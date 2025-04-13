@@ -1,0 +1,185 @@
+# Frontend Project Setup (React + Vite)
+
+## Setup Instructions
+
+1. Create a new Vite project:
+```bash
+npm create vite@latest ai-interface-frontend -- --template react
+cd ai-interface-frontend
+```
+
+2. Install required dependencies:
+```bash
+npm install react-router-dom zustand @tanstack/react-query re-resizable react-draggable @tanstack/react-virtual
+```
+
+3. Set up the project structure:
+```
+ai-interface-frontend/
+├── public/
+├── src/
+│   ├── components/
+│   │   ├── auth/
+│   │   │   └── LoginPage.jsx
+│   │   ├── controls/
+│   │   │   ├── ControlPanel.jsx
+│   │   │   ├── SimulationTab.jsx
+│   │   │   ├── StreamsTab.jsx
+│   │   │   └── ViewsTab.jsx
+│   │   ├── navigation/
+│   │   │   └── NavBar.jsx
+│   │   ├── projects/
+│   │   │   └── ProjectsPage.jsx
+│   │   ├── status/
+│   │   │   └── StatusBar.jsx
+│   │   ├── visualizers/
+│   │   │   ├── AnswerView.jsx
+│   │   │   ├── CodeView.jsx
+│   │   │   ├── DefaultView.jsx
+│   │   │   ├── InputView.jsx
+│   │   │   ├── LogView.jsx
+│   │   │   └── MediaView.jsx
+│   │   ├── workspace/
+│   │   │   ├── ViewContainer.jsx
+│   │   │   └── WorkspaceLayout.jsx
+│   │   └── App.jsx
+│   ├── contexts/
+│   │   ├── UserProfileContext.jsx
+│   │   ├── ViewManagerContext.jsx
+│   │   └── WebSocketContext.jsx
+│   ├── services/
+│   │   └── WebSocketService.js
+│   ├── state/
+│   │   ├── EventBus.js
+│   │   └── StateManager.js
+│   ├── streams/
+│   │   └── StreamManager.js
+│   ├── styles/
+│   │   └── index.css
+│   ├── testing/
+│   │   └── BackendSimulator.js
+│   ├── views/
+│   │   └── ViewRegistry.jsx
+│   └── main.jsx
+└── vite.config.js
+```
+
+4. Create the required directories:
+```bash
+# Create component directories
+mkdir -p src/components/{auth,controls,navigation,projects,status,visualizers,workspace}
+
+# Create other feature directories
+mkdir -p src/{contexts,services,state,streams,styles,testing,views}
+```
+
+5. Copy the source files into their respective locations:
+
+   - **State Management**
+     - Copy `EventBus.js` to `src/state/`
+     - Copy `StateManager.js` to `src/state/`
+
+   - **View Registry**
+     - Copy `ViewRegistry.jsx` to `src/views/`
+
+   - **Stream Management**
+     - Copy `StreamManager.js` to `src/streams/`
+
+   - **WebSocket Service**
+     - Copy `WebSocketService.js` to `src/services/`
+
+   - **Context Providers**
+     - Copy `WebSocketContext.jsx` to `src/contexts/`
+     - Copy `ViewManagerContext.jsx` to `src/contexts/`
+     - Copy `UserProfileContext.jsx` to `src/contexts/`
+
+   - **Testing**
+     - Copy `BackendSimulator.js` to `src/testing/`
+
+   - **UI Components**
+     - Copy `App.jsx` to `src/components/`
+     - Copy visualizers (`LogView.jsx`, `CodeView.jsx`, etc.) to `src/components/visualizers/`
+     - Copy workspace components to `src/components/workspace/`
+     - Copy control components to `src/components/controls/`
+     - Copy navigation components to `src/components/navigation/`
+     - Copy status components to `src/components/status/`
+     - Copy auth components to `src/components/auth/`
+     - Copy projects components to `src/components/projects/`
+
+   - **Styles**
+     - Copy `index.css` to `src/styles/`
+
+   - **Main Entry Files**
+     - Copy `main.jsx` to `src/`
+     - Copy `vite.config.js` to the project root
+
+6. Configure Vite proxy for WebSocket support by editing `vite.config.js`:
+```javascript
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 3000,
+    proxy: {
+      '/api': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+        ws: true, // Support WebSockets
+      }
+    }
+  }
+});
+```
+
+7. Create `.env.development` file for environment variables:
+```
+VITE_API_URL=http://localhost:8000
+VITE_WS_URL=ws://localhost:8000
+```
+
+8. Start the development server:
+```bash
+npm run dev
+```
+
+## Running in Development Mode
+
+When running in development mode, you can use the built-in simulation capabilities:
+
+1. Click the gear icon (⚙️) in the top right to open the Control Panel
+2. Go to the "Simulation" tab
+3. Select a scenario (e.g., "Reasoning Model Demo" or "Image Processing Demo")
+4. Click "Start Simulation"
+
+This will create dynamic views and simulate backend events without needing the actual backend service.
+
+## Connecting to a Real Backend
+
+To connect to your Python FastAPI backend:
+
+1. Ensure your backend is running on `http://localhost:8000`
+2. Make sure WebSocket endpoints are available at `/api/ws/stream/{streamId}`
+3. The frontend will automatically attempt to connect to the backend when not in simulation mode
+
+## Customizing Views and Components
+
+To add a new visualizer:
+
+1. Create a new component in `src/components/visualizers/`
+2. Register it in `src/views/ViewRegistry.jsx` by adding it to the `viewTypes` object
+
+To add new stream processors:
+
+1. Add new processing functions in `src/streams/StreamManager.js`
+2. Register processors in the constructor's `this.processors` object
+
+## Styling
+
+The project uses vanilla CSS with variables for theming. To modify the appearance:
+
+1. Edit the CSS variables in `src/styles/index.css` to change colors, spacing, etc.
+2. Add component-specific styles in the same file
+
+You can switch to a CSS-in-JS solution or a framework like Tailwind CSS if preferred.
