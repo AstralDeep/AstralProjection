@@ -458,3 +458,95 @@ textarea.form-control {
   .login-container { padding: var(--spacing-lg) var(--spacing-md); margin: var(--spacing-md); }
 }
 
+/* ============================
+   8. COMPONENT-SPECIFIC STYLES (Additions)
+============================ */
+
+/* --- HtmlView Specific Styles --- */
+.primitive-htmlview .table-responsive-wrapper {
+  overflow-x: auto; /* Enable horizontal scrolling for wide tables */
+  width: 100%;
+  margin-top: var(--spacing-xs);
+}
+
+.primitive-htmlview .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-small); /* Slightly smaller font for tables */
+}
+
+.primitive-htmlview .data-table th,
+.primitive-htmlview .data-table td {
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-xs) var(--spacing-sm); /* Adjust padding */
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap; /* Prevent wrapping by default */
+}
+/* Allow wrapping in specific columns if needed by adding a class later */
+.primitive-htmlview .data-table td.wrap {
+   white-space: normal;
+}
+
+
+.primitive-htmlview .data-table th {
+  background-color: var(--color-light);
+  font-weight: 600; /* Bolder headers */
+  position: sticky; /* Make headers sticky if table scrolls vertically */
+  top: 0;
+  z-index: 1;
+}
+
+.primitive-htmlview .data-table tr:nth-child(even) td {
+  background-color: #f9f9f9; /* Subtle striping for even rows */
+}
+.primitive-htmlview .data-table tr:hover td {
+  background-color: var(--color-primary-light); /* Highlight row on hover */
+}
+
+.primitive-htmlview .data-table .table-empty-message {
+  text-align: center;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  padding: var(--spacing-md);
+}
+
+.primitive-htmlview .viz-error {
+  padding: var(--spacing-sm);
+  color: var(--color-danger);
+  background-color: rgba(220, 53, 69, 0.05); /* Lighter background */
+  border: 1px solid rgba(220, 53, 69, 0.2); /* Lighter border */
+  border-radius: var(--border-radius-sm);
+  white-space: pre-wrap; /* Preserve formatting */
+  font-family: var(--font-family-monospace); /* Monospace often good for errors */
+  font-size: var(--font-size-small);
+}
+
+.primitive-htmlview .viz-message {
+  padding: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  white-space: pre-wrap; /* Preserve formatting */
+  font-size: var(--font-size-normal);
+}
+
+/* Ensure graph container takes space (already inline, but good practice) */
+#graph-container { /* If using a specific ID */
+    width: 100%;
+    height: 100%;
+    min-height: 300px; /* Ensure minimum visible area */
+}
+
+/* --- CodeView Specific Styles (Optional) --- */
+/* Most styling comes from the react-syntax-highlighter theme */
+.primitive-codeview {
+    /* Container styles set inline */
+}
+
+.primitive-codeview .primitive-title {
+    /* Inherits base primitive title styles */
+    /* Add specific overrides if needed */
+     border-bottom: none; /* Might not want border if theme has background */
+     padding-bottom: 0;
+     margin-bottom: var(--spacing-xs);
+     padding-left: var(--spacing-sm); /* Align with code padding */
+}

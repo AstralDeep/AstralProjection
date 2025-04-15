@@ -150,7 +150,7 @@ export function useWebSocket() { // streamId prop might be less relevant now wit
 
       const capabilitiesPayload = {
           supported_primitives: [
-            "StackLayout", "ChatViewBasic", "InputField", "Button", "TextView", "LogView", "McpStructuredLogView", "StreamingTextView"
+            "StackLayout", "ChatViewBasic", "InputField", "Button", "TextView", "LogView", "McpStructuredLogView", "StreamingTextView", "CodeView", "HtmlView"
           ]
       };
       const registrationMessage = { type: "register_capabilities", payload: capabilitiesPayload };

@@ -15,9 +15,11 @@ import Button from './primitives/Button.jsx';
 import ChatViewBasic from './primitives/ChatViewBasic.jsx';
 import McpStructuredLogView from './primitives/McpStructuredLogView.jsx';
 import StreamingTextView from './primitives/StreamingTextView.jsx';
+import CodeView from "./primitives/CodeView.jsx";
+import HtmlView from "./primitives/HtmlView.jsx";
 
 // Map backend type strings to frontend component implementations
-const primitiveMap = { StackLayout, TextView, LogView, InputField, Button, ChatViewBasic, McpStructuredLogView, StreamingTextView };
+const primitiveMap = { StackLayout, TextView, LogView, InputField, Button, ChatViewBasic, McpStructuredLogView, StreamingTextView, CodeView, HtmlView};
 
 // Fallback component for rendering unknown primitive types
 const UnknownPrimitive = ({ id, type, gridArea }) => (
