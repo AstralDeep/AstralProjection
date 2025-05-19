@@ -67,7 +67,13 @@ function McpStructuredLogView({ id, config = {}, content, gridArea }) {
   return (
     <div id={id} style={containerStyle} className="primitive-mcpstructuredlogview">
       {title && <h4 className="primitive-title">{title}</h4>}
-      <div ref={scrollRef} style={logAreaStyle}>
+      <div 
+        ref={scrollRef} 
+        style={logAreaStyle}
+        role="log"
+        aria-live="assertive"
+        aria-atomic="false"
+      >
         {entries.length > 0 ? (
           entries.map(renderEntry)
         ) : (

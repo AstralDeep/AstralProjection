@@ -17,9 +17,14 @@ import McpStructuredLogView from './primitives/McpStructuredLogView.jsx';
 import StreamingTextView from './primitives/StreamingTextView.jsx';
 import CodeView from "./primitives/CodeView.jsx";
 import HtmlView from "./primitives/HtmlView.jsx";
+import Icon from "./primitives/Icon.jsx"
+import Checkbox from "./primitives/Checkbox.jsx"
+import Card from "./primitives/Card.jsx"
 
 // Map backend type strings to frontend component implementations
-const primitiveMap = { StackLayout, TextView, LogView, InputField, Button, ChatViewBasic, McpStructuredLogView, StreamingTextView, CodeView, HtmlView};
+const primitiveMap = {
+    StackLayout, TextView, LogView, InputField, Button, ChatViewBasic, McpStructuredLogView, 
+    StreamingTextView, CodeView, HtmlView, Icon, Checkbox, Card};
 
 // Fallback component for rendering unknown primitive types
 const UnknownPrimitive = ({ id, type, gridArea }) => (
@@ -330,9 +335,9 @@ function DynamicRenderer({ primitive, sendAction }) {
    // --- Prepare Props ---
   const commonProps = {
       id, config, content, gridArea,
-      ...( (type === 'InputField' || type === 'Button') ? { actionId, onAction: handleAction } : {} ),
-      ...( (type === 'InputField') ? { onValueChange: handleValueChange } : {} ),
-      ...( (type === 'StackLayout') ? { children, sendAction } : {} ),
+      ...( (type === 'InputField' || type === 'Button' || type === 'Checkbox') ? { actionId, onAction: handleAction } : {} ),
+      ...( (type === 'InputField' || type === 'Checkbox') ? { onValueChange: handleValueChange } : {} ),
+      ...( (type === 'StackLayout' || type === 'Card') ? { children, sendAction } : {} ),
   };
   if (PrimitiveComponent === UnknownPrimitive) {
       commonProps.type = type;

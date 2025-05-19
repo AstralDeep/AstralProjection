@@ -1,23 +1,31 @@
 // src/components/primitives/LogView.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react'; // Added useCallback
 
 function LogView({ id, config = {}, content, gridArea }) {
   const {
     title,
-    autoScroll = true,
+    autoScroll: initialAutoScroll = true, // Renamed to avoid conflict with internal state
     lineFormat = 'string',
     maxLines,
-    // Layout/dimension config
     height = '200px',
-    // Presentation config (use CSS class primitive-logview defaults)
-    backgroundColor = undefined, // Use CSS default
-    border = undefined, // Use CSS default
-    padding = undefined, // Use CSS default
-    borderRadius = undefined, // Use CSS default
+    backgroundColor = undefined,
+    border = undefined,
+    padding = undefined,
+    borderRadius = undefined,
   } = config;
 
   const [logs, setLogs] = useState([]);
   const scrollRef = useRef(null);
+
+  // --- ENHANCEMENT: State for Sticky Scroll ---
+  const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
+  // Keep a ref for the autoScroll prop to avoid re-triggering scroll handler effect if only autoScroll prop changes
+  const autoScrollEnabledRef = useRef(initialAutoScroll);
+
+  useEffect(() => {
+    autoScrollEnabledRef.current = initialAutoScroll;
+  }, [initialAutoScroll]);
+
 
   useEffect(() => {
     let newLogs = Array.isArray(content) ? content : [];
@@ -27,11 +35,47 @@ function LogView({ id, config = {}, content, gridArea }) {
     setLogs(newLogs);
   }, [content, maxLines]);
 
+  // --- ENHANCEMENT: Modified Auto-Scroll Logic for Sticky Scroll ---
   useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+    const scrollElement = scrollRef.current;
+    if (scrollElement) {
+      // Only auto-scroll if the feature is enabled AND the user hasn't scrolled up
+      if (autoScrollEnabledRef.current && !userHasScrolledUp) {
+        scrollElement.scrollTo({ top: scrollElement.scrollHeight, behavior: 'smooth' });
+      }
     }
-  }, [logs, autoScroll]);
+  }, [logs, userHasScrolledUp]); // Auto-scroll depends on logs and userHasScrolledUp state
+
+  // --- ENHANCEMENT: Scroll Handler for Sticky Scroll ---
+  const handleScroll = useCallback(() => {
+    const scrollElement = scrollRef.current;
+    if (scrollElement) {
+      const threshold = 20; // Pixels from bottom to consider "at bottom"
+      const atBottom = scrollElement.scrollHeight - scrollElement.scrollTop - scrollElement.clientHeight <= threshold;
+
+      if (atBottom) {
+        if (userHasScrolledUp) { // Only update state if it changed
+          setUserHasScrolledUp(false);
+        }
+      } else {
+        if (!userHasScrolledUp) { // Only update state if it changed
+          setUserHasScrolledUp(true);
+        }
+      }
+    }
+  }, [userHasScrolledUp]); // Dependency: userHasScrolledUp to avoid stale closure
+
+  // Attach/detach scroll listener
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (scrollElement && autoScrollEnabledRef.current) { // Only add listener if autoScroll is a feature
+      scrollElement.addEventListener('scroll', handleScroll);
+      return () => {
+        scrollElement.removeEventListener('scroll', handleScroll);
+      };
+    }
+  }, [handleScroll]); // Re-attach if handleScroll changes (due to its own deps)
+
 
   const formatLogEntry = (entry, index) => {
     let text;
@@ -46,59 +90,56 @@ function LogView({ id, config = {}, content, gridArea }) {
       text = String(entry);
     }
     const key = (typeof entry === 'object' && entry?.id) ? entry.id : `${id}-log-${index}`;
-    // Apply .log-entry class for styling from index.css
     return <pre key={key} className="log-entry">{text}</pre>;
   };
 
-  // Container styles (layout + config overrides)
   const containerStyle = {
     height: height,
     gridArea: gridArea || undefined,
     display: 'flex',
     flexDirection: 'column',
-    overflow: 'hidden', // Keep overflow control
-    // Apply overrides from config if provided
+    overflow: 'hidden',
     backgroundColor: backgroundColor,
     padding: padding,
     border: border,
     borderRadius: borderRadius,
-    // Default presentation comes from CSS class
   };
 
-  // Scrollable area styles (layout)
   const logAreaStyle = {
-      flexGrow: 1,
-      overflowY: 'auto',
-      // Font family, size, line height moved to CSS class primitive-logview
+    flexGrow: 1,
+    overflowY: 'auto',
   };
 
-  // Title styles
-   const titleStyle = {
-       margin: '0 0 var(--spacing-sm) 0', // Use CSS var
-       paddingBottom: 'var(--spacing-sm)', // Use CSS var
-       borderBottom: '1px solid var(--color-border)',
-       fontSize: '1em',
-       fontWeight: '600',
-       flexShrink: 0,
-       // Add padding to align with container padding defined in CSS
-       paddingLeft: 'var(--spacing-sm)',
-       paddingRight: 'var(--spacing-sm)',
-   };
+  const titleStyle = {
+    margin: '0 0 var(--spacing-sm) 0',
+    paddingBottom: 'var(--spacing-sm)',
+    borderBottom: '1px solid var(--color-border)',
+    fontSize: '1em',
+    fontWeight: '600',
+    flexShrink: 0,
+    paddingLeft: 'var(--spacing-sm)',
+    paddingRight: 'var(--spacing-sm)',
+  };
 
   return (
-    // Apply base class for default styles
     <div id={id} style={containerStyle} className="primitive-logview">
       {title && <h4 style={titleStyle}>{title}</h4>}
-      {/* Inner div for scrolling doesn't need extra class if styled via parent */}
-      <div ref={scrollRef} style={logAreaStyle}>
+      <div
+        ref={scrollRef}
+        style={logAreaStyle}
+        // --- ENHANCEMENT: ARIA Attributes for Accessibility ---
+        role="log" // Semantically identifies the region as a log.
+        aria-live={autoScrollEnabledRef.current && !userHasScrolledUp ? "polite" : "off"} // Announce new logs if auto-scrolling, "off" if user scrolled up.
+        aria-atomic="false" // Announce only new additions, not the entire log.
+      >
         {logs.length > 0 ? (
           logs.map(formatLogEntry)
         ) : (
-          // Apply .log-empty class for styling
           <div className="log-empty">No log entries.</div>
         )}
       </div>
     </div>
   );
 }
+
 export default React.memo(LogView);

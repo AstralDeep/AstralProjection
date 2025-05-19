@@ -28,13 +28,15 @@ function InputField({ id, config = {}, onAction, gridArea, content, onValueChang
   );
 
   // Effect to update internal state if the 'content' prop changes externally
-  useEffect(() => {
-    const externalContentStr = content !== null && content !== undefined ? String(content) : '';
-    if (externalContentStr !== value) {
-      setValue(externalContentStr);
+ useEffect(() => {
+  const externalContentStr = content !== null && content !== undefined ? String(content) : '';
+  setValue(currentInternalValue => {
+    if (externalContentStr !== currentInternalValue) {
+      return externalContentStr;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content]);
+    return currentInternalValue;
+  });
+}, [content]); // Only depends on the external prop 'content'
 
 
   // Handle changes to the input field
@@ -56,7 +58,7 @@ function InputField({ id, config = {}, onAction, gridArea, content, onValueChang
 
         if (onAction) {
             // Call onAction with the configured actionId and targetElementId from enterKeyAction
-            onAction(enterActionId, enterTargetId, {});
+            onAction(enterActionId, enterTargetId);
         }
         // NOTE: Clearing the input field after Enter is handled by the BACKEND sending a
         // primitive_content_update message after successfully processing the action.

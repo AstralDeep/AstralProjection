@@ -31,14 +31,20 @@ function StreamingTextView({ id, config = {}, content, gridArea }) {
   }, [content]);
 
   useEffect(() => {
-    if (autoScroll && scrollContainerRef.current) {
-      requestAnimationFrame(() => {
-         if (scrollContainerRef.current) {
-             scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-         }
-      });
+  let animationFrameId; // Declare here
+  if (autoScroll && scrollContainerRef.current) {
+    animationFrameId = requestAnimationFrame(() => { // Assign here
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+      }
+    });
+  }
+  return () => {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId); // Cancel on cleanup
     }
-  }, [accumulatedText, autoScroll]);
+  };
+}, [accumulatedText, autoScroll]);
 
   // Container styles (layout + config overrides)
   const containerStyle = {
@@ -86,6 +92,8 @@ function StreamingTextView({ id, config = {}, content, gridArea }) {
         ref={scrollContainerRef}
         style={textStyle}
         className="primitive-streamingtextview"
+        role="log"
+        aria-live="assertive"
       >
         {accumulatedText || <>&nbsp;</>} {/* Render non-breaking space if empty to maintain height */}
       </div>

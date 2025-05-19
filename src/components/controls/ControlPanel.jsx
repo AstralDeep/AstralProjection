@@ -1,6 +1,5 @@
 // src/components/controls/ControlPanel.jsx (Modified)
 import React, { useState } from 'react';
-// Removed: import ViewsTab from './ViewsTab.jsx';
 import StreamsTab from './StreamsTab.jsx'; // Keep StreamsTab for Connection info
 
 // Receive isOpen and onToggle props from App
@@ -14,8 +13,12 @@ function ControlPanel({ isOpen, onToggle }) {
       <div className="panel-header">
         <h3>Control Panel</h3>
         {/* Use the onToggle prop passed from App */}
-        <button className="collapse-button btn-reset" onClick={onToggle}>
-          {isOpen ? '◀' : '▶'}
+        <button 
+          className="collapse-button btn-reset" 
+          onClick={onToggle}
+          aria-label="Close control panel" // Added for accessibility
+        >
+          <strong>X</strong>
         </button>
       </div>
 
@@ -61,7 +64,7 @@ function ControlPanel({ isOpen, onToggle }) {
                 border-left: 1px solid var(--color-border); transform: translateX(0);
             }
             .control-panel.collapsed {
-                transform: translateX(calc(100% - 24px)); /* Adjust based on header width */
+                transform: translateX(100%);
             }
             .panel-header { height: 45px; display: flex; align-items: center; justify-content: space-between; padding: 0 10px 0 15px; border-bottom: 1px solid var(--color-border); background: #f8f9fa; }
             .panel-header h3 { margin: 0; font-size: 1rem; }

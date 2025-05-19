@@ -48,14 +48,20 @@ function ChatViewBasic({ id, config = {}, content, gridArea }) {
   }, [content, id]);
 
   useEffect(() => {
-    if (autoScroll && scrollRef.current) {
-      requestAnimationFrame(() => {
-          if (scrollRef.current) {
-              scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-          }
-      });
+  let animationFrameId; // Declare here
+  if (autoScroll && scrollRef.current) {
+    animationFrameId = requestAnimationFrame(() => { // Assign here
+      if (scrollRef.current) {
+        scrollRef.current.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+      }
+    });
+  }
+  return () => {
+    if (animationFrameId) {
+      cancelAnimationFrame(animationFrameId); // Cancel on cleanup
     }
-  }, [messages, isAssistantWaiting, autoScroll]);
+  };
+}, [messages, isAssistantWaiting, autoScroll]);
 
   // --- Rendering Helpers ---
   const renderMessage = (message) => {
@@ -116,7 +122,14 @@ function ChatViewBasic({ id, config = {}, content, gridArea }) {
     <div id={id} style={containerStyle} className="primitive-chatviewbasic">
       {title && <h4 className="primitive-title">{title}</h4>}
       {/* Apply chat-area class for default padding etc. */}
-      <div ref={scrollRef} style={chatAreaStyle} className="chat-area">
+      <div 
+        ref={scrollRef} 
+        style={chatAreaStyle} 
+        className="chat-area"
+        role="log"
+        aria-live="assertive"
+        aria-atomic="false"
+      >
         {messages.length > 0 ? messages.map(renderMessage) : (
           !isAssistantWaiting && <div className="chat-empty">Conversation started.</div>
         )}

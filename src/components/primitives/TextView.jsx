@@ -65,7 +65,12 @@ function TextView({ id, config = {}, content, gridArea }) {
 
   // Render as 'pre' if it was JSON, otherwise 'div'
   // Apply base primitive class
-  const Tag = isJson ? 'pre' : 'div';
+  let Tag = 'div'; // Default for non-JSON text
+  if (isJson) {
+    Tag = 'pre';
+  } else if (config.as) {
+    Tag = config.as;
+  }
 
   return (
     <Tag id={id} style={style} className="primitive-textview">

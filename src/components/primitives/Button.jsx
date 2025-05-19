@@ -18,7 +18,7 @@ function Button({ id, config = {}, actionId, onAction, gridArea }) {
     event.preventDefault();
     if (onAction && actionId && !disabled) {
        console.log(`Button ${id}: Triggering action "${actionId}"`);
-       onAction(actionId, id, {});
+       onAction(actionId, id);
     }
   };
 
@@ -43,6 +43,7 @@ function Button({ id, config = {}, actionId, onAction, gridArea }) {
 
   return (
     <button
+      type="button"
       id={id}
       onClick={handleClick}
       disabled={disabled}
