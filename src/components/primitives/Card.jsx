@@ -1,5 +1,5 @@
 // src/components/primitives/Card.jsx
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import DynamicRenderer from '../DynamicRenderer.jsx'; // Assuming path from StackLayout
 
 function Card({ id, config = {}, children: childElements, gridArea, sendAction }) {
@@ -18,6 +18,8 @@ function Card({ id, config = {}, children: childElements, gridArea, sendAction }
     style: configStyle = {},
   } = config;
 
+  const scrollableContainerRef = useRef(null); // Create a ref for the scrollable div
+
   const finalStyle = {
     padding: padding,
     margin: margin || undefined,
@@ -26,10 +28,11 @@ function Card({ id, config = {}, children: childElements, gridArea, sendAction }
     backgroundColor: backgroundColor,
     boxShadow: boxShadow,
     width: width || undefined,
-    height: height || undefined,
+    height: height || 'auto', // Default to 'auto' if not specified, or set a specific height for scrolling to work as expected
     gridArea: gridArea || undefined,
     boxSizing: 'border-box',
-    overflow: 'hidden', // Often good for cards to contain their content
+    overflowY: 'auto', // Allow vertical scrolling
+    // overflowX: 'hidden', // Optionally hide horizontal scrollbar
     ...configStyle,
   };
 
@@ -38,8 +41,24 @@ function Card({ id, config = {}, children: childElements, gridArea, sendAction }
   // The 'children' prop is an array of primitive configurations.
   const hasChildrenToRender = childElements && Array.isArray(childElements) && childElements.length > 0;
 
+  // Scroll to bottom when childElements change (i.e., when items are appended)
+  useEffect(() => {
+    if (scrollableContainerRef.current) {
+      const { scrollHeight, clientHeight } = scrollableContainerRef.current;
+      // Scroll to bottom only if the content is overflowing
+      if (scrollHeight > clientHeight) {
+        scrollableContainerRef.current.scrollTop = scrollHeight;
+      }
+    }
+  }, [childElements]); // Dependency array: run effect when childElements changes
+
   return (
-    <div id={id} style={finalStyle} className="primitive-card">
+    <div
+      id={id}
+      style={finalStyle}
+      className="primitive-card"
+      ref={scrollableContainerRef} // Assign the ref to the div
+    >
       {hasChildrenToRender && childElements.map(childPrimitive => (
         <DynamicRenderer
           key={childPrimitive.id}

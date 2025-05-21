@@ -20,11 +20,12 @@ import HtmlView from "./primitives/HtmlView.jsx";
 import Icon from "./primitives/Icon.jsx"
 import Checkbox from "./primitives/Checkbox.jsx"
 import Card from "./primitives/Card.jsx"
+import AudioUpload from './primitives/AudioUpload.jsx';
 
 // Map backend type strings to frontend component implementations
 const primitiveMap = {
     StackLayout, TextView, LogView, InputField, Button, ChatViewBasic, McpStructuredLogView, 
-    StreamingTextView, CodeView, HtmlView, Icon, Checkbox, Card};
+    StreamingTextView, CodeView, HtmlView, Icon, Checkbox, Card, AudioUpload};
 
 // Fallback component for rendering unknown primitive types
 const UnknownPrimitive = ({ id, type, gridArea }) => (
@@ -335,8 +336,8 @@ function DynamicRenderer({ primitive, sendAction }) {
    // --- Prepare Props ---
   const commonProps = {
       id, config, content, gridArea,
-      ...( (type === 'InputField' || type === 'Button' || type === 'Checkbox') ? { actionId, onAction: handleAction } : {} ),
-      ...( (type === 'InputField' || type === 'Checkbox') ? { onValueChange: handleValueChange } : {} ),
+      ...( (type === 'InputField' || type === 'Button' || type === 'Checkbox' || type === 'AudioUpload') ? { actionId, onAction: handleAction } : {} ),
+      ...( (type === 'InputField' || type === 'Checkbox' || type === 'AudioUpload') ? { onValueChange: handleValueChange } : {} ),
       ...( (type === 'StackLayout' || type === 'Card') ? { children, sendAction } : {} ),
   };
   if (PrimitiveComponent === UnknownPrimitive) {
