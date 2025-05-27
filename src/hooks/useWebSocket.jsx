@@ -325,7 +325,7 @@ export function useWebSocket() { // streamId prop might be less relevant now wit
        setProjectConnectionStatus(ConnectionStatus.CONNECTING);
        console.log(`WebSocket internalConnect: Attempting connection to ${dynamicMcpStreamId}...`);
 
-       const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+       const wsProtocol = 'ws:'; // TODO window.location.protocol === 'https:' ? 'wss:' : 'ws:';
        const backendHost = window.location.hostname;
        const backendPort = 8000; // Make configurable if necessary
        const url = `${wsProtocol}//${backendHost}:${backendPort}/api/ws/stream/${dynamicMcpStreamId}?token=${encodeURIComponent(dynamicToken)}`;
