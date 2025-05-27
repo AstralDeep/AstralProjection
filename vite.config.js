@@ -21,6 +21,10 @@ export default defineConfig({
         changeOrigin: true,
         ws: true, // Support WebSockets
       }
-    }
+    },
+    allowedHosts: [
+      'sandbox.ai.uky.edu',
+      // Add other allowed hosts here if needed
+    ],
   }
 });
