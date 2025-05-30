@@ -325,10 +325,10 @@ export function useWebSocket() { // streamId prop might be less relevant now wit
        setProjectConnectionStatus(ConnectionStatus.CONNECTING);
        console.log(`WebSocket internalConnect: Attempting connection to ${dynamicMcpStreamId}...`);
 
-       const wsProtocol = import.meta.env.WS_PROTO || (window.location.protocol === 'https:' ? 'wss:' : 'ws:');
-       const backendHost = import.meta.env.WS_HOST || window.location.hostname;
-       const backendPort = import.meta.env.WS_PORT
-       
+       const wsProtocol = import.meta.env.VITE_WS_PROTO || (window.location.protocol === 'https:' ? 'wss:' : 'ws:');
+       const backendHost = import.meta.env.VITE_WS_HOST || window.location.hostname;
+       const backendPort = import.meta.env.VITE_WS_PORT
+
        const hostAndPort = backendPort ? `${backendHost}:${backendPort}` : backendHost;
 
        const url = `${wsProtocol}//${hostAndPort}/api/ws/stream/${dynamicMcpStreamId}?token=${encodeURIComponent(dynamicToken)}`;
