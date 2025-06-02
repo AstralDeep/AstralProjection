@@ -1,7 +1,6 @@
 // src/components/primitives/AudioUpload.jsx
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 
-// URL now points to the generic file proxy endpoint in the main.py server
 const UPLOAD_URL = '/api/upload-file/mcp_audio';
 
 function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
@@ -10,22 +9,24 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
     acceptedFormats = 'audio/*',
     buttonLabel = 'Select Audio File',
     clearButtonLabel = 'Clear',
-    maxFileSize, // Example: 5 * 1024 * 1024 (5MB)
+    maxFileSize,
   } = config;
 
+  // State for the component's value
   const [fileName, setFileName] = useState('');
   const [isUploaded, setIsUploaded] = useState(false);
+  
+  // State for the upload process and UI
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
 
   const fileInputRef = useRef(null);
 
+  // Effect to sync component state FROM the parent `content` prop
   useEffect(() => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
+    // This effect should only manage the component's persistent value (filename, uploaded status)
+    // It should NOT manage the transient previewUrl state.
     if (typeof content === 'string' && content) {
       try {
         const parsedContent = JSON.parse(content);
@@ -33,73 +34,50 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
           setFileName(parsedContent.original_filename);
           setIsUploaded(true);
           setError('');
-        } else {
-          setFileName('');
-          setIsUploaded(false);
+          return; // Exit after successfully setting state
         }
       } catch (e) {
-        console.warn(`AudioUpload (id: ${id}): Initial content string is not a valid file reference JSON. Content:`, content);
-        setFileName('');
-        setIsUploaded(false);
+        // Fall through to clear state if JSON is invalid
       }
-    } else if (content === null || content === undefined || content === '') {
-        setFileName('');
-        setIsUploaded(false);
-        setError('');
-    } else if (typeof content === 'object' && content !== null && content.filename && content.dataUrl) {
-        console.warn(`AudioUpload (id: ${id}): Received old base64 content structure. Displaying filename, but upload required.`);
-        setFileName(content.filename);
-        setIsUploaded(false);
-        setError('Please re-select and upload the file.');
-    } else {
-        setFileName('');
-        setIsUploaded(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [content, id]);
+
+    // If content is null, empty, or not our valid JSON, clear the value-related state.
+    setFileName('');
+    setIsUploaded(false);
+    // Do not clear 'error' here as it might be an upload error we want to show.
+  }, [content]);
+
+  // Effect to clean up the blob URL when the component is unmounted
+  // or when the previewUrl changes.
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
 
   const handleFileChange = useCallback(async (event) => {
     const file = event.target.files[0];
-    if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-    }
+    if (!file) return;
 
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
-
-    if (!file) {
-      if (!isUploaded) {
-        setFileName('');
-        setError('');
-        if (onValueChange) {
-          onValueChange(id, null);
-        }
-      }
-      return;
-    }
-
-    setError('');
-    setFileName(file.name);
+    // Reset state for the new file upload
     setIsUploaded(false);
+    setError('');
     setIsLoading(true);
+    setFileName(file.name);
+    
+    // Set a new preview URL for the selected file
+    setPreviewUrl(URL.createObjectURL(file));
 
     if (maxFileSize && file.size > maxFileSize) {
       const maxSizeMB = (maxFileSize / 1024 / 1024).toFixed(2);
       setError(`File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Max size: ${maxSizeMB}MB.`);
-      setFileName('');
       setIsLoading(false);
-      if (onValueChange) {
-        onValueChange(id, null);
-      }
       return;
     }
 
-    setPreviewUrl(URL.createObjectURL(file));
-
     const formData = new FormData();
-    // Use the standardized key 'file'
     formData.append('file', file);
 
     try {
@@ -108,42 +86,23 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
         body: formData,
       });
 
+      const responseData = await response.json();
       setIsLoading(false);
 
-      const responseData = await response.json();
-
       if (response.ok) {
-        if (onValueChange) {
-          onValueChange(id, JSON.stringify(responseData));
-        }
+        onValueChange?.(id, JSON.stringify(responseData));
         setFileName(responseData.original_filename || file.name);
         setIsUploaded(true);
-        setError('');
       } else {
-        // Handle errors from the server (including our 415 validation error)
-        console.error('Upload failed:', responseData);
         setError(responseData.error || `Upload failed. Server responded with ${response.status}.`);
-        setFileName(file.name);
-        setIsUploaded(false);
-        if (previewUrl) URL.revokeObjectURL(previewUrl);
-        setPreviewUrl(null);
-        if (onValueChange) {
-          onValueChange(id, null);
-        }
+        onValueChange?.(id, null);
       }
     } catch (err) {
       setIsLoading(false);
-      console.error('Upload network error:', err);
       setError(`Upload failed: ${err.message}. Check network or server.`);
-      setFileName(file.name);
-      setIsUploaded(false);
-      if (previewUrl) URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-      if (onValuechange) {
-        onValueChange(id, null);
-      }
+      onValueChange?.(id, null);
     }
-  }, [id, onValueChange, maxFileSize, previewUrl, isUploaded]);
+  }, [id, maxFileSize, onValueChange]);
 
   const handleButtonClick = () => {
     fileInputRef.current?.click();
@@ -154,89 +113,40 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
     setError('');
     setIsUploaded(false);
     setIsLoading(false);
+    setPreviewUrl(null); // This will trigger the cleanup effect for the old URL
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
-    if (onValueChange) {
-      onValueChange(id, null);
-    }
-  }, [id, onValueChange, previewUrl]);
+    onValueChange?.(id, null);
+  }, [id, onValueChange]);
 
-  const style = {
-    gridArea: gridArea || undefined,
-    margin: config.margin || undefined,
-    width: config.width || undefined,
-  };
-
-  const primitiveStyle = {
-    padding: '10px',
-    border: '1px solid #ccc',
-    borderRadius: '4px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-    ...style,
-  };
-
-  const buttonStyle = {
-    padding: '8px 12px',
-    cursor: 'pointer',
-    opacity: isLoading ? 0.7 : 1,
-  };
-
-  const fileNameStyle = {
-    marginTop: '5px',
-    fontStyle: 'italic',
-    wordBreak: 'break-all',
-    color: isUploaded ? 'green' : '#555',
-  };
-
-  const errorStyle = {
-    color: 'red',
-    fontSize: '0.9em',
-    marginTop: '5px',
-  };
+  const style = { gridArea: gridArea || undefined, ...config };
+  const primitiveStyle = { padding: '10px', border: '1px solid #ccc', borderRadius: '4px', display: 'flex', flexDirection: 'column', gap: '8px', ...style };
+  const buttonStyle = { padding: '8px 12px', cursor: 'pointer', opacity: isLoading ? 0.7 : 1 };
+  const fileNameStyle = { marginTop: '5px', fontStyle: 'italic', wordBreak: 'break-all', color: isUploaded ? 'green' : (error ? 'red' : '#555') };
+  const errorStyle = { color: 'red', fontSize: '0.9em', marginTop: '5px' };
 
   return (
     <div id={`${id}-container`} style={primitiveStyle} className="primitive-audioupload">
-      {config.label && <label htmlFor={id} style={{ fontWeight: 'bold' }}>{config.label}</label>}
-      <input
-        type="file"
-        id={id}
-        ref={fileInputRef}
-        onChange={handleFileChange}
-        accept={acceptedFormats}
-        style={{ display: 'none' }}
-        aria-label={config.label || 'Audio file uploader'}
-        disabled={isLoading}
-      />
+      {label && <label htmlFor={id} style={{ fontWeight: 'bold' }}>{label}</label>}
+      <input type="file" id={id} ref={fileInputRef} onChange={handleFileChange} accept={acceptedFormats} style={{ display: 'none' }} disabled={isLoading} />
       <button type="button" onClick={handleButtonClick} style={buttonStyle} className="btn" disabled={isLoading}>
         {isLoading ? 'Uploading...' : buttonLabel}
       </button>
       {fileName && (
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
           <span style={fileNameStyle}>
-            {isUploaded ? 'Uploaded: ' : 'Selected: '} {fileName}
+            {isUploaded ? '✅ Uploaded: ' : (isLoading ? 'Uploading: ' : 'Selected: ')} {fileName}
           </span>
-          <button
-            type="button"
-            onClick={handleClear}
-            style={{...buttonStyle, fontSize: '0.8em', padding: '4px 8px'}}
-            className="btn btn-secondary"
-            disabled={isLoading}
-          >
+          <button type="button" onClick={handleClear} style={{ ...buttonStyle, fontSize: '0.8em', padding: '4px 8px' }} className="btn btn-secondary" disabled={isLoading}>
             {clearButtonLabel}
           </button>
         </div>
       )}
       {error && <div style={errorStyle}>{error}</div>}
-      {previewUrl && !isUploaded && (
-        <div style={{marginTop: '10px'}}>
-          <p style={{fontSize: '0.9em', margin: '0 0 5px 0'}}>Local Preview:</p>
+      {previewUrl && (
+        <div style={{ marginTop: '10px' }}>
+          <p style={{ fontSize: '0.9em', margin: '0 0 5px 0' }}>Preview:</p>
           <audio controls src={previewUrl} style={{ width: '100%' }} onError={() => setError('Could not play audio preview.')}>
             Your browser does not support the audio element.
           </audio>

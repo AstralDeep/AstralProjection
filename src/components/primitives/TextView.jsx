@@ -4,7 +4,6 @@ import React from 'react';
 function TextView({ id, config = {}, content, gridArea }) {
   const {
     initialText = '',
-    // Presentation styles controlled by config (as TextView is highly configurable)
     fontSize = 'inherit',
     fontWeight = 'normal',
     textAlign = 'left',
@@ -13,64 +12,75 @@ function TextView({ id, config = {}, content, gridArea }) {
     margin = '0',
     backgroundColor,
     borderRadius,
-    whiteSpace: configWhiteSpace = 'pre-wrap', // Default from component
-    // Layout styles
+    whiteSpace: configWhiteSpace = 'pre-wrap',
     width,
     height,
-    // Debugging option
     debugJsonIndent = 2,
   } = config;
 
-  let textToDisplay;
-  let isJson = false;
+  let textToDisplay = initialText;
+  let isJsonForPreTag = false;
 
   if (content !== null && content !== undefined) {
-    if (typeof content === 'object') {
-      isJson = true;
+    let processedContent = content;
+
+    // Check if the content is a string that can be parsed into JSON
+    if (typeof content === 'string') {
       try {
-        textToDisplay = JSON.stringify(content, null, debugJsonIndent);
+        const parsed = JSON.parse(content);
+
+        // If parsing succeeds, check for our specific 'display_text' key
+        if (typeof parsed === 'object' && parsed !== null && parsed.hasOwnProperty('display_text')) {
+          // Use the 'display_text' value as the content to display
+          processedContent = String(parsed.display_text);
+        } else {
+          // It's a different kind of JSON object, so we'll display it formatted
+          processedContent = parsed;
+        }
+      } catch (e) {
+        // Not a JSON string, so we'll treat it as plain text.
+        // `processedContent` is already the original `content` string.
+      }
+    }
+
+    // Now, determine the final text based on the processed content
+    if (typeof processedContent === 'object' && processedContent !== null) {
+      isJsonForPreTag = true;
+      try {
+        textToDisplay = JSON.stringify(processedContent, null, debugJsonIndent);
       } catch (e) {
         textToDisplay = '[Error stringifying object]';
-        console.error(`TextView (${id}): Error stringifying content object:`, e, content);
+        console.error(`TextView (${id}): Error stringifying content object:`, e, processedContent);
       }
     } else {
-      textToDisplay = String(content);
+      textToDisplay = String(processedContent);
     }
-  } else {
-    textToDisplay = initialText;
   }
 
   // Determine the final whiteSpace style based on content type and config
-  const finalWhiteSpace = isJson ? 'pre-wrap' : configWhiteSpace;
+  const finalWhiteSpace = isJsonForPreTag ? 'pre-wrap' : configWhiteSpace;
 
-  // Construct the style object inline FROM CONFIG
-  // TextView is intended to be styled primarily via config props
+  // Construct the style object inline
   const style = {
     gridArea: gridArea || undefined,
     width: width || undefined,
     height: height || undefined,
-    fontSize: fontSize,
-    fontWeight: fontWeight,
-    textAlign: textAlign,
-    color: color || undefined, // Use undefined to allow CSS inheritance
-    padding: padding,
-    margin: margin,
-    backgroundColor: backgroundColor || undefined, // Use undefined for transparency
+    fontSize,
+    fontWeight,
+    textAlign,
+    color: color || undefined,
+    padding,
+    margin,
+    backgroundColor: backgroundColor || undefined,
     borderRadius: borderRadius || undefined,
     whiteSpace: finalWhiteSpace,
-    wordBreak: 'break-word', // Good default
+    wordBreak: 'break-word',
     boxSizing: 'border-box',
-    fontFamily: isJson ? 'var(--font-family-monospace)' : 'inherit', // Use CSS var
+    fontFamily: isJsonForPreTag ? 'var(--font-family-monospace)' : 'inherit',
   };
 
-  // Render as 'pre' if it was JSON, otherwise 'div'
-  // Apply base primitive class
-  let Tag = 'div'; // Default for non-JSON text
-  if (isJson) {
-    Tag = 'pre';
-  } else if (config.as) {
-    Tag = config.as;
-  }
+  // Render as 'pre' if we decided to display a full JSON object, otherwise 'div'
+  const Tag = isJsonForPreTag ? 'pre' : (config.as || 'div');
 
   return (
     <Tag id={id} style={style} className="primitive-textview">
