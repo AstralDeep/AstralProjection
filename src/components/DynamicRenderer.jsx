@@ -93,6 +93,21 @@ function DynamicRenderer({ primitive, sendAction }) {
     }), false, `handleValueChange_${changedElementId}`);
   }, [setViewStoreState]);
 
+  // *** NEW: Callback to get data for client-side actions (like download) ***
+  const getComponentData = useCallback((sourceElementId) => {
+      const rootElement = getRootElement();
+      if (!rootElement) {
+          console.error("getComponentData: Cannot find rootElement in state!");
+          return null;
+      }
+      const sourcePrimitive = findPrimitiveById(rootElement, sourceElementId);
+      if (!sourcePrimitive) {
+          console.warn(`getComponentData: Could not find primitive with ID: ${sourceElementId}`);
+          return null;
+      }
+      // The content of the TextView is the data needed for the download
+      return sourcePrimitive.content;
+  }, [getRootElement]);
 
   const handleAction = useCallback((triggeredActionId, sourceElementId) => {
       console.log(`DynamicRenderer: handleAction triggered by "${sourceElementId}" for actionId="${triggeredActionId}"`);
@@ -129,12 +144,9 @@ function DynamicRenderer({ primitive, sendAction }) {
           valuesForBackend[id] = contentRead ?? '';
       });
 
-      // NOTE: The complex validation and frontend action logic from your original
-      // file is preserved here for completeness, though it's not the source of the bug.
       const primaryInputValueForBackend = valuesForBackend[valueSourceElementIds[0]] ?? '';
       const toolSchemaStoreState = useToolSchemaStore.getState();
       const actionSchema = toolSchemaStoreState.toolSchemas?.[triggeredActionId];
-      // This is a simplified check. Your original file had more complex logic which is fine to keep.
       const requiresInput = actionSchema?.inputSchema?.properties && Object.keys(actionSchema.inputSchema.properties).length > 0;
       let shouldSendAction = true;
       if (requiresInput && String(primaryInputValueForBackend).trim() === '') {
@@ -143,28 +155,19 @@ function DynamicRenderer({ primitive, sendAction }) {
       }
 
       // --- Process Frontend Actions (if any) ---
-      // This section is preserved from your original code.
       const frontendActions = triggeringPrimitive?.config?.frontendActions;
       if (Array.isArray(frontendActions) && frontendActions.length > 0) {
           // Your frontend action logic (clearElement, echoToView, etc.) goes here.
-          // For brevity, the full implementation of this part is omitted, but
-          // you should keep your original code for it.
       }
 
 
       // --- Conditionally Send Backend Action ---
       if (shouldSendAction) {
-          // The flawed logic for creating an object payload is replaced with this.
-          // This correctly creates an ARRAY of values in the order specified by valueSourceElementIds.
           const finalActionPayload = valueSourceElementIds.map(id => {
               const value = valuesForBackend[id];
 
-              // The backend's `ask_on_transcription_action` expects a JSON object from the
-              // transcription, not a stringified version. We pre-parse it here.
               if (typeof value === 'string') {
                   try {
-                      // Attempt to parse. If it's not valid JSON, it will throw an
-                      // error, and we'll just send the raw string.
                       return JSON.parse(value);
                   } catch (e) {
                       return value; // It wasn't a JSON string, send as-is.
@@ -176,7 +179,6 @@ function DynamicRenderer({ primitive, sendAction }) {
           console.log(`DynamicRenderer: Constructed finalActionPayload for "${triggeredActionId}":`, finalActionPayload);
 
 
-          // Construct the final message with the new, correct payload format
           const message = {
               type: 'ui_action',
               payload: {
@@ -209,6 +211,11 @@ function DynamicRenderer({ primitive, sendAction }) {
       ...( (type === 'InputField' || type === 'Checkbox' || type === 'AudioUpload') ? { onValueChange: handleValueChange } : {} ),
       ...( (type === 'StackLayout' || type === 'Card') ? { children, sendAction } : {} ),
   };
+
+  if (type === 'Button') {
+    commonProps.getComponentData = getComponentData;
+  }
+
   if (PrimitiveComponent === UnknownPrimitive) {
       commonProps.type = type;
   }

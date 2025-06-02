@@ -4,11 +4,8 @@ import { produce } from 'immer'; // Import Immer for safe state mutation
 
 export const useViewStore = create((set, get) => ({
   rootElement: null, // Holds the entire UI tree structure from the backend
-
-  // *** ADD THIS LINE to expose the raw setState function ***
-  // This allows components/callbacks to update the state using Immer's produce
   setState: set,
-  // **********************************************************
+
   /**
    * Action to replace the entire UI tree, typically called on initial load.
    * @param {object} payload - The payload containing the new rootElement.
@@ -62,7 +59,6 @@ export const useViewStore = create((set, get) => ({
 
         if (nodeMatches) {
           console.log(`Found match for ${node.id}. Updating content.`);
-          // TODO: Implement section-specific updates if needed based on sectionId
           if (sectionId) {
               console.warn(`handlePrimitiveUpdate: sectionId "${sectionId}" received but not yet fully implemented for targeted content updates.`);
               // Placeholder: Update main content for now
@@ -70,9 +66,6 @@ export const useViewStore = create((set, get) => ({
 
           // Apply update based on updateType
           if (updateType === 'append') {
-              // <<< START MODIFICATION >>>
-              // Check if the target element is meant for streaming text
-              // Assuming the node object has a 'type' property
               const isTextStreamTarget = node.type === 'StreamingTextView'; // Check the type
 
               if (isTextStreamTarget) {
@@ -96,7 +89,6 @@ export const useViewStore = create((set, get) => ({
                   }
                   // --- End of existing array logic ---
               }
-               // <<< END MODIFICATION >>>
           } else { // Default to 'replace'
             node.content = content; // Replace existing content
           }
