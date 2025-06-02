@@ -31,8 +31,6 @@ function Card({ id, config = {}, children: childElements, gridArea, sendAction }
     height: height || 'auto', // Default to 'auto' if not specified, or set a specific height for scrolling to work as expected
     gridArea: gridArea || undefined,
     boxSizing: 'border-box',
-    overflowY: 'auto', // Allow vertical scrolling
-    // overflowX: 'hidden', // Optionally hide horizontal scrollbar
     ...configStyle,
   };
 

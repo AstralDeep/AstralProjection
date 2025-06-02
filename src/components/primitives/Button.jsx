@@ -9,10 +9,11 @@ function Button({ id, config = {}, actionId, onAction, gridArea }) {
     title,
     // Presentation styles (like padding, color, etc.) should come from CSS classes
     // Keep layout/sizing styles from config
-    margin,
+    margin = "8px 0 0 0",
     width,
     // height // Height usually determined by padding + content
   } = config;
+
 
   const handleClick = (event) => {
     event.preventDefault();
