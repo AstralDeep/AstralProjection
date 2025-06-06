@@ -1,54 +1,38 @@
-// src/components/primitives/AudioUpload.jsx
+// src/components/primitives/ImageUpload.jsx
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 
-const UPLOAD_URL = '/api/upload-file/mcp_audio';
-
-function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
+function ImageUpload({ id, config = {}, content, onValueChange, gridArea }) {
   const {
     label = 'Choose Image',
-    acceptedFormats = 'image/*', // Only allow images
+    acceptedFormats = 'image/*',
     buttonLabel = 'Select Image',
     clearButtonLabel = 'Clear',
     maxFileSize,
   } = config;
 
-  // State for the component's value
   const [fileName, setFileName] = useState('');
   const [isUploaded, setIsUploaded] = useState(false);
-  
-  // State for the upload process and UI
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
-
   const fileInputRef = useRef(null);
 
-  // Effect to sync component state FROM the parent `content` prop
   useEffect(() => {
-    // This effect should only manage the component's persistent value (filename, uploaded status)
-    // It should NOT manage the transient previewUrl state.
     if (typeof content === 'string' && content) {
       try {
         const parsedContent = JSON.parse(content);
-        if (parsedContent && parsedContent.original_filename) {
-          setFileName(parsedContent.original_filename);
+        if (parsedContent && parsedContent.name) {
+          setFileName(parsedContent.name);
           setIsUploaded(true);
           setError('');
-          return; // Exit after successfully setting state
+          return;
         }
-      } catch (e) {
-        // Fall through to clear state if JSON is invalid
-      }
+      } catch (e) {}
     }
-
-    // If content is null, empty, or not our valid JSON, clear the value-related state.
     setFileName('');
     setIsUploaded(false);
-    // Do not clear 'error' here as it might be an upload error we want to show.
   }, [content]);
 
-  // Effect to clean up the blob URL when the component is unmounted
-  // or when the previewUrl changes.
   useEffect(() => {
     return () => {
       if (previewUrl) {
@@ -57,51 +41,32 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
     };
   }, [previewUrl]);
 
-  const handleFileChange = useCallback(async (event) => {
+  const handleFileChange = useCallback((event) => {
     const file = event.target.files[0];
     if (!file) return;
-
-    // Reset state for the new file upload
     setIsUploaded(false);
     setError('');
     setIsLoading(true);
     setFileName(file.name);
-    
-    // Set a new preview URL for the selected file
     setPreviewUrl(URL.createObjectURL(file));
-
     if (maxFileSize && file.size > maxFileSize) {
       const maxSizeMB = (maxFileSize / 1024 / 1024).toFixed(2);
       setError(`File is too large (${(file.size / 1024 / 1024).toFixed(2)}MB). Max size: ${maxSizeMB}MB.`);
       setIsLoading(false);
       return;
     }
-
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-      const response = await fetch(UPLOAD_URL, {
-        method: 'POST',
-        body: formData,
-      });
-
-      const responseData = await response.json();
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result.split(',')[1];
+      onValueChange?.(id, JSON.stringify({ base64, name: file.name, type: file.type }));
+      setIsUploaded(true);
       setIsLoading(false);
-
-      if (response.ok) {
-        onValueChange?.(id, JSON.stringify(responseData));
-        setFileName(responseData.original_filename || file.name);
-        setIsUploaded(true);
-      } else {
-        setError(responseData.error || `Upload failed. Server responded with ${response.status}.`);
-        onValueChange?.(id, null);
-      }
-    } catch (err) {
+    };
+    reader.onerror = (err) => {
+      setError('File read failed: ' + err.message);
       setIsLoading(false);
-      setError(`Upload failed: ${err.message}. Check network or server.`);
-      onValueChange?.(id, null);
-    }
+    };
+    reader.readAsDataURL(file);
   }, [id, maxFileSize, onValueChange]);
 
   const handleButtonClick = () => {
@@ -113,7 +78,7 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
     setError('');
     setIsUploaded(false);
     setIsLoading(false);
-    setPreviewUrl(null); // This will trigger the cleanup effect for the old URL
+    setPreviewUrl(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
@@ -127,7 +92,7 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
   const errorStyle = { color: 'red', fontSize: '0.9em', marginTop: '5px' };
 
   return (
-    <div id={`${id}-container`} style={primitiveStyle} className="primitive-audioupload">
+    <div id={`${id}-container`} style={primitiveStyle} className="primitive-imageupload">
       {label && <label htmlFor={id} style={{ fontWeight: 'bold' }}>{label}</label>}
       <input type="file" id={id} ref={fileInputRef} onChange={handleFileChange} accept={acceptedFormats} style={{ display: 'none' }} disabled={isLoading} />
       <button type="button" onClick={handleButtonClick} style={buttonStyle} className="btn" disabled={isLoading}>
@@ -147,13 +112,11 @@ function AudioUpload({ id, config = {}, content, onValueChange, gridArea }) {
       {previewUrl && (
         <div style={{ marginTop: '10px' }}>
           <p style={{ fontSize: '0.9em', margin: '0 0 5px 0' }}>Preview:</p>
-          <audio controls src={previewUrl} style={{ width: '100%' }} onError={() => setError('Could not play audio preview.')}>
-            Your browser does not support the audio element.
-          </audio>
+          <img src={previewUrl} alt="preview" style={{ width: '100%', maxHeight: 300, objectFit: 'contain', border: '1px solid #eee', borderRadius: 4 }} onError={() => setError('Could not display image preview.')} />
         </div>
       )}
     </div>
   );
 }
 
-export default React.memo(AudioUpload);
+export default React.memo(ImageUpload);
