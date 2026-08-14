@@ -1,0 +1,324 @@
+{
+  "format": "astral.projection-checks/v1",
+  "generatedAt": "2026-08-14T03:18:44.454Z",
+  "feature": "074-multirepo-lets-integration",
+  "digestAlgorithm": "sha256",
+  "source": {
+    "astraldeepCommit": "fc113c4f99121b2053bb71523835c5c4743f1f56",
+    "astraldeepTree": "914b04d369faa4ee0d7c2bb59ce09db38a18d45a",
+    "legacyProjectionCommit": "7a10727b78f06e3b573c23b61ead5be6233506bb",
+    "extractionManifestSha256": "11fd0c769377cc3b16621b96000253c8acec44cd32f605110d9df3c8df38617f",
+    "astralprimitivesCommit": "c1feada40e104ff345c3a94348305dcf27870054",
+    "astralprimitivesVersion": "0.3.0"
+  },
+  "executionEnvironment": {
+    "operatingSystem": "Windows",
+    "shell": "PowerShell 7",
+    "uv": "0.11.21",
+    "python": "3.11.15",
+    "node": "24.19.0",
+    "npm": "11.16.0",
+    "gradle": "9.6.1",
+    "kotlin": "2.3.21",
+    "androidLauncherJvm": "21.0.6"
+  },
+  "policy": {
+    "localOnly": true,
+    "hostedCiDeferred": true,
+    "hostedCiClosureTask": "T236",
+    "releaseAuthorized": false,
+    "storeSubmissionAuthorized": false,
+    "ruffVersion": "0.15.21",
+    "ruffFormatGateRequired": false,
+    "dependencyResolution": "Python qualification commands ran offline after tool bootstrap; npm ci used the configured registry/cache and reported zero vulnerabilities."
+  },
+  "extraction": {
+    "selectionRoots": 27,
+    "sourceEntries": 519,
+    "unchangedEntries": 468,
+    "transformedEntries": 51,
+    "removedEntries": 14
+  },
+  "coverage": {
+    "pureChromePercent": 99,
+    "materializerPercent": 97,
+    "windowsIntegrityFullModulePercent": 84,
+    "windowsIntegrityChangedExecutableLinesCovered": 146,
+    "windowsIntegrityChangedExecutableLinesTotal": 148,
+    "windowsIntegrityChangedPercent": 98.6
+  },
+  "checks": [
+    {
+      "id": "projection-python-tests",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:PYTHONPATH='src;backend;Y:\\WORK\\MCP\\AstralPrimitives\\src'; $env:ASTRALDEEP_SOURCE_REPO='Y:\\WORK\\MCP\\AstralDeep'; uv run --offline --isolated --python 3.11 --with pytest==9.1.1 --with build==1.4.0 --with setuptools==80.10.2 --with pip==26.0.1 python -m pytest -p no:cacheprovider -q",
+      "commandSha256": "18e4feb60133471b49b7cef3b97c84b84a99453697066dee1f0edf519b048aec",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15"
+      },
+      "exitCode": 0,
+      "outputBytes": 670,
+      "outputSha256": "493918da0bdf1d330568951e603ad3a6c6b8b54e083eaab5028cbff9660eeac9",
+      "summary": "524 passed in 25.95 seconds, including wheel build/install and immutable-source replay."
+    },
+    {
+      "id": "projection-architecture",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:PYTHONPATH='src;backend;Y:\\WORK\\MCP\\AstralPrimitives\\src'; uv run --offline --isolated --python 3.11 --with pytest==9.1.1 python -m pytest -p no:cacheprovider tests/architecture/test_dependency_direction.py -q",
+      "commandSha256": "4bf495fcf8b3884790e29f485a5bf82a3185d31868b8f27ddaa6de2c6633d295",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15"
+      },
+      "exitCode": 0,
+      "outputBytes": 100,
+      "outputSha256": "6b48af97f73720967f3da539e3265a111959b5df74750f258f4bbf2119b4605e",
+      "summary": "8 passed; direct and aliased static/dynamic Deep implementation imports fail closed."
+    },
+    {
+      "id": "pure-chrome-coverage",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:PYTHONPATH='src;backend;Y:\\WORK\\MCP\\AstralPrimitives\\src'; $env:COVERAGE_FILE='C:\\Users\\Sam\\AppData\\Local\\Temp\\astralprojection-074-final-evidence-900fa0b0ab0e467982f209b447ad55cc\\.coverage.chrome'; uv run --offline --isolated --python 3.11 --with pytest==9.1.1 --with coverage==7.15.4 coverage run --branch --include='*/src/astralprojection/models.py,*/src/astralprojection/chrome/*.py' -m pytest -p no:cacheprovider tests/chrome -q; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; uv run --offline --isolated --python 3.11 --with coverage==7.15.4 coverage report --include='*/src/astralprojection/models.py,*/src/astralprojection/chrome/*.py' --fail-under=90 -m",
+      "commandSha256": "b4b6ce943c37a4e319c088075d0aa043598aea57fd3b33144751af9b83a2f865",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15",
+        "coverageFile": "local temporary evidence file"
+      },
+      "exitCode": 0,
+      "outputBytes": 1131,
+      "outputSha256": "b42bde15e1bd0d2ae9efdac63101d442e970caee16a7b7922e6d27a2244c2c10",
+      "summary": "55 passed; 99% branch coverage across 962 statements and 416 branches."
+    },
+    {
+      "id": "materializer-coverage",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:PYTHONPATH='src;backend'; $env:COVERAGE_FILE='C:\\Users\\Sam\\AppData\\Local\\Temp\\astralprojection-074-final-evidence-900fa0b0ab0e467982f209b447ad55cc\\.coverage.materializer'; uv run --offline --isolated --python 3.11 --with pytest==9.1.1 --with coverage==7.15.4 coverage run --branch --include='*/scripts/migration/materialize_extraction.py' -m pytest -p no:cacheprovider tests/migration/test_materialize_extraction.py -q; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; uv run --offline --isolated --python 3.11 --with coverage==7.15.4 coverage report --include='*/scripts/migration/materialize_extraction.py' --fail-under=90 -m",
+      "commandSha256": "72856a9633db51f3db6acb4748f78cc5f1ca586c7704829e929bee6961e3e178",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15",
+        "coverageFile": "local temporary evidence file"
+      },
+      "exitCode": 0,
+      "outputBytes": 685,
+      "outputSha256": "8d76652bf97b51c76082bf6dce331ded90fab058be9239d90ebd56cf48dd3960",
+      "summary": "99 passed; 97% branch coverage."
+    },
+    {
+      "id": "protocol-selection-and-transformation-provenance",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:PYTHONPATH='src;backend;Y:\\WORK\\MCP\\AstralPrimitives\\src'; $env:ASTRALDEEP_SOURCE_REPO='Y:\\WORK\\MCP\\AstralDeep'; uv run --offline --isolated --python 3.11 --with pytest==9.1.1 --with build==1.4.0 --with setuptools==80.10.2 --with pip==26.0.1 python -m pytest -p no:cacheprovider tests/test_protocol.py tests/test_resources.py -q",
+      "commandSha256": "d0f274f233873dda47313143d79b94e8fdd1cd6641afe5e2ea2bcd8f009154f6",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15",
+        "sourceRepository": "Y:/WORK/MCP/AstralDeep"
+      },
+      "exitCode": 0,
+      "outputBytes": 101,
+      "outputSha256": "681f4aa51f20e66973fc7dce833060ae7776129294ddde908483facfb0eac96d",
+      "summary": "54 passed; 27 roots replay to all 519 source tuples and the final tree partitions into 468 unchanged plus 51 ledgered transformations, including 14 removals."
+    },
+    {
+      "id": "client-release-continuity",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:PYTHONPATH='src;backend;windows-client;Y:\\WORK\\MCP\\AstralPrimitives\\src'; uv run --offline --isolated --python 3.11 --with pytest==9.1.1 --with build==1.4.0 --with setuptools==80.10.2 --with pip==26.0.1 python -m pytest -p no:cacheprovider tests/release windows-client/tests/test_integrity.py windows-client/tests/test_protocol_manifest.py windows-client/tests/test_voice_fixture_065.py -q",
+      "commandSha256": "81d233a7099f19a4ba9c71f868acdafd7a1816e01045f5e1f6d79ae319247f61",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15"
+      },
+      "exitCode": 0,
+      "outputBytes": 264,
+      "outputSha256": "a424081766ceb55a472584f2075e30e672bb26fb669783a730930b1067cf1df7",
+      "summary": "149 passed; no signing, publishing, store, or updater trust transition was activated."
+    },
+    {
+      "id": "windows-integrity-coverage",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:PYTHONPATH='windows-client'; $env:COVERAGE_FILE='C:\\Users\\Sam\\AppData\\Local\\Temp\\astralprojection-074-final-evidence-900fa0b0ab0e467982f209b447ad55cc\\.coverage.windows'; uv run --offline --isolated --python 3.11 --with pytest==9.1.1 --with coverage==7.15.4 coverage run --branch --include='*/windows-client/astral_client/integrity.py' -m pytest -p no:cacheprovider windows-client/tests/test_integrity.py -q; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; uv run --offline --isolated --python 3.11 --with coverage==7.15.4 coverage report --include='*/windows-client/astral_client/integrity.py' -m",
+      "commandSha256": "8c8a43232c05effb5fd7dc1b96d8e2c35719bcfd4c3adff96be39f447633ee1c",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15",
+        "coverageFile": "local temporary evidence file"
+      },
+      "exitCode": 0,
+      "outputBytes": 769,
+      "outputSha256": "b5eac389f74028ed05eae6295aa44bd0f7ac1925844e0379acbd121a234156c3",
+      "summary": "111 passed; full legacy module branch coverage is 84%."
+    },
+    {
+      "id": "windows-changed-line-coverage",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$env:COVERAGE_FILE='C:\\Users\\Sam\\AppData\\Local\\Temp\\astralprojection-074-final-evidence-900fa0b0ab0e467982f209b447ad55cc\\.coverage.windows'; uv run --offline --isolated --python 3.11 --with coverage==7.15.4 coverage json -o C:\\Users\\Sam\\AppData\\Local\\Temp\\astralprojection-074-final-evidence-900fa0b0ab0e467982f209b447ad55cc\\windows-coverage.json; if ($LASTEXITCODE -ne 0) { throw 'coverage json failed' }; uv run --offline --isolated --python 3.11 python -c \"import difflib,json,subprocess; from pathlib import Path; source=subprocess.run(['git','-C',r'Y:\\WORK\\MCP\\AstralDeep','show','fc113c4f99121b2053bb71523835c5c4743f1f56:windows-client/astral_client/integrity.py'],check=True,capture_output=True,text=True).stdout.splitlines(); current=Path(r'Y:\\WORK\\MCP\\.migration-worktrees\\AstralProjection-074\\windows-client\\astral_client\\integrity.py').read_text(encoding='utf-8').splitlines(); changed={line for tag,_i1,_i2,j1,j2 in difflib.SequenceMatcher(None,source,current,autojunk=False).get_opcodes() if tag in {'replace','insert'} for line in range(j1+1,j2+1)}; report=json.loads(Path(r'C:\\Users\\Sam\\AppData\\Local\\Temp\\astralprojection-074-final-evidence-900fa0b0ab0e467982f209b447ad55cc\\windows-coverage.json').read_text(encoding='utf-8')); details=next(value for key,value in report['files'].items() if key.replace('\\\\','/').endswith('windows-client/astral_client/integrity.py')); executed=set(details['executed_lines']); target=changed & (executed | set(details['missing_lines'])); covered=target & executed; percent=100.0*len(covered)/len(target); print(f'changed_executable_lines={len(target)}'); print(f'covered_changed_executable_lines={len(covered)}'); print(f'changed_line_coverage_percent={percent:.1f}'); assert target and percent>=90.0\"",
+      "commandSha256": "eb7fb85edbda0efc28d3f42cb0f6eea263cbe5021d26f68e40cb4ad170d12c64",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15",
+        "sourceRevision": "fc113c4f99121b2053bb71523835c5c4743f1f56"
+      },
+      "exitCode": 0,
+      "outputBytes": 104,
+      "outputSha256": "3cf08be63723876df992152c9cf4d20ec3ee601428982b3458bb5c09e1d143dd",
+      "summary": "146 of 148 changed executable lines covered (98.6%)."
+    },
+    {
+      "id": "primitive-vocabulary",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "uv run --offline --isolated --python 3.11 python Y:\\WORK\\MCP\\AstralDeep\\scripts\\verify_primitive_coverage.py --manifest contracts/ui_protocol.json --primitives-root Y:\\WORK\\MCP\\AstralPrimitives --minimum-version 0.3.0",
+      "commandSha256": "482f2f0a4354cc9fdd9d3a9e1542734109d09772e8553c3729691e1f30f8421b",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15"
+      },
+      "exitCode": 0,
+      "outputBytes": 1185,
+      "outputSha256": "c6ec92a78a5205e0c34860ce53fd570183778607d5dc037acd95e686d62397b8",
+      "summary": "Reuse AstralPrimitives 0.3.0: 32 public primitives, 3 bounded Projection-local types, 0 unknown or missing."
+    },
+    {
+      "id": "projection-ruff-lint",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "uv run --offline --isolated --python 3.11 --with ruff==0.15.21 ruff check src backend tests scripts windows-client",
+      "commandSha256": "db51444aefc8a17fcca505c4c175557655418ccc862d5d3a8509aeb318e084ae",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15",
+        "ruff": "0.15.21"
+      },
+      "exitCode": 0,
+      "outputBytes": 20,
+      "outputSha256": "a4443afdcfb6d7363adb285762515ccf7cf50473b1a05c20c1a50f6bed4d26b0",
+      "summary": "All configured lint checks passed. No repository-wide Ruff format claim is made."
+    },
+    {
+      "id": "wheel-build-install-import",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "$root=Join-Path ([IO.Path]::GetTempPath()) ('astralprojection-074-wheel-'+[Guid]::NewGuid().ToString('N')); $dist=Join-Path $root 'dist'; $venv=Join-Path $root 'venv'; New-Item -ItemType Directory -Path $dist -ErrorAction Stop | Out-Null; uv run --offline --isolated --python 3.11 --with build==1.4.0 --with setuptools==80.10.2 python -m build --wheel --no-isolation --outdir $dist .; if ($LASTEXITCODE -ne 0) { throw 'wheel build failed' }; $wheel=@(Get-ChildItem -LiteralPath $dist -Filter 'astralprojection-*.whl' -File); if ($wheel.Count -ne 1) { throw 'expected one wheel' }; uv venv --python 3.11 $venv; if ($LASTEXITCODE -ne 0) { throw 'venv creation failed' }; uv pip install --python (Join-Path $venv 'Scripts\\python.exe') --no-deps $wheel[0].FullName; if ($LASTEXITCODE -ne 0) { throw 'wheel install failed' }; & (Join-Path $venv 'Scripts\\python.exe') -I -c \"import astralprojection; print(astralprojection.CONTRACT_VERSION); print(astralprojection.protocol_manifest_path().is_file())\"; if ($LASTEXITCODE -ne 0) { throw 'installed import failed' }; Write-Output ('wheel_sha256='+(Get-FileHash -LiteralPath $wheel[0].FullName -Algorithm SHA256).Hash.ToLowerInvariant())",
+      "commandSha256": "abb24879c466e18477ea3b83a9632348ec13ad2eea6f957437a61818181c2fdf",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15"
+      },
+      "exitCode": 0,
+      "outputBytes": 13339,
+      "outputSha256": "1c4d5f3ed384bb7e583e05bd23b53245d6e06e707b222da5fa62b289639ac5f5",
+      "wheelSha256": "d548f6e9f9920fe2a5f7dffeae931b476b777557bc6c94d8731cd5f8977f9244",
+      "summary": "Built, installed without dependencies, imported contract metadata, and loaded packaged protocol resources."
+    },
+    {
+      "id": "node-lock-install",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074/tooling/web-ci",
+      "command": "$env:PATH='C:\\Users\\Sam\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;'+$env:PATH; corepack npm ci --ignore-scripts",
+      "commandSha256": "555a52c3fa6ad0b0d1e8b93b0cc3e236f47a739fcc8a47799632722d08757529",
+      "environment": {
+        "node": "24.19.0",
+        "npm": "11.16.0",
+        "network": "configured npm registry/cache"
+      },
+      "exitCode": 0,
+      "outputBytes": 148,
+      "outputSha256": "07b0ef8be619147c7d492ccba1917da3f2c91778d401b72ac829b28381caefa5",
+      "summary": "80 lock-pinned packages installed; audit reported 0 vulnerabilities."
+    },
+    {
+      "id": "node-lint-unit-and-isolation",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074/tooling/web-ci",
+      "command": "$env:PATH='C:\\Users\\Sam\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;'+$env:PATH; corepack npm run check:package-manager && corepack npm run lint && corepack npm run test:coverage-conversion && corepack npm run test:coverage-conversion:browser && corepack npm run test:coverage-conversion:node && corepack npm run test:product-isolation",
+      "commandSha256": "3454939f3a840c1e564e6a75a097bc5a25f1a95b1b06f09aae6115108f036905",
+      "environment": {
+        "node": "24.19.0",
+        "npm": "11.16.0",
+        "network": "local only after npm ci"
+      },
+      "exitCode": 0,
+      "outputBytes": 2433,
+      "outputSha256": "cbb6ee545ee9a76276bc2c6320a06bd8824156bce63e44617b929e0b45640640",
+      "summary": "Package-manager identity, ESLint, 7 coverage-conversion tests, and 4 product-isolation tests passed."
+    },
+    {
+      "id": "playwright-contracts",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074/tooling/web-ci",
+      "command": "$env:PATH='C:\\Users\\Sam\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;'+$env:PATH; corepack npm exec -- playwright test tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js",
+      "commandSha256": "5921e839a77e7a8ac134b981164c281e473910e86d6d9c3faa629858a7e14083",
+      "environment": {
+        "node": "24.19.0",
+        "npm": "11.16.0",
+        "browser": "Playwright Chromium 149 / v1228",
+        "network": "local browser contract fixtures"
+      },
+      "exitCode": 0,
+      "outputBytes": 9365,
+      "outputSha256": "4f09bb3b780893054cb62f557f8eb22fce3ec9ae11645ffbe1bc8b672aeadd6a",
+      "summary": "67 browser contract tests passed in 45.2 seconds."
+    },
+    {
+      "id": "android-protocol",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074/android-client",
+      "command": ".\\gradlew.bat --no-daemon :core:test --tests com.personalailabs.astraldeep.core.protocol.ProtocolManifestTest --tests com.personalailabs.astraldeep.core.protocol.VoiceContract065Test && .\\gradlew.bat --no-daemon :app:testDebugUnitTest --tests com.personalailabs.astraldeep.app.render.VocabularyParityTest",
+      "commandSha256": "93995d5f4dca9a3762e4e6da70338b5816e43c5fc28dcc2e05f1e5f18a3913a7",
+      "environment": {
+        "gradle": "9.6.1",
+        "kotlin": "2.3.21",
+        "java": "21.0.6",
+        "network": "local Gradle cache"
+      },
+      "exitCode": 0,
+      "outputBytes": 3074,
+      "outputSha256": "5a54ce54e4d87ebc59494ecb187dc90f7c9a6c1ab5bbe78c45a817f51b04642a",
+      "summary": "Both canonical protocol/voice fixture and app vocabulary Gradle invocations were BUILD SUCCESSFUL."
+    },
+    {
+      "id": "staged-sensitive-path-guard",
+      "cwd": "Y:/WORK/MCP/.migration-worktrees/AstralProjection-074",
+      "command": "uv run --offline --isolated --python 3.11 python Y:\\WORK\\MCP\\AstralDeep\\scripts\\migration\\check_staged_paths_074.py --repo Y:\\WORK\\MCP\\.migration-worktrees\\AstralProjection-074",
+      "commandSha256": "1d1603c12ee374943405da1e6165b844fa48136032878ca628d3335a27633583",
+      "environment": {
+        "network": "offline",
+        "python": "3.11.15"
+      },
+      "exitCode": 0,
+      "outputBytes": 78,
+      "outputSha256": "b3c046e5acfd19f9ca1a5203f9e3c076257f5d44cc8d6102f93a85cf8946eea2",
+      "summary": "595 staged paths checked; no denied credential, key, database, log, upload, manuscript, evidence, dependency, or runtime-state path."
+    }
+  ],
+  "staging": {
+    "exactPathsOnly": true,
+    "candidatePaths": 609,
+    "stagedChangedPaths": 595,
+    "indexEntries": 548,
+    "indexModes": {
+      "100644": 546,
+      "100755": 1,
+      "120000": 1
+    },
+    "executable": {
+      "path": "apple-clients/Scripts/altool_strict.sh",
+      "blob": "0037d61774421343b2a134c9a8b89cf9330ae1df"
+    },
+    "symlink": {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/voice_065",
+      "blob": "55d21b2f50878c87617aca10e390c04eeb4a2c44",
+      "target": "../../../../../contracts/fixtures/voice_065"
+    },
+    "ignoredUntrackedContinuityPaths": [
+      "android-client/keystore.properties",
+      "android-client/local.properties"
+    ],
+    "nonignoredUntrackedPaths": 0,
+    "worktreeIndexDifferences": 0,
+    "guardPassed": true
+  },
+  "limitations": [
+    "Apple Swift/Xcode execution is unavailable on this Windows host; bundle, profile, export-plist, and build-number identities are guarded structurally, and native execution remains required before release.",
+    "Full PySide6/native Windows qualification was not run; updater integrity, protocol, fixture, and release-transition logic were run locally.",
+    "Android upload-certificate fingerprint and next versionCode still require live Play Console reconciliation before any release.",
+    "The one-time Windows bridge still requires an import-only signing workflow and an explicitly selected bridge version; neither exists or is activated.",
+    "Imported Apple and Windows maintainer documentation retains historical monorepo commands, and disabled release workflows still reference protected inputs that must be rebuilt before activation.",
+    "No hosted workflow, signing job, store submission, tag, image, package publication, deployment, or release was activated."
+  ]
+}

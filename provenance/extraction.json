@@ -1,0 +1,3683 @@
+{
+  "destination": {
+    "branch": "codex/074-extract-projection",
+    "legacyBaseline": {
+      "commit": "7a10727b78f06e3b573c23b61ead5be6233506bb",
+      "observedAt": "2026-08-13T23:06:36.7146430Z",
+      "sourceRef": "refs/heads/master"
+    },
+    "repository": "https://github.com/AstralDeep/AstralProjection.git"
+  },
+  "digestAlgorithm": "sha256",
+  "entries": [
+    {
+      "blob": "2b9d3872b247b8e46179a6e16b103b86209ba3d9",
+      "bytes": 7325,
+      "destinationPath": "workflows-disabled/android-ci.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/android-ci.yml"
+    },
+    {
+      "blob": "2d8952f208f08dce700d6b86c83cf96394113125",
+      "bytes": 21858,
+      "destinationPath": "workflows-disabled/apple-ci.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/apple-ci.yml"
+    },
+    {
+      "blob": "0309982dfeabfdf83f8ee0989a6eaf821cbeb88b",
+      "bytes": 20670,
+      "destinationPath": "workflows-disabled/apple-release.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/apple-release.yml"
+    },
+    {
+      "blob": "8fc92178a67ef67703b7e17e1ed7a15df5aa3867",
+      "bytes": 18053,
+      "destinationPath": "workflows-disabled/build-windows-candidate.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/build-windows-candidate.yml"
+    },
+    {
+      "blob": "6472b82e1d578b20b8cd8f43727fb947f3b89fbf",
+      "bytes": 10550,
+      "destinationPath": "workflows-disabled/release-apple-evidence-normalizer.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/release-apple-evidence-normalizer.yml"
+    },
+    {
+      "blob": "3cc07b493f7ed0f3fe97f856b49257bcfb5a15b5",
+      "bytes": 12112,
+      "destinationPath": "workflows-disabled/release-windows-publisher-controller.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/release-windows-publisher-controller.yml"
+    },
+    {
+      "blob": "49ca70b6d8befee2b4e1e78dd9c19498c6fe37c9",
+      "bytes": 63642,
+      "destinationPath": "workflows-disabled/release-windows-publisher.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/release-windows-publisher.yml"
+    },
+    {
+      "blob": "31970256dc8aeb2a863f91f19de5eed1ee7c36a2",
+      "bytes": 6033,
+      "destinationPath": "workflows-disabled/release-windows.yml",
+      "mode": "100644",
+      "sourcePath": ".github/workflows/release-windows.yml"
+    },
+    {
+      "blob": "7062bf19348c9242408b036bfd8f08b378b712f0",
+      "bytes": 11346,
+      "destinationPath": "LICENSE.md",
+      "mode": "100644",
+      "sourcePath": "LICENSE.md"
+    },
+    {
+      "blob": "fd1d86eb44f8fe0fc89fd600614c2aad9e20e353",
+      "bytes": 760,
+      "destinationPath": "android-client/.editorconfig",
+      "mode": "100644",
+      "sourcePath": "android-client/.editorconfig"
+    },
+    {
+      "blob": "2c06ef6792e500ef965f056ea23f75848e9cf498",
+      "bytes": 140,
+      "destinationPath": "android-client/.gitignore",
+      "mode": "100644",
+      "sourcePath": "android-client/.gitignore"
+    },
+    {
+      "blob": "20e821e016ac580349270e0b2d8ec3f33a304677",
+      "bytes": 1062437,
+      "destinationPath": "android-client/Android Raw Assets/1920X1080.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/1920X1080.png"
+    },
+    {
+      "blob": "9d7d9a399d9138e1d2dd33e4f2ee66c3dd3dd732",
+      "bytes": 1279501,
+      "destinationPath": "android-client/Android Raw Assets/2560x1440.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/2560x1440.png"
+    },
+    {
+      "blob": "0f8df6bf632da1d5a3d9efb0712a3d36dc4e4a20",
+      "bytes": 4515105,
+      "destinationPath": "android-client/Android Raw Assets/AppIcon.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/AppIcon.png"
+    },
+    {
+      "blob": "6fa01714d49b9f169888b3fbae3faa9d36dca5bc",
+      "bytes": 309091,
+      "destinationPath": "android-client/Android Raw Assets/feature-graphic.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/feature-graphic.png"
+    },
+    {
+      "blob": "48495a4db386632276194d51158548dc255ec969",
+      "bytes": 563041,
+      "destinationPath": "android-client/Android Raw Assets/phone-1-welcome.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/phone-1-welcome.png"
+    },
+    {
+      "blob": "48e562b62e9da1378058850131f06c682479e097",
+      "bytes": 821515,
+      "destinationPath": "android-client/Android Raw Assets/phone-2-dashboard.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/phone-2-dashboard.png"
+    },
+    {
+      "blob": "88b142ab7fa1327fe704063eb0b1d337f4fcd64f",
+      "bytes": 538478,
+      "destinationPath": "android-client/Android Raw Assets/tablet10-1-welcome.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/tablet10-1-welcome.png"
+    },
+    {
+      "blob": "8bbcab21299dcc8f073efe290d6a66b7a24ef50a",
+      "bytes": 816123,
+      "destinationPath": "android-client/Android Raw Assets/tablet10-2-dashboard.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/tablet10-2-dashboard.png"
+    },
+    {
+      "blob": "ba0cea7596bfd276ddc14864e8bbc94111fa6ace",
+      "bytes": 484218,
+      "destinationPath": "android-client/Android Raw Assets/tablet7-1-welcome.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/tablet7-1-welcome.png"
+    },
+    {
+      "blob": "06767527609e336410d2bcb73f4aa7fcbbd78deb",
+      "bytes": 734086,
+      "destinationPath": "android-client/Android Raw Assets/tablet7-2-dashboard.png",
+      "mode": "100644",
+      "sourcePath": "android-client/Android Raw Assets/tablet7-2-dashboard.png"
+    },
+    {
+      "blob": "a2f81fbfa8b081a3c339e870f5cc8ed05a16f1c9",
+      "bytes": 4066,
+      "destinationPath": "android-client/README.md",
+      "mode": "100644",
+      "sourcePath": "android-client/README.md"
+    },
+    {
+      "blob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
+      "bytes": 9064,
+      "destinationPath": "android-client/app/build.gradle.kts",
+      "mode": "100644",
+      "sourcePath": "android-client/app/build.gradle.kts"
+    },
+    {
+      "blob": "19e2d36a13fcd36355d036c336b9554f3a4ab46a",
+      "bytes": 98132,
+      "destinationPath": "android-client/app/gradle.lockfile",
+      "mode": "100644",
+      "sourcePath": "android-client/app/gradle.lockfile"
+    },
+    {
+      "blob": "6ff4015535eb57c90e2d4f1ed40211cfe263d543",
+      "bytes": 959,
+      "destinationPath": "android-client/app/proguard-rules.pro",
+      "mode": "100644",
+      "sourcePath": "android-client/app/proguard-rules.pro"
+    },
+    {
+      "blob": "5b5738de087ab0e7a083701423b14009adabf4b6",
+      "bytes": 3758,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/Accessibility060Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/Accessibility060Test.kt"
+    },
+    {
+      "blob": "83647aa5bf0a7cd3bcb5c6fc297885708f8bdf7b",
+      "bytes": 3710,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt"
+    },
+    {
+      "blob": "dca482c14591240a1e5c2111f87e8668134b1fdd",
+      "bytes": 958,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ChatRenderTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ChatRenderTest.kt"
+    },
+    {
+      "blob": "c2078fd024b529369aae0d334607f4f1b60eb606",
+      "bytes": 4750,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ChromeMenuUiTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ChromeMenuUiTest.kt"
+    },
+    {
+      "blob": "cfe52322c98550496cf46fc77b71f00dd293bb4b",
+      "bytes": 2074,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityInstrumentedTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityInstrumentedTest.kt"
+    },
+    {
+      "blob": "5954585253ff18e5bd382b279a1ca10ce151a689",
+      "bytes": 491,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/Fixtures.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/Fixtures.kt"
+    },
+    {
+      "blob": "fb97d42efd8e2b72030a0c2957715feb6757ff6d",
+      "bytes": 3496,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/NativeIme060InstrumentedTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/NativeIme060InstrumentedTest.kt"
+    },
+    {
+      "blob": "cbe379b313c3e39dc281204f5192b6a96e70c992",
+      "bytes": 35698,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ReleaseEvidenceInstrumentedTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ReleaseEvidenceInstrumentedTest.kt"
+    },
+    {
+      "blob": "f5752925a77db680fcf11ae5c55044350f3e5d18",
+      "bytes": 3382,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/RenderersTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/RenderersTest.kt"
+    },
+    {
+      "blob": "5d03ede55a0349ececbd603ae82b4569781afbb6",
+      "bytes": 1906,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/StreamingUiTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/StreamingUiTest.kt"
+    },
+    {
+      "blob": "b2d35ddae09fc9eb527e2a6df341643d1ff7f6d4",
+      "bytes": 1963,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/SurfacesTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/SurfacesTest.kt"
+    },
+    {
+      "blob": "6b58ee3852e30bbc3cb988895e4e8262c0445100",
+      "bytes": 10003,
+      "destinationPath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/VoiceConversation065InstrumentedTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/VoiceConversation065InstrumentedTest.kt"
+    },
+    {
+      "blob": "578258aa998c3fc3ee37d724c49fb2a48c3e15a3",
+      "bytes": 502,
+      "destinationPath": "android-client/app/src/debug/AndroidManifest.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/debug/AndroidManifest.xml"
+    },
+    {
+      "blob": "3296aee144adde3a8a09d439c45351226b6cb40d",
+      "bytes": 573,
+      "destinationPath": "android-client/app/src/debug/res/xml/network_security_config.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/debug/res/xml/network_security_config.xml"
+    },
+    {
+      "blob": "12f60a18a7505c3a8d37ebe9c2f3abd8c1439253",
+      "bytes": 2630,
+      "destinationPath": "android-client/app/src/main/AndroidManifest.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/AndroidManifest.xml"
+    },
+    {
+      "blob": "2b631ee30f3850b7b10a0ee133d88e8a1e7b0686",
+      "bytes": 1366,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AppConfig.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AppConfig.kt"
+    },
+    {
+      "blob": "fa7d5a9fc51ea8336d2774ab7df8369457545d28",
+      "bytes": 256,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AstralApp.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AstralApp.kt"
+    },
+    {
+      "blob": "4f7e94f65ef6f4dd5c2976029ed38679a58d43ff",
+      "bytes": 16874,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt"
+    },
+    {
+      "blob": "5364b210a6246502cd66a4312717f03270a63e94",
+      "bytes": 1819,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/AuthRoute.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/AuthRoute.kt"
+    },
+    {
+      "blob": "6953ae8e6eb21a2b5c8a9a03a0f470911fde8706",
+      "bytes": 7772,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/ConversationResumeStore.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/ConversationResumeStore.kt"
+    },
+    {
+      "blob": "25d4b7c9618798159b0950fef8e7757677ea61ce",
+      "bytes": 1312,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/KeycloakLogout.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/KeycloakLogout.kt"
+    },
+    {
+      "blob": "c1cf11677debfdff7266368e7476c21fddb5f8fc",
+      "bytes": 3768,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcAuth.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcAuth.kt"
+    },
+    {
+      "blob": "cf25b2221fa0b4fef3ef1eec1866a51b347fe9ee",
+      "bytes": 774,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcEndpoints.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcEndpoints.kt"
+    },
+    {
+      "blob": "25587e20f3f34928927cba6058f84698f6239f84",
+      "bytes": 1274,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/TokenStore.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/TokenStore.kt"
+    },
+    {
+      "blob": "8a7b911bc80fe36dea393dfae3a92a4162963322",
+      "bytes": 2293,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt"
+    },
+    {
+      "blob": "206e2005284e02f41047381e70302c9048b548e2",
+      "bytes": 6908,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt"
+    },
+    {
+      "blob": "843bcb3a22428797c0ab0f7fb41add252e209f88",
+      "bytes": 2593,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Renderer.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Renderer.kt"
+    },
+    {
+      "blob": "ec76d3c82c5ce03f7ac62989685d572c83815593",
+      "bytes": 11073,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt"
+    },
+    {
+      "blob": "57b8afb300ede93a3a9b3f55c48e2cab5206ea22",
+      "bytes": 4889,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Attrs.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Attrs.kt"
+    },
+    {
+      "blob": "21fbe9a7893bbafb1841b4beb8125b35940f30cb",
+      "bytes": 7103,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Basic.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Basic.kt"
+    },
+    {
+      "blob": "42b763cdc9ce4d89f2e5c8410d215c6bd352b224",
+      "bytes": 9673,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Charts.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Charts.kt"
+    },
+    {
+      "blob": "dc5bd0e6294c540ea44a765fc043e8f01e4eb940",
+      "bytes": 7234,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Data.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Data.kt"
+    },
+    {
+      "blob": "0c23123bd7dff8b2c94e18a7bebbbf16638ae4a4",
+      "bytes": 24783,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Input.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Input.kt"
+    },
+    {
+      "blob": "b792f1dce68192b7cd64371e768f95ce29ac2c0d",
+      "bytes": 10551,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Layout.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Layout.kt"
+    },
+    {
+      "blob": "cc0db0d610d90f1135f447d016267a28412d9068",
+      "bytes": 850,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt"
+    },
+    {
+      "blob": "b7070742ab4c72cad53e5e82c031dce40503b2b2",
+      "bytes": 917,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Renderers.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Renderers.kt"
+    },
+    {
+      "blob": "cfe2f47d64cff61dd03f3561a78dcc13a429fdeb",
+      "bytes": 7791,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/rest/AstralRest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/rest/AstralRest.kt"
+    },
+    {
+      "blob": "333b0f201e01777a81c295a8317dfa768a0e7f45",
+      "bytes": 3890,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCaps.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCaps.kt"
+    },
+    {
+      "blob": "25a71eb2c805119e642c5cc5cc4c456e47776fec",
+      "bytes": 24298,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt"
+    },
+    {
+      "blob": "e6ff616138233eaf811a567ff5b2bad7f4020d3e",
+      "bytes": 40866,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt"
+    },
+    {
+      "blob": "d241aacb0fb0710105e25b81d30f754bd8419611",
+      "bytes": 100136,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt"
+    },
+    {
+      "blob": "ab56b7ccb1e56b47c900995c70768db0c38cb41e",
+      "bytes": 13941,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt"
+    },
+    {
+      "blob": "6fbaa0b83e865d0055a0ca4fd645e8ca7ccc7e04",
+      "bytes": 15203,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt"
+    },
+    {
+      "blob": "f8859fbb777eac9f471017cd97770f1ce2a78c8c",
+      "bytes": 3049,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Skeletons.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Skeletons.kt"
+    },
+    {
+      "blob": "511c2f58826722cd836baa39f624e1d5358d1ee2",
+      "bytes": 1398,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/TopBarActions.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/TopBarActions.kt"
+    },
+    {
+      "blob": "6293e3e06908ee9318913196ef3207fdda544f0b",
+      "bytes": 9669,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/theme/Theme.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/theme/Theme.kt"
+    },
+    {
+      "blob": "1fbdf6029c1ab1aecc655c004a2595679b987e7f",
+      "bytes": 100223,
+      "destinationPath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController.kt"
+    },
+    {
+      "blob": "9fab18b74346794a82bf5e870b67c0fe30e3daa3",
+      "bytes": 32668,
+      "destinationPath": "android-client/app/src/main/res/drawable-nodpi/app_icon.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable-nodpi/app_icon.png"
+    },
+    {
+      "blob": "f88ceff79dd867355b5fdabb45723d2a499cbaff",
+      "bytes": 157479,
+      "destinationPath": "android-client/app/src/main/res/drawable-nodpi/astral_logo.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable-nodpi/astral_logo.png"
+    },
+    {
+      "blob": "956161aa3c1743adc15f3b0398e2d2052c15c662",
+      "bytes": 676,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_agents.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_agents.xml"
+    },
+    {
+      "blob": "f243e053b4f0dac8c15c79a629fe0409e9b88ac3",
+      "bytes": 571,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_audit.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_audit.xml"
+    },
+    {
+      "blob": "df61789e4eadb8c5cdea37e5bd1b1024d9d41330",
+      "bytes": 578,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_chat.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_chat.xml"
+    },
+    {
+      "blob": "4fbc13e88f2cd6d62b0b16014719facd08901a96",
+      "bytes": 550,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_history.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_history.xml"
+    },
+    {
+      "blob": "99011212a7e27369f2d8797d772b0bf32e7f317c",
+      "bytes": 330,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_launcher_background.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_launcher_background.xml"
+    },
+    {
+      "blob": "29308b31282cceb91b4b15fb93fa03383ef419d8",
+      "bytes": 423,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_launcher_foreground.xml"
+    },
+    {
+      "blob": "89b226c036ae53d27922b08d7d6913d8af00144d",
+      "bytes": 512,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_menu.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_menu.xml"
+    },
+    {
+      "blob": "0eb54efece892f6cd6b6a3fba4e25458e8c2ed2d",
+      "bytes": 593,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_mic.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_mic.xml"
+    },
+    {
+      "blob": "bb972f86e67eb31336940c00a499a136aa72f12c",
+      "bytes": 537,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_more.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_more.xml"
+    },
+    {
+      "blob": "4eb5eb7e9a9804454373efd8c28c1db010f48956",
+      "bytes": 614,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_paperclip.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_paperclip.xml"
+    },
+    {
+      "blob": "0a89b3b4fc54b33467be0dbcd2fe0cd1d92de85b",
+      "bytes": 501,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_plus.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_plus.xml"
+    },
+    {
+      "blob": "d26236dccdcfb12a57f91ac428f99d352527485e",
+      "bytes": 513,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_send.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_send.xml"
+    },
+    {
+      "blob": "e70d6679b8b3f29fa53d9c8ca7046caa8488d0c0",
+      "bytes": 2083,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_settings.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_settings.xml"
+    },
+    {
+      "blob": "86c9466354636796e69598fe74fc013f7641280e",
+      "bytes": 564,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_signout.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_signout.xml"
+    },
+    {
+      "blob": "1c069af98c8eb30f00af2477e712c1cc8f2909f9",
+      "bytes": 882,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_sparkle.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_sparkle.xml"
+    },
+    {
+      "blob": "ce1a1ea59bb11ffa90382a115a32a1533a3b73c8",
+      "bytes": 295,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_stop.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_stop.xml"
+    },
+    {
+      "blob": "13ca73d0099538e6abbdbfaaac7a7e28d1f68fd2",
+      "bytes": 443,
+      "destinationPath": "android-client/app/src/main/res/drawable/ic_volume.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/drawable/ic_volume.xml"
+    },
+    {
+      "blob": "be438580f7f9f25a62c9e3e448de0338b63a8e18",
+      "bytes": 268,
+      "destinationPath": "android-client/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+    },
+    {
+      "blob": "be438580f7f9f25a62c9e3e448de0338b63a8e18",
+      "bytes": 268,
+      "destinationPath": "android-client/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml"
+    },
+    {
+      "blob": "dea3feb4195fe0bd3e9bbe514ac560b58f90e78b",
+      "bytes": 7497,
+      "destinationPath": "android-client/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-hdpi/ic_launcher.png"
+    },
+    {
+      "blob": "49cc8e34487646a725c41f6bd9d0656056211fda",
+      "bytes": 19341,
+      "destinationPath": "android-client/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png"
+    },
+    {
+      "blob": "68c4c68c8a77730a6bf30fb4c699730819f67923",
+      "bytes": 7690,
+      "destinationPath": "android-client/app/src/main/res/mipmap-hdpi/ic_launcher_round.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-hdpi/ic_launcher_round.png"
+    },
+    {
+      "blob": "cd229588738bcb5db8bc8f8992a359fbb663dffb",
+      "bytes": 3981,
+      "destinationPath": "android-client/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-mdpi/ic_launcher.png"
+    },
+    {
+      "blob": "ea225fb57ce40d448c904511c68b702087f03c3c",
+      "bytes": 10431,
+      "destinationPath": "android-client/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png"
+    },
+    {
+      "blob": "5d09bf843b0a6fde689e855d264de81ac53d09ff",
+      "bytes": 4107,
+      "destinationPath": "android-client/app/src/main/res/mipmap-mdpi/ic_launcher_round.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-mdpi/ic_launcher_round.png"
+    },
+    {
+      "blob": "8cef49676d465c7a57bc7259771197af404a30e0",
+      "bytes": 11562,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xhdpi/ic_launcher.png"
+    },
+    {
+      "blob": "055569b62c5a3520157185fc011c300e0c2204eb",
+      "bytes": 30340,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png"
+    },
+    {
+      "blob": "e88398b6628127c9349f721b8a9b1f9a2b044a4e",
+      "bytes": 11855,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png"
+    },
+    {
+      "blob": "fe755645a9641a7b6d4cf6813fb418b9c0c15c72",
+      "bytes": 21147,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xxhdpi/ic_launcher.png"
+    },
+    {
+      "blob": "61a30e1a0215cee1e1b39ec2cc2b557269c6107a",
+      "bytes": 58128,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png"
+    },
+    {
+      "blob": "337c0a469c83af85868839916aa07dc2f60c9a36",
+      "bytes": 21579,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png"
+    },
+    {
+      "blob": "9fab18b74346794a82bf5e870b67c0fe30e3daa3",
+      "bytes": 32668,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
+    },
+    {
+      "blob": "cca0b21536b01e49992ab552c168809b7de3b70e",
+      "bytes": 92063,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png"
+    },
+    {
+      "blob": "218c8969595fabc20269dc239884d0e4b548b8c2",
+      "bytes": 33306,
+      "destinationPath": "android-client/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png"
+    },
+    {
+      "blob": "e58f44da5034211e0b7c4d25ca9bd5c5d32364ed",
+      "bytes": 310,
+      "destinationPath": "android-client/app/src/main/res/values/colors.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/values/colors.xml"
+    },
+    {
+      "blob": "9f28a160a71187d46a21118cadb13ff3a5598594",
+      "bytes": 112,
+      "destinationPath": "android-client/app/src/main/res/values/strings.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/values/strings.xml"
+    },
+    {
+      "blob": "ce1c4a069d2e8564e1410ef0af541e700b093145",
+      "bytes": 611,
+      "destinationPath": "android-client/app/src/main/res/values/themes.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/main/res/values/themes.xml"
+    },
+    {
+      "blob": "8ab7f1bf2bf9720bef9ba5dcf0609470ddc1f5b5",
+      "bytes": 38264,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt"
+    },
+    {
+      "blob": "e3b877417815321b04a5f6773435a9151be5fb0c",
+      "bytes": 18623,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/StatusLifecycleTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/StatusLifecycleTest.kt"
+    },
+    {
+      "blob": "131bbc08f412407e7331c7d35fbe5350710896fc",
+      "bytes": 1010,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/VoiceFixtureBundle065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/VoiceFixtureBundle065Test.kt"
+    },
+    {
+      "blob": "07a650c9e8cbaa79ce8b007b1b2b3a7c57fc59af",
+      "bytes": 2133,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/auth/AuthRoutingTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/auth/AuthRoutingTest.kt"
+    },
+    {
+      "blob": "4c0215f149dacd62b32f931e876aa37a4ee558f7",
+      "bytes": 1814,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/auth/KeycloakLogoutTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/auth/KeycloakLogoutTest.kt"
+    },
+    {
+      "blob": "03565670c7ed7f8a914ba8a7857240d78d1c1727",
+      "bytes": 829,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/auth/OidcConfigTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/auth/OidcConfigTest.kt"
+    },
+    {
+      "blob": "dcb597c5701cdb35122be60be28c73119f02f865",
+      "bytes": 1381,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/MarkdownTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/MarkdownTest.kt"
+    },
+    {
+      "blob": "239b4834de2c932cdbbd1e905c2e7994d2cbc283",
+      "bytes": 2538,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt"
+    },
+    {
+      "blob": "246926750072af1debdcffa55aaf932ac3b0c317",
+      "bytes": 5536,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChromeTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChromeTest.kt"
+    },
+    {
+      "blob": "56a9e83b9a8246647fc5646f9c593c6665623c91",
+      "bytes": 3301,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ContainerCssTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ContainerCssTest.kt"
+    },
+    {
+      "blob": "16763084884746e3ed29cbca1fb605e09347afc5",
+      "bytes": 1513,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/InputImeActionTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/InputImeActionTest.kt"
+    },
+    {
+      "blob": "440a5026575c48be73bfeb7866e5b2f22ccb8f79",
+      "bytes": 5937,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ParamPickerFieldsTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ParamPickerFieldsTest.kt"
+    },
+    {
+      "blob": "decf68c57c93c31624b60a7d915e314839df4288",
+      "bytes": 4407,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ParamVisibleWhenTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ParamVisibleWhenTest.kt"
+    },
+    {
+      "blob": "8c62b0743f747dcb844b68caf7234eaa2be63546",
+      "bytes": 1580,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/TablePagerTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/TablePagerTest.kt"
+    },
+    {
+      "blob": "596b80b740a7c5f0b356ac033f8156f24e691276",
+      "bytes": 1427,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/rest/AuditParseTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/rest/AuditParseTest.kt"
+    },
+    {
+      "blob": "e3a6635cd2147d05fc35f50158f28899e794b4a5",
+      "bytes": 2066,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/rest/LogoutRestTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/rest/LogoutRestTest.kt"
+    },
+    {
+      "blob": "f984db6612405e36714522d0cf1a7feb135cf3b0",
+      "bytes": 718,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/BackoffTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/BackoffTest.kt"
+    },
+    {
+      "blob": "9e71cbae1df99e3c7d6ce1df24377608dd60b13c",
+      "bytes": 1481,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCapsTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCapsTest.kt"
+    },
+    {
+      "blob": "6d0c2688b19e2b5e370a5a6aace0b05bc1d33d9f",
+      "bytes": 2970,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/QueueOverflowTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/QueueOverflowTest.kt"
+    },
+    {
+      "blob": "d9c4497109e6143e78eafc32b1d5882d2dae4dd7",
+      "bytes": 3150,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/VoicePlayoutTransport065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/VoicePlayoutTransport065Test.kt"
+    },
+    {
+      "blob": "f041e8f4f8ff37e8ef2473c866cbe6a559c68447",
+      "bytes": 5384,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModelReducerTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModelReducerTest.kt"
+    },
+    {
+      "blob": "aaff233218297bf0b250b08ee9cfcc8af7dc274f",
+      "bytes": 3996,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/AttachExistingTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/AttachExistingTest.kt"
+    },
+    {
+      "blob": "21072bfd3db3ff46f5d5fa46fba8fd4114c72770",
+      "bytes": 4557,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/BackgroundContinuityTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/BackgroundContinuityTest.kt"
+    },
+    {
+      "blob": "68e7079ccd82213eeb1ec87b2da073eb1b2ab951",
+      "bytes": 6644,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/CanvasClobberTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/CanvasClobberTest.kt"
+    },
+    {
+      "blob": "f3c28c3b7686a4e8b3cc12b3ecad142445b5f005",
+      "bytes": 5110,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ChromeSurfaceReducerTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ChromeSurfaceReducerTest.kt"
+    },
+    {
+      "blob": "ebecb218873518ab8abca8529dbb55ac4a443b3b",
+      "bytes": 1157,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ConnectionStripTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ConnectionStripTest.kt"
+    },
+    {
+      "blob": "46e233fedba752c4fba7ac66f0ce087460720309",
+      "bytes": 587,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/LayoutModeTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/LayoutModeTest.kt"
+    },
+    {
+      "blob": "4eb22d4dadfa95847859bf47eb4f8ba2f7762338",
+      "bytes": 858,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/SurfaceStateTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/SurfaceStateTest.kt"
+    },
+    {
+      "blob": "0b3217264d70a058d25ade7a7dd6ed58c3254510",
+      "bytes": 1367,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ThemeReducerTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ThemeReducerTest.kt"
+    },
+    {
+      "blob": "d6bd8abe55d8b7cc7c22dc7de7fc0b72682f27a2",
+      "bytes": 1485,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/TimelineModeTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/TimelineModeTest.kt"
+    },
+    {
+      "blob": "3b645f09f35c2412a076724aada9ca75167b7798",
+      "bytes": 2074,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/TopBarActionsTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/TopBarActionsTest.kt"
+    },
+    {
+      "blob": "91fde7de77c5159882390cae19c711d8ca50c3ec",
+      "bytes": 2968,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/VoiceViewModel065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/VoiceViewModel065Test.kt"
+    },
+    {
+      "blob": "2c12bc13495386760fc9ee319b9f04978eb136ca",
+      "bytes": 4569,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WelcomePurgeTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WelcomePurgeTest.kt"
+    },
+    {
+      "blob": "d4d6b768fbf9c1cd59428721d8bd9dfce469b074",
+      "bytes": 4469,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WorkspaceVerbReducerTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WorkspaceVerbReducerTest.kt"
+    },
+    {
+      "blob": "6fbf30b12fa68769e95abb21465ed257c8a7794b",
+      "bytes": 4077,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/theme/ThemeTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/theme/ThemeTest.kt"
+    },
+    {
+      "blob": "a6f72e0bea77c93ddb0d1ebdd49f7a1ceec423b7",
+      "bytes": 10475,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceControlApi065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceControlApi065Test.kt"
+    },
+    {
+      "blob": "796a49776f9335e643a75ae5aee373e72680d08c",
+      "bytes": 1440,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceDebugNetworkPolicy065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceDebugNetworkPolicy065Test.kt"
+    },
+    {
+      "blob": "e790c3a1be16e20b93f39c941122955fcbc0f0f4",
+      "bytes": 1746,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceLiveKitPublicationReconciliation065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceLiveKitPublicationReconciliation065Test.kt"
+    },
+    {
+      "blob": "f4bee7583b51d49c5c4420dd967862ae7dbb192a",
+      "bytes": 976,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoicePlayoutBudget065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoicePlayoutBudget065Test.kt"
+    },
+    {
+      "blob": "1f9fd43ef9ea057a6ebce7a3008381d4b21576cf",
+      "bytes": 75816,
+      "destinationPath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController065Test.kt"
+    },
+    {
+      "blob": "bf361f67a393c92bf56b9a3780174ce6560751e5",
+      "bytes": 1105,
+      "destinationPath": "android-client/build.gradle.kts",
+      "mode": "100644",
+      "sourcePath": "android-client/build.gradle.kts"
+    },
+    {
+      "blob": "ba2b4daf7432eb9ba76c3c51514102c0b9a699ba",
+      "bytes": 7310,
+      "destinationPath": "android-client/buildscript-gradle.lockfile",
+      "mode": "100644",
+      "sourcePath": "android-client/buildscript-gradle.lockfile"
+    },
+    {
+      "blob": "8a450dbfd63c34dee3783a905f4693057379dd3f",
+      "bytes": 1368,
+      "destinationPath": "android-client/compose_stability.conf",
+      "mode": "100644",
+      "sourcePath": "android-client/compose_stability.conf"
+    },
+    {
+      "blob": "353bb580ed616a321a510194436aeef7c1667b6f",
+      "bytes": 1090,
+      "destinationPath": "android-client/core/build.gradle.kts",
+      "mode": "100644",
+      "sourcePath": "android-client/core/build.gradle.kts"
+    },
+    {
+      "blob": "d4088ad6d1f5138ace37e39459f2554cb6cec8f8",
+      "bytes": 8897,
+      "destinationPath": "android-client/core/gradle.lockfile",
+      "mode": "100644",
+      "sourcePath": "android-client/core/gradle.lockfile"
+    },
+    {
+      "blob": "d8281a8be6eddf1ee087af1746e1c2c68e05ccd4",
+      "bytes": 6348,
+      "destinationPath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenu.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenu.kt"
+    },
+    {
+      "blob": "422b37a5f9dfe46919bc52df26b6f19ff7ca3929",
+      "bytes": 21939,
+      "destinationPath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt"
+    },
+    {
+      "blob": "efafbfe736f5fed5a6f2cab51aee5192200aaa78",
+      "bytes": 5683,
+      "destinationPath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt"
+    },
+    {
+      "blob": "4801ccf81355ce04ac24930bb37754c86cd2cd87",
+      "bytes": 82410,
+      "destinationPath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt"
+    },
+    {
+      "blob": "20ce8af51539c134877df47e0a374be8759682e0",
+      "bytes": 1448,
+      "destinationPath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/sdui/Canvas.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/sdui/Canvas.kt"
+    },
+    {
+      "blob": "9663099e21587e5f13717cad73ea957d77a09d26",
+      "bytes": 1894,
+      "destinationPath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/sdui/Component.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/sdui/Component.kt"
+    },
+    {
+      "blob": "f3d6f21bb20629a8fb0004268f7f287fbe2b9cbd",
+      "bytes": 5143,
+      "destinationPath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/streaming/Streaming.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/streaming/Streaming.kt"
+    },
+    {
+      "blob": "34cb693a107b1253207572b9d28fe0f4de173649",
+      "bytes": 9713,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenuTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenuTest.kt"
+    },
+    {
+      "blob": "12a4d46a3be93ea8784ff65518c69f6ec2b28d17",
+      "bytes": 6241,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt"
+    },
+    {
+      "blob": "718b190871eba6ea1c4357405043c6fcb517d7aa",
+      "bytes": 22966,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/RuntimeReliabilityWireTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/RuntimeReliabilityWireTest.kt"
+    },
+    {
+      "blob": "91a34fb1ac6831ef090e90a79ad5bada51106a0e",
+      "bytes": 13325,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt"
+    },
+    {
+      "blob": "fbab913a948c72581666156ce21aaf12363be29c",
+      "bytes": 17498,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/WireTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/WireTest.kt"
+    },
+    {
+      "blob": "b34d7281150138cdc6fa6f3d05b0e5a0a4034dbd",
+      "bytes": 2724,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/sdui/CanvasIdentityTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/sdui/CanvasIdentityTest.kt"
+    },
+    {
+      "blob": "8e75e880f1bcee7943ec939d34adcf01724ccd04",
+      "bytes": 3031,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/sdui/ComponentTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/sdui/ComponentTest.kt"
+    },
+    {
+      "blob": "206d93aa1e6073c4f8dadfc517c2cbcc4c6ec7ea",
+      "bytes": 7228,
+      "destinationPath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/streaming/StreamingTest.kt",
+      "mode": "100644",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/streaming/StreamingTest.kt"
+    },
+    {
+      "blob": "41bf17ac006b61b742b8abbe66b40fdddaa57ea2",
+      "bytes": 7890,
+      "destinationPath": "android-client/docs/play-store-release.md",
+      "mode": "100644",
+      "sourcePath": "android-client/docs/play-store-release.md"
+    },
+    {
+      "blob": "ed39c406325c769c7286d78da541c2abef149ce0",
+      "bytes": 368,
+      "destinationPath": "android-client/gradle.properties",
+      "mode": "100644",
+      "sourcePath": "android-client/gradle.properties"
+    },
+    {
+      "blob": "6c1139ec06ae4e5307f6f0ea75ff8338aa2d4b72",
+      "bytes": 1138,
+      "destinationPath": "android-client/gradle/gradle-daemon-jvm.properties",
+      "mode": "100644",
+      "sourcePath": "android-client/gradle/gradle-daemon-jvm.properties"
+    },
+    {
+      "blob": "6cec66b5b4c4842d9f0a7ea9fbc3216885a850c3",
+      "bytes": 4560,
+      "destinationPath": "android-client/gradle/libs.versions.toml",
+      "mode": "100644",
+      "sourcePath": "android-client/gradle/libs.versions.toml"
+    },
+    {
+      "blob": "8f1eb972f2adb73269533d7eda0f363757908d13",
+      "bytes": 1072,
+      "destinationPath": "android-client/gradle/next-major-canary.properties",
+      "mode": "100644",
+      "sourcePath": "android-client/gradle/next-major-canary.properties"
+    },
+    {
+      "blob": "6a1f909477f345367fb05f240b58c915ed8aa560",
+      "bytes": 289727,
+      "destinationPath": "android-client/gradle/verification-metadata.xml",
+      "mode": "100644",
+      "sourcePath": "android-client/gradle/verification-metadata.xml"
+    },
+    {
+      "blob": "61285a659d17295f1de7c53e24fdf13ad755c379",
+      "bytes": 46175,
+      "destinationPath": "android-client/gradle/wrapper/gradle-wrapper.jar",
+      "mode": "100644",
+      "sourcePath": "android-client/gradle/wrapper/gradle-wrapper.jar"
+    },
+    {
+      "blob": "d0ecbc7c94bfe9d3d8e2ca2bbb730e58ebb5b866",
+      "bytes": 232,
+      "destinationPath": "android-client/gradle/wrapper/gradle-wrapper.properties",
+      "mode": "100644",
+      "sourcePath": "android-client/gradle/wrapper/gradle-wrapper.properties"
+    },
+    {
+      "blob": "adff685a0348c64b2b64f0b302f1f82b28eeaaea",
+      "bytes": 8618,
+      "destinationPath": "android-client/gradlew",
+      "mode": "100644",
+      "sourcePath": "android-client/gradlew"
+    },
+    {
+      "blob": "c4bdd3ab8e3ccd2ac3a2bc0db0f856f16b79ef39",
+      "bytes": 2803,
+      "destinationPath": "android-client/gradlew.bat",
+      "mode": "100644",
+      "sourcePath": "android-client/gradlew.bat"
+    },
+    {
+      "blob": "1aa2035e270aeae9c7fe773014bb24bf71fe058f",
+      "bytes": 267,
+      "destinationPath": "android-client/settings-gradle.lockfile",
+      "mode": "100644",
+      "sourcePath": "android-client/settings-gradle.lockfile"
+    },
+    {
+      "blob": "6688811a0986ab425ba9429b9358378bd8fe9ccc",
+      "bytes": 1147,
+      "destinationPath": "android-client/settings.gradle.kts",
+      "mode": "100644",
+      "sourcePath": "android-client/settings.gradle.kts"
+    },
+    {
+      "blob": "3655cd1c3a085cf0f2a97f5dafa95c642d34aac1",
+      "bytes": 603,
+      "destinationPath": "apple-clients/.gitignore",
+      "mode": "100644",
+      "sourcePath": "apple-clients/.gitignore"
+    },
+    {
+      "blob": "b120e7a98ad838a1fcc7ba2b53cb8f4be8f78ef1",
+      "bytes": 2799,
+      "destinationPath": "apple-clients/.swift-format",
+      "mode": "100644",
+      "sourcePath": "apple-clients/.swift-format"
+    },
+    {
+      "blob": "b19b6cef3620d9f681e7924ed64a6dfece0d3fd9",
+      "bytes": 466623,
+      "destinationPath": "apple-clients/AppStore/screenshots/ipad-13/01-dashboard.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/ipad-13/01-dashboard.png"
+    },
+    {
+      "blob": "85aa2a27562dd4070ae7a26594cbe59fa4146f0b",
+      "bytes": 488524,
+      "destinationPath": "apple-clients/AppStore/screenshots/ipad-13/02-insights.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/ipad-13/02-insights.png"
+    },
+    {
+      "blob": "3d590f5f30994d81cb87054721d54b7a8e52acc5",
+      "bytes": 290822,
+      "destinationPath": "apple-clients/AppStore/screenshots/ipad-13/03-get-started.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/ipad-13/03-get-started.png"
+    },
+    {
+      "blob": "5574048354f9cc9fb0bf4bcb38adf65397658baa",
+      "bytes": 525809,
+      "destinationPath": "apple-clients/AppStore/screenshots/iphone-6.5/01-dashboard.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/iphone-6.5/01-dashboard.png"
+    },
+    {
+      "blob": "243b5445de3aef78a5cfe088f3bae5cb232ca507",
+      "bytes": 614444,
+      "destinationPath": "apple-clients/AppStore/screenshots/iphone-6.5/02-insights.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/iphone-6.5/02-insights.png"
+    },
+    {
+      "blob": "8e391cf07fdad932d86c587ce1a183fc43c6fb7d",
+      "bytes": 694005,
+      "destinationPath": "apple-clients/AppStore/screenshots/iphone-6.5/03-get-started.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/iphone-6.5/03-get-started.png"
+    },
+    {
+      "blob": "08ba6a9b3942ecd64662311a2554a0f9520b35db",
+      "bytes": 548757,
+      "destinationPath": "apple-clients/AppStore/screenshots/mac/01-dashboard.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/mac/01-dashboard.png"
+    },
+    {
+      "blob": "bca29a63e9c574aca14854c495e9cf24b27d0bdd",
+      "bytes": 997295,
+      "destinationPath": "apple-clients/AppStore/screenshots/mac/02-growth-plan.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/mac/02-growth-plan.png"
+    },
+    {
+      "blob": "1f785fe6987afefb596b488bc82591e452904a93",
+      "bytes": 666202,
+      "destinationPath": "apple-clients/AppStore/screenshots/mac/03-schedule.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/mac/03-schedule.png"
+    },
+    {
+      "blob": "0ae8657b5e1c4ff5cecdad76a59c31edfd4a6726",
+      "bytes": 405426,
+      "destinationPath": "apple-clients/AppStore/screenshots/mac/04-get-started.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/mac/04-get-started.png"
+    },
+    {
+      "blob": "ff0bf67767d6aa538de7e70da7da049ede97d0bb",
+      "bytes": 23220,
+      "destinationPath": "apple-clients/AppStore/screenshots/watch/01-conversations.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/watch/01-conversations.png"
+    },
+    {
+      "blob": "e2f210c3a09ecf9d4799ae1b9dab459ab0095c10",
+      "bytes": 51514,
+      "destinationPath": "apple-clients/AppStore/screenshots/watch/02-dashboard.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/watch/02-dashboard.png"
+    },
+    {
+      "blob": "60211386636895119e0657afd8edb066d3643151",
+      "bytes": 45207,
+      "destinationPath": "apple-clients/AppStore/screenshots/watch/03-ask-and-speak.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AppStore/screenshots/watch/03-ask-and-speak.png"
+    },
+    {
+      "blob": "7d3bc46ec58954c782e4777b6643b89a37521c6c",
+      "bytes": 1652,
+      "destinationPath": "apple-clients/AstralApp/AstralApp-macOS.entitlements",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp-macOS.entitlements"
+    },
+    {
+      "blob": "9fb8c3b036fc1c2c9dfa6a822163f796aee0af78",
+      "bytes": 31208,
+      "destinationPath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj"
+    },
+    {
+      "blob": "919434a6254f0e9651f402737811be6634a03e9c",
+      "bytes": 135,
+      "destinationPath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/contents.xcworkspacedata",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/contents.xcworkspacedata"
+    },
+    {
+      "blob": "7f317af9cda83f6e3a3a03f67fcbf78223abe862",
+      "bytes": 1264,
+      "destinationPath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"
+    },
+    {
+      "blob": "8323771b92e4b87b022fab53df9ac5ab93d2af31",
+      "bytes": 3868,
+      "destinationPath": "apple-clients/AstralApp/AstralApp.xcodeproj/xcshareddata/xcschemes/AstralApp.xcscheme",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/xcshareddata/xcschemes/AstralApp.xcscheme"
+    },
+    {
+      "blob": "459a546e06cd79ddf8edda557c331848685f8737",
+      "bytes": 3441,
+      "destinationPath": "apple-clients/AstralApp/AstralApp.xcodeproj/xcshareddata/xcschemes/AstralWatch.xcscheme",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/xcshareddata/xcschemes/AstralWatch.xcscheme"
+    },
+    {
+      "blob": "d41e7b743730ae8bfd49e21068e838c2f07bf799",
+      "bytes": 106165,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/AppModel.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/AppModel.swift"
+    },
+    {
+      "blob": "eb8789700816459c1e1480e0b34781d9fb78a1ca",
+      "bytes": 123,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AccentColor.colorset/Contents.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AccentColor.colorset/Contents.json"
+    },
+    {
+      "blob": "9072ed3d59918fcebb3bcbf455c390dc4824df94",
+      "bytes": 861130,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024-dark.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024-dark.png"
+    },
+    {
+      "blob": "9072ed3d59918fcebb3bcbf455c390dc4824df94",
+      "bytes": 861130,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+    },
+    {
+      "blob": "4847faa9abaf5268b2f6bf70f05c6fa3fbf14943",
+      "bytes": 1643,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/Contents.json"
+    },
+    {
+      "blob": "41f8cc2fd38012f722aeb75f2169603456b95408",
+      "bytes": 13758,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-128x128@1x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-128x128@1x.png"
+    },
+    {
+      "blob": "f193db681ba4754f14b71779cc14a92da3adcd3f",
+      "bytes": 45516,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-128x128@2x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-128x128@2x.png"
+    },
+    {
+      "blob": "0e4bf15fd8ea9e292ee2def9af3e876be55f36b2",
+      "bytes": 681,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-16x16@1x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-16x16@1x.png"
+    },
+    {
+      "blob": "f6d1d306deed5c8b667db2de282560ec0fdda108",
+      "bytes": 1453,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-16x16@2x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-16x16@2x.png"
+    },
+    {
+      "blob": "f193db681ba4754f14b71779cc14a92da3adcd3f",
+      "bytes": 45516,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-256x256@1x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-256x256@1x.png"
+    },
+    {
+      "blob": "9a892ddb45f04c812f7ebf1de25550813e21177b",
+      "bytes": 155068,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-256x256@2x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-256x256@2x.png"
+    },
+    {
+      "blob": "f6d1d306deed5c8b667db2de282560ec0fdda108",
+      "bytes": 1453,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-32x32@1x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-32x32@1x.png"
+    },
+    {
+      "blob": "c887498a2ea5a655d1cd39039782c8ff33843c28",
+      "bytes": 4098,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-32x32@2x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-32x32@2x.png"
+    },
+    {
+      "blob": "9a892ddb45f04c812f7ebf1de25550813e21177b",
+      "bytes": 155068,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-512x512@1x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-512x512@1x.png"
+    },
+    {
+      "blob": "e27644b21257c65b6950c89072ff72d2af88f539",
+      "bytes": 623357,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-512x512@2x.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset/mac-512x512@2x.png"
+    },
+    {
+      "blob": "f88ceff79dd867355b5fdabb45723d2a499cbaff",
+      "bytes": 157479,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralDeepLogo.imageset/AstralDeep.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralDeepLogo.imageset/AstralDeep.png"
+    },
+    {
+      "blob": "17a760f6f417a6462236c5ce62d2f455f73e7ee9",
+      "bytes": 160,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralDeepLogo.imageset/Contents.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralDeepLogo.imageset/Contents.json"
+    },
+    {
+      "blob": "f78434d2227cb909f9ea5c60c709f6e8b28bd9a3",
+      "bytes": 159,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralIcon.imageset/Contents.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralIcon.imageset/Contents.json"
+    },
+    {
+      "blob": "4ceeb7bf9d51fcd8c9ffbd52aa2abaaa172cc4e2",
+      "bytes": 43816,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralIcon.imageset/astra-fav.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/AstralIcon.imageset/astra-fav.png"
+    },
+    {
+      "blob": "73c00596a7fca3f3d4bdd64053b69d86745f9e10",
+      "bytes": 63,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/Contents.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Assets.xcassets/Contents.json"
+    },
+    {
+      "blob": "cb822bfcd36782eb2f87a74c6ac8313c9847b94c",
+      "bytes": 5684,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift"
+    },
+    {
+      "blob": "8756b41147184b2f6654e2f39416fd2c39a132f1",
+      "bytes": 3482,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/ConversationResumeStore.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/ConversationResumeStore.swift"
+    },
+    {
+      "blob": "390ea1e60d03b65b1db25955560055ef207c39ba",
+      "bytes": 19063,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift"
+    },
+    {
+      "blob": "d8715921544a54cc508bca6af2aa5af737ffb725",
+      "bytes": 2323,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/PrivacyInfo.xcprivacy",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/PrivacyInfo.xcprivacy"
+    },
+    {
+      "blob": "a0b812c252c910d3535d3092a40c29e20757341b",
+      "bytes": 6400,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Theme.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Theme.swift"
+    },
+    {
+      "blob": "c82493afacf227e0211a4ee31bfb84648e3e11ac",
+      "bytes": 2182,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Views/ChatListView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ChatListView.swift"
+    },
+    {
+      "blob": "ae7a39f349d86b489910d22985b20a9067f165e2",
+      "bytes": 52375,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift"
+    },
+    {
+      "blob": "eddd7f1759eb83dd8836e4ef58080dd1de0cb070",
+      "bytes": 5882,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift"
+    },
+    {
+      "blob": "698310891434a11385b3e8436981f0bbfc631e59",
+      "bytes": 61611,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift"
+    },
+    {
+      "blob": "a3192ca22b6c46c2e737ee057904526aab60740f",
+      "bytes": 3473,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Views/MarkdownBlockView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/MarkdownBlockView.swift"
+    },
+    {
+      "blob": "8290b380f4ee3979984255013712a7946a530590",
+      "bytes": 11701,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Views/RootView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/RootView.swift"
+    },
+    {
+      "blob": "4f8bf9a340b0a199e76761175c0f1943f1167ba4",
+      "bytes": 11514,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Views/Screens.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/Screens.swift"
+    },
+    {
+      "blob": "f361e8ffee74f4cecccd6cd2b7b5b39850f35f8a",
+      "bytes": 136290,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift"
+    },
+    {
+      "blob": "44c99b726b1b5d1e03f6de873b7e17a3b2fd238d",
+      "bytes": 2992,
+      "destinationPath": "apple-clients/AstralApp/AstralApp/WatchOverrideSync.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/WatchOverrideSync.swift"
+    },
+    {
+      "blob": "38269e6f30cfb698155fc2f641511c5e1c2c5060",
+      "bytes": 5595,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelBackgroundContinuityTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelBackgroundContinuityTests.swift"
+    },
+    {
+      "blob": "4a3f1ffcaa8e26cae57a19d0060b7397adf48bfd",
+      "bytes": 3981,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelChromeSurfaceTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelChromeSurfaceTests.swift"
+    },
+    {
+      "blob": "063e44a4fd864584f702857fbd6da49838080915",
+      "bytes": 6089,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelFirstTurnContractTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelFirstTurnContractTests.swift"
+    },
+    {
+      "blob": "c871607ad2e0f5aff66abbd60460f3f987e34faa",
+      "bytes": 13732,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelLiveCanvasTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelLiveCanvasTests.swift"
+    },
+    {
+      "blob": "f35401eaab555b1dd0a9a0b34b7e31762d35a286",
+      "bytes": 4248,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelRefineExportTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelRefineExportTests.swift"
+    },
+    {
+      "blob": "12ad9752729a6cb4a5e65537ca834e8fa32ff234",
+      "bytes": 2515,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelStreamJoinTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelStreamJoinTests.swift"
+    },
+    {
+      "blob": "9ca3466d692155e49c31e4bc5c9454eaf5fb253d",
+      "bytes": 5525,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelTextOnlyCanvasTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelTextOnlyCanvasTests.swift"
+    },
+    {
+      "blob": "d7bf354edf293dfbca781b6a971f77d76b8dd677",
+      "bytes": 6397,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/AppModelWorkspaceVerbTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelWorkspaceVerbTests.swift"
+    },
+    {
+      "blob": "9f2387fe8fbf12e09002646daca304e6141d8e0e",
+      "bytes": 15249,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/ConversationContinuityTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/ConversationContinuityTests.swift"
+    },
+    {
+      "blob": "732806a9a9d545466f73d846ac5a5bd5ecc007ba",
+      "bytes": 12541,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/LLMFirstLoginOperationTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/LLMFirstLoginOperationTests.swift"
+    },
+    {
+      "blob": "2d7d262ac1c387117a19d34fadfd2704c3bbe28e",
+      "bytes": 24383,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/StatusLifecycleTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/StatusLifecycleTests.swift"
+    },
+    {
+      "blob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
+      "bytes": 91643,
+      "destinationPath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift"
+    },
+    {
+      "blob": "5dedd6c9e9a32bd754773881f393e4643adc9cf7",
+      "bytes": 4692,
+      "destinationPath": "apple-clients/AstralApp/AstralAppUITests/Accessibility060UITests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/Accessibility060UITests.swift"
+    },
+    {
+      "blob": "7418d32da167fcda8275c48815d2aa76ad01a25a",
+      "bytes": 5925,
+      "destinationPath": "apple-clients/AstralApp/AstralAppUITests/ConversationContinuityUITests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/ConversationContinuityUITests.swift"
+    },
+    {
+      "blob": "ed02627859c931e8c2685ddee43e2307ffd2c7bb",
+      "bytes": 10510,
+      "destinationPath": "apple-clients/AstralApp/AstralAppUITests/LLMFirstLoginUITests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/LLMFirstLoginUITests.swift"
+    },
+    {
+      "blob": "18e207353f54c5bfb33d55df444e20ef111cc9aa",
+      "bytes": 50203,
+      "destinationPath": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift"
+    },
+    {
+      "blob": "cce4db962f803cb8119cafcfea1d54374e3ad5be",
+      "bytes": 2782,
+      "destinationPath": "apple-clients/AstralApp/AstralAppUITests/VoiceConversationUITests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/VoiceConversationUITests.swift"
+    },
+    {
+      "blob": "ec2a120865633b1e12fa257d17215c754701ce3d",
+      "bytes": 3372,
+      "destinationPath": "apple-clients/AstralApp/Info.plist",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/Info.plist"
+    },
+    {
+      "blob": "eb2bcc1976c0a868bf11b193160ea1281f8711ee",
+      "bytes": 2336,
+      "destinationPath": "apple-clients/AstralApp/WatchInfo.plist",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralApp/WatchInfo.plist"
+    },
+    {
+      "blob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
+      "bytes": 2664,
+      "destinationPath": "apple-clients/AstralCore/Package.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Package.swift"
+    },
+    {
+      "blob": "a5b686d4bc48f2484b93eefb20ce47cabd951ca1",
+      "bytes": 13309,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/API/Rest.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/API/Rest.swift"
+    },
+    {
+      "blob": "1c3c0d3e8b0342fe9d71325c9165811c7559b6a6",
+      "bytes": 6854,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Auth/DeviceLogin.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Auth/DeviceLogin.swift"
+    },
+    {
+      "blob": "b9b5e0eb4799bc98ce37b80f7fa5935e2c9a3301",
+      "bytes": 5427,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Auth/PKCE.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Auth/PKCE.swift"
+    },
+    {
+      "blob": "6f7608bbe583d00a4991cd3e74f57a556a58dd77",
+      "bytes": 7225,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Auth/TokenStore.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Auth/TokenStore.swift"
+    },
+    {
+      "blob": "78e4a92ca64a85583415dbf290fb0a05cbf15523",
+      "bytes": 5197,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Chrome/ChromeMenu.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Chrome/ChromeMenu.swift"
+    },
+    {
+      "blob": "cae7e0ed3682fef7bdd00dbb4d4b38de08001f73",
+      "bytes": 5579,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Configuration.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Configuration.swift"
+    },
+    {
+      "blob": "1f01ee9c6b8952a05846140de1aefb4c7bd97fb9",
+      "bytes": 931,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/InlineMarkdown.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/InlineMarkdown.swift"
+    },
+    {
+      "blob": "30dd325dedfed0e139966afe6fac6d0f45e888f4",
+      "bytes": 9720,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/MarkdownBlocks.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/MarkdownBlocks.swift"
+    },
+    {
+      "blob": "0e093aab9cb28eb5abd322e8f501a188c8443ec4",
+      "bytes": 36460,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift"
+    },
+    {
+      "blob": "f7f1650973d4fbd6574fc69669edd084f1910663",
+      "bytes": 5914,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Agents.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Agents.swift"
+    },
+    {
+      "blob": "45118e38bcbbc604a3550c95d738a7cef763709e",
+      "bytes": 4896,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Components.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Components.swift"
+    },
+    {
+      "blob": "35abc8965053f025f3ad583bfa20524b3dac1f47",
+      "bytes": 17122,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/ConversationContinuity.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/ConversationContinuity.swift"
+    },
+    {
+      "blob": "779efa2b0d8e43224539d33918fba80e76d4794d",
+      "bytes": 13090,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift"
+    },
+    {
+      "blob": "19b0ebe5453621a4d8700a2f45655992dce34ede",
+      "bytes": 34505,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift"
+    },
+    {
+      "blob": "8aa00de6585d54fd850f7765233fb2a30e7ff353",
+      "bytes": 4424,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/JSONValue.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/JSONValue.swift"
+    },
+    {
+      "blob": "4d59169f8ed25e1f2d36801d0e0346761c00385b",
+      "bytes": 8116,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/StatusLifecycle.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/StatusLifecycle.swift"
+    },
+    {
+      "blob": "d19d554b034c250545b3c018df3039a8d7e2091c",
+      "bytes": 73909,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift"
+    },
+    {
+      "blob": "8b602d56a0a462ffe94bf34a649a9d569c21c185",
+      "bytes": 3700,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Transport/NoStoreHTTP.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Transport/NoStoreHTTP.swift"
+    },
+    {
+      "blob": "182e9ffe914dbb5e9d5727f3682f1b229b939be8",
+      "bytes": 7831,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Transport/Streaming.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Transport/Streaming.swift"
+    },
+    {
+      "blob": "ed6be6b1759d8a0e46eef99e32e10bb9df382810",
+      "bytes": 10761,
+      "destinationPath": "apple-clients/AstralCore/Sources/AstralCore/Transport/WSClient.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Transport/WSClient.swift"
+    },
+    {
+      "blob": "12390acff46e9b22ac50967268a1e2325a36604e",
+      "bytes": 1586,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/ChromeSurfaceModeTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ChromeSurfaceModeTests.swift"
+    },
+    {
+      "blob": "c3748962e2ed5c5730846d6c32fed306217f6e71",
+      "bytes": 4394,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/ConfigurationTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ConfigurationTests.swift"
+    },
+    {
+      "blob": "244a4314b963eca719e1c458545112dd7e0b9e53",
+      "bytes": 13349,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/ConversationSnapshotTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ConversationSnapshotTests.swift"
+    },
+    {
+      "blob": "f044f15aa108b80cbbe50d0049f3071e00c24121",
+      "bytes": 8624,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/CoreLogicTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/CoreLogicTests.swift"
+    },
+    {
+      "blob": "95cfc251259783d17b749f7e22ef07c7766cdfd1",
+      "bytes": 10913,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/DeviceLoginTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/DeviceLoginTests.swift"
+    },
+    {
+      "blob": "ec14a86cb31e3060d3b7c0d3f0a6678133a0dc08",
+      "bytes": 6322,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/astralprims-fixtures.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/astralprims-fixtures.json"
+    },
+    {
+      "blob": "9654d20e6514fbf9fa4b5dc0844e4521ea1b17d5",
+      "bytes": 4269,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py"
+    },
+    {
+      "blob": "79c3dfbdb641e8a5809f1b5c13bcde7ff18f8987",
+      "bytes": 47,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/voice_065",
+      "mode": "120000",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/voice_065"
+    },
+    {
+      "blob": "ea0ac4745edf70a00f8a7871a7c31b7a8ff0fcc1",
+      "bytes": 1508,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/InlineMarkdownTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/InlineMarkdownTests.swift"
+    },
+    {
+      "blob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
+      "bytes": 12342,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift"
+    },
+    {
+      "blob": "fdcc020e8c323e32e7c12c42ba3b7654efe0f10a",
+      "bytes": 5233,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/OperationReconciliationTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/OperationReconciliationTests.swift"
+    },
+    {
+      "blob": "02178074c2cbde5df4baf96dbf06086c1d73b069",
+      "bytes": 15199,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/PrimitivesTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/PrimitivesTests.swift"
+    },
+    {
+      "blob": "3573ed7ed10cc54a90dcbc6066352927e718881e",
+      "bytes": 11292,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/RuntimeReliabilityFramesTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/RuntimeReliabilityFramesTests.swift"
+    },
+    {
+      "blob": "3f9435f27d36992dded52999f98f55e620de6edb",
+      "bytes": 9166,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/StatusLifecycleTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/StatusLifecycleTests.swift"
+    },
+    {
+      "blob": "c7a087983cf41f1646adfeebc6c31b50d91b91f2",
+      "bytes": 8101,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/StreamKeyingTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/StreamKeyingTests.swift"
+    },
+    {
+      "blob": "9b3048e2704f78c916bb1c48f789602c075bbd1d",
+      "bytes": 31310,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift"
+    },
+    {
+      "blob": "f476fb232d1649b5da111bbf903265dd6f820e62",
+      "bytes": 3128,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/WelcomePurgeTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/WelcomePurgeTests.swift"
+    },
+    {
+      "blob": "56936fc3351cb20b052b3daf400b8e3c7c8c59b5",
+      "bytes": 6510,
+      "destinationPath": "apple-clients/AstralCore/Tests/AstralCoreTests/WireContractFixTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/WireContractFixTests.swift"
+    },
+    {
+      "blob": "6d518675fe3d62fd8fe34b3f5055792d1977f773",
+      "bytes": 2054,
+      "destinationPath": "apple-clients/AstralWatch/Accessibility060.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Accessibility060.swift"
+    },
+    {
+      "blob": "9072ed3d59918fcebb3bcbf455c390dc4824df94",
+      "bytes": 861130,
+      "destinationPath": "apple-clients/AstralWatch/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png"
+    },
+    {
+      "blob": "3e58c9f43f4ec243ba32eaae220f786ae066b079",
+      "bytes": 212,
+      "destinationPath": "apple-clients/AstralWatch/Assets.xcassets/AppIcon.appiconset/Contents.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Assets.xcassets/AppIcon.appiconset/Contents.json"
+    },
+    {
+      "blob": "74d6a722cf39b2dd5bef11f166e6ac9b99568a01",
+      "bytes": 60,
+      "destinationPath": "apple-clients/AstralWatch/Assets.xcassets/Contents.json",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Assets.xcassets/Contents.json"
+    },
+    {
+      "blob": "25aa48938009986ec4fad7081aa3424b98ee2130",
+      "bytes": 1148,
+      "destinationPath": "apple-clients/AstralWatch/AstralWatchApp.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/AstralWatchApp.swift"
+    },
+    {
+      "blob": "bfcb805cd0068efbe5c1a1933cf83f67a67e85d9",
+      "bytes": 3355,
+      "destinationPath": "apple-clients/AstralWatch/ConversationResumeStore.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/ConversationResumeStore.swift"
+    },
+    {
+      "blob": "f98361c00e7c39dbe971cc52528a8c484b6ef8fa",
+      "bytes": 2176,
+      "destinationPath": "apple-clients/AstralWatch/PrivacyInfo.xcprivacy",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/PrivacyInfo.xcprivacy"
+    },
+    {
+      "blob": "0f0fdf23ba0b3562c8f17c017249aa7cdc24f300",
+      "bytes": 2775,
+      "destinationPath": "apple-clients/AstralWatch/Speaker.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Speaker.swift"
+    },
+    {
+      "blob": "5b01c522b59d6bcf0c58ad4ceea18104d79ace74",
+      "bytes": 3573,
+      "destinationPath": "apple-clients/AstralWatch/Views/DeviceLoginView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Views/DeviceLoginView.swift"
+    },
+    {
+      "blob": "64a9845bc5d933ab251797320c930160d5056114",
+      "bytes": 15358,
+      "destinationPath": "apple-clients/AstralWatch/Views/WatchChatView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchChatView.swift"
+    },
+    {
+      "blob": "6877aa7a83db820af007e7b93e28c8b98d56c968",
+      "bytes": 8031,
+      "destinationPath": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchComponentView.swift"
+    },
+    {
+      "blob": "48dbda13367284ef0a85916ef20e27dd141b3601",
+      "bytes": 2918,
+      "destinationPath": "apple-clients/AstralWatch/Views/WatchHomeView.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchHomeView.swift"
+    },
+    {
+      "blob": "8164768c856633459b8d169a81fd15055ba889dc",
+      "bytes": 89688,
+      "destinationPath": "apple-clients/AstralWatch/WatchModel.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/WatchModel.swift"
+    },
+    {
+      "blob": "c6d2fe57e2e20c2747bf97cf6cb0aea1676127be",
+      "bytes": 3574,
+      "destinationPath": "apple-clients/AstralWatch/WatchOverrideSync.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/WatchOverrideSync.swift"
+    },
+    {
+      "blob": "0c7bf2e36c3336b88119765e71248912f7138d8f",
+      "bytes": 712,
+      "destinationPath": "apple-clients/AstralWatch/WatchTheme.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/WatchTheme.swift"
+    },
+    {
+      "blob": "5848941fc98c306b8167a7dcad344f82b5fa2698",
+      "bytes": 25996,
+      "destinationPath": "apple-clients/AstralWatch/WatchVoiceBridge.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/WatchVoiceBridge.swift"
+    },
+    {
+      "blob": "a1f2aaf0c39e5d527626377cc1a3c080a6279b3d",
+      "bytes": 32591,
+      "destinationPath": "apple-clients/AstralWatch/WatchVoiceContracts.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/WatchVoiceContracts.swift"
+    },
+    {
+      "blob": "10851679a22bd900eae15bda6655c15cc4f3b3d0",
+      "bytes": 823,
+      "destinationPath": "apple-clients/AstralWatch/WatchVoiceDeviceIdentity.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/WatchVoiceDeviceIdentity.swift"
+    },
+    {
+      "blob": "c69ef396e3858576a1602eba0a052eaf89bbcaac",
+      "bytes": 11919,
+      "destinationPath": "apple-clients/AstralWatch/WatchVoiceREST.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatch/WatchVoiceREST.swift"
+    },
+    {
+      "blob": "e2e5f3361c9cc9242b6b54c9d2e59d1ad45130d9",
+      "bytes": 1675,
+      "destinationPath": "apple-clients/AstralWatchTests/Accessibility060Tests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatchTests/Accessibility060Tests.swift"
+    },
+    {
+      "blob": "2c38f302840bb6bfc194be1663302201ad4d48c4",
+      "bytes": 9433,
+      "destinationPath": "apple-clients/AstralWatchTests/ConversationContinuityTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatchTests/ConversationContinuityTests.swift"
+    },
+    {
+      "blob": "88cd7b60560d52b1f42d377053e85846177fed52",
+      "bytes": 33996,
+      "destinationPath": "apple-clients/AstralWatchTests/ReleaseEvidenceTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatchTests/ReleaseEvidenceTests.swift"
+    },
+    {
+      "blob": "1f9ecafa99d8b375d258633c6803022910aa55f8",
+      "bytes": 17118,
+      "destinationPath": "apple-clients/AstralWatchTests/StatusLifecycleTests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatchTests/StatusLifecycleTests.swift"
+    },
+    {
+      "blob": "721867714043ef3d0615d6c57840d3fcd41f5b94",
+      "bytes": 54564,
+      "destinationPath": "apple-clients/AstralWatchTests/VoiceContract065Tests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatchTests/VoiceContract065Tests.swift"
+    },
+    {
+      "blob": "f560d23c23adb9fea9dbbe66990f6ea844873919",
+      "bytes": 8476,
+      "destinationPath": "apple-clients/AstralWatchTests/WatchVoiceBridge065Tests.swift",
+      "mode": "100644",
+      "sourcePath": "apple-clients/AstralWatchTests/WatchVoiceBridge065Tests.swift"
+    },
+    {
+      "blob": "dc18300c213f290ad6888490c8cad112e8c4bf89",
+      "bytes": 1524,
+      "destinationPath": "apple-clients/Config/Base.xcconfig",
+      "mode": "100644",
+      "sourcePath": "apple-clients/Config/Base.xcconfig"
+    },
+    {
+      "blob": "bff4cd508b6f3b550629bd1f303b6db31c154340",
+      "bytes": 134,
+      "destinationPath": "apple-clients/Config/Debug.xcconfig",
+      "mode": "100644",
+      "sourcePath": "apple-clients/Config/Debug.xcconfig"
+    },
+    {
+      "blob": "4de5920bedf05879746eec768c8b8dcc761cfe9d",
+      "bytes": 261,
+      "destinationPath": "apple-clients/Config/Release.xcconfig",
+      "mode": "100644",
+      "sourcePath": "apple-clients/Config/Release.xcconfig"
+    },
+    {
+      "blob": "555bd2ce0964f1d4b276ad136a432c4aab2c8dbc",
+      "bytes": 1350,
+      "destinationPath": "apple-clients/ExportOptions-ios.plist",
+      "mode": "100644",
+      "sourcePath": "apple-clients/ExportOptions-ios.plist"
+    },
+    {
+      "blob": "54b3ec25b9b136b1a6ca9e4ef8044c3eb259b6c8",
+      "bytes": 1583,
+      "destinationPath": "apple-clients/ExportOptions-macos.plist",
+      "mode": "100644",
+      "sourcePath": "apple-clients/ExportOptions-macos.plist"
+    },
+    {
+      "blob": "d2b6482f3f8ed21b25c1a344dad1f08ae5e12dd4",
+      "bytes": 3453,
+      "destinationPath": "apple-clients/KNOWN-ISSUES.md",
+      "mode": "100644",
+      "sourcePath": "apple-clients/KNOWN-ISSUES.md"
+    },
+    {
+      "blob": "cb691c78cf96254f272637b5c6ab21f59a6cb0ed",
+      "bytes": 15488,
+      "destinationPath": "apple-clients/README.md",
+      "mode": "100644",
+      "sourcePath": "apple-clients/README.md"
+    },
+    {
+      "blob": "0037d61774421343b2a134c9a8b89cf9330ae1df",
+      "bytes": 1476,
+      "destinationPath": "apple-clients/Scripts/altool_strict.sh",
+      "mode": "100755",
+      "sourcePath": "apple-clients/Scripts/altool_strict.sh"
+    },
+    {
+      "blob": "0911a5018f7cb8b2c626de70906bc39a5cedef25",
+      "bytes": 13451,
+      "destinationPath": "apple-clients/Scripts/generate_app_icons.py",
+      "mode": "100644",
+      "sourcePath": "apple-clients/Scripts/generate_app_icons.py"
+    },
+    {
+      "blob": "1e3d99c1ca7d8b339aeff62b87aa69d274074562",
+      "bytes": 15952,
+      "destinationPath": "apple-clients/Scripts/prepare_screenshots.py",
+      "mode": "100644",
+      "sourcePath": "apple-clients/Scripts/prepare_screenshots.py"
+    },
+    {
+      "blob": "b63ecad0bc1dcf3a80d9189db949b4de01d96a23",
+      "bytes": 1668,
+      "destinationPath": "apple-clients/Scripts/render_export_options.py",
+      "mode": "100644",
+      "sourcePath": "apple-clients/Scripts/render_export_options.py"
+    },
+    {
+      "blob": "6174dd31d285076dfdc126ec3312f063d7d70059",
+      "bytes": 173,
+      "destinationPath": "backend/rote/__init__.py",
+      "mode": "100644",
+      "sourcePath": "backend/rote/__init__.py"
+    },
+    {
+      "blob": "ada87b7c601058cff8acbf9a62d11367406d0438",
+      "bytes": 32180,
+      "destinationPath": "backend/rote/adapter.py",
+      "mode": "100644",
+      "sourcePath": "backend/rote/adapter.py"
+    },
+    {
+      "blob": "f99b8e575640d0176bf855fbd6cf01cc5bde4790",
+      "bytes": 13749,
+      "destinationPath": "backend/rote/capabilities.py",
+      "mode": "100644",
+      "sourcePath": "backend/rote/capabilities.py"
+    },
+    {
+      "blob": "32e901e62c19a0a32f4465d5ac0f94bba0253745",
+      "bytes": 2197,
+      "destinationPath": "backend/rote/fallback.py",
+      "mode": "100644",
+      "sourcePath": "backend/rote/fallback.py"
+    },
+    {
+      "blob": "6f0158ec7b28a62b9cd578c426e902c8d9797175",
+      "bytes": 8331,
+      "destinationPath": "backend/rote/lod.py",
+      "mode": "100644",
+      "sourcePath": "backend/rote/lod.py"
+    },
+    {
+      "blob": "ee75305ae2bda689d75c08f5fac35ddced057814",
+      "bytes": 12772,
+      "destinationPath": "backend/rote/objectives.py",
+      "mode": "100644",
+      "sourcePath": "backend/rote/objectives.py"
+    },
+    {
+      "blob": "5a6b618640b472236ee36a71cf9c60ba91f35bc4",
+      "bytes": 5669,
+      "destinationPath": "backend/rote/rote.py",
+      "mode": "100644",
+      "sourcePath": "backend/rote/rote.py"
+    },
+    {
+      "blob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
+      "bytes": 18521,
+      "destinationPath": "contracts/ui_protocol.json",
+      "mode": "100644",
+      "sourcePath": "backend/shared/ui_protocol.json"
+    },
+    {
+      "blob": "799a3dceaa333ef17bbab44b326dddfc7740acb9",
+      "bytes": 62213,
+      "destinationPath": "contracts/fixtures/voice_065/client_conformance.json",
+      "mode": "100644",
+      "sourcePath": "backend/tests/fixtures/voice_065/client_conformance.json"
+    },
+    {
+      "blob": "49c285929a1681039043111e1d66c149cdd3d3ca",
+      "bytes": 3631,
+      "destinationPath": "contracts/fixtures/voice_065/recap_review_matrix.json",
+      "mode": "100644",
+      "sourcePath": "backend/tests/fixtures/voice_065/recap_review_matrix.json"
+    },
+    {
+      "blob": "ec46e52e1b4c17aab541161794c8b544fbffdcb3",
+      "bytes": 1568,
+      "destinationPath": "tests/rote/test_rote_dashboard_text.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/test_rote_dashboard_text.py"
+    },
+    {
+      "blob": "f449aaffd443d052008889fccd55abeef195ca87",
+      "bytes": 3053,
+      "destinationPath": "tests/rote/test_rote_identity_preservation.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/test_rote_identity_preservation.py"
+    },
+    {
+      "blob": "038bf349ba2deb6b268a67d689dcb79437273bf9",
+      "bytes": 6814,
+      "destinationPath": "tests/rote/test_rote_lod_adapt.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/test_rote_lod_adapt.py"
+    },
+    {
+      "blob": "958fd40e2e94bdd4bbfa4f3f856c437fd53648f9",
+      "bytes": 3893,
+      "destinationPath": "tests/rote/test_voice_rote_capabilities_065.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/test_voice_rote_capabilities_065.py"
+    },
+    {
+      "blob": "c7a23e7538a43d2cc262f6d3ffb08fb00e7084c1",
+      "bytes": 4656,
+      "destinationPath": "tests/webrender/test_a11y.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_a11y.py"
+    },
+    {
+      "blob": "e392fba3caa2f3c500a53ef14bface7a6e633084",
+      "bytes": 5499,
+      "destinationPath": "tests/webrender/test_accessibility_060.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_accessibility_060.py"
+    },
+    {
+      "blob": "69775546056dd8b431ee52e31c83b415ba2a613f",
+      "bytes": 9210,
+      "destinationPath": "tests/webrender/test_aom.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_aom.py"
+    },
+    {
+      "blob": "6b6182ac340ce61991df110b79e3f0ee10ebea1f",
+      "bytes": 8242,
+      "destinationPath": "tests/webrender/test_component_chrome.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_component_chrome.py"
+    },
+    {
+      "blob": "5409424a2d938b4d6815ec81ce1ce9c10d3552c0",
+      "bytes": 4830,
+      "destinationPath": "tests/webrender/test_dashboard_primitives.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_dashboard_primitives.py"
+    },
+    {
+      "blob": "b2c68e2979c6801c5e58a31f54e69c83f664f2c4",
+      "bytes": 3007,
+      "destinationPath": "tests/webrender/test_escaping.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_escaping.py"
+    },
+    {
+      "blob": "370ed14cbd077337f604520437ac34ccb3037803",
+      "bytes": 3699,
+      "destinationPath": "tests/webrender/test_export_document.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_export_document.py"
+    },
+    {
+      "blob": "7f5999912c1a34ec8d899183c0f52f7a7dede5dd",
+      "bytes": 4245,
+      "destinationPath": "tests/webrender/test_generative.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_generative.py"
+    },
+    {
+      "blob": "cf170f3df8d64ccc34e0504da702594b0f943fe0",
+      "bytes": 4320,
+      "destinationPath": "tests/webrender/test_markdown_blocks.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_markdown_blocks.py"
+    },
+    {
+      "blob": "a5b110a57b734a71ce5d255ff2fd9814bc6c46f3",
+      "bytes": 2798,
+      "destinationPath": "tests/webrender/test_markdown_headings.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_markdown_headings.py"
+    },
+    {
+      "blob": "7230719fdad10c38309b94d472c0adc92010d989",
+      "bytes": 6503,
+      "destinationPath": "tests/webrender/test_provenance.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_provenance.py"
+    },
+    {
+      "blob": "984d275ed35426ff8f294bb5263310e968f4afa0",
+      "bytes": 12429,
+      "destinationPath": "tests/webrender/test_render_a11y.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_render_a11y.py"
+    },
+    {
+      "blob": "1ad034c074c419c56a05ff72ea3d4eda5cc43f0e",
+      "bytes": 6322,
+      "destinationPath": "tests/webrender/test_render_golden.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_render_golden.py"
+    },
+    {
+      "blob": "942cb6c7bc9173975a05eeb5d6a4c2c5b149a323",
+      "bytes": 1530,
+      "destinationPath": "tests/webrender/test_renderer_seam.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_renderer_seam.py"
+    },
+    {
+      "blob": "8be81493f5877a6bd65638c993cb9f92561fc16d",
+      "bytes": 1433,
+      "destinationPath": "tests/webrender/test_unsupported.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_unsupported.py"
+    },
+    {
+      "blob": "3af4aba8bdf19346f5ebf47dff7e9defeec4cbb0",
+      "bytes": 4949,
+      "destinationPath": "tests/webrender/test_voice_renderer.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_voice_renderer.py"
+    },
+    {
+      "blob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
+      "bytes": 8786,
+      "destinationPath": "tests/webrender/test_voice_renderer_065.py",
+      "mode": "100644",
+      "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py"
+    },
+    {
+      "blob": "14d799f6f988ec56409c4322d3fb8b4c045e4680",
+      "bytes": 1012,
+      "destinationPath": "backend/webrender/__init__.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/__init__.py"
+    },
+    {
+      "blob": "768f0eb191e5f497518e1e705af36ccf4bedf0ae",
+      "bytes": 4640,
+      "destinationPath": "backend/webrender/a11y.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/a11y.py"
+    },
+    {
+      "blob": "7d16146482d51ac7433b77aac54fad884044cb96",
+      "bytes": 8864,
+      "destinationPath": "backend/webrender/aom.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/aom.py"
+    },
+    {
+      "blob": "ce9cafa3b8409376449aa163014646ea27ddf4fc",
+      "bytes": 4337,
+      "destinationPath": "backend/webrender/chrome/__init__.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/__init__.py"
+    },
+    {
+      "blob": "87f8f18908fdad5b7d3efc620f124c71084314aa",
+      "bytes": 11472,
+      "destinationPath": "backend/webrender/chrome/composer_model.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/composer_model.py"
+    },
+    {
+      "blob": "d3cfd4ba3115a5dfc21de52538e0e0e163c32674",
+      "bytes": 26934,
+      "destinationPath": "backend/webrender/chrome/guide_content.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/guide_content.py"
+    },
+    {
+      "blob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
+      "bytes": 11117,
+      "destinationPath": "backend/webrender/chrome/menu_model.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/menu_model.py"
+    },
+    {
+      "blob": "da4aa385ca44d53183e6ce54b124b6359af7a02c",
+      "bytes": 3412,
+      "destinationPath": "backend/webrender/chrome/surfaces/__init__.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/__init__.py"
+    },
+    {
+      "blob": "78c62bf28ec82eb0d77af47946d02713dde28871",
+      "bytes": 6455,
+      "destinationPath": "backend/webrender/chrome/surfaces/_sdui.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/_sdui.py"
+    },
+    {
+      "blob": "04835b43d44b749e3fda9922f0165b96d83305fc",
+      "bytes": 32903,
+      "destinationPath": "backend/webrender/chrome/surfaces/admin_tools.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/admin_tools.py"
+    },
+    {
+      "blob": "3fbf1e3a6db674cede1a7e03f3d202b2e0425de7",
+      "bytes": 48064,
+      "destinationPath": "backend/webrender/chrome/surfaces/agents.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/agents.py"
+    },
+    {
+      "blob": "078d3a928ddcb56c41341cec9313fe5d5e8a176f",
+      "bytes": 6766,
+      "destinationPath": "backend/webrender/chrome/surfaces/attachments.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/attachments.py"
+    },
+    {
+      "blob": "6b8e534550709ab6b4601a25166c36509ba55c28",
+      "bytes": 17352,
+      "destinationPath": "backend/webrender/chrome/surfaces/audit.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/audit.py"
+    },
+    {
+      "blob": "a157ed8cb3ed089f3d8fa28a00463b64186c7012",
+      "bytes": 35722,
+      "destinationPath": "backend/webrender/chrome/surfaces/authoring.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/authoring.py"
+    },
+    {
+      "blob": "1815f67a0a8ac93a9c16c2707da86141e78fd3cf",
+      "bytes": 10949,
+      "destinationPath": "backend/webrender/chrome/surfaces/drafts.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/drafts.py"
+    },
+    {
+      "blob": "b8802f77390676a34ef98a92b5e103bbbcb04ce1",
+      "bytes": 5729,
+      "destinationPath": "backend/webrender/chrome/surfaces/guide.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/guide.py"
+    },
+    {
+      "blob": "dde73feaca92eaf74f49aeae86d0ead265d180e0",
+      "bytes": 30913,
+      "destinationPath": "backend/webrender/chrome/surfaces/llm.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/llm.py"
+    },
+    {
+      "blob": "c63818857c560a252c107579e50fcca28d7c6f40",
+      "bytes": 14234,
+      "destinationPath": "backend/webrender/chrome/surfaces/llm_system.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/llm_system.py"
+    },
+    {
+      "blob": "dd267ccbe57313519cb22b36889c966dec274a2a",
+      "bytes": 50779,
+      "destinationPath": "backend/webrender/chrome/surfaces/personalization.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/personalization.py"
+    },
+    {
+      "blob": "545b3da4b18f53be9ee668ec2bb555dbaa9a9c77",
+      "bytes": 8530,
+      "destinationPath": "backend/webrender/chrome/surfaces/pulse.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/pulse.py"
+    },
+    {
+      "blob": "d1722d515dd583ffd50e6caedc8a6657f80b2ae5",
+      "bytes": 23726,
+      "destinationPath": "backend/webrender/chrome/surfaces/remote_machines.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/remote_machines.py"
+    },
+    {
+      "blob": "8899b43b01f963e99b4e59eed2a153d1dd28a11d",
+      "bytes": 11173,
+      "destinationPath": "backend/webrender/chrome/surfaces/theme.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/theme.py"
+    },
+    {
+      "blob": "7920007fffbfd17271dce4951b303e2689553678",
+      "bytes": 9397,
+      "destinationPath": "backend/webrender/chrome/surfaces/tour.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/tour.py"
+    },
+    {
+      "blob": "5e6034ac82a3975ec98f105efcacf816298d2b59",
+      "bytes": 12510,
+      "destinationPath": "backend/webrender/chrome/surfaces/workspace_timeline.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/surfaces/workspace_timeline.py"
+    },
+    {
+      "blob": "60411d8364415d1cd1ef687ce59457673d8c62cb",
+      "bytes": 14882,
+      "destinationPath": "backend/webrender/chrome/topbar.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/chrome/topbar.py"
+    },
+    {
+      "blob": "27880d6a74b5bc33f239a62ca80a635460b6c317",
+      "bytes": 5370,
+      "destinationPath": "backend/webrender/generative.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/generative.py"
+    },
+    {
+      "blob": "529b43fbd07198b24d05e91c68ece6c27ada8b03",
+      "bytes": 3007,
+      "destinationPath": "backend/webrender/registry.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/registry.py"
+    },
+    {
+      "blob": "21f98cc84bd4d81670f8c1fece4ab119468206ce",
+      "bytes": 75823,
+      "destinationPath": "backend/webrender/renderer.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/renderer.py"
+    },
+    {
+      "blob": "bce994903a0bab3b4c38c20469f76e632c0f8367",
+      "bytes": 11788,
+      "destinationPath": "backend/webrender/sanitize.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/sanitize.py"
+    },
+    {
+      "blob": "a4a7714b1479db47ad1550018b6ad9610cc56d9a",
+      "bytes": 48248,
+      "destinationPath": "backend/webrender/static/astral.css",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/astral.css"
+    },
+    {
+      "blob": "399225bec437d2f1911f09457d453f44b5a938f1",
+      "bytes": 283236,
+      "destinationPath": "backend/webrender/static/client.js",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/client.js"
+    },
+    {
+      "blob": "d15208de03cd1ad7c5199f0a0ce915fe841e4722",
+      "bytes": 48256,
+      "destinationPath": "backend/webrender/static/fonts/inter-latin.woff2",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/fonts/inter-latin.woff2"
+    },
+    {
+      "blob": "585887339efd032b6b715466ae72d86e306bec79",
+      "bytes": 21168,
+      "destinationPath": "backend/webrender/static/fonts/jetbrains-mono-latin.woff2",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/fonts/jetbrains-mono-latin.woff2"
+    },
+    {
+      "blob": "f88ceff79dd867355b5fdabb45723d2a499cbaff",
+      "bytes": 157479,
+      "destinationPath": "backend/webrender/static/img/AstralDeep.png",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/img/AstralDeep.png"
+    },
+    {
+      "blob": "4ceeb7bf9d51fcd8c9ffbd52aa2abaaa172cc4e2",
+      "bytes": 43816,
+      "destinationPath": "backend/webrender/static/img/astra-fav.png",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/img/astra-fav.png"
+    },
+    {
+      "blob": "67db8588217f266eb561f75fae738656325deac9",
+      "bytes": 10142,
+      "destinationPath": "backend/webrender/static/vendor/LICENSE.livekit-client",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/vendor/LICENSE.livekit-client"
+    },
+    {
+      "blob": "3f524eedcb6aaf4e2ece875daf445ad01d101a7d",
+      "bytes": 16043,
+      "destinationPath": "backend/webrender/static/vendor/THIRD_PARTY_NOTICES.livekit-client",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/vendor/THIRD_PARTY_NOTICES.livekit-client"
+    },
+    {
+      "blob": "7fba264746a9b050876d2e45f63c80eb9fd446cf",
+      "bytes": 101,
+      "destinationPath": "backend/webrender/static/vendor/THIRD_PARTY_NOTICES.livekit-client.sha256",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/vendor/THIRD_PARTY_NOTICES.livekit-client.sha256"
+    },
+    {
+      "blob": "6a3a6ce7712c86e8f1186ebf93d3e567749fa089",
+      "bytes": 92,
+      "destinationPath": "backend/webrender/static/vendor/livekit-client.sha256",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/vendor/livekit-client.sha256"
+    },
+    {
+      "blob": "d9c9a77621391397b705e9185f2c1a1190e7f0ac",
+      "bytes": 561757,
+      "destinationPath": "backend/webrender/static/vendor/livekit-client.umd.min.js",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/vendor/livekit-client.umd.min.js"
+    },
+    {
+      "blob": "503ed73dba55068e6d4da3781220e200f53cf362",
+      "bytes": 4558696,
+      "destinationPath": "backend/webrender/static/vendor/plotly.min.js",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/vendor/plotly.min.js"
+    },
+    {
+      "blob": "f44737d5adac3b3ebd2663e5166b0a93e46e16e7",
+      "bytes": 451131,
+      "destinationPath": "backend/webrender/static/vendor/tailwind.js",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/static/vendor/tailwind.js"
+    },
+    {
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "bytes": 0,
+      "destinationPath": "backend/webrender/targets/__init__.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/targets/__init__.py"
+    },
+    {
+      "blob": "14b797116584bafab9b0a119214db994a7637e36",
+      "bytes": 2624,
+      "destinationPath": "backend/webrender/targets/mcp_renderer.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/targets/mcp_renderer.py"
+    },
+    {
+      "blob": "4b78e42f2f058d3ced51681a3b6afba9976984a6",
+      "bytes": 1161,
+      "destinationPath": "backend/webrender/targets/stub_renderer.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/targets/stub_renderer.py"
+    },
+    {
+      "blob": "17c8470c8fcdd73c31f2aaa54b2f152072e591c9",
+      "bytes": 12830,
+      "destinationPath": "backend/webrender/templates/kiosk.html",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/templates/kiosk.html"
+    },
+    {
+      "blob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
+      "bytes": 12770,
+      "destinationPath": "backend/webrender/templates/shell.html",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/templates/shell.html"
+    },
+    {
+      "blob": "5bb19f83747441a2ede00c8f83e73c7bfcaa4016",
+      "bytes": 5402,
+      "destinationPath": "backend/webrender/voice.py",
+      "mode": "100644",
+      "sourcePath": "backend/webrender/voice.py"
+    },
+    {
+      "blob": "55d89e3ccc36714ea424b4921bb464b4abda7820",
+      "bytes": 3164,
+      "destinationPath": "docs/keycloak-android-client-setup.md",
+      "mode": "100644",
+      "sourcePath": "docs/keycloak-android-client-setup.md"
+    },
+    {
+      "blob": "cf817615549c5d15d65a4757c10cbc915c23644a",
+      "bytes": 11325,
+      "destinationPath": "docs/keycloak-windows-client-setup.md",
+      "mode": "100644",
+      "sourcePath": "docs/keycloak-windows-client-setup.md"
+    },
+    {
+      "blob": "fb8854fb6756f735e3f6b99bc2430b9fde30b196",
+      "bytes": 24906,
+      "destinationPath": "scripts/export_xccov_line_coverage.py",
+      "mode": "100644",
+      "sourcePath": "scripts/export_xccov_line_coverage.py"
+    },
+    {
+      "blob": "207d7353e9edbf411a4112103c2597cbe05058b6",
+      "bytes": 28336,
+      "destinationPath": "scripts/run_android_next_major_canary.py",
+      "mode": "100644",
+      "sourcePath": "scripts/run_android_next_major_canary.py"
+    },
+    {
+      "blob": "218aab81e3b3a53baa13834c4d34c04241c860f8",
+      "bytes": 11350,
+      "destinationPath": "scripts/windows_release_candidate.py",
+      "mode": "100644",
+      "sourcePath": "scripts/windows_release_candidate.py"
+    },
+    {
+      "blob": "37827c2e87fc4f61782393afc5c05f1d2ac3e04d",
+      "bytes": 6961,
+      "destinationPath": "tooling/web-ci/coverage-conversion-cli.mjs",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/coverage-conversion-cli.mjs"
+    },
+    {
+      "blob": "1c5a8193efc7c5e01a12d0cfac374b9d404ab857",
+      "bytes": 6888,
+      "destinationPath": "tooling/web-ci/coverage-conversion.mjs",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/coverage-conversion.mjs"
+    },
+    {
+      "blob": "118fe1204b5113200e3c934ac0d914f82616ab9d",
+      "bytes": 1757,
+      "destinationPath": "tooling/web-ci/eslint.config.mjs",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/eslint.config.mjs"
+    },
+    {
+      "blob": "200dea188f2416f171c5112f6223208e8cdf2e71",
+      "bytes": 36754,
+      "destinationPath": "tooling/web-ci/package-lock.json",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/package-lock.json"
+    },
+    {
+      "blob": "b56acfe10999e5787d5c4eb506d5c0fea2031bb6",
+      "bytes": 2523,
+      "destinationPath": "tooling/web-ci/package.json",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/package.json"
+    },
+    {
+      "blob": "dbdaa96066b03cef46909d83c4f50697f18b0966",
+      "bytes": 115,
+      "destinationPath": "tooling/web-ci/playwright-image.txt",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/playwright-image.txt"
+    },
+    {
+      "blob": "a9da1fb149c0d36caf74efcf7929944dcc6580ce",
+      "bytes": 6741,
+      "destinationPath": "tooling/web-ci/release-runner.mjs",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/release-runner.mjs"
+    },
+    {
+      "blob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
+      "bytes": 37185,
+      "destinationPath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js"
+    },
+    {
+      "blob": "8a813a259ca6af98fffaf24ad828927aec1b26c9",
+      "bytes": 1380,
+      "destinationPath": "tooling/web-ci/tests/coverage-conversion.browser.test.mjs",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/tests/coverage-conversion.browser.test.mjs"
+    },
+    {
+      "blob": "b0ca931b210c5a21637d9df87ae00a82e2f4265d",
+      "bytes": 3728,
+      "destinationPath": "tooling/web-ci/tests/coverage-conversion.test.mjs",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/tests/coverage-conversion.test.mjs"
+    },
+    {
+      "blob": "27e53482de23ba0d1c7f94808940ee0e51a50f48",
+      "bytes": 2369,
+      "destinationPath": "tooling/web-ci/tests/node-v8-cli.test.mjs",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/tests/node-v8-cli.test.mjs"
+    },
+    {
+      "blob": "819f9d8d549f54c6a3b48d2c6353088f18af3324",
+      "bytes": 30845,
+      "destinationPath": "tooling/web-ci/tests/release-060.spec.js",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/tests/release-060.spec.js"
+    },
+    {
+      "blob": "893e5722d552d1af9bfe16394f4a900e281f2a5d",
+      "bytes": 95502,
+      "destinationPath": "tooling/web-ci/tests/voice-conversation-065.spec.js",
+      "mode": "100644",
+      "sourcePath": "tooling/web-ci/tests/voice-conversation-065.spec.js"
+    },
+    {
+      "blob": "e350e8454ea4bda6910f4a57b0e58be944520c4e",
+      "bytes": 251,
+      "destinationPath": "windows-client/.gitignore",
+      "mode": "100644",
+      "sourcePath": "windows-client/.gitignore"
+    },
+    {
+      "blob": "253955f910fec308082f9051037e0e36a7ca9b38",
+      "bytes": 8011,
+      "destinationPath": "windows-client/AstralDeep.spec",
+      "mode": "100644",
+      "sourcePath": "windows-client/AstralDeep.spec"
+    },
+    {
+      "blob": "5a538fde4b6e318538fb15756cc5958ec8aabca8",
+      "bytes": 475,
+      "destinationPath": "windows-client/Launch-AstralDeep.bat",
+      "mode": "100644",
+      "sourcePath": "windows-client/Launch-AstralDeep.bat"
+    },
+    {
+      "blob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
+      "bytes": 14267,
+      "destinationPath": "windows-client/README.md",
+      "mode": "100644",
+      "sourcePath": "windows-client/README.md"
+    },
+    {
+      "blob": "d72cf7639f92bdcd0e86fee8559d1709528b57db",
+      "bytes": 7091,
+      "destinationPath": "windows-client/Scripts/generate_win_icon.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/Scripts/generate_win_icon.py"
+    },
+    {
+      "blob": "d3073832c42869296a6f13245cc16d87c5625f1b",
+      "bytes": 87621,
+      "destinationPath": "windows-client/assets/astraldeep.ico",
+      "mode": "100644",
+      "sourcePath": "windows-client/assets/astraldeep.ico"
+    },
+    {
+      "blob": "813cef4ea157a2f0c56b2e816396c6a0f380eb58",
+      "bytes": 175,
+      "destinationPath": "windows-client/astral_client/__init__.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/__init__.py"
+    },
+    {
+      "blob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
+      "bytes": 229021,
+      "destinationPath": "windows-client/astral_client/app.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/app.py"
+    },
+    {
+      "blob": "5d55f98001d932f7282c313e6d9618041d891e17",
+      "bytes": 7441,
+      "destinationPath": "windows-client/astral_client/audit_log.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/audit_log.py"
+    },
+    {
+      "blob": "ed7797195eb82b0197d15d929ac059163698fe7b",
+      "bytes": 7281,
+      "destinationPath": "windows-client/astral_client/auth.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/auth.py"
+    },
+    {
+      "blob": "3d508c1cebf0e51e02e36708a8893b5819f418ff",
+      "bytes": 3699,
+      "destinationPath": "windows-client/astral_client/charts.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/charts.py"
+    },
+    {
+      "blob": "0707f8b1d9613adeba8c5cfcf6bf62c52ed7c52a",
+      "bytes": 2247,
+      "destinationPath": "windows-client/astral_client/chrome.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/chrome.py"
+    },
+    {
+      "blob": "890e38438add3c7eec233e09025970ccab38e2a7",
+      "bytes": 8511,
+      "destinationPath": "windows-client/astral_client/confirm.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/confirm.py"
+    },
+    {
+      "blob": "0483064234542ed0033353ee4551735228781990",
+      "bytes": 27457,
+      "destinationPath": "windows-client/astral_client/deployment.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/deployment.py"
+    },
+    {
+      "blob": "9b100fb01ced3f10fb7ea29f0d5335ce5bac40bf",
+      "bytes": 20363,
+      "destinationPath": "windows-client/astral_client/integrity.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/integrity.py"
+    },
+    {
+      "blob": "0f1f0cb40130478c95a04a33f49d9f1bc4a370bd",
+      "bytes": 2517,
+      "destinationPath": "windows-client/astral_client/phi_gate.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/phi_gate.py"
+    },
+    {
+      "blob": "c16ec978cd8517f336e2966797c25545bd29ff24",
+      "bytes": 98774,
+      "destinationPath": "windows-client/astral_client/protocol.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/protocol.py"
+    },
+    {
+      "blob": "7b47e7e8a789b1d7a5b0fae543b3ff0665248148",
+      "bytes": 5515,
+      "destinationPath": "windows-client/astral_client/protocol_manifest.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/protocol_manifest.py"
+    },
+    {
+      "blob": "0dd02dd95f36f1e97a74566441d59d3a01fde072",
+      "bytes": 62668,
+      "destinationPath": "windows-client/astral_client/renderer.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/renderer.py"
+    },
+    {
+      "blob": "84a9af9da43fdf9890c26e025d8d79ab946f55cb",
+      "bytes": 12668,
+      "destinationPath": "windows-client/astral_client/rest.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/rest.py"
+    },
+    {
+      "blob": "6e3b664121138268fd172560f3e69e47728d7cc8",
+      "bytes": 7176,
+      "destinationPath": "windows-client/astral_client/streaming.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/streaming.py"
+    },
+    {
+      "blob": "2e2ff4df16812138a2da4eee97695b90034a41f2",
+      "bytes": 15581,
+      "destinationPath": "windows-client/astral_client/theme.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/theme.py"
+    },
+    {
+      "blob": "8cbf3a7bbe032abbd6d9f718e94ee8cafaef46c7",
+      "bytes": 114466,
+      "destinationPath": "windows-client/astral_client/voice.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/astral_client/voice.py"
+    },
+    {
+      "blob": "751fff03c1b3ff8838e35186d1105f26fa4f6696",
+      "bytes": 797,
+      "destinationPath": "windows-client/deployment/release-profile.json",
+      "mode": "100644",
+      "sourcePath": "windows-client/deployment/release-profile.json"
+    },
+    {
+      "blob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
+      "bytes": 635,
+      "destinationPath": "windows-client/deployment/runtime-manifest.json",
+      "mode": "100644",
+      "sourcePath": "windows-client/deployment/runtime-manifest.json"
+    },
+    {
+      "blob": "7b9c2fba21cb01b78cc90f531ae3712b366d9542",
+      "bytes": 5259,
+      "destinationPath": "windows-client/main.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/main.py"
+    },
+    {
+      "blob": "f533dbb4dfcedf6398a8c1649dccd37fd4c1f7f7",
+      "bytes": 7471,
+      "destinationPath": "windows-client/requirements-release.lock.txt",
+      "mode": "100644",
+      "sourcePath": "windows-client/requirements-release.lock.txt"
+    },
+    {
+      "blob": "17727135e29ec6a7bafc0950777a2e134e4f3ef6",
+      "bytes": 432,
+      "destinationPath": "windows-client/requirements.in",
+      "mode": "100644",
+      "sourcePath": "windows-client/requirements.in"
+    },
+    {
+      "blob": "996b22359c9907306e0651985751d1038ce025d4",
+      "bytes": 159,
+      "destinationPath": "windows-client/requirements.txt",
+      "mode": "100644",
+      "sourcePath": "windows-client/requirements.txt"
+    },
+    {
+      "blob": "f8c0916f52494b6e953da01ba66a91db783bbee9",
+      "bytes": 894,
+      "destinationPath": "windows-client/tests/conftest.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/conftest.py"
+    },
+    {
+      "blob": "41a2dce3114cb6ae700e73a394e194d8f80ea5c2",
+      "bytes": 4329,
+      "destinationPath": "windows-client/tests/e2e_live.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/e2e_live.py"
+    },
+    {
+      "blob": "78e7984e4ed2f176c5ea98546dff685a4f3295b2",
+      "bytes": 14608,
+      "destinationPath": "windows-client/tests/e2e_voice_065.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/e2e_voice_065.py"
+    },
+    {
+      "blob": "21b46644204d9d509e129dfcde32dce6bc202584",
+      "bytes": 39083,
+      "destinationPath": "windows-client/tests/release_evidence_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/release_evidence_060.py"
+    },
+    {
+      "blob": "1222252be870eae6e116a5e6378e82e675034b52",
+      "bytes": 5201,
+      "destinationPath": "windows-client/tests/screenshot.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/screenshot.py"
+    },
+    {
+      "blob": "172b4877941e8a0bc1fc24f8c040406162d93517",
+      "bytes": 4261,
+      "destinationPath": "windows-client/tests/screenshot_settings.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/screenshot_settings.py"
+    },
+    {
+      "blob": "4ce444446e44626b2ab05ed788f3a210d3551bc3",
+      "bytes": 5376,
+      "destinationPath": "windows-client/tests/test_accessibility_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_accessibility_060.py"
+    },
+    {
+      "blob": "8779a13b5977a94bba6ba164d08d1e67c684fab2",
+      "bytes": 2913,
+      "destinationPath": "windows-client/tests/test_app_icon.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_app_icon.py"
+    },
+    {
+      "blob": "bf36ff1f065e365d369408bebf626c163e465882",
+      "bytes": 9601,
+      "destinationPath": "windows-client/tests/test_attachments.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_attachments.py"
+    },
+    {
+      "blob": "39103b93af320689100eb3d481d5d9d61661ad2d",
+      "bytes": 2718,
+      "destinationPath": "windows-client/tests/test_audit_dialog.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_audit_dialog.py"
+    },
+    {
+      "blob": "b795fe74b6c9a40a6ccd5653af48cc0dd0f6a251",
+      "bytes": 6662,
+      "destinationPath": "windows-client/tests/test_auth.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_auth.py"
+    },
+    {
+      "blob": "443b858b94acb5c99556026ad2dd2b9ad904c369",
+      "bytes": 26529,
+      "destinationPath": "windows-client/tests/test_byo_host.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_byo_host.py"
+    },
+    {
+      "blob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
+      "bytes": 26976,
+      "destinationPath": "windows-client/tests/test_byo_runtime_compatibility.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py"
+    },
+    {
+      "blob": "f47bc7a74113baf1015a0aec2e386652c41e4613",
+      "bytes": 16869,
+      "destinationPath": "windows-client/tests/test_byo_supervision_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_byo_supervision_060.py"
+    },
+    {
+      "blob": "cdae911684101fd0d4e16c56ee09f4f779855a5a",
+      "bytes": 8547,
+      "destinationPath": "windows-client/tests/test_canvas_convergence.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_canvas_convergence.py"
+    },
+    {
+      "blob": "87ea4421541dc9c8c73ee43934a58cf4cc940383",
+      "bytes": 1092,
+      "destinationPath": "windows-client/tests/test_chrome.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_chrome.py"
+    },
+    {
+      "blob": "0bb55c2a848ebbff8153c461a53cd59522b41783",
+      "bytes": 12740,
+      "destinationPath": "windows-client/tests/test_codegen_tools.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_codegen_tools.py"
+    },
+    {
+      "blob": "9df59b8fe46e94cc3e308a91d24e18829586c7a3",
+      "bytes": 6958,
+      "destinationPath": "windows-client/tests/test_component_menu.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_component_menu.py"
+    },
+    {
+      "blob": "16f0aa7ae8c9ee1c02682261956f99fad818208d",
+      "bytes": 2784,
+      "destinationPath": "windows-client/tests/test_config_resolution.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_config_resolution.py"
+    },
+    {
+      "blob": "9642de00abb67177e62fa53282962e44ec6b94ec",
+      "bytes": 5489,
+      "destinationPath": "windows-client/tests/test_confirm_bridge.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_confirm_bridge.py"
+    },
+    {
+      "blob": "f15a48e2734e231db035b78c39bea0f009ade6fc",
+      "bytes": 19125,
+      "destinationPath": "windows-client/tests/test_conversation_continuity_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_conversation_continuity_060.py"
+    },
+    {
+      "blob": "1a71b8dd3865abab13a6ac954223e928477c1f8a",
+      "bytes": 12342,
+      "destinationPath": "windows-client/tests/test_deployment_profile_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_deployment_profile_060.py"
+    },
+    {
+      "blob": "8cfc673e00fa2e6a9172d8b1ffc8c619126b5165",
+      "bytes": 9894,
+      "destinationPath": "windows-client/tests/test_first_turn.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_first_turn.py"
+    },
+    {
+      "blob": "16f53830824af29ac5c8c45dd3596dd65974ec16",
+      "bytes": 22666,
+      "destinationPath": "windows-client/tests/test_integrity.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_integrity.py"
+    },
+    {
+      "blob": "03017c56f3898f940b6f82b76f47700f73109bfc",
+      "bytes": 5121,
+      "destinationPath": "windows-client/tests/test_launch_timing.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_launch_timing.py"
+    },
+    {
+      "blob": "0a0b864f43cd2d5689321c592d5989f72ba29eca",
+      "bytes": 25447,
+      "destinationPath": "windows-client/tests/test_message_routing.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_message_routing.py"
+    },
+    {
+      "blob": "d2388022214b169fd9438ea80ece7206ad736758",
+      "bytes": 11396,
+      "destinationPath": "windows-client/tests/test_packaged_release.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_packaged_release.py"
+    },
+    {
+      "blob": "efca1bbe1331932c8061c8a90033a2c9003d7f8a",
+      "bytes": 4075,
+      "destinationPath": "windows-client/tests/test_param_visible_when.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_param_visible_when.py"
+    },
+    {
+      "blob": "00114c40d6e0840afb3dc4d2996496b1b45fdd7f",
+      "bytes": 4119,
+      "destinationPath": "windows-client/tests/test_protocol_manifest.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_protocol_manifest.py"
+    },
+    {
+      "blob": "dbb1f009bdbc4a779b793c48d4e0fff4c0b63a3d",
+      "bytes": 4494,
+      "destinationPath": "windows-client/tests/test_provenance_badge.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_provenance_badge.py"
+    },
+    {
+      "blob": "d0609608eb814ed3705f4ef19b878b47bcf6fd07",
+      "bytes": 14351,
+      "destinationPath": "windows-client/tests/test_release_lock_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_release_lock_060.py"
+    },
+    {
+      "blob": "5babcb2b1a22ac18ebf9f23fbd3d7ba6a73ee941",
+      "bytes": 4439,
+      "destinationPath": "windows-client/tests/test_remote_machines_surface.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_remote_machines_surface.py"
+    },
+    {
+      "blob": "15b1de77422f7c88ee9f9d91eb3a537614abb64e",
+      "bytes": 15582,
+      "destinationPath": "windows-client/tests/test_renderer.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_renderer.py"
+    },
+    {
+      "blob": "a5c29d8752df22e47a86fa01e7d95a9e2b58e00f",
+      "bytes": 10251,
+      "destinationPath": "windows-client/tests/test_rest.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_rest.py"
+    },
+    {
+      "blob": "82a673d2743897cb87339d5b771094f1f2ece684",
+      "bytes": 5380,
+      "destinationPath": "windows-client/tests/test_runtime_reliability_protocol_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_runtime_reliability_protocol_060.py"
+    },
+    {
+      "blob": "ffeeb6259c8a0c5f61a802baa9711f2296732d0e",
+      "bytes": 2824,
+      "destinationPath": "windows-client/tests/test_skeleton_loading.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_skeleton_loading.py"
+    },
+    {
+      "blob": "3127b94fec154ab9eba4efbdc24ec868e2befe3a",
+      "bytes": 1676,
+      "destinationPath": "windows-client/tests/test_slash_commands.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_slash_commands.py"
+    },
+    {
+      "blob": "fc9d36e74626b97682368f66052f02e1da1eb6a3",
+      "bytes": 24422,
+      "destinationPath": "windows-client/tests/test_status_lifecycle_060.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_status_lifecycle_060.py"
+    },
+    {
+      "blob": "7be36641c78725a64a2847f56edf0042cd0e5e50",
+      "bytes": 5330,
+      "destinationPath": "windows-client/tests/test_streaming.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_streaming.py"
+    },
+    {
+      "blob": "1a437473ac59e3f6b7326d6e4af0611fb32934b9",
+      "bytes": 7006,
+      "destinationPath": "windows-client/tests/test_streaming_bridge.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_streaming_bridge.py"
+    },
+    {
+      "blob": "234b11ea4cefbc4418a46fa444790d7bb416f081",
+      "bytes": 7921,
+      "destinationPath": "windows-client/tests/test_task_continuity.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_task_continuity.py"
+    },
+    {
+      "blob": "f65514fd464a1bfd04f82f7eedca6e17f2d474b0",
+      "bytes": 6444,
+      "destinationPath": "windows-client/tests/test_theme_live.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_theme_live.py"
+    },
+    {
+      "blob": "6447afc408fbeb1c33a03898d5759abf34199b42",
+      "bytes": 4376,
+      "destinationPath": "windows-client/tests/test_top_bar.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_top_bar.py"
+    },
+    {
+      "blob": "530310cea62670a1a8dd9cd8cab1b24668ecc067",
+      "bytes": 7313,
+      "destinationPath": "windows-client/tests/test_transport.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_transport.py"
+    },
+    {
+      "blob": "26f8ac37be3068733d6b7a9adaa7c9482cfe735d",
+      "bytes": 32331,
+      "destinationPath": "windows-client/tests/test_voice_contract_065.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_voice_contract_065.py"
+    },
+    {
+      "blob": "5632740842116b29f449ad3ff5f5ea86cc6f2f96",
+      "bytes": 19263,
+      "destinationPath": "windows-client/tests/test_voice_lifecycle_065.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_voice_lifecycle_065.py"
+    },
+    {
+      "blob": "121f3047230654a79cf9cf86ab9bb9ae0c526a31",
+      "bytes": 1654,
+      "destinationPath": "windows-client/tests/test_voice_package_065.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_voice_package_065.py"
+    },
+    {
+      "blob": "ba5ed87c0120eddc95ea5f279d3e5183b1a45570",
+      "bytes": 21915,
+      "destinationPath": "windows-client/tests/test_voice_playout_065.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_voice_playout_065.py"
+    },
+    {
+      "blob": "ee1c2088f2f72b8cbc3ca5953c5f9e227dd0bee6",
+      "bytes": 1890,
+      "destinationPath": "windows-client/tests/test_voice_refusal_reasons_066.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_voice_refusal_reasons_066.py"
+    },
+    {
+      "blob": "513b3b440ec3bbfecbaa55da05938e01c0e89a7d",
+      "bytes": 4065,
+      "destinationPath": "windows-client/tests/test_win_agent.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_win_agent.py"
+    },
+    {
+      "blob": "97dd129ecca6c2c980f937ab461b2132e04bf3eb",
+      "bytes": 14956,
+      "destinationPath": "windows-client/tests/test_win_agent_inbound_auth.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_win_agent_inbound_auth.py"
+    },
+    {
+      "blob": "d3b659fccb254638270977b97697062cbb531f31",
+      "bytes": 8396,
+      "destinationPath": "windows-client/tests/test_win_agent_startup_gate.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_win_agent_startup_gate.py"
+    },
+    {
+      "blob": "ba0df1c48a6e04bbb642f3a69666f2a915fdfc2c",
+      "bytes": 8811,
+      "destinationPath": "windows-client/tests/test_workspace_override.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_workspace_override.py"
+    },
+    {
+      "blob": "7caa8c7e28cfe998a1fd954f6adbd37a088bd878",
+      "bytes": 8535,
+      "destinationPath": "windows-client/tests/test_workspace_verbs.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/test_workspace_verbs.py"
+    },
+    {
+      "blob": "1210c4254abaadcd02506f3613d4ffe1a198d9e4",
+      "bytes": 9912,
+      "destinationPath": "windows-client/tests/verify_live.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/tests/verify_live.py"
+    },
+    {
+      "blob": "958d9bec1ba02f0f7a88632385bb40dae713b569",
+      "bytes": 317,
+      "destinationPath": "windows-client/win_agent/__init__.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/win_agent/__init__.py"
+    },
+    {
+      "blob": "d30ecec78c8753d1ea6cdcb278aff62a85c23a59",
+      "bytes": 21612,
+      "destinationPath": "windows-client/win_agent/agent.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/win_agent/agent.py"
+    },
+    {
+      "blob": "6ed2071b286421438f09c14cc6725540e2de370e",
+      "bytes": 85242,
+      "destinationPath": "windows-client/win_agent/byo_host.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/win_agent/byo_host.py"
+    },
+    {
+      "blob": "ea2e21054cc25ead2a740dc66429231b329fc0fe",
+      "bytes": 5045,
+      "destinationPath": "windows-client/win_agent/byo_worker.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/win_agent/byo_worker.py"
+    },
+    {
+      "blob": "626db7a3ffacace8a8e5f2da6595fdee2156c5a1",
+      "bytes": 37461,
+      "destinationPath": "windows-client/win_agent/process_supervision.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/win_agent/process_supervision.py"
+    },
+    {
+      "blob": "b3e8f9a5cf0d7087715c44b7e61927ab876e44dc",
+      "bytes": 33568,
+      "destinationPath": "windows-client/win_agent/tools.py",
+      "mode": "100644",
+      "sourcePath": "windows-client/win_agent/tools.py"
+    }
+  ],
+  "format": "astral.extraction-provenance/v1",
+  "manifestSha256": "11fd0c769377cc3b16621b96000253c8acec44cd32f605110d9df3c8df38617f",
+  "selectionRoots": [
+    ".github/workflows/android-ci.yml",
+    ".github/workflows/apple-ci.yml",
+    ".github/workflows/apple-release.yml",
+    ".github/workflows/build-windows-candidate.yml",
+    ".github/workflows/release-apple-evidence-normalizer.yml",
+    ".github/workflows/release-windows-publisher-controller.yml",
+    ".github/workflows/release-windows-publisher.yml",
+    ".github/workflows/release-windows.yml",
+    "LICENSE.md",
+    "android-client",
+    "apple-clients",
+    "backend/rote",
+    "backend/shared/ui_protocol.json",
+    "backend/tests/fixtures/voice_065",
+    "backend/tests/test_rote_dashboard_text.py",
+    "backend/tests/test_rote_identity_preservation.py",
+    "backend/tests/test_rote_lod_adapt.py",
+    "backend/tests/test_voice_rote_capabilities_065.py",
+    "backend/tests/webrender",
+    "backend/webrender",
+    "docs/keycloak-android-client-setup.md",
+    "docs/keycloak-windows-client-setup.md",
+    "scripts/export_xccov_line_coverage.py",
+    "scripts/run_android_next_major_canary.py",
+    "scripts/windows_release_candidate.py",
+    "tooling/web-ci",
+    "windows-client"
+  ],
+  "source": {
+    "commit": "fc113c4f99121b2053bb71523835c5c4743f1f56",
+    "repository": "https://github.com/AstralDeep/AstralDeep.git",
+    "tree": "914b04d369faa4ee0d7c2bb59ce09db38a18d45a"
+  }
+}

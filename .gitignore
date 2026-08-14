@@ -1,26 +1,125 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.hypothesis/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.tox/
+.nox/
 
-node_modules
-dist
-dist-ssr
-*.local
+# Python environments, packaging, and build output
+.venv/
+venv/
+env/
+ENV/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+build/
+dist/
+/uv.lock
 
-.env
+# JavaScript and Node tooling
+node_modules/
+.npm/
+.pnpm-store/
+.yarn/cache/
+.yarn/unplugged/
+.yarn/install-state.gz
+.vite/
+.parcel-cache/
+.turbo/
+.next/
+*.tsbuildinfo
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
+# Gradle, Kotlin, Android, and native Android builds
+.gradle/
+.kotlin/
+.cxx/
+.externalNativeBuild/
+captures/
+local.properties
+keystore.properties
+key.properties
+*.jks
+*.keystore
+*.apk
+*.aab
+
+# Apple/Xcode and Swift build or user state
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.dSYM/
+*.dSYM.zip
+*.app/
+*.ipa
+
+# Windows/Visual Studio build and user state
+.vs/
+[Bb]in/
+[Oo]bj/
+*.user
 *.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+*.userosscache
+*.sln.docstates
+
+# Browser tests and coverage output
+playwright-report/
+test-results/
+blob-report/
+.playwright/
+.coverage
+.coverage.*
+coverage.xml
+coverage/
+htmlcov/
+.nyc_output/
+
+# Local environment, credentials, signing material, and private keys
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+signing.properties
+.astral_token.json
+
+# Local database, log, and runtime state
+*.db
+*.db-*
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-*
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-*
+*.log
+*.log.*
+/data/
+/logs/
+/runtime/
+/tmp/
+/backend/data/
+/backend/knowledge/
+/backend/tmp/
+
+# IDE and operating-system metadata
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
