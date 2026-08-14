@@ -1,8 +1,9 @@
 # Known issues — apple-clients (features 051 + 053)
 
-Honest state of the tree (041 convention). Task numbers refer to
-`specs/051-apple-native-clients/tasks.md` and
-`specs/053-apple-app-store/tasks.md`.
+Honest state of the standalone tree. Historical task numbers refer to the
+feature-051 and feature-053 AstralDeep source revisions recorded in
+[`provenance/extraction.json`](../provenance/extraction.json); those monorepo
+specification paths are not part of AstralProjection.
 
 1. **Realm prerequisites (RESOLVED on the dev realm 2026-07-07, needed per
    realm)**: (a) "OAuth 2.0 Device Authorization Grant" enabled on

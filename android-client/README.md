@@ -9,7 +9,11 @@ non-web wire layer) and draws native UI for the SDUI primitive vocabulary, with
 unknown types degrading to a labeled placeholder. Phones, tablets, and foldables
 are served by one adaptive layout.
 
-Spec: [`specs/041-android-sdui-client/`](../specs/041-android-sdui-client/).
+The original feature-041 design history remains attributable through
+[`provenance/extraction.json`](../provenance/extraction.json). The standalone
+client contract is now defined by this tree, especially
+[`../contracts/ui_protocol.json`](../contracts/ui_protocol.json), the shared
+voice fixtures under `../contracts/fixtures/`, and the tests below.
 
 ## Modules
 

@@ -70,11 +70,14 @@ python -m venv .venv
 .venv/Scripts/python main.py --deployment-profile C:\path\to\local-profile.json --token dev-token
 ```
 
-The local profile must satisfy the feature-060
-[`windows-deployment-profile` schema](../specs/060-runtime-reliability-hardening/contracts/windows-deployment-profile.schema.json):
-`distribution` is `generic_developer`, `local_only` is `true`, and its authority
-and WebSocket endpoint are loopback URLs. `ASTRAL_TOKEN` remains an optional
-credential input; it is not deployment configuration.
+The local profile is validated fail-closed by
+[`astral_client/deployment.py`](astral_client/deployment.py) and its focused
+tests. `distribution` must be `generic_developer`, `local_only` must be `true`,
+and its authority and WebSocket endpoint must be loopback URLs. The original
+feature-060 schema remains attributable through
+[`../provenance/extraction.json`](../provenance/extraction.json), but its former
+AstralDeep `specs/` path is not a standalone Projection contract. `ASTRAL_TOKEN`
+remains an optional credential input; it is not deployment configuration.
 
 ## Build the .exe
 

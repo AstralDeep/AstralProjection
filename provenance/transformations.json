@@ -3,6 +3,15 @@
   "sourceManifestSha256": "11fd0c769377cc3b16621b96000253c8acec44cd32f605110d9df3c8df38617f",
   "entries": [
     {
+      "path": "android-client/README.md",
+      "sourcePath": "android-client/README.md",
+      "sourceBlob": "a2f81fbfa8b081a3c339e870f5cc8ed05a16f1c9",
+      "sourceMode": "100644",
+      "resultSha256": "a72c03ce9b7a511df88f10aa6c6f5645e1fe094724bbaebf224b466f7b939edc",
+      "task": "T188",
+      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references."
+    },
+    {
       "path": "android-client/app/build.gradle.kts",
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
@@ -102,13 +111,22 @@
       "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent."
     },
     {
+      "path": "apple-clients/KNOWN-ISSUES.md",
+      "sourcePath": "apple-clients/KNOWN-ISSUES.md",
+      "sourceBlob": "d2b6482f3f8ed21b25c1a344dad1f08ae5e12dd4",
+      "sourceMode": "100644",
+      "resultSha256": "5f8649b1981000be18a6b2b1fd3ff60aa99338ce0a7349e7dcfec42fd5cc44d0",
+      "task": "T188",
+      "reason": "Replace broken monorepo task links with standalone Projection provenance guidance."
+    },
+    {
       "path": "apple-clients/README.md",
       "sourcePath": "apple-clients/README.md",
       "sourceBlob": "cb691c78cf96254f272637b5c6ab21f59a6cb0ed",
       "sourceMode": "100644",
-      "resultSha256": "0bc7fdbea71f328a90e97eea5d07b125fa03945c00c6f16ea790330094f3ec82",
+      "resultSha256": "587828b97d44a12c0216d9dca349239334b80eec43b26681ca1c735de16d27f8",
       "task": "T058/T188",
-      "reason": "Document the inactive protected Apple build-number workflow and replace the former Primitives URL with its canonical repository identity."
+      "reason": "Document the inactive protected Apple build-number workflow, canonical Primitives identity, standalone provenance, and the blocked container-only fixture-regeneration prerequisite."
     },
     {
       "path": "backend/webrender/chrome/menu_model.py",
@@ -331,9 +349,9 @@
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "6f0f33dde37758c54ea5c8cd6009d1133f08aba1ca24a2a263070f5b6b0a3e8c",
-      "task": "T060/T062",
-      "reason": "Remove runtime repository trust overrides and document the inactive bounded bridge transition."
+      "resultSha256": "fab332bc0ff4878775370f1a82397f1b8dd4bbd61ec16e1db9bdcbe749177f57",
+      "task": "T060/T062/T188",
+      "reason": "Remove runtime repository trust overrides, document the inactive bounded bridge transition, and replace a broken monorepo schema link with the standalone fail-closed validator and provenance."
     },
     {
       "path": "windows-client/astral_client/integrity.py",

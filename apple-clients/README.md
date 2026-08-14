@@ -12,12 +12,12 @@ AstralWatch/   # watchOS: QR sign-in (RFC 8628 via backend broker), bounded
                # PCM voice bridge in/out, and server-synthesized speech
 ```
 
-Specs: `specs/051-apple-native-clients/` (051 — the clients themselves),
-`specs/053-apple-app-store/` (053 — packaging, signing, and the release
-pipeline), and `specs/065-conversational-voice/` (065 — included voice across
-all clients). Feature 065 pins `client-sdk-swift` 2.15.3 and every resolved
-transitive revision in the committed `Package.resolved`; watchOS uses the
-owned bounded PCM-over-WSS bridge rather than the LiveKit package.
+The original feature-051, feature-053, and feature-065 design history remains
+attributable through [`provenance/extraction.json`](../provenance/extraction.json).
+The standalone contracts now live in this tree. Feature 065 pins
+`client-sdk-swift` 2.15.3 and every resolved transitive revision in the
+committed `Package.resolved`; watchOS uses the owned bounded PCM-over-WSS bridge
+rather than the LiveKit package.
 
 ## Shipped identities
 
@@ -75,17 +75,19 @@ let canvas = AstralPrims.createUIResponse([
 ])
 ```
 
-Fidelity is pinned by known-answer fixtures generated FROM the live Python
-package: every Swift construction in `PrimitivesTests` must byte-match its
-Python `to_dict()`. When the pip package version bumps, regenerate:
+Fidelity is pinned by known-answer fixtures generated from the exact
+AstralPrimitives package: every Swift construction in `PrimitivesTests` must
+byte-match its Python `to_dict()`. Regeneration is currently an explicit
+composition-activation prerequisite: the imported helper still writes to the
+historical container-only `/tmp/fixtures_out.json` path, while the standalone
+Projection build intentionally has no active composed-image workflow. Do not
+run the former `astraldeep` container commands or replace the committed fixture
+from an index-resolved package. Before workflow activation, give the helper a
+repository-relative output argument, run it against the exact composed
+AstralPrimitives revision, review the fixture diff, and then run:
 
 ```bash
-docker cp apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py \
-  astraldeep:/tmp/gen_fixtures.py
-docker exec astraldeep python3 /tmp/gen_fixtures.py
-docker cp astraldeep:/tmp/fixtures_out.json \
-  apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/astralprims-fixtures.json
-swift test --package-path apple-clients/AstralCore   # fails on any drift
+swift test --package-path apple-clients/AstralCore
 ```
 
 ## How the endpoints are configured
