@@ -467,6 +467,7 @@ def test_release_activation_document_matches_current_workflow_inventory() -> Non
     document = (ROOT / "docs" / "release-workflow-activation.md").read_text(
         encoding="utf-8"
     )
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     active = sorted(ACTIVE.glob("*.yml"))
     disabled = sorted(INACTIVE.glob("*.yml"))
     disabled_jobs = sum(len(_job_ids(path.read_text(encoding="utf-8"))) for path in disabled)
@@ -480,6 +481,12 @@ def test_release_activation_document_matches_current_workflow_inventory() -> Non
     assert "There is no `.github/workflows/` directory" not in document
     assert "Nine YAML files" not in document
     assert "all 19 jobs" not in document
+    assert "Three owner CI workflows are active and read-only/secret-free" in readme
+    for workflow in ("ci.yml", "android-ci.yml", "apple-ci.yml"):
+        assert f"`.github/workflows/{workflow}`" in readme
+    assert "Six release workflows remain disabled under `workflows-disabled/`" in readme
+    assert "Android and Apple workflows also remain inert" not in readme
+    assert "Android, Apple, candidate, and release workflows" not in readme
 
 
 @pytest.mark.parametrize(

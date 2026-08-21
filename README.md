@@ -23,19 +23,22 @@ builders through `astralprojection`.
 - `tooling/web-ci/` and `tests/` — browser tooling and standalone verification.
 - `provenance/` — immutable extraction manifest and reviewed transformation
   ledger for the AstralDeep decomposition.
-- `.github/workflows/ci.yml` — active read-only CI for the Python package,
-  web tooling, and Windows client.
-- `workflows-disabled/` — Android, Apple, candidate, and release workflows
-  held inert until final local qualification and an explicit activation change.
+- `.github/workflows/ci.yml`, `.github/workflows/android-ci.yml`, and
+  `.github/workflows/apple-ci.yml` — active read-only, secret-free owner CI for
+  core Python/web/Windows, Android, and Apple qualification respectively.
+- `workflows-disabled/` — six release workflows whose eight jobs remain
+  unconditionally disabled pending a separately authorized activation change.
 
-Core Python, web, and Windows CI is active. The disabled release workflows
-intentionally preserve some references to
-legacy protected-policy and release-evidence tooling that was not extracted
-into this repository. They are historical design inputs, not runnable release
-automation; Android and Apple workflows also remain inert. Activation requires
-an explicit follow-up that inventories and
-rebuilds every missing protected input in AstralProjection, re-runs local and
-provider-native qualification, and receives separate release authorization.
+Three owner CI workflows are active and read-only/secret-free. They qualify the
+core Python/web/Windows, Android, and Apple owner surfaces; they do not sign,
+publish, deploy, or submit artifacts. Six release workflows remain disabled under `workflows-disabled/`.
+Those release workflows intentionally preserve
+some references to legacy protected-policy and release-evidence tooling that
+was not extracted into this repository. They are historical design inputs, not
+runnable release automation. Release activation requires an explicit follow-up
+that inventories and rebuilds every missing protected input in
+AstralProjection, re-runs local and provider-native qualification, and receives
+separate release authorization.
 
 ## Local verification
 
