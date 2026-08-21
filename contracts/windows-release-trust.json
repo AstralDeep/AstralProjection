@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "documentType": "astral.windows-release-trust-transition",
+  "client": "windows",
+  "state": "legacy_only",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "artifactName": "AstralDeep.exe",
+  "legacy": {
+    "repository": "AstralDeep/AstralDeep",
+    "workflowIdentity": "https://github.com/AstralDeep/AstralDeep/.github/workflows/release-windows.yml",
+    "tagRefTemplate": "refs/tags/v<version>",
+    "bridgeMaximum": null
+  },
+  "projection": {
+    "repository": "AstralDeep/AstralProjection",
+    "workflowIdentity": "https://github.com/AstralDeep/AstralProjection/.github/workflows/release-windows.yml",
+    "tagRefTemplate": "refs/tags/v<version>",
+    "minimumVersion": null
+  },
+  "bridge": {
+    "selected": false,
+    "version": null,
+    "artifactSha256": null,
+    "legacyBundleSha256": null,
+    "projectionBundleSha256": null,
+    "legacyMaximumRule": "equals_bridge_version",
+    "projectionMinimumRule": "equals_bridge_version",
+    "identicalArtifactBytesRequired": true,
+    "differentBundleBytesPermitted": true
+  },
+  "activation": {
+    "releaseSelected": false,
+    "selectionAuthority": "authorized-release-planning-event",
+    "publicationAuthorized": false,
+    "workflowsLocation": "workflows-disabled"
+  }
+}

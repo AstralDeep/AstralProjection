@@ -1,0 +1,17 @@
+AstralProjection
+Copyright 2025-2026 AstralDeep contributors
+
+This product is licensed under the Apache License, Version 2.0. See
+LICENSE.md for the complete license text.
+
+The server-rendering assets include the following locally vendored software:
+
+- Plotly.js 2.35.2, Copyright 2012-2024 Plotly, Inc., licensed under the MIT
+  License. The upstream license notice remains in the distributed bundle.
+- Tailwind CSS Play CDN browser bundle, licensed under the MIT License.
+- LiveKit Web Client 2.21.0, licensed under the Apache License, Version 2.0.
+  Its full license and generated third-party notices are distributed under
+  webrender/static/vendor/ inside the installed package.
+
+Native-client dependency notices remain with their respective Windows,
+Android, and Apple build products and dependency manifests.

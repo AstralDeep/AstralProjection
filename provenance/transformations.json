@@ -1,0 +1,702 @@
+{
+  "format": "astral.extraction-transformations/v1",
+  "sourceManifestSha256": "11fd0c769377cc3b16621b96000253c8acec44cd32f605110d9df3c8df38617f",
+  "entries": [
+    {
+      "path": "android-client/README.md",
+      "sourcePath": "android-client/README.md",
+      "sourceBlob": "a2f81fbfa8b081a3c339e870f5cc8ed05a16f1c9",
+      "sourceMode": "100644",
+      "resultSha256": "a72c03ce9b7a511df88f10aa6c6f5645e1fe094724bbaebf224b466f7b939edc",
+      "task": "T188",
+      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references."
+    },
+    {
+      "path": "android-client/app/build.gradle.kts",
+      "sourcePath": "android-client/app/build.gradle.kts",
+      "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
+      "sourceMode": "100644",
+      "resultSha256": "3bc9ce093e2b640cfb5092f21dc66b1f94a04da37b060fcfc8f3d75dd3706931",
+      "task": "T054/T057",
+      "reason": "Repoint generated Android voice fixtures to Projection while preserving registered application, redirect, and monotonic version identities."
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
+      "sourceBlob": "239b4834de2c932cdbbd1e905c2e7994d2cbc283",
+      "sourceMode": "100644",
+      "resultSha256": "3c2e1dd66ebf9defa3443def9ed2888e599d0913bbb50ffc59a2a894e4a0882f",
+      "task": "T054",
+      "reason": "Repoint Android renderer vocabulary parity to the standalone Projection contract."
+    },
+    {
+      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
+      "sourceBlob": "efafbfe736f5fed5a6f2cab51aee5192200aaa78",
+      "sourceMode": "100644",
+      "resultSha256": "a590ade1d74d876ca59c3e0be6f3ed3f634c62a56f4f3897ebf9ab696bc4bab2",
+      "task": "T054",
+      "reason": "Name the standalone Projection manifest as the current source for Android frame dispositions."
+    },
+    {
+      "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
+      "sourceBlob": "12a4d46a3be93ea8784ff65518c69f6ec2b28d17",
+      "sourceMode": "100644",
+      "resultSha256": "648a331d880a935aa8b106ad24ec8aec4d60fbb91bcbae686fcb10848cb7db95",
+      "task": "T054",
+      "reason": "Repoint the Android protocol drift guard to the standalone Projection contract."
+    },
+    {
+      "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
+      "sourceBlob": "91a34fb1ac6831ef090e90a79ad5bada51106a0e",
+      "sourceMode": "100644",
+      "resultSha256": "f00c6078346852bbfe89c217f23491800d263159b2d76895cd68f5c5b7b157e5",
+      "task": "T054",
+      "reason": "Repoint the Android voice conformance consumer to the standalone Projection fixture."
+    },
+    {
+      "path": "android-client/docs/play-store-release.md",
+      "sourcePath": "android-client/docs/play-store-release.md",
+      "sourceBlob": "41bf17ac006b61b742b8abbe66b40fdddaa57ea2",
+      "sourceMode": "100644",
+      "resultSha256": "91b89d07e53518c921450e8481f738b97996eff3b9dace0927934e56e2acd1ad",
+      "task": "T057",
+      "reason": "Point the release runbook at the owned currentVersionCode constant and require exact Play Console upload-certificate fingerprint reconciliation instead of alias or subject-name assumptions."
+    },
+    {
+      "path": "android-client/gradlew",
+      "sourcePath": "android-client/gradlew",
+      "sourceBlob": "adff685a0348c64b2b64f0b302f1f82b28eeaaea",
+      "sourceMode": "100644",
+      "resultSha256": "fb68debc1b1acf8ec55dc0d5e5495e1dedd0bd6b61f304bee61613eeb2bd9b92",
+      "task": "T056",
+      "reason": "Make the committed Gradle wrapper user-executable so active Android CI can invoke the repository-owned wrapper directly."
+    },
+    {
+      "path": "apple-clients/AstralCore/Package.swift",
+      "sourcePath": "apple-clients/AstralCore/Package.swift",
+      "sourceBlob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
+      "sourceMode": "100644",
+      "resultSha256": "f9b7a7659109acc8c8f580b99e699034e143e5753a3b126c63c0efbab713039c",
+      "task": "T055",
+      "reason": "Repoint the Apple voice conformance resource to the standalone Projection fixture."
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
+      "sourceBlob": "0e093aab9cb28eb5abd322e8f501a188c8443ec4",
+      "sourceMode": "100644",
+      "resultSha256": "4035538af3c8e2471e44486e3f5b66aa05dccbaaa9815e26959b086ebe73106c",
+      "task": "T188",
+      "reason": "Replace the former Astral-Primitives repository URL with the canonical AstralPrimitives identity."
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
+      "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
+      "sourceMode": "100644",
+      "resultSha256": "eb194f716c01f2f847221967a55bc7a4329037cc8e2e862c936385ebd9ea1615",
+      "task": "T055",
+      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions."
+    },
+    {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
+      "sourceBlob": "9654d20e6514fbf9fa4b5dc0844e4521ea1b17d5",
+      "sourceMode": "100644",
+      "resultSha256": "13906595b5b390c350dc2319a4bcc61059f5bb72888d1c14a5555e672fc8849e",
+      "task": "T226",
+      "reason": "Make AstralPrimitives fixture regeneration use a portable explicit output path so Apple qualification can run from the standalone Projection checkout."
+    },
+    {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/voice_065",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/voice_065",
+      "sourceBlob": "79c3dfbdb641e8a5809f1b5c13bcde7ff18f8987",
+      "sourceMode": "120000",
+      "resultSha256": "d0dfbe43f5bca35865cafab1db7071f179d89071fdff820a9d9ad1ae84eb732b",
+      "task": "T055",
+      "reason": "Retarget the Apple fixture link to the standalone Projection fixture directory."
+    },
+    {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
+      "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
+      "sourceMode": "100644",
+      "resultSha256": "d1c969acc6d7b592e4d9f854535eb1dcb9e611508db2a497070bb59b3c4e353a",
+      "task": "T055",
+      "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent."
+    },
+    {
+      "path": "apple-clients/KNOWN-ISSUES.md",
+      "sourcePath": "apple-clients/KNOWN-ISSUES.md",
+      "sourceBlob": "d2b6482f3f8ed21b25c1a344dad1f08ae5e12dd4",
+      "sourceMode": "100644",
+      "resultSha256": "5f8649b1981000be18a6b2b1fd3ff60aa99338ce0a7349e7dcfec42fd5cc44d0",
+      "task": "T188",
+      "reason": "Replace broken monorepo task links with standalone Projection provenance guidance."
+    },
+    {
+      "path": "apple-clients/README.md",
+      "sourcePath": "apple-clients/README.md",
+      "sourceBlob": "cb691c78cf96254f272637b5c6ab21f59a6cb0ed",
+      "sourceMode": "100644",
+      "resultSha256": "d0c146f8ba2535613ae3bd163a5470222dc081f50d4d8d3decaf1629d7c38266",
+      "task": "T058/T188",
+      "reason": "Document active Apple owner CI, canonical Primitives identity, standalone provenance, portable fixture regeneration, and the required qualified-host gates."
+    },
+    {
+      "path": "apple-clients/Scripts/generate_app_icons.py",
+      "sourcePath": "apple-clients/Scripts/generate_app_icons.py",
+      "sourceBlob": "0911a5018f7cb8b2c626de70906bc39a5cedef25",
+      "sourceMode": "100644",
+      "resultSha256": "c4a9616b56414e62d54f3e47333dc92518ddc47208e504330978a5dd48757f38",
+      "task": "T226",
+      "reason": "Remove repository-wide Ruff violations from the Apple icon generator without altering generated image bytes."
+    },
+    {
+      "path": "backend/webrender/chrome/menu_model.py",
+      "sourcePath": "backend/webrender/chrome/menu_model.py",
+      "sourceBlob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
+      "sourceMode": "100644",
+      "resultSha256": "ce1c54e0ea7029db3f5282460aefce2963e4c86fecf5a24130d46bc63aeab0a8",
+      "task": "T044",
+      "reason": "Replace lazy Deep feature-flag imports with explicit host-supplied presentation state."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/__init__.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/__init__.py",
+      "sourceBlob": "da4aa385ca44d53183e6ce54b124b6359af7a02c",
+      "sourceMode": "100644",
+      "resultSha256": "356501067c12b0aa817636a4f14c7fb0e8093355412fab55d953e8572872b98f",
+      "task": "T045/T046/T047/T048",
+      "reason": "Retain only host-neutral legacy utilities after Deep-owned controller discovery and dispatch moved behind supplied-state builders."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/admin_tools.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/admin_tools.py",
+      "sourceBlob": "04835b43d44b749e3fda9922f0165b96d83305fc",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T045",
+      "reason": "Remove the Deep-coupled admin controller; Projection now exposes a pure supplied-state admin builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/agents.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/agents.py",
+      "sourceBlob": "3fbf1e3a6db674cede1a7e03f3d202b2e0425de7",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T046",
+      "reason": "Remove the Deep-coupled agent controller; Projection now exposes a pure supplied-state agent builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/attachments.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/attachments.py",
+      "sourceBlob": "078d3a928ddcb56c41341cec9313fe5d5e8a176f",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T046",
+      "reason": "Remove the Deep-coupled attachment controller; Projection now exposes a pure supplied-state attachment builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/audit.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/audit.py",
+      "sourceBlob": "6b8e534550709ab6b4601a25166c36509ba55c28",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T045",
+      "reason": "Remove the Deep-coupled audit controller; Projection now exposes a pure supplied-state audit builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/authoring.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/authoring.py",
+      "sourceBlob": "a157ed8cb3ed089f3d8fa28a00463b64186c7012",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T046",
+      "reason": "Remove the Deep-coupled authoring controller; Projection now exposes a pure supplied-state authoring builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/drafts.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/drafts.py",
+      "sourceBlob": "1815f67a0a8ac93a9c16c2707da86141e78fd3cf",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T046",
+      "reason": "Remove the Deep-coupled draft controller; Projection now exposes a pure supplied-state draft builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/llm.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/llm.py",
+      "sourceBlob": "dde73feaca92eaf74f49aeae86d0ead265d180e0",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T047",
+      "reason": "Remove the Deep-coupled user LLM controller; Projection now exposes a secret-free supplied-state builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/llm_system.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/llm_system.py",
+      "sourceBlob": "c63818857c560a252c107579e50fcca28d7c6f40",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T047",
+      "reason": "Remove the Deep-coupled system LLM controller; Projection now exposes a secret-free supplied-state builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/personalization.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/personalization.py",
+      "sourceBlob": "dd267ccbe57313519cb22b36889c966dec274a2a",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T047",
+      "reason": "Remove the Deep-coupled personalization controller; Projection now exposes pure profile, memory, skill, scheduler, and dreaming builders."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/pulse.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/pulse.py",
+      "sourceBlob": "545b3da4b18f53be9ee668ec2bb555dbaa9a9c77",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T047",
+      "reason": "Remove the Deep-coupled pulse controller; Projection now exposes a pure supplied-state pulse builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/remote_machines.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/remote_machines.py",
+      "sourceBlob": "d1722d515dd583ffd50e6caedc8a6657f80b2ae5",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T048",
+      "reason": "Remove the Deep-coupled remote execution controller; Projection now exposes a secret-free supplied-state inventory builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/theme.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/theme.py",
+      "sourceBlob": "8899b43b01f963e99b4e59eed2a153d1dd28a11d",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T047",
+      "reason": "Remove the Deep-coupled theme controller; Projection now exposes a pure supplied-state theme builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/tour.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/tour.py",
+      "sourceBlob": "7920007fffbfd17271dce4951b303e2689553678",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T045",
+      "reason": "Remove the Deep-coupled onboarding controller; Projection now exposes a pure supplied-state tour builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/workspace_timeline.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/workspace_timeline.py",
+      "sourceBlob": "5e6034ac82a3975ec98f105efcacf816298d2b59",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T048",
+      "reason": "Remove the Deep-coupled timeline controller; Projection now exposes pure supplied-state workspace/history builders."
+    },
+    {
+      "path": "backend/webrender/chrome/topbar.py",
+      "sourcePath": "backend/webrender/chrome/topbar.py",
+      "sourceBlob": "60411d8364415d1cd1ef687ce59457673d8c62cb",
+      "sourceMode": "100644",
+      "resultSha256": "1dbbff7d5051674d36a889f90ce5dfb06cf0929207ce92746eff7e98847ebd29",
+      "task": "T044",
+      "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection."
+    },
+    {
+      "path": "backend/webrender/static/client.js",
+      "sourcePath": "backend/webrender/static/client.js",
+      "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
+      "sourceMode": "100644",
+      "resultSha256": "5f13d0d922d3e86321dcd7fc43ddac6f21c4e64c5a9b426559389619cd8d8ea0",
+      "task": "T052/T063",
+      "reason": "Name the standalone Projection manifest as the current error-frame contract source."
+    },
+    {
+      "path": "scripts/windows_release_candidate.py",
+      "sourcePath": "scripts/windows_release_candidate.py",
+      "sourceBlob": "218aab81e3b3a53baa13834c4d34c04241c860f8",
+      "sourceMode": "100644",
+      "resultSha256": "d77bcbdf53d5eba3617c574c3c504870918db0d07ea771410dc30bc26232dd51",
+      "task": "T166",
+      "reason": "Bind Windows candidate assembly to the exact LETS runtime release lock and protected-executor bundle."
+    },
+    {
+      "path": "tests/webrender/test_accessibility_060.py",
+      "sourcePath": "backend/tests/webrender/test_accessibility_060.py",
+      "sourceBlob": "e392fba3caa2f3c500a53ef14bface7a6e633084",
+      "sourceMode": "100644",
+      "resultSha256": "1548b992668481e2ef3e3b940afaded4eb3d800adb0bf118561c82331dbd1d7d",
+      "task": "T043/T049",
+      "reason": "Resolve assets through packaged resources and exercise accessibility against the public pure supplied-state builders."
+    },
+    {
+      "path": "tests/webrender/test_render_a11y.py",
+      "sourcePath": "backend/tests/webrender/test_render_a11y.py",
+      "sourceBlob": "984d275ed35426ff8f294bb5263310e968f4afa0",
+      "sourceMode": "100644",
+      "resultSha256": "fcfb80ac145bb36e69618130933d0ccdfba92f6e6a352b081e1a61ea023b8981",
+      "task": "T043",
+      "reason": "Normalize extracted renderer test imports and use package resource access instead of monorepo-relative paths."
+    },
+    {
+      "path": "tests/webrender/test_voice_renderer_065.py",
+      "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py",
+      "sourceBlob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
+      "sourceMode": "100644",
+      "resultSha256": "889d442a3595073df15eec9964ae89911be4c76002902a625c322d5c3d402ee2",
+      "task": "T043",
+      "reason": "Read the canonical voice fixture through the standalone Projection resource facade."
+    },
+    {
+      "path": "tooling/web-ci/coverage-conversion-cli.mjs",
+      "sourcePath": "tooling/web-ci/coverage-conversion-cli.mjs",
+      "sourceBlob": "37827c2e87fc4f61782393afc5c05f1d2ac3e04d",
+      "sourceMode": "100644",
+      "resultSha256": "ce08a0eb0357439eea7d04704bd54a31eea1ff9c6d58d1258e90df88c3419b6c",
+      "task": "T236",
+      "reason": "Emit canonical Node V8 coverage with an exact lane-specific producer identity before strict Node-plus-browser union."
+    },
+    {
+      "path": "tooling/web-ci/coverage-conversion.mjs",
+      "sourcePath": "tooling/web-ci/coverage-conversion.mjs",
+      "sourceBlob": "1c5a8193efc7c5e01a12d0cfac374b9d404ab857",
+      "sourceMode": "100644",
+      "resultSha256": "bf78d34e48c60fec121b2d22c834defc82f3e22416361e2687c021bd1a74c508",
+      "task": "T236",
+      "reason": "Emit distinct exact browser and Node V8 identity labels for the union's independent structural lane-scope validation."
+    },
+    {
+      "path": "tooling/web-ci/package.json",
+      "sourcePath": "tooling/web-ci/package.json",
+      "sourceBlob": "b56acfe10999e5787d5c4eb506d5c0fea2031bb6",
+      "sourceMode": "100644",
+      "resultSha256": "a28102990f9ec4cb8891f7020baa7e91c7994f949eee8c25afe9d9abe4746825",
+      "task": "T063",
+      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command."
+    },
+    {
+      "path": "tooling/web-ci/tests/continuity-contract-060.spec.js",
+      "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
+      "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
+      "sourceMode": "100644",
+      "resultSha256": "caf788eb0444eac66325b48757e54090131ad084a4bad5b6caab8ee1542d1cbe",
+      "task": "T052/T063",
+      "reason": "Read the continuity contract from Projection's canonical standalone protocol path."
+    },
+    {
+      "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",
+      "sourcePath": "tooling/web-ci/tests/coverage-conversion.test.mjs",
+      "sourceBlob": "b0ca931b210c5a21637d9df87ae00a82e2f4265d",
+      "sourceMode": "100644",
+      "resultSha256": "1d2b46bb7a2e052a4f5fd44d69dccf749bbb1b445a8c6a1029bf98f69d0b7dc7",
+      "task": "T236",
+      "reason": "Prove browser and Node conversions emit exact, distinct, lock-pinned lane identities."
+    },
+    {
+      "path": "tooling/web-ci/tests/node-v8-cli.test.mjs",
+      "sourcePath": "tooling/web-ci/tests/node-v8-cli.test.mjs",
+      "sourceBlob": "27e53482de23ba0d1c7f94808940ee0e51a50f48",
+      "sourceMode": "100644",
+      "resultSha256": "53b23cf4a98e56c9e81994ff1a672c98048140fd78f46eed64e08cdec8a1449a",
+      "task": "T236",
+      "reason": "Verify the real two-pass Node V8 producer carries the exact Node lane identity."
+    },
+    {
+      "path": "tooling/web-ci/tests/voice-conversation-065.spec.js",
+      "sourcePath": "tooling/web-ci/tests/voice-conversation-065.spec.js",
+      "sourceBlob": "893e5722d552d1af9bfe16394f4a900e281f2a5d",
+      "sourceMode": "100644",
+      "resultSha256": "27008189c584b34a659a2bf52660f965f14dc382bb3972ea2b83dbfd55e382fa",
+      "task": "T052/T063",
+      "reason": "Read browser voice conformance vectors from Projection's canonical standalone fixture path."
+    },
+    {
+      "path": "windows-client/AstralDeep.spec",
+      "sourcePath": "windows-client/AstralDeep.spec",
+      "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
+      "sourceMode": "100644",
+      "resultSha256": "2be8358d3e8da33e19fd0bbd2355cd272457fa4f3279f7753da0ac1dff8d3ae6",
+      "task": "T166",
+      "reason": "Package the protected BYO executor and exact LETS runtime artifacts in the Windows application candidate."
+    },
+    {
+      "path": "windows-client/README.md",
+      "sourcePath": "windows-client/README.md",
+      "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
+      "sourceMode": "100644",
+      "resultSha256": "01f6a44784bf386ad764776e1c184b25a4e92686e88b4d9f76ec206ce703b5da",
+      "task": "T060/T062/T188",
+      "reason": "Remove runtime repository trust overrides, document the inactive bounded bridge transition, and replace a broken monorepo schema link with the standalone fail-closed validator and provenance."
+    },
+    {
+      "path": "windows-client/astral_client/deployment.py",
+      "sourcePath": "windows-client/astral_client/deployment.py",
+      "sourceBlob": "0483064234542ed0033353ee4551735228781990",
+      "sourceMode": "100644",
+      "resultSha256": "86afee658546d74bdea2b852409cec2409c488d53925c8add377d8d97efed89d",
+      "task": "T166",
+      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation."
+    },
+    {
+      "path": "windows-client/astral_client/integrity.py",
+      "sourcePath": "windows-client/astral_client/integrity.py",
+      "sourceBlob": "9b100fb01ced3f10fb7ea29f0d5335ce5bac40bf",
+      "sourceMode": "100644",
+      "resultSha256": "b6c78b6cdd0634a925c6944ea5308a8d61abffe2bfee1118cd16138c296d8c6e",
+      "task": "T060",
+      "reason": "Implement exact legacy and Projection repository/workflow bounds, byte-identical bridge selection, downgrade refusal, and selected-release digest binding."
+    },
+    {
+      "path": "windows-client/astral_client/protocol.py",
+      "sourcePath": "windows-client/astral_client/protocol.py",
+      "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
+      "sourceMode": "100644",
+      "resultSha256": "1b180b5debfc37eeb55f1fd5fbd35435b9ea2bc8d923fd0316c105dd2ad13ed5",
+      "task": "T166",
+      "reason": "Carry the exact runtime-v3 authority object and protected-executor disposition in the Windows delivery protocol."
+    },
+    {
+      "path": "windows-client/astral_client/protocol_manifest.py",
+      "sourcePath": "windows-client/astral_client/protocol_manifest.py",
+      "sourceBlob": "7b47e7e8a789b1d7a5b0fae543b3ff0665248148",
+      "sourceMode": "100644",
+      "resultSha256": "94e23f0485ab43993abb347cc84662f6d5ee23fe3e44244f3cacafa0fab9f8dc",
+      "task": "T053",
+      "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions."
+    },
+    {
+      "path": "windows-client/deployment/runtime-manifest.json",
+      "sourcePath": "windows-client/deployment/runtime-manifest.json",
+      "sourceBlob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
+      "sourceMode": "100644",
+      "resultSha256": "0367fc09456b558a403d9fa978b13c7dafd8391eb219a759915489bb9498ee68",
+      "task": "T166",
+      "reason": "Declare runtime contract v3 and the protected-executor file in the signed Windows deployment bundle."
+    },
+    {
+      "path": "windows-client/main.py",
+      "sourcePath": "windows-client/main.py",
+      "sourceBlob": "7b9c2fba21cb01b78cc90f531ae3712b366d9542",
+      "sourceMode": "100644",
+      "resultSha256": "48e6196d3a97347404a1c48362eecf3b78cb06c5a3b497c3d1964acda47a0778",
+      "task": "T166",
+      "reason": "Propagate authenticated host-session identity into the runtime-v3 Windows BYO authority boundary."
+    },
+    {
+      "path": "windows-client/requirements-release.lock.txt",
+      "sourcePath": "windows-client/requirements-release.lock.txt",
+      "sourceBlob": "f533dbb4dfcedf6398a8c1649dccd37fd4c1f7f7",
+      "sourceMode": "100644",
+      "resultSha256": "948def355ae1e4c37478d2c87c287d41d3a81055a96ff813c341d1b466096943",
+      "task": "T166",
+      "reason": "Pin the exact signed LETS v1.0.10 wheel URL and digest for reproducible Windows candidates."
+    },
+    {
+      "path": "windows-client/requirements.in",
+      "sourcePath": "windows-client/requirements.in",
+      "sourceBlob": "17727135e29ec6a7bafc0950777a2e134e4f3ef6",
+      "sourceMode": "100644",
+      "resultSha256": "f7b1be1847f9a5deda45b9e191edb086c032fcf5b940245ef292a3fb4f961770",
+      "task": "T166",
+      "reason": "Declare the signed LETS public executor dependency consumed by the Windows protected runtime."
+    },
+    {
+      "path": "windows-client/tests/e2e_voice_065.py",
+      "sourcePath": "windows-client/tests/e2e_voice_065.py",
+      "sourceBlob": "78e7984e4ed2f176c5ea98546dff685a4f3295b2",
+      "sourceMode": "100644",
+      "resultSha256": "c31ebc82870f249a9fc5ba506f85cfc22fe2053e5304f98ac2f693e047419b30",
+      "task": "T053",
+      "reason": "Repoint Windows voice conformance to Projection's fixture and its local stdlib-only materializer instead of an absent Deep contract-CI module."
+    },
+    {
+      "path": "windows-client/tests/test_byo_runtime_compatibility.py",
+      "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
+      "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
+      "sourceMode": "100644",
+      "resultSha256": "8964ce7570788db6e700f763d577a0d764b096ab39136b1c5449919550a8a2a5",
+      "task": "T166",
+      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, and legacy-v2 mediation."
+    },
+    {
+      "path": "windows-client/tests/test_byo_supervision_060.py",
+      "sourcePath": "windows-client/tests/test_byo_supervision_060.py",
+      "sourceBlob": "f47bc7a74113baf1015a0aec2e386652c41e4613",
+      "sourceMode": "100644",
+      "resultSha256": "6bd5dab851730af46c30d4f9e2eeac9dec492ba36d08d99a807cf5b074905857",
+      "task": "T166",
+      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path."
+    },
+    {
+      "path": "windows-client/tests/test_integrity.py",
+      "sourcePath": "windows-client/tests/test_integrity.py",
+      "sourceBlob": "16f53830824af29ac5c8c45dd3596dd65974ec16",
+      "sourceMode": "100644",
+      "resultSha256": "9d88ec927f5bc39dc6458dc3bcf1ffd73864d9fc9061bfb7b87a4f127479eb5e",
+      "task": "T061",
+      "reason": "Cover exact trust-state channel selection, bridge maxima and byte equality, selected-release digest binding, malformed digests, downgrade refusal, and policy version identity."
+    },
+    {
+      "path": "windows-client/tests/test_protocol_manifest.py",
+      "sourcePath": "windows-client/tests/test_protocol_manifest.py",
+      "sourceBlob": "00114c40d6e0840afb3dc4d2996496b1b45fdd7f",
+      "sourceMode": "100644",
+      "resultSha256": "82e871b058dcebb3a480974ccfe5e3142974a610adbf46d7653b9ef7119837d2",
+      "task": "T053",
+      "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract."
+    },
+    {
+      "path": "windows-client/tests/test_release_lock_060.py",
+      "sourcePath": "windows-client/tests/test_release_lock_060.py",
+      "sourceBlob": "d0609608eb814ed3705f4ef19b878b47bcf6fd07",
+      "sourceMode": "100644",
+      "resultSha256": "71c6266028ac017b55994930c2e91b35ca4ce99d03b201269c0493be81748ab5",
+      "task": "T166",
+      "reason": "Verify the exact signed LETS wheel lock and protected-executor candidate inventory."
+    },
+    {
+      "path": "windows-client/tests/test_renderer.py",
+      "sourcePath": "windows-client/tests/test_renderer.py",
+      "sourceBlob": "15b1de77422f7c88ee9f9d91eb3a537614abb64e",
+      "sourceMode": "100644",
+      "resultSha256": "430b60edd2561b53d688dfc4ba5a76bb5aa491d277b6a8c062903eb1789cfc1b",
+      "task": "T053",
+      "reason": "Repoint Windows renderer vocabulary parity to the standalone Projection contract."
+    },
+    {
+      "path": "windows-client/tests/test_runtime_reliability_protocol_060.py",
+      "sourcePath": "windows-client/tests/test_runtime_reliability_protocol_060.py",
+      "sourceBlob": "82a673d2743897cb87339d5b771094f1f2ece684",
+      "sourceMode": "100644",
+      "resultSha256": "9998a01b91eed26c57e723d7874c685eaef897cb2bc45078d4d8c26c4623840f",
+      "task": "T166",
+      "reason": "Exercise the runtime-v3 delivery fence and protected-executor reliability contract."
+    },
+    {
+      "path": "windows-client/tests/test_task_continuity.py",
+      "sourcePath": "windows-client/tests/test_task_continuity.py",
+      "sourceBlob": "234b11ea4cefbc4418a46fa444790d7bb416f081",
+      "sourceMode": "100644",
+      "resultSha256": "242a51a51e8b8dfb239a4565e87b41968fd7362e3a9ed784bba8d290f7423000",
+      "task": "T166",
+      "reason": "Preserve runtime-v3 authority identity across bounded Windows task recovery and successor delivery."
+    },
+    {
+      "path": "windows-client/win_agent/agent.py",
+      "sourcePath": "windows-client/win_agent/agent.py",
+      "sourceBlob": "d30ecec78c8753d1ea6cdcb278aff62a85c23a59",
+      "sourceMode": "100644",
+      "resultSha256": "21eea828c11aad00bf037a2f1274e12d9c53dc4aaa38598605806225ba387534",
+      "task": "T166",
+      "reason": "Admit only exact runtime-v3 delivery authority and pass bounded LETS executor references to the child."
+    },
+    {
+      "path": "windows-client/win_agent/byo_host.py",
+      "sourcePath": "windows-client/win_agent/byo_host.py",
+      "sourceBlob": "6ed2071b286421438f09c14cc6725540e2de370e",
+      "sourceMode": "100644",
+      "resultSha256": "7d2aa7a4f8a0e3932fae796fdaca23ff2884fe6ebfd4dad88ddf2cd2dee39307",
+      "task": "T166",
+      "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch."
+    },
+    {
+      "path": "windows-client/win_agent/byo_worker.py",
+      "sourcePath": "windows-client/win_agent/byo_worker.py",
+      "sourceBlob": "ea2e21054cc25ead2a740dc66429231b329fc0fe",
+      "sourceMode": "100644",
+      "resultSha256": "2a9bfb7850cdd165bd87df17c6b15853dd19f5fbec8f23b5d0c2fde32cbb5884",
+      "task": "T166",
+      "reason": "Launch runtime-v3 BYO children with explicit LETS mode and non-secret descriptor-bound authority references."
+    },
+    {
+      "path": "workflows-disabled/android-ci.yml",
+      "sourcePath": ".github/workflows/android-ci.yml",
+      "sourceBlob": "2b9d3872b247b8e46179a6e16b103b86209ba3d9",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "resultPaths": [
+        {
+          "path": ".github/workflows/android-ci.yml",
+          "sha256": "ea7009921982b2ba51d9337c50ca0c3b3204b61fd8b0e52a6f7804b393985cac"
+        }
+      ],
+      "task": "T056",
+      "reason": "Move the imported Android workflow into its active owner path, retain standalone paths, require the committed wrapper, and keep it read-only and secret-free."
+    },
+    {
+      "path": "workflows-disabled/apple-ci.yml",
+      "sourcePath": ".github/workflows/apple-ci.yml",
+      "sourceBlob": "2d8952f208f08dce700d6b86c83cf96394113125",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "resultPaths": [
+        {
+          "path": ".github/workflows/apple-ci.yml",
+          "sha256": "cd59795165c1548ddd71c8fe39ba232622f9f747e4d72ba9a59986f99939d3ab"
+        }
+      ],
+      "task": "T056",
+      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, read-only authority, and repo-contained explicit unit-plus-UI platform unions."
+    },
+    {
+      "path": "workflows-disabled/apple-release.yml",
+      "sourcePath": ".github/workflows/apple-release.yml",
+      "sourceBlob": "0309982dfeabfdf83f8ee0989a6eaf821cbeb88b",
+      "sourceMode": "100644",
+      "resultSha256": "5ed19ee0e0c1c0bb1af0476d80566dc62fc39afc55a6d40ee6cdde7e4fd2c2ca",
+      "task": "T056/T058",
+      "reason": "Keep the copied Apple release workflow inert, read-only, and secret-free while deriving build numbers from protected migration state."
+    },
+    {
+      "path": "workflows-disabled/build-windows-candidate.yml",
+      "sourcePath": ".github/workflows/build-windows-candidate.yml",
+      "sourceBlob": "8fc92178a67ef67703b7e17e1ed7a15df5aa3867",
+      "sourceMode": "100644",
+      "resultSha256": "ff77096cb58e381616b0d180d2464a2c22308cd17d5ad8936a3a72f286589b77",
+      "task": "T056",
+      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free."
+    },
+    {
+      "path": "workflows-disabled/release-apple-evidence-normalizer.yml",
+      "sourcePath": ".github/workflows/release-apple-evidence-normalizer.yml",
+      "sourceBlob": "6472b82e1d578b20b8cd8f43727fb947f3b89fbf",
+      "sourceMode": "100644",
+      "resultSha256": "c63ca17d654ffcd6a7532fc7887cc7c52f0d5d41c91c5b387a1385d7376a20c7",
+      "task": "T056",
+      "reason": "Keep the copied Apple evidence workflow inert, read-only, and secret-free."
+    },
+    {
+      "path": "workflows-disabled/release-windows-publisher-controller.yml",
+      "sourcePath": ".github/workflows/release-windows-publisher-controller.yml",
+      "sourceBlob": "3cc07b493f7ed0f3fe97f856b49257bcfb5a15b5",
+      "sourceMode": "100644",
+      "resultSha256": "e9e621ec1e1764dc7e07b33a714531755e393ce7ffa1260cdebe4b5acdbcc585",
+      "task": "T056",
+      "reason": "Keep the copied Windows publisher controller inert, read-only, and secret-free."
+    },
+    {
+      "path": "workflows-disabled/release-windows-publisher.yml",
+      "sourcePath": ".github/workflows/release-windows-publisher.yml",
+      "sourceBlob": "49ca70b6d8befee2b4e1e78dd9c19498c6fe37c9",
+      "sourceMode": "100644",
+      "resultSha256": "41de7db803e002524984f2b513d9ce861dc10ad498e7d30424e19bb9aec714c6",
+      "task": "T056",
+      "reason": "Keep the copied Windows publisher workflow inert, read-only, and secret-free."
+    },
+    {
+      "path": "workflows-disabled/release-windows.yml",
+      "sourcePath": ".github/workflows/release-windows.yml",
+      "sourceBlob": "31970256dc8aeb2a863f91f19de5eed1ee7c36a2",
+      "sourceMode": "100644",
+      "resultSha256": "e99bb0fa0351ebe7b35718ef888d6325b39dd3ced32c0a3bb8eeecdbef28910e",
+      "task": "T056",
+      "reason": "Retarget Projection repository identity and keep the copied Windows release workflow inert and read-only."
+    }
+  ]
+}
