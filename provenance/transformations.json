@@ -354,6 +354,24 @@
       "reason": "Read the canonical voice fixture through the standalone Projection resource facade."
     },
     {
+      "path": "tooling/web-ci/coverage-conversion-cli.mjs",
+      "sourcePath": "tooling/web-ci/coverage-conversion-cli.mjs",
+      "sourceBlob": "37827c2e87fc4f61782393afc5c05f1d2ac3e04d",
+      "sourceMode": "100644",
+      "resultSha256": "ce08a0eb0357439eea7d04704bd54a31eea1ff9c6d58d1258e90df88c3419b6c",
+      "task": "T236",
+      "reason": "Emit canonical Node V8 coverage with an exact lane-specific producer identity before strict Node-plus-browser union."
+    },
+    {
+      "path": "tooling/web-ci/coverage-conversion.mjs",
+      "sourcePath": "tooling/web-ci/coverage-conversion.mjs",
+      "sourceBlob": "1c5a8193efc7c5e01a12d0cfac374b9d404ab857",
+      "sourceMode": "100644",
+      "resultSha256": "bf78d34e48c60fec121b2d22c834defc82f3e22416361e2687c021bd1a74c508",
+      "task": "T236",
+      "reason": "Bind browser and Node V8 coverage envelopes to distinct exact producer identities so their union cannot reuse one lane twice."
+    },
+    {
       "path": "tooling/web-ci/package.json",
       "sourcePath": "tooling/web-ci/package.json",
       "sourceBlob": "b56acfe10999e5787d5c4eb506d5c0fea2031bb6",
@@ -370,6 +388,24 @@
       "resultSha256": "caf788eb0444eac66325b48757e54090131ad084a4bad5b6caab8ee1542d1cbe",
       "task": "T052/T063",
       "reason": "Read the continuity contract from Projection's canonical standalone protocol path."
+    },
+    {
+      "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",
+      "sourcePath": "tooling/web-ci/tests/coverage-conversion.test.mjs",
+      "sourceBlob": "b0ca931b210c5a21637d9df87ae00a82e2f4265d",
+      "sourceMode": "100644",
+      "resultSha256": "1d2b46bb7a2e052a4f5fd44d69dccf749bbb1b445a8c6a1029bf98f69d0b7dc7",
+      "task": "T236",
+      "reason": "Prove browser and Node conversions emit exact, distinct, lock-pinned lane identities."
+    },
+    {
+      "path": "tooling/web-ci/tests/node-v8-cli.test.mjs",
+      "sourcePath": "tooling/web-ci/tests/node-v8-cli.test.mjs",
+      "sourceBlob": "27e53482de23ba0d1c7f94808940ee0e51a50f48",
+      "sourceMode": "100644",
+      "resultSha256": "53b23cf4a98e56c9e81994ff1a672c98048140fd78f46eed64e08cdec8a1449a",
+      "task": "T236",
+      "reason": "Verify the real two-pass Node V8 producer carries the exact Node lane identity."
     },
     {
       "path": "tooling/web-ci/tests/voice-conversation-065.spec.js",
@@ -602,11 +638,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "8aa70610318beb3d57c7bbf07571b07fbe2359abc939ab443d861bd4e767d9df"
+          "sha256": "4334962ff50a90d905f235f17492e979024b8768c02ceea19e64be87e965889e"
         }
       ],
       "task": "T056",
-      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, and read-only authority."
+      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, read-only authority, and explicit unit-plus-UI platform unions."
     },
     {
       "path": "workflows-disabled/apple-release.yml",

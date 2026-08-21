@@ -12,40 +12,45 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 import { main } from "../coverage-union-cli.mjs";
+import {
+  BROWSER_COVERAGE_PRODUCER,
+  NODE_COVERAGE_PRODUCER,
+} from "../coverage-conversion.mjs";
+import { UNION_COVERAGE_PRODUCER } from "../coverage-union.mjs";
 
 const TOOLING_ROOT = resolve(import.meta.dirname, "..");
 const CLI = resolve(TOOLING_ROOT, "coverage-union-cli.mjs");
-const PRODUCER = {
-  schema_version: 1,
-  producer: "astraldeep-playwright-executable-lines",
-  producer_version: 1,
-  v8_to_istanbul_version: "9.3.0",
-  espree_version: "11.2.0",
-};
 
 function fixture() {
   const repoRoot = mkdtempSync(resolve(tmpdir(), "projection-coverage-union-cli-"));
   const sourcePath = "backend/webrender/static/client.js";
   mkdirSync(resolve(repoRoot, "backend/webrender/static"), { recursive: true });
   writeFileSync(resolve(repoRoot, sourcePath), "const alpha = 1;\nalpha;\n", "utf8");
-  const document = {
-    ...PRODUCER,
-    coverage: {
-      [sourcePath]: {
-        path: sourcePath,
-        statementMap: {
-          0: { start: { line: 1, column: 0 }, end: { line: 1, column: 15 } },
-          1: { start: { line: 2, column: 0 }, end: { line: 2, column: 5 } },
-        },
-        s: { 0: 1, 1: 0 },
+  const record = {
+    [sourcePath]: {
+      path: sourcePath,
+      statementMap: {
+        0: { start: { line: 1, column: 0 }, end: { line: 1, column: 15 } },
+        1: { start: { line: 2, column: 0 }, end: { line: 2, column: 5 } },
       },
+      s: { 0: 1, 1: 0 },
+    },
+  };
+  const nodeDocument = {
+    ...NODE_COVERAGE_PRODUCER,
+    coverage: record,
+  };
+  const browserDocument = {
+    ...BROWSER_COVERAGE_PRODUCER,
+    coverage: {
+      [sourcePath]: { ...structuredClone(record[sourcePath]), s: { 0: 2, 1: 0 } },
     },
   };
   const node = resolve(repoRoot, "node.json");
   const browser = resolve(repoRoot, "browser.json");
   const output = resolve(repoRoot, "union.json");
-  writeFileSync(node, `${JSON.stringify(document)}\n`, "utf8");
-  writeFileSync(browser, `${JSON.stringify(document)}\n`, "utf8");
+  writeFileSync(node, `${JSON.stringify(nodeDocument)}\n`, "utf8");
+  writeFileSync(browser, `${JSON.stringify(browserDocument)}\n`, "utf8");
   return { repoRoot, node, browser, output, sourcePath };
 }
 
@@ -80,7 +85,35 @@ test("CLI writes one deterministic Node-plus-browser envelope", () => {
   ]);
   assert.equal(result.status, 0, result.stderr);
   const document = JSON.parse(readFileSync(output, "utf8"));
-  assert.deepEqual(document.coverage[sourcePath].s, { 0: 2, 1: 0 });
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(document).filter(([key]) => key !== "coverage"),
+    ),
+    UNION_COVERAGE_PRODUCER,
+  );
+  assert.deepEqual(document.coverage[sourcePath].s, { 0: 3, 1: 0 });
+});
+
+test("CLI rejects duplicated or swapped producer identities", () => {
+  for (const mutation of ["node-twice", "browser-twice", "swapped"]) {
+    const { repoRoot, node, browser, output } = fixture();
+    const nodeBytes = readFileSync(node);
+    const browserBytes = readFileSync(browser);
+    if (mutation === "node-twice") writeFileSync(browser, nodeBytes);
+    if (mutation === "browser-twice") writeFileSync(node, browserBytes);
+    if (mutation === "swapped") {
+      writeFileSync(node, browserBytes);
+      writeFileSync(browser, nodeBytes);
+    }
+    const result = run([
+      "--node", node,
+      "--browser", browser,
+      "--repo-root", repoRoot,
+      "--output", output,
+    ]);
+    assert.notEqual(result.status, 0, mutation);
+    assert.match(result.stderr, /producer identity/u, mutation);
+  }
 });
 
 test("CLI rejects duplicate inputs, malformed JSON, duplicate flags, and existing output", () => {

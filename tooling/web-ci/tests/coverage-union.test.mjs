@@ -10,16 +10,11 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 import {
+  BROWSER_COVERAGE_PRODUCER,
+  NODE_COVERAGE_PRODUCER,
+  UNION_COVERAGE_PRODUCER,
   unionCanonicalCoverage,
 } from "../coverage-union.mjs";
-
-const PRODUCER = Object.freeze({
-  schema_version: 1,
-  producer: "astraldeep-playwright-executable-lines",
-  producer_version: 1,
-  v8_to_istanbul_version: "9.3.0",
-  espree_version: "11.2.0",
-});
 
 function fixture() {
   const repoRoot = mkdtempSync(resolve(tmpdir(), "projection-coverage-union-"));
@@ -30,9 +25,9 @@ function fixture() {
   return { repoRoot, sourcePath };
 }
 
-function envelope(sourcePath, hits = { 0: 1, 1: 0 }) {
+function envelope(identity, sourcePath, hits = { 0: 1, 1: 0 }) {
   return {
-    ...PRODUCER,
+    ...identity,
     coverage: {
       [sourcePath]: {
         path: sourcePath,
@@ -55,14 +50,14 @@ function envelope(sourcePath, hits = { 0: 1, 1: 0 }) {
 test("Node and browser observations form one source-bound canonical envelope", () => {
   const { repoRoot, sourcePath } = fixture();
   const merged = unionCanonicalCoverage({
-    node: envelope(sourcePath, { 0: 1, 1: 0 }),
-    browser: envelope(sourcePath, { 0: 2, 1: 3 }),
+    node: envelope(NODE_COVERAGE_PRODUCER, sourcePath, { 0: 1, 1: 0 }),
+    browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath, { 0: 2, 1: 3 }),
     repoRoot,
   });
 
   assert.deepEqual(
     Object.fromEntries(Object.entries(merged).filter(([key]) => key !== "coverage")),
-    PRODUCER,
+    UNION_COVERAGE_PRODUCER,
   );
   assert.deepEqual(Object.keys(merged.coverage), [sourcePath]);
   assert.deepEqual(merged.coverage[sourcePath].s, { 0: 3, 1: 3 });
@@ -76,8 +71,8 @@ test("disjoint maintained sources are emitted in deterministic path order", () =
   writeFileSync(secondAbsolute, "const alpha = 1;\nalpha;\n", "utf8");
 
   const merged = unionCanonicalCoverage({
-    node: envelope(secondPath),
-    browser: envelope(sourcePath),
+    node: envelope(NODE_COVERAGE_PRODUCER, secondPath),
+    browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
     repoRoot,
   });
 
@@ -98,18 +93,26 @@ test("metadata, record shape, paths, source binding, and counts fail closed", ()
   ];
 
   for (const mutate of mutations) {
-    const node = structuredClone(envelope(sourcePath));
+    const node = structuredClone(envelope(NODE_COVERAGE_PRODUCER, sourcePath));
     mutate(node);
     assert.throws(
-      () => unionCanonicalCoverage({ node, browser: envelope(sourcePath), repoRoot }),
+      () => unionCanonicalCoverage({
+        node,
+        browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+        repoRoot,
+      }),
       /invalid canonical JavaScript coverage union/u,
     );
   }
 
-  const unsafe = envelope(sourcePath);
+  const unsafe = envelope(NODE_COVERAGE_PRODUCER, sourcePath);
   unsafe.coverage = { "../client.js": unsafe.coverage[sourcePath] };
   assert.throws(
-    () => unionCanonicalCoverage({ node: unsafe, browser: envelope(sourcePath), repoRoot }),
+    () => unionCanonicalCoverage({
+      node: unsafe,
+      browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+      repoRoot,
+    }),
     /invalid canonical JavaScript coverage union/u,
   );
 });
@@ -124,10 +127,14 @@ test("empty, malformed, and non-canonical source envelopes fail closed", () => {
     (value) => { delete value.coverage[sourcePath].s[1]; },
   ];
   for (const mutate of mutations) {
-    const node = structuredClone(envelope(sourcePath));
+    const node = structuredClone(envelope(NODE_COVERAGE_PRODUCER, sourcePath));
     mutate(node);
     assert.throws(
-      () => unionCanonicalCoverage({ node, browser: envelope(sourcePath), repoRoot }),
+      () => unionCanonicalCoverage({
+        node,
+        browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+        repoRoot,
+      }),
       /invalid canonical JavaScript coverage union/u,
     );
   }
@@ -141,41 +148,57 @@ test("empty, malformed, and non-canonical source envelopes fail closed", () => {
     "backend/webrender/static/client.min.js",
     "tooling/web-ci/client.txt",
   ]) {
-    const node = envelope(sourcePath);
+    const node = envelope(NODE_COVERAGE_PRODUCER, sourcePath);
     node.coverage = {
       [unsafePath]: { ...node.coverage[sourcePath], path: unsafePath },
     };
     assert.throws(
-      () => unionCanonicalCoverage({ node, browser: envelope(sourcePath), repoRoot }),
+      () => unionCanonicalCoverage({
+        node,
+        browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+        repoRoot,
+      }),
       /invalid canonical JavaScript coverage union/u,
     );
   }
 
   const missingPath = "backend/webrender/static/missing.js";
-  const missing = envelope(sourcePath);
+  const missing = envelope(NODE_COVERAGE_PRODUCER, sourcePath);
   missing.coverage = {
     [missingPath]: { ...missing.coverage[sourcePath], path: missingPath },
   };
   assert.throws(
-    () => unionCanonicalCoverage({ node: missing, browser: envelope(sourcePath), repoRoot }),
+    () => unionCanonicalCoverage({
+      node: missing,
+      browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+      repoRoot,
+    }),
     /source is unavailable/u,
   );
 
   const emptyPath = "backend/webrender/static/empty.js";
   writeFileSync(resolve(repoRoot, emptyPath), "", "utf8");
-  const empty = envelope(sourcePath);
+  const empty = envelope(NODE_COVERAGE_PRODUCER, sourcePath);
   empty.coverage = { [emptyPath]: { ...empty.coverage[sourcePath], path: emptyPath } };
   assert.throws(
-    () => unionCanonicalCoverage({ node: empty, browser: envelope(sourcePath), repoRoot }),
+    () => unionCanonicalCoverage({
+      node: empty,
+      browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+      repoRoot,
+    }),
     /source size is out of bounds/u,
   );
 
   const linkPath = "backend/webrender/static/link.js";
   symlinkSync(resolve(repoRoot, sourcePath), resolve(repoRoot, linkPath));
-  const linked = envelope(sourcePath);
+  const linked = envelope(NODE_COVERAGE_PRODUCER, sourcePath);
   linked.coverage = { [linkPath]: { ...linked.coverage[sourcePath], path: linkPath } };
   assert.throws(
-    () => unionCanonicalCoverage({ node: linked, browser: envelope(sourcePath), repoRoot }),
+    () => unionCanonicalCoverage({
+      node: linked,
+      browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+      repoRoot,
+    }),
     /source is not a canonical regular file/u,
   );
 });
@@ -189,10 +212,14 @@ test("invalid UTF-8, invalid syntax, and non-executable source fail closed", () 
     const { repoRoot, sourcePath } = fixture();
     const path = `backend/webrender/static/${name}`;
     writeFileSync(resolve(repoRoot, path), bytes);
-    const mutated = envelope(sourcePath);
+    const mutated = envelope(NODE_COVERAGE_PRODUCER, sourcePath);
     mutated.coverage = { [path]: { ...mutated.coverage[sourcePath], path } };
     assert.throws(
-      () => unionCanonicalCoverage({ node: mutated, browser: envelope(sourcePath), repoRoot }),
+      () => unionCanonicalCoverage({
+        node: mutated,
+        browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
+        repoRoot,
+      }),
       expected,
     );
   }
@@ -202,8 +229,8 @@ test("repository root must be an available directory", () => {
   const { repoRoot, sourcePath } = fixture();
   assert.throws(
     () => unionCanonicalCoverage({
-      node: envelope(sourcePath),
-      browser: envelope(sourcePath),
+      node: envelope(NODE_COVERAGE_PRODUCER, sourcePath),
+      browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
       repoRoot: resolve(repoRoot, "missing"),
     }),
     /repository root is unavailable/u,
@@ -212,8 +239,8 @@ test("repository root must be an available directory", () => {
   writeFileSync(regularFile, "not a directory", "utf8");
   assert.throws(
     () => unionCanonicalCoverage({
-      node: envelope(sourcePath),
-      browser: envelope(sourcePath),
+      node: envelope(NODE_COVERAGE_PRODUCER, sourcePath),
+      browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath),
       repoRoot: regularFile,
     }),
     /repository root is not a directory/u,
@@ -224,10 +251,37 @@ test("hit-count overflow fails instead of wrapping or saturating", () => {
   const { repoRoot, sourcePath } = fixture();
   assert.throws(
     () => unionCanonicalCoverage({
-      node: envelope(sourcePath, { 0: Number.MAX_SAFE_INTEGER, 1: 0 }),
-      browser: envelope(sourcePath, { 0: 1, 1: 0 }),
+      node: envelope(NODE_COVERAGE_PRODUCER, sourcePath, {
+        0: Number.MAX_SAFE_INTEGER,
+        1: 0,
+      }),
+      browser: envelope(BROWSER_COVERAGE_PRODUCER, sourcePath, { 0: 1, 1: 0 }),
       repoRoot,
     }),
     /overflow/u,
+  );
+});
+
+test("union requires one genuine Node lane and one genuine browser lane", () => {
+  const { repoRoot, sourcePath } = fixture();
+  const node = envelope(NODE_COVERAGE_PRODUCER, sourcePath);
+  const browser = envelope(BROWSER_COVERAGE_PRODUCER, sourcePath);
+
+  for (const [left, right] of [
+    [node, node],
+    [browser, browser],
+    [browser, node],
+  ]) {
+    assert.throws(
+      () => unionCanonicalCoverage({ node: left, browser: right, repoRoot }),
+      /producer identity/u,
+    );
+  }
+
+  const forgedBrowser = structuredClone(browser);
+  forgedBrowser.coverage_lane = NODE_COVERAGE_PRODUCER.coverage_lane;
+  assert.throws(
+    () => unionCanonicalCoverage({ node, browser: forgedBrowser, repoRoot }),
+    /producer identity/u,
   );
 });

@@ -62,7 +62,8 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
     assert "mkdir -p build/074/coverage" in python
     assert (
         "pytest -q -p no:cacheprovider "
-        "--cov=astralprojection --cov=rote --cov=webrender --cov-branch "
+        "--cov=astralprojection --cov=rote --cov=webrender "
+        "--cov=scripts.merge_xccov_line_coverage --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert (
@@ -114,9 +115,11 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert job.count(exporter) == 1
         assert "--platform '${{ matrix.slug }}'" in job
 
-    assert "apple-required-app-unit-${{ matrix.slug }}" in app_unit
+    app_unit_marker = _step_block(app_unit, "Publish app unit success marker")
+    assert "name: apple-required-app-unit-${{ matrix.slug }}" in app_unit_marker
     assert "app-unit-${{ matrix.slug }}.ok" in app_unit
-    assert "apple-required-first-login-${{ matrix.slug }}" in first_login
+    first_login_marker = _step_block(first_login, "Publish first-login success marker")
+    assert "name: apple-required-first-login-${{ matrix.slug }}" in first_login_marker
     assert "first-login-${{ matrix.slug }}.ok" in first_login
 
     assert "name: Required · watchOS 26.5 continuity coverage" in watch
@@ -150,6 +153,24 @@ def _assert_apple_platform_contract(apple: str) -> None:
         step = _step_block(apple_required, step_name)
         assert download_action in step
         assert f"name: {artifact_name}" in step
+
+    assert "name: Check out candidate for source-bound coverage union" in apple_required
+    assert "python3 scripts/merge_xccov_line_coverage.py" in apple_required
+    for platform in ("ios", "macos"):
+        assert f"name: apple-required-app-unit-{platform}-coverage" in apple_required
+        assert f"name: apple-required-first-login-{platform}-coverage" in apple_required
+        assert f"--platform {platform}" in apple_required
+        assert (
+            f'--unit-input "${{RUNNER_TEMP}}/apple-coverage/{platform}/unit/'
+            f'apple-{platform}-unit-xccov.json"'
+        ) in apple_required
+        assert (
+            f'--ui-input "${{RUNNER_TEMP}}/apple-coverage/{platform}/ui/'
+            f'apple-{platform}-first-login-xccov.json"'
+        ) in apple_required
+        assert f'--output "${{COVERAGE_ROOT}}/apple-{platform}-xccov.json"' in apple_required
+    assert "name: apple-required-platform-union-coverage" in apple_required
+    assert "--input " not in apple_required
 
 
 def test_core_ci_is_active_read_only_and_projection_owned() -> None:
@@ -230,6 +251,10 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
     (
         ("  push:\n    branches: [main]\n", ""),
         ("--cov=webrender", "--cov=tests"),
+        (
+            "--cov=scripts.merge_xccov_line_coverage",
+            "--cov=tests.test_merge_xccov_line_coverage",
+        ),
         ("--cov-branch", ""),
         ("--compare-branch origin/main", "--compare-branch HEAD~1"),
         ("--fail-under=90", "--fail-under=89"),
@@ -382,11 +407,31 @@ def test_apple_contract_rejects_watch_contract_moved_out_of_its_job(
 
 def test_apple_contract_rejects_success_markers_swapped_between_matrix_jobs() -> None:
     apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
-    app_marker = "apple-required-app-unit-${{ matrix.slug }}"
-    first_login_marker = "apple-required-first-login-${{ matrix.slug }}"
+    app_marker = "name: apple-required-app-unit-${{ matrix.slug }}\n"
+    first_login_marker = "name: apple-required-first-login-${{ matrix.slug }}\n"
     mutated = apple.replace(app_marker, "__APP_MARKER__", 1)
     mutated = mutated.replace(first_login_marker, app_marker, 1)
     mutated = mutated.replace("__APP_MARKER__", first_login_marker, 1)
+    assert mutated != apple
+
+    with pytest.raises(AssertionError):
+        _assert_apple_platform_contract(mutated)
+
+
+@pytest.mark.parametrize(
+    ("needle", "replacement"),
+    (
+        ("--unit-input", "--input"),
+        ("--ui-input", "--unit-input"),
+        ("apple-required-app-unit-ios-coverage", "apple-required-first-login-ios-coverage"),
+    ),
+)
+def test_apple_contract_rejects_unlabeled_missing_or_duplicate_coverage_producers(
+    needle: str,
+    replacement: str,
+) -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    mutated = apple.replace(needle, replacement, 1)
     assert mutated != apple
 
     with pytest.raises(AssertionError):

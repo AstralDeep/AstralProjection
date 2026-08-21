@@ -44,10 +44,11 @@ except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
     )
 
 
-MAX_INPUTS = 8
 MAX_INPUT_BYTES = 32 * 1024 * 1024
 MAX_TOTAL_INPUT_BYTES = 64 * 1024 * 1024
 MAX_FILES = 10_000
+REQUIRED_PRODUCERS = ("unit", "ui")
+SUPPORTED_PLATFORMS = frozenset({"ios", "macos"})
 
 
 class MergeError(RuntimeError):
@@ -184,7 +185,7 @@ def _normalized_observations(
 def merge_xccov_reports(
     *,
     repo: Path,
-    inputs: Sequence[Path],
+    inputs: Mapping[str, Path],
     output: Path,
     platform: str,
 ) -> dict[str, list[dict[str, Any]]]:
@@ -196,10 +197,13 @@ def merge_xccov_reports(
         raise MergeError("missing_repo", "repository root is unavailable") from exc
     if not repo.is_dir():
         raise MergeError("invalid_repo", "repository root is not a directory")
-    if platform not in PLATFORM_ROOTS:
+    if platform not in SUPPORTED_PLATFORMS:
         raise MergeError("invalid_platform", "unsupported Apple coverage platform")
-    if not 1 <= len(inputs) <= MAX_INPUTS:
-        raise MergeError("invalid_input_count", "coverage input count is out of bounds")
+    if not isinstance(inputs, Mapping) or set(inputs) != set(REQUIRED_PRODUCERS):
+        raise MergeError(
+            "invalid_producer_set",
+            "coverage inputs require exact unit and ui producer labels",
+        )
     try:
         tracked = _tracked_swift_sources(repo, platform)
         destination = _validate_output(output, repo=repo)
@@ -209,7 +213,13 @@ def merge_xccov_reports(
     documents: list[Mapping[str, Any]] = []
     seen_inputs: set[Path] = set()
     total_input_bytes = 0
-    for input_path in inputs:
+    for producer in REQUIRED_PRODUCERS:
+        input_path = inputs[producer]
+        if not isinstance(input_path, Path):
+            raise MergeError(
+                "invalid_producer_input",
+                f"{producer} coverage input must be a filesystem path",
+            )
         absolute, content = _read_stable_input(input_path, repo=repo)
         if absolute in seen_inputs:
             raise MergeError("duplicate_input", "coverage input path is duplicated")
@@ -289,18 +299,26 @@ def merge_xccov_reports(
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", type=Path, default=Path.cwd())
-    parser.add_argument("--input", type=Path, action="append", required=True)
+    parser.add_argument("--unit-input", type=Path, action="append", required=True)
+    parser.add_argument("--ui-input", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--platform", choices=sorted(PLATFORM_ROOTS), required=True)
+    parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS), required=True)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if len(args.unit_input) != 1 or len(args.ui_input) != 1:
+        print(
+            "xccov merge failed [invalid_producer_set]: "
+            "exactly one unit and one ui coverage input are required",
+            file=sys.stderr,
+        )
+        return 2
     try:
         merge_xccov_reports(
             repo=args.repo,
-            inputs=args.input,
+            inputs={"unit": args.unit_input[0], "ui": args.ui_input[0]},
             output=args.output,
             platform=args.platform,
         )

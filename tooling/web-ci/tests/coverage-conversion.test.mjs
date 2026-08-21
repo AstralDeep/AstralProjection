@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  COVERAGE_PRODUCER,
+  BROWSER_COVERAGE_PRODUCER,
+  NODE_COVERAGE_PRODUCER,
+  convertNodeV8Coverage,
   convertPlaywrightV8Coverage,
   convertPlaywrightV8Entry,
 } from "../coverage-conversion.mjs";
@@ -79,19 +81,30 @@ test("a line is covered when any executable token on it is covered", async () =>
   assert.deepEqual(converted.s, { 0: 1 });
 });
 
-test("the exact lock-pinned producer envelope is emitted", async () => {
+test("browser and Node collectors emit exact distinct lane identities", async () => {
   const source = "const value = 1;\n";
-  const converted = await convertPlaywrightV8Coverage(
+  const browser = await convertPlaywrightV8Coverage(
+    [entry(source)],
+    () => "backend/webrender/static/client.js",
+  );
+  const node = await convertNodeV8Coverage(
     [entry(source)],
     () => "backend/webrender/static/client.js",
   );
   assert.deepEqual(
     Object.fromEntries(
-      Object.entries(converted).filter(([key]) => key !== "coverage"),
+      Object.entries(browser).filter(([key]) => key !== "coverage"),
     ),
-    COVERAGE_PRODUCER,
+    BROWSER_COVERAGE_PRODUCER,
   );
-  assert.deepEqual(Object.keys(converted.coverage), [
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(node).filter(([key]) => key !== "coverage"),
+    ),
+    NODE_COVERAGE_PRODUCER,
+  );
+  assert.notDeepEqual(BROWSER_COVERAGE_PRODUCER, NODE_COVERAGE_PRODUCER);
+  assert.deepEqual(Object.keys(browser.coverage), [
     "backend/webrender/static/client.js",
   ]);
 });

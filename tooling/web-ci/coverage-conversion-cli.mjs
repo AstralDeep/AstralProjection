@@ -13,7 +13,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
-  convertPlaywrightV8Coverage,
+  convertNodeV8Coverage,
 } from "./coverage-conversion.mjs";
 
 const MAX_REPORTS = 256;
@@ -194,7 +194,7 @@ export async function convertNodeV8Directory({ directory, repoRoot }) {
   const canonicalRoot = realpathSync(repoRoot);
   const canonicalDirectory = realpathSync(directory);
   const entries = readEntries(canonicalDirectory, canonicalRoot);
-  return convertPlaywrightV8Coverage(entries, (entry) => entry.repoPath);
+  return convertNodeV8Coverage(entries, (entry) => entry.repoPath);
 }
 
 function writeAtomically(output, document) {

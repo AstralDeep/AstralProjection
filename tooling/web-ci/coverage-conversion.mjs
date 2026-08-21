@@ -1,12 +1,23 @@
 import { parse } from "espree";
 import v8ToIstanbul from "v8-to-istanbul";
 
-export const COVERAGE_PRODUCER = Object.freeze({
+const COVERAGE_PRODUCER_BASE = Object.freeze({
   schema_version: 1,
-  producer: "astraldeep-playwright-executable-lines",
-  producer_version: 1,
+  producer_version: 2,
   v8_to_istanbul_version: "9.3.0",
   espree_version: "11.2.0",
+});
+
+export const NODE_COVERAGE_PRODUCER = Object.freeze({
+  ...COVERAGE_PRODUCER_BASE,
+  producer: "astralprojection-node-v8-executable-lines",
+  coverage_lane: "node-v8",
+});
+
+export const BROWSER_COVERAGE_PRODUCER = Object.freeze({
+  ...COVERAGE_PRODUCER_BASE,
+  producer: "astralprojection-browser-v8-executable-lines",
+  coverage_lane: "browser-v8",
 });
 
 function fail(message) {
@@ -190,8 +201,7 @@ export async function convertPlaywrightV8Entry(entry, { sourcePath } = {}) {
   return { path: sourcePath, statementMap, s: hits };
 }
 
-/** Convert multiple entries and add the exact collector producer envelope. */
-export async function convertPlaywrightV8Coverage(entries, resolveSourcePath) {
+async function convertV8Coverage(entries, resolveSourcePath, producerIdentity) {
   if (!Array.isArray(entries) || entries.length === 0) {
     fail("coverage must contain at least one source entry");
   }
@@ -206,5 +216,19 @@ export async function convertPlaywrightV8Coverage(entries, resolveSourcePath) {
     }
     coverage[sourcePath] = await convertPlaywrightV8Entry(entry, { sourcePath });
   }
-  return { ...COVERAGE_PRODUCER, coverage };
+  return { ...producerIdentity, coverage };
+}
+
+/** Convert Playwright/Chromium V8 entries with the exact browser-lane identity. */
+export async function convertPlaywrightV8Coverage(entries, resolveSourcePath) {
+  return convertV8Coverage(
+    entries,
+    resolveSourcePath,
+    BROWSER_COVERAGE_PRODUCER,
+  );
+}
+
+/** Convert Node runtime V8 entries with the exact Node-lane identity. */
+export async function convertNodeV8Coverage(entries, resolveSourcePath) {
+  return convertV8Coverage(entries, resolveSourcePath, NODE_COVERAGE_PRODUCER);
 }

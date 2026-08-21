@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
+import { NODE_COVERAGE_PRODUCER } from "../coverage-conversion.mjs";
+
 const TOOLING_ROOT = resolve(import.meta.dirname, "..");
 const REPO_ROOT = resolve(TOOLING_ROOT, "../..");
 const CLI = resolve(TOOLING_ROOT, "coverage-conversion-cli.mjs");
@@ -65,6 +67,12 @@ test("two-pass Node coverage maps the converter and its CLI", () => {
   ]);
 
   const document = JSON.parse(readFileSync(output, "utf8"));
+  assert.deepEqual(
+    Object.fromEntries(
+      Object.entries(document).filter(([key]) => key !== "coverage"),
+    ),
+    NODE_COVERAGE_PRODUCER,
+  );
   assert.deepEqual(Object.keys(document.coverage).sort(), [
     "tooling/web-ci/coverage-conversion-cli.mjs",
     "tooling/web-ci/coverage-conversion.mjs",

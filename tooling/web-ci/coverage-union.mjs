@@ -9,13 +9,30 @@ import { TextDecoder } from "node:util";
 
 import { parse } from "espree";
 
-import { COVERAGE_PRODUCER } from "./coverage-conversion.mjs";
+import {
+  BROWSER_COVERAGE_PRODUCER,
+  NODE_COVERAGE_PRODUCER,
+} from "./coverage-conversion.mjs";
+
+export {
+  BROWSER_COVERAGE_PRODUCER,
+  NODE_COVERAGE_PRODUCER,
+};
+
+export const UNION_COVERAGE_PRODUCER = Object.freeze({
+  schema_version: 1,
+  producer_version: 2,
+  v8_to_istanbul_version: "9.3.0",
+  espree_version: "11.2.0",
+  producer: "astralprojection-node-browser-union",
+  coverage_lane: "node-browser-union",
+});
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_SOURCE_PATH_BYTES = 16 * 1024;
 const MAX_SOURCES = 4096;
 const MAX_STATEMENTS = 1_000_000;
-const PRODUCER_KEYS = Object.keys(COVERAGE_PRODUCER);
+const PRODUCER_KEYS = Object.keys(UNION_COVERAGE_PRODUCER);
 const ENVELOPE_KEYS = [...PRODUCER_KEYS, "coverage"];
 
 function fail(message) {
@@ -178,13 +195,13 @@ function readBoundedSource(repoRoot, repoPath) {
   }
 }
 
-function validateEnvelope(document, repoRoot, label) {
+function validateEnvelope(document, repoRoot, label, producerIdentity) {
   if (!hasExactKeys(document, ENVELOPE_KEYS)) {
     fail(`${label} envelope has the wrong shape`);
   }
   for (const key of PRODUCER_KEYS) {
-    if (document[key] !== COVERAGE_PRODUCER[key]) {
-      fail(`${label} envelope has unsupported producer metadata`);
+    if (document[key] !== producerIdentity[key]) {
+      fail(`${label} envelope has an invalid producer identity`);
     }
   }
   if (!isObject(document.coverage)) {
@@ -246,8 +263,18 @@ export function unionCanonicalCoverage({ node, browser, repoRoot }) {
   if (!lstatSync(canonicalRoot).isDirectory()) {
     fail("repository root is not a directory");
   }
-  const nodeRecords = validateEnvelope(node, canonicalRoot, "Node");
-  const browserRecords = validateEnvelope(browser, canonicalRoot, "browser");
+  const nodeRecords = validateEnvelope(
+    node,
+    canonicalRoot,
+    "Node",
+    NODE_COVERAGE_PRODUCER,
+  );
+  const browserRecords = validateEnvelope(
+    browser,
+    canonicalRoot,
+    "browser",
+    BROWSER_COVERAGE_PRODUCER,
+  );
   const paths = [...new Set([...nodeRecords.keys(), ...browserRecords.keys()])].sort();
   if (paths.length > MAX_SOURCES) {
     fail("union source count exceeds its bound");
@@ -271,5 +298,5 @@ export function unionCanonicalCoverage({ node, browser, repoRoot }) {
     }
     coverage[path] = { path, statementMap, s: hits };
   }
-  return { ...COVERAGE_PRODUCER, coverage };
+  return { ...UNION_COVERAGE_PRODUCER, coverage };
 }

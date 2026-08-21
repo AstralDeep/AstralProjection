@@ -199,6 +199,14 @@ jobs:
             build/060/coverage/apple-${{ matrix.slug }}-unit-xccov.json
           if-no-files-found: error
           retention-days: 14
+      - name: Publish normalized app unit coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-required-app-unit-${{ matrix.slug }}-coverage
+          path: build/060/coverage/apple-${{ matrix.slug }}-unit-xccov.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Stage app unit success marker
         shell: bash
         run: |
@@ -340,6 +348,14 @@ jobs:
             build/060/coverage/apple-${{ matrix.slug }}-first-login-xccov.json
           if-no-files-found: error
           retention-days: 14
+      - name: Publish normalized first-login coverage
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-required-first-login-${{ matrix.slug }}-coverage
+          path: build/060/coverage/apple-${{ matrix.slug }}-first-login-xccov.json
+          if-no-files-found: error
+          retention-days: 1
       - name: Stage first-login success marker
         shell: bash
         run: |
@@ -451,6 +467,8 @@ jobs:
       - first-login-ui
       - watch-continuity
     steps:
+      - name: Check out candidate for source-bound coverage union
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       # `needs.<matrix-job>.result` can report the result of only one matrix
       # child. Requiring one current-run artifact from every child prevents a
       # later successful sibling from hiding a failed platform.
@@ -474,6 +492,52 @@ jobs:
         with:
           name: apple-required-first-login-macos
           path: ${{ runner.temp }}/apple-required/first-login-macos
+      - name: Download iOS app-unit coverage
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-app-unit-ios-coverage
+          path: ${{ runner.temp }}/apple-coverage/ios/unit
+      - name: Download iOS first-login coverage
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-first-login-ios-coverage
+          path: ${{ runner.temp }}/apple-coverage/ios/ui
+      - name: Download macOS app-unit coverage
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-app-unit-macos-coverage
+          path: ${{ runner.temp }}/apple-coverage/macos/unit
+      - name: Download macOS first-login coverage
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-first-login-macos-coverage
+          path: ${{ runner.temp }}/apple-coverage/macos/ui
+      - name: Union required unit and UI coverage by platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${COVERAGE_ROOT}"
+          python3 scripts/merge_xccov_line_coverage.py \
+            --repo "$PWD" \
+            --platform ios \
+            --unit-input "${RUNNER_TEMP}/apple-coverage/ios/unit/apple-ios-unit-xccov.json" \
+            --ui-input "${RUNNER_TEMP}/apple-coverage/ios/ui/apple-ios-first-login-xccov.json" \
+            --output "${COVERAGE_ROOT}/apple-ios-xccov.json"
+          python3 scripts/merge_xccov_line_coverage.py \
+            --repo "$PWD" \
+            --platform macos \
+            --unit-input "${RUNNER_TEMP}/apple-coverage/macos/unit/apple-macos-unit-xccov.json" \
+            --ui-input "${RUNNER_TEMP}/apple-coverage/macos/ui/apple-macos-first-login-xccov.json" \
+            --output "${COVERAGE_ROOT}/apple-macos-xccov.json"
+      - name: Publish platform coverage unions
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-required-platform-union-coverage
+          path: |
+            build/060/coverage/apple-ios-xccov.json
+            build/060/coverage/apple-macos-xccov.json
+          if-no-files-found: error
+          retention-days: 14
       - name: Enforce every non-waivable Apple result
         shell: bash
         run: |
