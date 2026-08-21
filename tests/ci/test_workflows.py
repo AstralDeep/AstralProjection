@@ -110,6 +110,91 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     )
 
 
+def test_apple_ci_runs_when_its_coverage_exporter_changes() -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    triggers = apple.partition("on:\n")[2].partition("\npermissions:\n")[0]
+    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
+    pull_request = triggers.partition("  pull_request:\n")[2]
+
+    assert '- "scripts/**"' in push
+    assert '- "scripts/**"' in pull_request
+
+
+def test_native_ci_is_independently_read_only_secret_free_and_sha_pinned() -> None:
+    workflows = {
+        name: (ACTIVE / name).read_text(encoding="utf-8")
+        for name in ("android-ci.yml", "apple-ci.yml")
+    }
+
+    for name, text in workflows.items():
+        assert re.search(r"(?m)^permissions:\n  contents: read(?:\s|$)", text), name
+        assert not re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s*write(?:\s|#|$)", text), name
+        assert not re.search(r"\bsecrets?\b", text, flags=re.IGNORECASE), name
+        assert "id-token:" not in text, name
+        uses = re.findall(r"(?m)^\s*(?:-\s*)?uses:\s*([^\s#]+)", text)
+        assert uses, name
+        for action in uses:
+            if action.startswith("./"):
+                continue
+            _, separator, ref = action.rpartition("@")
+            assert separator and re.fullmatch(r"[0-9a-f]{40}", ref), (name, action)
+
+
+def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> None:
+    android = (ACTIVE / "android-ci.yml").read_text(encoding="utf-8")
+    instrumented = _job_block(android, "instrumented")
+
+    assert android.count("./gradlew ") == 6
+    assert not re.search(r"(?m)^\s+(?:run|script):\s+gradle(?:\s|$)", android)
+    assert 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' in instrumented
+    assert "sudo udevadm control --reload-rules" in instrumented
+    assert "sudo udevadm trigger --name-match=kvm" in instrumented
+    assert "api-level: 34" in instrumented
+    assert "arch: x86_64" in instrumented
+    assert "working-directory: android-client" in instrumented
+    assert (
+        "script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace"
+        in instrumented
+    )
+
+
+def test_apple_ci_preserves_exact_platform_coverage_and_marker_contract() -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    apple_required = _job_block(apple, "apple-required")
+
+    for setting in (
+        'XCODE_VERSION: "26.6"',
+        'XCODE_BUILD: "17F113"',
+        'IOS_RUNTIME: "26.5"',
+        'WATCHOS_RUNTIME: "26.5"',
+        'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"',
+        'destination: "platform=macOS"',
+    ):
+        assert setting in apple
+    assert apple.count("runs-on: macos-26") == 5
+    assert apple.count("name: Select exact Xcode") == 5
+    assert apple.count("CODE_SIGNING_ALLOWED=NO") == 3
+    assert apple.count("-enableCodeCoverage YES") == 3
+    assert apple.count("python3 scripts/export_xccov_line_coverage.py") == 3
+
+    for marker in (
+        "apple-required-app-unit-${{ matrix.slug }}",
+        "apple-required-first-login-${{ matrix.slug }}",
+        "apple-required-app-unit-ios",
+        "apple-required-app-unit-macos",
+        "apple-required-first-login-ios",
+        "apple-required-first-login-macos",
+    ):
+        assert marker in apple
+    for marker in (
+        "apple-required-app-unit-ios",
+        "apple-required-app-unit-macos",
+        "apple-required-first-login-ios",
+        "apple-required-first-login-macos",
+    ):
+        assert f"name: {marker}" in apple_required
+
+
 def test_android_ci_wrapper_is_committed_executable() -> None:
     wrapper_mode = (ROOT / "android-client" / "gradlew").stat().st_mode
 

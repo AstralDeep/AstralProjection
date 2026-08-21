@@ -326,27 +326,13 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
 
     moved_workflows = {
-        entry["path"]: entry.get("resultPaths")
+        entry["path"]: [result["path"] for result in entry.get("resultPaths", [])]
         for entry in record["entries"]
-        if entry["path"]
-        in {
-            "workflows-disabled/android-ci.yml",
-            "workflows-disabled/apple-ci.yml",
-        }
+        if entry.get("resultPaths")
     }
     assert moved_workflows == {
-        "workflows-disabled/android-ci.yml": [
-            {
-                "path": ".github/workflows/android-ci.yml",
-                "sha256": "ea7009921982b2ba51d9337c50ca0c3b3204b61fd8b0e52a6f7804b393985cac",
-            }
-        ],
-        "workflows-disabled/apple-ci.yml": [
-            {
-                "path": ".github/workflows/apple-ci.yml",
-                "sha256": "f7a1f2e60725a4dba075b260aac20c0b43e508ffb0a5b00fde55fdf21e7aa5d0",
-            }
-        ],
+        "workflows-disabled/android-ci.yml": [".github/workflows/android-ci.yml"],
+        "workflows-disabled/apple-ci.yml": [".github/workflows/apple-ci.yml"],
     }
 
     changed_paths = _changed_extraction_paths(
@@ -370,6 +356,14 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         if entry.get("resultStatus") == "removed":
             assert not current.exists() and not current.is_symlink()
             assert "resultSha256" not in entry
+            for result in entry.get("resultPaths", []):
+                relative = Path(result["path"])
+                assert not relative.is_absolute()
+                result_path = ROOT / relative
+                result_path.resolve(strict=True).relative_to(ROOT.resolve(strict=True))
+                assert result["sha256"] == hashlib.sha256(
+                    _current_bytes(result_path)
+                ).hexdigest()
             assert re.fullmatch(r"T\d{3}(?:/T\d{3})*", entry["task"])
             assert entry["reason"]
             continue

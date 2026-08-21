@@ -8,12 +8,14 @@ on:
       - "apple-clients/**"
       - "contracts/ui_protocol.json"
       - "contracts/fixtures/voice_065/client_conformance.json"
+      - "scripts/**"
       - ".github/workflows/apple-ci.yml"
   pull_request:
     paths:
       - "apple-clients/**"
       - "contracts/ui_protocol.json"
       - "contracts/fixtures/voice_065/client_conformance.json"
+      - "scripts/**"
       - ".github/workflows/apple-ci.yml"
 
 permissions:

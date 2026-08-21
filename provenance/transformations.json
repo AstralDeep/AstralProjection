@@ -602,7 +602,7 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "f7a1f2e60725a4dba075b260aac20c0b43e508ffb0a5b00fde55fdf21e7aa5d0"
+          "sha256": "8aa70610318beb3d57c7bbf07571b07fbe2359abc939ab443d861bd4e767d9df"
         }
       ],
       "task": "T056",
