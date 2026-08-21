@@ -43,6 +43,7 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     assert "ruff check src backend tests scripts windows-client" in text
     assert "pytest -q" in text
     assert "python -m build" in text
+    assert "python -m pip install --force-reinstall --no-deps dist/*.whl" in text
     assert 'python -c "import astralprojection, rote, webrender"' in text
     assert "test \"$(corepack npm --version)\" = \"11.16.0\"" in text
     assert "test:coverage-conversion:browser" in text
