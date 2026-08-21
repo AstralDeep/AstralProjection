@@ -20,30 +20,44 @@ import { UNION_COVERAGE_PRODUCER } from "../coverage-union.mjs";
 
 const TOOLING_ROOT = resolve(import.meta.dirname, "..");
 const CLI = resolve(TOOLING_ROOT, "coverage-union-cli.mjs");
+const NODE_PATHS = [
+  "tooling/web-ci/coverage-conversion-cli.mjs",
+  "tooling/web-ci/coverage-conversion.mjs",
+  "tooling/web-ci/coverage-union-cli.mjs",
+  "tooling/web-ci/coverage-union.mjs",
+  "tooling/web-ci/eslint.config.mjs",
+  "tooling/web-ci/product-isolation.mjs",
+  "tooling/web-ci/release-runner.mjs",
+];
+const BROWSER_PATH = "backend/webrender/static/client.js";
+
+function record(path, hits) {
+  return {
+    path,
+    statementMap: {
+      0: { start: { line: 1, column: 0 }, end: { line: 1, column: 15 } },
+      1: { start: { line: 2, column: 0 }, end: { line: 2, column: 5 } },
+    },
+    s: hits,
+  };
+}
 
 function fixture() {
   const repoRoot = mkdtempSync(resolve(tmpdir(), "projection-coverage-union-cli-"));
-  const sourcePath = "backend/webrender/static/client.js";
-  mkdirSync(resolve(repoRoot, "backend/webrender/static"), { recursive: true });
-  writeFileSync(resolve(repoRoot, sourcePath), "const alpha = 1;\nalpha;\n", "utf8");
-  const record = {
-    [sourcePath]: {
-      path: sourcePath,
-      statementMap: {
-        0: { start: { line: 1, column: 0 }, end: { line: 1, column: 15 } },
-        1: { start: { line: 2, column: 0 }, end: { line: 2, column: 5 } },
-      },
-      s: { 0: 1, 1: 0 },
-    },
-  };
+  for (const path of [...NODE_PATHS, BROWSER_PATH]) {
+    mkdirSync(resolve(repoRoot, path, ".."), { recursive: true });
+    writeFileSync(resolve(repoRoot, path), "const alpha = 1;\nalpha;\n", "utf8");
+  }
   const nodeDocument = {
     ...NODE_COVERAGE_PRODUCER,
-    coverage: record,
+    coverage: Object.fromEntries(
+      NODE_PATHS.map((path) => [path, record(path, { 0: 1, 1: 0 })]),
+    ),
   };
   const browserDocument = {
     ...BROWSER_COVERAGE_PRODUCER,
     coverage: {
-      [sourcePath]: { ...structuredClone(record[sourcePath]), s: { 0: 2, 1: 0 } },
+      [BROWSER_PATH]: record(BROWSER_PATH, { 0: 2, 1: 0 }),
     },
   };
   const node = resolve(repoRoot, "node.json");
@@ -51,7 +65,7 @@ function fixture() {
   const output = resolve(repoRoot, "union.json");
   writeFileSync(node, `${JSON.stringify(nodeDocument)}\n`, "utf8");
   writeFileSync(browser, `${JSON.stringify(browserDocument)}\n`, "utf8");
-  return { repoRoot, node, browser, output, sourcePath };
+  return { repoRoot, node, browser, output, sourcePath: BROWSER_PATH };
 }
 
 function run(arguments_) {
@@ -91,7 +105,29 @@ test("CLI writes one deterministic Node-plus-browser envelope", () => {
     ),
     UNION_COVERAGE_PRODUCER,
   );
-  assert.deepEqual(document.coverage[sourcePath].s, { 0: 3, 1: 0 });
+  assert.deepEqual(document.coverage[sourcePath].s, { 0: 2, 1: 0 });
+});
+
+test("CLI rejects a relabeled semantic clone instead of doubling its hits", () => {
+  const { repoRoot, node, browser, output } = fixture();
+  const nodeDocument = JSON.parse(readFileSync(node, "utf8"));
+  writeFileSync(
+    browser,
+    `${JSON.stringify({
+      ...BROWSER_COVERAGE_PRODUCER,
+      coverage: nodeDocument.coverage,
+    })}\n`,
+    "utf8",
+  );
+
+  const result = run([
+    "--node", node,
+    "--browser", browser,
+    "--repo-root", repoRoot,
+    "--output", output,
+  ]);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /semantically identical/u);
 });
 
 test("CLI rejects duplicated or swapped producer identities", () => {

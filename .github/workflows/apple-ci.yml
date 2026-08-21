@@ -496,38 +496,38 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-app-unit-ios-coverage
-          path: ${{ runner.temp }}/apple-coverage/ios/unit
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/unit
       - name: Download iOS first-login coverage
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-first-login-ios-coverage
-          path: ${{ runner.temp }}/apple-coverage/ios/ui
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/ui
       - name: Download macOS app-unit coverage
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-app-unit-macos-coverage
-          path: ${{ runner.temp }}/apple-coverage/macos/unit
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/macos/unit
       - name: Download macOS first-login coverage
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-first-login-macos-coverage
-          path: ${{ runner.temp }}/apple-coverage/macos/ui
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/macos/ui
       - name: Union required unit and UI coverage by platform
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${COVERAGE_ROOT}"
           python3 scripts/merge_xccov_line_coverage.py \
-            --repo "$PWD" \
+            --repo "${GITHUB_WORKSPACE}" \
             --platform ios \
-            --unit-input "${RUNNER_TEMP}/apple-coverage/ios/unit/apple-ios-unit-xccov.json" \
-            --ui-input "${RUNNER_TEMP}/apple-coverage/ios/ui/apple-ios-first-login-xccov.json" \
+            --unit-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/unit/apple-ios-unit-xccov.json" \
+            --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/ui/apple-ios-first-login-xccov.json" \
             --output "${COVERAGE_ROOT}/apple-ios-xccov.json"
           python3 scripts/merge_xccov_line_coverage.py \
-            --repo "$PWD" \
+            --repo "${GITHUB_WORKSPACE}" \
             --platform macos \
-            --unit-input "${RUNNER_TEMP}/apple-coverage/macos/unit/apple-macos-unit-xccov.json" \
-            --ui-input "${RUNNER_TEMP}/apple-coverage/macos/ui/apple-macos-first-login-xccov.json" \
+            --unit-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/macos/unit/apple-macos-unit-xccov.json" \
+            --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/macos/ui/apple-macos-first-login-xccov.json" \
             --output "${COVERAGE_ROOT}/apple-macos-xccov.json"
       - name: Publish platform coverage unions
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

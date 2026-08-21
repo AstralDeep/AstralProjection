@@ -247,6 +247,45 @@ def test_watchos_is_not_a_unit_ui_union_platform(tmp_path: Path) -> None:
         )
 
 
+def test_hosted_workflow_repo_contained_inputs_are_accepted(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    root = repo / "build" / "060" / "coverage" / "union-inputs" / "ios"
+    unit = root / "unit" / "apple-ios-unit-xccov.json"
+    ui = root / "ui" / "apple-ios-first-login-xccov.json"
+    unit.parent.mkdir(parents=True)
+    ui.parent.mkdir(parents=True)
+    unit.write_text(json.dumps({SOURCE: _observations(2, 0)}) + "\n", encoding="utf-8")
+    ui.write_text(json.dumps({SOURCE: _observations(1, 3)}) + "\n", encoding="utf-8")
+    output = repo / "build" / "060" / "coverage" / "apple-ios-xccov.json"
+    script = Path(__file__).resolve().parents[1] / "scripts" / "merge_xccov_line_coverage.py"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--repo",
+            str(repo),
+            "--platform",
+            "ios",
+            "--unit-input",
+            str(unit),
+            "--ui-input",
+            str(ui),
+            "--output",
+            str(output),
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(output.read_text(encoding="utf-8")) == {
+        SOURCE: _observations(3, 3)
+    }
+
+
 @pytest.mark.parametrize(
     ("content", "code"),
     (

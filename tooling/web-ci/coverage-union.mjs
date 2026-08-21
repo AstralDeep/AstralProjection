@@ -28,6 +28,20 @@ export const UNION_COVERAGE_PRODUCER = Object.freeze({
   coverage_lane: "node-browser-union",
 });
 
+export const NODE_LANE_SOURCE_PATHS = Object.freeze([
+  "tooling/web-ci/coverage-conversion-cli.mjs",
+  "tooling/web-ci/coverage-conversion.mjs",
+  "tooling/web-ci/coverage-union-cli.mjs",
+  "tooling/web-ci/coverage-union.mjs",
+  "tooling/web-ci/eslint.config.mjs",
+  "tooling/web-ci/product-isolation.mjs",
+  "tooling/web-ci/release-runner.mjs",
+]);
+
+export const BROWSER_LANE_SOURCE_PATHS = Object.freeze([
+  "backend/webrender/static/client.js",
+]);
+
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_SOURCE_PATH_BYTES = 16 * 1024;
 const MAX_SOURCES = 4096;
@@ -48,6 +62,47 @@ function hasExactKeys(value, expected) {
     isObject(value) &&
     Object.keys(value).sort().join("\u0000") === [...expected].sort().join("\u0000")
   );
+}
+
+function canonicalPayloadValue(value, depth = 0) {
+  if (depth > 8) {
+    fail("coverage payload nesting exceeds its bound");
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => canonicalPayloadValue(item, depth + 1));
+  }
+  if (isObject(value)) {
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, canonicalPayloadValue(value[key], depth + 1)]),
+    );
+  }
+  if (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  ) {
+    return value;
+  }
+  fail("coverage payload contains an unsupported value");
+}
+
+function coveragePayloadFingerprint(coverage) {
+  return JSON.stringify(canonicalPayloadValue(coverage));
+}
+
+function validateLaneScope(paths, expectedPaths, label) {
+  const actual = [...paths].sort();
+  if (
+    actual.length !== expectedPaths.length ||
+    actual.some((path, index) => path !== expectedPaths[index])
+  ) {
+    fail(
+      `${label} lane source scope is incomplete or contains cross-lane/unknown paths`,
+    );
+  }
 }
 
 function isMaintainedSourcePath(path) {
@@ -195,7 +250,7 @@ function readBoundedSource(repoRoot, repoPath) {
   }
 }
 
-function validateEnvelope(document, repoRoot, label, producerIdentity) {
+function validateEnvelopeIdentity(document, label, producerIdentity) {
   if (!hasExactKeys(document, ENVELOPE_KEYS)) {
     fail(`${label} envelope has the wrong shape`);
   }
@@ -208,9 +263,20 @@ function validateEnvelope(document, repoRoot, label, producerIdentity) {
     fail(`${label} coverage must be an object`);
   }
   const paths = Object.keys(document.coverage);
-  if (paths.length === 0 || paths.length > MAX_SOURCES) {
+  if (paths.length > MAX_SOURCES) {
     fail(`${label} envelope source count is out of bounds`);
   }
+  return paths;
+}
+
+function validateEnvelope(
+  document,
+  repoRoot,
+  label,
+  expectedPaths,
+  paths,
+) {
+  validateLaneScope(paths, expectedPaths, label);
   const validated = new Map();
   let totalStatements = 0;
   for (const path of paths) {
@@ -263,18 +329,40 @@ export function unionCanonicalCoverage({ node, browser, repoRoot }) {
   if (!lstatSync(canonicalRoot).isDirectory()) {
     fail("repository root is not a directory");
   }
+  const nodePaths = validateEnvelopeIdentity(
+    node,
+    "Node",
+    NODE_COVERAGE_PRODUCER,
+  );
+  const browserPaths = validateEnvelopeIdentity(
+    browser,
+    "browser",
+    BROWSER_COVERAGE_PRODUCER,
+  );
+  if (
+    coveragePayloadFingerprint(node.coverage) ===
+    coveragePayloadFingerprint(browser.coverage)
+  ) {
+    fail("Node and browser coverage payloads are semantically identical");
+  }
   const nodeRecords = validateEnvelope(
     node,
     canonicalRoot,
     "Node",
-    NODE_COVERAGE_PRODUCER,
+    NODE_LANE_SOURCE_PATHS,
+    nodePaths,
   );
   const browserRecords = validateEnvelope(
     browser,
     canonicalRoot,
     "browser",
-    BROWSER_COVERAGE_PRODUCER,
+    BROWSER_LANE_SOURCE_PATHS,
+    browserPaths,
   );
+  const overlap = [...nodeRecords.keys()].filter((path) => browserRecords.has(path));
+  if (overlap.length > 0) {
+    fail(`Node and browser lane source scopes overlap: ${overlap[0]}`);
+  }
   const paths = [...new Set([...nodeRecords.keys(), ...browserRecords.keys()])].sort();
   if (paths.length > MAX_SOURCES) {
     fail("union source count exceeds its bound");
@@ -282,21 +370,12 @@ export function unionCanonicalCoverage({ node, browser, repoRoot }) {
 
   const coverage = {};
   for (const path of paths) {
-    const records = [nodeRecords.get(path), browserRecords.get(path)].filter(Boolean);
-    const statementMap = records[0].statementMap;
-    const hits = {};
-    for (const id of Object.keys(statementMap)) {
-      let total = 0;
-      for (const record of records) {
-        const next = total + record.s[id];
-        if (!Number.isSafeInteger(next)) {
-          fail(`hit count overflow: ${path}`);
-        }
-        total = next;
-      }
-      hits[id] = total;
-    }
-    coverage[path] = { path, statementMap, s: hits };
+    const record = nodeRecords.get(path) ?? browserRecords.get(path);
+    coverage[path] = {
+      path,
+      statementMap: record.statementMap,
+      s: record.s,
+    };
   }
   return { ...UNION_COVERAGE_PRODUCER, coverage };
 }

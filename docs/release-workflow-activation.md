@@ -1,16 +1,18 @@
 # Release workflow activation gate
 
-All copied workflows are intentionally inactive. There is no
-`.github/workflows/` directory in this repository; every copied job is under
-`workflows-disabled/` and has an unconditional `${{ false }}` job gate. This
-document records the preconditions for a later, separately reviewed activation
-commit. It does not authorize that commit or any publication.
+Three owner CI workflows are active under `.github/workflows/`: core, Android,
+and Apple qualification. They are read-only, secret-free pull-request/push
+checks and do not publish releases. The six release workflows remain under `workflows-disabled/`;
+all eight release jobs carry `if: ${{ false }}`. This
+document records the preconditions for a later, separately reviewed release
+activation commit. It does not authorize that commit or any publication.
 
 ## Current status
 
 | Gate | Status | Evidence or closure |
 |---|---|---|
-| Workflow location and job fences | Satisfied for inactivity | Nine YAML files under `workflows-disabled/`; all 19 jobs carry `if: ${{ false }}` |
+| Owner CI location and authority | Active | Three read-only, secret-free owner CI workflows under `.github/workflows/` cover core/Python/web/Windows, Android, and Apple qualification |
+| Release workflow location and job fences | Satisfied for inactivity | Six release YAML files remain under `workflows-disabled/`; all eight release jobs carry `if: ${{ false }}` |
 | Feature-074 final local qualification | Pending | AstralDeep tasks T221-T237, including platform-specific unavailable checks, must be recorded honestly |
 | Exact Projection revision/composition | Pending | Pin the qualified Projection commit in the Deep composition manifest and verify a clean recursive checkout |
 | Release environments and reviewers | Pending | Create and re-query the exact environments in `release-environment-inventory.md` |
@@ -47,10 +49,11 @@ commit. It does not authorize that commit or any publication.
    `${{ vars.NAME }}` references from the inventory. Keep candidate jobs
    read-only and signing/publication authority confined to approved
    environments with the built-in short-lived token.
-6. In one dedicated activation commit, move only reviewed files into
-   `.github/workflows/` and remove their unconditional false gates. Before
-   pushing, re-run workflow-policy checks and re-query provider state. Keep any
-   workflow whose prerequisites remain incomplete disabled.
+6. In one dedicated release-activation commit, move only reviewed release files
+   into `.github/workflows/` and remove their unconditional false gates. Do not
+   alter the three active owner CI workflows as an incidental release change.
+   Before pushing, re-run workflow-policy checks and re-query provider state.
+   Keep any release workflow whose prerequisites remain incomplete disabled.
 7. Open a draft/non-mergeable checkpoint and run read-only/rehearsal paths
    first. Publication, tag creation, GitHub Releases, Play upload, App Store
    upload, and submission require separate explicit release authorization.
@@ -74,6 +77,7 @@ commit. It does not authorize that commit or any publication.
 - No workflow uses `pull_request_target` to expose credentials or private
   component bytes, and no shared public cache contains private source.
 
-To deactivate, use an ordinary reviewed commit that restores unconditional
-false job gates or moves the affected files back to `workflows-disabled/`.
+To deactivate a release workflow, use an ordinary reviewed commit that restores
+its unconditional false job gates or moves that release file back to
+`workflows-disabled/`. Owner CI deactivation is a separate gate-policy change.
 Never delete or rewrite release tags as a rollback mechanism.

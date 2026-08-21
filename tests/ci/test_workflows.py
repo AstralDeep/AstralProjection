@@ -161,15 +161,27 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert f"name: apple-required-first-login-{platform}-coverage" in apple_required
         assert f"--platform {platform}" in apple_required
         assert (
-            f'--unit-input "${{RUNNER_TEMP}}/apple-coverage/{platform}/unit/'
+            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/"
+            f"{platform}/unit"
+        ) in apple_required
+        assert (
+            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/"
+            f"{platform}/ui"
+        ) in apple_required
+        assert (
+            f'--unit-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
+            f'{platform}/unit/'
             f'apple-{platform}-unit-xccov.json"'
         ) in apple_required
         assert (
-            f'--ui-input "${{RUNNER_TEMP}}/apple-coverage/{platform}/ui/'
+            f'--ui-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
+            f'{platform}/ui/'
             f'apple-{platform}-first-login-xccov.json"'
         ) in apple_required
         assert f'--output "${{COVERAGE_ROOT}}/apple-{platform}-xccov.json"' in apple_required
     assert "name: apple-required-platform-union-coverage" in apple_required
+    assert '--repo "${GITHUB_WORKSPACE}"' in apple_required
+    assert "${RUNNER_TEMP}/apple-coverage" not in apple_required
     assert "--input " not in apple_required
 
 
@@ -436,6 +448,38 @@ def test_apple_contract_rejects_unlabeled_missing_or_duplicate_coverage_producer
 
     with pytest.raises(AssertionError):
         _assert_apple_platform_contract(mutated)
+
+
+def test_apple_contract_rejects_coverage_inputs_outside_candidate_checkout() -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    mutated = apple.replace(
+        "${{ github.workspace }}/build/060/coverage/union-inputs/ios/unit",
+        "${{ runner.temp }}/apple-coverage/ios/unit",
+        1,
+    )
+    assert mutated != apple
+
+    with pytest.raises(AssertionError):
+        _assert_apple_platform_contract(mutated)
+
+
+def test_release_activation_document_matches_current_workflow_inventory() -> None:
+    document = (ROOT / "docs" / "release-workflow-activation.md").read_text(
+        encoding="utf-8"
+    )
+    active = sorted(ACTIVE.glob("*.yml"))
+    disabled = sorted(INACTIVE.glob("*.yml"))
+    disabled_jobs = sum(len(_job_ids(path.read_text(encoding="utf-8"))) for path in disabled)
+
+    assert len(active) == 3
+    assert len(disabled) == 6
+    assert disabled_jobs == 8
+    assert "Three owner CI workflows are active under `.github/workflows/`" in document
+    assert "six release workflows remain under `workflows-disabled/`" in document
+    assert "all eight release jobs carry `if: ${{ false }}`" in document
+    assert "There is no `.github/workflows/` directory" not in document
+    assert "Nine YAML files" not in document
+    assert "all 19 jobs" not in document
 
 
 @pytest.mark.parametrize(

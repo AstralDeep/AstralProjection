@@ -369,7 +369,7 @@
       "sourceMode": "100644",
       "resultSha256": "bf78d34e48c60fec121b2d22c834defc82f3e22416361e2687c021bd1a74c508",
       "task": "T236",
-      "reason": "Bind browser and Node V8 coverage envelopes to distinct exact producer identities so their union cannot reuse one lane twice."
+      "reason": "Emit distinct exact browser and Node V8 identity labels for the union's independent structural lane-scope validation."
     },
     {
       "path": "tooling/web-ci/package.json",
@@ -638,11 +638,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "4334962ff50a90d905f235f17492e979024b8768c02ceea19e64be87e965889e"
+          "sha256": "cd59795165c1548ddd71c8fe39ba232622f9f747e4d72ba9a59986f99939d3ab"
         }
       ],
       "task": "T056",
-      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, read-only authority, and explicit unit-plus-UI platform unions."
+      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, read-only authority, and repo-contained explicit unit-plus-UI platform unions."
     },
     {
       "path": "workflows-disabled/apple-release.yml",
