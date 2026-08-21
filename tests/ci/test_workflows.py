@@ -2,6 +2,8 @@ from pathlib import Path
 import re
 import stat
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 ACTIVE = ROOT / ".github" / "workflows"
@@ -20,6 +22,101 @@ def _job_block(text: str, job_id: str) -> str:
     _, marker, remainder = jobs.partition(f"  {job_id}:\n")
     assert marker, job_id
     return re.split(r"(?m)^  [A-Za-z0-9_-]+:\s*$", remainder, maxsplit=1)[0]
+
+
+def _assert_native_workflow_authority(name: str, text: str) -> None:
+    permission_indents = re.findall(r"(?m)^([ \t]*)permissions\s*:", text)
+    assert permission_indents == [""], (name, permission_indents)
+    _, marker, after_permissions = text.partition("permissions:\n")
+    assert marker, name
+    permission_block = re.split(
+        r"(?m)^(?=\S)", after_permissions, maxsplit=1
+    )[0].strip()
+    assert permission_block == "contents: read", (name, permission_block)
+    assert not re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s*write(?:\s|#|$)", text), name
+    assert not re.search(r"\bsecrets?\b", text, flags=re.IGNORECASE), name
+    assert "id-token:" not in text, name
+    uses = re.findall(r"(?m)^\s*(?:-\s*)?uses:\s*([^\s#]+)", text)
+    assert uses, name
+    for action in uses:
+        if action.startswith("./"):
+            continue
+        _, separator, ref = action.rpartition("@")
+        assert separator and re.fullmatch(r"[0-9a-f]{40}", ref), (name, action)
+
+
+def _assert_apple_platform_contract(apple: str) -> None:
+    app_unit = _job_block(apple, "app-unit-tests")
+    first_login = _job_block(apple, "first-login-ui")
+    watch = _job_block(apple, "watch-continuity")
+    apple_required = _job_block(apple, "apple-required")
+
+    for setting in (
+        'XCODE_VERSION: "26.6"',
+        'XCODE_BUILD: "17F113"',
+        'IOS_RUNTIME: "26.5"',
+        'WATCHOS_RUNTIME: "26.5"',
+    ):
+        assert setting in apple
+    for job_id in (
+        "swift-lint",
+        "core-tests",
+        "app-unit-tests",
+        "first-login-ui",
+        "watch-continuity",
+    ):
+        job = _job_block(apple, job_id)
+        assert "runs-on: macos-26" in job
+        assert "name: Select exact Xcode" in job
+        assert "${XCODE_VERSION}" in job
+        assert "${XCODE_BUILD}" in job
+
+    ios_destination = (
+        'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"'
+    )
+    macos_destination = 'destination: "platform=macOS"'
+    ios_runtime_check = (
+        'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"'
+    )
+    exporter = "python3 scripts/export_xccov_line_coverage.py"
+    for job in (app_unit, first_login):
+        assert ios_destination in job
+        assert macos_destination in job
+        assert ios_runtime_check in job
+        assert job.count("CODE_SIGNING_ALLOWED=NO") == 1
+        assert job.count("-enableCodeCoverage YES") == 1
+        assert job.count(exporter) == 1
+        assert "--platform '${{ matrix.slug }}'" in job
+
+    assert "apple-required-app-unit-${{ matrix.slug }}" in app_unit
+    assert "app-unit-${{ matrix.slug }}.ok" in app_unit
+    assert "apple-required-first-login-${{ matrix.slug }}" in first_login
+    assert "first-login-${{ matrix.slug }}.ok" in first_login
+
+    assert "name: Required · watchOS 26.5 continuity coverage" in watch
+    assert (
+        'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"'
+        in watch
+    )
+    assert "os.environ['WATCHOS_RUNTIME']" in watch
+    assert "-scheme AstralWatch" in watch
+    assert (
+        '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"'
+        in watch
+    )
+    assert watch.count("CODE_SIGNING_ALLOWED=NO") == 1
+    assert watch.count("-enableCodeCoverage YES") == 1
+    assert watch.count(exporter) == 1
+    assert "--platform watchos" in watch
+    assert "--output \"$report\"" in watch
+
+    for marker in (
+        "apple-required-app-unit-ios",
+        "apple-required-app-unit-macos",
+        "apple-required-first-login-ios",
+        "apple-required-first-login-macos",
+    ):
+        assert f"name: {marker}" in apple_required
 
 
 def test_core_ci_is_active_read_only_and_projection_owned() -> None:
@@ -127,17 +224,36 @@ def test_native_ci_is_independently_read_only_secret_free_and_sha_pinned() -> No
     }
 
     for name, text in workflows.items():
-        assert re.search(r"(?m)^permissions:\n  contents: read(?:\s|$)", text), name
-        assert not re.search(r"(?m)^\s+[A-Za-z0-9_-]+:\s*write(?:\s|#|$)", text), name
-        assert not re.search(r"\bsecrets?\b", text, flags=re.IGNORECASE), name
-        assert "id-token:" not in text, name
-        uses = re.findall(r"(?m)^\s*(?:-\s*)?uses:\s*([^\s#]+)", text)
-        assert uses, name
-        for action in uses:
-            if action.startswith("./"):
-                continue
-            _, separator, ref = action.rpartition("@")
-            assert separator and re.fullmatch(r"[0-9a-f]{40}", ref), (name, action)
+        _assert_native_workflow_authority(name, text)
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "job_id"),
+    (("android-ci.yml", "build-test"), ("apple-ci.yml", "swift-lint")),
+)
+@pytest.mark.parametrize("mutation", ("global-write-all", "inline-job-write"))
+def test_native_ci_authority_rejects_additional_permissions(
+    workflow_name: str,
+    job_id: str,
+    mutation: str,
+) -> None:
+    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+    if mutation == "global-write-all":
+        mutated = text.replace(
+            "\npermissions:\n",
+            "\npermissions: write-all\n\npermissions:\n",
+            1,
+        )
+    else:
+        mutated = text.replace(
+            f"  {job_id}:\n",
+            f"  {job_id}:\n    permissions: {{contents: write}}\n",
+            1,
+        )
+    assert mutated != text
+
+    with pytest.raises(AssertionError):
+        _assert_native_workflow_authority(workflow_name, mutated)
 
 
 def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> None:
@@ -160,39 +276,46 @@ def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> No
 
 def test_apple_ci_preserves_exact_platform_coverage_and_marker_contract() -> None:
     apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
-    apple_required = _job_block(apple, "apple-required")
+    _assert_apple_platform_contract(apple)
 
-    for setting in (
-        'XCODE_VERSION: "26.6"',
-        'XCODE_BUILD: "17F113"',
-        'IOS_RUNTIME: "26.5"',
-        'WATCHOS_RUNTIME: "26.5"',
-        'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"',
-        'destination: "platform=macOS"',
-    ):
-        assert setting in apple
-    assert apple.count("runs-on: macos-26") == 5
-    assert apple.count("name: Select exact Xcode") == 5
-    assert apple.count("CODE_SIGNING_ALLOWED=NO") == 3
-    assert apple.count("-enableCodeCoverage YES") == 3
-    assert apple.count("python3 scripts/export_xccov_line_coverage.py") == 3
 
-    for marker in (
-        "apple-required-app-unit-${{ matrix.slug }}",
-        "apple-required-first-login-${{ matrix.slug }}",
-        "apple-required-app-unit-ios",
-        "apple-required-app-unit-macos",
-        "apple-required-first-login-ios",
-        "apple-required-first-login-macos",
-    ):
-        assert marker in apple
-    for marker in (
-        "apple-required-app-unit-ios",
-        "apple-required-app-unit-macos",
-        "apple-required-first-login-ios",
-        "apple-required-first-login-macos",
-    ):
-        assert f"name: {marker}" in apple_required
+@pytest.mark.parametrize(
+    ("needle", "replacement"),
+    (
+        (
+            'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"',
+            'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"',
+        ),
+        (
+            '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"',
+            '-destination "platform=iOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"',
+        ),
+        ("--platform watchos \\", "--platform '${{ matrix.slug }}' \\"),
+    ),
+)
+def test_apple_contract_rejects_watch_contract_moved_out_of_its_job(
+    needle: str,
+    replacement: str,
+) -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    mutated = apple.replace(needle, replacement, 1)
+    assert mutated != apple
+
+    with pytest.raises(AssertionError):
+        _assert_apple_platform_contract(mutated)
+
+
+def test_apple_contract_rejects_success_markers_swapped_between_matrix_jobs() -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    app_marker = "apple-required-app-unit-${{ matrix.slug }}"
+    first_login_marker = "apple-required-first-login-${{ matrix.slug }}"
+    mutated = apple.replace(app_marker, "__APP_MARKER__", 1)
+    mutated = mutated.replace(first_login_marker, app_marker, 1)
+    mutated = mutated.replace("__APP_MARKER__", first_login_marker, 1)
+    assert mutated != apple
+
+    with pytest.raises(AssertionError):
+        _assert_apple_platform_contract(mutated)
 
 
 def test_android_ci_wrapper_is_committed_executable() -> None:
