@@ -5,12 +5,20 @@ import re
 ROOT = Path(__file__).resolve().parents[2]
 ACTIVE = ROOT / ".github" / "workflows"
 INACTIVE = ROOT / "workflows-disabled"
+PYTHON_CI_LOCK = ROOT / "tooling" / "python-ci" / "requirements.lock.txt"
 
 
 def _job_ids(text: str) -> set[str]:
     jobs = text.partition("\njobs:\n")[2]
     assert jobs
     return set(re.findall(r"(?m)^  ([A-Za-z0-9_-]+):\s*$", jobs))
+
+
+def _job_block(text: str, job_id: str) -> str:
+    jobs = text.partition("\njobs:\n")[2]
+    _, marker, remainder = jobs.partition(f"  {job_id}:\n")
+    assert marker, job_id
+    return re.split(r"(?m)^  [A-Za-z0-9_-]+:\s*$", remainder, maxsplit=1)[0]
 
 
 def test_core_ci_is_active_read_only_and_projection_owned() -> None:
@@ -50,6 +58,28 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     for job in ("python", "web", "windows"):
         assert f"needs.{job}.result" in text
     assert text.count("== 'success'") == 3
+
+
+def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint() -> None:
+    text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
+    lock = PYTHON_CI_LOCK.read_text(encoding="utf-8")
+
+    requirements = re.findall(r"(?m)^[A-Za-z][A-Za-z0-9_.-]*==[^\s]+.*$", lock)
+    assert requirements
+    assert all("==" in line and "--hash=sha256:" in line for line in requirements)
+
+    install = "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
+    for job_id in ("python", "windows"):
+        job = _job_block(text, job_id)
+        assert install in job
+        assert "python -m pip install --no-deps --no-build-isolation ." in job
+        assert ".[dev]" not in job
+
+    python_job = _job_block(text, "python")
+    assert "PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build" in python_job
+    assert 'requires = ["setuptools==80.10.2"]' in (ROOT / "pyproject.toml").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_only_core_ci_is_active_while_eight_workflows_remain_inert() -> None:
