@@ -180,6 +180,44 @@ Consequences to know about:
   fetch will 401. The restriction exists because `register_external_agent`
   accepts a user-supplied URL and this key can register any agent id.
 
+### LETS protected-executor boundary
+
+Feature 074 adds a host-local protected-executor boundary without importing
+AstralDeep. When `LETS_MODE=enforce`, the listener refuses to start until all
+of the following are locally provisioned and mutually consistent:
+
+- `FF_LETS_EXTERNAL_WARDEN=1`;
+- the operator-signed cluster manifest at `LETS_SIGNED_TRUST_MANIFEST` and its
+  separately mounted Ed25519 operator anchors at
+  `LETS_MANIFEST_OPERATOR_KEYS_FILE`;
+- exact `LETS_WARDEN_ID`, `LETS_TENANT_ID`, `LETS_ENVELOPE_ID`,
+  `LETS_POLICY_DIGEST`, and `LETS_MACHINE_DIGEST` fences;
+- exact host identity in `ASTRAL_AUTHORITY_OWNER_ID`,
+  `ASTRAL_AUTHORITY_BINDING_ID`, `ASTRAL_RUNTIME_ID`, and
+  `ASTRAL_RUNTIME_GENERATION`;
+- one `LETS_EXECUTOR_INSTANCE_ID`, an existing writable
+  `LETS_EXECUTOR_DB_ROOT`, and a distinct existing
+  `LETS_EXECUTOR_AUTHORITY_ROOT`.
+
+Production requires the external authority root. It holds the monotonic anchor
+separately from the persistent SQLite replay database so restoring older local
+database bytes cannot restore spent receipts. `off` and `shadow` retain current
+behavior; only `enforce` claims receipts. A protected permit received while
+the local executor is not enforcing is refused.
+
+The permit travels under the typed MCP caller capability
+`astraldeep.lets/v1`, outside ordinary tool arguments. Immediately before the
+actuator, the client compares owner, binding, agent, runtime generation, tool,
+scope/capability/transition, audience, nonce, sequence, one-unit cost,
+content-free effect evidence, and the exact post-filter argument digest. It
+then calls LETS v1.0.10 `ReceiptVerifier.verify_and_claim()` against the
+persistent store. Missing, stale, wrong-host, invalid-signature, replayed, or
+unclaimable receipts fail closed and the tool function is not called.
+
+The released LETS wheel is pinned by its exact v1.0.10 GitHub release URL and
+SHA-256 in `requirements-release.lock.txt`; the warden itself remains a
+separately deployed service.
+
 ### Coding agent (feature 039)
 
 The coding tools let the assistant **generate, write, edit, and run code on your

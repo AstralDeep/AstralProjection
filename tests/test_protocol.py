@@ -254,9 +254,15 @@ def test_apple_fixture_link_targets_the_standalone_fixture_contract() -> None:
         / "voice_065"
     )
 
-    assert link.is_symlink()
-    assert os.readlink(link).replace("\\", "/") == ("../../../../../contracts/fixtures/voice_065")
-    assert link.resolve(strict=True) == (ROOT / "contracts" / "fixtures" / "voice_065").resolve()
+    relative = link.relative_to(ROOT).as_posix()
+    assert _index_modes(ROOT)[relative] == "120000"
+    target = os.readlink(link) if link.is_symlink() else link.read_text(encoding="utf-8")
+    assert target.replace("\\", "/").strip() == (
+        "../../../../../contracts/fixtures/voice_065"
+    )
+    assert (link.parent / target.strip()).resolve(strict=True) == (
+        ROOT / "contracts" / "fixtures" / "voice_065"
+    ).resolve()
 
 
 def test_disabled_workflows_are_explicitly_inert_read_only_and_projection_owned() -> None:
@@ -310,7 +316,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 53
+    assert len(paths) == 71
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 14
 
     changed_paths = _changed_extraction_paths(
@@ -322,7 +328,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 466
+    assert len(extracted) - len(changed_paths) == 448
 
     for entry in record["entries"]:
         path = entry["path"]

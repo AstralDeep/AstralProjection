@@ -22,6 +22,14 @@ identity. AstralProjection is present in the code as a second exact channel,
 but it remains untrusted until a bridge build pins a selected version in source
 and candidate-bound release evidence binds the executable digest.
 
+The machine-readable form is
+`contracts/windows-release-trust.json`. It deliberately contains null bridge
+identities while its state is `legacy_only`; selecting values is a later
+authorized release decision, not a migration guess. Once selected, verify the
+two local artifacts and bundles with `scripts/verify_windows_bridge.py`. The
+harness uses Sigstore's offline verifier, checks both exact workflow/tag
+identities, and proves the executable bytes are identical without publishing.
+
 The live legacy release observed during migration was `v0.4.0`, with
 `AstralDeep.exe` SHA-256
 `e8c511d3951af53d6e5897b6ddeb179693541977b1e2e1bde22139476e6b5003`.

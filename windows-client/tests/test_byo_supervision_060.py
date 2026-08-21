@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from astralprojection.resources import fixture_path
 from win_agent.process_supervision import (
     DEFAULT_PROCESS_SUPERVISION_LIMITS,
     BoundedStreamReader,
@@ -26,13 +27,8 @@ from win_agent.process_supervision import (
 
 
 _ROOT = Path(__file__).resolve().parents[2]
-_VECTOR_PATH = (
-    _ROOT
-    / "backend"
-    / "tests"
-    / "fixtures"
-    / "runtime_reliability_060"
-    / "process-supervision-vectors.json"
+_VECTOR_PATH = fixture_path(
+    "runtime_reliability_060/process-supervision-vectors.json"
 )
 _CORPUS = json.loads(_VECTOR_PATH.read_text(encoding="utf-8"))
 _VECTORS = {item["id"]: item for item in _CORPUS["vectors"]}

@@ -2,7 +2,7 @@
 
 Runs ONE delivered bundle (`%LOCALAPPDATA%/AstralDeep/agents/<agent_id>/`) in a
 process of its own. The versioned bundle's `agent_main.py` owns the stdio loop:
-v2 reads the non-secret launch fence/runtime metadata supplied by its parent,
+v3 reads the non-secret launch fence/runtime metadata supplied by its parent,
 emits `agent_runtime_register`, then handles fully fenced request JSON lines.
 This module's whole job is to make that file importable and hand it control.
 

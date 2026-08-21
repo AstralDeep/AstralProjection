@@ -27,6 +27,7 @@ from win_agent.byo_host import (
     ByoAgentHost,
     canonical_bundle_sha256,
     check_runtime_compatibility,
+    derive_executor_audience,
     HostIdentityError,
     load_or_create_host_id,
 )
@@ -34,14 +35,7 @@ from win_agent.process_supervision import OutputStream
 
 
 _ROOT = Path(__file__).resolve().parents[2]
-_LOCK_FIXTURE_PATH = (
-    _ROOT
-    / "backend"
-    / "tests"
-    / "fixtures"
-    / "runtime_reliability_060"
-    / "runtime-lock-contract.json"
-)
+_LOCK_FIXTURE_PATH = _ROOT / "windows-client" / "deployment" / "runtime-lock-contract.json"
 _LOCK_FIXTURE = json.loads(_LOCK_FIXTURE_PATH.read_text(encoding="utf-8"))
 
 HOST_ID = "d373d586-c430-4668-90e7-3652ca86b88a"
@@ -54,8 +48,9 @@ AGENT_ID = "ua-example-abc123"
 
 def _bundle() -> dict[str, str]:
     return {
-        "agent_main.py": "# deterministic v2 child\n",
+        "agent_main.py": "# deterministic v3 child\n",
         "astralprims_ui.py": "def build_ui():\n    return []\n",
+        "protected_executor.py": "# reviewed public LETS adapter\n",
         "mcp_tools.py": "TOOL_REGISTRY = {}\n",
     }
 
@@ -83,10 +78,28 @@ def _delivery(files: dict[str, str] | None = None) -> dict:
             "runtime_instance_id": RUNTIME_INSTANCE_ID,
             "lifecycle_generation": 14,
         },
+        "authority": None,
         "runtime_contract_version": BYO_RUNTIME_CONTRACT_VERSION,
         "required_runtime_lock_sha256": RUNTIME_LOCK_SHA256,
         "bundle_sha256": canonical_bundle_sha256(files),
         "files": files,
+    }
+
+
+def _authority(*, fence: dict | None = None) -> dict:
+    fence = fence or _delivery()["fence"]
+    return {
+        "owner_id": "owner-123",
+        "binding_id": "binding-456",
+        "lease_id": "lease-789",
+        "lineage_id": "lineage-012",
+        "population": "byo_user",
+        "executor_audience": derive_executor_audience(
+            fence["host_id"], fence["host_session_id"]
+        ),
+        "agent_id": fence["agent_id"],
+        "runtime_instance_id": fence["runtime_instance_id"],
+        "lifecycle_generation": fence["lifecycle_generation"],
     }
 
 
@@ -171,6 +184,202 @@ def test_tracked_runtime_lock_fixture_is_the_only_windows_contract_source() -> N
             assert refusal == vector["refusal_code"]
 
 
+def test_executor_audience_derivation_matches_deep_canonical_vector() -> None:
+    assert derive_executor_audience(
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+    ) == (
+        "astraldeep.byo-executor/v1:"
+        "9e7551f451da68f7e25858d30b1947d3ee6befade36e6a91ee00f4b5cbd25f06"
+    )
+
+
+def test_v2_is_explicitly_legacy_and_never_launched(tmp_path) -> None:
+    supervisor = _RecordingSupervisor()
+    host = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path),
+        host_id=HOST_ID,
+        process_supervisor=supervisor,
+    )
+    host.handle_frame(_ack())
+    host.handle_frame(dict(_delivery(), runtime_contract_version=2))
+
+    assert check_runtime_compatibility(2, RUNTIME_LOCK_SHA256) == (
+        "legacy_runtime_dispatch_mediated_only"
+    )
+    assert supervisor.spawns == []
+
+
+def test_off_launch_has_no_authority_or_binding_state(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("LETS_MODE", "off")
+    monkeypatch.setenv("ASTRAL_AUTHORITY_BINDING_ID", "must-not-be-inherited")
+    monkeypatch.setenv("ASTRAL_AUTHORITY_LEASE_ID", "must-not-be-inherited")
+    monkeypatch.setenv("ASTRAL_AUTHORITY_LINEAGE_ID", "must-not-be-inherited")
+    supervisor = _RecordingSupervisor()
+    host = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path),
+        host_id=HOST_ID,
+        process_supervisor=supervisor,
+    )
+    host.handle_frame(_ack())
+    host.handle_frame(_delivery())
+
+    environment = supervisor.spawns[0]["env"]
+    assert environment["LETS_MODE"] == "off"
+    assert "ASTRAL_RUNTIME_AUTHORITY_JSON" not in environment
+    assert "ASTRAL_AUTHORITY_OWNER_ID" not in environment
+    assert "ASTRAL_AUTHORITY_BINDING_ID" not in environment
+    assert "ASTRAL_AUTHORITY_LEASE_ID" not in environment
+    assert "ASTRAL_AUTHORITY_LINEAGE_ID" not in environment
+    assert "LETS_EXECUTOR_INSTANCE_ID" not in environment
+
+
+def test_enforced_launch_requires_and_cross_checks_external_authority(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LETS_MODE", "enforce")
+    manifest_ref = str(tmp_path / "host-state" / "signed-manifest.json")
+    operator_ref = str(tmp_path / "host-state" / "operator-keys.json")
+    replay_ref = str(tmp_path / "host-state" / "replay")
+    anchor_ref = str(tmp_path / "independent-state" / "authority")
+    monkeypatch.setenv("LETS_SIGNED_TRUST_MANIFEST", manifest_ref)
+    monkeypatch.setenv("LETS_MANIFEST_OPERATOR_KEYS_FILE", operator_ref)
+    monkeypatch.setenv("LETS_EXECUTOR_DB_ROOT", replay_ref)
+    monkeypatch.setenv("LETS_EXECUTOR_AUTHORITY_ROOT", anchor_ref)
+    supervisor = _RecordingSupervisor()
+    host = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path),
+        host_id=HOST_ID,
+        process_supervisor=supervisor,
+    )
+    host.handle_frame(_ack())
+    missing = _delivery()
+    host.handle_frame(missing)
+    assert supervisor.spawns == []
+
+    protected = _delivery()
+    protected["authority"] = _authority(fence=protected["fence"])
+    host.handle_frame(protected)
+    environment = supervisor.spawns[0]["env"]
+    assert json.loads(environment["ASTRAL_RUNTIME_AUTHORITY_JSON"]) == (
+        protected["authority"]
+    )
+    assert environment["LETS_EXECUTOR_INSTANCE_ID"] == derive_executor_audience(
+        HOST_ID, HOST_SESSION_ID
+    )
+    assert environment["ASTRAL_RUNTIME_ID"] == RUNTIME_INSTANCE_ID
+    assert environment["ASTRAL_RUNTIME_GENERATION"] == "14"
+    assert environment["ASTRAL_AUTHORITY_LEASE_ID"] == "lease-789"
+    assert environment["ASTRAL_AUTHORITY_LINEAGE_ID"] == "lineage-012"
+    assert environment["LETS_SIGNED_TRUST_MANIFEST"] == manifest_ref
+    assert environment["LETS_MANIFEST_OPERATOR_KEYS_FILE"] == operator_ref
+    assert environment["LETS_EXECUTOR_DB_ROOT"] == replay_ref
+    assert environment["LETS_EXECUTOR_AUTHORITY_ROOT"] == anchor_ref
+    persisted = "".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            tmp_path / AGENT_ID / "revisions" / REVISION_ID
+        ).iterdir()
+    )
+    for host_only_value in (
+        protected["authority"]["owner_id"],
+        protected["authority"]["binding_id"],
+        protected["authority"]["lease_id"],
+        protected["authority"]["lineage_id"],
+        manifest_ref,
+        operator_ref,
+        replay_ref,
+        anchor_ref,
+    ):
+        assert host_only_value not in persisted
+
+
+def test_shadow_launch_accepts_degraded_null_or_bound_authority(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("LETS_MODE", "shadow")
+    degraded_supervisor = _RecordingSupervisor()
+    degraded = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path / "degraded"),
+        host_id=HOST_ID,
+        process_supervisor=degraded_supervisor,
+    )
+    degraded.handle_frame(_ack())
+    degraded.handle_frame(_delivery())
+    degraded_environment = degraded_supervisor.spawns[0]["env"]
+    assert degraded_environment["LETS_MODE"] == "shadow"
+    assert "ASTRAL_RUNTIME_AUTHORITY_JSON" not in degraded_environment
+
+    bound_supervisor = _RecordingSupervisor()
+    bound = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path / "bound"),
+        host_id=HOST_ID,
+        process_supervisor=bound_supervisor,
+    )
+    bound.handle_frame(_ack())
+    delivery = _delivery()
+    delivery["authority"] = _authority(fence=delivery["fence"])
+    bound.handle_frame(delivery)
+    assert json.loads(
+        bound_supervisor.spawns[0]["env"]["ASTRAL_RUNTIME_AUTHORITY_JSON"]
+    ) == delivery["authority"]
+
+
+def test_authority_mismatch_refuses_without_logging_or_persisting_values(
+    tmp_path, monkeypatch, caplog
+) -> None:
+    monkeypatch.setenv("LETS_MODE", "enforce")
+    supervisor = _RecordingSupervisor()
+    host = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path),
+        host_id=HOST_ID,
+        process_supervisor=supervisor,
+    )
+    host.handle_frame(_ack())
+    delivery = _delivery()
+    authority = _authority(fence=delivery["fence"])
+    authority["binding_id"] = "sensitive-binding-value"
+    authority["executor_audience"] = "wrong-audience"
+    delivery["authority"] = authority
+
+    host.handle_frame(delivery)
+
+    assert supervisor.spawns == []
+    assert "sensitive-binding-value" not in caplog.text
+    revision = tmp_path / AGENT_ID / "revisions" / REVISION_ID
+    assert not revision.exists()
+
+
+@pytest.mark.parametrize("missing", ["lease_id", "lineage_id"])
+def test_enforced_launch_refuses_incomplete_lease_authority(
+    tmp_path, monkeypatch, missing
+) -> None:
+    monkeypatch.setenv("LETS_MODE", "enforce")
+    supervisor = _RecordingSupervisor()
+    host = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path),
+        host_id=HOST_ID,
+        process_supervisor=supervisor,
+    )
+    host.handle_frame(_ack())
+    delivery = _delivery()
+    authority = _authority(fence=delivery["fence"])
+    authority.pop(missing)
+    delivery["authority"] = authority
+
+    host.handle_frame(delivery)
+
+    assert supervisor.spawns == []
+    assert not (tmp_path / AGENT_ID / "revisions" / REVISION_ID).exists()
+
+
 def test_host_identity_is_uuid4_and_persists_across_processes(tmp_path) -> None:
     first = load_or_create_host_id(str(tmp_path))
     second = load_or_create_host_id(str(tmp_path))
@@ -201,7 +410,7 @@ def test_protocol_registration_uses_persisted_identity_and_structured_metadata(
 
     assert frame["agent_host"] == {
         "host_id": HOST_ID,
-        "supported_runtime_contract_versions": [2],
+        "supported_runtime_contract_versions": [3],
         "runtime_lock_sha256": RUNTIME_LOCK_SHA256,
         "platform": "windows",
         "client_version": "0.4.0",
@@ -239,7 +448,7 @@ def test_protocol_binds_only_one_matching_server_session_ack() -> None:
             "code": "runtime_contract_unsupported",
             "retryable": False,
             "details": {
-                "required_runtime_contract_version": 2,
+                "required_runtime_contract_version": 3,
                 "supported_runtime_contract_versions": [1],
             },
             "refused_at": "2026-07-15T18:41:00Z",
@@ -362,7 +571,7 @@ def test_inventory_reconciliation_precedes_retained_start_and_is_exact(tmp_path)
             "agent_id": AGENT_ID,
             "revision_id": REVISION_ID,
             "bundle_sha256": canonical_bundle_sha256(files),
-            "runtime_contract_version": 2,
+            "runtime_contract_version": 3,
             "required_runtime_lock_sha256": RUNTIME_LOCK_SHA256,
         }
     ]
@@ -384,9 +593,10 @@ def test_inventory_reconciliation_precedes_retained_start_and_is_exact(tmp_path)
                         "delivery_id": str(uuid.uuid4()),
                         "runtime_instance_id": str(uuid.uuid4()),
                         "lifecycle_generation": 15,
-                        "runtime_contract_version": 2,
+                        "runtime_contract_version": 3,
                         "required_runtime_lock_sha256": RUNTIME_LOCK_SHA256,
                         "bundle_sha256": canonical_bundle_sha256(files),
+                        "authority": None,
                     },
                 }
             ],
@@ -492,7 +702,7 @@ def test_install_is_staged_immutable_and_process_id_is_allocated_at_spawn(
     registration = {
         "type": "agent_runtime_register",
         "fence": starting["fence"],
-        "runtime_contract_version": 2,
+        "runtime_contract_version": 3,
         "bundle_sha256": delivery["bundle_sha256"],
         "agent_card": {
             "name": "Example Agent",
@@ -558,7 +768,7 @@ def test_mismatched_first_registration_fails_and_duplicate_delivery_spawns_once(
     wrong = {
         "type": "agent_runtime_register",
         "fence": dict(starting["fence"], runtime_instance_id=str(uuid.uuid4())),
-        "runtime_contract_version": 2,
+        "runtime_contract_version": 3,
         "bundle_sha256": delivery["bundle_sha256"],
         "agent_card": {
             "name": "Example",
@@ -600,7 +810,7 @@ def test_registered_runtime_heartbeats_once_per_second_with_monotonic_sequence(
             {
                 "type": "agent_runtime_register",
                 "fence": fence,
-                "runtime_contract_version": 2,
+                "runtime_contract_version": 3,
                 "bundle_sha256": delivery["bundle_sha256"],
                 "agent_card": {
                     "name": "Example",
@@ -650,7 +860,7 @@ def test_fenced_tunnel_and_all_three_exit_kinds_are_exact(tmp_path) -> None:
     registration = {
         "type": "agent_runtime_register",
         "fence": fence,
-        "runtime_contract_version": 2,
+        "runtime_contract_version": 3,
         "bundle_sha256": delivery["bundle_sha256"],
         "agent_card": {
             "name": "Example",

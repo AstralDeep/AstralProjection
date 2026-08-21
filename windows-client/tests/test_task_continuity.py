@@ -202,7 +202,7 @@ def test_register_frame_declares_host_capability(qapp):
     frame = c._register_frame()
     assert frame["agent_host"] == {
         "host_id": c.host_id,
-        "supported_runtime_contract_versions": [2],
+        "supported_runtime_contract_versions": [3],
         "runtime_lock_sha256": c.host_registration.runtime_lock_sha256,
         "platform": "windows",
         "client_version": c.host_registration.client_version,

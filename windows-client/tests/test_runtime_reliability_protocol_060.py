@@ -118,7 +118,7 @@ def test_register_frame_is_structured_and_ack_binds_only_matching_host(qapp) -> 
         "platform",
         "client_version",
     }
-    assert frame["agent_host"]["supported_runtime_contract_versions"] == [2]
+    assert frame["agent_host"]["supported_runtime_contract_versions"] == [3]
     assert frame["agent_host"]["platform"] == "windows"
     assert "host_session_id" not in frame
 

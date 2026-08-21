@@ -131,10 +131,14 @@ hiddenimports = (
     + ["PySide6.QtCharts", "PySide6.QtMultimedia", "websockets",
        "livekit", "livekit.rtc",
        "win_agent", "win_agent.agent", "win_agent.tools",
+       "win_agent.lets_executor",
        "win_agent.byo_host", "win_agent.byo_worker",
        "astral_client.phi_gate", "astral_client.audit_log", "astral_client.integrity",
        "astral_client.confirm",
-       "psutil", "pyperclip", "sigstore", "astralprims"]
+       "psutil", "pyperclip", "sigstore", "astralprims", "lets", "nacl",
+       # Feature 074: this helper is reached through a pre-Qt frozen-exe
+       # entrypoint, so ordinary static import analysis cannot discover it.
+       "lets.authority_helper", "lets.executor"]
 )
 
 # Trim heavy, unused Qt modules to keep the binary lean.

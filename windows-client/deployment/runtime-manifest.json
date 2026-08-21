@@ -5,9 +5,9 @@
   "python_version": "3.11",
   "target_platform": "win_amd64",
   "deployment_profile_sha256": "771bd01cacaff4db5ef9e8bda6991b8502942da9630719720a475b05b9594bec",
-  "requirements_input_sha256": "349459af71b1f49de1d867c88942f72ff30126296b6b6e5b48776aa862aea9e1",
-  "requirements_lock_sha256": "82d58a54a8cd1a7ffd925d724ba247f0cfb09e4de0747aeca4a869f7dd87ba35",
-  "runtime_contract_version": 2,
-  "required_runtime_lock_sha256": "82d58a54a8cd1a7ffd925d724ba247f0cfb09e4de0747aeca4a869f7dd87ba35",
+  "requirements_input_sha256": "f7b1be1847f9a5deda45b9e191edb086c032fcf5b940245ef292a3fb4f961770",
+  "requirements_lock_sha256": "948def355ae1e4c37478d2c87c287d41d3a81055a96ff813c341d1b466096943",
+  "runtime_contract_version": 3,
+  "required_runtime_lock_sha256": "948def355ae1e4c37478d2c87c287d41d3a81055a96ff813c341d1b466096943",
   "worker_entrypoint": "AstralDeep.exe --byo-worker"
 }

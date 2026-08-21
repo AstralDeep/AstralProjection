@@ -93,6 +93,15 @@
       "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions."
     },
     {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
+      "sourceBlob": "9654d20e6514fbf9fa4b5dc0844e4521ea1b17d5",
+      "sourceMode": "100644",
+      "resultSha256": "13906595b5b390c350dc2319a4bcc61059f5bb72888d1c14a5555e672fc8849e",
+      "task": "T226",
+      "reason": "Make AstralPrimitives fixture regeneration use a portable explicit output path so Apple qualification can run from the standalone Projection checkout."
+    },
+    {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/voice_065",
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/voice_065",
       "sourceBlob": "79c3dfbdb641e8a5809f1b5c13bcde7ff18f8987",
@@ -124,9 +133,18 @@
       "sourcePath": "apple-clients/README.md",
       "sourceBlob": "cb691c78cf96254f272637b5c6ab21f59a6cb0ed",
       "sourceMode": "100644",
-      "resultSha256": "587828b97d44a12c0216d9dca349239334b80eec43b26681ca1c735de16d27f8",
+      "resultSha256": "94dece4f3e9576ab96ee1353ddd1d818e91ecfdad9a4345e374dbb429476e51d",
       "task": "T058/T188",
-      "reason": "Document the inactive protected Apple build-number workflow, canonical Primitives identity, standalone provenance, and the blocked container-only fixture-regeneration prerequisite."
+      "reason": "Document inactive Apple workflows, canonical Primitives identity, standalone provenance, portable fixture regeneration, and the required qualified-host gates."
+    },
+    {
+      "path": "apple-clients/Scripts/generate_app_icons.py",
+      "sourcePath": "apple-clients/Scripts/generate_app_icons.py",
+      "sourceBlob": "0911a5018f7cb8b2c626de70906bc39a5cedef25",
+      "sourceMode": "100644",
+      "resultSha256": "c4a9616b56414e62d54f3e47333dc92518ddc47208e504330978a5dd48757f38",
+      "task": "T226",
+      "reason": "Remove repository-wide Ruff violations from the Apple icon generator without altering generated image bytes."
     },
     {
       "path": "backend/webrender/chrome/menu_model.py",
@@ -291,6 +309,15 @@
       "reason": "Name the standalone Projection manifest as the current error-frame contract source."
     },
     {
+      "path": "scripts/windows_release_candidate.py",
+      "sourcePath": "scripts/windows_release_candidate.py",
+      "sourceBlob": "218aab81e3b3a53baa13834c4d34c04241c860f8",
+      "sourceMode": "100644",
+      "resultSha256": "d77bcbdf53d5eba3617c574c3c504870918db0d07ea771410dc30bc26232dd51",
+      "task": "T166",
+      "reason": "Bind Windows candidate assembly to the exact LETS runtime release lock and protected-executor bundle."
+    },
+    {
       "path": "tests/webrender/test_accessibility_060.py",
       "sourcePath": "backend/tests/webrender/test_accessibility_060.py",
       "sourceBlob": "e392fba3caa2f3c500a53ef14bface7a6e633084",
@@ -345,13 +372,31 @@
       "reason": "Read browser voice conformance vectors from Projection's canonical standalone fixture path."
     },
     {
+      "path": "windows-client/AstralDeep.spec",
+      "sourcePath": "windows-client/AstralDeep.spec",
+      "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
+      "sourceMode": "100644",
+      "resultSha256": "2be8358d3e8da33e19fd0bbd2355cd272457fa4f3279f7753da0ac1dff8d3ae6",
+      "task": "T166",
+      "reason": "Package the protected BYO executor and exact LETS runtime artifacts in the Windows application candidate."
+    },
+    {
       "path": "windows-client/README.md",
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "fab332bc0ff4878775370f1a82397f1b8dd4bbd61ec16e1db9bdcbe749177f57",
+      "resultSha256": "01f6a44784bf386ad764776e1c184b25a4e92686e88b4d9f76ec206ce703b5da",
       "task": "T060/T062/T188",
       "reason": "Remove runtime repository trust overrides, document the inactive bounded bridge transition, and replace a broken monorepo schema link with the standalone fail-closed validator and provenance."
+    },
+    {
+      "path": "windows-client/astral_client/deployment.py",
+      "sourcePath": "windows-client/astral_client/deployment.py",
+      "sourceBlob": "0483064234542ed0033353ee4551735228781990",
+      "sourceMode": "100644",
+      "resultSha256": "86afee658546d74bdea2b852409cec2409c488d53925c8add377d8d97efed89d",
+      "task": "T166",
+      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation."
     },
     {
       "path": "windows-client/astral_client/integrity.py",
@@ -363,6 +408,15 @@
       "reason": "Implement exact legacy and Projection repository/workflow bounds, byte-identical bridge selection, downgrade refusal, and selected-release digest binding."
     },
     {
+      "path": "windows-client/astral_client/protocol.py",
+      "sourcePath": "windows-client/astral_client/protocol.py",
+      "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
+      "sourceMode": "100644",
+      "resultSha256": "1b180b5debfc37eeb55f1fd5fbd35435b9ea2bc8d923fd0316c105dd2ad13ed5",
+      "task": "T166",
+      "reason": "Carry the exact runtime-v3 authority object and protected-executor disposition in the Windows delivery protocol."
+    },
+    {
       "path": "windows-client/astral_client/protocol_manifest.py",
       "sourcePath": "windows-client/astral_client/protocol_manifest.py",
       "sourceBlob": "7b47e7e8a789b1d7a5b0fae543b3ff0665248148",
@@ -372,6 +426,42 @@
       "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions."
     },
     {
+      "path": "windows-client/deployment/runtime-manifest.json",
+      "sourcePath": "windows-client/deployment/runtime-manifest.json",
+      "sourceBlob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
+      "sourceMode": "100644",
+      "resultSha256": "0367fc09456b558a403d9fa978b13c7dafd8391eb219a759915489bb9498ee68",
+      "task": "T166",
+      "reason": "Declare runtime contract v3 and the protected-executor file in the signed Windows deployment bundle."
+    },
+    {
+      "path": "windows-client/main.py",
+      "sourcePath": "windows-client/main.py",
+      "sourceBlob": "7b9c2fba21cb01b78cc90f531ae3712b366d9542",
+      "sourceMode": "100644",
+      "resultSha256": "48e6196d3a97347404a1c48362eecf3b78cb06c5a3b497c3d1964acda47a0778",
+      "task": "T166",
+      "reason": "Propagate authenticated host-session identity into the runtime-v3 Windows BYO authority boundary."
+    },
+    {
+      "path": "windows-client/requirements-release.lock.txt",
+      "sourcePath": "windows-client/requirements-release.lock.txt",
+      "sourceBlob": "f533dbb4dfcedf6398a8c1649dccd37fd4c1f7f7",
+      "sourceMode": "100644",
+      "resultSha256": "948def355ae1e4c37478d2c87c287d41d3a81055a96ff813c341d1b466096943",
+      "task": "T166",
+      "reason": "Pin the exact signed LETS v1.0.10 wheel URL and digest for reproducible Windows candidates."
+    },
+    {
+      "path": "windows-client/requirements.in",
+      "sourcePath": "windows-client/requirements.in",
+      "sourceBlob": "17727135e29ec6a7bafc0950777a2e134e4f3ef6",
+      "sourceMode": "100644",
+      "resultSha256": "f7b1be1847f9a5deda45b9e191edb086c032fcf5b940245ef292a3fb4f961770",
+      "task": "T166",
+      "reason": "Declare the signed LETS public executor dependency consumed by the Windows protected runtime."
+    },
+    {
       "path": "windows-client/tests/e2e_voice_065.py",
       "sourcePath": "windows-client/tests/e2e_voice_065.py",
       "sourceBlob": "78e7984e4ed2f176c5ea98546dff685a4f3295b2",
@@ -379,6 +469,24 @@
       "resultSha256": "c31ebc82870f249a9fc5ba506f85cfc22fe2053e5304f98ac2f693e047419b30",
       "task": "T053",
       "reason": "Repoint Windows voice conformance to Projection's fixture and its local stdlib-only materializer instead of an absent Deep contract-CI module."
+    },
+    {
+      "path": "windows-client/tests/test_byo_runtime_compatibility.py",
+      "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
+      "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
+      "sourceMode": "100644",
+      "resultSha256": "8964ce7570788db6e700f763d577a0d764b096ab39136b1c5449919550a8a2a5",
+      "task": "T166",
+      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, and legacy-v2 mediation."
+    },
+    {
+      "path": "windows-client/tests/test_byo_supervision_060.py",
+      "sourcePath": "windows-client/tests/test_byo_supervision_060.py",
+      "sourceBlob": "f47bc7a74113baf1015a0aec2e386652c41e4613",
+      "sourceMode": "100644",
+      "resultSha256": "6bd5dab851730af46c30d4f9e2eeac9dec492ba36d08d99a807cf5b074905857",
+      "task": "T166",
+      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path."
     },
     {
       "path": "windows-client/tests/test_integrity.py",
@@ -399,6 +507,15 @@
       "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract."
     },
     {
+      "path": "windows-client/tests/test_release_lock_060.py",
+      "sourcePath": "windows-client/tests/test_release_lock_060.py",
+      "sourceBlob": "d0609608eb814ed3705f4ef19b878b47bcf6fd07",
+      "sourceMode": "100644",
+      "resultSha256": "71c6266028ac017b55994930c2e91b35ca4ce99d03b201269c0493be81748ab5",
+      "task": "T166",
+      "reason": "Verify the exact signed LETS wheel lock and protected-executor candidate inventory."
+    },
+    {
       "path": "windows-client/tests/test_renderer.py",
       "sourcePath": "windows-client/tests/test_renderer.py",
       "sourceBlob": "15b1de77422f7c88ee9f9d91eb3a537614abb64e",
@@ -406,6 +523,51 @@
       "resultSha256": "430b60edd2561b53d688dfc4ba5a76bb5aa491d277b6a8c062903eb1789cfc1b",
       "task": "T053",
       "reason": "Repoint Windows renderer vocabulary parity to the standalone Projection contract."
+    },
+    {
+      "path": "windows-client/tests/test_runtime_reliability_protocol_060.py",
+      "sourcePath": "windows-client/tests/test_runtime_reliability_protocol_060.py",
+      "sourceBlob": "82a673d2743897cb87339d5b771094f1f2ece684",
+      "sourceMode": "100644",
+      "resultSha256": "9998a01b91eed26c57e723d7874c685eaef897cb2bc45078d4d8c26c4623840f",
+      "task": "T166",
+      "reason": "Exercise the runtime-v3 delivery fence and protected-executor reliability contract."
+    },
+    {
+      "path": "windows-client/tests/test_task_continuity.py",
+      "sourcePath": "windows-client/tests/test_task_continuity.py",
+      "sourceBlob": "234b11ea4cefbc4418a46fa444790d7bb416f081",
+      "sourceMode": "100644",
+      "resultSha256": "242a51a51e8b8dfb239a4565e87b41968fd7362e3a9ed784bba8d290f7423000",
+      "task": "T166",
+      "reason": "Preserve runtime-v3 authority identity across bounded Windows task recovery and successor delivery."
+    },
+    {
+      "path": "windows-client/win_agent/agent.py",
+      "sourcePath": "windows-client/win_agent/agent.py",
+      "sourceBlob": "d30ecec78c8753d1ea6cdcb278aff62a85c23a59",
+      "sourceMode": "100644",
+      "resultSha256": "21eea828c11aad00bf037a2f1274e12d9c53dc4aaa38598605806225ba387534",
+      "task": "T166",
+      "reason": "Admit only exact runtime-v3 delivery authority and pass bounded LETS executor references to the child."
+    },
+    {
+      "path": "windows-client/win_agent/byo_host.py",
+      "sourcePath": "windows-client/win_agent/byo_host.py",
+      "sourceBlob": "6ed2071b286421438f09c14cc6725540e2de370e",
+      "sourceMode": "100644",
+      "resultSha256": "7d2aa7a4f8a0e3932fae796fdaca23ff2884fe6ebfd4dad88ddf2cd2dee39307",
+      "task": "T166",
+      "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch."
+    },
+    {
+      "path": "windows-client/win_agent/byo_worker.py",
+      "sourcePath": "windows-client/win_agent/byo_worker.py",
+      "sourceBlob": "ea2e21054cc25ead2a740dc66429231b329fc0fe",
+      "sourceMode": "100644",
+      "resultSha256": "2a9bfb7850cdd165bd87df17c6b15853dd19f5fbec8f23b5d0c2fde32cbb5884",
+      "task": "T166",
+      "reason": "Launch runtime-v3 BYO children with explicit LETS mode and non-secret descriptor-bound authority references."
     },
     {
       "path": "workflows-disabled/android-ci.yml",

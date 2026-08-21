@@ -48,6 +48,10 @@ def test_compatibility_packages_and_public_facade_are_importable() -> None:
         (resources.vendor_path, "THIRD_PARTY_NOTICES.livekit-client.sha256"),
         (resources.fixture_path, "voice_065/client_conformance.json"),
         (resources.fixture_path, "voice_065/recap_review_matrix.json"),
+        (
+            resources.fixture_path,
+            "runtime_reliability_060/process-supervision-vectors.json",
+        ),
     ],
 )
 def test_declared_resources_are_present(accessor, name: str) -> None:

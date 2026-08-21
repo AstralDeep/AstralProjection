@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from collections import OrderedDict
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -30,6 +31,13 @@ from aiohttp import web
 
 from astral_client import __version__
 from astral_client.audit_log import AuditLogger
+from .lets_executor import (
+    ProtectedExecutorConfigurationError,
+    ProtectedExecutorError,
+    ProtectedExecutorRuntime,
+    extract_permit,
+    load_protected_executor,
+)
 from .tools import TOOL_REGISTRY, set_context
 
 if TYPE_CHECKING:
@@ -43,6 +51,29 @@ AGENT_DESC = ("Windows tools that run on the user's PC: read/write/edit files an
               "run commands inside an approved workspace, plus system info, clipboard, "
               "notifications, and open. Every action is permission-gated, PHI-gated "
               "(fail-closed), and audited.")
+
+_protected_executor: ProtectedExecutorRuntime | None = None
+_protected_executor_lock = threading.Lock()
+
+
+def _get_protected_executor() -> ProtectedExecutorRuntime:
+    """Load the process-lifetime verifier once from operator-owned state."""
+
+    global _protected_executor
+    with _protected_executor_lock:
+        if _protected_executor is None:
+            _protected_executor = load_protected_executor(agent_id=AGENT_ID)
+        return _protected_executor
+
+
+def _reset_protected_executor_for_tests() -> None:
+    """Release persistent authority handles before a test changes its env."""
+
+    global _protected_executor
+    with _protected_executor_lock:
+        if _protected_executor is not None:
+            _protected_executor.close()
+        _protected_executor = None
 
 
 def _bypass_enabled() -> bool:
@@ -69,6 +100,7 @@ def build_card(
         "host": "windows-client",
         "platform": "windows",
         "dangerous_bypass": _bypass_enabled(),
+        "protected_executor": _get_protected_executor().card_metadata(),
     }
     if deployment_profile is not None:
         metadata.update(
@@ -325,6 +357,17 @@ def dispatch(req: Dict[str, Any]) -> Dict[str, Any]:
             sig = inspect.signature(fn)
             if not any(p.kind == p.VAR_KEYWORD for p in sig.parameters.values()):
                 args = {k: v for k, v in args.items() if k in sig.parameters}
+            executor = _get_protected_executor()
+            permit = extract_permit(req.get("caller_capabilities"))
+            if executor.requires_permit:
+                if permit is None:
+                    raise ProtectedExecutorError("missing_protected_permit")
+                executor.verify_and_claim(
+                    metadata=permit,
+                    final_arguments=args,
+                    tool_id=name,
+                    tool_scope=info.get("scope", ""),
+                )
             result = fn(**args)
             comps = result.get("_ui_components") if isinstance(result, dict) else None
             data = result.get("_data") if isinstance(result, dict) else result
@@ -332,6 +375,13 @@ def dispatch(req: Dict[str, Any]) -> Dict[str, Any]:
                     "result_type": "complete",
                     "responder_info": {"name": AGENT_ID, "version": "1.0.0"},
                     "result": data, "ui_components": comps}
+        except ProtectedExecutorError as exc:
+            logger.warning("protected tool %s refused: %s", name, exc.code)
+            return {"type": "mcp_response", "request_id": rid,
+                    "result_type": "complete",
+                    "responder_info": {"name": AGENT_ID, "version": "1.0.0"},
+                    "error": {"code": -32073, "message": exc.code,
+                              "retryable": exc.retryable}}
         except Exception as exc:  # noqa: BLE001
             logger.exception("tool %s failed", name)
             return {"type": "mcp_response", "request_id": rid,
@@ -403,6 +453,12 @@ def make_app(
         raise AgentKeyUnavailable(
             f"{reason} — refusing to serve the Windows tools agent"
         )
+    try:
+        _get_protected_executor()
+    except ProtectedExecutorConfigurationError as exc:
+        raise AgentKeyUnavailable(
+            f"protected executor is not ready ({exc.code}) — refusing to serve"
+        ) from None
     app = web.Application()
     app["deployment_profile"] = deployment_profile
     app["inbound_key"] = key

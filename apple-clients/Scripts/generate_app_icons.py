@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import pathlib
 import struct
 import subprocess
@@ -99,8 +98,10 @@ def read_png(path: pathlib.Path) -> tuple[int, int, int, bytearray]:
     prev = bytearray(stride)
     pos = 0
     for y in range(height):
-        filt = raw[pos]; pos += 1
-        line = bytearray(raw[pos:pos + stride]); pos += stride
+        filt = raw[pos]
+        pos += 1
+        line = bytearray(raw[pos:pos + stride])
+        pos += stride
         if filt:
             for i in range(stride):
                 a = line[i - channels] if i >= channels else 0
@@ -275,7 +276,7 @@ def generate(master: pathlib.Path) -> None:
                        APP_ICONSET / "AppIcon-1024-dark.png",
                        WATCH_ICONSET / "AppIcon-1024.png"):
             write_png(target, w, h, 3, rgb)
-        print(f"  ios/watch  1024x1024 opaque  -> 3 files")
+        print("  ios/watch  1024x1024 opaque  -> 3 files")
 
         # --- macOS: rounded-rect body inside a transparent gutter, ten slots.
         body = tmp / "body-824.png"

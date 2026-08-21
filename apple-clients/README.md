@@ -77,14 +77,13 @@ let canvas = AstralPrims.createUIResponse([
 
 Fidelity is pinned by known-answer fixtures generated from the exact
 AstralPrimitives package: every Swift construction in `PrimitivesTests` must
-byte-match its Python `to_dict()`. Regeneration is currently an explicit
-composition-activation prerequisite: the imported helper still writes to the
-historical container-only `/tmp/fixtures_out.json` path, while the standalone
-Projection build intentionally has no active composed-image workflow. Do not
-run the former `astraldeep` container commands or replace the committed fixture
-from an index-resolved package. Before workflow activation, give the helper a
-repository-relative output argument, run it against the exact composed
-AstralPrimitives revision, review the fixture diff, and then run:
+byte-match its Python `to_dict()`. The helper now writes the portable sibling
+`AstralCore/Tests/AstralCoreTests/Fixtures/astralprims-fixtures.generated.json`
+by default, or an explicit `--output` path. Do not run former `astraldeep`
+container commands or replace the committed fixture from an index-resolved
+package. Before workflow activation, run the helper against the exact composed
+AstralPrimitives revision, review the generated file against
+`astralprims-fixtures.json`, and then run:
 
 ```bash
 swift test --package-path apple-clients/AstralCore
@@ -129,8 +128,9 @@ python3 apple-clients/Scripts/generate_app_icons.py --check    # verify only (CI
 ```
 
 The iOS/watchOS 1024 icons are fully opaque (ITMS-90717); the ten macOS slots
-keep their transparent gutter. `--check` is run by `apple-ci.yml` so an icon
-regression fails in CI rather than at App Store upload.
+keep their transparent gutter. The currently inactive
+`workflows-disabled/apple-ci.yml` contains the intended `--check` gate; until
+activation, run it locally on the qualified macOS host.
 
 ## Build & test — all three schemes
 
@@ -302,7 +302,8 @@ MobileDevice and Xcode UserData profile directories and asserts it found ≥3.
 - Per-frame/per-component dispositions live in
   `AstralCore/Sources/AstralCore/Protocol/Dispositions.swift` — the
   machine-checked seed of the 044 parity matrix rows for ios/macos/watch.
-- CI: `.github/workflows/apple-ci.yml` runs the icon `--check` gate and
-  `swift test` on a macOS runner, then unsigned `xcodebuild` of all three app
-  targets (iOS, macOS, watchOS) against the committed project.
+- Intended CI: the inactive `workflows-disabled/apple-ci.yml` definition runs
+  the icon `--check` gate and `swift test` on a macOS runner, then unsigned
+  `xcodebuild` of all three app targets (iOS, macOS, watchOS) against the
+  committed project. It is not active during migration.
 - Known gaps: `KNOWN-ISSUES.md`.

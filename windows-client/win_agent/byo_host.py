@@ -1,7 +1,7 @@
-"""BYO agent host and v2 runtime-fencing coordinator (058/060).
+"""BYO agent host and v3 protected-runtime coordinator (058/060/074).
 
 This is the desktop half of `specs/058-byo-agents-runtime/contracts/host-bundle.md`.
-The orchestrator generates a self-contained 3-file bundle and pushes it down the
+The orchestrator generates a self-contained 4-file bundle and pushes it down the
 owner's authenticated UI socket; this module writes it to disk, runs it as a
 **separate child process**, and pumps frames between that child and the socket:
 
@@ -34,6 +34,7 @@ import shutil
 import sys
 import threading
 import time
+import unicodedata
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -58,12 +59,18 @@ HOST_FRAME_TYPES = (
     "agent_offline",
 )
 
-BYO_RUNTIME_CONTRACT_VERSION = 2
+BYO_RUNTIME_CONTRACT_VERSION = 3
+LEGACY_RUNTIME_DISPOSITIONS = {2: "dispatch_mediated_only"}
 PACKAGED_RUNTIME_LOCK_ARTIFACT = "requirements-release.lock.txt"
 PACKAGED_RUNTIME_LOCK_SHA256 = (
-    "82d58a54a8cd1a7ffd925d724ba247f0cfb09e4de0747aeca4a869f7dd87ba35"
+    "948def355ae1e4c37478d2c87c287d41d3a81055a96ff813c341d1b466096943"
 )
-BUNDLE_FILE_NAMES = ("agent_main.py", "astralprims_ui.py", "mcp_tools.py")
+BUNDLE_FILE_NAMES = (
+    "agent_main.py",
+    "astralprims_ui.py",
+    "protected_executor.py",
+    "mcp_tools.py",
+)
 _RUNTIME_METADATA_FILE = ".astraldeep-runtime.json"
 _HOST_IDENTITY_FILE = ".host-identity.json"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -83,6 +90,23 @@ _CHILD_ENV_ALLOWLIST = {
     "TMP",
     "USERPROFILE",
     "WINDIR",
+}
+# Non-secret operator configuration needed by the public LETS executor.  The
+# server-owned authority binding is never inherited: it is validated against
+# the launch fence and injected explicitly by ``_launch_v3`` below.
+_PROTECTED_EXECUTOR_ENV_ALLOWLIST = {
+    "ASTRAL_ENV",
+    "FF_LETS_EXTERNAL_WARDEN",
+    "LETS_MODE",
+    "LETS_SIGNED_TRUST_MANIFEST",
+    "LETS_MANIFEST_OPERATOR_KEYS_FILE",
+    "LETS_WARDEN_ID",
+    "LETS_TENANT_ID",
+    "LETS_ENVELOPE_ID",
+    "LETS_POLICY_DIGEST",
+    "LETS_MACHINE_DIGEST",
+    "LETS_EXECUTOR_DB_ROOT",
+    "LETS_EXECUTOR_AUTHORITY_ROOT",
 }
 
 #: How long to wait for the server's `agent_registered` ack after starting a
@@ -242,13 +266,13 @@ def load_or_create_host_id(base_dir: Optional[str] = None) -> str:
 
 
 def canonical_bundle_sha256(files: dict[str, str]) -> str:
-    """Digest the complete v2 three-file mapping as canonical UTF-8 JSON."""
+    """Digest the complete v3 four-file mapping as canonical UTF-8 JSON."""
 
     if set(files) != set(BUNDLE_FILE_NAMES) or any(
         not isinstance(name, str) or not isinstance(source, str)
         for name, source in files.items()
     ):
-        raise ValueError("v2 bundles contain exactly the three declared text files")
+        raise ValueError("v3 bundles contain exactly the four declared text files")
     canonical = json.dumps(
         files,
         ensure_ascii=False,
@@ -263,6 +287,8 @@ def check_runtime_compatibility(
 ) -> Optional[str]:
     """Return the canonical refusal code, or None for the packaged runtime."""
 
+    if runtime_contract_version in LEGACY_RUNTIME_DISPOSITIONS:
+        return "legacy_runtime_dispatch_mediated_only"
     if runtime_contract_version != BYO_RUNTIME_CONTRACT_VERSION:
         return "runtime_contract_unsupported"
     if required_runtime_lock_sha256 != PACKAGED_RUNTIME_LOCK_SHA256:
@@ -271,13 +297,103 @@ def check_runtime_compatibility(
 
 
 def _child_environment() -> dict[str, str]:
-    """Minimal OS environment; never inherit credentials into authored code."""
+    """Minimal OS and executor config; never inherit credentials into code."""
 
     return {
         key: value
         for key, value in os.environ.items()
         if key.upper() in _CHILD_ENV_ALLOWLIST
+        or key.upper() in _PROTECTED_EXECUTOR_ENV_ALLOWLIST
     }
+
+
+def _local_lets_mode() -> str:
+    """Return the host-selected local posture, including an explicit off."""
+
+    mode = os.getenv("LETS_MODE", "off").strip().lower() or "off"
+    if mode not in {"off", "shadow", "enforce"}:
+        raise ValueError("local LETS mode is invalid")
+    return mode
+
+
+def _authority_identifier(value: object, name: str) -> str:
+    """Validate one opaque authority identifier without ever logging its value."""
+
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or len(value.encode("utf-8")) > 512
+        or any(
+            character.isspace()
+            or unicodedata.category(character).startswith("C")
+            for character in value
+        )
+    ):
+        raise ValueError(f"{name} is invalid")
+    return value
+
+
+def derive_executor_audience(host_id: object, host_session_id: object) -> str:
+    """Derive the immutable executor audience from the authenticated host fence."""
+
+    canonical_host_id = _canonical_uuid4(host_id, "host_id")
+    canonical_session_id = _canonical_uuid4(host_session_id, "host_session_id")
+    material = (
+        f"astraldeep.byo_user\0{canonical_host_id}\0{canonical_session_id}"
+    ).encode("utf-8")
+    return f"astraldeep.byo-executor/v1:{hashlib.sha256(material).hexdigest()}"
+
+
+def _runtime_authority(
+    value: object,
+    *,
+    fence: dict[str, Any],
+) -> dict[str, Any]:
+    """Validate the server-owned v3 authority binding against its launch fence."""
+
+    expected = {
+        "owner_id",
+        "binding_id",
+        "lease_id",
+        "lineage_id",
+        "population",
+        "executor_audience",
+        "agent_id",
+        "runtime_instance_id",
+        "lifecycle_generation",
+    }
+    if not isinstance(value, dict) or set(value) != expected:
+        raise ValueError("runtime authority fields are invalid")
+    for name in (
+        "owner_id",
+        "binding_id",
+        "lease_id",
+        "lineage_id",
+        "executor_audience",
+    ):
+        _authority_identifier(value[name], name)
+    if value["population"] != "byo_user":
+        raise ValueError("runtime authority population is invalid")
+    if value["agent_id"] != fence["agent_id"]:
+        raise ValueError("runtime authority agent is invalid")
+    expected_audience = derive_executor_audience(
+        fence["host_id"], fence["host_session_id"]
+    )
+    if value["executor_audience"] != expected_audience:
+        raise ValueError("runtime authority audience is invalid")
+    _canonical_uuid4(value["runtime_instance_id"], "authority runtime_instance_id")
+    if value["runtime_instance_id"] != fence["runtime_instance_id"]:
+        raise ValueError("runtime authority instance is invalid")
+    generation = value["lifecycle_generation"]
+    if (
+        type(generation) is not int
+        or generation < 1
+        or generation >= 1 << 64
+        or generation != fence["lifecycle_generation"]
+    ):
+        raise ValueError("runtime authority generation is invalid")
+    return dict(value)
 
 
 def agents_root() -> str:
@@ -465,17 +581,17 @@ class ByoAgentHost:
             self._reconcile_inventory(msg)
         elif t == "agent_bundle_deliver":
             if "fence" in msg or "runtime_contract_version" in msg:
-                self._deliver_v2(msg)
+                self._deliver_v3(msg)
             elif self._spawn is not None:
                 # Test-only/feature-058 compatibility path. Production hosting
-                # advertises only v2 and never silently treats v1 as v2.
+                # advertises only v3 and never silently treats v1 as v3.
                 self.deliver(
                     msg.get("agent_id") or "",
                     msg.get("files") or {},
                     msg.get("constitution_version"),
                 )
             else:
-                logger.warning("refusing an implicit legacy BYO bundle on the v2 host")
+                logger.warning("refusing an implicit legacy BYO bundle on the v3 host")
         elif t == "agent_tunnel":
             if isinstance(msg.get("fence"), dict):
                 self._to_runtime_child(msg)
@@ -486,7 +602,7 @@ class ByoAgentHost:
                 self._stop_runtime_fence(msg["fence"])
             else:
                 # A legacy server stop is terminal and removes its mutable v1
-                # bundle. V2 immutable revision deletion arrives via inventory.
+                # bundle. V3 immutable revision deletion arrives via inventory.
                 self.remove(msg.get("agent_id") or "")
         elif t == "agent_offline":
             # The server dropped routing for one of this owner's agents (its host
@@ -528,7 +644,7 @@ class ByoAgentHost:
         )
 
     def on_transport_disconnected(self) -> None:
-        """Fence and settle every v2 child tied to the lost server session."""
+        """Fence and settle every v3 child tied to the lost server session."""
 
         with self._lock:
             children = list(self._runtime_children.values())
@@ -648,7 +764,7 @@ class ByoAgentHost:
                     (item.agent_id, item.revision_id): item for item in entries
                 }
                 self._inventory_completed = False
-            self._send_v2_frame(
+            self._send_v3_frame(
                 {
                     "type": "agent_host_inventory",
                     "host_id": self.host_id,
@@ -723,7 +839,7 @@ class ByoAgentHost:
         offline after the client restarts."""
         self.on_transport_connected()
         if self._spawn is None:
-            # Production v2: wait for agent_host_registered and, when retained
+            # Production v3: wait for agent_host_registered and, when retained
             # entries exist, agent_host_inventory_reconciled. No disk code is
             # started merely because the WebSocket transport opened.
             return
@@ -781,7 +897,7 @@ class ByoAgentHost:
             logger.info("rehydrated %d byo agent(s) from disk: %s", len(started), started)
         return started
 
-    # --- v2 durable inventory / immutable installation ------------------- #
+    # --- v3 durable inventory / immutable installation ------------------- #
 
     def _revision_dir(self, agent_id: str, revision_id: str) -> Optional[str]:
         agent_dir = self._agent_dir(agent_id)
@@ -877,7 +993,7 @@ class ByoAgentHost:
                 if installed is not None:
                     entries.append(installed)
                 else:
-                    # Corrupt/partial v2 revisions are never asserted as valid
+                    # Corrupt/partial v3 revisions are never asserted as valid
                     # inventory and can never become executable after reconnect.
                     candidate = os.path.join(revisions_dir, revision_id)
                     if os.path.isdir(candidate):
@@ -893,7 +1009,7 @@ class ByoAgentHost:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def _install_v2_bundle(
+    def _install_v3_bundle(
         self,
         *,
         agent_id: str,
@@ -977,7 +1093,7 @@ class ByoAgentHost:
         ):
             _canonical_uuid4(value[name], name)
         generation = value["lifecycle_generation"]
-        if type(generation) is not int or generation < 0 or generation >= 1 << 64:
+        if type(generation) is not int or generation < 1 or generation >= 1 << 64:
             raise ValueError("lifecycle_generation is invalid")
         return dict(value)
 
@@ -1000,7 +1116,7 @@ class ByoAgentHost:
         _canonical_uuid4(process_id, "process_id")
         return dict(value)
 
-    def _deliver_v2(self, msg: dict[str, Any]) -> bool:
+    def _deliver_v3(self, msg: dict[str, Any]) -> bool:
         with self._lock:
             session_id = self._accepted_host_session_id
             inventory_completed = self._inventory_completed
@@ -1014,6 +1130,7 @@ class ByoAgentHost:
             if set(msg) != {
                 "type",
                 "fence",
+                "authority",
                 "runtime_contract_version",
                 "required_runtime_lock_sha256",
                 "bundle_sha256",
@@ -1030,6 +1147,17 @@ class ByoAgentHost:
             if compatibility is not None:
                 logger.warning("refusing incompatible BYO bundle: %s", compatibility)
                 return False
+            mode = _local_lets_mode()
+            if mode == "off":
+                if msg["authority"] is not None:
+                    raise ValueError("off delivery carries an authority binding")
+                authority = None
+            elif msg["authority"] is not None:
+                authority = _runtime_authority(msg["authority"], fence=fence)
+            elif mode == "enforce":
+                raise ValueError("enforced delivery is missing authority")
+            else:
+                authority = None
             files = msg["files"]
             digest = msg["bundle_sha256"]
             if not isinstance(files, dict) or not isinstance(digest, str):
@@ -1038,7 +1166,7 @@ class ByoAgentHost:
                 logger.warning("refusing BYO bundle with bundle_digest_mismatch")
                 return False
         except (KeyError, TypeError, ValueError):
-            logger.warning("discarding malformed v2 BYO bundle", exc_info=True)
+            logger.warning("discarding malformed v3 BYO bundle", exc_info=True)
             return False
 
         with self._lock:
@@ -1047,7 +1175,7 @@ class ByoAgentHost:
                 for child in self._runtime_children.values()
             ):
                 return True
-        installed = self._install_v2_bundle(
+        installed = self._install_v3_bundle(
             agent_id=fence["agent_id"],
             revision_id=fence["revision_id"],
             files=files,
@@ -1063,7 +1191,7 @@ class ByoAgentHost:
                 reason_code="bundle_install_failed",
             )
             return False
-        return self._launch_v2(installed, fence)
+        return self._launch_v3(installed, fence, authority)
 
     def _selected_delivery(
         self, value: object, installed: _InstalledRevision
@@ -1075,13 +1203,14 @@ class ByoAgentHost:
             "runtime_contract_version",
             "required_runtime_lock_sha256",
             "bundle_sha256",
+            "authority",
         }
         if not isinstance(value, dict) or set(value) != expected:
             raise ValueError("selected delivery fields are invalid")
         _canonical_uuid4(value["delivery_id"], "delivery_id")
         _canonical_uuid4(value["runtime_instance_id"], "runtime_instance_id")
         generation = value["lifecycle_generation"]
-        if type(generation) is not int or generation < 0 or generation >= 1 << 64:
+        if type(generation) is not int or generation < 1 or generation >= 1 << 64:
             raise ValueError("selected lifecycle generation is invalid")
         if (
             value["runtime_contract_version"] != installed.runtime_contract_version
@@ -1090,7 +1219,27 @@ class ByoAgentHost:
             or value["bundle_sha256"] != installed.bundle_sha256
         ):
             raise ValueError("selected delivery does not match the retained revision")
-        return dict(value)
+        fence = {
+            "agent_id": installed.agent_id,
+            "host_id": self.host_id,
+            "host_session_id": self._accepted_host_session_id,
+            "delivery_id": value["delivery_id"],
+            "revision_id": installed.revision_id,
+            "runtime_instance_id": value["runtime_instance_id"],
+            "lifecycle_generation": generation,
+        }
+        mode = _local_lets_mode()
+        if mode == "off":
+            if value["authority"] is not None:
+                raise ValueError("off selection carries an authority binding")
+            authority = None
+        elif value["authority"] is not None:
+            authority = _runtime_authority(value["authority"], fence=fence)
+        elif mode == "enforce":
+            raise ValueError("enforced selection is missing authority")
+        else:
+            authority = None
+        return dict(value, authority=authority)
 
     def _reconcile_inventory(self, msg: dict[str, Any]) -> bool:
         """Validate the complete action set before deleting or starting anything."""
@@ -1187,16 +1336,16 @@ class ByoAgentHost:
                 "runtime_instance_id": selected["runtime_instance_id"],
                 "lifecycle_generation": selected["lifecycle_generation"],
             }
-            self._launch_v2(installed, fence)
+            self._launch_v3(installed, fence, selected["authority"])
         return True
 
-    # --- v2 launch, child protocol, heartbeat, and exit ------------------ #
+    # --- v3 launch, child protocol, heartbeat, and exit ------------------ #
 
-    def _send_v2_frame(self, frame: dict[str, Any]) -> None:
+    def _send_v3_frame(self, frame: dict[str, Any]) -> None:
         try:
             self._send_frame(frame)
         except Exception:  # noqa: BLE001 - transport loss triggers host teardown
-            logger.debug("BYO v2 frame send failed: %s", frame.get("type"), exc_info=True)
+            logger.debug("BYO v3 frame send failed: %s", frame.get("type"), exc_info=True)
 
     def _prelaunch_failure(
         self,
@@ -1211,7 +1360,7 @@ class ByoAgentHost:
         with self._lock:
             if self._accepted_host_session_id != fence.get("host_session_id"):
                 return
-        self._send_v2_frame(
+        self._send_v3_frame(
             {
                 "type": "agent_runtime_state",
                 "fence": dict(fence),
@@ -1229,7 +1378,7 @@ class ByoAgentHost:
         with self._lock:
             if self._accepted_host_session_id != child.fence["host_session_id"]:
                 return
-        self._send_v2_frame(
+        self._send_v3_frame(
             {
                 "type": "agent_runtime_state",
                 "fence": dict(child.fence),
@@ -1241,9 +1390,24 @@ class ByoAgentHost:
             }
         )
 
-    def _launch_v2(
-        self, installed: _InstalledRevision, prelaunch_fence: dict[str, Any]
+    def _launch_v3(
+        self,
+        installed: _InstalledRevision,
+        prelaunch_fence: dict[str, Any],
+        authority: Optional[dict[str, Any]],
     ) -> bool:
+        try:
+            mode = _local_lets_mode()
+            if mode == "off":
+                if authority is not None:
+                    raise ValueError("off launch carries an authority binding")
+            elif authority is not None:
+                authority = _runtime_authority(authority, fence=prelaunch_fence)
+            elif mode == "enforce":
+                raise ValueError("enforced launch is missing authority")
+        except (KeyError, TypeError, ValueError):
+            logger.warning("refusing BYO launch with an invalid authority fence")
+            return False
         runtime_instance_id = prelaunch_fence["runtime_instance_id"]
         with self._lock:
             if prelaunch_fence["host_session_id"] != self._accepted_host_session_id:
@@ -1314,8 +1478,30 @@ class ByoAgentHost:
                     installed.runtime_contract_version
                 ),
                 "ASTRAL_RUNTIME_BUNDLE_SHA256": installed.bundle_sha256,
+                # Always explicit: an off launch does not synthesize or inherit
+                # any authority/binding identity, while shadow/enforce below
+                # receive their server-owned binding outside bundle bytes.
+                "LETS_MODE": mode,
             }
         )
+        if authority is not None:
+            environment.update(
+                {
+                    "ASTRAL_RUNTIME_AUTHORITY_JSON": json.dumps(
+                        authority, sort_keys=True, separators=(",", ":")
+                    ),
+                    "ASTRAL_AUTHORITY_OWNER_ID": authority["owner_id"],
+                    "ASTRAL_AUTHORITY_BINDING_ID": authority["binding_id"],
+                    "ASTRAL_AUTHORITY_LEASE_ID": authority["lease_id"],
+                    "ASTRAL_AUTHORITY_LINEAGE_ID": authority["lineage_id"],
+                    "ASTRAL_RUNTIME_COHORT": authority["population"],
+                    "ASTRAL_RUNTIME_ID": authority["runtime_instance_id"],
+                    "ASTRAL_RUNTIME_GENERATION": str(
+                        authority["lifecycle_generation"]
+                    ),
+                    "LETS_EXECUTOR_INSTANCE_ID": authority["executor_audience"],
+                }
+            )
         try:
             supervised = self._process_supervisor.spawn(
                 process_id=process_id,
@@ -1330,7 +1516,7 @@ class ByoAgentHost:
                 on_exit=exited,
             )
         except Exception:  # noqa: BLE001 - spawn failure is user-visible
-            logger.exception("could not start v2 BYO worker %s", installed.agent_id)
+            logger.exception("could not start v3 BYO worker %s", installed.agent_id)
             self._notify("Couldn't start a personal-agent worker on this PC.", "error")
             self._prelaunch_failure(
                 prelaunch_fence,
@@ -1439,7 +1625,7 @@ class ByoAgentHost:
             if child.register_timer is not None:
                 child.register_timer.cancel()
                 child.register_timer = None
-            self._send_v2_frame(frame)
+            self._send_v3_frame(frame)
             self._emit_runtime_heartbeat(child)
             self._runtime_state(child, "ready")
             return
@@ -1460,7 +1646,7 @@ class ByoAgentHost:
                 and frame.get("bundle_sha256") == child.installed.bundle_sha256
                 and self._valid_agent_card(frame.get("agent_card"), child.agent_id)
             ):
-                self._send_v2_frame(frame)
+                self._send_v3_frame(frame)
             return
         if frame.get("type") == "agent_runtime_heartbeat":
             sequence = frame.get("heartbeat_sequence")
@@ -1473,7 +1659,7 @@ class ByoAgentHost:
             ):
                 return
             child.last_heartbeat_sequence = sequence
-            self._send_v2_frame(frame)
+            self._send_v3_frame(frame)
             if not child.ready:
                 child.ready = True
                 if child.register_timer is not None:
@@ -1487,7 +1673,7 @@ class ByoAgentHost:
         if not self._valid_request_identity(frame):
             logger.warning("dropping unfenced request result for %s", child.agent_id)
             return
-        self._send_v2_frame(frame)
+        self._send_v3_frame(frame)
 
     def _emit_runtime_heartbeat(self, child: _RuntimeChild) -> None:
         """Emit and re-arm the host-owned monotonic liveness heartbeat."""
@@ -1503,7 +1689,7 @@ class ByoAgentHost:
                 return
             child.last_heartbeat_sequence += 1
             sequence = child.last_heartbeat_sequence
-        self._send_v2_frame(
+        self._send_v3_frame(
             {
                 "type": "agent_runtime_heartbeat",
                 "fence": dict(child.fence),
@@ -1570,7 +1756,7 @@ class ByoAgentHost:
             if exit_kind == "process_exit" and type(exit_code) is not int:
                 exit_kind = "protocol_eof"
                 exit_code = None
-            self._send_v2_frame(
+            self._send_v3_frame(
                 {
                     "type": "agent_runtime_exit",
                     "fence": dict(child.fence),

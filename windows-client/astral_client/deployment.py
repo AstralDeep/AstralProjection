@@ -25,7 +25,7 @@ from .integrity import parse_semver
 
 PROFILE_SCHEMA_VERSION = 1
 RUNTIME_MANIFEST_SCHEMA_VERSION = 1
-RUNTIME_CONTRACT_VERSION = 2
+RUNTIME_CONTRACT_VERSION = 3
 _MAX_PROFILE_BYTES = 64 * 1024
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PROFILE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")

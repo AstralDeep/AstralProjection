@@ -21,6 +21,11 @@ from typing import Any, Iterable, Mapping, Optional
 
 SCHEMA_VERSION = 1
 _LOCK_LINE = re.compile(r"^([A-Za-z0-9][A-Za-z0-9._-]*)==([^ ;\\]+)")
+_LETS_DIRECT_LOCK_LINE = re.compile(
+    r"^lets-agent @ https://github\.com/AstralDeep/LETS/releases/download/"
+    r"v(?P<tag>[0-9]+\.[0-9]+\.[0-9]+)/lets_agent-"
+    r"(?P<wheel>[0-9]+\.[0-9]+\.[0-9]+)-py3-none-any\.whl(?: \\)?$"
+)
 _SHA = re.compile(r"^[0-9a-f]{40,64}$")
 
 
@@ -65,6 +70,17 @@ def locked_packages(path: Path) -> dict[str, str]:
             continue
         match = _LOCK_LINE.match(line)
         if match is None:
+            direct = _LETS_DIRECT_LOCK_LINE.fullmatch(line)
+            if direct is not None:
+                if direct.group("tag") != direct.group("wheel"):
+                    raise CandidateManifestError(
+                        "LETS release tag and wheel version disagree"
+                    )
+                if "lets-agent" in packages:
+                    raise CandidateManifestError(
+                        "release lock repeats package lets-agent"
+                    )
+                packages["lets-agent"] = direct.group("wheel")
             continue
         name = match.group(1).replace("_", "-").lower()
         version = match.group(2)

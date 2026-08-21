@@ -1,6 +1,45 @@
+import argparse
 import json
-from astralprims import *
+from pathlib import Path
+
 import astralprims
+from astralprims import (
+    Alert,
+    Audio,
+    Badge,
+    BarChart,
+    Button,
+    Card,
+    ChartDataset,
+    ChatHistory,
+    CodeBlock,
+    Collapsible,
+    ColorPicker,
+    Container,
+    Divider,
+    FileDownload,
+    FileUpload,
+    Grid,
+    Hero,
+    Image,
+    Input,
+    KeyValue,
+    LineChart,
+    List_,
+    MetricCard,
+    ParamPicker,
+    PieChart,
+    PlotlyChart,
+    ProgressBar,
+    Rating,
+    TabItem,
+    Table,
+    Tabs,
+    Text,
+    ThemeApply,
+    Timeline,
+    create_ui_response,
+)
 
 F = {}
 F["button_doctest"] = Button(label="Click me", action="open", css={"background-color": "white", "color": "#000000"}).to_dict()
@@ -54,6 +93,24 @@ F["metric_minimal"] = MetricCard().to_dict()
 F["attributes_override"] = Text(content="x", attributes={"variant": "h1", "data-test": "1"}).to_dict()
 F["envelope"] = create_ui_response([Text(content="hi"), Badge(label="ok")])
 
-with open("/tmp/fixtures_out.json", "w") as f:
-    json.dump({"astralprims_version": astralprims.__version__, "fixtures": F}, f, ensure_ascii=False, indent=1, sort_keys=True)
-print("wrote", len(F), "fixtures")
+parser = argparse.ArgumentParser(description="Generate AstralCore primitive fixtures")
+parser.add_argument(
+    "--output",
+    type=Path,
+    default=Path(__file__).resolve().with_name("astralprims-fixtures.generated.json"),
+    help="output JSON path (default: generated sibling beside this script)",
+)
+options = parser.parse_args()
+output = options.output.expanduser().resolve()
+output.parent.mkdir(parents=True, exist_ok=True)
+output.write_text(
+    json.dumps(
+        {"astralprims_version": astralprims.__version__, "fixtures": F},
+        ensure_ascii=False,
+        indent=1,
+        sort_keys=True,
+    )
+    + "\n",
+    encoding="utf-8",
+)
+print("wrote", len(F), "fixtures to", output)

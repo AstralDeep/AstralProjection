@@ -108,9 +108,18 @@ def main(argv=None) -> int:
 
     arguments = list(sys.argv[1:] if argv is None else argv)
     if (
-        "--byo-worker" in arguments or "--validate-deployment" in arguments
+        "--byo-worker" in arguments
+        or "--lets-executor-authority-helper" in arguments
+        or "--validate-deployment" in arguments
     ) and not _restore_frozen_standard_streams():
         return 78
+    if "--lets-executor-authority-helper" in arguments:
+        from lets.authority_helper import main as authority_helper_main
+
+        index = arguments.index("--lets-executor-authority-helper")
+        return authority_helper_main(
+            ["--format", "executor", *arguments[index + 1 :]]
+        )
     if "--byo-worker" in arguments:
         from win_agent.byo_worker import main as worker_main
 
