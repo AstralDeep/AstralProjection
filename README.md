@@ -23,13 +23,17 @@ builders through `astralprojection`.
 - `tooling/web-ci/` and `tests/` — browser tooling and standalone verification.
 - `provenance/` — immutable extraction manifest and reviewed transformation
   ledger for the AstralDeep decomposition.
-- `workflows-disabled/` — migrated workflows held inert until final local
-  qualification and an explicit activation change.
+- `.github/workflows/ci.yml` — active read-only CI for the Python package,
+  web tooling, and Windows client.
+- `workflows-disabled/` — Android, Apple, candidate, and release workflows
+  held inert until final local qualification and an explicit activation change.
 
-The disabled release workflows intentionally preserve some references to
+Core Python, web, and Windows CI is active. The disabled release workflows
+intentionally preserve some references to
 legacy protected-policy and release-evidence tooling that was not extracted
 into this repository. They are historical design inputs, not runnable release
-automation. Activation requires an explicit follow-up that inventories and
+automation; Android and Apple workflows also remain inert. Activation requires
+an explicit follow-up that inventories and
 rebuilds every missing protected input in AstralProjection, re-runs local and
 provider-native qualification, and receives separate release authorization.
 

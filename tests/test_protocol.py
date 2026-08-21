@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / "contracts" / "ui_protocol.json"
 TRANSFORMATIONS = ROOT / "provenance" / "transformations.json"
 WORKFLOWS = ROOT / "workflows-disabled"
+ACTIVE_WORKFLOWS = ROOT / ".github" / "workflows"
 SOURCE_REPOSITORY_ENV = "ASTRALDEEP_SOURCE_REPO"
 
 
@@ -267,7 +268,8 @@ def test_apple_fixture_link_targets_the_standalone_fixture_contract() -> None:
 
 def test_disabled_workflows_are_explicitly_inert_read_only_and_projection_owned() -> None:
     workflows = sorted(WORKFLOWS.glob("*.yml"))
-    assert len(workflows) == 9
+    assert len(workflows) == 8
+    assert {path.name for path in ACTIVE_WORKFLOWS.glob("*.yml")} == {"ci.yml"}
 
     for path in workflows:
         text = path.read_text(encoding="utf-8")

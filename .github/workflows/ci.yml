@@ -1,0 +1,92 @@
+name: AstralProjection CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - name: Install checksum-pinned Gitleaks
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="gitleaks_8.30.1_linux_x64.tar.gz"
+          curl --fail --location --silent --show-error --proto '=https' --tlsv1.2 \
+            --output "$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/$archive"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $archive" \
+            | sha256sum --check --status
+          tar --extract --gzip --file "$archive" gitleaks
+          install -m 0755 gitleaks "$RUNNER_TEMP/gitleaks"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Scan complete history
+        run: gitleaks git --redact --log-opts="--all"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - run: python -m pip install '.[dev]'
+      - run: ruff check src backend tests scripts windows-client
+      - run: pytest -q
+      - run: python -m build
+      - run: python -m pip install --force-reinstall dist/*.whl && python -c "import astralprojection, rote, webrender"
+
+  web:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: tooling/web-ci/package-lock.json
+      - working-directory: tooling/web-ci
+        run: test "$(corepack npm --version)" = "11.16.0" && corepack npm ci --ignore-scripts
+      - working-directory: tooling/web-ci
+        run: corepack npm run check:package-manager && corepack npm run check:product-isolation && corepack npm run lint && corepack npm run test:coverage-conversion && corepack npm run test:coverage-conversion:node
+      - name: Run browser checks in the pinned Playwright image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="$(tr -d '\r\n' < tooling/web-ci/playwright-image.txt)"
+          test -n "$image"
+          docker run --rm --init \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp \
+            --volume "$GITHUB_WORKSPACE:/workspace" \
+            --workdir /workspace/tooling/web-ci \
+            "$image" \
+            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && corepack npm exec -- playwright test tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js --browser=chromium --workers=1'
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - run: python -m pip install --require-hashes -r windows-client/requirements-release.lock.txt
+      - run: python -m pip install '.[dev]'
+      - env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: windows-client
+        run: python -m pytest windows-client/tests -q
+
+  required:
+    if: always()
+    needs: [python, web, windows]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every owner gate
+        shell: bash
+        run: |
+          [[ '${{ needs.python.result }}' == 'success' ]]
+          [[ '${{ needs.web.result }}' == 'success' ]]
+          [[ '${{ needs.windows.result }}' == 'success' ]]
