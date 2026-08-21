@@ -24,6 +24,12 @@ def _job_block(text: str, job_id: str) -> str:
     return re.split(r"(?m)^  [A-Za-z0-9_-]+:\s*$", remainder, maxsplit=1)[0]
 
 
+def _step_block(job: str, step_name: str) -> str:
+    _, marker, remainder = job.partition(f"      - name: {step_name}\n")
+    assert marker, step_name
+    return re.split(r"(?m)^      - ", remainder, maxsplit=1)[0]
+
+
 def _assert_native_workflow_authority(name: str, text: str) -> None:
     permission_indents = re.findall(r"(?m)^([ \t]*)permissions\s*:", text)
     assert permission_indents == [""], (name, permission_indents)
@@ -110,13 +116,20 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "--platform watchos" in watch
     assert "--output \"$report\"" in watch
 
-    for marker in (
-        "apple-required-app-unit-ios",
-        "apple-required-app-unit-macos",
-        "apple-required-first-login-ios",
-        "apple-required-first-login-macos",
-    ):
-        assert f"name: {marker}" in apple_required
+    download_action = (
+        "uses: actions/download-artifact@"
+        "d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    )
+    marker_steps = {
+        "Require iOS app-unit success": "apple-required-app-unit-ios",
+        "Require macOS app-unit success": "apple-required-app-unit-macos",
+        "Require iOS first-login success": "apple-required-first-login-ios",
+        "Require macOS first-login success": "apple-required-first-login-macos",
+    }
+    for step_name, artifact_name in marker_steps.items():
+        step = _step_block(apple_required, step_name)
+        assert download_action in step
+        assert f"name: {artifact_name}" in step
 
 
 def test_core_ci_is_active_read_only_and_projection_owned() -> None:
@@ -231,17 +244,26 @@ def test_native_ci_is_independently_read_only_secret_free_and_sha_pinned() -> No
     ("workflow_name", "job_id"),
     (("android-ci.yml", "build-test"), ("apple-ci.yml", "swift-lint")),
 )
-@pytest.mark.parametrize("mutation", ("global-write-all", "inline-job-write"))
-def test_native_ci_authority_rejects_additional_permissions(
+@pytest.mark.parametrize(
+    "mutation",
+    ("top-level-write-all", "job-write-all", "inline-job-write"),
+)
+def test_native_ci_authority_rejects_write_escalations(
     workflow_name: str,
     job_id: str,
     mutation: str,
 ) -> None:
     text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
-    if mutation == "global-write-all":
+    if mutation == "top-level-write-all":
         mutated = text.replace(
-            "\npermissions:\n",
-            "\npermissions: write-all\n\npermissions:\n",
+            "permissions:\n  contents: read",
+            "permissions: write-all",
+            1,
+        )
+    elif mutation == "job-write-all":
+        mutated = text.replace(
+            f"  {job_id}:\n",
+            f"  {job_id}:\n    permissions: write-all\n",
             1,
         )
     else:
@@ -312,6 +334,28 @@ def test_apple_contract_rejects_success_markers_swapped_between_matrix_jobs() ->
     mutated = apple.replace(app_marker, "__APP_MARKER__", 1)
     mutated = mutated.replace(first_login_marker, app_marker, 1)
     mutated = mutated.replace("__APP_MARKER__", first_login_marker, 1)
+    assert mutated != apple
+
+    with pytest.raises(AssertionError):
+        _assert_apple_platform_contract(mutated)
+
+
+@pytest.mark.parametrize(
+    "replacement",
+    (
+        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "",
+    ),
+    ids=("wrong-action", "removed-action"),
+)
+def test_apple_aggregate_rejects_missing_pinned_marker_download_action(
+    replacement: str,
+) -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    download_action = (
+        "actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
+    )
+    mutated = apple.replace(download_action, replacement, 1)
     assert mutated != apple
 
     with pytest.raises(AssertionError):
