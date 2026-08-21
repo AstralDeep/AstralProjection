@@ -40,7 +40,6 @@ defaults:
 
 jobs:
   build-test:
-    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -67,16 +66,16 @@ jobs:
           gradle-version: ${{ steps.wrapper.outputs.version }}
 
       - name: Lint (ktlint + Android Lint)
-        run: gradle ktlintCheck :app:lintDebug --no-daemon --stacktrace
+        run: ./gradlew ktlintCheck :app:lintDebug --no-daemon --stacktrace
 
       - name: Unit tests (:core + :app JVM)
-        run: gradle :core:test :app:testDebugUnitTest --no-daemon --stacktrace
+        run: ./gradlew :core:test :app:testDebugUnitTest --no-daemon --stacktrace
 
       - name: Coverage gate (Kover ≥ 90% on :core pure logic)
-        run: gradle :core:koverVerify --no-daemon --stacktrace
+        run: ./gradlew :core:koverVerify --no-daemon --stacktrace
 
       - name: Publish app and core Kover XML inputs
-        run: gradle :app:koverXmlReport :core:koverXmlReport --no-daemon --stacktrace
+        run: ./gradlew :app:koverXmlReport :core:koverXmlReport --no-daemon --stacktrace
 
       - name: Archive app and core Kover XML inputs
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -89,7 +88,7 @@ jobs:
           retention-days: 14
 
       - name: Assemble debug APK
-        run: gradle :app:assembleDebug --no-daemon --stacktrace
+        run: ./gradlew :app:assembleDebug --no-daemon --stacktrace
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -101,7 +100,7 @@ jobs:
     name: Android stable next-major readiness (isolated)
     # Non-required network-touching diagnostic — nightly (and manual) only,
     # not on every PR push.
-    if: ${{ false }}
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -131,7 +130,6 @@ jobs:
   # gate. They run for the same path-filtered pull requests as the JVM suites,
   # as well as the existing nightly and manual invocations.
   instrumented:
-    if: ${{ false }}
     name: Required · instrumented UI tests (emulator)
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -167,11 +165,11 @@ jobs:
           api-level: 34
           arch: x86_64
           working-directory: android-client
-          script: gradle :app:connectedDebugAndroidTest --no-daemon --stacktrace
+          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
 
   android-required:
     name: Required · Android aggregate
-    if: ${{ false }}
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:

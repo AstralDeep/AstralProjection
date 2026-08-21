@@ -81,8 +81,8 @@ byte-match its Python `to_dict()`. The helper now writes the portable sibling
 `AstralCore/Tests/AstralCoreTests/Fixtures/astralprims-fixtures.generated.json`
 by default, or an explicit `--output` path. Do not run former `astraldeep`
 container commands or replace the committed fixture from an index-resolved
-package. Before workflow activation, run the helper against the exact composed
-AstralPrimitives revision, review the generated file against
+package. Before changing the mirrored primitives, run the helper against the
+exact composed AstralPrimitives revision, review the generated file against
 `astralprims-fixtures.json`, and then run:
 
 ```bash
@@ -128,9 +128,9 @@ python3 apple-clients/Scripts/generate_app_icons.py --check    # verify only (CI
 ```
 
 The iOS/watchOS 1024 icons are fully opaque (ITMS-90717); the ten macOS slots
-keep their transparent gutter. The currently inactive
-`workflows-disabled/apple-ci.yml` contains the intended `--check` gate; until
-activation, run it locally on the qualified macOS host.
+keep their transparent gutter. The active `.github/workflows/apple-ci.yml`
+enforces the `--check` gate; run it locally on the qualified macOS host before
+committing icon changes.
 
 ## Build & test — all three schemes
 
@@ -302,8 +302,9 @@ MobileDevice and Xcode UserData profile directories and asserts it found ≥3.
 - Per-frame/per-component dispositions live in
   `AstralCore/Sources/AstralCore/Protocol/Dispositions.swift` — the
   machine-checked seed of the 044 parity matrix rows for ios/macos/watch.
-- Intended CI: the inactive `workflows-disabled/apple-ci.yml` definition runs
-  the icon `--check` gate and `swift test` on a macOS runner, then unsigned
-  `xcodebuild` of all three app targets (iOS, macOS, watchOS) against the
-  committed project. It is not active during migration.
+- Active owner CI: `.github/workflows/apple-ci.yml` runs strict recursive
+  `swift-format`, the icon `--check` gate, `swift test` with coverage, and
+  unsigned `xcodebuild` tests for iOS 26.5, macOS, first-login UI, and watchOS
+  26.5 against Xcode 26.6 (build 17F113). Its fail-closed `apple-required`
+  aggregate requires every platform result and matrix success marker.
 - Known gaps: `KNOWN-ISSUES.md`.

@@ -66,6 +66,15 @@
       "reason": "Point the release runbook at the owned currentVersionCode constant and require exact Play Console upload-certificate fingerprint reconciliation instead of alias or subject-name assumptions."
     },
     {
+      "path": "android-client/gradlew",
+      "sourcePath": "android-client/gradlew",
+      "sourceBlob": "adff685a0348c64b2b64f0b302f1f82b28eeaaea",
+      "sourceMode": "100644",
+      "resultSha256": "fb68debc1b1acf8ec55dc0d5e5495e1dedd0bd6b61f304bee61613eeb2bd9b92",
+      "task": "T056",
+      "reason": "Make the committed Gradle wrapper user-executable so active Android CI can invoke the repository-owned wrapper directly."
+    },
+    {
       "path": "apple-clients/AstralCore/Package.swift",
       "sourcePath": "apple-clients/AstralCore/Package.swift",
       "sourceBlob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
@@ -133,9 +142,9 @@
       "sourcePath": "apple-clients/README.md",
       "sourceBlob": "cb691c78cf96254f272637b5c6ab21f59a6cb0ed",
       "sourceMode": "100644",
-      "resultSha256": "94dece4f3e9576ab96ee1353ddd1d818e91ecfdad9a4345e374dbb429476e51d",
+      "resultSha256": "d0c146f8ba2535613ae3bd163a5470222dc081f50d4d8d3decaf1629d7c38266",
       "task": "T058/T188",
-      "reason": "Document inactive Apple workflows, canonical Primitives identity, standalone provenance, portable fixture regeneration, and the required qualified-host gates."
+      "reason": "Document active Apple owner CI, canonical Primitives identity, standalone provenance, portable fixture regeneration, and the required qualified-host gates."
     },
     {
       "path": "apple-clients/Scripts/generate_app_icons.py",
@@ -574,18 +583,30 @@
       "sourcePath": ".github/workflows/android-ci.yml",
       "sourceBlob": "2b9d3872b247b8e46179a6e16b103b86209ba3d9",
       "sourceMode": "100644",
-      "resultSha256": "a249470e589326a25788f23280c1c482b0b0a7f5e065ec7e445e4d5bdbcf3661",
+      "resultStatus": "removed",
+      "resultPaths": [
+        {
+          "path": ".github/workflows/android-ci.yml",
+          "sha256": "ea7009921982b2ba51d9337c50ca0c3b3204b61fd8b0e52a6f7804b393985cac"
+        }
+      ],
       "task": "T056",
-      "reason": "Retarget imported Android paths, restore its canary test as a newly authored standalone test, and keep the copied workflow inert, read-only, and secret-free."
+      "reason": "Move the imported Android workflow into its active owner path, retain standalone paths, require the committed wrapper, and keep it read-only and secret-free."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",
       "sourcePath": ".github/workflows/apple-ci.yml",
       "sourceBlob": "2d8952f208f08dce700d6b86c83cf96394113125",
       "sourceMode": "100644",
-      "resultSha256": "c09faced479d280fb1e3f56f45acaeb7e4dbe80b6a6d747e3f4cdad6e1943ba4",
+      "resultStatus": "removed",
+      "resultPaths": [
+        {
+          "path": ".github/workflows/apple-ci.yml",
+          "sha256": "f7a1f2e60725a4dba075b260aac20c0b43e508ffb0a5b00fde55fdf21e7aa5d0"
+        }
+      ],
       "task": "T056",
-      "reason": "Retarget imported Apple paths and keep the copied workflow inert, read-only, and secret-free."
+      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, and read-only authority."
     },
     {
       "path": "workflows-disabled/apple-release.yml",

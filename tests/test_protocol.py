@@ -266,10 +266,14 @@ def test_apple_fixture_link_targets_the_standalone_fixture_contract() -> None:
     ).resolve()
 
 
-def test_disabled_workflows_are_explicitly_inert_read_only_and_projection_owned() -> None:
+def test_release_workflows_are_explicitly_inert_read_only_and_projection_owned() -> None:
     workflows = sorted(WORKFLOWS.glob("*.yml"))
-    assert len(workflows) == 8
-    assert {path.name for path in ACTIVE_WORKFLOWS.glob("*.yml")} == {"ci.yml"}
+    assert len(workflows) == 6
+    assert {path.name for path in ACTIVE_WORKFLOWS.glob("*.yml")} == {
+        "android-ci.yml",
+        "apple-ci.yml",
+        "ci.yml",
+    }
 
     for path in workflows:
         text = path.read_text(encoding="utf-8")
@@ -318,8 +322,32 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 71
-    assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 14
+    assert len(paths) == 72
+    assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
+
+    moved_workflows = {
+        entry["path"]: entry.get("resultPaths")
+        for entry in record["entries"]
+        if entry["path"]
+        in {
+            "workflows-disabled/android-ci.yml",
+            "workflows-disabled/apple-ci.yml",
+        }
+    }
+    assert moved_workflows == {
+        "workflows-disabled/android-ci.yml": [
+            {
+                "path": ".github/workflows/android-ci.yml",
+                "sha256": "ea7009921982b2ba51d9337c50ca0c3b3204b61fd8b0e52a6f7804b393985cac",
+            }
+        ],
+        "workflows-disabled/apple-ci.yml": [
+            {
+                "path": ".github/workflows/apple-ci.yml",
+                "sha256": "f7a1f2e60725a4dba075b260aac20c0b43e508ffb0a5b00fde55fdf21e7aa5d0",
+            }
+        ],
+    }
 
     changed_paths = _changed_extraction_paths(
         extraction["entries"],
@@ -330,7 +358,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 448
+    assert len(extracted) - len(changed_paths) == 447
 
     for entry in record["entries"]:
         path = entry["path"]

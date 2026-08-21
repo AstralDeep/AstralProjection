@@ -36,7 +36,6 @@ env:
 
 jobs:
   swift-lint:
-    if: ${{ false }}
     name: Required · strict recursive swift-format
     runs-on: macos-26
     timeout-minutes: 15
@@ -67,7 +66,6 @@ jobs:
           apple-clients/AstralCore apple-clients/AstralApp apple-clients/AstralWatch
 
   core-tests:
-    if: ${{ false }}
     name: Required · AstralCore tests and drift guard
     runs-on: macos-26
     timeout-minutes: 20
@@ -119,7 +117,6 @@ jobs:
           retention-days: 14
 
   app-unit-tests:
-    if: ${{ false }}
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
     timeout-minutes: 35
@@ -214,7 +211,6 @@ jobs:
           retention-days: 1
 
   first-login-ui:
-    if: ${{ false }}
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
     timeout-minutes: 35
@@ -356,7 +352,6 @@ jobs:
           retention-days: 1
 
   watch-continuity:
-    if: ${{ false }}
     name: Required · watchOS 26.5 continuity coverage
     runs-on: macos-26
     timeout-minutes: 35
@@ -442,7 +437,7 @@ jobs:
 
   apple-required:
     name: Required · Apple aggregate
-    if: ${{ false }}
+    if: ${{ always() }}
     # Marker downloads + shell checks only — no macOS toolchain needed, and
     # ubuntu starts faster than a 10x-billed macos-26 runner.
     runs-on: ubuntu-latest

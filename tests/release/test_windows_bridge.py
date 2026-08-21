@@ -202,11 +202,15 @@ def test_contract_rejects_wrong_trust_boundary(tmp_path):
             module.load_contract(path)
 
 
-def test_only_core_ci_is_active_while_remaining_copied_workflows_stay_inert():
+def test_owner_ci_is_active_while_release_workflows_stay_inert():
     active = ROOT / ".github/workflows"
-    assert {workflow.name for workflow in active.glob("*.yml")} == {"ci.yml"}
+    assert {workflow.name for workflow in active.glob("*.yml")} == {
+        "android-ci.yml",
+        "apple-ci.yml",
+        "ci.yml",
+    }
     workflows = sorted((ROOT / "workflows-disabled").glob("*.yml"))
-    assert len(workflows) == 8
+    assert len(workflows) == 6
     job_count = 0
     for workflow in workflows:
         lines = workflow.read_text(encoding="utf-8").splitlines()
@@ -221,4 +225,4 @@ def test_only_core_ci_is_active_while_remaining_copied_workflows_stay_inert():
             block = "\n".join(lines[start:end])
             assert "if: ${{ false }}" in block, workflow.name
         job_count += len(starts)
-    assert job_count == 18
+    assert job_count == 8

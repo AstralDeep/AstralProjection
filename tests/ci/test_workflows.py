@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import stat
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -83,6 +84,63 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
     )
 
 
-def test_only_core_ci_is_active_while_eight_workflows_remain_inert() -> None:
-    assert {path.name for path in ACTIVE.glob("*.yml")} == {"ci.yml"}
-    assert len(list(INACTIVE.glob("*.yml"))) == 8
+def test_native_ci_is_active_and_uses_standalone_paths() -> None:
+    android = (ACTIVE / "android-ci.yml").read_text(encoding="utf-8")
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+
+    assert _job_ids(android) == {
+        "build-test",
+        "next-major-readiness",
+        "instrumented",
+        "android-required",
+    }
+    assert _job_ids(apple) == {
+        "swift-lint",
+        "core-tests",
+        "app-unit-tests",
+        "first-login-ui",
+        "watch-continuity",
+        "apple-required",
+    }
+    assert "components/AstralProjection/" not in android + apple
+    assert "if: ${{ false }}" not in android + apple
+    assert (
+        "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+        in android
+    )
+
+
+def test_android_ci_wrapper_is_committed_executable() -> None:
+    wrapper_mode = (ROOT / "android-client" / "gradlew").stat().st_mode
+
+    assert wrapper_mode & stat.S_IXUSR
+
+
+def test_native_ci_aggregates_run_fail_closed_after_required_jobs() -> None:
+    android = (ACTIVE / "android-ci.yml").read_text(encoding="utf-8")
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    android_required = _job_block(android, "android-required")
+    apple_required = _job_block(apple, "apple-required")
+
+    assert "if: ${{ always() }}" in android_required
+    assert "needs:\n      - build-test\n      - instrumented" in android_required
+    assert "next-major-readiness" not in android_required
+    assert "if: ${{ always() }}" in apple_required
+    assert "needs:\n      - swift-lint\n      - core-tests" in apple_required
+    for job_id in (
+        "swift-lint",
+        "core-tests",
+        "app-unit-tests",
+        "first-login-ui",
+        "watch-continuity",
+    ):
+        assert f"needs.{job_id}.result" in apple_required
+
+
+def test_three_owner_workflows_are_active_while_six_release_workflows_remain_inert() -> None:
+    assert {path.name for path in ACTIVE.glob("*.yml")} == {
+        "android-ci.yml",
+        "apple-ci.yml",
+        "ci.yml",
+    }
+    assert len(list(INACTIVE.glob("*.yml"))) == 6
