@@ -358,9 +358,9 @@
       "sourcePath": "tooling/web-ci/package.json",
       "sourceBlob": "b56acfe10999e5787d5c4eb506d5c0fea2031bb6",
       "sourceMode": "100644",
-      "resultSha256": "b064f6c03da1e22c08b84a020351b29a943e3e9b366e68a13b3d54c7f382b617",
+      "resultSha256": "a28102990f9ec4cb8891f7020baa7e91c7994f949eee8c25afe9d9abe4746825",
       "task": "T063",
-      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check."
+      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command."
     },
     {
       "path": "tooling/web-ci/tests/continuity-contract-060.spec.js",

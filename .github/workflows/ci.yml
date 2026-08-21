@@ -1,6 +1,8 @@
 name: AstralProjection CI
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
@@ -35,7 +37,9 @@ jobs:
       - run: python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
       - run: python -m pip install --no-deps --no-build-isolation .
       - run: ruff check src backend tests scripts windows-client
-      - run: pytest -q
+      - run: mkdir -p build/074/coverage
+      - run: pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
+      - run: diff-cover build/074/coverage/projection-python.xml --compare-branch origin/main --fail-under=90
       - run: PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build
       - run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import astralprojection, rote, webrender"
 
@@ -51,7 +55,7 @@ jobs:
       - working-directory: tooling/web-ci
         run: test "$(corepack npm --version)" = "11.16.0" && corepack npm ci --ignore-scripts
       - working-directory: tooling/web-ci
-        run: corepack npm run check:package-manager && corepack npm run check:product-isolation && corepack npm run lint && corepack npm run test:coverage-conversion && corepack npm run test:coverage-conversion:node
+        run: corepack npm run check:package-manager && corepack npm run check:product-isolation && corepack npm run lint && corepack npm run test:coverage-conversion && corepack npm run test:coverage-conversion:node && corepack npm run test:coverage-union
       - name: Run browser checks in the pinned Playwright image
         shell: bash
         run: |

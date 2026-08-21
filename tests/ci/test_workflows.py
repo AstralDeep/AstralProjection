@@ -51,6 +51,26 @@ def _assert_native_workflow_authority(name: str, text: str) -> None:
         assert separator and re.fullmatch(r"[0-9a-f]{40}", ref), (name, action)
 
 
+def _assert_core_trigger_and_python_coverage(text: str) -> None:
+    triggers = text.partition("on:\n")[2].partition("\npermissions:\n")[0]
+    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
+    pull_request = triggers.partition("  pull_request:\n")[2]
+    assert "branches: [main]" in push
+    assert "branches: [main]" in pull_request
+
+    python = _job_block(text, "python")
+    assert "mkdir -p build/074/coverage" in python
+    assert (
+        "pytest -q -p no:cacheprovider "
+        "--cov=astralprojection --cov=rote --cov=webrender --cov-branch "
+        "--cov-report=xml:build/074/coverage/projection-python.xml"
+    ) in python
+    assert (
+        "diff-cover build/074/coverage/projection-python.xml "
+        "--compare-branch origin/main --fail-under=90"
+    ) in python
+
+
 def _assert_apple_platform_contract(apple: str) -> None:
     app_unit = _job_block(apple, "app-unit-tests")
     first_login = _job_block(apple, "first-login-ui")
@@ -136,7 +156,7 @@ def test_core_ci_is_active_read_only_and_projection_owned() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
 
     assert _job_ids(text) == {"python", "web", "windows", "required"}
-    assert "pull_request:" in text and "branches: [main]" in text
+    _assert_core_trigger_and_python_coverage(text)
     assert "permissions:\n  contents: read" in text
     assert "if: ${{ false }}" not in text
     assert "components/AstralProjection/" not in text
@@ -152,12 +172,13 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     assert "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb" in text
     assert 'gitleaks git --redact --log-opts="--all"' in text
     assert "ruff check src backend tests scripts windows-client" in text
-    assert "pytest -q" in text
+    _assert_core_trigger_and_python_coverage(text)
     assert "python -m build" in text
     assert "python -m pip install --force-reinstall --no-deps dist/*.whl" in text
     assert 'python -c "import astralprojection, rote, webrender"' in text
     assert "test \"$(corepack npm --version)\" = \"11.16.0\"" in text
     assert "test:coverage-conversion:browser" in text
+    assert "test:coverage-union" in text
     assert "continuity-contract-060.spec.js" in text
     assert "voice-conversation-065.spec.js" in text
     assert "playwright-image.txt" in text
@@ -179,6 +200,16 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
     requirements = re.findall(r"(?m)^[A-Za-z][A-Za-z0-9_.-]*==[^\s]+.*$", lock)
     assert requirements
     assert all("==" in line and "--hash=sha256:" in line for line in requirements)
+    for package in (
+        "chardet",
+        "coverage",
+        "diff-cover",
+        "jinja2",
+        "markupsafe",
+        "pytest-cov",
+        "tomli",
+    ):
+        assert re.search(rf"(?m)^{re.escape(package)}==[^\s]+.*--hash=sha256:", lock)
 
     install = "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
     for job_id in ("python", "windows"):
@@ -192,6 +223,28 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
     assert 'requires = ["setuptools==80.10.2"]' in (ROOT / "pyproject.toml").read_text(
         encoding="utf-8"
     )
+
+
+@pytest.mark.parametrize(
+    ("needle", "replacement"),
+    (
+        ("  push:\n    branches: [main]\n", ""),
+        ("--cov=webrender", "--cov=tests"),
+        ("--cov-branch", ""),
+        ("--compare-branch origin/main", "--compare-branch HEAD~1"),
+        ("--fail-under=90", "--fail-under=89"),
+    ),
+)
+def test_core_ci_rejects_trigger_or_python_coverage_weakening(
+    needle: str,
+    replacement: str,
+) -> None:
+    text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
+    mutated = text.replace(needle, replacement, 1)
+    assert mutated != text
+
+    with pytest.raises(AssertionError):
+        _assert_core_trigger_and_python_coverage(mutated)
 
 
 def test_native_ci_is_active_and_uses_standalone_paths() -> None:
