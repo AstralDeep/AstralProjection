@@ -4,7 +4,7 @@ The Windows agent is intentionally self-contained and cannot import AstralDeep.
 This module therefore implements only Astral's small, versioned transport
 envelope while delegating receipt parsing, signature verification, clock
 checks, persistent replay defense, and rollback protection to the public LETS
-v1.0.10 executor API.
+v1.0.11 executor API.
 
 Configuration is local operator state.  Raw receipts, operator keys, tool
 arguments, and filesystem paths are never returned in exceptions or card
@@ -51,7 +51,7 @@ from lets.models import Receipt
 
 LETS_CALLER_CAPABILITY: Final = "astraldeep.lets/v1"
 PERMIT_TYPE: Final = "astraldeep.protected-permit/v1"
-LETS_RELEASE: Final = "v1.0.10"
+LETS_RELEASE: Final = "v1.0.11"
 RECEIPT_WIRE_TYPE: Final = "lets.receipt/v1"
 EVIDENCE_TYPE: Final = "astral.tool-effect/v1"
 CONTEXT_TYPE: Final = "astral.protected-effect-context/v1"

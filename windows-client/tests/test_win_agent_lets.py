@@ -23,6 +23,10 @@ from win_agent import agent
 from win_agent import lets_executor as executor
 
 
+def test_executor_is_pinned_to_lets_v1_0_11() -> None:
+    assert executor.LETS_RELEASE == "v1.0.11"
+
+
 @pytest.fixture(autouse=True)
 def _reset_executor():
     agent._reset_protected_executor_for_tests()
