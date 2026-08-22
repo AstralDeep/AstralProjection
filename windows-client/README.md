@@ -210,11 +210,11 @@ The permit travels under the typed MCP caller capability
 actuator, the client compares owner, binding, agent, runtime generation, tool,
 scope/capability/transition, audience, nonce, sequence, one-unit cost,
 content-free effect evidence, and the exact post-filter argument digest. It
-then calls LETS v1.0.10 `ReceiptVerifier.verify_and_claim()` against the
+then calls LETS v1.0.11 `ReceiptVerifier.verify_and_claim()` against the
 persistent store. Missing, stale, wrong-host, invalid-signature, replayed, or
 unclaimable receipts fail closed and the tool function is not called.
 
-The released LETS wheel is pinned by its exact v1.0.10 GitHub release URL and
+The released LETS wheel is pinned by its exact v1.0.11 GitHub release URL and
 SHA-256 in `requirements-release.lock.txt`; the warden itself remains a
 separately deployed service.
 

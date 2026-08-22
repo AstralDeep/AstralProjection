@@ -67,9 +67,9 @@ def test_complete_lock_is_exact_hashed_and_covers_direct_inputs():
     assert direct
     assert all(locked.get(name) == version for name, version in direct.items())
     assert {"pyinstaller", "sigstore", "astralprims", "pefile", "pywin32-ctypes"} <= set(locked)
-    assert locked["lets-agent"] == "1.0.10"
-    assert "lets-agent @ https://github.com/AstralDeep/LETS/releases/download/v1.0.10/" in text
-    assert "292e98eb33d1203f8da6242c8cecdd38a0dbccdef6efeab7c60332eb58fc77d4" in text
+    assert locked["lets-agent"] == "1.0.11"
+    assert "lets-agent @ https://github.com/AstralDeep/LETS/releases/download/v1.0.11/" in text
+    assert "c22dd4c55b1f8e62200455c370ea1b56fb2a96da7fbeae1406e3d0b1365f8c80" in text
 
 
 def test_manifest_and_package_spec_bind_the_exact_lock_bytes():
@@ -140,11 +140,11 @@ def test_lock_reader_normalizes_ignores_host_helper_and_fails_closed(tmp_path):
 
     lock.write_text(
         "lets-agent @ https://github.com/AstralDeep/LETS/releases/download/"
-        "v1.0.10/lets_agent-1.0.10-py3-none-any.whl \\\n"
+        "v1.0.11/lets_agent-1.0.11-py3-none-any.whl \\\n"
         "    --hash=sha256:" + "c" * 64 + "\n",
         encoding="utf-8",
     )
-    assert tool.locked_packages(lock) == {"lets-agent": "1.0.10"}
+    assert tool.locked_packages(lock) == {"lets-agent": "1.0.11"}
 
     lock.write_text("foo==1\nfoo==1\n", encoding="utf-8")
     with pytest.raises(tool.CandidateManifestError, match="repeats package foo"):

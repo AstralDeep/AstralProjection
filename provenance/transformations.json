@@ -430,7 +430,7 @@
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "01f6a44784bf386ad764776e1c184b25a4e92686e88b4d9f76ec206ce703b5da",
+      "resultSha256": "dd7680b127e2d267ae86ee9b5b7ae45d1681569f2e4ffdbf924a91a8c3d05610",
       "task": "T060/T062/T188",
       "reason": "Remove runtime repository trust overrides, document the inactive bounded bridge transition, and replace a broken monorepo schema link with the standalone fail-closed validator and provenance."
     },
@@ -457,7 +457,7 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "1b180b5debfc37eeb55f1fd5fbd35435b9ea2bc8d923fd0316c105dd2ad13ed5",
+      "resultSha256": "309e92be0ad63ded0c6c71288dc1c9bd2212810a208fce5b69eade4dbf109ea1",
       "task": "T166",
       "reason": "Carry the exact runtime-v3 authority object and protected-executor disposition in the Windows delivery protocol."
     },
@@ -475,7 +475,7 @@
       "sourcePath": "windows-client/deployment/runtime-manifest.json",
       "sourceBlob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
       "sourceMode": "100644",
-      "resultSha256": "0367fc09456b558a403d9fa978b13c7dafd8391eb219a759915489bb9498ee68",
+      "resultSha256": "b4e7722bc485d417c7ac908d15de9112ad3e906d645195f4cbc96aa5496ea674",
       "task": "T166",
       "reason": "Declare runtime contract v3 and the protected-executor file in the signed Windows deployment bundle."
     },
@@ -493,16 +493,16 @@
       "sourcePath": "windows-client/requirements-release.lock.txt",
       "sourceBlob": "f533dbb4dfcedf6398a8c1649dccd37fd4c1f7f7",
       "sourceMode": "100644",
-      "resultSha256": "948def355ae1e4c37478d2c87c287d41d3a81055a96ff813c341d1b466096943",
+      "resultSha256": "f376ece93b3754b02498e8243a88b3c68282fd26d80c868d85c23bb7ac1d317d",
       "task": "T166",
-      "reason": "Pin the exact signed LETS v1.0.10 wheel URL and digest for reproducible Windows candidates."
+      "reason": "Pin the exact signed LETS v1.0.11 wheel URL and digest for reproducible Windows candidates."
     },
     {
       "path": "windows-client/requirements.in",
       "sourcePath": "windows-client/requirements.in",
       "sourceBlob": "17727135e29ec6a7bafc0950777a2e134e4f3ef6",
       "sourceMode": "100644",
-      "resultSha256": "f7b1be1847f9a5deda45b9e191edb086c032fcf5b940245ef292a3fb4f961770",
+      "resultSha256": "5bd4739e9a0db246de0d9df06315be3e2f8f734e40a48e2569a00124382c3a5a",
       "task": "T166",
       "reason": "Declare the signed LETS public executor dependency consumed by the Windows protected runtime."
     },
@@ -556,7 +556,7 @@
       "sourcePath": "windows-client/tests/test_release_lock_060.py",
       "sourceBlob": "d0609608eb814ed3705f4ef19b878b47bcf6fd07",
       "sourceMode": "100644",
-      "resultSha256": "71c6266028ac017b55994930c2e91b35ca4ce99d03b201269c0493be81748ab5",
+      "resultSha256": "745c7aeeb9f88d2a37ce211917dd8b2b9b1564983aa2afe36ced072319eeec84",
       "task": "T166",
       "reason": "Verify the exact signed LETS wheel lock and protected-executor candidate inventory."
     },
@@ -601,7 +601,7 @@
       "sourcePath": "windows-client/win_agent/byo_host.py",
       "sourceBlob": "6ed2071b286421438f09c14cc6725540e2de370e",
       "sourceMode": "100644",
-      "resultSha256": "7d2aa7a4f8a0e3932fae796fdaca23ff2884fe6ebfd4dad88ddf2cd2dee39307",
+      "resultSha256": "b6d3a896f990f2c6fd859d883b15db18517eadf7419d42bfafc3904eed5a815b",
       "task": "T166",
       "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch."
     },

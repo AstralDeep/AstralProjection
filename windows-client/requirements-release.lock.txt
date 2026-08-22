@@ -48,8 +48,8 @@ id==1.6.1 \
     --hash=sha256:f5ec41ed2629a508f5d0988eda142e190c9c6da971100612c4de9ad9f9b237ca
 idna==3.18 \
     --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2
-lets-agent @ https://github.com/AstralDeep/LETS/releases/download/v1.0.10/lets_agent-1.0.10-py3-none-any.whl \
-    --hash=sha256:292e98eb33d1203f8da6242c8cecdd38a0dbccdef6efeab7c60332eb58fc77d4
+lets-agent @ https://github.com/AstralDeep/LETS/releases/download/v1.0.11/lets_agent-1.0.11-py3-none-any.whl \
+    --hash=sha256:c22dd4c55b1f8e62200455c370ea1b56fb2a96da7fbeae1406e3d0b1365f8c80
 livekit==1.1.14 \
     --hash=sha256:b8f8d38f131956297923e520bc4375bc9ebfa255cab7f125cb7755bfca71df24
 markdown-it-py==4.2.0 \
