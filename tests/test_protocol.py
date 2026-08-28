@@ -445,6 +445,65 @@ def test_voice_075_contract_is_strict_complete_and_preserves_remote_v1_bytes() -
             "synthesis_locale",
         },
     }
+    assert local["optional_rest_fields"] == {
+        "voice_capability_v2": ["retry_after_seconds"],
+    }
+    assert set(local["closed_reasons"]) == {
+        "altered_local_final",
+        "announcement_consent_invalid",
+        "announcement_invalid",
+        "announcement_stale_sequence",
+        "announcement_suppressed_background",
+        "announcement_suppressed_muted",
+        "asr_unavailable",
+        "authentication_required",
+        "backend_mismatch",
+        "backend_selection_invalid",
+        "capacity_exhausted",
+        "client_contract_upgrade_required",
+        "client_readiness_required",
+        "duplicate_local_final",
+        "feature_disabled",
+        "internal_error",
+        "invalid_binding",
+        "local_announcement_expired",
+        "local_audio_interrupted",
+        "local_capture_not_ready",
+        "local_engine_lost",
+        "local_final_empty",
+        "local_final_malformed",
+        "local_final_oversized",
+        "local_language_download_required",
+        "local_language_install_failed",
+        "local_language_installing",
+        "local_language_mismatch",
+        "local_processing_not_guaranteed",
+        "local_recognition_cancelled",
+        "local_recognition_failed",
+        "local_recognition_locale_unavailable",
+        "local_recognition_unavailable",
+        "local_session_not_ready",
+        "local_synthesis_failed",
+        "local_synthesis_locale_unavailable",
+        "local_synthesis_unavailable",
+        "microphone_permission_denied",
+        "microphone_permission_not_determined",
+        "no_audio_output",
+        "no_microphone",
+        "ready",
+        "speech_recognition_permission_denied",
+        "speech_recognition_permission_not_determined",
+        "stale_chat_context",
+        "stale_connection",
+        "stale_local_turn",
+        "stale_session",
+        "stale_speech_revision",
+        "stopped_by_user",
+        "takeover_required",
+        "tts_unavailable",
+        "unsupported_speech_backend",
+        "worker_unavailable",
+    }
 
 
 def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys() -> None:
@@ -519,6 +578,31 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
+        "android-client/gradle/libs.versions.toml": (
+            "f28e58d74f1a33e8ec59590469d61095a218956d249c1e28d1d2a1adba90fa8d"
+        ),
+        "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
+            "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"
+        ),
+        "pyproject.toml": (
+            "4b0becf7655428f715cba9b47c718ad3ceda5f87802efc40c924a9f6fc9baa79"
+        ),
+    }
+    assert set(immutable_manifests) == {
+        "android-client/app/gradle.lockfile",
+        "android-client/buildscript-gradle.lockfile",
+        "android-client/core/gradle.lockfile",
+        "android-client/gradle/libs.versions.toml",
+        "android-client/settings-gradle.lockfile",
+        "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+        "pyproject.toml",
+        "tooling/python-ci/requirements.lock.txt",
+        "tooling/web-ci/package-lock.json",
+        "tooling/web-ci/package.json",
+        "windows-client/deployment/runtime-lock-contract.json",
+        "windows-client/requirements-release.lock.txt",
+        "windows-client/requirements.in",
+        "windows-client/requirements.txt",
     }
     for relative, expected in immutable_manifests.items():
         assert hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected, relative
@@ -609,7 +693,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 81
+    assert len(paths) == 82
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
 
     moved_workflows = {
@@ -631,7 +715,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 438
+    assert len(extracted) - len(changed_paths) == 437
 
     for entry in record["entries"]:
         path = entry["path"]
