@@ -320,6 +320,48 @@ def test_apple_ci_runs_when_its_coverage_exporter_changes() -> None:
     assert '- "scripts/**"' in pull_request
 
 
+@pytest.mark.parametrize("workflow_name", ("android-ci.yml", "apple-ci.yml"))
+def test_native_ci_push_and_pull_request_watch_voice_075_fixture(workflow_name: str) -> None:
+    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+    triggers = text.partition("on:\n")[2].partition("\npermissions:\n")[0]
+    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
+    pull_request = triggers.partition("  pull_request:\n")[2].partition("\n  schedule:\n")[0]
+    path = "contracts/fixtures/voice_075/client_local_conformance.json"
+
+    assert push.count(path) == 1
+    assert pull_request.count(path) == 1
+
+
+@pytest.mark.parametrize("workflow_name", ("android-ci.yml", "apple-ci.yml"))
+@pytest.mark.parametrize("event_name", ("push", "pull_request"))
+def test_native_ci_voice_075_path_guard_rejects_missing_event_filter(
+    workflow_name: str,
+    event_name: str,
+) -> None:
+    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+    path = "contracts/fixtures/voice_075/client_local_conformance.json"
+    lines = text.splitlines(keepends=True)
+    start = lines.index(f"  {event_name}:\n")
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if lines[index].startswith("  ") and not lines[index].startswith("    ")
+        ),
+        len(lines),
+    )
+    event_path = next(
+        index for index in range(start, end) if path in lines[index]
+    )
+    mutated = "".join(lines[:event_path] + lines[event_path + 1 :])
+
+    triggers = mutated.partition("on:\n")[2].partition("\npermissions:\n")[0]
+    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
+    pull_request = triggers.partition("  pull_request:\n")[2].partition("\n  schedule:\n")[0]
+    with pytest.raises(AssertionError):
+        assert push.count(path) == 1 and pull_request.count(path) == 1
+
+
 def test_native_ci_is_independently_read_only_secret_free_and_sha_pinned() -> None:
     workflows = {
         name: (ACTIVE / name).read_text(encoding="utf-8")

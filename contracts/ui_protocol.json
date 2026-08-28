@@ -79,6 +79,49 @@
         "voice_visible_chat_update": "updateVoiceSession"
       },
       "required_dispositions": ["accepted", "rejected", "partial", "final", "listening", "speaking", "interrupted", "failed", "ended", "takeover_required", "permission_denied", "typed_fallback"]
+    },
+    "voice_075": {
+      "schema_version": "2",
+      "rest_contract": "voice-rest/v2-client-local",
+      "local_frame_contract": "client_local/v1",
+      "additional_fields": false,
+      "remote_v1_byte_invariant": {
+        "fixture": "contracts/fixtures/voice_065/client_conformance.json",
+        "sha256": "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
+      },
+      "requirements": {
+        "session_contract": "voice-rest/v2-client-local",
+        "local_frame_contract": "client_local/v1",
+        "configured_locale": "en-US",
+        "recognition_must_be_local": true,
+        "synthesis_must_be_local": true,
+        "installation_policy": "explicit_user_action_only",
+        "requirement_revision": 1,
+        "max_final_unicode_scalars": 8000,
+        "max_announcement_utf8_bytes": 600,
+        "announcement_ttl_seconds": 10,
+        "echo_suppression_milliseconds": 500
+      },
+      "exact_rest_fields": {
+        "voice_capability_v2": ["schema_version", "speech_backend", "status", "reason", "checked_at", "expires_at", "supported_transports", "requirements"],
+        "client_local_capability": ["contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale"]
+      },
+      "exact_frame_fields": {
+        "voice_local_ready": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale", "client_sequence"],
+        "voice_local_session_ready": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "contract", "transport", "configured_locale", "chat_id", "chat_context_revision", "applied_chat_context_revision", "foreground_active", "microphone_enabled", "speech_muted", "lease_expires_at"],
+        "voice_local_recognition_started": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "chat_id", "chat_context_revision", "recognition_sequence"],
+        "voice_local_turn_bound": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "binding_expires_at"],
+        "voice_local_final": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "final", "recognized_locale", "text", "text_digest_sha256"],
+        "voice_local_recognition_failed": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason"],
+        "voice_local_final_rejected": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason", "retry_policy", "occurred_at"],
+        "voice_local_announcement": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "output_policy", "locale", "text", "text_digest_sha256", "expires_at", "foreground_required", "mute_revision", "consent_revision"],
+        "voice_local_playout_event": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "phase", "client_sequence", "observed_at"]
+      },
+      "optional_frame_fields": {
+        "voice_local_playout_event": ["reason"]
+      },
+      "closed_reasons": ["ready", "client_contract_upgrade_required", "client_readiness_required", "microphone_permission_not_determined", "microphone_permission_denied", "speech_recognition_permission_not_determined", "speech_recognition_permission_denied", "no_microphone", "no_audio_output", "local_processing_not_guaranteed", "local_recognition_unavailable", "local_synthesis_unavailable", "local_recognition_locale_unavailable", "local_synthesis_locale_unavailable", "local_language_download_required", "local_language_installing", "local_language_install_failed", "local_capture_not_ready", "local_session_not_ready", "local_recognition_failed", "local_recognition_cancelled", "local_synthesis_failed", "local_audio_interrupted", "local_engine_lost", "local_announcement_expired", "stopped_by_user", "stale_connection", "stale_session", "stale_speech_revision", "stale_chat_context", "stale_local_turn", "duplicate_local_final", "altered_local_final", "local_final_empty", "local_final_oversized", "local_final_malformed", "local_language_mismatch", "announcement_stale_sequence", "announcement_suppressed_muted", "announcement_suppressed_background", "announcement_consent_invalid", "announcement_invalid", "invalid_binding", "capacity_exhausted"],
+      "required_dispositions": ["ready", "typed_fallback", "rejected", "permission_denied", "final", "speaking", "finished"]
     }
   },
   "push_types": [
@@ -142,6 +185,10 @@
     {"name": "user_preferences", "category": "bootstrap"},
     {"name": "voice_announcement_media", "category": "voice_media"},
     {"name": "voice_control_binding", "category": "voice"},
+    {"name": "voice_local_announcement", "category": "voice"},
+    {"name": "voice_local_final_rejected", "category": "voice"},
+    {"name": "voice_local_session_ready", "category": "voice"},
+    {"name": "voice_local_turn_bound", "category": "voice"},
     {"name": "voice_session_state", "category": "voice"},
     {"name": "voice_submission_rejected", "category": "voice"},
     {"name": "voice_transcript", "category": "voice"},

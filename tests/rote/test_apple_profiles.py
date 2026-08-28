@@ -16,6 +16,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from rote.adapter import ComponentAdapter  # noqa: E402
 from rote.capabilities import DeviceProfile, DeviceType, load_host_config  # noqa: E402
 
 
@@ -106,3 +107,30 @@ def test_apple_profiles_respect_env_override(monkeypatch):
     assert cfg["macos"]["supports_code"] is False
     # untouched fields keep their defaults
     assert cfg["ios"]["supports_code"] is True
+
+
+def test_all_apple_profiles_share_local_permission_denial_typed_fallback():
+    for device_type in ("ios", "macos", "watch"):
+        prof = DeviceProfile.from_dict({
+            "device_type": device_type,
+            "has_microphone": True,
+            "has_audio_output": True,
+            "microphone_permission": "authorized",
+            "full_duplex": False,
+            "voice_transport": "client_local",
+            "voice": {
+                "contract": "client_local/v1",
+                "configured_locale": "en-US",
+                "recognition_permission": "denied",
+                "recognition_processing": "guaranteed_local",
+                "recognition_locale": "ready",
+                "recognition_installation": "ready",
+                "synthesis_processing": "guaranteed_local",
+                "synthesis_locale": "ready",
+            },
+        })
+
+        result = ComponentAdapter.adapt_voice_capability(prof)
+        assert result["disposition"] == "typed_fallback"
+        assert result["reason"] == "speech_recognition_permission_denied"
+        assert result["typed_fallback"] is True

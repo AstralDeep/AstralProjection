@@ -20,6 +20,7 @@ CSS_PATH = static_path("astral.css")
 FIXTURE_PATH = fixture_path("voice_065/client_conformance.json")
 LIVEKIT_PATH = vendor_path("livekit-client.umd.min.js")
 LIVEKIT_DIGEST_PATH = vendor_path("livekit-client.sha256")
+REMOTE_V1_SHA256 = "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
 
 
 class _ShellParser(HTMLParser):
@@ -66,6 +67,19 @@ def test_server_composer_builder_matches_canonical_web_projection() -> None:
     )
 
     assert actual == _fixture_composer()
+
+
+def test_local_fixture_is_standalone_and_remote_v1_fixture_bytes_are_unchanged() -> None:
+    local_path = fixture_path("voice_075/client_local_conformance.json")
+    local = json.loads(local_path.read_text(encoding="utf-8"))
+
+    assert local_path != FIXTURE_PATH
+    assert local["contract"] == "client_local/v1"
+    assert local["remote_v1_invariant"] == {
+        "fixture": "contracts/fixtures/voice_065/client_conformance.json",
+        "sha256": REMOTE_V1_SHA256,
+    }
+    assert hashlib.sha256(FIXTURE_PATH.read_bytes()).hexdigest() == REMOTE_V1_SHA256
 
 
 def test_shell_hosts_accessible_voice_controls_without_replacing_typed_chat() -> None:

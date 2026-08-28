@@ -15,10 +15,14 @@ let repositoryRoot =
     .deletingLastPathComponent()  // repository
 let canonicalVoiceFixture = repositoryRoot.appendingPathComponent(
     "contracts/fixtures/voice_065/client_conformance.json")
+let canonicalLocalVoiceFixture = repositoryRoot.appendingPathComponent(
+    "contracts/fixtures/voice_075/client_local_conformance.json")
 let linkedVoiceFixture = packageRoot.appendingPathComponent(
     "Tests/AstralCoreTests/Fixtures/voice_065/client_conformance.json")
 let expectedVoiceFixtureSHA256 =
     "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
+let expectedLocalVoiceFixtureSHA256 =
+    "59b77d9acbfd4c40ec9c2eaa50c30e30090c8da7ff7026786d1f77d8c5984b04"
 
 func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
@@ -33,6 +37,10 @@ do {
     let linkedBytes = try Data(contentsOf: linkedVoiceFixture)
     guard sha256(linkedBytes) == canonicalDigest, linkedBytes == canonicalBytes else {
         fatalError("Feature 065 test-resource link differs from its canonical source")
+    }
+    let localBytes = try Data(contentsOf: canonicalLocalVoiceFixture)
+    guard sha256(localBytes) == expectedLocalVoiceFixtureSHA256 else {
+        fatalError("canonical Feature 075 local voice fixture digest changed")
     }
 } catch {
     fatalError("unable to validate canonical Feature 065 voice fixture: \(error)")

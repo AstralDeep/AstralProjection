@@ -31,6 +31,17 @@ class VoiceContract065Test {
         json.parseToJsonElement(file.readText()).jsonObject
     }
 
+    private val localFixture by lazy {
+        val relative = "contracts/fixtures/voice_075/client_local_conformance.json"
+        val start = File(System.getProperty("user.dir")).absoluteFile
+        val file =
+            generateSequence(start) { it.parentFile }
+                .map { File(it, relative) }
+                .firstOrNull(File::isFile)
+                ?: error("canonical local voice fixture not found from $start")
+        json.parseToJsonElement(file.readText()).jsonObject
+    }
+
     private val rawVectors: List<JsonObject> by lazy {
         fixture["cases"]!!.jsonArray.flatMap { case ->
             val value = case.jsonObject
@@ -41,6 +52,27 @@ class VoiceContract065Test {
 
     private val vectorsById: Map<String, JsonObject> by lazy {
         rawVectors.associateBy { it["id"]!!.jsonPrimitive.content }
+    }
+
+    @Test
+    fun feature075LocalFixtureIsAvailableToTheAndroidConsumer() {
+        assertEquals("client_local/v1", localFixture["contract"]?.jsonPrimitive?.content)
+        val categories =
+            localFixture["vectors"]!!.jsonArray.map {
+                it.jsonObject["category"]!!.jsonPrimitive.content
+            }.toSet()
+        assertEquals(
+            setOf(
+                "supported",
+                "unavailable",
+                "stale",
+                "denial",
+                "local_final",
+                "announcement",
+                "playout",
+            ),
+            categories,
+        )
     }
 
     @Test

@@ -19,6 +19,11 @@ TRANSFORMATIONS = ROOT / "provenance" / "transformations.json"
 WORKFLOWS = ROOT / "workflows-disabled"
 ACTIVE_WORKFLOWS = ROOT / ".github" / "workflows"
 SOURCE_REPOSITORY_ENV = "ASTRALDEEP_SOURCE_REPO"
+VOICE_065_FIXTURE = ROOT / "contracts" / "fixtures" / "voice_065" / "client_conformance.json"
+VOICE_075_FIXTURE = (
+    ROOT / "contracts" / "fixtures" / "voice_075" / "client_local_conformance.json"
+)
+VOICE_065_SHA256 = "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
 
 
 def _canonical_bytes(document: object) -> bytes:
@@ -241,7 +246,289 @@ def test_all_client_voice_fixture_consumers_use_the_standalone_contract() -> Non
     for path in fixture_consumers:
         text = path.read_text(encoding="utf-8")
         assert "contracts/fixtures/voice_065/client_conformance.json" in text, path
+        assert "contracts/fixtures/voice_075/client_local_conformance.json" in text, path
         assert "backend/tests/fixtures/voice_065" not in text, path
+
+
+def test_voice_075_contract_is_strict_complete_and_preserves_remote_v1_bytes() -> None:
+    document = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    local = document["frame_contracts"]["voice_075"]
+
+    assert hashlib.sha256(VOICE_065_FIXTURE.read_bytes()).hexdigest() == VOICE_065_SHA256
+    assert local["remote_v1_byte_invariant"] == {
+        "fixture": "contracts/fixtures/voice_065/client_conformance.json",
+        "sha256": VOICE_065_SHA256,
+    }
+    assert local["schema_version"] == "2"
+    assert local["rest_contract"] == "voice-rest/v2-client-local"
+    assert local["local_frame_contract"] == "client_local/v1"
+    assert local["additional_fields"] is False
+    assert local["requirements"] == {
+        "session_contract": "voice-rest/v2-client-local",
+        "local_frame_contract": "client_local/v1",
+        "configured_locale": "en-US",
+        "recognition_must_be_local": True,
+        "synthesis_must_be_local": True,
+        "installation_policy": "explicit_user_action_only",
+        "requirement_revision": 1,
+        "max_final_unicode_scalars": 8000,
+        "max_announcement_utf8_bytes": 600,
+        "announcement_ttl_seconds": 10,
+        "echo_suppression_milliseconds": 500,
+    }
+
+    common = {
+        "schema_version",
+        "speech_backend",
+        "device_id",
+        "connection_generation",
+        "session_id",
+        "generation",
+        "speech_revision",
+    }
+    expected_fields = {
+        "voice_local_ready": common
+        | {
+            "type",
+            "contract",
+            "transport",
+            "configured_locale",
+            "full_duplex",
+            "has_microphone",
+            "has_audio_output",
+            "microphone_permission",
+            "recognition_permission",
+            "recognition_processing",
+            "recognition_locale",
+            "recognition_installation",
+            "synthesis_processing",
+            "synthesis_locale",
+            "client_sequence",
+        },
+        "voice_local_session_ready": common
+        | {
+            "type",
+            "contract",
+            "transport",
+            "configured_locale",
+            "chat_id",
+            "chat_context_revision",
+            "applied_chat_context_revision",
+            "foreground_active",
+            "microphone_enabled",
+            "speech_muted",
+            "lease_expires_at",
+        },
+        "voice_local_recognition_started": common
+        | {
+            "type",
+            "client_turn_id",
+            "chat_id",
+            "chat_context_revision",
+            "recognition_sequence",
+        },
+        "voice_local_turn_bound": common
+        | {
+            "type",
+            "client_turn_id",
+            "turn_id",
+            "submission_id",
+            "request_generation",
+            "chat_id",
+            "chat_context_revision",
+            "recognition_sequence",
+            "binding_expires_at",
+        },
+        "voice_local_final": common
+        | {
+            "type",
+            "client_turn_id",
+            "turn_id",
+            "submission_id",
+            "request_generation",
+            "chat_id",
+            "chat_context_revision",
+            "recognition_sequence",
+            "final",
+            "recognized_locale",
+            "text",
+            "text_digest_sha256",
+        },
+        "voice_local_recognition_failed": common
+        | {
+            "type",
+            "client_turn_id",
+            "turn_id",
+            "submission_id",
+            "request_generation",
+            "chat_id",
+            "chat_context_revision",
+            "recognition_sequence",
+            "reason",
+        },
+        "voice_local_final_rejected": common
+        | {
+            "type",
+            "client_turn_id",
+            "turn_id",
+            "submission_id",
+            "request_generation",
+            "chat_id",
+            "chat_context_revision",
+            "recognition_sequence",
+            "reason",
+            "retry_policy",
+            "occurred_at",
+        },
+        "voice_local_announcement": common
+        | {
+            "type",
+            "announcement_id",
+            "announcement_sequence",
+            "turn_id",
+            "kind",
+            "output_policy",
+            "locale",
+            "text",
+            "text_digest_sha256",
+            "expires_at",
+            "foreground_required",
+            "mute_revision",
+            "consent_revision",
+        },
+        "voice_local_playout_event": common
+        | {
+            "type",
+            "announcement_id",
+            "announcement_sequence",
+            "turn_id",
+            "kind",
+            "phase",
+            "client_sequence",
+            "observed_at",
+        },
+    }
+    actual_fields = {
+        name: set(fields) for name, fields in local["exact_frame_fields"].items()
+    }
+    assert actual_fields == expected_fields
+    assert all("speech_revision" in fields for fields in actual_fields.values())
+    assert local["optional_frame_fields"] == {
+        "voice_local_playout_event": ["reason"],
+    }
+    assert {
+        name: set(fields) for name, fields in local["exact_rest_fields"].items()
+    } == {
+        "voice_capability_v2": {
+            "schema_version",
+            "speech_backend",
+            "status",
+            "reason",
+            "checked_at",
+            "expires_at",
+            "supported_transports",
+            "requirements",
+        },
+        "client_local_capability": {
+            "contract",
+            "transport",
+            "configured_locale",
+            "full_duplex",
+            "has_microphone",
+            "has_audio_output",
+            "microphone_permission",
+            "recognition_permission",
+            "recognition_processing",
+            "recognition_locale",
+            "recognition_installation",
+            "synthesis_processing",
+            "synthesis_locale",
+        },
+    }
+
+
+def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys() -> None:
+    document = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    local = document["frame_contracts"]["voice_075"]
+    fixture = json.loads(VOICE_075_FIXTURE.read_text(encoding="utf-8"))
+    vectors = fixture["vectors"]
+
+    assert fixture["format"] == "astral.voice.client-local-conformance/v1"
+    assert fixture["schema_version"] == "2"
+    assert fixture["contract"] == "client_local/v1"
+    assert {vector["category"] for vector in vectors} == {
+        "supported",
+        "unavailable",
+        "stale",
+        "denial",
+        "local_final",
+        "announcement",
+        "playout",
+    }
+    assert len(vectors) == 7
+    assert len({vector["id"] for vector in vectors}) == len(vectors)
+    closed_dispositions = set(local["required_dispositions"])
+    assert closed_dispositions == set(fixture["closed_dispositions"])
+    assert {vector["expected_disposition"] for vector in vectors} <= closed_dispositions
+
+    exact_shapes = {**local["exact_frame_fields"], **local["exact_rest_fields"]}
+
+    def assert_exact_keys(payload: dict[str, object], expected: set[str]) -> None:
+        assert set(payload) == expected
+
+    for vector in vectors:
+        payload = vector["payload"]
+        exact = set(exact_shapes[vector["shape"]])
+        assert_exact_keys(payload, exact)
+        with pytest.raises(AssertionError):
+            assert_exact_keys({**payload, "unexpected": "forbidden"}, exact)
+
+
+def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
+    immutable_manifests = {
+        "tooling/python-ci/requirements.lock.txt": (
+            "4359fb05e72eb3596ad7c450c37c0bb217f7ff2505e920e899ff736d0d1d2554"
+        ),
+        "tooling/web-ci/package.json": (
+            "a28102990f9ec4cb8891f7020baa7e91c7994f949eee8c25afe9d9abe4746825"
+        ),
+        "tooling/web-ci/package-lock.json": (
+            "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"
+        ),
+        "windows-client/requirements.in": (
+            "5bd4739e9a0db246de0d9df06315be3e2f8f734e40a48e2569a00124382c3a5a"
+        ),
+        "windows-client/requirements.txt": (
+            "d301d1e3a1b523fda5c1488693cf9a7a4336504c0d168bd0f4e220c8b0302c95"
+        ),
+        "windows-client/requirements-release.lock.txt": (
+            "f376ece93b3754b02498e8243a88b3c68282fd26d80c868d85c23bb7ac1d317d"
+        ),
+        "windows-client/deployment/runtime-lock-contract.json": (
+            "5907ee2ffedc4376d31721739f8279cbac69774af72459de34905dd679bfd0db"
+        ),
+        "android-client/buildscript-gradle.lockfile": (
+            "9e0750c539a1715561bb7018f3f24010f2542a7400b953abc4958959c9616750"
+        ),
+        "android-client/settings-gradle.lockfile": (
+            "5e2d075903b5cd264613e7538c7c51b1484fe2ed489d4ead3e6b4ba0cf3911c4"
+        ),
+        "android-client/app/gradle.lockfile": (
+            "60ee1455b5bf1fc30c8f58a583a21f570bb61199f6a6ed83246e741c7107e260"
+        ),
+        "android-client/core/gradle.lockfile": (
+            "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
+        ),
+    }
+    for relative, expected in immutable_manifests.items():
+        assert hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected, relative
+
+    project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'dependencies = ["astralprims==0.3.0"]' in project
+    apple = (ROOT / "apple-clients" / "AstralCore" / "Package.swift").read_text(
+        encoding="utf-8"
+    )
+    assert ".package(" not in apple
 
 
 def test_apple_fixture_link_targets_the_standalone_fixture_contract() -> None:
@@ -322,7 +609,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 76
+    assert len(paths) == 81
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
 
     moved_workflows = {
@@ -344,7 +631,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 443
+    assert len(extracted) - len(changed_paths) == 438
 
     for entry in record["entries"]:
         path = entry["path"]

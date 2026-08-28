@@ -46,6 +46,7 @@ from astral_client.voice import (  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_PATH = REPO_ROOT / "contracts/fixtures/voice_065/client_conformance.json"
+LOCAL_FIXTURE_PATH = REPO_ROOT / "contracts/fixtures/voice_075/client_local_conformance.json"
 DEVICE = "00000000-0000-4000-8000-000000000001"
 CONNECTION = "00000000-0000-4000-8000-000000000002"
 SESSION = "00000000-0000-4000-8000-000000000003"
@@ -54,10 +55,24 @@ WORKER = "voice-worker-01"
 
 fixture = strict_load_json(FIXTURE_PATH)
 indexed = index_fixture_vectors(fixture)
+local_fixture = strict_load_json(LOCAL_FIXTURE_PATH)
 
 
 def _vector(vector_id: str) -> dict[str, Any]:
     return materialize_vector(indexed[vector_id], fixture, indexed)
+
+
+def test_feature_075_local_fixture_is_available_to_the_windows_consumer() -> None:
+    assert local_fixture["contract"] == "client_local/v1"
+    assert {vector["category"] for vector in local_fixture["vectors"]} == {
+        "supported",
+        "unavailable",
+        "stale",
+        "denial",
+        "local_final",
+        "announcement",
+        "playout",
+    }
 
 
 class _FixtureDateTime(datetime):

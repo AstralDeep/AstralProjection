@@ -16,6 +16,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+from rote.adapter import ComponentAdapter  # noqa: E402
 from rote.capabilities import DeviceProfile, DeviceType, load_host_config  # noqa: E402
 
 
@@ -71,3 +72,30 @@ def test_android_respects_env_override(monkeypatch):
     monkeypatch.setenv("ROTE_HOST_CONFIG", '{"android": {"max_grid_columns": 4}}')
     prof = DeviceProfile.from_dict({"device_type": "android"})
     assert prof.max_grid_columns == 4
+
+
+def test_android_local_unavailable_degrades_to_specific_typed_fallback():
+    prof = DeviceProfile.from_dict({
+        "device_type": "android",
+        "has_microphone": True,
+        "has_audio_output": True,
+        "microphone_permission": "authorized",
+        "full_duplex": False,
+        "voice_transport": "client_local",
+        "voice": {
+            "contract": "client_local/v1",
+            "configured_locale": "en-US",
+            "recognition_permission": "authorized",
+            "recognition_processing": "unavailable",
+            "recognition_locale": "unavailable",
+            "recognition_installation": "unavailable",
+            "synthesis_processing": "guaranteed_local",
+            "synthesis_locale": "ready",
+        },
+    })
+
+    result = ComponentAdapter.adapt_voice_capability(prof)
+    assert result["available"] is False
+    assert result["disposition"] == "typed_fallback"
+    assert result["reason"] == "local_recognition_unavailable"
+    assert result["typed_fallback"] is True

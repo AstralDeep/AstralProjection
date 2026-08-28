@@ -8,6 +8,7 @@ on:
       - "apple-clients/**"
       - "contracts/ui_protocol.json"
       - "contracts/fixtures/voice_065/client_conformance.json"
+      - "contracts/fixtures/voice_075/client_local_conformance.json"
       - "scripts/**"
       - ".github/workflows/apple-ci.yml"
   pull_request:
@@ -15,6 +16,7 @@ on:
       - "apple-clients/**"
       - "contracts/ui_protocol.json"
       - "contracts/fixtures/voice_065/client_conformance.json"
+      - "contracts/fixtures/voice_075/client_local_conformance.json"
       - "scripts/**"
       - ".github/workflows/apple-ci.yml"
 

@@ -16,9 +16,9 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "3bc9ce093e2b640cfb5092f21dc66b1f94a04da37b060fcfc8f3d75dd3706931",
-      "task": "T054/T057",
-      "reason": "Repoint generated Android voice fixtures to Projection while preserving registered application, redirect, and monotonic version identities."
+      "resultSha256": "7ac647a81edc5256279a7fb634fb2d381c801885b8dd3b5384b64a64e2850d7b",
+      "task": "T054/T057/T013/T014",
+      "reason": "Repoint generated Android voice fixtures to Projection, then hash-bind and bundle the standalone Feature 075 local conformance fixture without changing dependencies or registered identities."
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
@@ -52,9 +52,9 @@
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
       "sourceBlob": "91a34fb1ac6831ef090e90a79ad5bada51106a0e",
       "sourceMode": "100644",
-      "resultSha256": "f00c6078346852bbfe89c217f23491800d263159b2d76895cd68f5c5b7b157e5",
-      "task": "T054",
-      "reason": "Repoint the Android voice conformance consumer to the standalone Projection fixture."
+      "resultSha256": "d9e77cff1316f3ff0cbd9159d3f6f6fc13c6f59a6dd49f79a2c434c07bfbeb82",
+      "task": "T054/T013/T014",
+      "reason": "Bind the Android voice conformance consumer to both standalone remote-v1 and client-local-v1 Projection fixtures."
     },
     {
       "path": "android-client/docs/play-store-release.md",
@@ -79,9 +79,9 @@
       "sourcePath": "apple-clients/AstralCore/Package.swift",
       "sourceBlob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
       "sourceMode": "100644",
-      "resultSha256": "f9b7a7659109acc8c8f580b99e699034e143e5753a3b126c63c0efbab713039c",
-      "task": "T055",
-      "reason": "Repoint the Apple voice conformance resource to the standalone Projection fixture."
+      "resultSha256": "d1a77c01102c6ddc4e9716db3bc51854b7088828ce168faaeed7f390484da538",
+      "task": "T055/T013/T014",
+      "reason": "Bind the shared Apple package to hash-verified standalone remote-v1 and client-local-v1 Projection fixtures without adding a package dependency."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
@@ -154,6 +154,33 @@
       "resultSha256": "c4a9616b56414e62d54f3e47333dc92518ddc47208e504330978a5dd48757f38",
       "task": "T226",
       "reason": "Remove repository-wide Ruff violations from the Apple icon generator without altering generated image bytes."
+    },
+    {
+      "path": "backend/rote/adapter.py",
+      "sourcePath": "backend/rote/adapter.py",
+      "sourceBlob": "ada87b7c601058cff8acbf9a62d11367406d0438",
+      "sourceMode": "100644",
+      "resultSha256": "ab65b1428e17acf6d7fb39ac36b08bc6403586a06a3bab87b786beb4fd49e602",
+      "task": "T017",
+      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition."
+    },
+    {
+      "path": "backend/rote/capabilities.py",
+      "sourcePath": "backend/rote/capabilities.py",
+      "sourceBlob": "f99b8e575640d0176bf855fbd6cf01cc5bde4790",
+      "sourceMode": "100644",
+      "resultSha256": "c6b49157808e79e020f2b0d3244957ee71d2560727a89185134b3a4ebb7b373c",
+      "task": "T017",
+      "reason": "Normalize the strict client_local/v1 half-duplex capability vocabulary without inferring local readiness from client identity."
+    },
+    {
+      "path": "backend/rote/fallback.py",
+      "sourcePath": "backend/rote/fallback.py",
+      "sourceBlob": "32e901e62c19a0a32f4465d5ac0f94bba0253745",
+      "sourceMode": "100644",
+      "resultSha256": "9edf5a4c9bb60e9540ab5a9da3c46d8292fe1e21cfa52bf7256f4a2b47bafd0c",
+      "task": "T017",
+      "reason": "Classify local speech readiness with closed reasons and preserve an explicit typed fallback for every unavailable posture."
     },
     {
       "path": "backend/webrender/chrome/menu_model.py",
@@ -318,6 +345,15 @@
       "reason": "Name the standalone Projection manifest as the current error-frame contract source."
     },
     {
+      "path": "contracts/ui_protocol.json",
+      "sourcePath": "backend/shared/ui_protocol.json",
+      "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
+      "sourceMode": "100644",
+      "resultSha256": "4452492d1961d3ca4ab3485b2dedde357fbd3a941d664c3bf18d731b08fe3c70",
+      "task": "T013/T015",
+      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest."
+    },
+    {
       "path": "scripts/windows_release_candidate.py",
       "sourcePath": "scripts/windows_release_candidate.py",
       "sourceBlob": "218aab81e3b3a53baa13834c4d34c04241c860f8",
@@ -325,6 +361,15 @@
       "resultSha256": "d77bcbdf53d5eba3617c574c3c504870918db0d07ea771410dc30bc26232dd51",
       "task": "T166",
       "reason": "Bind Windows candidate assembly to the exact LETS runtime release lock and protected-executor bundle."
+    },
+    {
+      "path": "tests/rote/test_voice_rote_capabilities_065.py",
+      "sourcePath": "backend/tests/test_voice_rote_capabilities_065.py",
+      "sourceBlob": "958fd40e2e94bdd4bbfa4f3f856c437fd53648f9",
+      "sourceMode": "100644",
+      "resultSha256": "856cc832b4a7dc7df6553d080c33689a9d071e76c5fd22615c53b997779d8ff0",
+      "task": "T016",
+      "reason": "Cover strict half-duplex client-local capability normalization and fail-closed typed fallback before ROTE implementation."
     },
     {
       "path": "tests/webrender/test_accessibility_060.py",
@@ -349,9 +394,9 @@
       "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py",
       "sourceBlob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
       "sourceMode": "100644",
-      "resultSha256": "889d442a3595073df15eec9964ae89911be4c76002902a625c322d5c3d402ee2",
-      "task": "T043",
-      "reason": "Read the canonical voice fixture through the standalone Projection resource facade."
+      "resultSha256": "9dcbd5a8b9497c74a70f6a11ba4cc5192623ad6d23854a32c4774d1fc1206fd4",
+      "task": "T043/T013/T014",
+      "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant."
     },
     {
       "path": "tooling/web-ci/coverage-conversion-cli.mjs",
@@ -511,9 +556,9 @@
       "sourcePath": "windows-client/tests/e2e_voice_065.py",
       "sourceBlob": "78e7984e4ed2f176c5ea98546dff685a4f3295b2",
       "sourceMode": "100644",
-      "resultSha256": "c31ebc82870f249a9fc5ba506f85cfc22fe2053e5304f98ac2f693e047419b30",
-      "task": "T053",
-      "reason": "Repoint Windows voice conformance to Projection's fixture and its local stdlib-only materializer instead of an absent Deep contract-CI module."
+      "resultSha256": "faee11d82e40352e02a99d50a26525de3286cd9817c383e651c2266b5a1f1de6",
+      "task": "T053/T013/T014",
+      "reason": "Bind Windows conformance to Projection's standalone remote-v1 and client-local-v1 fixtures without implementing a runtime adapter."
     },
     {
       "path": "windows-client/tests/test_byo_runtime_compatibility.py",
@@ -623,11 +668,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "ea7009921982b2ba51d9337c50ca0c3b3204b61fd8b0e52a6f7804b393985cac"
+          "sha256": "5202d3778f17d47dafcf83528fbe1ff05a01aa5a429eed1f0aa603e33b0ae6ac"
         }
       ],
-      "task": "T056",
-      "reason": "Move the imported Android workflow into its active owner path, retain standalone paths, require the committed wrapper, and keep it read-only and secret-free."
+      "task": "T056/T015",
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",
@@ -638,11 +683,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "cd59795165c1548ddd71c8fe39ba232622f9f747e4d72ba9a59986f99939d3ab"
+          "sha256": "71fc3069872a483db09ecf583a2e59260e44dfa9a54b9126f8d1a8fe3d7cf91e"
         }
       ],
-      "task": "T056",
-      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, read-only authority, and repo-contained explicit unit-plus-UI platform unions."
+      "task": "T056/T015",
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes."
     },
     {
       "path": "workflows-disabled/apple-release.yml",

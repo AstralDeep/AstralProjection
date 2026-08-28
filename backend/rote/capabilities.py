@@ -22,9 +22,14 @@ from typing import Any, Dict, FrozenSet, Optional
 logger = logging.getLogger("rote.capabilities")
 
 _VOICE_PERMISSION_STATES = frozenset(
-    {"not_determined", "authorized", "denied", "restricted"}
+    {"not_determined", "authorized", "denied", "restricted", "unavailable"}
 )
-_VOICE_TRANSPORTS = frozenset({"livekit", "watch_pcm_websocket"})
+_VOICE_TRANSPORTS = frozenset({"livekit", "watch_pcm_websocket", "client_local"})
+_LOCAL_PROCESSING_STATES = frozenset({"guaranteed_local", "unavailable", "unsupported"})
+_LOCAL_LOCALE_STATES = frozenset({"ready", "unavailable", "unknown"})
+_LOCAL_INSTALLATION_STATES = frozenset(
+    {"ready", "downloadable", "installing", "failed", "unavailable", "not_applicable"}
+)
 
 
 class DeviceType(str, Enum):
@@ -151,6 +156,14 @@ class DeviceCapabilities:
     microphone_permission: str = "not_determined"
     full_duplex: bool = False
     voice_transport: str = ""
+    voice_contract: str = ""
+    configured_locale: str = ""
+    recognition_permission: str = "not_determined"
+    recognition_processing: str = "unsupported"
+    recognition_locale: str = "unknown"
+    recognition_installation: str = "unavailable"
+    synthesis_processing: str = "unsupported"
+    synthesis_locale: str = "unknown"
     has_camera: bool = False
     has_file_system: bool = True
     connection_type: str = "unknown"  # wifi, 4g, 3g, 2g, slow-2g
@@ -199,9 +212,18 @@ class DeviceProfile:
             "has_audio_output",
             "microphone_permission",
             "full_duplex",
+            "configured_locale",
+            "recognition_permission",
+            "recognition_processing",
+            "recognition_locale",
+            "recognition_installation",
+            "synthesis_processing",
+            "synthesis_locale",
         ):
             if name not in normalized and name in voice:
                 normalized[name] = voice[name]
+        contract = normalized.get("voice_contract", voice.get("contract"))
+        normalized["voice_contract"] = contract if contract == "client_local/v1" else ""
 
         # Web and older Windows registration payloads used ``transport`` while
         # native protocol descriptors use the unambiguous ``voice_transport``.
@@ -221,6 +243,33 @@ class DeviceProfile:
         normalized["microphone_permission"] = (
             permission if permission in _VOICE_PERMISSION_STATES else "not_determined"
         )
+        recognition_permission = normalized.get("recognition_permission")
+        normalized["recognition_permission"] = (
+            recognition_permission
+            if recognition_permission in _VOICE_PERMISSION_STATES
+            else "not_determined"
+        )
+        recognition_processing = normalized.get("recognition_processing")
+        normalized["recognition_processing"] = (
+            recognition_processing
+            if recognition_processing in _LOCAL_PROCESSING_STATES
+            else "unsupported"
+        )
+        synthesis_processing = normalized.get("synthesis_processing")
+        normalized["synthesis_processing"] = (
+            synthesis_processing
+            if synthesis_processing in _LOCAL_PROCESSING_STATES
+            else "unsupported"
+        )
+        for name in ("recognition_locale", "synthesis_locale"):
+            state = normalized.get(name)
+            normalized[name] = state if state in _LOCAL_LOCALE_STATES else "unknown"
+        installation = normalized.get("recognition_installation")
+        normalized["recognition_installation"] = (
+            installation if installation in _LOCAL_INSTALLATION_STATES else "unavailable"
+        )
+        locale = normalized.get("configured_locale")
+        normalized["configured_locale"] = locale if locale == "en-US" else ""
         for name in ("has_microphone", "has_audio_output", "full_duplex"):
             value = normalized.get(name)
             normalized[name] = value if isinstance(value, bool) else False

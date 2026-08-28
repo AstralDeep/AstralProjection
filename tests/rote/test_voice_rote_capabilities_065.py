@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from rote.capabilities import DeviceProfile, DeviceType
+from rote.adapter import ComponentAdapter
 
 
 def _voice_device(**updates: object) -> dict[str, object]:
@@ -103,3 +104,92 @@ def test_form_factor_is_capability_driven_not_client_identity() -> None:
     assert watch_sized.max_grid_columns == 1
     assert watch_sized.capabilities.voice_transport == "watch_pcm_websocket"
     assert watch_sized.capabilities.full_duplex is False
+
+
+def test_client_local_capability_is_strictly_half_duplex_and_round_trips() -> None:
+    profile = DeviceProfile.from_dict(
+        _voice_device(
+            voice_transport="client_local",
+            full_duplex=False,
+            voice={
+                "contract": "client_local/v1",
+                "configured_locale": "en-US",
+                "recognition_permission": "authorized",
+                "recognition_processing": "guaranteed_local",
+                "recognition_locale": "ready",
+                "recognition_installation": "ready",
+                "synthesis_processing": "guaranteed_local",
+                "synthesis_locale": "ready",
+            },
+        )
+    )
+
+    assert ComponentAdapter.adapt_voice_capability(profile) == {
+        "available": True,
+        "disposition": "ready",
+        "reason": "ready",
+        "speech_backend": "client_local",
+        "transport": "client_local",
+        "contract": "client_local/v1",
+        "configured_locale": "en-US",
+        "full_duplex": False,
+        "typed_fallback": True,
+    }
+    serialized = profile.to_dict()["capabilities"]
+    assert serialized["recognition_processing"] == "guaranteed_local"
+    assert serialized["synthesis_processing"] == "guaranteed_local"
+
+
+def test_client_local_rejects_full_duplex_and_untrusted_local_values() -> None:
+    profile = DeviceProfile.from_dict(
+        _voice_device(
+            voice_transport="client_local",
+            full_duplex=True,
+            voice={
+                "contract": "client_local/v1",
+                "configured_locale": "en-US",
+                "recognition_permission": "authorized",
+                "recognition_processing": "cloud",
+                "recognition_locale": "ready",
+                "recognition_installation": "ready",
+                "synthesis_processing": "guaranteed_local",
+                "synthesis_locale": "ready",
+            },
+        )
+    )
+
+    assert profile.capabilities.recognition_processing == "unsupported"
+    assert ComponentAdapter.adapt_voice_capability(profile) == {
+        "available": False,
+        "disposition": "typed_fallback",
+        "reason": "client_readiness_required",
+        "speech_backend": "client_local",
+        "transport": "client_local",
+        "contract": "client_local/v1",
+        "configured_locale": "en-US",
+        "full_duplex": False,
+        "typed_fallback": True,
+    }
+
+
+def test_client_local_missing_installed_recognition_asset_is_unavailable() -> None:
+    profile = DeviceProfile.from_dict(
+        _voice_device(
+            voice_transport="client_local",
+            full_duplex=False,
+            voice={
+                "contract": "client_local/v1",
+                "configured_locale": "en-US",
+                "recognition_permission": "authorized",
+                "recognition_processing": "guaranteed_local",
+                "recognition_locale": "ready",
+                "recognition_installation": "unavailable",
+                "synthesis_processing": "guaranteed_local",
+                "synthesis_locale": "ready",
+            },
+        )
+    )
+
+    result = ComponentAdapter.adapt_voice_capability(profile)
+    assert result["disposition"] == "typed_fallback"
+    assert result["reason"] == "local_recognition_unavailable"

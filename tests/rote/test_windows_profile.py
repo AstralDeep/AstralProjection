@@ -6,6 +6,7 @@ emitted a frozenset and crashed the `rote_config` send on register.
 """
 import json
 
+from rote.adapter import ComponentAdapter
 from rote.capabilities import DeviceProfile, DeviceType
 
 
@@ -43,3 +44,30 @@ def test_no_supported_types_serializes_too():
     d = DeviceProfile.from_dict({"device_type": "windows"}).to_dict()
     assert d["supported_types"] is None
     json.dumps(d)  # must not raise
+
+
+def test_windows_missing_local_synthesis_preserves_typed_fallback():
+    profile = DeviceProfile.from_dict({
+        "device_type": "windows",
+        "has_microphone": True,
+        "has_audio_output": True,
+        "microphone_permission": "authorized",
+        "full_duplex": False,
+        "voice_transport": "client_local",
+        "voice": {
+            "contract": "client_local/v1",
+            "configured_locale": "en-US",
+            "recognition_permission": "authorized",
+            "recognition_processing": "guaranteed_local",
+            "recognition_locale": "ready",
+            "recognition_installation": "ready",
+            "synthesis_processing": "unavailable",
+            "synthesis_locale": "unavailable",
+        },
+    })
+
+    result = ComponentAdapter.adapt_voice_capability(profile)
+    assert result["available"] is False
+    assert result["disposition"] == "typed_fallback"
+    assert result["reason"] == "local_synthesis_unavailable"
+    assert result["typed_fallback"] is True

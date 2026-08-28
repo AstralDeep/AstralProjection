@@ -1,0 +1,205 @@
+{
+  "format": "astral.voice.client-local-conformance/v1",
+  "schema_version": "2",
+  "contract": "client_local/v1",
+  "remote_v1_invariant": {
+    "fixture": "contracts/fixtures/voice_065/client_conformance.json",
+    "sha256": "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
+  },
+  "closed_dispositions": [
+    "ready",
+    "typed_fallback",
+    "rejected",
+    "permission_denied",
+    "final",
+    "speaking",
+    "finished"
+  ],
+  "vectors": [
+    {
+      "id": "L-P01-supported-half-duplex",
+      "category": "supported",
+      "shape": "voice_local_ready",
+      "expected_disposition": "ready",
+      "payload": {
+        "type": "voice_local_ready",
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": "00000000-0000-4000-8000-000000000001",
+        "connection_generation": "00000000-0000-4000-8000-000000000002",
+        "session_id": "00000000-0000-4000-8000-000000000003",
+        "generation": 1,
+        "speech_revision": 2,
+        "contract": "client_local/v1",
+        "transport": "client_local",
+        "configured_locale": "en-US",
+        "full_duplex": false,
+        "has_microphone": true,
+        "has_audio_output": true,
+        "microphone_permission": "authorized",
+        "recognition_permission": "authorized",
+        "recognition_processing": "guaranteed_local",
+        "recognition_locale": "ready",
+        "recognition_installation": "ready",
+        "synthesis_processing": "guaranteed_local",
+        "synthesis_locale": "ready",
+        "client_sequence": 1
+      }
+    },
+    {
+      "id": "L-N01-local-recognition-unavailable",
+      "category": "unavailable",
+      "shape": "voice_capability_v2",
+      "expected_disposition": "typed_fallback",
+      "payload": {
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "status": "unavailable",
+        "reason": "local_recognition_unavailable",
+        "checked_at": "2026-08-28T12:00:00Z",
+        "expires_at": "2026-08-28T12:00:10Z",
+        "supported_transports": [
+          "client_local"
+        ],
+        "requirements": {
+          "session_contract": "voice-rest/v2-client-local",
+          "local_frame_contract": "client_local/v1",
+          "configured_locale": "en-US",
+          "recognition_must_be_local": true,
+          "synthesis_must_be_local": true,
+          "installation_policy": "explicit_user_action_only",
+          "requirement_revision": 1,
+          "max_final_unicode_scalars": 8000,
+          "max_announcement_utf8_bytes": 600,
+          "announcement_ttl_seconds": 10,
+          "echo_suppression_milliseconds": 500
+        }
+      }
+    },
+    {
+      "id": "L-N02-stale-speech-revision",
+      "category": "stale",
+      "shape": "voice_local_final_rejected",
+      "expected_disposition": "rejected",
+      "payload": {
+        "type": "voice_local_final_rejected",
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": "00000000-0000-4000-8000-000000000001",
+        "connection_generation": "00000000-0000-4000-8000-000000000002",
+        "session_id": "00000000-0000-4000-8000-000000000003",
+        "generation": 1,
+        "speech_revision": 2,
+        "client_turn_id": "00000000-0000-4000-8000-000000000005",
+        "turn_id": "00000000-0000-4000-8000-000000000006",
+        "submission_id": "00000000-0000-4000-8000-000000000007",
+        "request_generation": "00000000-0000-4000-8000-000000000008",
+        "chat_id": "00000000-0000-4000-8000-000000000004",
+        "chat_context_revision": 3,
+        "recognition_sequence": 1,
+        "reason": "stale_speech_revision",
+        "retry_policy": "none",
+        "occurred_at": "2026-08-28T12:00:01Z"
+      }
+    },
+    {
+      "id": "L-N03-recognition-permission-denied",
+      "category": "denial",
+      "shape": "client_local_capability",
+      "expected_disposition": "permission_denied",
+      "payload": {
+        "contract": "client_local/v1",
+        "transport": "client_local",
+        "configured_locale": "en-US",
+        "full_duplex": false,
+        "has_microphone": true,
+        "has_audio_output": true,
+        "microphone_permission": "authorized",
+        "recognition_permission": "denied",
+        "recognition_processing": "guaranteed_local",
+        "recognition_locale": "ready",
+        "recognition_installation": "ready",
+        "synthesis_processing": "guaranteed_local",
+        "synthesis_locale": "ready"
+      }
+    },
+    {
+      "id": "L-P02-local-final",
+      "category": "local_final",
+      "shape": "voice_local_final",
+      "expected_disposition": "final",
+      "payload": {
+        "type": "voice_local_final",
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": "00000000-0000-4000-8000-000000000001",
+        "connection_generation": "00000000-0000-4000-8000-000000000002",
+        "session_id": "00000000-0000-4000-8000-000000000003",
+        "generation": 1,
+        "speech_revision": 2,
+        "client_turn_id": "00000000-0000-4000-8000-000000000005",
+        "turn_id": "00000000-0000-4000-8000-000000000006",
+        "submission_id": "00000000-0000-4000-8000-000000000007",
+        "request_generation": "00000000-0000-4000-8000-000000000008",
+        "chat_id": "00000000-0000-4000-8000-000000000004",
+        "chat_context_revision": 3,
+        "recognition_sequence": 1,
+        "final": true,
+        "recognized_locale": "en-US",
+        "text": "Please continue with my request.",
+        "text_digest_sha256": "bf2a146c64ad6c2e07d2ffa471bb5339e88fc61eca42badd273b8a5a2362be4c"
+      }
+    },
+    {
+      "id": "L-P03-authorized-announcement",
+      "category": "announcement",
+      "shape": "voice_local_announcement",
+      "expected_disposition": "speaking",
+      "payload": {
+        "type": "voice_local_announcement",
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": "00000000-0000-4000-8000-000000000001",
+        "connection_generation": "00000000-0000-4000-8000-000000000002",
+        "session_id": "00000000-0000-4000-8000-000000000003",
+        "generation": 1,
+        "speech_revision": 2,
+        "announcement_id": "00000000-0000-4000-8000-000000000009",
+        "announcement_sequence": 1,
+        "turn_id": null,
+        "kind": "greeting",
+        "output_policy": "lifecycle",
+        "locale": "en-US",
+        "text": "I’m listening.",
+        "text_digest_sha256": "9059f16b0325e80e16907604e6b067ee663909754e7c785e298d42ae693749b9",
+        "expires_at": "2026-08-28T12:00:10Z",
+        "foreground_required": true,
+        "mute_revision": 1,
+        "consent_revision": 1
+      }
+    },
+    {
+      "id": "L-P04-playout-finished",
+      "category": "playout",
+      "shape": "voice_local_playout_event",
+      "expected_disposition": "finished",
+      "payload": {
+        "type": "voice_local_playout_event",
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": "00000000-0000-4000-8000-000000000001",
+        "connection_generation": "00000000-0000-4000-8000-000000000002",
+        "session_id": "00000000-0000-4000-8000-000000000003",
+        "generation": 1,
+        "speech_revision": 2,
+        "announcement_id": "00000000-0000-4000-8000-000000000009",
+        "announcement_sequence": 1,
+        "turn_id": null,
+        "kind": "greeting",
+        "phase": "finished",
+        "client_sequence": 2,
+        "observed_at": "2026-08-28T12:00:02Z"
+      }
+    }
+  ]
+}

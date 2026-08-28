@@ -97,6 +97,12 @@ val canonicalVoiceFixture =
     )
 val canonicalVoiceFixtureSha256 =
     "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
+val canonicalLocalVoiceFixture =
+    rootProject.layout.projectDirectory.file(
+        "../contracts/fixtures/voice_075/client_local_conformance.json",
+    )
+val canonicalLocalVoiceFixtureSha256 =
+    "59b77d9acbfd4c40ec9c2eaa50c30e30090c8da7ff7026786d1f77d8c5984b04"
 val voiceFixtureUnitOutput =
     layout.buildDirectory.file(
         "generated/voice-fixture-065/testResources/voice_065/client_conformance.json",
@@ -104,6 +110,14 @@ val voiceFixtureUnitOutput =
 val voiceFixtureAndroidTestOutput =
     layout.buildDirectory.file(
         "generated/voice-fixture-065/androidTestAssets/voice_065/client_conformance.json",
+    )
+val localVoiceFixtureUnitOutput =
+    layout.buildDirectory.file(
+        "generated/voice-fixture-075/testResources/voice_075/client_local_conformance.json",
+    )
+val localVoiceFixtureAndroidTestOutput =
+    layout.buildDirectory.file(
+        "generated/voice-fixture-075/androidTestAssets/voice_075/client_local_conformance.json",
     )
 
 val copyCanonicalVoiceFixture065 =
@@ -114,6 +128,16 @@ val copyCanonicalVoiceFixture065 =
         expectedSha256.set(canonicalVoiceFixtureSha256)
         unitTestFixture.set(voiceFixtureUnitOutput)
         instrumentedTestFixture.set(voiceFixtureAndroidTestOutput)
+    }
+
+val copyCanonicalVoiceFixture075 =
+    tasks.register<CopyCanonicalVoiceFixture065Task>("copyCanonicalVoiceFixture075") {
+        group = "verification"
+        description = "Hash-check and copy the canonical Feature 075 fixture into test bundles"
+        sourceFixture.set(canonicalLocalVoiceFixture)
+        expectedSha256.set(canonicalLocalVoiceFixtureSha256)
+        unitTestFixture.set(localVoiceFixtureUnitOutput)
+        instrumentedTestFixture.set(localVoiceFixtureAndroidTestOutput)
     }
 
 android {
@@ -181,8 +205,14 @@ android {
         getByName("test").resources.directories.add(
             "build/generated/voice-fixture-065/testResources",
         )
+        getByName("test").resources.directories.add(
+            "build/generated/voice-fixture-075/testResources",
+        )
         getByName("androidTest").assets.directories.add(
             "build/generated/voice-fixture-065/androidTestAssets",
+        )
+        getByName("androidTest").assets.directories.add(
+            "build/generated/voice-fixture-075/androidTestAssets",
         )
     }
 }
@@ -195,6 +225,7 @@ tasks.configureEach {
         (name.startsWith("process") && name.endsWith("UnitTestJavaRes"))
     ) {
         dependsOn(copyCanonicalVoiceFixture065)
+        dependsOn(copyCanonicalVoiceFixture075)
     }
 }
 
