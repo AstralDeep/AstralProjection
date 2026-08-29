@@ -111,6 +111,39 @@ class BlockingReadyProcess(FakeProcess):
         self.stdout.release.set()
 
 
+class CapabilityGapLock:
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def __enter__(self):
+        self.entered.set()
+        self.release.wait(5)
+        return self
+
+    def __exit__(self, *_args) -> None:
+        pass
+
+
+class ObservableLock:
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._guard = threading.Lock()
+        self._attempts = 0
+        self.second_waiting = threading.Event()
+
+    def __enter__(self):
+        with self._guard:
+            self._attempts += 1
+            if self._attempts == 2:
+                self.second_waiting.set()
+        self._lock.acquire()
+        return self
+
+    def __exit__(self, *_args) -> None:
+        self._lock.release()
+
+
 class FakeHelper:
     def __init__(self, ready: bool = True) -> None:
         self.ready = ready
@@ -528,6 +561,73 @@ def test_helper_close_cancels_blocked_readiness_without_stale_ready(tmp_path) ->
     assert capability_result == [False]
     assert not helper._ready
     assert helper._process is None
+    assert helper._state == "closed"
+
+
+def test_helper_capability_ticket_rejects_close_before_launch_capture(tmp_path) -> None:
+    helper_path = tmp_path / "AstralSpeechHelper.exe"
+    helper_path.write_bytes(b"first-party-helper")
+    launches = []
+
+    def popen(*_args, **_kwargs):
+        launches.append(True)
+        return FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=popen)
+    gap = CapabilityGapLock()
+    helper._launch_lock = gap
+    capability_result = []
+    probe = threading.Thread(
+        target=lambda: capability_result.append(helper.capability()), daemon=True
+    )
+    probe.start()
+    assert gap.entered.wait(1)
+
+    helper.close()
+    gap.release.set()
+    probe.join(1)
+
+    assert not probe.is_alive()
+    assert capability_result == [False]
+    assert launches == []
+    assert helper._state == "closed"
+
+
+def test_helper_queued_pre_close_capability_cannot_relaunch(tmp_path) -> None:
+    helper_path = tmp_path / "AstralSpeechHelper.exe"
+    helper_path.write_bytes(b"first-party-helper")
+    first_process = BlockingReadyProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    second_process = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    launches = []
+
+    def popen(*_args, **_kwargs):
+        process = first_process if not launches else second_process
+        launches.append(process)
+        return process
+
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=popen)
+    observable_lock = ObservableLock()
+    helper._launch_lock = observable_lock
+    results = {}
+    first_probe = threading.Thread(
+        target=lambda: results.setdefault("first", helper.capability()), daemon=True
+    )
+    second_probe = threading.Thread(
+        target=lambda: results.setdefault("second", helper.capability()), daemon=True
+    )
+    first_probe.start()
+    assert first_process.stdout.read_started.wait(1)
+    second_probe.start()
+    assert observable_lock.second_waiting.wait(1)
+
+    helper.close()
+    first_probe.join(1)
+    second_probe.join(1)
+
+    assert not first_probe.is_alive()
+    assert not second_probe.is_alive()
+    assert results == {"first": False, "second": False}
+    assert launches == [first_process]
     assert helper._state == "closed"
 
 

@@ -371,11 +371,13 @@ class WindowsSpeechHelper:
         self._state = "new"
         self._lifecycle_generation = 0
 
-    def _launch(self) -> bool:
+    def _launch(self, ticket: int) -> bool:
         if not self.helper_path.is_file():
             return False
         with self._state_lock:
-            generation = self._lifecycle_generation
+            if ticket != self._lifecycle_generation:
+                return False
+            generation = ticket
             self._ready = False
             self._state = "launching"
         environment = {
@@ -427,11 +429,17 @@ class WindowsSpeechHelper:
             return False
 
     def capability(self) -> bool:
+        with self._state_lock:
+            if self._ready:
+                return True
+            ticket = self._lifecycle_generation
         with self._launch_lock:
             with self._state_lock:
+                if ticket != self._lifecycle_generation:
+                    return False
                 if self._ready:
                     return True
-            return self._launch()
+            return self._launch(ticket)
 
     def _send(self, kind: str, payload: bytes | str = b"") -> None:
         process = self._process
