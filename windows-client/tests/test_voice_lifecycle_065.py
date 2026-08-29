@@ -546,6 +546,8 @@ def test_connection_rotation_reads_current_state_and_rejoins_once_with_new_grant
         "expired_lease",
         "applied_chat_mismatch",
         "chat_revision_mismatch",
+        "chat_revision_bool",
+        "applied_chat_revision_bool",
         "chat_unsynced",
     ],
 )
@@ -566,6 +568,12 @@ def test_remote_recovery_current_state_is_exact_active_and_unexpired(qapp, mutat
             value["session"]["applied_visible_chat_id"] = TURN
         elif mutation == "chat_revision_mismatch":
             value["session"]["applied_chat_context_revision"] = 2
+        elif mutation == "chat_revision_bool":
+            value["session"]["chat_context_revision"] = True
+            value["session"]["applied_chat_context_revision"] = 1
+        elif mutation == "applied_chat_revision_bool":
+            value["session"]["chat_context_revision"] = 1
+            value["session"]["applied_chat_context_revision"] = True
         else:
             value["session"]["chat_context_synced"] = False
         return value

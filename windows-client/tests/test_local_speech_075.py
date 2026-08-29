@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import hashlib
 import struct
+import threading
 import urllib.error
 
 import pytest
@@ -617,14 +618,15 @@ def test_helper_rejects_stop_before_start_and_repeated_start_fail_closed(tmp_pat
     assert second.terminated == 1
 
 
-def test_helper_rejects_pcm_before_start_and_after_stop_fail_closed(tmp_path) -> None:
+@pytest.mark.parametrize("payload", [b"\x00\x00", b"", "not-bytes"])
+def test_helper_rejects_pcm_before_start_and_after_stop_fail_closed(tmp_path, payload) -> None:
     helper_path = tmp_path / "AstralSpeechHelper.exe"
     helper_path.write_bytes(b"first-party-helper")
     before = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
     helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: before)
     assert helper.capability()
     with pytest.raises(RuntimeError, match="invalid_helper_state"):
-        helper.feed_pcm(b"\x00\x00")
+        helper.feed_pcm(payload)
     assert before.terminated == 1
 
     after = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
@@ -634,8 +636,63 @@ def test_helper_rejects_pcm_before_start_and_after_stop_fail_closed(tmp_path) ->
     helper.start_recognition(lambda _text: None, lambda _reason: None)
     helper.stop_recognition()
     with pytest.raises(RuntimeError, match="invalid_helper_state"):
-        helper.feed_pcm(b"\x00\x00")
+        helper.feed_pcm(payload)
     assert after.terminated == 1
+
+
+@pytest.mark.parametrize("payload", [b"", "not-bytes", b"x" * (HELPER_MAX_PCM_BYTES + 1)])
+def test_helper_invalid_pcm_while_recognizing_fails_closed(tmp_path, payload) -> None:
+    helper_path = tmp_path / "AstralSpeechHelper.exe"
+    helper_path.write_bytes(b"first-party-helper")
+    process = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: process)
+    assert helper.capability()
+    helper._reader = type("Reader", (), {"is_alive": lambda self: True})()
+    helper.start_recognition(lambda _text: None, lambda _reason: None)
+
+    with pytest.raises(ValueError, match="PCM frame"):
+        helper.feed_pcm(payload)
+
+    assert process.terminated == 1
+
+
+def test_helper_serializes_pcm_before_concurrent_stop(tmp_path) -> None:
+    helper_path = tmp_path / "AstralSpeechHelper.exe"
+    helper_path.write_bytes(b"first-party-helper")
+    process = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: process)
+    assert helper.capability()
+    helper._reader = type("Reader", (), {"is_alive": lambda self: True})()
+    helper.start_recognition(lambda _text: None, lambda _reason: None)
+
+    original_send = helper._send
+    pcm_send_entered = threading.Event()
+    release_pcm_send = threading.Event()
+    stop_sent = threading.Event()
+
+    def controlled_send(kind, payload=b""):
+        if kind == "pcm":
+            pcm_send_entered.set()
+            assert release_pcm_send.wait(1)
+        original_send(kind, payload)
+        if kind == "stop":
+            stop_sent.set()
+
+    helper._send = controlled_send
+    feed_thread = threading.Thread(target=helper.feed_pcm, args=(b"\x00\x00",))
+    stop_thread = threading.Thread(target=helper.stop_recognition)
+    feed_thread.start()
+    assert pcm_send_entered.wait(1)
+    stop_thread.start()
+    stop_sent.wait(0.2)
+    release_pcm_send.set()
+    feed_thread.join(1)
+    stop_thread.join(1)
+
+    assert not feed_thread.is_alive()
+    assert not stop_thread.is_alive()
+    frames = io.BytesIO(process.stdin.bytes)
+    assert [read_helper_frame(frames)[0] for _ in range(3)] == ["start", "pcm", "stop"]
 
 
 @pytest.mark.parametrize(

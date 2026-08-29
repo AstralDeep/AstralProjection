@@ -363,6 +363,7 @@ class WindowsSpeechHelper:
         self._process: Any = None
         self._ready = False
         self._reader: Optional[threading.Thread] = None
+        self._state_lock = threading.RLock()
         self._write_lock = threading.Lock()
         self._on_final: Optional[Callable[[str], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
@@ -405,7 +406,8 @@ class WindowsSpeechHelper:
             return False
 
     def capability(self) -> bool:
-        return self._ready or self._launch()
+        with self._state_lock:
+            return self._ready or self._launch()
 
     def _send(self, kind: str, payload: bytes | str = b"") -> None:
         process = self._process
@@ -425,18 +427,19 @@ class WindowsSpeechHelper:
         on_final: Callable[[str], None],
         on_error: Callable[[str], None],
     ) -> None:
-        if not self.capability():
-            raise RuntimeError("local_recognition_unavailable")
-        if self._state != "ready":
-            self._fail_closed()
-            raise RuntimeError("invalid_helper_state")
-        self._on_final = on_final
-        self._on_error = on_error
-        self._send("start", b'{"locale":"en-US","sample_rate":48000,"channels":1}')
-        self._state = "recognizing"
-        if self._reader is None or not self._reader.is_alive():
-            self._reader = threading.Thread(target=self._read_loop, daemon=True)
-            self._reader.start()
+        with self._state_lock:
+            if not self.capability():
+                raise RuntimeError("local_recognition_unavailable")
+            if self._state != "ready":
+                self._fail_closed()
+                raise RuntimeError("invalid_helper_state")
+            self._on_final = on_final
+            self._on_error = on_error
+            self._send("start", b'{"locale":"en-US","sample_rate":48000,"channels":1}')
+            self._state = "recognizing"
+            if self._reader is None or not self._reader.is_alive():
+                self._reader = threading.Thread(target=self._read_loop, daemon=True)
+                self._reader.start()
 
     def _read_loop(self) -> None:
         process = self._process
@@ -456,51 +459,54 @@ class WindowsSpeechHelper:
                 callback("local_engine_lost")
 
     def feed_pcm(self, pcm: bytes) -> None:
-        if not isinstance(pcm, bytes) or not pcm:
-            return
-        if self._state != "recognizing":
-            self._fail_closed()
-            raise RuntimeError("invalid_helper_state")
-        if len(pcm) > HELPER_MAX_PCM_BYTES:
-            raise ValueError("PCM frame exceeds its bound")
-        self._send("pcm", pcm)
+        with self._state_lock:
+            if self._state != "recognizing":
+                self._fail_closed()
+                raise RuntimeError("invalid_helper_state")
+            if not isinstance(pcm, bytes) or not pcm or len(pcm) > HELPER_MAX_PCM_BYTES:
+                self._fail_closed()
+                raise ValueError("PCM frame is invalid or exceeds its bound")
+            self._send("pcm", pcm)
 
     def stop_recognition(self) -> None:
-        if self._process is None or self._process.poll() is not None:
-            return
-        if self._state != "recognizing":
-            self._fail_closed()
-            raise RuntimeError("invalid_helper_state")
-        try:
-            self._send("stop")
-            self._state = "ready"
-        except RuntimeError:
-            pass
-
-    def _fail_closed(self) -> None:
-        process = self._process
-        self._process = None
-        self._ready = False
-        self._state = "closed"
-        self._on_final = None
-        self._on_error = None
-        if process is not None and process.poll() is None:
+        with self._state_lock:
+            if self._process is None or self._process.poll() is not None:
+                return
+            if self._state != "recognizing":
+                self._fail_closed()
+                raise RuntimeError("invalid_helper_state")
             try:
-                process.terminate()
-                process.wait(timeout=1)
-            except (OSError, subprocess.TimeoutExpired):
-                try:
-                    process.kill()
-                except OSError:
-                    pass
-
-    def close(self) -> None:
-        if self._process is not None and self._process.poll() is None:
-            try:
-                self._send("shutdown")
+                self._send("stop")
+                self._state = "ready"
             except RuntimeError:
                 pass
-        self._fail_closed()
+
+    def _fail_closed(self) -> None:
+        with self._state_lock:
+            process = self._process
+            self._process = None
+            self._ready = False
+            self._state = "closed"
+            self._on_final = None
+            self._on_error = None
+            if process is not None and process.poll() is None:
+                try:
+                    process.terminate()
+                    process.wait(timeout=1)
+                except (OSError, subprocess.TimeoutExpired):
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+
+    def close(self) -> None:
+        with self._state_lock:
+            if self._process is not None and self._process.poll() is None:
+                try:
+                    self._send("shutdown")
+                except RuntimeError:
+                    pass
+            self._fail_closed()
 
 
 class _QtTextToSpeechBackend(QObject):
@@ -3806,6 +3812,8 @@ class VoiceController(QObject):
             or session.get("visible_chat_id") != expected["visible_chat_id"]
             or session.get("applied_visible_chat_id") != expected["visible_chat_id"]
             or session.get("applied_visible_chat_id") != session.get("visible_chat_id")
+            or not _positive(session.get("chat_context_revision"))
+            or not _positive(session.get("applied_chat_context_revision"))
             or session.get("applied_chat_context_revision") != session.get("chat_context_revision")
             or session.get("chat_context_synced") is not True
         ):
