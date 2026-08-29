@@ -9,6 +9,16 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIVE = ROOT / ".github" / "workflows"
 INACTIVE = ROOT / "workflows-disabled"
 PYTHON_CI_LOCK = ROOT / "tooling" / "python-ci" / "requirements.lock.txt"
+REVIEWED_GITLEAKS_FIXTURE_FINGERPRINTS = frozenset(
+    {
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_remote_machines_surface.py:private-key:42",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:121",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:133",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:201",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:124",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:267",
+    }
+)
 
 
 def _job_ids(text: str) -> set[str]:
@@ -224,6 +234,16 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     for job in ("python", "web", "windows"):
         assert f"needs.{job}.result" in text
     assert text.count("== 'success'") == 3
+
+
+def test_gitleaks_history_exempts_only_reviewed_fixture_fingerprints() -> None:
+    ignore = ROOT / ".gitleaksignore"
+
+    fingerprints = {
+        line for line in ignore.read_text(encoding="utf-8").splitlines() if line
+    }
+
+    assert fingerprints == REVIEWED_GITLEAKS_FIXTURE_FINGERPRINTS
 
 
 def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint() -> None:
