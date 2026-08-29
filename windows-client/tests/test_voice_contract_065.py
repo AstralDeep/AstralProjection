@@ -117,6 +117,85 @@ def test_client_local_v2_rejects_corrupt_non_ready_semantics_and_unknown_playout
         assert parse_voice_local_frame(payload) is None, identifier
 
 
+def _local_lifecycle_frame(frame_type: str, **details: object) -> dict:
+    return {
+        "type": frame_type,
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": DEVICE,
+        "connection_generation": CONNECTION,
+        "session_id": SESSION,
+        "generation": 1,
+        "speech_revision": 2,
+        **details,
+    }
+
+
+def _assert_local_frame_corruptions_fail_closed(
+    valid: dict, corruptions: dict[str, object], required_field: str
+) -> None:
+    for field, value in corruptions.items():
+        assert parse_voice_local_frame({**valid, field: value}) is None, field
+    assert parse_voice_local_frame({key: value for key, value in valid.items() if key != required_field}) is None
+    assert parse_voice_local_frame({**valid, "unexpected": True}) is None
+
+
+def test_client_local_recognition_started_requires_declared_semantics_and_fails_closed():
+    valid = _local_lifecycle_frame(
+        "voice_local_recognition_started",
+        client_turn_id=CLIENT_TURN,
+        chat_id=CHAT,
+        chat_context_revision=3,
+        recognition_sequence=1,
+    )
+
+    parsed = parse_voice_local_frame(valid)
+    assert parsed is not None
+    assert parsed.disposition == "ready"
+    _assert_local_frame_corruptions_fail_closed(
+        valid,
+        {
+            "client_turn_id": "not-a-uuid",
+            "chat_id": "not-a-uuid",
+            "chat_context_revision": 0,
+            "recognition_sequence": 0,
+        },
+        "recognition_sequence",
+    )
+
+
+def test_client_local_turn_bound_requires_declared_semantics_and_fails_closed():
+    valid = _local_lifecycle_frame(
+        "voice_local_turn_bound",
+        client_turn_id=CLIENT_TURN,
+        turn_id=TURN,
+        submission_id=SUBMISSION,
+        request_generation=REQUEST,
+        chat_id=CHAT,
+        chat_context_revision=3,
+        recognition_sequence=1,
+        binding_expires_at="2026-08-28T12:05:00Z",
+    )
+
+    parsed = parse_voice_local_frame(valid)
+    assert parsed is not None
+    assert parsed.disposition == "ready"
+    _assert_local_frame_corruptions_fail_closed(
+        valid,
+        {
+            "client_turn_id": "not-a-uuid",
+            "turn_id": "not-a-uuid",
+            "submission_id": "not-a-uuid",
+            "request_generation": "not-a-uuid",
+            "chat_id": "not-a-uuid",
+            "chat_context_revision": 0,
+            "recognition_sequence": 0,
+            "binding_expires_at": "not-a-time",
+        },
+        "binding_expires_at",
+    )
+
+
 def test_client_local_v2_keeps_frozen_remote_v1_fixture_bytes():
     fixture_path = (
         Path(__file__).resolve().parents[2] / "contracts/fixtures/voice_065/client_conformance.json"

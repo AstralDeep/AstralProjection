@@ -137,6 +137,66 @@ class VoiceContract065Test {
     }
 
     @Test
+    fun feature075RecognitionStartedRequiresItsDeclaredLocalSemantics() {
+        val valid =
+            localLifecycleFrame(
+                "voice_local_recognition_started",
+                mapOf(
+                    "client_turn_id" to JsonPrimitive("00000000-0000-4000-8000-000000000005"),
+                    "chat_id" to JsonPrimitive("00000000-0000-4000-8000-000000000004"),
+                    "chat_context_revision" to JsonPrimitive(3),
+                    "recognition_sequence" to JsonPrimitive(1),
+                ),
+            )
+
+        assertEquals(LocalVoiceDisposition.READY, LocalVoiceFrame.fromJson(valid)?.disposition)
+        assertLocalFrameCorruptionsFailClosed(
+            valid,
+            mapOf(
+                "client_turn_id" to JsonPrimitive("not-a-uuid"),
+                "chat_id" to JsonPrimitive("not-a-uuid"),
+                "chat_context_revision" to JsonPrimitive(0),
+                "recognition_sequence" to JsonPrimitive(0),
+            ),
+        )
+        assertMissingAndUndeclaredFieldsFailClosed(valid, "recognition_sequence")
+    }
+
+    @Test
+    fun feature075TurnBoundRequiresItsDeclaredLocalSemantics() {
+        val valid =
+            localLifecycleFrame(
+                "voice_local_turn_bound",
+                mapOf(
+                    "client_turn_id" to JsonPrimitive("00000000-0000-4000-8000-000000000005"),
+                    "turn_id" to JsonPrimitive("00000000-0000-4000-8000-000000000006"),
+                    "submission_id" to JsonPrimitive("00000000-0000-4000-8000-000000000007"),
+                    "request_generation" to JsonPrimitive("00000000-0000-4000-8000-000000000008"),
+                    "chat_id" to JsonPrimitive("00000000-0000-4000-8000-000000000004"),
+                    "chat_context_revision" to JsonPrimitive(3),
+                    "recognition_sequence" to JsonPrimitive(1),
+                    "binding_expires_at" to JsonPrimitive("2026-08-28T12:05:00Z"),
+                ),
+            )
+
+        assertEquals(LocalVoiceDisposition.READY, LocalVoiceFrame.fromJson(valid)?.disposition)
+        assertLocalFrameCorruptionsFailClosed(
+            valid,
+            mapOf(
+                "client_turn_id" to JsonPrimitive("not-a-uuid"),
+                "turn_id" to JsonPrimitive("not-a-uuid"),
+                "submission_id" to JsonPrimitive("not-a-uuid"),
+                "request_generation" to JsonPrimitive("not-a-uuid"),
+                "chat_id" to JsonPrimitive("not-a-uuid"),
+                "chat_context_revision" to JsonPrimitive(0),
+                "recognition_sequence" to JsonPrimitive(0),
+                "binding_expires_at" to JsonPrimitive("not-a-time"),
+            ),
+        )
+        assertMissingAndUndeclaredFieldsFailClosed(valid, "binding_expires_at")
+    }
+
+    @Test
     fun feature075KeepsTheFrozenRemoteV1FixtureByteIdentical() {
         val file =
             generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
@@ -146,6 +206,40 @@ class VoiceContract065Test {
             MessageDigest.getInstance("SHA-256").digest(file.readBytes())
                 .joinToString("") { "%02x".format(it) }
         assertEquals("bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143", digest)
+    }
+
+    private fun localLifecycleFrame(
+        type: String,
+        details: Map<String, JsonElement>,
+    ): JsonObject =
+        JsonObject(
+            mapOf(
+                "type" to JsonPrimitive(type),
+                "schema_version" to JsonPrimitive("2"),
+                "speech_backend" to JsonPrimitive("client_local"),
+                "device_id" to JsonPrimitive("00000000-0000-4000-8000-000000000001"),
+                "connection_generation" to JsonPrimitive("00000000-0000-4000-8000-000000000002"),
+                "session_id" to JsonPrimitive("00000000-0000-4000-8000-000000000003"),
+                "generation" to JsonPrimitive(1),
+                "speech_revision" to JsonPrimitive(2),
+            ) + details,
+        )
+
+    private fun assertLocalFrameCorruptionsFailClosed(
+        valid: JsonObject,
+        corruptions: Map<String, JsonElement>,
+    ) {
+        corruptions.forEach { (field, value) ->
+            assertNull(LocalVoiceFrame.fromJson(JsonObject(valid + (field to value))), field)
+        }
+    }
+
+    private fun assertMissingAndUndeclaredFieldsFailClosed(
+        valid: JsonObject,
+        requiredField: String,
+    ) {
+        assertNull(LocalVoiceFrame.fromJson(JsonObject(valid - requiredField)), requiredField)
+        assertNull(LocalVoiceFrame.fromJson(JsonObject(valid + ("unexpected" to JsonPrimitive(true)))), "unexpected")
     }
 
     @Test
