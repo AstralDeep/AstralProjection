@@ -354,6 +354,8 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
         for name in ("generation", "speech_revision")
     ):
         return None
+    if not _valid_voice_local_detail(payload):
+        return None
     if frame_type == "voice_local_ready":
         if not _valid_voice_local_runtime(payload):
             return None
@@ -385,6 +387,9 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
             or len(text) > 8000
             or not isinstance(payload.get("text_digest_sha256"), str)
             or re.fullmatch(r"[0-9a-f]{64}", payload["text_digest_sha256"]) is None
+            or not isinstance(payload.get("recognized_locale"), str)
+            or re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", payload["recognized_locale"])
+            is None
         ):
             return None
         disposition = "final"
@@ -397,7 +402,9 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
             return None
         disposition = "speaking"
     elif frame_type == "voice_local_playout_event":
-        if payload.get("phase") not in {"started", "finished", "failed", "suppressed"}:
+        if payload.get("phase") not in {"started", "finished", "failed", "suppressed"} or (
+            payload.get("reason") is not None and payload.get("reason") not in _VOICE_LOCAL_REASONS
+        ):
             return None
         disposition = "finished"
     else:
@@ -423,6 +430,51 @@ def _valid_voice_local_runtime(payload: dict[str, Any]) -> bool:
         and payload.get("synthesis_processing") == "guaranteed_local"
         and payload.get("synthesis_locale") == "ready"
     )
+
+
+def _valid_voice_local_detail(payload: dict[str, Any]) -> bool:
+    for name in (
+        "client_turn_id",
+        "turn_id",
+        "submission_id",
+        "request_generation",
+        "chat_id",
+        "announcement_id",
+    ):
+        if name in payload and payload[name] is not None and not _is_uuid4(payload[name]):
+            return False
+    for name in (
+        "chat_context_revision",
+        "recognition_sequence",
+        "announcement_sequence",
+        "mute_revision",
+        "consent_revision",
+    ):
+        if name in payload and (
+            isinstance(payload[name], bool)
+            or not isinstance(payload[name], int)
+            or payload[name] < 1
+        ):
+            return False
+    if "client_sequence" in payload and (
+        isinstance(payload["client_sequence"], bool)
+        or not isinstance(payload["client_sequence"], int)
+        or payload["client_sequence"] < 0
+    ):
+        return False
+    for name in (
+        "binding_expires_at",
+        "occurred_at",
+        "expires_at",
+        "observed_at",
+        "lease_expires_at",
+    ):
+        if name in payload:
+            try:
+                _utc(payload[name], name)
+            except WindowsProtocolError:
+                return False
+    return True
 
 
 def build_voice_local_final(value: VoiceLocalValue) -> Optional[dict[str, Any]]:

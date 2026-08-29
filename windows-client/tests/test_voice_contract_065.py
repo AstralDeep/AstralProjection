@@ -101,6 +101,22 @@ def test_client_local_v2_rejects_invalid_declared_values_and_accepts_optional_pl
     assert parse_voice_local_frame(playout).disposition == "finished"
 
 
+def test_client_local_v2_rejects_corrupt_non_ready_semantics_and_unknown_playout_reason():
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    vectors = json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+    for identifier, key, value in (
+        ("L-P02-local-final", "recognized_locale", "bad locale"),
+        ("L-P03-authorized-announcement", "expires_at", "not-a-time"),
+        ("L-P04-playout-finished", "reason", "unknown_reason"),
+    ):
+        payload = next(vector["payload"] for vector in vectors if vector["id"] == identifier).copy()
+        payload[key] = value
+        assert parse_voice_local_frame(payload) is None, identifier
+
+
 def test_client_local_v2_keeps_frozen_remote_v1_fixture_bytes():
     fixture_path = (
         Path(__file__).resolve().parents[2] / "contracts/fixtures/voice_065/client_conformance.json"

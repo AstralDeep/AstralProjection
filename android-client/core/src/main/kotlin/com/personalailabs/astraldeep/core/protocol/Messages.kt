@@ -13,6 +13,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import java.time.Instant
 
 /**
  * Device capabilities reported in `register_ui` (maps to the server-side
@@ -317,6 +318,7 @@ data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposit
             ) {
                 return null
             }
+            if (!localDetail(value)) return null
             val disposition =
                 when (type) {
                     "voice_local_ready" -> if (localRuntime(value)) LocalVoiceDisposition.READY else return null
@@ -331,7 +333,7 @@ data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposit
                         } else {
                             return null
                         }
-                    "voice_local_final" -> if (value["final"]?.jsonPrimitive?.booleanOrNull == true && !value.string("text").isNullOrBlank() && value.string("text")!!.length <= 8000 && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true) LocalVoiceDisposition.FINAL else return null
+                    "voice_local_final" -> if (value["final"]?.jsonPrimitive?.booleanOrNull == true && !value.string("text").isNullOrBlank() && value.string("text")!!.length <= 8000 && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true && value.string("recognized_locale")?.matches(Regex("^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")) == true) LocalVoiceDisposition.FINAL else return null
                     "voice_local_recognition_failed", "voice_local_final_rejected" -> if (value.string("reason") in reasons) LocalVoiceDisposition.REJECTED else return null
                     "voice_local_announcement" -> if ((value.string("text")?.toByteArray()?.size ?: 601) <= 600) LocalVoiceDisposition.SPEAKING else return null
                     "voice_local_playout_event" -> if (value.string("phase") in setOf("started", "finished", "failed", "suppressed") && (value["reason"] == null || value.string("reason") in reasons)) LocalVoiceDisposition.FINISHED else return null
@@ -366,6 +368,28 @@ private fun localRuntime(value: JsonObject): Boolean =
         value.string("recognition_installation") == "ready" &&
         value.string("synthesis_processing") == "guaranteed_local" &&
         value.string("synthesis_locale") == "ready"
+
+private fun localDetail(value: JsonObject): Boolean {
+    if (listOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "announcement_id").any {
+            it in value && value[it] !is kotlinx.serialization.json.JsonNull && !isUuid4(value.string(it))
+        }
+    ) {
+        return false
+    }
+    if (listOf("chat_context_revision", "recognition_sequence", "announcement_sequence", "mute_revision", "consent_revision").any {
+            it in value && value.int(it)?.let {
+                    number ->
+                number > 0
+            } != true
+        }
+    ) {
+        return false
+    }
+    if ("client_sequence" in value && value.int("client_sequence")?.let { it >= 0 } != true) return false
+    return listOf("binding_expires_at", "occurred_at", "expires_at", "observed_at", "lease_expires_at").filter {
+        it in value
+    }.all { runCatching { Instant.parse(value.string(it)) }.isSuccess }
+}
 
 /** Content-free manifest that must precede a worker audio track. */
 data class VoiceAnnouncementMedia(

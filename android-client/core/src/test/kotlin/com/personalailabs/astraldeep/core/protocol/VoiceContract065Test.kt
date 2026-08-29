@@ -121,6 +121,22 @@ class VoiceContract065Test {
     }
 
     @Test
+    fun feature075RejectsCorruptNonReadyLocalSemantics() {
+        val vectors = localFixture.getValue("vectors").jsonArray
+        listOf(
+            "L-P02-local-final" to ("recognized_locale" to JsonPrimitive("bad locale")),
+            "L-P03-authorized-announcement" to ("expires_at" to JsonPrimitive("not-a-time")),
+            "L-P04-playout-finished" to ("reason" to JsonPrimitive("unknown_reason")),
+        ).forEach { (id, mutation) ->
+            val payload =
+                vectors.first { it.jsonObject["id"]!!.jsonPrimitive.content == id }
+                    .jsonObject.getValue("payload").jsonObject.toMutableMap()
+            payload[mutation.first] = mutation.second
+            assertNull(LocalVoiceFrame.fromJson(JsonObject(payload)), id)
+        }
+    }
+
+    @Test
     fun feature075KeepsTheFrozenRemoteV1FixtureByteIdentical() {
         val file =
             generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
