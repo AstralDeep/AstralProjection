@@ -458,6 +458,9 @@ class WindowsSpeechHelper:
     def feed_pcm(self, pcm: bytes) -> None:
         if not isinstance(pcm, bytes) or not pcm:
             return
+        if self._state != "recognizing":
+            self._fail_closed()
+            raise RuntimeError("invalid_helper_state")
         if len(pcm) > HELPER_MAX_PCM_BYTES:
             raise ValueError("PCM frame exceeds its bound")
         self._send("pcm", pcm)
@@ -3801,6 +3804,10 @@ class VoiceController(QObject):
             or session.get("transport") != "livekit"
             or session.get("owner_connection_generation") != self.connection_provider()
             or session.get("visible_chat_id") != expected["visible_chat_id"]
+            or session.get("applied_visible_chat_id") != expected["visible_chat_id"]
+            or session.get("applied_visible_chat_id") != session.get("visible_chat_id")
+            or session.get("applied_chat_context_revision") != session.get("chat_context_revision")
+            or session.get("chat_context_synced") is not True
         ):
             raise WindowsProtocolError("stale voice recovery session")
         return grant_state["media_grant_revision"]

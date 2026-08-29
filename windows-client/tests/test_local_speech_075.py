@@ -617,6 +617,27 @@ def test_helper_rejects_stop_before_start_and_repeated_start_fail_closed(tmp_pat
     assert second.terminated == 1
 
 
+def test_helper_rejects_pcm_before_start_and_after_stop_fail_closed(tmp_path) -> None:
+    helper_path = tmp_path / "AstralSpeechHelper.exe"
+    helper_path.write_bytes(b"first-party-helper")
+    before = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: before)
+    assert helper.capability()
+    with pytest.raises(RuntimeError, match="invalid_helper_state"):
+        helper.feed_pcm(b"\x00\x00")
+    assert before.terminated == 1
+
+    after = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: after)
+    assert helper.capability()
+    helper._reader = type("Reader", (), {"is_alive": lambda self: True})()
+    helper.start_recognition(lambda _text: None, lambda _reason: None)
+    helper.stop_recognition()
+    with pytest.raises(RuntimeError, match="invalid_helper_state"):
+        helper.feed_pcm(b"\x00\x00")
+    assert after.terminated == 1
+
+
 @pytest.mark.parametrize(
     ("value", "expected"),
     [

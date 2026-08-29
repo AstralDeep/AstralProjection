@@ -538,7 +538,17 @@ def test_connection_rotation_reads_current_state_and_rejoins_once_with_new_grant
     assert controller.media_grant_revision == 5
 
 
-@pytest.mark.parametrize("mutation", ["extra", "inactive", "expired_lease"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "extra",
+        "inactive",
+        "expired_lease",
+        "applied_chat_mismatch",
+        "chat_revision_mismatch",
+        "chat_unsynced",
+    ],
+)
 def test_remote_recovery_current_state_is_exact_active_and_unexpired(qapp, mutation):
     controller, transport, http, media = _controller()
     controller.handle_action("voice_session_start")
@@ -550,8 +560,14 @@ def test_remote_recovery_current_state_is_exact_active_and_unexpired(qapp, mutat
             value["session"]["credential"] = "forbidden"
         elif mutation == "inactive":
             value["session"]["state"] = "suspended"
-        else:
+        elif mutation == "expired_lease":
             value["session"]["lease_expires_at"] = "2020-01-01T00:00:00Z"
+        elif mutation == "applied_chat_mismatch":
+            value["session"]["applied_visible_chat_id"] = TURN
+        elif mutation == "chat_revision_mismatch":
+            value["session"]["applied_chat_context_revision"] = 2
+        else:
+            value["session"]["chat_context_synced"] = False
         return value
 
     http.current_media_grant = current
