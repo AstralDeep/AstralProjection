@@ -30,20 +30,38 @@
       "reason": "Repoint Android renderer vocabulary parity to the standalone Projection contract."
     },
     {
+      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
+      "sourceBlob": "422b37a5f9dfe46919bc52df26b6f19ff7ca3929",
+      "sourceMode": "100644",
+      "resultSha256": "0864c31f8179763185ff6e96504455d45eb556e49fd7f8f5f9fde0f0639e2031",
+      "task": "T052",
+      "reason": "Implement the strict Android client-local voice frame and bound-final models while preserving remote-v1 behavior."
+    },
+    {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
       "sourceBlob": "efafbfe736f5fed5a6f2cab51aee5192200aaa78",
       "sourceMode": "100644",
-      "resultSha256": "a590ade1d74d876ca59c3e0be6f3ed3f634c62a56f4f3897ebf9ab696bc4bab2",
+      "resultSha256": "08f68fe267e4673ba02c2fecf9d92d3c14cb693d2efff0610f298d8e222385f3",
       "task": "T054",
       "reason": "Name the standalone Projection manifest as the current source for Android frame dispositions."
+    },
+    {
+      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
+      "sourceBlob": "4801ccf81355ce04ac24930bb37754c86cd2cd87",
+      "sourceMode": "100644",
+      "resultSha256": "f92778b427700d165c4cc1ebcf05de1261b06acab2f2e75a551fcb1b27a6ee6f",
+      "task": "T052",
+      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation."
     },
     {
       "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
       "sourceBlob": "12a4d46a3be93ea8784ff65518c69f6ec2b28d17",
       "sourceMode": "100644",
-      "resultSha256": "648a331d880a935aa8b106ad24ec8aec4d60fbb91bcbae686fcb10848cb7db95",
+      "resultSha256": "28a9a847bd084cf939345c75d266ffc5ffba27c357ce4aa06c45c3c897e07a5e",
       "task": "T054",
       "reason": "Repoint the Android protocol drift guard to the standalone Projection contract."
     },
@@ -52,7 +70,7 @@
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
       "sourceBlob": "91a34fb1ac6831ef090e90a79ad5bada51106a0e",
       "sourceMode": "100644",
-      "resultSha256": "d9e77cff1316f3ff0cbd9159d3f6f6fc13c6f59a6dd49f79a2c434c07bfbeb82",
+      "resultSha256": "8c324dafa175113a71f201ba4431beb1a097d9e2e2053d7c07bfc2728da4df76",
       "task": "T054/T013/T014",
       "reason": "Bind the Android voice conformance consumer to both standalone remote-v1 and client-local-v1 Projection fixtures."
     },
@@ -106,9 +124,18 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
       "sourceMode": "100644",
-      "resultSha256": "eb194f716c01f2f847221967a55bc7a4329037cc8e2e862c936385ebd9ea1615",
+      "resultSha256": "21b3810f35f2857542103c876de09468547616011fe03994ac13748617f75025",
       "task": "T055",
       "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions."
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
+      "sourceBlob": "d19d554b034c250545b3c018df3039a8d7e2091c",
+      "sourceMode": "100644",
+      "resultSha256": "5ec6e76247284a620cba18921896da820ebcb50fb46ac3c5fff775cc29c1919e",
+      "task": "T050",
+      "reason": "Implement strict Apple client-local voice capability, frame, disposition, and bound-final protocol models."
     },
     {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
@@ -133,9 +160,18 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "d1c969acc6d7b592e4d9f854535eb1dcb9e611508db2a497070bb59b3c4e353a",
+      "resultSha256": "925a3dd668a975daa8019e2a29d338b9690dc7e33a9375416a4cd39f61e96ea1",
       "task": "T055",
       "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent."
+    },
+    {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
+      "sourceBlob": "9b3048e2704f78c916bb1c48f789602c075bbd1d",
+      "sourceMode": "100644",
+      "resultSha256": "2b89c8b2ce138a8b05324769c67f4980a692c85397ebc7110f740d451d9c62ff",
+      "task": "T049",
+      "reason": "Exercise Apple client-local fixture parsing, bound-final construction, semantic denials, and unchanged remote-v1 proof behavior."
     },
     {
       "path": "apple-clients/KNOWN-ISSUES.md",
@@ -349,9 +385,18 @@
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "5f13d0d922d3e86321dcd7fc43ddac6f21c4e64c5a9b426559389619cd8d8ea0",
+      "resultSha256": "093f4c267c9207113774eefa0cd4cb8e8a0f3a74f428e627249dd196256e9c80",
       "task": "T052/T063",
       "reason": "Name the standalone Projection manifest as the current error-frame contract source."
+    },
+    {
+      "path": "backend/webrender/templates/shell.html",
+      "sourcePath": "backend/webrender/templates/shell.html",
+      "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
+      "sourceMode": "100644",
+      "resultSha256": "5a9e750dcbcd3cc7d02ccd5ec4205144253a0f54fc031a8c6765abfe3c687504",
+      "task": "T042",
+      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter."
     },
     {
       "path": "contracts/ui_protocol.json",
@@ -403,7 +448,7 @@
       "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py",
       "sourceBlob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
       "sourceMode": "100644",
-      "resultSha256": "9dcbd5a8b9497c74a70f6a11ba4cc5192623ad6d23854a32c4774d1fc1206fd4",
+      "resultSha256": "53d4e69e113b6eb34642599500d1cc0a5bb6ed49e23a337e9cb6b35d70849732",
       "task": "T043/T013/T014",
       "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant."
     },
@@ -466,7 +511,7 @@
       "sourcePath": "tooling/web-ci/tests/voice-conversation-065.spec.js",
       "sourceBlob": "893e5722d552d1af9bfe16394f4a900e281f2a5d",
       "sourceMode": "100644",
-      "resultSha256": "27008189c584b34a659a2bf52660f965f14dc382bb3972ea2b83dbfd55e382fa",
+      "resultSha256": "eea4339a0330fad1555f297b95dafe5409995dfd7d7ab1b312b88132a31fb627",
       "task": "T052/T063",
       "reason": "Read browser voice conformance vectors from Projection's canonical standalone fixture path."
     },
@@ -475,7 +520,7 @@
       "sourcePath": "windows-client/AstralDeep.spec",
       "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
       "sourceMode": "100644",
-      "resultSha256": "2be8358d3e8da33e19fd0bbd2355cd272457fa4f3279f7753da0ac1dff8d3ae6",
+      "resultSha256": "0ce70cdd94453fd93c84ea2890c8ad776f2abfeb7f9f368eff7c7cc5d2a1f9f4",
       "task": "T166",
       "reason": "Package the protected BYO executor and exact LETS runtime artifacts in the Windows application candidate."
     },
@@ -487,6 +532,15 @@
       "resultSha256": "dd7680b127e2d267ae86ee9b5b7ae45d1681569f2e4ffdbf924a91a8c3d05610",
       "task": "T060/T062/T188",
       "reason": "Remove runtime repository trust overrides, document the inactive bounded bridge transition, and replace a broken monorepo schema link with the standalone fail-closed validator and provenance."
+    },
+    {
+      "path": "windows-client/astral_client/app.py",
+      "sourcePath": "windows-client/astral_client/app.py",
+      "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
+      "sourceMode": "100644",
+      "resultSha256": "aa0535af846c2b83be5d05a01906b96c727cbd6eb171e133eaaf0ccbbed1704b",
+      "task": "T059",
+      "reason": "Route authenticated local speech frames through the Windows application controller without changing remote-v1 dispatch."
     },
     {
       "path": "windows-client/astral_client/deployment.py",
@@ -511,7 +565,7 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "309e92be0ad63ded0c6c71288dc1c9bd2212810a208fce5b69eade4dbf109ea1",
+      "resultSha256": "d19c5670d2e633964721ee68940e41884d72ca978b2078724bb51bab43871747",
       "task": "T166",
       "reason": "Carry the exact runtime-v3 authority object and protected-executor disposition in the Windows delivery protocol."
     },
@@ -520,9 +574,18 @@
       "sourcePath": "windows-client/astral_client/protocol_manifest.py",
       "sourceBlob": "7b47e7e8a789b1d7a5b0fae543b3ff0665248148",
       "sourceMode": "100644",
-      "resultSha256": "94e23f0485ab43993abb347cc84662f6d5ee23fe3e44244f3cacafa0fab9f8dc",
+      "resultSha256": "30ce6c1b157d8c31c1d94441d13f008d89f2a19f969028ec49dd69fc53234115",
       "task": "T053",
       "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions."
+    },
+    {
+      "path": "windows-client/astral_client/voice.py",
+      "sourcePath": "windows-client/astral_client/voice.py",
+      "sourceBlob": "8cbf3a7bbe032abbd6d9f718e94ee8cafaef46c7",
+      "sourceMode": "100644",
+      "resultSha256": "e197dcddfe701db356dde7bceb2d77337938cfbce5bca37d65261d9a23420f3d",
+      "task": "T057/T059/T089",
+      "reason": "Implement the Windows local helper and TTS lifecycle, bound local frames, and exact remote-media recovery fences."
     },
     {
       "path": "windows-client/deployment/runtime-manifest.json",
@@ -601,7 +664,7 @@
       "sourcePath": "windows-client/tests/test_protocol_manifest.py",
       "sourceBlob": "00114c40d6e0840afb3dc4d2996496b1b45fdd7f",
       "sourceMode": "100644",
-      "resultSha256": "82e871b058dcebb3a480974ccfe5e3142974a610adbf46d7653b9ef7119837d2",
+      "resultSha256": "5b8d56baad60b64835df656c1af8893eef989291f0a4dcf3b1471c264fd6c4f4",
       "task": "T053",
       "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract."
     },
@@ -640,6 +703,33 @@
       "resultSha256": "242a51a51e8b8dfb239a4565e87b41968fd7362e3a9ed784bba8d290f7423000",
       "task": "T166",
       "reason": "Preserve runtime-v3 authority identity across bounded Windows task recovery and successor delivery."
+    },
+    {
+      "path": "windows-client/tests/test_voice_contract_065.py",
+      "sourcePath": "windows-client/tests/test_voice_contract_065.py",
+      "sourceBlob": "26f8ac37be3068733d6b7a9adaa7c9482cfe735d",
+      "sourceMode": "100644",
+      "resultSha256": "9a909daf899e276ed4d4ecb82954b98fa982d1887eea4f7bdefb75f3aa12bada",
+      "task": "T053",
+      "reason": "Prove strict Windows client-local frame semantics, bound finals, closed dispositions, and unchanged remote-v1 proof behavior."
+    },
+    {
+      "path": "windows-client/tests/test_voice_lifecycle_065.py",
+      "sourcePath": "windows-client/tests/test_voice_lifecycle_065.py",
+      "sourceBlob": "5632740842116b29f449ad3ff5f5ea86cc6f2f96",
+      "sourceMode": "100644",
+      "resultSha256": "4b6d646de75e59b39bc4815beb48ee7794ac482174891553ffef146f017d1340",
+      "task": "T058/T088",
+      "reason": "Exercise Windows local speech teardown, echo fencing, callback generations, and exact remote recovery rejection paths."
+    },
+    {
+      "path": "windows-client/tests/test_voice_package_065.py",
+      "sourcePath": "windows-client/tests/test_voice_package_065.py",
+      "sourceBlob": "121f3047230654a79cf9cf86ab9bb9ae0c526a31",
+      "sourceMode": "100644",
+      "resultSha256": "a0d8f565157166681d405d39ebfcb8716de2f14c48c0ab52bbe721803fc55cb9",
+      "task": "T058",
+      "reason": "Prove frozen Windows helper and Qt TTS packaging provenance while excluding test dependencies and assets."
     },
     {
       "path": "windows-client/win_agent/agent.py",
