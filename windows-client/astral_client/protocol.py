@@ -333,7 +333,13 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
     frame_type = payload.get("type")
     if (
         not isinstance(frame_type, str)
-        or set(payload) != _VOICE_LOCAL_FIELDS.get(frame_type, frozenset())
+        or (
+            set(payload) != _VOICE_LOCAL_FIELDS.get(frame_type, frozenset())
+            and not (
+                frame_type == "voice_local_playout_event"
+                and set(payload) == _VOICE_LOCAL_FIELDS[frame_type] | {"reason"}
+            )
+        )
         or payload.get("schema_version") != "2"
         or payload.get("speech_backend") != "client_local"
     ):
@@ -348,7 +354,29 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
         for name in ("generation", "speech_revision")
     ):
         return None
-    if frame_type == "voice_local_final":
+    if frame_type == "voice_local_ready":
+        if not _valid_voice_local_runtime(payload):
+            return None
+        disposition = "ready"
+    elif frame_type == "voice_local_session_ready":
+        if (
+            payload.get("contract") != "client_local/v1"
+            or payload.get("transport") != "client_local"
+            or not _is_uuid4(payload.get("chat_id"))
+            or any(
+                isinstance(payload.get(name), bool)
+                or not isinstance(payload.get(name), int)
+                or payload[name] < 1
+                for name in ("chat_context_revision", "applied_chat_context_revision")
+            )
+            or not all(
+                isinstance(payload.get(name), bool)
+                for name in ("foreground_active", "microphone_enabled", "speech_muted")
+            )
+        ):
+            return None
+        disposition = "ready"
+    elif frame_type == "voice_local_final":
         text = payload.get("text")
         if (
             payload.get("final") is not True
@@ -375,6 +403,26 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
     else:
         disposition = "ready"
     return VoiceLocalValue(disposition, payload)
+
+
+def _valid_voice_local_runtime(payload: dict[str, Any]) -> bool:
+    return (
+        payload.get("contract") == "client_local/v1"
+        and payload.get("transport") == "client_local"
+        and payload.get("full_duplex") is False
+        and all(
+            isinstance(payload.get(name), bool) for name in ("has_microphone", "has_audio_output")
+        )
+        and payload.get("microphone_permission")
+        in {"authorized", "denied", "not_determined", "restricted"}
+        and payload.get("recognition_permission")
+        in {"authorized", "denied", "not_determined", "restricted"}
+        and payload.get("recognition_processing") == "guaranteed_local"
+        and payload.get("recognition_locale") == "ready"
+        and payload.get("recognition_installation") == "ready"
+        and payload.get("synthesis_processing") == "guaranteed_local"
+        and payload.get("synthesis_locale") == "ready"
+    )
 
 
 def build_voice_local_final(value: VoiceLocalValue) -> Optional[dict[str, Any]]:

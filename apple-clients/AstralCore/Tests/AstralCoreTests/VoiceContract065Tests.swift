@@ -69,6 +69,20 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertNil(VoiceLocalFrame(frame: frame))
     }
 
+    func testClientLocalV2RejectsInvalidDeclaredValuesAndAcceptsOptionalPlayoutReason() throws {
+        let root = try JSONValue.parse(Data(contentsOf: try localFixtureURL()))
+        let vectors = try XCTUnwrap(root["vectors"]?.arrayValue)
+        var ready = try XCTUnwrap(vectors.first { $0["id"]?.stringValue == "L-P01-supported-half-duplex" }?["payload"]?.objectValue)
+        ready["contract"] = .string("remote/v1")
+        let invalid = try XCTUnwrap(InboundFrame.parse(String(decoding: try JSONValue.object(ready).encoded(), as: UTF8.self)))
+        XCTAssertNil(VoiceLocalFrame(frame: invalid))
+
+        var playout = try XCTUnwrap(vectors.first { $0["id"]?.stringValue == "L-P04-playout-finished" }?["payload"]?.objectValue)
+        playout["reason"] = .string("announcement_suppressed_muted")
+        let optional = try XCTUnwrap(InboundFrame.parse(String(decoding: try JSONValue.object(playout).encoded(), as: UTF8.self)))
+        XCTAssertEqual(VoiceLocalFrame(frame: optional)?.disposition, .finished)
+    }
+
     private func localFixtureURL() throws -> URL {
         try ManifestDriftTests.manifestURL().deletingLastPathComponent()
             .appendingPathComponent("fixtures/voice_075/client_local_conformance.json")

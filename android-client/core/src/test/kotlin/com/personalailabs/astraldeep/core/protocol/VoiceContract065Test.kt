@@ -105,6 +105,22 @@ class VoiceContract065Test {
     }
 
     @Test
+    fun feature075RejectsInvalidDeclaredValuesAndAcceptsOptionalPlayoutReason() {
+        val vectors = localFixture.getValue("vectors").jsonArray
+        val ready =
+            vectors.first { it.jsonObject["id"]!!.jsonPrimitive.content == "L-P01-supported-half-duplex" }
+                .jsonObject.getValue("payload").jsonObject.toMutableMap()
+        ready["contract"] = JsonPrimitive("remote/v1")
+        assertNull(LocalVoiceFrame.fromJson(JsonObject(ready)))
+
+        val playout =
+            vectors.first { it.jsonObject["id"]!!.jsonPrimitive.content == "L-P04-playout-finished" }
+                .jsonObject.getValue("payload").jsonObject.toMutableMap()
+        playout["reason"] = JsonPrimitive("announcement_suppressed_muted")
+        assertEquals(LocalVoiceDisposition.FINISHED, LocalVoiceFrame.fromJson(JsonObject(playout))?.disposition)
+    }
+
+    @Test
     fun feature075KeepsTheFrozenRemoteV1FixtureByteIdentical() {
         val file =
             generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }

@@ -310,7 +310,7 @@ data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposit
 
         fun fromJson(value: JsonObject): LocalVoiceFrame? {
             val type = value.string("type") ?: return null
-            if (value.keys != fields[type] || value.string("schema_version") != "2" || value.string("speech_backend") != "client_local" ||
+            if ((value.keys != fields[type] && !(type == "voice_local_playout_event" && value.keys == fields[type]!! + "reason")) || value.string("schema_version") != "2" || value.string("speech_backend") != "client_local" ||
                 listOf("device_id", "connection_generation", "session_id").any {
                     !isUuid4(value.string(it))
                 } || value.int("generation")?.takeIf { it > 0 } == null || value.int("speech_revision")?.takeIf { it > 0 } == null
@@ -319,10 +319,22 @@ data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposit
             }
             val disposition =
                 when (type) {
+                    "voice_local_ready" -> if (localRuntime(value)) LocalVoiceDisposition.READY else return null
+                    "voice_local_session_ready" ->
+                        if (value.string("contract") == "client_local/v1" && value.string("transport") == "client_local" && isUuid4(value.string("chat_id")) && value.int("chat_context_revision")?.let {
+                                it > 0
+                            } == true && value.int("applied_chat_context_revision")?.let {
+                                it > 0
+                            } == true && value["foreground_active"]?.jsonPrimitive?.booleanOrNull != null && value["microphone_enabled"]?.jsonPrimitive?.booleanOrNull != null && value["speech_muted"]?.jsonPrimitive?.booleanOrNull != null
+                        ) {
+                            LocalVoiceDisposition.READY
+                        } else {
+                            return null
+                        }
                     "voice_local_final" -> if (value["final"]?.jsonPrimitive?.booleanOrNull == true && !value.string("text").isNullOrBlank() && value.string("text")!!.length <= 8000 && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true) LocalVoiceDisposition.FINAL else return null
                     "voice_local_recognition_failed", "voice_local_final_rejected" -> if (value.string("reason") in reasons) LocalVoiceDisposition.REJECTED else return null
                     "voice_local_announcement" -> if ((value.string("text")?.toByteArray()?.size ?: 601) <= 600) LocalVoiceDisposition.SPEAKING else return null
-                    "voice_local_playout_event" -> if (value.string("phase") in setOf("started", "finished", "failed", "suppressed")) LocalVoiceDisposition.FINISHED else return null
+                    "voice_local_playout_event" -> if (value.string("phase") in setOf("started", "finished", "failed", "suppressed") && (value["reason"] == null || value.string("reason") in reasons)) LocalVoiceDisposition.FINISHED else return null
                     else -> LocalVoiceDisposition.READY
                 }
             return LocalVoiceFrame(type, disposition, value)
@@ -340,6 +352,20 @@ private fun JsonObject.array(key: String): JsonArray? = this[key] as? JsonArray
 
 private fun isUuid4(value: String?): Boolean =
     value?.matches(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) == true
+
+private fun localRuntime(value: JsonObject): Boolean =
+    value.string("contract") == "client_local/v1" &&
+        value.string("transport") == "client_local" &&
+        value["full_duplex"]?.jsonPrimitive?.booleanOrNull == false &&
+        value["has_microphone"]?.jsonPrimitive?.booleanOrNull != null &&
+        value["has_audio_output"]?.jsonPrimitive?.booleanOrNull != null &&
+        value.string("microphone_permission") in setOf("authorized", "denied", "not_determined", "restricted") &&
+        value.string("recognition_permission") in setOf("authorized", "denied", "not_determined", "restricted") &&
+        value.string("recognition_processing") == "guaranteed_local" &&
+        value.string("recognition_locale") == "ready" &&
+        value.string("recognition_installation") == "ready" &&
+        value.string("synthesis_processing") == "guaranteed_local" &&
+        value.string("synthesis_locale") == "ready"
 
 /** Content-free manifest that must precede a worker audio track. */
 data class VoiceAnnouncementMedia(

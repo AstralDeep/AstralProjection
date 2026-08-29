@@ -82,6 +82,25 @@ def test_client_local_v2_fails_closed_on_undeclared_fields():
     assert parse_voice_local_frame(payload) is None
 
 
+def test_client_local_v2_rejects_invalid_declared_values_and_accepts_optional_playout_reason():
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    vectors = json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+    ready = next(
+        vector["payload"] for vector in vectors if vector["id"] == "L-P01-supported-half-duplex"
+    ).copy()
+    ready["contract"] = "remote/v1"
+    assert parse_voice_local_frame(ready) is None
+
+    playout = next(
+        vector["payload"] for vector in vectors if vector["id"] == "L-P04-playout-finished"
+    ).copy()
+    playout["reason"] = "announcement_suppressed_muted"
+    assert parse_voice_local_frame(playout).disposition == "finished"
+
+
 def test_client_local_v2_keeps_frozen_remote_v1_fixture_bytes():
     fixture_path = (
         Path(__file__).resolve().parents[2] / "contracts/fixtures/voice_065/client_conformance.json"
