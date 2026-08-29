@@ -97,6 +97,31 @@
   var voiceLifecycleSuspended = false;
   var voiceSuspensionPromise = null;
   var voiceRecoverySuppressed = false;
+  var voiceSpeechBackend = null;
+  var voiceBackendProbe = null;
+  var voiceBackendCapability = null;
+  var voiceBackendPrime = null;
+  var voiceLocalRequirements = null;
+  var voiceLocalReady = false;
+  var voiceLocalRecognition = null;
+  var voiceLocalPendingRecognitionFailures = [];
+  var voiceLocalPendingFinal = null;
+  var voiceLocalClientSequence = 0;
+  var voiceLocalLastAnnouncementSequence = 0;
+  var voiceLocalLastMuteRevision = 0;
+  var voiceLocalLastConsentRevision = 0;
+  var voiceLocalAnnouncementIngress = [];
+  var voiceLocalAnnouncementDigesting = null;
+  var voiceLocalAnnouncementDraining = false;
+  var voiceLocalAnnouncementQueue = [];
+  var voiceLocalActiveAnnouncement = null;
+  var voiceLocalEchoUntil = 0;
+  var voiceLocalEchoTimer = null;
+  var voiceLocalInstallContext = null;
+  var voiceLocalResumeMicrophoneEnabled = true;
+  var voiceLocalResuming = false;
+  var voiceControlPatchQueue = [];
+  var voiceControlPatchActive = null;
   var voiceStateEpoch = 0;
   var voicePlayoutSequence = 0;
   var voiceIgnoringTrackEnd = false;
@@ -112,6 +137,18 @@
   var VOICE_SUBMISSION_RETRY_MS = 2500;
   var VOICE_RECOVERY_DEADLINE_MS = 30000;
   var VOICE_RECOVERY_MAX_ATTEMPTS = 4;
+  var VOICE_BACKEND_DISCOVERY_TIMEOUT_MS = 2000;
+  var VOICE_LOCAL_ACTIVATION_TIMEOUT_MS = 3000;
+  // Language packs are an explicit, separate user action and can be much
+  // larger than the already-installed 3 s activation budget. They still get
+  // one bounded progress window so a wedged browser API cannot disable the
+  // control forever.
+  var VOICE_LOCAL_INSTALL_TIMEOUT_MS = 2 * 60 * 1000;
+  var VOICE_LOCAL_MAX_ANNOUNCEMENTS = 8;
+  var VOICE_LOCAL_TURN_BINDING_TIMEOUT_MS = 2 * 60 * 1000;
+  var VOICE_LOCAL_MAX_PENDING_FAILURES = 4;
+  var VOICE_LOCAL_FINAL_RETRY_MS = 2500;
+  var VOICE_LOCAL_FINAL_ACK_TIMEOUT_MS = 2 * 60 * 1000;
   var ALLOWED_LOCATOR_CLEAR_REASONS = Object.freeze({
     explicit_new_chat: true,
     definitive_sign_out: true,
@@ -359,6 +396,7 @@
   var voiceStatusEl = document.getElementById("astral-voice-status");
   var voiceTranscriptEl = document.getElementById("astral-voice-transcript");
   var voiceAudioResumeEl = document.getElementById("astral-voice-audio-resume");
+  var voiceLocalInstallEl = document.getElementById("astral-voice-local-install");
   var voiceAudioHostEl = document.getElementById("astral-voice-audio");
   var voiceTurnNoticeEl = document.getElementById("astral-voice-turn-notice");
   var voiceTurnNoticeTitleEl = document.getElementById("astral-voice-turn-notice-title");
@@ -739,6 +777,23 @@
     output_language_unsupported: "Voice output is not supported for this language. You can keep typing messages.",
     capacity_exhausted: "Voice is at capacity right now. Try again shortly.",
     chat_context_unavailable: "The active chat changed before voice could start. Try again.",
+    client_readiness_required: "Checking this browser for private local speech… Typed chat remains available.",
+    local_processing_not_guaranteed: "This browser cannot guarantee private local speech. You can keep typing messages.",
+    local_recognition_unavailable: "Local speech recognition is unavailable. You can keep typing messages.",
+    local_synthesis_unavailable: "Local speech synthesis is unavailable. You can keep typing messages.",
+    local_recognition_locale_unavailable: "Local recognition for English (United States) is unavailable. You can keep typing messages.",
+    local_synthesis_locale_unavailable: "A local English (United States) voice is unavailable. You can keep typing messages.",
+    local_language_download_required: "Local English speech must be installed before voice can start. Choose Install local speech or keep typing.",
+    local_language_installing: "Installing local English speech… Typed chat remains available.",
+    local_language_install_failed: "Local speech could not be installed. You can keep typing messages.",
+    speech_recognition_permission_not_determined: "Local voice needs microphone permission. Allow it in browser settings or keep typing.",
+    speech_recognition_permission_denied: "Speech recognition permission was denied. You can keep typing messages.",
+    microphone_permission_not_determined: "Local voice needs microphone permission. Allow it in browser settings or keep typing.",
+    microphone_permission_denied: "Microphone permission was denied. You can keep typing messages.",
+    local_synthesis_failed: "Local speech playback failed. The text result remains available, and you can keep typing.",
+    local_announcement_expired: "A spoken update expired before playback. The text result remains available.",
+    local_final_empty: "No speech was recognized. Please try again or keep typing.",
+    local_final_malformed: "That spoken request could not be used. Please try again or keep typing.",
   });
 
   function voiceCapability() {
@@ -748,6 +803,344 @@
       microphone_permission: voicePermissionState,
       full_duplex: true,
       transport: "livekit",
+    };
+  }
+
+  function validClientLocalRequirements(value) {
+    var keys = [
+      "announcement_ttl_seconds", "configured_locale", "echo_suppression_milliseconds",
+      "installation_policy", "local_frame_contract", "max_announcement_utf8_bytes",
+      "max_final_unicode_scalars", "recognition_must_be_local", "requirement_revision",
+      "session_contract", "synthesis_must_be_local",
+    ];
+    return exactKeys(value, keys)
+      && value.session_contract === "voice-rest/v2-client-local"
+      && value.local_frame_contract === "client_local/v1"
+      && value.configured_locale === "en-US"
+      && value.recognition_must_be_local === true
+      && value.synthesis_must_be_local === true
+      && value.installation_policy === "explicit_user_action_only"
+      && value.requirement_revision === 1
+      && value.max_final_unicode_scalars === 8000
+      && value.max_announcement_utf8_bytes === 600
+      && value.announcement_ttl_seconds === 10
+      && value.echo_suppression_milliseconds === 500;
+  }
+
+  function validRemoteVoiceRequirements(value) {
+    var keys = [
+      "announcement_ttl_seconds", "configured_locale", "echo_suppression_milliseconds",
+      "installation_policy", "local_frame_contract", "max_announcement_utf8_bytes",
+      "max_final_unicode_scalars", "recognition_must_be_local", "requirement_revision",
+      "session_contract", "synthesis_must_be_local",
+    ];
+    return exactKeys(value, keys)
+      && value.session_contract === "voice-rest/v1"
+      && value.local_frame_contract === null
+      && value.configured_locale === "en-US"
+      && value.recognition_must_be_local === false
+      && value.synthesis_must_be_local === false
+      && value.installation_policy === "explicit_user_action_only"
+      && value.requirement_revision === 1
+      && value.max_final_unicode_scalars === 8000
+      && value.max_announcement_utf8_bytes === 600
+      && value.announcement_ttl_seconds === 10
+      && value.echo_suppression_milliseconds === 500;
+  }
+
+  function validVoiceBackendCapability(value) {
+    var keys = [
+      "checked_at", "expires_at", "reason", "requirements", "schema_version",
+      "speech_backend", "status", "supported_transports",
+    ];
+    if (!hasExactKeys(value, keys, ["retry_after_seconds"])
+        || value.schema_version !== "2"
+        || ["llm_factory", "client_local"].indexOf(value.speech_backend) === -1
+        || ["ready", "unavailable", "requires_client_readiness"].indexOf(value.status) === -1
+        || typeof value.reason !== "string" || !/^[a-z][a-z0-9_]*$/.test(value.reason)
+        || !isRfc3339Utc(value.checked_at) || !isRfc3339Utc(value.expires_at)
+        || Date.parse(value.expires_at) <= Date.now()
+        || !Array.isArray(value.supported_transports)
+        || new Set(value.supported_transports).size !== value.supported_transports.length
+        || (Object.prototype.hasOwnProperty.call(value, "retry_after_seconds")
+          && (!Number.isSafeInteger(value.retry_after_seconds)
+            || value.retry_after_seconds < 1 || value.retry_after_seconds > 300))) return false;
+    if (value.speech_backend === "llm_factory") {
+      return ["ready", "unavailable"].indexOf(value.status) !== -1
+        && value.supported_transports.length >= 1
+        && value.supported_transports.length <= 2
+        && value.supported_transports.indexOf("livekit") !== -1
+        && value.supported_transports.every(function (transport) {
+          return ["livekit", "watch_pcm_websocket"].indexOf(transport) !== -1;
+        })
+        && validRemoteVoiceRequirements(value.requirements);
+    }
+    return ["ready", "unavailable", "requires_client_readiness"].indexOf(value.status) !== -1
+      && value.supported_transports.length === 1
+      && value.supported_transports[0] === "client_local"
+      && validClientLocalRequirements(value.requirements);
+  }
+
+  function hideClientLocalInstall() {
+    voiceLocalInstallContext = null;
+    if (voiceLocalInstallEl) voiceLocalInstallEl.hidden = true;
+  }
+
+  function showClientLocalInstall(kind, capability) {
+    voiceLocalInstallContext = {
+      kind: kind,
+      capability: capability,
+      connection_generation: connectionGeneration,
+      binding_id: voiceBinding && voiceBinding.binding_id,
+      chat_id: activeChatId,
+    };
+    if (voiceLocalInstallEl) voiceLocalInstallEl.hidden = false;
+    setVoiceFeedback("unavailable", "local_language_download_required", null, true);
+  }
+
+  function clientLocalVoiceForLocale(locale) {
+    if (!window.speechSynthesis || typeof window.speechSynthesis.getVoices !== "function") {
+      return null;
+    }
+    var voices;
+    try { voices = window.speechSynthesis.getVoices(); } catch (e) { return null; }
+    if (!Array.isArray(voices)) voices = Array.prototype.slice.call(voices || []);
+    return voices.find(function (voice) {
+      return voice && voice.lang === locale && voice.localService === true;
+    }) || null;
+  }
+
+  function waitForClientLocalVoice(locale) {
+    var existing = clientLocalVoiceForLocale(locale);
+    if (existing || !window.speechSynthesis
+        || typeof window.speechSynthesis.addEventListener !== "function") {
+      return Promise.resolve(existing);
+    }
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer;
+      var finish = function () {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        try { window.speechSynthesis.removeEventListener("voiceschanged", finish); } catch (e) {}
+        resolve(clientLocalVoiceForLocale(locale));
+      };
+      window.speechSynthesis.addEventListener("voiceschanged", finish);
+      timer = setTimeout(finish, 1000);
+    });
+  }
+
+  function clientLocalAwait(promise, deadlineAt) {
+    if (!Number.isFinite(deadlineAt)) {
+      return Promise.resolve(promise).then(function (value) {
+        return { completed: true, value: value };
+      }, function (error) {
+        return { completed: true, error: error };
+      });
+    }
+    var remaining = Math.max(0, deadlineAt - Date.now());
+    if (!remaining) return Promise.resolve({ completed: false });
+    return new Promise(function (resolve) {
+      var settled = false;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        resolve({ completed: false });
+      }, remaining);
+      Promise.resolve(promise).then(function (value) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ completed: true, value: value });
+      }, function (error) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve({ completed: true, error: error });
+      });
+    });
+  }
+
+  async function currentMicrophonePermission() {
+    if (!navigator.permissions || typeof navigator.permissions.query !== "function") {
+      return voicePermissionState;
+    }
+    try {
+      var permission = await navigator.permissions.query({ name: "microphone" });
+      voicePermissionState = permission.state === "granted" ? "authorized"
+        : permission.state === "denied" ? "denied" : "not_determined";
+    } catch (e) {}
+    return voicePermissionState;
+  }
+
+  function requestClientLocalRecognitionPermission(Recognition, locale, deadlineAt) {
+    return new Promise(function (resolve) {
+      var recognizer;
+      try { recognizer = new Recognition(); } catch (e) {
+        resolve({ authorized: false, reason: "local_recognition_unavailable" });
+        return;
+      }
+      recognizer.lang = locale;
+      recognizer.continuous = false;
+      recognizer.interimResults = false;
+      recognizer.maxAlternatives = 1;
+      if (!("processLocally" in recognizer)) {
+        resolve({ authorized: false, reason: "local_processing_not_guaranteed" });
+        return;
+      }
+      recognizer.processLocally = true;
+      if (recognizer.processLocally !== true) {
+        resolve({ authorized: false, reason: "local_processing_not_guaranteed" });
+        return;
+      }
+      var settled = false;
+      var remaining = Math.max(1, Number.isFinite(deadlineAt)
+        ? deadlineAt - Date.now() : VOICE_LOCAL_ACTIVATION_TIMEOUT_MS);
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        try { recognizer.abort(); } catch (e) {}
+        resolve({ authorized: false, reason: "microphone_permission_not_determined" });
+      }, remaining);
+      function finish(result) {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(result);
+      }
+      recognizer.onstart = function () {
+        voicePermissionState = "authorized";
+        finish({ authorized: true });
+        try { recognizer.abort(); } catch (e) {}
+      };
+      recognizer.onresult = function () {};
+      recognizer.onerror = function (event) {
+        var denied = event && ["not-allowed", "service-not-allowed"].indexOf(event.error) !== -1;
+        if (denied) voicePermissionState = "denied";
+        finish({
+          authorized: false,
+          reason: denied ? "microphone_permission_denied" : "local_recognition_unavailable",
+        });
+      };
+      recognizer.onend = function () {
+        if (!settled) finish({
+          authorized: false,
+          reason: "microphone_permission_not_determined",
+        });
+      };
+      try { recognizer.start(); } catch (e) {
+        finish({ authorized: false, reason: "local_recognition_unavailable" });
+      }
+    });
+  }
+
+  async function hasClientLocalMicrophone() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
+      return false;
+    }
+    try {
+      var devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.some(function (device) { return device.kind === "audioinput"; });
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function probeClientLocalCapability(requirements, options) {
+    options = options || {};
+    var deadlineAt = options.deadline_at;
+    var locale = requirements.configured_locale;
+    var Recognition = window.SpeechRecognition;
+    if (typeof Recognition !== "function"
+        || typeof Recognition.available !== "function"
+        || typeof Recognition.install !== "function") {
+      return { eligible: false, reason: "local_processing_not_guaranteed" };
+    }
+    if (!Recognition.prototype || !("processLocally" in Recognition.prototype)) {
+      return { eligible: false, reason: "local_processing_not_guaranteed" };
+    }
+    var availabilityPromise;
+    try {
+      availabilityPromise = Recognition.available({
+        langs: [locale],
+        processLocally: true,
+      });
+    } catch (e) {
+      return { eligible: false, reason: "local_recognition_unavailable" };
+    }
+    var availabilityResult = await clientLocalAwait(availabilityPromise, deadlineAt);
+    if (!availabilityResult.completed) {
+      return { eligible: false, reason: "local_session_not_ready" };
+    }
+    if (availabilityResult.error) {
+      return { eligible: false, reason: "local_recognition_unavailable" };
+    }
+    var availability = availabilityResult.value;
+    if (["downloadable", "downloading"].indexOf(availability) !== -1) {
+      return {
+        eligible: false,
+        installable: availability === "downloadable",
+        reason: availability === "downloadable"
+          ? "local_language_download_required" : "local_language_installing",
+      };
+    }
+    if (availability !== "available") {
+      return { eligible: false, reason: "local_recognition_locale_unavailable" };
+    }
+    var permissionResult = await clientLocalAwait(currentMicrophonePermission(), deadlineAt);
+    if (!permissionResult.completed) {
+      return { eligible: false, reason: "local_session_not_ready" };
+    }
+    var permission = permissionResult.error ? voicePermissionState : permissionResult.value;
+    if (permission !== "authorized" && options.allow_permission_prompt === true
+        && permission !== "denied") {
+      var requested = await requestClientLocalRecognitionPermission(
+        Recognition, locale, deadlineAt
+      );
+      if (requested.authorized) permission = "authorized";
+      else return { eligible: false, reason: requested.reason };
+    }
+    if (permission !== "authorized") {
+      return {
+        eligible: false,
+        reason: permission === "denied"
+          ? "microphone_permission_denied" : "microphone_permission_not_determined",
+      };
+    }
+    var microphoneResult = await clientLocalAwait(hasClientLocalMicrophone(), deadlineAt);
+    if (!microphoneResult.completed) {
+      return { eligible: false, reason: "local_session_not_ready" };
+    }
+    var hasMicrophone = !microphoneResult.error && microphoneResult.value;
+    if (!hasMicrophone) return { eligible: false, reason: "no_microphone" };
+    var voiceResult = await clientLocalAwait(waitForClientLocalVoice(locale), deadlineAt);
+    if (!voiceResult.completed) {
+      return { eligible: false, reason: "local_session_not_ready" };
+    }
+    var voice = voiceResult.error ? null : voiceResult.value;
+    if (!voice || !window.speechSynthesis
+        || typeof window.SpeechSynthesisUtterance !== "function") {
+      return { eligible: false, reason: "local_synthesis_locale_unavailable" };
+    }
+    return {
+      eligible: true,
+      voice: voice,
+      capability: {
+        contract: "client_local/v1",
+        transport: "client_local",
+        configured_locale: locale,
+        full_duplex: false,
+        has_microphone: true,
+        has_audio_output: true,
+        microphone_permission: "authorized",
+        recognition_permission: "authorized",
+        recognition_processing: "guaranteed_local",
+        recognition_locale: "ready",
+        recognition_installation: "ready",
+        synthesis_processing: "guaranteed_local",
+        synthesis_locale: "ready",
+      },
     };
   }
 
@@ -900,10 +1293,13 @@
     return headers;
   }
 
-  async function voiceRequest(path, method, body) {
+  async function voiceRequest(path, method, body, timeoutMilliseconds) {
     var response;
+    var payload = null;
     var controller = typeof AbortController === "function" ? new AbortController() : null;
-    var timeout = controller ? setTimeout(function () { controller.abort(); }, 20000) : null;
+    var requestTimeout = Number.isSafeInteger(timeoutMilliseconds) && timeoutMilliseconds > 0
+      ? timeoutMilliseconds : 20000;
+    var timeout = controller ? setTimeout(function () { controller.abort(); }, requestTimeout) : null;
     try {
       response = await fetch(API_URL + path, {
         method: method,
@@ -917,17 +1313,105 @@
       if (timeout) clearTimeout(timeout);
       return { ok: false, status: 0, body: null, reason: "network_interrupted" };
     }
-    if (timeout) clearTimeout(timeout);
-    var payload = null;
     if (response.status !== 204) {
-      try { payload = await response.json(); } catch (e) {}
+      try { payload = await response.json(); } catch (e) {
+        if (controller && controller.signal.aborted) {
+          if (timeout) clearTimeout(timeout);
+          return { ok: false, status: 0, body: null, reason: "network_interrupted" };
+        }
+      }
     }
+    if (timeout) clearTimeout(timeout);
     return {
       ok: response.ok,
       status: response.status,
       body: payload,
       reason: response.status === 401 ? "auth_expired" : null,
     };
+  }
+
+  function voiceBackendCapabilityIsCurrent(record) {
+    return record && voiceBindingIsCurrent()
+      && record.connection_generation === connectionGeneration
+      && record.binding_id === voiceBinding.binding_id
+      && record.expires_at > Date.now();
+  }
+
+  function primeVoiceBackendCapability() {
+    if (!voiceBindingIsCurrent()) return Promise.resolve(null);
+    if (voiceBackendCapabilityIsCurrent(voiceBackendCapability)) {
+      return Promise.resolve(voiceBackendCapability);
+    }
+    if (voiceBackendPrime
+        && voiceBackendPrime.connection_generation === connectionGeneration
+        && voiceBackendPrime.binding_id === voiceBinding.binding_id) {
+      return voiceBackendPrime.promise;
+    }
+    var scope = {
+      connection_generation: connectionGeneration,
+      binding_id: voiceBinding.binding_id,
+    };
+    var pending = Object.assign({}, scope);
+    pending.promise = voiceRequest(
+      "/api/voice/v2/capability", "GET", undefined, VOICE_BACKEND_DISCOVERY_TIMEOUT_MS
+    ).then(function (result) {
+      if (voiceBackendPrime === pending) voiceBackendPrime = null;
+      if (scope.connection_generation !== connectionGeneration || !voiceBindingIsCurrent()
+          || voiceBinding.binding_id !== scope.binding_id) return null;
+      var record = null;
+      if (result.status === 404) {
+        record = Object.assign({}, scope, {
+          legacy: true,
+          result: result,
+          expires_at: Date.parse(voiceBinding.expires_at),
+        });
+      } else if (result.ok && validVoiceBackendCapability(result.body)) {
+        record = Object.assign({}, scope, {
+          legacy: false,
+          result: result,
+          body: result.body,
+          expires_at: Date.parse(result.body.expires_at),
+        });
+      }
+      if (!record) return { result: result };
+      voiceBackendCapability = record;
+      if (record.legacy || (record.body.speech_backend === "llm_factory"
+          && record.body.status === "ready")) {
+        ensureLiveKitSdk(null);
+      }
+      return record;
+    });
+    voiceBackendPrime = pending;
+    return pending.promise;
+  }
+
+  function routeVoiceBackendActivation(kind, record) {
+    if (!record || !record.result) {
+      setVoiceFeedback("unavailable", "voice_unavailable", null, true);
+      return;
+    }
+    if (record.legacy === true) {
+      voiceSpeechBackend = "llm_factory";
+      hideClientLocalInstall();
+      beginRemoteVoiceActivation(kind);
+      return;
+    }
+    if (!record.body || !validVoiceBackendCapability(record.body)) {
+      setVoiceFeedback("unavailable", record.result.body && record.result.body.reason
+        || record.result.reason || "voice_unavailable", null, true);
+      return;
+    }
+    voiceSpeechBackend = record.body.speech_backend;
+    if (record.body.status === "unavailable") {
+      setVoiceFeedback("unavailable", record.body.reason || "voice_unavailable", null, true);
+      return;
+    }
+    if (voiceSpeechBackend === "client_local") {
+      beginClientLocalActivation(kind, record.body);
+    } else {
+      hideClientLocalInstall();
+      beginRemoteVoiceActivation(kind);
+    }
   }
 
   function voiceBindingIsCurrent() {
@@ -976,11 +1460,19 @@
       binding: frame.binding,
       expires_at: frame.expires_at,
     };
+    voiceLocalPendingRecognitionFailures.slice().forEach(function (pending) {
+      if (pending.connection_generation !== connectionGeneration) {
+        removeClientLocalPendingRecognitionFailure(pending);
+      }
+    });
     scheduleVoiceBindingRenewal(voiceBinding);
+    primeVoiceBackendCapability();
     if (voicePendingEndFence) {
       var pendingEnd = voicePendingEndFence;
       voicePendingEndFence = null;
       bestEffortEndVoice(pendingEnd).then(function () { voiceLastSession = null; });
+    } else if (voiceSpeechBackend === "client_local") {
+      resumeClientLocalSpeech();
     } else {
       maybeBeginVoiceRecovery("network_interrupted");
     }
@@ -1118,8 +1610,10 @@
       voiceLastSession = null;
       voicePendingEndFence = null;
     } else {
-      maybeBeginVoiceRecovery(frame.voice.reason === "backgrounded"
-        ? "backgrounded" : "network_interrupted");
+      if (voiceSpeechBackend !== "client_local") {
+        maybeBeginVoiceRecovery(frame.voice.reason === "backgrounded"
+          ? "backgrounded" : "network_interrupted");
+      }
     }
     return true;
   }
@@ -1312,6 +1806,8 @@
     // Invalidate every in-flight media/control continuation, including joins
     // that may resolve after a replacement room has already been installed.
     voiceStateEpoch += 1;
+    if (voiceSpeechBackend === "client_local") clearClientLocalSpeech(clearSession);
+    voiceBackendProbe = null;
     voiceVisibleChatSync = null;
     if (clearSession) clearVoiceRecovery();
     stopVoiceLeaseHeartbeat();
@@ -1355,6 +1851,7 @@
         stopVoiceLeaseHeartbeat();
         return;
       }
+      if (voiceControlPatchActive || voiceControlPatchQueue.length) return;
       // A generation-fenced semantic no-op renews only the crash/reconnect
       // lease. It is deliberately not an interaction and cannot postpone the
       // server-owned five-minute true-idle deadline.
@@ -1396,14 +1893,16 @@
   }
 
   function sessionFence(source) {
+    var revision = source && source.speech_backend === "client_local"
+      ? source.speech_revision : source && source.media_grant_revision;
     if (!source || !isCanonicalUuid4(source.session_id)
         || !Number.isSafeInteger(source.generation) || source.generation < 1
-        || !Number.isSafeInteger(source.media_grant_revision)
-        || source.media_grant_revision < 1) return null;
+        || !Number.isSafeInteger(revision) || revision < 1) return null;
     return {
       session_id: source.session_id,
       generation: source.generation,
-      media_grant_revision: source.media_grant_revision,
+      media_grant_revision: revision,
+      speech_backend: source.speech_backend || null,
     };
   }
 
@@ -1438,7 +1937,8 @@
     if (!fence || !voiceBindingIsCurrent()) return false;
     var result = await voiceRequest(voiceEndPath(fence), "DELETE");
     if (result.ok || result.status === 404) return true;
-    if (result.status === 409 && retryCurrentFence !== false && voiceBindingIsCurrent()) {
+    if (result.status === 409 && fence.speech_backend !== "client_local"
+        && retryCurrentFence !== false && voiceBindingIsCurrent()) {
       var state = await voiceRequest("/api/voice/sessions/"
         + encodeURIComponent(fence.session_id) + "/media-grants", "GET");
       if (state.status === 404) return true;
@@ -1580,6 +2080,7 @@
   }
 
   function beginVoiceRecovery(reason) {
+    if (voiceSpeechBackend === "client_local") return false;
     var fence = voiceRecoverableFence();
     if (!fence || voicePendingEndFence || voiceActivation
         || document.visibilityState === "hidden" || navigator.onLine === false) return false;
@@ -1942,7 +2443,8 @@
         || frame.request_generation !== pending.hydration_generation
         || frame.connection_generation !== pending.connection_generation) return;
     pending.awaiting_hydration = false;
-    continueVoiceActivation(pending);
+    if (pending.backend === "client_local") continueClientLocalActivation(pending);
+    else continueRemoteVoiceActivation(pending);
   }
 
   function voiceActivationRequest(pending, capability) {
@@ -1965,7 +2467,7 @@
     return { path: "/api/voice/sessions", body: body };
   }
 
-  async function continueVoiceActivation(pending) {
+  async function continueRemoteVoiceActivation(pending) {
     if (voiceActivation !== pending || pending.connection_generation !== connectionGeneration
         || !activeChatId || (pending.chat_id && pending.chat_id !== activeChatId)) return;
     if (!voiceBindingIsCurrent()) {
@@ -2039,7 +2541,229 @@
     else setVoiceFeedback("connecting", "chat_context_unavailable", "Waiting for the voice chat context…", true);
   }
 
-  function beginVoiceActivation(kind, sdkRetried) {
+  function validClientLocalSession(value, expectedChatId) {
+    var keys = [
+      "applied_chat_context_revision", "chat_context_revision", "chat_context_synced",
+      "configured_locale", "foreground_active", "generation", "idle_expires_at",
+      "microphone_enabled", "schema_version", "session_id", "speech_backend",
+      "speech_muted", "speech_revision", "state", "transport", "visible_chat_id",
+    ];
+    return exactKeys(value, keys)
+      && value.schema_version === "2"
+      && value.speech_backend === "client_local"
+      && value.transport === "client_local"
+      && value.configured_locale === "en-US"
+      && isCanonicalUuid4(value.session_id)
+      && value.visible_chat_id === (expectedChatId || activeChatId)
+      && isCanonicalUuid4(value.visible_chat_id)
+      && Number.isSafeInteger(value.generation) && value.generation > 0
+      && Number.isSafeInteger(value.speech_revision) && value.speech_revision > 0
+      && Number.isSafeInteger(value.chat_context_revision)
+      && value.chat_context_revision > 0
+      && value.applied_chat_context_revision === value.chat_context_revision
+      && value.chat_context_synced === true
+      && value.foreground_active === true
+      && typeof value.microphone_enabled === "boolean"
+      && typeof value.speech_muted === "boolean"
+      && ["starting", "active"].indexOf(value.state) !== -1
+      && isRfc3339Utc(value.idle_expires_at)
+      && Date.parse(value.idle_expires_at) > Date.now();
+  }
+
+  function clientLocalCommonFrame(type) {
+    if (!voiceSession || voiceSpeechBackend !== "client_local") return null;
+    return {
+      type: type,
+      schema_version: "2",
+      speech_backend: "client_local",
+      device_id: voiceDeviceId,
+      connection_generation: connectionGeneration,
+      session_id: voiceSession.session_id,
+      generation: voiceSession.generation,
+      speech_revision: voiceSession.speech_revision,
+    };
+  }
+
+  function sendClientLocalReady(capability) {
+    var frame = clientLocalCommonFrame("voice_local_ready");
+    if (!frame || !voiceSession || voiceSession.foreground_active !== true
+        || voiceSession.microphone_enabled !== true || voiceSession.speech_muted !== false
+        || voiceSession.chat_context_synced !== true
+        || voiceSession.visible_chat_id !== activeChatId
+        || document.visibilityState === "hidden" || voiceLifecycleSuspended
+        || !voiceBindingIsCurrent() || !ws || ws.readyState !== 1) return false;
+    Object.assign(frame, capability, { client_sequence: ++voiceLocalClientSequence });
+    send(frame);
+    return true;
+  }
+
+  function clientLocalActivationIsCurrent(pending) {
+    return voiceActivation === pending
+      && pending.connection_generation === connectionGeneration
+      && activeChatId === (pending.chat_id || pending.initial_chat_id)
+      && document.visibilityState !== "hidden" && !voiceLifecycleSuspended
+      && voiceBindingIsCurrent();
+  }
+
+  async function continueClientLocalActivation(pending) {
+    if (!clientLocalActivationIsCurrent(pending) || !activeChatId) return;
+    var probed = await probeClientLocalCapability(pending.server_capability.requirements, {
+      allow_permission_prompt: true,
+      deadline_at: pending.deadline_at,
+    });
+    if (!clientLocalActivationIsCurrent(pending)) return;
+    if (!probed.eligible) {
+      if (pending.timeout) clearTimeout(pending.timeout);
+      voiceActivation = null;
+      if (probed.installable) showClientLocalInstall(pending.kind, pending.server_capability);
+      else setVoiceFeedback("unavailable", probed.reason, null, true);
+      return;
+    }
+    hideClientLocalInstall();
+    var body = {
+      schema_version: "2",
+      activation_id: pending.activation_id,
+      device_id: voiceDeviceId,
+      device_kind: "web",
+      visible_chat_id: activeChatId,
+      foreground_active: true,
+      client_capability: probed.capability,
+    };
+    var path = "/api/voice/v2/sessions";
+    if (pending.kind === "takeover") {
+      body.expected_generation = pending.takeover.generation;
+      body.expected_speech_revision = pending.takeover.media_grant_revision;
+      path += "/" + encodeURIComponent(pending.takeover.session_id) + "/takeover";
+    }
+    var remaining = Math.max(1, pending.deadline_at - Date.now());
+    var result = await voiceRequest(path, "POST", body, remaining);
+    if (result.status === 0 && voiceActivation === pending
+        && pending.connection_generation === connectionGeneration
+        && Date.now() < pending.deadline_at) {
+      result = await voiceRequest(path, "POST", body, Math.max(1, pending.deadline_at - Date.now()));
+    }
+    if (!clientLocalActivationIsCurrent(pending)) {
+      if (result.ok && validClientLocalSession(
+        result.body, pending.chat_id || pending.initial_chat_id
+      )) {
+        bestEffortEndVoice(sessionFence(result.body));
+      }
+      if (voiceActivation === pending) voiceActivation = null;
+      setVoiceFeedback(document.visibilityState === "hidden" ? "suspended" : "error",
+        document.visibilityState === "hidden" ? "backgrounded" : "chat_context_unavailable",
+        null, true);
+      return;
+    }
+    if (!result.ok || !validClientLocalSession(result.body)) {
+      var reason = result.body && result.body.reason || result.reason
+        || "local_session_not_ready";
+      if (result.status === 409 && result.body
+          && isCanonicalUuid4(result.body.current_session_id)) {
+        var authoritative = pending.takeover
+          && pending.takeover.session_id === result.body.current_session_id
+          ? pending.takeover : sessionFence(voiceComposer);
+        voiceTakeover = authoritative
+          && authoritative.session_id === result.body.current_session_id
+          ? authoritative : null;
+      }
+      if (pending.timeout) clearTimeout(pending.timeout);
+      voiceActivation = null;
+      setVoiceFeedback("unavailable", reason, null, true);
+      return;
+    }
+    voiceSpeechBackend = "client_local";
+    voiceLocalRequirements = pending.server_capability.requirements;
+    voiceLocalReady = false;
+    voiceLocalClientSequence = 0;
+    voiceLocalLastAnnouncementSequence = 0;
+    voiceLocalLastMuteRevision = 0;
+    voiceLocalLastConsentRevision = 0;
+    clearClientLocalPendingFinal();
+    voiceSession = Object.assign({}, result.body, {
+      device_id: voiceDeviceId,
+      owner_connection_generation: connectionGeneration,
+      media_grant_revision: result.body.speech_revision,
+    });
+    voiceLastSession = voiceSession;
+    voiceLocalResumeMicrophoneEnabled = voiceSession.microphone_enabled;
+    voiceTakeover = null;
+    voiceLifecycleSuspended = false;
+    startVoiceLeaseHeartbeat();
+    if (pending.timeout) clearTimeout(pending.timeout);
+    voiceActivation = null;
+    if (!voiceSession.microphone_enabled || voiceSession.speech_muted) {
+      setVoiceFeedback(voiceSession.speech_muted ? "muted" : "suspended",
+        voiceSession.speech_muted ? "ready" : "local_session_not_ready", null, true);
+      return;
+    }
+    if (!sendClientLocalReady(probed.capability)) {
+      setVoiceFeedback("error", "local_session_not_ready", null, true);
+      return;
+    }
+    setVoiceFeedback("connecting", "client_readiness_required", "Local speech is ready. Securing this conversation…", true);
+  }
+
+  function beginClientLocalActivation(kind, serverCapability) {
+    if (voiceActivation || !voiceBindingIsCurrent()) return;
+    var takeover = kind === "takeover"
+      ? voiceTakeover || sessionFence(voiceComposer) : null;
+    if (kind === "takeover" && (!takeover || !isCanonicalUuid4(takeover.session_id))) {
+      setVoiceFeedback("error", "stale_generation", null, true);
+      return;
+    }
+    voiceActivation = {
+      kind: kind,
+      backend: "client_local",
+      server_capability: serverCapability,
+      activation_id: randomUuid4(),
+      connection_generation: connectionGeneration,
+      initial_chat_id: activeChatId,
+      chat_id: activeChatId,
+      takeover: takeover,
+      deadline_at: Date.now() + VOICE_LOCAL_ACTIVATION_TIMEOUT_MS,
+    };
+    var pending = voiceActivation;
+    pending.timeout = setTimeout(function () {
+      if (voiceActivation !== pending) return;
+      voiceActivation = null;
+      setVoiceFeedback("unavailable", "local_session_not_ready", "Local voice did not become ready. You can keep typing.", true);
+    }, VOICE_LOCAL_ACTIVATION_TIMEOUT_MS);
+    setVoiceFeedback("connecting", "client_readiness_required", null, true);
+    if (!activeChatId) sendCorrelatedVoiceNewChat(pending);
+    else continueClientLocalActivation(pending);
+  }
+
+  function beginVoiceActivation(kind) {
+    if (voiceActivation || voiceBackendProbe) return;
+    if (!voiceBindingIsCurrent()) {
+      setVoiceFeedback("error", "auth_expired", "Voice controls are reconnecting. Try again in a moment.", true);
+      return;
+    }
+    if (document.visibilityState === "hidden" || voiceLifecycleSuspended) {
+      setVoiceFeedback("suspended", "backgrounded", null, true);
+      return;
+    }
+    if (voiceBackendCapabilityIsCurrent(voiceBackendCapability)) {
+      routeVoiceBackendActivation(kind, voiceBackendCapability);
+      return;
+    }
+    var probe = {
+      connection_generation: connectionGeneration,
+      binding_id: voiceBinding.binding_id,
+    };
+    voiceBackendProbe = probe;
+    setVoiceFeedback("connecting", "client_readiness_required", "Checking the selected speech service…", true);
+    primeVoiceBackendCapability().then(function (record) {
+      if (voiceBackendProbe !== probe) return;
+      voiceBackendProbe = null;
+      if (probe.connection_generation !== connectionGeneration
+          || !voiceBindingIsCurrent() || voiceBinding.binding_id !== probe.binding_id
+          || document.visibilityState === "hidden" || voiceLifecycleSuspended) return;
+      routeVoiceBackendActivation(kind, record);
+    });
+  }
+
+  function beginRemoteVoiceActivation(kind, sdkRetried) {
     if (voiceActivation) return;
     if (!voiceBindingIsCurrent()) {
       setVoiceFeedback("error", "auth_expired", "Voice controls are reconnecting. Try again in a moment.", true);
@@ -2053,7 +2777,7 @@
     // that will not load reaches createVoiceRoom's media_unavailable branch.
     if (!livekitSdkReady() && sdkRetried !== true) {
       setVoiceFeedback("connecting", "ready", null, true);
-      ensureLiveKitSdk(function () { beginVoiceActivation(kind, true); });
+      ensureLiveKitSdk(function () { beginRemoteVoiceActivation(kind, true); });
       return;
     }
     voiceRecoverySuppressed = false;
@@ -2068,6 +2792,7 @@
     }
     voiceActivation = {
       kind: kind,
+      backend: "llm_factory",
       activation_id: randomUuid4(),
       connection_generation: connectionGeneration,
       initial_chat_id: activeChatId,
@@ -2088,44 +2813,107 @@
     }, 30000);
     setVoiceFeedback("connecting", "ready", null, true);
     if (!activeChatId) sendCorrelatedVoiceNewChat(voiceActivation);
-    else continueVoiceActivation(voiceActivation);
+    else continueRemoteVoiceActivation(voiceActivation);
   }
 
-  function patchVoiceSession(fields, optimistic) {
-    var fence = currentVoiceFence();
-    var stateEpoch = voiceStateEpoch;
-    if (!fence || !voiceBindingIsCurrent()) {
-      setVoiceFeedback("error", "stale_generation", null, true);
-      return Promise.resolve(false);
-    }
-    if (optimistic) optimistic();
-    var body = Object.assign({
-      expected_generation: fence.generation,
-      expected_media_grant_revision: fence.media_grant_revision,
-    }, fields);
-    return voiceRequest("/api/voice/sessions/" + encodeURIComponent(fence.session_id), "PATCH", body)
-      .then(function (result) {
-        if (!result.ok) {
-          setVoiceFeedback("error", result.reason || result.body && result.body.code || "stale_generation",
+  function patchVoiceSession(fields, optimistic, timeoutMilliseconds) {
+    return new Promise(function (resolve) {
+      var request = {
+        fields: Object.assign({}, fields),
+        timeout_milliseconds: timeoutMilliseconds,
+        epoch: voiceStateEpoch,
+        blocks_capture: fields.foreground_active === false
+          || fields.microphone_enabled === false
+          || fields.speech_muted === true
+          || Object.prototype.hasOwnProperty.call(fields, "visible_chat_id"),
+        resolve: resolve,
+      };
+      try { if (optimistic) optimistic(); } catch (e) {
+        resolve(false);
+        return;
+      }
+      voiceControlPatchQueue.push(request);
+      applyVoiceCaptureState();
+      drainVoiceControlPatchQueue();
+    });
+  }
+
+  function voiceControlCaptureBlocked() {
+    return !!(voiceControlPatchActive && voiceControlPatchActive.blocks_capture)
+      || voiceControlPatchQueue.some(function (request) { return request.blocks_capture; });
+  }
+
+  async function drainVoiceControlPatchQueue() {
+    if (voiceControlPatchActive) return;
+    while (voiceControlPatchQueue.length) {
+      var request = voiceControlPatchQueue.shift();
+      voiceControlPatchActive = request;
+      var updated = false;
+      try {
+        var fence = currentVoiceFence();
+        if (!fence || !voiceBindingIsCurrent() || request.epoch !== voiceStateEpoch) {
+          if (request.epoch === voiceStateEpoch) {
+            setVoiceFeedback("error", "stale_generation", null, true);
+          }
+        } else {
+          var body = Object.assign({
+            expected_generation: fence.generation,
+            expected_media_grant_revision: fence.media_grant_revision,
+          }, request.fields);
+          var result = await voiceRequest(
+            "/api/voice/sessions/" + encodeURIComponent(fence.session_id),
+            "PATCH",
+            body,
+            request.timeout_milliseconds
+          );
+          if (request.epoch !== voiceStateEpoch) {
+            updated = false;
+          } else if (!result.ok) {
+            setVoiceFeedback("error", result.reason
+              || result.body && result.body.code || "stale_generation",
             result.body && result.body.message, true);
-          applyVoiceCaptureState();
-          return false;
+          } else if (result.body && result.body.session_id === fence.session_id) {
+            if (voiceSpeechBackend === "client_local") {
+              voiceSession = Object.assign({}, result.body, {
+                speech_backend: "client_local",
+                speech_revision: result.body.speech_revision
+                  || result.body.media_grant_revision || fence.media_grant_revision,
+                media_grant_revision: result.body.media_grant_revision
+                  || result.body.speech_revision || fence.media_grant_revision,
+                owner_connection_generation: connectionGeneration,
+                device_id: voiceDeviceId,
+              });
+            } else {
+              voiceSession = result.body;
+            }
+            voiceLastSession = voiceSession;
+            if (voiceSession.foreground_active) startVoiceLeaseHeartbeat();
+            else stopVoiceLeaseHeartbeat();
+            updated = true;
+          }
         }
-        if (stateEpoch === voiceStateEpoch && result.body
-            && result.body.session_id === fence.session_id) {
-          voiceSession = result.body;
-          voiceLastSession = result.body;
-          if (voiceSession.foreground_active) startVoiceLeaseHeartbeat();
-          else stopVoiceLeaseHeartbeat();
-          applyVoiceCaptureState();
+      } catch (e) {
+        if (request.epoch === voiceStateEpoch) {
+          setVoiceFeedback("error", "stale_generation", null, true);
         }
-        return true;
-      });
+      } finally {
+        voiceControlPatchActive = null;
+        applyVoiceCaptureState();
+        request.resolve(updated);
+      }
+    }
   }
 
   function applyVoiceCaptureState() {
+    if (voiceSpeechBackend === "client_local") {
+      flushClientLocalPendingRecognitionFailures();
+      if (clientLocalCanRecognize()) scheduleClientLocalRecognition();
+      else stopClientLocalRecognition("local_recognition_cancelled", true);
+      return;
+    }
     if (!voiceStream) return;
-    var enabled = !!(voiceMediaJoined && voiceSession && voiceSession.foreground_active
+    var enabled = !voiceControlCaptureBlocked()
+      && !!(voiceMediaJoined && voiceSession && voiceSession.foreground_active
       && voiceSession.microphone_enabled && voiceSession.chat_context_synced
       && voiceSession.visible_chat_id === activeChatId
       && ["off", "unavailable", "suspended", "reconnecting", "error", "ending", "ended"]
@@ -2135,7 +2923,931 @@
     } catch (e) {}
   }
 
+  function clientLocalFrameMatches(frame) {
+    return frame && voiceSession && voiceSpeechBackend === "client_local"
+      && frame.schema_version === "2" && frame.speech_backend === "client_local"
+      && frame.device_id === voiceDeviceId
+      && frame.connection_generation === connectionGeneration
+      && frame.session_id === voiceSession.session_id
+      && frame.generation === voiceSession.generation
+      && frame.speech_revision === voiceSession.speech_revision;
+  }
+
+  function clientLocalCanRecognize() {
+    return voiceSpeechBackend === "client_local" && voiceLocalReady && voiceSession
+      && voiceSession.state === "active"
+      && voiceSession.foreground_active && voiceSession.microphone_enabled
+      && voiceSession.speech_muted === false
+      && voiceSession.chat_context_synced
+      && voiceSession.visible_chat_id === activeChatId
+      && document.visibilityState !== "hidden" && !voiceLifecycleSuspended
+      && !voiceControlCaptureBlocked()
+      && voiceBindingIsCurrent() && !voiceLocalActiveAnnouncement
+      && voiceLocalAnnouncementQueue.length === 0 && !voiceLocalPendingFinal;
+  }
+
+  function canonicalClientLocalText(text, maximumScalars) {
+    if (typeof text !== "string") return { reason: "local_final_malformed" };
+    var canonical;
+    try { canonical = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").normalize("NFC").trim(); }
+    catch (e) { return { reason: "local_final_malformed" }; }
+    if (!canonical) return { reason: "local_final_empty" };
+    if (Array.from(canonical).length > maximumScalars) {
+      return { reason: "local_final_malformed" };
+    }
+    var scalars = Array.from(canonical);
+    for (var index = 0; index < scalars.length; index++) {
+      if (scalars[index] !== "\t" && scalars[index] !== "\n"
+          && /\p{C}/u.test(scalars[index])) {
+        return { reason: "local_final_malformed" };
+      }
+    }
+    return { text: canonical };
+  }
+
+  function boundedClientLocalScalarLength(text, remaining) {
+    var count = 0;
+    for (var scalar of text) {
+      if (!scalar) continue;
+      count += 1;
+      if (count > remaining) return -1;
+    }
+    return count;
+  }
+
+  function validClientLocalAnnouncementText(text) {
+    if (typeof text !== "string" || !text) return false;
+    var normalized;
+    try { normalized = text.normalize("NFC"); } catch (e) { return false; }
+    if (normalized !== text) return false;
+    return !Array.from(text).some(function (scalar) {
+      return scalar === "\u0000" || /\p{Cc}/u.test(scalar);
+    });
+  }
+
+  async function clientLocalSha256(text) {
+    var bytes = new TextEncoder().encode(text);
+    var digest = await crypto.subtle.digest("SHA-256", bytes);
+    return Array.prototype.map.call(new Uint8Array(digest), function (value) {
+      return value.toString(16).padStart(2, "0");
+    }).join("");
+  }
+
+  function clientLocalRecognitionStarted(state) {
+    if (!state || voiceLocalRecognition !== state || state.started_sent
+        || !voiceBindingIsCurrent() || !ws || ws.readyState !== 1) return false;
+    var frame = clientLocalCommonFrame("voice_local_recognition_started");
+    if (!frame) return false;
+    state.recognition_sequence = ++voiceLocalClientSequence;
+    Object.assign(frame, {
+      client_turn_id: state.client_turn_id,
+      chat_id: state.chat_id,
+      chat_context_revision: state.chat_context_revision,
+      recognition_sequence: state.recognition_sequence,
+    });
+    if (!send(frame)) return false;
+    state.started_sent = true;
+    state.binding_timer = setTimeout(function () {
+      if (voiceLocalRecognition !== state || state.binding) return;
+      voiceLocalRecognition = null;
+      state.cancelled = true;
+      scrubClientLocalRecognitionState(state);
+      try { state.recognizer.abort(); } catch (e) {}
+      scheduleClientLocalRecognition();
+    }, VOICE_LOCAL_TURN_BINDING_TIMEOUT_MS);
+    return true;
+  }
+
+  function sendClientLocalRecognitionFailure(state, reason) {
+    if (!state || !state.binding || state.failure_sent || !clientLocalFrameMatches(state.binding)
+        || !voiceBindingIsCurrent() || !ws || ws.readyState !== 1) {
+      return false;
+    }
+    var frame = clientLocalCommonFrame("voice_local_recognition_failed");
+    if (!frame) return false;
+    Object.assign(frame, {
+      client_turn_id: state.binding.client_turn_id,
+      turn_id: state.binding.turn_id,
+      submission_id: state.binding.submission_id,
+      request_generation: state.binding.request_generation,
+      chat_id: state.binding.chat_id,
+      chat_context_revision: state.binding.chat_context_revision,
+      recognition_sequence: state.binding.recognition_sequence,
+      reason: reason,
+    });
+    if (!send(frame)) return false;
+    state.failure_sent = true;
+    return true;
+  }
+
+  function removeClientLocalPendingRecognitionFailure(pending) {
+    var index = voiceLocalPendingRecognitionFailures.indexOf(pending);
+    if (index === -1) return false;
+    if (pending.timer) clearTimeout(pending.timer);
+    voiceLocalPendingRecognitionFailures.splice(index, 1);
+    return true;
+  }
+
+  function clearClientLocalPendingRecognitionFailures() {
+    voiceLocalPendingRecognitionFailures.forEach(function (pending) {
+      if (pending.timer) clearTimeout(pending.timer);
+    });
+    voiceLocalPendingRecognitionFailures = [];
+  }
+
+  function scrubClientLocalRecognitionState(state) {
+    if (!state) return;
+    if (state.binding_timer) clearTimeout(state.binding_timer);
+    state.binding_timer = null;
+    state.final_value = null;
+    state.recognizer.onstart = null;
+    state.recognizer.onresult = null;
+    state.recognizer.onerror = null;
+    state.recognizer.onend = null;
+    clearClientLocalTranscript();
+  }
+
+  function retainClientLocalRecognitionFailure(state, reason) {
+    if (!state || !state.started_sent || !Number.isSafeInteger(state.recognition_sequence)) return;
+    if (voiceLocalPendingRecognitionFailures.length >= VOICE_LOCAL_MAX_PENDING_FAILURES) {
+      removeClientLocalPendingRecognitionFailure(voiceLocalPendingRecognitionFailures[0]);
+    }
+    var pending = {
+      session_id: voiceSession && voiceSession.session_id,
+      generation: voiceSession && voiceSession.generation,
+      speech_revision: voiceSession && voiceSession.speech_revision,
+      connection_generation: connectionGeneration,
+      client_turn_id: state.client_turn_id,
+      chat_id: state.chat_id,
+      chat_context_revision: state.chat_context_revision,
+      recognition_sequence: state.recognition_sequence,
+      reason: reason,
+      binding: null,
+      expires_at: Date.now() + VOICE_LOCAL_TURN_BINDING_TIMEOUT_MS,
+      timer: null,
+    };
+    pending.timer = setTimeout(function () {
+      if (removeClientLocalPendingRecognitionFailure(pending)) {
+        scheduleClientLocalRecognition();
+      }
+    }, VOICE_LOCAL_TURN_BINDING_TIMEOUT_MS);
+    voiceLocalPendingRecognitionFailures.push(pending);
+  }
+
+  function clientLocalControlAuthorized() {
+    return voiceLocalReady && voiceSession && voiceSession.state === "active"
+      && voiceSession.foreground_active === true && voiceSession.microphone_enabled === true
+      && voiceSession.speech_muted === false && voiceSession.chat_context_synced === true
+      && voiceSession.visible_chat_id === activeChatId
+      && document.visibilityState !== "hidden" && !voiceLifecycleSuspended
+      && voiceBindingIsCurrent() && ws && ws.readyState === 1;
+  }
+
+  function clearClientLocalPendingFinal() {
+    var pending = voiceLocalPendingFinal;
+    if (pending && pending.timer) clearTimeout(pending.timer);
+    if (pending && pending.frame) {
+      pending.frame.text = "";
+      pending.frame.text_digest_sha256 = "";
+      pending.frame = null;
+    }
+    if (pending) pending.socket = null;
+    voiceLocalPendingFinal = null;
+  }
+
+  function failClientLocalPendingFinal() {
+    if (!voiceLocalPendingFinal) return;
+    var fence = currentVoiceFence();
+    clearClientLocalPendingFinal();
+    voiceRecoverySuppressed = true;
+    teardownVoiceMedia(true);
+    setVoiceFeedback("error", "stale_local_turn",
+      "Voice stopped because request acceptance could not be confirmed. Typed chat remains available.",
+      true);
+    if (voiceBindingIsCurrent()) bestEffortEndVoice(fence);
+    else if (fence) voicePendingEndFence = fence;
+  }
+
+  function scheduleClientLocalPendingFinalRetry(pending) {
+    if (voiceLocalPendingFinal !== pending) return;
+    if (pending.timer) clearTimeout(pending.timer);
+    var remaining = pending.expires_at - Date.now();
+    if (remaining <= 0) {
+      failClientLocalPendingFinal();
+      return;
+    }
+    pending.timer = setTimeout(function () {
+      pending.timer = null;
+      sendClientLocalPendingFinal(pending);
+    }, Math.min(VOICE_LOCAL_FINAL_RETRY_MS, remaining));
+  }
+
+  function sendClientLocalPendingFinal(pending) {
+    if (voiceLocalPendingFinal !== pending) return;
+    if (pending.socket !== ws || pending.connection_generation !== connectionGeneration) {
+      failClientLocalPendingFinal();
+      return;
+    }
+    if (pending.expires_at <= Date.now()) {
+      failClientLocalPendingFinal();
+      return;
+    }
+    if (voiceBindingIsCurrent() && ws && ws.readyState === 1) send(pending.frame);
+    scheduleClientLocalPendingFinalRetry(pending);
+  }
+
+  function armClientLocalPendingFinal(pending) {
+    pending.socket = ws;
+    pending.expires_at = Math.min(
+      Date.parse(pending.binding_expires_at),
+      Date.now() + VOICE_LOCAL_FINAL_ACK_TIMEOUT_MS
+    );
+    voiceLocalPendingFinal = pending;
+    sendClientLocalPendingFinal(pending);
+  }
+
+  function flushClientLocalPendingRecognitionFailures() {
+    var sentAny = false;
+    voiceLocalPendingRecognitionFailures.slice().forEach(function (pending) {
+      if (!pending.binding) return;
+      if (pending.expires_at <= Date.now()
+          || Date.parse(pending.binding.binding_expires_at) <= Date.now()
+          || !clientLocalFrameMatches(pending.binding)) {
+        removeClientLocalPendingRecognitionFailure(pending);
+        return;
+      }
+      var state = { binding: pending.binding, failure_sent: false };
+      if (sendClientLocalRecognitionFailure(state, pending.reason)) {
+        removeClientLocalPendingRecognitionFailure(pending);
+        sentAny = true;
+      }
+    });
+    if (sentAny) scheduleClientLocalRecognition();
+    return sentAny;
+  }
+
+  function stopClientLocalRecognition(reason, report) {
+    var state = voiceLocalRecognition;
+    if (!state) return;
+    state.cancelled = true;
+    if (report && state.started_sent) {
+      state.failure_reason = reason || "local_recognition_cancelled";
+      if (!state.binding) {
+        retainClientLocalRecognitionFailure(state, state.failure_reason);
+        voiceLocalRecognition = null;
+        scrubClientLocalRecognitionState(state);
+        try { state.recognizer.abort(); } catch (e) {
+          try { state.recognizer.stop(); } catch (_error) {}
+        }
+        return;
+      }
+      sendClientLocalRecognitionFailure(state, state.failure_reason);
+    }
+    voiceLocalRecognition = null;
+    scrubClientLocalRecognitionState(state);
+    try { state.recognizer.abort(); } catch (e) {
+      try { state.recognizer.stop(); } catch (_error) {}
+    }
+  }
+
+  function scheduleClientLocalRecognition() {
+    if (voiceLocalEchoTimer != null) {
+      clearTimeout(voiceLocalEchoTimer);
+      voiceLocalEchoTimer = null;
+    }
+    if (!clientLocalCanRecognize() || voiceLocalRecognition) return;
+    var remaining = voiceLocalEchoUntil - Date.now();
+    if (remaining > 0) {
+      var epoch = voiceStateEpoch;
+      voiceLocalEchoTimer = setTimeout(function () {
+        voiceLocalEchoTimer = null;
+        if (epoch === voiceStateEpoch) scheduleClientLocalRecognition();
+      }, remaining);
+      return;
+    }
+    var Recognition = window.SpeechRecognition;
+    if (typeof Recognition !== "function") {
+      setVoiceFeedback("unavailable", "local_recognition_unavailable", null, true);
+      return;
+    }
+    var recognizer;
+    try { recognizer = new Recognition(); } catch (e) {
+      setVoiceFeedback("unavailable", "local_recognition_unavailable", null, true);
+      return;
+    }
+    recognizer.lang = voiceLocalRequirements.configured_locale;
+    recognizer.continuous = false;
+    recognizer.interimResults = true;
+    recognizer.maxAlternatives = 1;
+    if (!("processLocally" in recognizer)) {
+      setVoiceFeedback("unavailable", "local_processing_not_guaranteed", null, true);
+      return;
+    }
+    recognizer.processLocally = true;
+    if (recognizer.processLocally !== true) {
+      setVoiceFeedback("unavailable", "local_processing_not_guaranteed", null, true);
+      return;
+    }
+    var state = {
+      recognizer: recognizer,
+      epoch: voiceStateEpoch,
+      client_turn_id: randomUuid4(),
+      chat_id: activeChatId,
+      chat_context_revision: voiceSession.chat_context_revision,
+      recognition_sequence: null,
+      binding_timer: null,
+      started_sent: false,
+      binding: null,
+      final_value: null,
+      final_sending: false,
+      final_sent: false,
+      failure_reason: null,
+      failure_sent: false,
+      cancelled: false,
+    };
+    voiceLocalRecognition = state;
+    recognizer.onstart = function () {
+      if (voiceLocalRecognition === state && state.epoch === voiceStateEpoch) {
+        setVoiceFeedback("listening", "ready", null, true);
+      }
+    };
+    recognizer.onresult = function (event) {
+      if (voiceLocalRecognition !== state || state.epoch !== voiceStateEpoch
+          || state.cancelled || state.final_sent) return;
+      var transcript = "";
+      var isFinal = false;
+      var remainingScalars = voiceLocalRequirements.max_final_unicode_scalars;
+      var oversized = false;
+      for (var index = 0; index < event.results.length; index++) {
+        var result = event.results[index];
+        if (result && result[0] && typeof result[0].transcript === "string") {
+          var scalarLength = boundedClientLocalScalarLength(
+            result[0].transcript, remainingScalars
+          );
+          if (scalarLength < 0) {
+            oversized = true;
+            break;
+          }
+          transcript += result[0].transcript;
+          remainingScalars -= scalarLength;
+          if (result.isFinal) isFinal = true;
+        }
+      }
+      if (oversized) {
+        if (!state.started_sent && !clientLocalRecognitionStarted(state)) return;
+        state.failure_reason = "local_final_malformed";
+        stopClientLocalRecognition(state.failure_reason, true);
+        setVoiceFeedback("error", state.failure_reason, null, true);
+        return;
+      }
+      if (!transcript) return;
+      if (!state.started_sent && !clientLocalRecognitionStarted(state)) return;
+      if (!isFinal) {
+        if (voiceTranscriptEl) {
+          voiceTranscriptEl.textContent = "Hearing: " + transcript;
+          voiceTranscriptEl.setAttribute("data-final", "false");
+        }
+        return;
+      }
+      var canonical = canonicalClientLocalText(
+        transcript,
+        voiceLocalRequirements.max_final_unicode_scalars
+      );
+      if (!canonical.text) {
+        state.failure_reason = canonical.reason;
+        if (state.binding) {
+          sendClientLocalRecognitionFailure(state, state.failure_reason);
+          stopClientLocalRecognition(state.failure_reason, false);
+          scheduleClientLocalRecognition();
+        }
+        return;
+      }
+      state.final_value = canonical.text;
+      if (voiceTranscriptEl) {
+        voiceTranscriptEl.textContent = "Heard: " + canonical.text;
+        voiceTranscriptEl.setAttribute("data-final", "true");
+      }
+      maybeSendClientLocalFinal(state);
+    };
+    recognizer.onerror = function (event) {
+      if (voiceLocalRecognition !== state || state.epoch !== voiceStateEpoch
+          || state.cancelled) return;
+      var reason = event && event.error === "aborted"
+        ? "local_recognition_cancelled" : "local_recognition_failed";
+      state.failure_reason = reason;
+      if (state.binding) {
+        sendClientLocalRecognitionFailure(state, reason);
+        stopClientLocalRecognition(reason, false);
+        scheduleClientLocalRecognition();
+      } else if (!state.started_sent) {
+        stopClientLocalRecognition(reason, false);
+      }
+      setVoiceFeedback("error", reason, null, true);
+    };
+    recognizer.onend = function () {
+      if (voiceLocalRecognition !== state || state.epoch !== voiceStateEpoch) return;
+      state.recognition_ended = true;
+      if (!state.started_sent) {
+        voiceLocalRecognition = null;
+        scheduleClientLocalRecognition();
+        return;
+      }
+      if (state.final_value || state.final_sending || state.final_sent) {
+        maybeSendClientLocalFinal(state);
+        return;
+      }
+      if (!state.failure_reason) state.failure_reason = "local_recognition_failed";
+      if (!state.binding) return;
+      sendClientLocalRecognitionFailure(state, state.failure_reason);
+      stopClientLocalRecognition(state.failure_reason, false);
+      scheduleClientLocalRecognition();
+      setVoiceFeedback("error", state.failure_reason, null, true);
+    };
+    try { recognizer.start(); } catch (e) {
+      voiceLocalRecognition = null;
+      setVoiceFeedback("error", "local_recognition_failed", null, true);
+    }
+  }
+
+  async function maybeSendClientLocalFinal(state) {
+    if (!state || voiceLocalRecognition !== state || !state.binding
+        || !state.final_value || state.final_sending || state.final_sent) return;
+    state.final_sending = true;
+    var epoch = voiceStateEpoch;
+    var value = state.final_value;
+    var digestResult = await clientLocalAwait(
+      clientLocalSha256(value), Date.parse(state.binding.binding_expires_at)
+    );
+    if (!digestResult.completed || digestResult.error) {
+      state.final_sending = false;
+      state.failure_reason = "local_final_malformed";
+      sendClientLocalRecognitionFailure(state, state.failure_reason);
+      stopClientLocalRecognition(state.failure_reason, false);
+      scheduleClientLocalRecognition();
+      return;
+    }
+    var digest = digestResult.value;
+    if (voiceLocalRecognition !== state || state.epoch !== epoch
+        || epoch !== voiceStateEpoch || state.cancelled || state.final_sent
+        || !clientLocalControlAuthorized()
+        || !clientLocalFrameMatches(state.binding)
+        || Date.parse(state.binding.binding_expires_at) <= Date.now()
+        || !voiceBindingIsCurrent() || !ws || ws.readyState !== 1) return;
+    var frame = clientLocalCommonFrame("voice_local_final");
+    Object.assign(frame, {
+      client_turn_id: state.binding.client_turn_id,
+      turn_id: state.binding.turn_id,
+      submission_id: state.binding.submission_id,
+      request_generation: state.binding.request_generation,
+      chat_id: state.binding.chat_id,
+      chat_context_revision: state.binding.chat_context_revision,
+      recognition_sequence: state.binding.recognition_sequence,
+      final: true,
+      recognized_locale: voiceLocalRequirements.configured_locale,
+      text: value,
+      text_digest_sha256: digest,
+    });
+    state.final_sent = true;
+    state.final_value = null;
+    armClientLocalPendingFinal({
+      epoch: epoch,
+      frame: frame,
+      session_id: frame.session_id,
+      generation: frame.generation,
+      speech_revision: frame.speech_revision,
+      connection_generation: frame.connection_generation,
+      client_turn_id: frame.client_turn_id,
+      turn_id: frame.turn_id,
+      submission_id: frame.submission_id,
+      request_generation: frame.request_generation,
+      chat_id: frame.chat_id,
+      chat_context_revision: frame.chat_context_revision,
+      recognition_sequence: frame.recognition_sequence,
+      binding_expires_at: state.binding.binding_expires_at,
+      expires_at: null,
+      socket: null,
+      timer: null,
+    });
+    voiceLocalRecognition = null;
+    try { state.recognizer.stop(); } catch (e) {}
+  }
+
+  function consumeClientLocalSessionReady(frame) {
+    var keys = [
+      "applied_chat_context_revision", "chat_context_revision", "chat_id", "configured_locale",
+      "connection_generation", "contract", "device_id", "foreground_active", "generation",
+      "lease_expires_at", "microphone_enabled", "schema_version", "session_id",
+      "speech_backend", "speech_muted", "speech_revision", "transport", "type",
+    ];
+    if (!exactKeys(frame, keys) || frame.type !== "voice_local_session_ready"
+        || !clientLocalFrameMatches(frame) || frame.contract !== "client_local/v1"
+        || frame.transport !== "client_local" || frame.configured_locale !== "en-US"
+        || frame.chat_id !== activeChatId
+        || frame.chat_context_revision !== voiceSession.chat_context_revision
+        || frame.applied_chat_context_revision !== frame.chat_context_revision
+        || frame.foreground_active !== true
+        || frame.microphone_enabled !== true
+        || frame.speech_muted !== false
+        || !isRfc3339Utc(frame.lease_expires_at)
+        || Date.parse(frame.lease_expires_at) <= Date.now()) return false;
+    voiceSession = Object.assign({}, voiceSession, {
+      state: "active",
+      foreground_active: true,
+      microphone_enabled: frame.microphone_enabled,
+      speech_muted: frame.speech_muted,
+      applied_chat_context_revision: frame.applied_chat_context_revision,
+      chat_context_synced: true,
+    });
+    voiceLastSession = voiceSession;
+    voiceLocalReady = true;
+    voiceLocalResumeMicrophoneEnabled = frame.microphone_enabled;
+    startVoiceLeaseHeartbeat();
+    setVoiceFeedback(frame.speech_muted ? "muted" : "listening", "ready", null, true);
+    applyVoiceCaptureState();
+    return true;
+  }
+
+  function consumeClientLocalTurnBound(frame) {
+    var keys = [
+      "binding_expires_at", "chat_context_revision", "chat_id", "client_turn_id",
+      "connection_generation", "device_id", "generation", "recognition_sequence",
+      "request_generation", "schema_version", "session_id", "speech_backend",
+      "speech_revision", "submission_id", "turn_id", "type",
+    ];
+    if (!exactKeys(frame, keys) || frame.type !== "voice_local_turn_bound"
+        || !clientLocalFrameMatches(frame)
+        || !isCanonicalUuid4(frame.turn_id) || !isCanonicalUuid4(frame.submission_id)
+        || !isCanonicalUuid4(frame.request_generation)
+        || !isRfc3339Utc(frame.binding_expires_at)
+        || Date.parse(frame.binding_expires_at) <= Date.now()
+        || Date.parse(frame.binding_expires_at) - Date.now()
+          > VOICE_LOCAL_TURN_BINDING_TIMEOUT_MS + 1000) return false;
+    var state = voiceLocalRecognition;
+    if ((!state || state.binding || frame.client_turn_id !== state.client_turn_id
+        || frame.recognition_sequence !== state.recognition_sequence
+        || frame.chat_id !== state.chat_id
+        || frame.chat_context_revision !== state.chat_context_revision)) {
+      var pending = voiceLocalPendingRecognitionFailures.find(function (candidate) {
+        return !candidate.binding
+          && candidate.session_id === frame.session_id
+          && candidate.generation === frame.generation
+          && candidate.speech_revision === frame.speech_revision
+          && candidate.connection_generation === frame.connection_generation
+          && candidate.client_turn_id === frame.client_turn_id
+          && candidate.chat_id === frame.chat_id
+          && candidate.chat_context_revision === frame.chat_context_revision
+          && candidate.recognition_sequence === frame.recognition_sequence;
+      });
+      if (!pending || pending.binding || pending.expires_at <= Date.now()
+      ) return false;
+      pending.binding = frame;
+      pending.expires_at = Math.min(
+        pending.expires_at, Date.parse(frame.binding_expires_at)
+      );
+      flushClientLocalPendingRecognitionFailures();
+      return true;
+    }
+    if (frame.chat_id !== activeChatId
+        || frame.chat_context_revision !== voiceSession.chat_context_revision) return false;
+    state.binding = frame;
+    if (state.binding_timer) clearTimeout(state.binding_timer);
+    state.binding_timer = null;
+    if (state.failure_reason) {
+      sendClientLocalRecognitionFailure(state, state.failure_reason);
+      stopClientLocalRecognition(state.failure_reason, false);
+      scheduleClientLocalRecognition();
+    } else {
+      maybeSendClientLocalFinal(state);
+    }
+    return true;
+  }
+
+  function consumeClientLocalFinalRejected(frame) {
+    var keys = [
+      "chat_context_revision", "chat_id", "client_turn_id", "connection_generation",
+      "device_id", "generation", "occurred_at", "recognition_sequence", "reason",
+      "request_generation", "retry_policy", "schema_version", "session_id",
+      "speech_backend", "speech_revision", "submission_id", "turn_id", "type",
+    ];
+    var reasons = {
+      altered_local_final: true, capacity_exhausted: true, invalid_binding: true,
+      local_final_empty: true, local_final_malformed: true, local_final_oversized: true,
+      local_language_mismatch: true, stale_chat_context: true, stale_connection: true,
+      stale_local_turn: true, stale_session: true, stale_speech_revision: true,
+    };
+    var pending = voiceLocalPendingFinal;
+    if (!exactKeys(frame, keys) || frame.type !== "voice_local_final_rejected"
+        || !clientLocalFrameMatches(frame) || !pending
+        || frame.client_turn_id !== pending.client_turn_id || frame.turn_id !== pending.turn_id
+        || frame.submission_id !== pending.submission_id
+        || frame.request_generation !== pending.request_generation
+        || frame.chat_id !== pending.chat_id
+        || frame.chat_context_revision !== pending.chat_context_revision
+        || frame.recognition_sequence !== pending.recognition_sequence
+        || !reasons[frame.reason]
+        || ["none", "explicit_user_retry"].indexOf(frame.retry_policy) === -1
+        || !isRfc3339Utc(frame.occurred_at)) return false;
+    clearClientLocalPendingFinal();
+    setVoiceFeedback("error", frame.reason, "That spoken request was not accepted. You can try again or keep typing.", true);
+    scheduleClientLocalRecognition();
+    return true;
+  }
+
+  function sendClientLocalPlayoutEvent(active, phase, reason) {
+    if (!active || !clientLocalFrameMatches(active.frame)
+        || !voiceBindingIsCurrent() || !ws || ws.readyState !== 1) return false;
+    var frame = clientLocalCommonFrame("voice_local_playout_event");
+    Object.assign(frame, {
+      announcement_id: active.frame.announcement_id,
+      announcement_sequence: active.frame.announcement_sequence,
+      turn_id: active.frame.turn_id,
+      kind: active.frame.kind,
+      phase: phase,
+      client_sequence: ++voiceLocalClientSequence,
+      observed_at: new Date().toISOString(),
+    });
+    if (reason) frame.reason = reason;
+    send(frame);
+    return true;
+  }
+
+  function settleClientLocalAnnouncementQueue() {
+    if (voiceLocalActiveAnnouncement || voiceLocalAnnouncementQueue.length) return;
+    voiceLocalEchoUntil = Date.now()
+      + (voiceLocalRequirements && voiceLocalRequirements.echo_suppression_milliseconds || 500);
+    scheduleClientLocalRecognition();
+  }
+
+  function finishClientLocalAnnouncement(active, phase, reason, suppressNext) {
+    if (!active || active.terminal || voiceLocalActiveAnnouncement !== active) return;
+    active.terminal = true;
+    if (active.timer) clearTimeout(active.timer);
+    voiceLocalActiveAnnouncement = null;
+    if (phase) sendClientLocalPlayoutEvent(active, phase, reason);
+    active.frame.text = "";
+    if (suppressNext) return;
+    if (voiceLocalAnnouncementQueue.length) startNextClientLocalAnnouncement();
+    else settleClientLocalAnnouncementQueue();
+  }
+
+  function cancelClientLocalPlayout(reason, report) {
+    var active = voiceLocalActiveAnnouncement;
+    voiceLocalAnnouncementQueue.forEach(function (frame) { frame.text = ""; });
+    voiceLocalAnnouncementQueue = [];
+    if (active) {
+      active.terminal = true;
+      if (active.timer) clearTimeout(active.timer);
+      voiceLocalActiveAnnouncement = null;
+      if (report) sendClientLocalPlayoutEvent(
+        active,
+        active.started ? "interrupted" : "failed",
+        reason || "stopped_by_user"
+      );
+      active.frame.text = "";
+    }
+    try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+    voiceLocalEchoUntil = Date.now()
+      + (voiceLocalRequirements && voiceLocalRequirements.echo_suppression_milliseconds || 500);
+  }
+
+  function clientLocalAnnouncementAuthorityCurrent(frame) {
+    return clientLocalFrameMatches(frame) && voiceLocalReady && voiceSession
+      && voiceLocalRequirements
+      && voiceSession.state === "active" && voiceSession.foreground_active === true
+      && voiceSession.microphone_enabled === true && voiceSession.speech_muted === false
+      && voiceSession.chat_context_synced === true
+      && voiceSession.visible_chat_id === activeChatId
+      && frame.locale === voiceLocalRequirements.configured_locale
+      && document.visibilityState !== "hidden" && !voiceLifecycleSuspended
+      && voiceBindingIsCurrent() && Date.parse(frame.expires_at) > Date.now();
+  }
+
+  function startNextClientLocalAnnouncement() {
+    if (voiceLocalActiveAnnouncement || !voiceLocalAnnouncementQueue.length) return;
+    var frame = voiceLocalAnnouncementQueue.shift();
+    var voice = clientLocalVoiceForLocale(frame.locale);
+    if (!clientLocalAnnouncementAuthorityCurrent(frame) || !voice) {
+      var expired = { frame: frame };
+      if (Date.parse(frame.expires_at) <= Date.now()) {
+        sendClientLocalPlayoutEvent(expired, "failed", "local_announcement_expired");
+      } else if (clientLocalFrameMatches(frame) && voiceBindingIsCurrent() && !voice) {
+        sendClientLocalPlayoutEvent(expired, "failed", "local_synthesis_failed");
+      }
+      frame.text = "";
+      if (voiceLocalAnnouncementQueue.length) startNextClientLocalAnnouncement();
+      else settleClientLocalAnnouncementQueue();
+      return;
+    }
+    stopClientLocalRecognition("local_audio_interrupted", true);
+    var utterance;
+    try { utterance = new window.SpeechSynthesisUtterance(frame.text); } catch (e) {
+      sendClientLocalPlayoutEvent({ frame: frame }, "failed", "local_synthesis_failed");
+      frame.text = "";
+      if (voiceLocalAnnouncementQueue.length) startNextClientLocalAnnouncement();
+      else settleClientLocalAnnouncementQueue();
+      return;
+    }
+    utterance.lang = frame.locale;
+    utterance.voice = voice;
+    var active = {
+      frame: frame,
+      utterance: utterance,
+      epoch: voiceStateEpoch,
+      started: false,
+      terminal: false,
+      timer: null,
+    };
+    voiceLocalActiveAnnouncement = active;
+    utterance.onstart = function () {
+      if (voiceLocalActiveAnnouncement !== active || active.epoch !== voiceStateEpoch
+          || !clientLocalAnnouncementAuthorityCurrent(frame)) {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+        finishClientLocalAnnouncement(active,
+          Date.parse(frame.expires_at) <= Date.now() ? "failed" : null,
+          Date.parse(frame.expires_at) <= Date.now() ? "local_announcement_expired" : null);
+        return;
+      }
+      active.started = true;
+      sendClientLocalPlayoutEvent(active, "started");
+      setVoiceFeedback(frame.kind === "greeting" ? "greeting" : "speaking_progress", "ready", null, true);
+    };
+    utterance.onend = function () {
+      if (voiceLocalActiveAnnouncement !== active || active.epoch !== voiceStateEpoch) return;
+      finishClientLocalAnnouncement(active, active.started ? "finished" : "failed",
+        active.started ? null : "local_synthesis_failed");
+    };
+    utterance.onerror = function () {
+      if (voiceLocalActiveAnnouncement !== active || active.epoch !== voiceStateEpoch) return;
+      finishClientLocalAnnouncement(active, "failed", "local_synthesis_failed");
+      setVoiceFeedback("error", "local_synthesis_failed", null, true);
+    };
+    active.timer = setTimeout(function () {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+      finishClientLocalAnnouncement(active, "failed", "local_announcement_expired");
+    }, Math.max(1, Date.parse(frame.expires_at) - Date.now()));
+    try { window.speechSynthesis.speak(utterance); } catch (e) {
+      finishClientLocalAnnouncement(active, "failed", "local_synthesis_failed");
+    }
+  }
+
+  async function consumeClientLocalAnnouncement(frame) {
+    var keys = [
+      "announcement_id", "announcement_sequence", "connection_generation", "consent_revision",
+      "device_id", "expires_at", "foreground_required", "generation", "kind", "locale",
+      "mute_revision", "output_policy", "schema_version", "session_id", "speech_backend",
+      "speech_revision", "text", "text_digest_sha256", "turn_id", "type",
+    ];
+    var kinds = [
+      "greeting", "acknowledgement", "progress", "waiting", "result",
+      "sensitive_notice", "failure", "refusal", "cancellation",
+    ];
+    if (!exactKeys(frame, keys) || frame.type !== "voice_local_announcement"
+        || !clientLocalFrameMatches(frame) || !isCanonicalUuid4(frame.announcement_id)
+        || frame.announcement_sequence !== voiceLocalLastAnnouncementSequence + 1
+        || kinds.indexOf(frame.kind) === -1
+        || ["lifecycle", "full_recap"].indexOf(frame.output_policy) === -1
+        || (frame.kind === "greeting" ? frame.turn_id !== null : !isCanonicalUuid4(frame.turn_id))
+        || frame.locale !== voiceLocalRequirements.configured_locale
+        || frame.foreground_required !== true || !clientLocalAnnouncementAuthorityCurrent(frame)
+        || !Number.isSafeInteger(frame.mute_revision)
+        || frame.mute_revision < 1 || !Number.isSafeInteger(frame.consent_revision)
+        || frame.consent_revision < 1
+        || frame.mute_revision < voiceLocalLastMuteRevision
+        || frame.consent_revision < voiceLocalLastConsentRevision
+        || !/^[0-9a-f]{64}$/.test(frame.text_digest_sha256)
+        || !isRfc3339Utc(frame.expires_at) || Date.parse(frame.expires_at) <= Date.now()
+        || Date.parse(frame.expires_at) - Date.now()
+          > voiceLocalRequirements.announcement_ttl_seconds * 1000 + 1000) return false;
+    if (!validClientLocalAnnouncementText(frame.text)
+        || new TextEncoder().encode(frame.text).length
+          > voiceLocalRequirements.max_announcement_utf8_bytes) return false;
+    var epoch = voiceStateEpoch;
+    var expectedSequence = voiceLocalLastAnnouncementSequence + 1;
+    var digestResult = await clientLocalAwait(
+      clientLocalSha256(frame.text), Date.parse(frame.expires_at)
+    );
+    if (!digestResult.completed || digestResult.error) return false;
+    var digest = digestResult.value;
+    if (epoch !== voiceStateEpoch || !clientLocalAnnouncementAuthorityCurrent(frame)
+        || frame.announcement_sequence !== expectedSequence
+        || voiceLocalLastAnnouncementSequence + 1 !== expectedSequence
+        || frame.mute_revision < voiceLocalLastMuteRevision
+        || frame.consent_revision < voiceLocalLastConsentRevision
+        || digest !== frame.text_digest_sha256
+        || Date.parse(frame.expires_at) <= Date.now()) return false;
+    voiceLocalLastAnnouncementSequence = frame.announcement_sequence;
+    voiceLocalLastMuteRevision = Math.max(voiceLocalLastMuteRevision, frame.mute_revision);
+    voiceLocalLastConsentRevision = Math.max(
+      voiceLocalLastConsentRevision, frame.consent_revision
+    );
+    voiceLocalAnnouncementQueue.push(Object.assign({}, frame));
+    startNextClientLocalAnnouncement();
+    return true;
+  }
+
+  function enqueueClientLocalAnnouncement(frame) {
+    var retained = voiceLocalAnnouncementIngress.length + voiceLocalAnnouncementQueue.length
+      + (voiceLocalAnnouncementDigesting ? 1 : 0) + (voiceLocalActiveAnnouncement ? 1 : 0);
+    if (retained >= VOICE_LOCAL_MAX_ANNOUNCEMENTS) return false;
+    voiceLocalAnnouncementIngress.push(Object.assign({}, frame));
+    drainClientLocalAnnouncements();
+    return true;
+  }
+
+  async function drainClientLocalAnnouncements() {
+    if (voiceLocalAnnouncementDraining) return;
+    voiceLocalAnnouncementDraining = true;
+    try {
+      while (voiceLocalAnnouncementIngress.length) {
+        var frame = voiceLocalAnnouncementIngress.shift();
+        voiceLocalAnnouncementDigesting = frame;
+        try { await consumeClientLocalAnnouncement(frame); } catch (e) {}
+        frame.text = "";
+        if (voiceLocalAnnouncementDigesting === frame) voiceLocalAnnouncementDigesting = null;
+      }
+    } finally {
+      voiceLocalAnnouncementDigesting = null;
+      voiceLocalAnnouncementDraining = false;
+      if (voiceLocalAnnouncementIngress.length) drainClientLocalAnnouncements();
+    }
+  }
+
+  function clearClientLocalTranscript() {
+    if (!voiceTranscriptEl) return;
+    voiceTranscriptEl.textContent = "";
+    voiceTranscriptEl.removeAttribute("data-final");
+    voiceTranscriptEl.removeAttribute("data-accepted");
+    voiceTranscriptEl.removeAttribute("data-rejected");
+  }
+
+  function clearClientLocalSpeech(clearSession) {
+    if (voiceLocalEchoTimer != null) clearTimeout(voiceLocalEchoTimer);
+    voiceLocalEchoTimer = null;
+    stopClientLocalRecognition("local_recognition_cancelled", !clearSession);
+    cancelClientLocalPlayout("stopped_by_user", false);
+    voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
+    voiceLocalAnnouncementIngress = [];
+    if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
+    voiceLocalAnnouncementDigesting = null;
+    clearClientLocalTranscript();
+    voiceLocalReady = false;
+    if (clearSession) clearClientLocalPendingFinal();
+    if (clearSession) {
+      clearClientLocalPendingRecognitionFailures();
+      voiceLocalClientSequence = 0;
+      voiceLocalLastAnnouncementSequence = 0;
+      voiceLocalLastMuteRevision = 0;
+      voiceLocalLastConsentRevision = 0;
+      voiceLocalRequirements = null;
+      voiceSpeechBackend = null;
+      voiceLocalResuming = false;
+      hideClientLocalInstall();
+    }
+  }
+
+  async function resumeClientLocalSpeech() {
+    if (voiceSpeechBackend !== "client_local" || !voiceSession || !voiceLocalRequirements
+        || !voiceBindingIsCurrent() || document.visibilityState === "hidden"
+        || voiceLocalResuming) return;
+    voiceLocalResuming = true;
+    try {
+      var epoch = voiceStateEpoch;
+      var deadlineAt = Date.now() + VOICE_LOCAL_ACTIVATION_TIMEOUT_MS;
+      var probed = await probeClientLocalCapability(voiceLocalRequirements, {
+        allow_permission_prompt: false,
+        deadline_at: deadlineAt,
+      });
+      if (epoch !== voiceStateEpoch || !probed.eligible || !voiceSession
+          || !voiceBindingIsCurrent()) {
+        setVoiceFeedback("unavailable", probed.reason || "local_engine_lost", null, true);
+        return;
+      }
+      var resumed = await patchVoiceSession({
+        foreground_active: true,
+        foreground_reason: "foreground",
+        microphone_enabled: voiceLocalResumeMicrophoneEnabled,
+      }, null, Math.max(1, deadlineAt - Date.now()));
+      if (!resumed || epoch !== voiceStateEpoch || !voiceSession
+          || !voiceBindingIsCurrent() || document.visibilityState === "hidden") return;
+      if (!voiceSession.microphone_enabled || voiceSession.speech_muted
+          || !voiceSession.foreground_active || !voiceSession.chat_context_synced
+          || voiceSession.visible_chat_id !== activeChatId) return;
+      sendClientLocalReady(probed.capability);
+    } finally {
+      voiceLocalResuming = false;
+    }
+  }
+
   function pauseVoiceCaptureForChatTransition() {
+    if (voiceSpeechBackend === "client_local") {
+      stopClientLocalRecognition("local_recognition_cancelled", true);
+      cancelClientLocalPlayout("local_audio_interrupted", true);
+      voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
+      voiceLocalAnnouncementIngress = [];
+      if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
+      clearClientLocalTranscript();
+      return;
+    }
     if (!voiceStream) return;
     try {
       voiceStream.getAudioTracks().forEach(function (track) { track.enabled = false; });
@@ -2194,7 +3906,12 @@
     // request so a slow or failed network path cannot leave stale speech
     // audible.  The server request below still owns the authoritative speech
     // epoch and existing error/state semantics.
-    clearVoiceAudioElements();
+    if (voiceSpeechBackend === "client_local") {
+      cancelClientLocalPlayout("stopped_by_user", true);
+      scheduleClientLocalRecognition();
+    } else {
+      clearVoiceAudioElements();
+    }
     voiceRequest("/api/voice/sessions/" + encodeURIComponent(fence.session_id) + "/speech/stop", "POST", {
       expected_generation: fence.generation,
       expected_media_grant_revision: fence.media_grant_revision,
@@ -2231,12 +3948,49 @@
       case "voice_microphone_set": {
         var enable = !control.pressed;
         patchVoiceSession({ microphone_enabled: enable }, function () {
+          if (voiceSpeechBackend === "client_local" && voiceSession) {
+            if (!enable) {
+              voiceLocalResumeMicrophoneEnabled = false;
+              stopClientLocalRecognition("stopped_by_user", true);
+              cancelClientLocalPlayout("stopped_by_user", true);
+              voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
+              voiceLocalAnnouncementIngress = [];
+              if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
+              clearClientLocalTranscript();
+            }
+          }
           if (voiceStream) voiceStream.getAudioTracks().forEach(function (track) { track.enabled = enable; });
+        }).then(function (updated) {
+          if (voiceSpeechBackend === "client_local" && voiceSession) {
+            voiceLocalResumeMicrophoneEnabled = voiceSession.microphone_enabled;
+          }
+          if (updated && enable && voiceSpeechBackend === "client_local" && !voiceLocalReady) {
+            resumeClientLocalSpeech();
+          }
         });
         break;
       }
       case "voice_speech_stop": stopVoiceSpeech(); break;
-      case "voice_speech_mute_set": patchVoiceSession({ speech_muted: !control.pressed }); break;
+      case "voice_speech_mute_set": {
+        var mute = !control.pressed;
+        patchVoiceSession({ speech_muted: mute }, function () {
+          if (voiceSpeechBackend === "client_local" && voiceSession) {
+            if (mute) {
+              stopClientLocalRecognition("stopped_by_user", true);
+              cancelClientLocalPlayout("stopped_by_user", true);
+              voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
+              voiceLocalAnnouncementIngress = [];
+              if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
+              clearClientLocalTranscript();
+            }
+          }
+        }).then(function (updated) {
+          if (updated && !mute && voiceSpeechBackend === "client_local" && !voiceLocalReady) {
+            resumeClientLocalSpeech();
+          }
+        });
+        break;
+      }
       case "voice_visible_chat_update":
         if (activeChatId) syncVoiceVisibleChat(activeChatId);
         break;
@@ -2274,6 +4028,15 @@
         foreground_active: frame.foreground_active,
       });
       voiceLastSession = voiceSession;
+      if (voiceSpeechBackend === "client_local"
+          && (voiceSession.state !== "active" || !voiceSession.foreground_active
+            || !voiceSession.microphone_enabled || voiceSession.speech_muted
+            || !voiceSession.chat_context_synced
+            || voiceSession.visible_chat_id !== activeChatId)) {
+        stopClientLocalRecognition("local_recognition_cancelled", true);
+        cancelClientLocalPlayout("local_audio_interrupted", true);
+        clearClientLocalTranscript();
+      }
     }
     if (frame.state === "ended") {
       voiceRecoverySuppressed = true;
@@ -2516,6 +4279,16 @@
         || !isCanonicalUuid4(frame.voice_turn_id) || !isCanonicalUuid4(frame.chat_id)
         || !isCanonicalUuid4(frame.submission_id) || !isCanonicalUuid4(frame.request_generation)
         || !Number.isSafeInteger(frame.message_id) || frame.message_id < 1) return false;
+    var localPending = voiceLocalPendingFinal;
+    if (localPending && frame.voice_turn_id === localPending.turn_id
+        && frame.chat_id === localPending.chat_id
+        && frame.submission_id === localPending.submission_id
+        && frame.request_generation === localPending.request_generation) {
+      clearClientLocalPendingFinal();
+      if (voiceTranscriptEl) voiceTranscriptEl.setAttribute("data-accepted", "true");
+      scheduleClientLocalRecognition();
+      return true;
+    }
     var pending = voicePendingSubmissions[frame.submission_id];
     if (!pending || pending.turn_id !== frame.voice_turn_id
         || pending.chat_id !== frame.chat_id
@@ -3077,7 +4850,18 @@
 
   function suspendVoiceForLifecycle(reason) {
     var fence = voiceRecoverableFence();
-    if (!fence || voiceLifecycleSuspended) return;
+    if (voiceLifecycleSuspended) return;
+    if (!fence) {
+      if (voiceActivation || voiceBackendProbe) {
+        voiceLifecycleSuspended = true;
+        teardownVoiceMedia(false);
+        setVoiceFeedback("suspended", reason, null, true);
+      }
+      return;
+    }
+    if (voiceSpeechBackend === "client_local" && voiceSession) {
+      voiceLocalResumeMicrophoneEnabled = voiceSession.microphone_enabled;
+    }
     voiceLifecycleSuspended = true;
     clearVoiceRecovery();
     teardownVoiceMedia(false);
@@ -3094,6 +4878,9 @@
   function suspendVoiceForNetworkLoss() {
     var fence = voiceRecoverableFence();
     if (!fence) return;
+    if (voiceSpeechBackend === "client_local" && voiceSession) {
+      voiceLocalResumeMicrophoneEnabled = voiceSession.microphone_enabled;
+    }
     voiceLifecycleSuspended = false;
     clearVoiceRecovery();
     teardownVoiceMedia(false);
@@ -3118,6 +4905,10 @@
           resumeVoiceForLifecycle();
         }
       });
+      return;
+    }
+    if (voiceSpeechBackend === "client_local") {
+      resumeClientLocalSpeech();
       return;
     }
     if (!voiceBindingIsCurrent()) {
@@ -3173,9 +4964,53 @@
     if (!resumptions.length) return;
     Promise.all(resumptions).then(hideVoiceAudioResume).catch(showVoiceAudioResume);
   });
+  if (voiceLocalInstallEl) voiceLocalInstallEl.addEventListener("click", async function () {
+    var context = voiceLocalInstallContext;
+    var Recognition = window.SpeechRecognition;
+    if (!context || context.connection_generation !== connectionGeneration
+        || !voiceBindingIsCurrent() || context.binding_id !== voiceBinding.binding_id
+        || context.chat_id !== activeChatId
+        || typeof Recognition !== "function"
+        || typeof Recognition.install !== "function") {
+      hideClientLocalInstall();
+      setVoiceFeedback("unavailable", "local_language_install_failed", null, true);
+      return;
+    }
+    voiceLocalInstallEl.disabled = true;
+    setVoiceFeedback("connecting", "local_language_installing", null, true);
+    var installPromise;
+    try {
+      installPromise = Recognition.install({
+        langs: [context.capability.requirements.configured_locale],
+      });
+    } catch (e) { installPromise = Promise.reject(e); }
+    var installResult = await clientLocalAwait(
+      installPromise,
+      Date.now() + VOICE_LOCAL_INSTALL_TIMEOUT_MS
+    );
+    var installed = installResult.completed && !installResult.error && installResult.value === true;
+    voiceLocalInstallEl.disabled = false;
+    if (!installed || voiceLocalInstallContext !== context
+        || context.connection_generation !== connectionGeneration
+        || !voiceBindingIsCurrent() || context.binding_id !== voiceBinding.binding_id
+        || context.chat_id !== activeChatId || document.visibilityState === "hidden") {
+      hideClientLocalInstall();
+      setVoiceFeedback("unavailable", "local_language_install_failed", null, true);
+      return;
+    }
+    hideClientLocalInstall();
+    beginVoiceActivation(context.kind);
+  });
   installVoiceCapabilityWatchers();
 
-  function send(obj) { try { ws.send(JSON.stringify(obj)); } catch (e) {} }
+  function send(obj) {
+    try {
+      ws.send(JSON.stringify(obj));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   /** Create the client-owned retry/generation identity before any socket I/O. */
   function beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus) {
@@ -4383,6 +6218,20 @@
     switch (data.type) {
       case "voice_control_binding":
         consumeVoiceControlBinding(data);
+        break;
+      case "voice_local_session_ready":
+        consumeClientLocalSessionReady(data);
+        break;
+      case "voice_local_turn_bound":
+        consumeClientLocalTurnBound(data);
+        break;
+      case "voice_local_final_rejected":
+        consumeClientLocalFinalRejected(data);
+        break;
+      case "voice_local_announcement":
+        if (new TextEncoder().encode(ev.data).length <= 4096) {
+          enqueueClientLocalAnnouncement(data);
+        }
         break;
       case "composer_state":
         consumeComposerState(data);
@@ -5913,6 +7762,8 @@
     voiceComposer = null;
     voiceComposerRevision = -1;
     voiceTakeover = null;
+    voiceBackendCapability = null;
+    voiceBackendPrime = null;
     clearVoiceBindingRenewal();
     if (voiceControlsEl && !preserveVoiceControls) {
       // 066: never leave the composer without a voice affordance.
@@ -5947,6 +7798,9 @@
       operationSubmissionById = Object.create(null);
       clearVoiceBindingRenewal();
       voiceBinding = null;
+      if (voiceSpeechBackend === "client_local" && voiceLocalPendingFinal) {
+        failClientLocalPendingFinal();
+      }
       if (voiceRecoverableFence() && document.visibilityState !== "hidden") {
         if (!beginVoiceRecovery("network_interrupted")) suspendVoiceForNetworkLoss();
       } else if (voiceActivation) {
@@ -5973,11 +7827,13 @@
     else refreshToken(false, function () { connect(); });
   }).catch(function () { connect(); });
 
-  // Warm the lazy Plotly and LiveKit bundles once the boot work has settled so
-  // the first chart-bearing turn and the first voice gesture are usually
-  // already loaded. Prefetching LiveKit is what keeps its move out of the shell
-  // a page-load win rather than an activation-budget regression.
-  function idlePrefetchVendorBundles() { ensurePlotly(null); ensureLiveKitSdk(null); }
+  // Plotly is backend-neutral. LiveKit is deliberately not prefetched until
+  // authenticated v2 discovery selects llm_factory; a client_local page must
+  // never fetch or parse the remote media stack.
+  function idlePrefetchVendorBundles() {
+    ensurePlotly(null);
+    if (voiceSpeechBackend === "llm_factory") ensureLiveKitSdk(null);
+  }
   if (window.requestIdleCallback) window.requestIdleCallback(idlePrefetchVendorBundles, { timeout: 5000 });
   else setTimeout(idlePrefetchVendorBundles, 2500);
 })();

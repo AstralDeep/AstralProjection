@@ -88,6 +88,7 @@ def test_shell_hosts_accessible_voice_controls_without_replacing_typed_chat() ->
     status = parser.by_id["astral-voice-status"]
     transcript = parser.by_id["astral-voice-transcript"]
     resume = parser.by_id["astral-voice-audio-resume"]
+    local_install = parser.by_id["astral-voice-local-install"]
     terminal_notice = parser.by_id["astral-voice-turn-notice"]
 
     assert controls["role"] == "group"
@@ -99,6 +100,9 @@ def test_shell_hosts_accessible_voice_controls_without_replacing_typed_chat() ->
     assert transcript["aria-live"] == "polite"
     assert resume["type"] == "button"
     assert resume["hidden"] is None
+    assert local_install["type"] == "button"
+    assert local_install["hidden"] is None
+    assert local_install["aria-describedby"] == "astral-voice-status"
     assert terminal_notice["role"] == "alert"
     assert terminal_notice["aria-live"] == "assertive"
     assert terminal_notice["aria-atomic"] == "true"
@@ -167,9 +171,43 @@ def test_client_uses_explicit_media_and_all_required_voice_frame_handlers() -> N
     missing = sorted(item for item in required if item not in source)
     assert not missing, f"web voice controller is missing contract seams: {missing}"
 
-    assert "SpeechRecognition" not in source
+    assert "window.SpeechRecognition" in source
     assert "webkitSpeechRecognition" not in source
-    assert "speechSynthesis" not in source
+    assert "window.speechSynthesis" in source
+
+
+def test_client_local_web_speech_path_is_strictly_local_and_media_free() -> None:
+    source = CLIENT_PATH.read_text(encoding="utf-8")
+
+    required = {
+        "Recognition.available",
+        "Recognition.install",
+        '"processLocally" in Recognition.prototype',
+        "processLocally = true",
+        "localService === true",
+        'contract: "client_local/v1"',
+        'transport: "client_local"',
+        'full_duplex: false',
+        '"/api/voice/v2/capability"',
+        '"/api/voice/v2/sessions"',
+        'clientLocalCommonFrame("voice_local_ready")',
+        'clientLocalCommonFrame("voice_local_recognition_started")',
+        'clientLocalCommonFrame("voice_local_final")',
+        'case "voice_local_session_ready"',
+        'case "voice_local_turn_bound"',
+        'case "voice_local_announcement"',
+        'case "voice_local_final_rejected"',
+    }
+    missing = sorted(item for item in required if item not in source)
+    assert not missing, f"client-local controller is missing safety seams: {missing}"
+
+    local_controller = source.split("function beginClientLocalActivation", 1)[1].split(
+        "function beginRemoteVoiceActivation", 1
+    )[0]
+    assert "navigator.mediaDevices.getUserMedia" not in local_controller
+    assert "LivekitClient" not in local_controller
+    assert "join_token" not in local_controller
+    assert "webkitSpeechRecognition" not in source
 
 
 def test_client_requires_exact_worker_identity_at_data_and_track_boundaries() -> None:
