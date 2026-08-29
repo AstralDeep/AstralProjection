@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.security.MessageDigest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -73,6 +74,42 @@ class VoiceContract065Test {
             ),
             categories,
         )
+    }
+
+    @Test
+    fun feature075VectorsMapToClosedDispositionsAndBuildBoundedLocalFinal() {
+        localFixture["vectors"]!!.jsonArray.forEach { element ->
+            val vector = element.jsonObject
+            val payload = vector.getValue("payload").jsonObject
+            val expected = vector.getValue("expected_disposition").jsonPrimitive.content
+            val disposition = when (vector.getValue("shape").jsonPrimitive.content) {
+                "client_local_capability", "voice_capability_v2" -> LocalVoiceCapability.fromJson(payload)?.disposition
+                else -> LocalVoiceFrame.fromJson(payload)?.disposition
+            }
+            assertEquals(expected, disposition?.wireValue, vector.getValue("id").jsonPrimitive.content)
+            if (expected == "final") {
+                assertEquals(payload, Json.parseToJsonElement(Wire.encodeVoiceLocalFinal(requireNotNull(LocalVoiceFrame.fromJson(payload)))))
+            }
+        }
+    }
+
+    @Test
+    fun feature075ExtraFieldsFailClosed() {
+        val final = localFixture["vectors"]!!.jsonArray
+            .first { it.jsonObject["id"]!!.jsonPrimitive.content == "L-P02-local-final" }
+            .jsonObject.getValue("payload").jsonObject.toMutableMap()
+        final["unexpected"] = JsonPrimitive(true)
+        assertNull(LocalVoiceFrame.fromJson(JsonObject(final)))
+    }
+
+    @Test
+    fun feature075KeepsTheFrozenRemoteV1FixtureByteIdentical() {
+        val file = generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+            .map { File(it, "contracts/fixtures/voice_065/client_conformance.json") }
+            .first(File::isFile)
+        val digest = MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+            .joinToString("") { "%02x".format(it) }
+        assertEquals("bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143", digest)
     }
 
     @Test

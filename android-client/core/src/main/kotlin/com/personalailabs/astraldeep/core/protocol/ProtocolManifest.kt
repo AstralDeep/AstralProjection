@@ -73,6 +73,10 @@ object ProtocolManifest {
             "voice_submission_rejected" to HANDLED,
             "voice_transcript" to HANDLED,
             "voice_announcement_media" to HANDLED,
+            "voice_local_announcement" to HANDLED,
+            "voice_local_final_rejected" to HANDLED,
+            "voice_local_session_ready" to HANDLED,
+            "voice_local_turn_bound" to HANDLED,
             // heartbeat: transport keepalive
             "heartbeat" to IGNORED,
             // streaming

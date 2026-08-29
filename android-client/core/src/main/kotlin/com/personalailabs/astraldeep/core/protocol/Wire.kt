@@ -79,6 +79,8 @@ object Wire {
                 voiceTranscriptFromJson(root)?.let(Inbound::VoiceTranscriptFrame) ?: Inbound.Unknown(type)
             "voice_announcement_media" ->
                 voiceAnnouncementFromJson(root)?.let(Inbound::VoiceAnnouncementMediaFrame) ?: Inbound.Unknown(type)
+            "voice_local_announcement", "voice_local_final_rejected", "voice_local_session_ready", "voice_local_turn_bound" ->
+                LocalVoiceFrame.fromJson(root)?.let(Inbound::LocalVoiceFrame) ?: Inbound.Unknown(type)
             "chat_loaded" -> Inbound.ChatLoaded(transcriptFromJson(root.obj("chat")))
             "conversation_snapshot" -> conversationSnapshotFromJson(root) ?: Inbound.Unknown(type)
             "conversation_commit_ready" -> conversationCommitReadyFromJson(root) ?: Inbound.Unknown(type)
@@ -415,6 +417,12 @@ object Wire {
             put("client_sequence", value.clientSequence)
             put("observed_at", value.observedAt)
         }.toString()
+    }
+
+    /** Emits a validated local final only; it never manufactures remote proof or authority. */
+    fun encodeVoiceLocalFinal(value: LocalVoiceFrame): String {
+        require(value.type == "voice_local_final" && value.disposition == LocalVoiceDisposition.FINAL)
+        return value.payload.toString()
     }
 
     // ---- feature 060 strict wire models ----
