@@ -27,7 +27,7 @@ const WORKER_IDENTITY = "voice-worker-065";
 const BINDING = "synthetic-binding-value-000000000000";
 const VOICE_RETRY_SETTLE_MS = 2750;
 const VOICE_COVERAGE_OUTPUT = process.env.ASTRAL_VOICE_COVERAGE_ISTANBUL_OUTPUT;
-const voiceCoverageEntries = [];
+const voiceCoverageDocuments = [];
 
 const fixture = JSON.parse(await readFile(FIXTURE_PATH, "utf8"));
 const localFixture = JSON.parse(await readFile(LOCAL_FIXTURE_PATH, "utf8"));
@@ -39,46 +39,41 @@ const fixtureVectors = new Map(fixture.cases.flatMap((fixtureCase) => (
 const localFixtureVectors = new Map(localFixture.vectors.map((vector) => [vector.id, vector]));
 
 
-function mergedVoiceCoverageEntries(entries) {
-  const merged = new Map();
-  for (const entry of entries) {
-    let parsed;
+function voiceClientCoverageEntry(entries) {
+  const matches = entries.filter((entry) => {
     try {
-      parsed = new URL(entry.url);
+      const parsed = new URL(entry.url);
+      return parsed.origin === "https://candidate.example"
+        && parsed.pathname === "/static/client.js";
     } catch {
-      continue;
+      return false;
     }
-    if (
-      parsed.origin !== "https://candidate.example"
-      || parsed.pathname !== "/static/client.js"
-    ) {
-      continue;
-    }
-    const sourcePath = "backend/webrender/static/client.js";
-    if (typeof entry.source !== "string") {
-      throw new Error("voice coverage entry lacks exact client source text");
-    }
-    const record = merged.get(sourcePath) ?? { source: entry.source, ranges: new Map() };
-    if (record.source !== entry.source) {
-      throw new Error("client source changed during the voice browser run");
-    }
-    for (const functionCoverage of entry.functions ?? []) {
-      for (const { startOffset, endOffset, count } of functionCoverage.ranges ?? []) {
-        const key = `${startOffset}:${endOffset}`;
-        const mergedCount = (record.ranges.get(key)?.count ?? 0) + count;
-        if (!Number.isSafeInteger(mergedCount)) {
-          throw new Error("voice coverage count overflow");
-        }
-        record.ranges.set(key, { startOffset, endOffset, count: mergedCount });
-      }
-    }
-    merged.set(sourcePath, record);
+  });
+  if (matches.length !== 1 || typeof matches[0].source !== "string") {
+    throw new Error("voice browser test did not produce one exact client source entry");
   }
-  return [...merged.entries()].map(([sourcePath, record]) => ({
-    sourcePath,
-    source: record.source,
-    functions: [{ ranges: [...record.ranges.values()] }],
-  }));
+  return matches[0];
+}
+
+
+function unionVoiceCoverageDocuments(documents) {
+  if (documents.length === 0) throw new Error("voice browser coverage is empty");
+  const output = structuredClone(documents[0]);
+  const sourcePath = "backend/webrender/static/client.js";
+  const outputRecord = output.coverage[sourcePath];
+  if (!outputRecord) throw new Error("voice browser coverage lacks the client source");
+  for (const document of documents.slice(1)) {
+    const record = document.coverage[sourcePath];
+    if (!record
+        || JSON.stringify(record.statementMap) !== JSON.stringify(outputRecord.statementMap)
+        || Object.keys(record.s).join(",") !== Object.keys(outputRecord.s).join(",")) {
+      throw new Error("voice client source changed during browser coverage collection");
+    }
+    for (const [identifier, count] of Object.entries(record.s)) {
+      outputRecord.s[identifier] = outputRecord.s[identifier] > 0 || count > 0 ? 1 : 0;
+    }
+  }
+  return output;
 }
 
 
@@ -114,20 +109,17 @@ test.beforeEach(async ({ browserName, page }) => {
 
 test.afterEach(async ({ page }) => {
   if (!VOICE_COVERAGE_OUTPUT) return;
-  voiceCoverageEntries.push(...await page.coverage.stopJSCoverage());
+  const entry = voiceClientCoverageEntry(await page.coverage.stopJSCoverage());
+  voiceCoverageDocuments.push(await convertPlaywrightV8Coverage(
+    [{ ...entry, sourcePath: "backend/webrender/static/client.js" }],
+    (candidate) => candidate.sourcePath,
+  ));
 });
 
 
 test.afterAll(async () => {
   if (!VOICE_COVERAGE_OUTPUT) return;
-  const entries = mergedVoiceCoverageEntries(voiceCoverageEntries);
-  if (entries.length !== 1) {
-    throw new Error("voice browser run did not produce exactly one maintained client source");
-  }
-  const report = await convertPlaywrightV8Coverage(
-    entries,
-    (entry) => entry.sourcePath,
-  );
+  const report = unionVoiceCoverageDocuments(voiceCoverageDocuments);
   if (!Object.hasOwn(report.coverage, "backend/webrender/static/client.js")) {
     throw new Error("voice Istanbul report does not contain the shipped client");
   }
@@ -259,6 +251,7 @@ async function installHarness(page, {
   speechAvailability = "available",
   speechInstallSucceeds = true,
   localVoice = true,
+  audioOutput = true,
   speechProcessLocallySupport = true,
 } = {}) {
   await page.addInitScript(({
@@ -269,6 +262,7 @@ async function installHarness(page, {
     initialSpeechAvailability,
     installSucceeds,
     hasLocalVoice,
+    hasAudioOutput,
     processLocallySupport,
   }) => {
     window.__ASTRAL_TOKEN__ = "synthetic-user-token";
@@ -287,12 +281,13 @@ async function installHarness(page, {
     window.__speechRecognizers = [];
     window.__speechUtterances = [];
     window.__speechAvailability = initialSpeechAvailability;
+    window.__hasAudioOutput = hasAudioOutput;
     window.__runtimeErrors = [];
     window.__voiceIntervals = [];
     const nativeSetInterval = window.setInterval.bind(window);
     window.setInterval = (callback, delay, ...args) => {
       const identifier = nativeSetInterval(callback, delay, ...args);
-      window.__voiceIntervals.push({ identifier, delay });
+      window.__voiceIntervals.push({ identifier, delay, callback });
       return identifier;
     };
     window.addEventListener("error", (event) => {
@@ -525,10 +520,16 @@ async function installHarness(page, {
         };
       },
       async enumerateDevices() {
-        return mode === "missing" ? [] : [{ kind: "audioinput", deviceId: "synthetic-mic" }];
+        return mode === "missing" ? [] : [
+          { kind: "audioinput", deviceId: "synthetic-mic" },
+          ...(window.__hasAudioOutput
+            ? [{ kind: "audiooutput", deviceId: "synthetic-speaker" }]
+            : []),
+        ];
       },
       addEventListener(name, callback) { mediaDeviceListeners[name] = callback; },
     };
+    window.__emitMediaDeviceChange = () => mediaDeviceListeners.devicechange?.();
     Object.defineProperty(navigator, "mediaDevices", {
       configurable: true,
       value: mode === "no-api" ? undefined : mediaDevices,
@@ -752,6 +753,7 @@ async function installHarness(page, {
     initialSpeechAvailability: speechAvailability,
     installSucceeds: speechInstallSucceeds,
     hasLocalVoice: localVoice,
+    hasAudioOutput: audioOutput,
     processLocallySupport: speechProcessLocallySupport,
   });
 
@@ -807,6 +809,17 @@ async function queueRouteResponse(page, path, status, body, delayMs = 0) {
     responseBody: body,
     responseDelay: delayMs,
   });
+}
+
+
+async function queueRejectedRouteResponse(page, path, delayMs = 0) {
+  await page.evaluate(({ responsePath, responseDelay }) => {
+    window.__voiceRouteResponses[responsePath] ||= [];
+    window.__voiceRouteResponses[responsePath].push({
+      reject: true,
+      delayMs: responseDelay,
+    });
+  }, { responsePath: path, responseDelay: delayMs });
 }
 
 
@@ -1067,6 +1080,31 @@ function localAcknowledgedFrame(scope, bound, messageId) {
     request_generation: bound.request_generation,
     connection_generation: scope.connection_generation,
     voice_turn_id: bound.turn_id,
+  };
+}
+
+
+function localFinalRejectedFrame(scope, bound, overrides = {}) {
+  return {
+    type: "voice_local_final_rejected",
+    schema_version: "2",
+    speech_backend: "client_local",
+    device_id: scope.device_id,
+    connection_generation: scope.connection_generation,
+    session_id: SESSION_ID,
+    generation: 1,
+    speech_revision: 2,
+    client_turn_id: bound.client_turn_id,
+    turn_id: bound.turn_id,
+    submission_id: bound.submission_id,
+    request_generation: bound.request_generation,
+    chat_id: bound.chat_id,
+    chat_context_revision: bound.chat_context_revision,
+    recognition_sequence: bound.recognition_sequence,
+    reason: "stale_local_turn",
+    retry_policy: "explicit_user_retry",
+    occurred_at: new Date().toISOString(),
+    ...overrides,
   };
 }
 
@@ -1522,6 +1560,52 @@ test("client-local activation proves on-device Web Speech without RTC or media e
 });
 
 
+test("client-local lease heartbeat is a no-op PATCH that leaves capture authorized", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 1);
+  await queueRouteResponse(
+    page,
+    `/api/voice/sessions/${SESSION_ID}`,
+    200,
+    localSessionResponse(),
+  );
+
+  await page.evaluate(() => window.__voiceIntervals.find((item) => (
+    item.delay === 20000
+  )).callback());
+  await page.waitForFunction((sessionId) => window.__voiceFetches.some((request) => (
+    request.method === "PATCH"
+      && new URL(request.url).pathname === `/api/voice/sessions/${sessionId}`
+  )), SESSION_ID);
+
+  const heartbeat = await page.evaluate((sessionId) => window.__voiceFetches.find((request) => (
+    request.method === "PATCH"
+      && new URL(request.url).pathname === `/api/voice/sessions/${sessionId}`
+  )), SESSION_ID);
+  expect(heartbeat.body).toEqual({
+    expected_generation: 1,
+    expected_media_grant_revision: 2,
+  });
+  expect(await page.evaluate(() => ({
+    readyFrames: window.__socketEvents.filter((frame) => (
+      frame.type === "voice_local_ready"
+    )).length,
+    recognizers: window.__speechRecognizers.length,
+    recognitionStarted: window.__speechRecognizers[0].started,
+    recognitionStopped: window.__speechRecognizers[0].stopped,
+  }))).toEqual({
+    readyFrames: 1,
+    recognizers: 1,
+    recognitionStarted: true,
+    recognitionStopped: false,
+  });
+});
+
+
 test("an extensible recognizer without native local-processing support stays typed-only", async ({
   page,
 }) => {
@@ -1695,6 +1779,59 @@ test("local interim text stays on device and one canonical bound final is submit
 });
 
 
+test("mixed final and interim recognition segments keep interim text on device", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 1);
+  await page.evaluate(() => {
+    const finalSegment = Object.assign([{ transcript: "Schedule ", confidence: 0.99 }], {
+      isFinal: true,
+    });
+    const interimSegment = Object.assign([{ transcript: "my appoint", confidence: 0.8 }], {
+      isFinal: false,
+    });
+    window.__speechRecognizers[0].onresult({
+      resultIndex: 1,
+      results: [finalSegment, interimSegment],
+    });
+  });
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )));
+  const started = await page.evaluate(() => window.__socketEvents.find((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )));
+  await receive(page, localTurnBoundFrame(scope, started));
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => ({
+    finals: window.__socketEvents.filter((frame) => frame.type === "voice_local_final").length,
+    transcript: document.querySelector("#astral-voice-transcript").textContent,
+  }))).toEqual({ finals: 0, transcript: "Hearing: Schedule my appoint" });
+
+  await page.evaluate(() => {
+    const first = Object.assign([{ transcript: "Schedule ", confidence: 0.99 }], {
+      isFinal: true,
+    });
+    const second = Object.assign([{ transcript: "my appointment.", confidence: 0.99 }], {
+      isFinal: true,
+    });
+    window.__speechRecognizers[0].onresult({
+      resultIndex: 1,
+      results: [first, second],
+    });
+  });
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_final"
+  )));
+  expect(await page.evaluate(() => window.__socketEvents.find((frame) => (
+    frame.type === "voice_local_final"
+  )).text)).toBe("Schedule my appointment.");
+});
+
+
 test("a local final retries exactly on its original socket until acknowledged", async ({ page }) => {
   await installHarness(page, { speechMode: "local" });
   const scope = await startClientLocalVoice(page);
@@ -1763,6 +1900,49 @@ test("a lost local-final acknowledgement triggers an idempotent same-socket repl
   )));
   expect(finals[1]).toEqual(finals[0]);
   await receive(page, localAcknowledgedFrame(scope, bound, 53));
+});
+
+
+test("an exactly correlated local-final rejection stops replay and resumes recognition", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 1);
+  await page.evaluate(() => window.__speechRecognizers[0].emitResult("Reject exactly.", true));
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )));
+  const started = await page.evaluate(() => window.__socketEvents.find((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )));
+  const bound = localTurnBoundFrame(scope, started);
+  await receive(page, bound);
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_final"
+  )));
+  await page.evaluate(() => {
+    const feedback = document.querySelector("#astral-voice-feedback");
+    const setAttribute = feedback.setAttribute.bind(feedback);
+    window.__voiceReasonTransitions = [];
+    feedback.setAttribute = (name, value) => {
+      if (name === "data-reason") window.__voiceReasonTransitions.push(value);
+      return setAttribute(name, value);
+    };
+  });
+
+  await receive(page, localFinalRejectedFrame(scope, bound));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 2);
+  expect(await page.evaluate(() => ({
+    finals: window.__socketEvents.filter((frame) => frame.type === "voice_local_final").length,
+    reasons: window.__voiceReasonTransitions,
+    transcript: document.querySelector("#astral-voice-transcript").textContent,
+  }))).toEqual({
+    finals: 1,
+    reasons: ["stale_local_turn", "ready"],
+    transcript: "Heard: Reject exactly.",
+  });
 });
 
 
@@ -2112,6 +2292,11 @@ test("local mute cancels active synthesis before a delayed server acknowledgemen
   await receive(page, localAnnouncementFrame(scope));
   await page.waitForFunction(() => window.__speechUtterances.length === 1);
   await page.evaluate(() => window.__speechUtterances[0].onstart());
+  await receive(page, localAnnouncementFrame(scope, {
+    announcement_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    announcement_sequence: 2,
+  }));
+  await page.waitForTimeout(75);
   const cancelsBefore = await page.evaluate(() => window.__speechTrace.filter((event) => (
     event.type === "synthesis:cancel"
   )).length);
@@ -2131,10 +2316,13 @@ test("local mute cancels active synthesis before a delayed server acknowledgemen
   expect(await page.evaluate(() => window.__speechTrace.filter((event) => (
     event.type === "synthesis:cancel"
   )).length)).toBe(cancelsBefore + 1);
-  expect(await page.evaluate(() => window.__socketEvents.some((frame) => (
-    frame.type === "voice_local_playout_event" && frame.phase === "interrupted"
-      && frame.reason === "stopped_by_user"
-  )))).toBe(true);
+  expect(await page.evaluate(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_playout_event"
+      && ["interrupted", "failed"].includes(frame.phase)
+  )).map((frame) => [frame.announcement_sequence, frame.phase, frame.reason]))).toEqual([
+    [1, "interrupted", "stopped_by_user"],
+    [2, "failed", "stopped_by_user"],
+  ]);
   await page.waitForTimeout(750);
   expect(await page.evaluate(() => window.__speechRecognizers.length)).toBe(1);
 
@@ -2164,12 +2352,31 @@ test("local mute cancels active synthesis before a delayed server acknowledgemen
     200,
     localSessionResponse({ speechRevision: 4, speechMuted: false }),
   );
+  await queueRouteResponse(
+    page,
+    `/api/voice/sessions/${SESSION_ID}`,
+    200,
+    localSessionResponse({ speechRevision: 4, speechMuted: false }),
+  );
   await page.getByRole("button", { name: "Unmute assistant speech" }).click();
+  await page.waitForFunction(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_ready"
+  )).length === 2);
+  expect(await page.evaluate(() => window.__speechRecognizers.length)).toBe(1);
+  await receive(page, localSessionReadyFrame(scope, { speech_revision: 4 }));
   await page.waitForFunction(() => window.__speechRecognizers.length === 2);
+  await receive(page, localAnnouncementFrame(scope, {
+    speech_revision: 4,
+    announcement_id: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    announcement_sequence: 3,
+    mute_revision: 2,
+    consent_revision: 2,
+  }));
+  await page.waitForFunction(() => window.__speechUtterances.length === 2);
 });
 
 
-test("overlapping local control failures serialize and restore authoritative capture", async ({
+test("overlapping stale local controls serialize and keep capture failed closed", async ({
   page,
 }) => {
   await installHarness(page, { speechMode: "local" });
@@ -2221,8 +2428,18 @@ test("overlapping local control failures serialize and restore authoritative cap
   await page.waitForFunction(() => window.__voiceFetches.filter((request) => (
     request.method === "PATCH"
   )).length === 2);
-  await page.waitForFunction(() => window.__speechRecognizers.length === 2);
-  expect(await page.evaluate(() => window.__speechRecognizers[1].started)).toBe(true);
+  await page.waitForTimeout(750);
+  expect(await page.evaluate(() => ({
+    recognizers: window.__speechRecognizers.length,
+    stopped: window.__speechRecognizers[0].stopped,
+    reason: document.querySelector("#astral-voice-feedback").dataset.reason,
+    typedInputDisabled: document.querySelector("#astral-input").disabled,
+  }))).toEqual({
+    recognizers: 1,
+    stopped: true,
+    reason: "stale_generation",
+    typedInputDisabled: false,
+  });
 });
 
 
@@ -2250,6 +2467,11 @@ test("local stop cancels active synthesis before a delayed server acknowledgemen
   await receive(page, localAnnouncementFrame(scope));
   await page.waitForFunction(() => window.__speechUtterances.length === 1);
   await page.evaluate(() => window.__speechUtterances[0].onstart());
+  await receive(page, localAnnouncementFrame(scope, {
+    announcement_id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    announcement_sequence: 2,
+  }));
+  await page.waitForTimeout(75);
   const cancelsBefore = await page.evaluate(() => window.__speechTrace.filter((event) => (
     event.type === "synthesis:cancel"
   )).length);
@@ -2269,10 +2491,150 @@ test("local stop cancels active synthesis before a delayed server acknowledgemen
   expect(await page.evaluate(() => window.__speechTrace.filter((event) => (
     event.type === "synthesis:cancel"
   )).length)).toBe(cancelsBefore + 1);
-  expect(await page.evaluate(() => window.__socketEvents.some((frame) => (
-    frame.type === "voice_local_playout_event" && frame.phase === "interrupted"
-      && frame.reason === "stopped_by_user"
-  )))).toBe(true);
+  expect(await page.evaluate(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_playout_event"
+      && ["interrupted", "failed"].includes(frame.phase)
+  )).map((frame) => [frame.announcement_sequence, frame.phase, frame.reason]))).toEqual([
+    [1, "interrupted", "stopped_by_user"],
+    [2, "failed", "stopped_by_user"],
+  ]);
+});
+
+
+test("local stop fences a pending digest then reauthorizes the next turn and announcement", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await receive(page, composerFrame(scope, {
+    state: "speaking_progress",
+    reason: "ready",
+    session_id: SESSION_ID,
+    generation: 1,
+    media_grant_revision: 2,
+    owner_device: { device_id: scope.device_id, device_kind: "web", generation: 1 },
+    foreground_active: true,
+    microphone_enabled: true,
+    speech_muted: false,
+    chat_context_revision: 1,
+    applied_chat_context_revision: 1,
+    chat_context_synced: true,
+    controls: clientLocalActiveControls(),
+  }, 8));
+  await page.evaluate(() => {
+    const digest = window.crypto.subtle.digest.bind(window.crypto.subtle);
+    Object.defineProperty(window.crypto.subtle, "digest", {
+      configurable: true,
+      value: async (...args) => {
+        window.__localAnnouncementDigestStarted = true;
+        const result = await digest(...args);
+        await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+        return result;
+      },
+    });
+  });
+  await receive(page, localAnnouncementFrame(scope));
+  await page.waitForFunction(() => window.__localAnnouncementDigestStarted === true);
+  await queueRouteResponse(
+    page,
+    `/api/voice/sessions/${SESSION_ID}/speech/stop`,
+    202,
+    null,
+    150,
+  );
+  await queueRouteResponse(
+    page,
+    `/api/voice/sessions/${SESSION_ID}`,
+    200,
+    localSessionResponse(),
+  );
+
+  await page.getByRole("button", { name: "Stop speaking" }).click();
+  await page.waitForFunction((sessionId) => window.__voiceFetches.some((request) => (
+    request.method === "POST"
+      && new URL(request.url).pathname === `/api/voice/sessions/${sessionId}/speech/stop`
+  )), SESSION_ID);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForTimeout(50);
+  expect(await page.evaluate(() => window.__speechRecognizers.length)).toBe(1);
+  await page.waitForTimeout(350);
+  expect(await page.evaluate(() => ({
+    utterances: window.__speechUtterances.length,
+    recognizers: window.__speechRecognizers.length,
+    started: window.__socketEvents.filter((frame) => (
+      frame.type === "voice_local_playout_event" && frame.phase === "started"
+    )).length,
+  }))).toEqual({ utterances: 0, recognizers: 1, started: 0 });
+  await page.waitForFunction(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_ready"
+  )).length === 2);
+  expect(await page.evaluate(() => window.__speechRecognizers.length)).toBe(1);
+
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 2);
+  await page.evaluate(() => window.__speechRecognizers[1].emitResult("After stop.", true));
+  await page.waitForFunction(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )).length === 1);
+  const started = await page.evaluate(() => window.__socketEvents.find((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )));
+  const bound = localTurnBoundFrame(scope, started);
+  await receive(page, bound);
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_final" && frame.text === "After stop."
+  )));
+  await receive(page, localAcknowledgedFrame(scope, bound, 77));
+
+  await receive(page, localAnnouncementFrame(scope, {
+    announcement_id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    announcement_sequence: 1,
+    turn_id: bound.turn_id,
+    kind: "result",
+    output_policy: "full_recap",
+    text: "After-stop answer.",
+    text_digest_sha256: "e4f132ef873db5d37c1eae75e1f17505d47ae13f6321d9f573c45783e49b5a19",
+  }));
+  await page.waitForFunction(() => window.__speechUtterances.length === 1);
+  expect(await page.evaluate(() => window.__speechUtterances[0].text))
+    .toBe("After-stop answer.");
+});
+
+
+test("losing the local audio output immediately fences speech and keeps typed chat", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 1);
+  await receive(page, localAnnouncementFrame(scope));
+  await page.waitForFunction(() => window.__speechUtterances.length === 1);
+  await page.evaluate(() => window.__speechUtterances[0].onstart());
+  await queueRouteResponse(page, `/api/voice/sessions/${SESSION_ID}`, 204, null);
+
+  await page.evaluate(() => {
+    window.__hasAudioOutput = false;
+    window.__emitMediaDeviceChange();
+  });
+
+  await expect(page.locator("#astral-voice-feedback"))
+    .toHaveAttribute("data-reason", "no_audio_output");
+  await expect(page.locator("#astral-input")).toBeEnabled();
+  expect(await page.evaluate(() => ({
+    recognitionStopped: window.__speechRecognizers[0].stopped,
+    synthesisCancelled: window.__speechTrace.some((event) => (
+      event.type === "synthesis:cancel"
+    )),
+  }))).toEqual({
+    recognitionStopped: true,
+    synthesisCancelled: true,
+  });
+  expect(await page.evaluate((sessionId) => window.__voiceFetches.some((request) => (
+    request.method === "DELETE"
+      && new URL(request.url).pathname === `/api/voice/sessions/${sessionId}`
+  )), SESSION_ID)).toBe(true);
 });
 
 
@@ -2309,6 +2671,10 @@ test("backgrounding stops local capture and synthesis before its delayed acknowl
     cancelled: window.__speechTrace.filter((event) => (
       event.type === "synthesis:cancel"
     )).length,
+    terminalEvents: window.__socketEvents.filter((frame) => (
+      frame.type === "voice_local_playout_event"
+        && ["interrupted", "failed"].includes(frame.phase)
+    )).map((frame) => [frame.phase, frame.reason]),
     recognitionStopped: window.__speechRecognizers[0].stopped,
     typedInputDisabled: document.querySelector("#astral-input").disabled,
     transcript: document.querySelector("#astral-voice-transcript").textContent,
@@ -2316,10 +2682,95 @@ test("backgrounding stops local capture and synthesis before its delayed acknowl
       .filter((name) => name.startsWith("data-")),
   }))).toEqual({
     cancelled: cancelsBefore + 1,
+    terminalEvents: [["interrupted", "local_audio_interrupted"]],
     recognitionStopped: true,
     typedInputDisabled: false,
     transcript: "",
     transcriptState: [],
+  });
+});
+
+
+test("pagehide stops local synthesis before reporting its terminal playout", async ({ page }) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await receive(page, localAnnouncementFrame(scope));
+  await page.waitForFunction(() => window.__speechUtterances.length === 1);
+  await page.evaluate(() => window.__speechUtterances[0].onstart());
+
+  await queueRouteResponse(page, `/api/voice/sessions/${SESSION_ID}`, 200, {
+    ...localSessionResponse({ speechRevision: 3 }),
+    foreground_active: false,
+    microphone_enabled: false,
+    state: "suspended",
+  });
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
+
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_playout_event"
+      && ["interrupted", "failed"].includes(frame.phase)
+  )));
+  expect(await page.evaluate(() => {
+    const trace = window.__speechTrace;
+    const cancelIndex = trace.findIndex((event) => event.type === "synthesis:cancel");
+    const terminal = window.__socketEvents.find((frame) => (
+      frame.type === "voice_local_playout_event"
+        && ["interrupted", "failed"].includes(frame.phase)
+    ));
+    return {
+      cancelIndex,
+      terminal: [terminal.phase, terminal.reason],
+      active: window.speechSynthesis.active,
+    };
+  })).toEqual({
+    cancelIndex: expect.any(Number),
+    terminal: ["interrupted", "local_audio_interrupted"],
+    active: null,
+  });
+});
+
+
+test("explicit local session end reports the interrupted playout before teardown", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await receive(page, composerFrame(scope, {
+    state: "speaking_progress",
+    reason: "ready",
+    session_id: SESSION_ID,
+    generation: 1,
+    media_grant_revision: 2,
+    owner_device: { device_id: scope.device_id, device_kind: "web", generation: 1 },
+    foreground_active: true,
+    microphone_enabled: true,
+    speech_muted: false,
+    chat_context_revision: 1,
+    applied_chat_context_revision: 1,
+    chat_context_synced: true,
+    controls: clientLocalActiveControls(),
+  }, 8));
+  await receive(page, localAnnouncementFrame(scope));
+  await page.waitForFunction(() => window.__speechUtterances.length === 1);
+  await page.evaluate(() => window.__speechUtterances[0].onstart());
+  await queueRouteResponse(page, `/api/voice/sessions/${SESSION_ID}`, 204, null);
+
+  await page.getByRole("button", { name: "End voice conversation" }).click();
+  await page.waitForFunction((sessionId) => window.__voiceFetches.some((request) => (
+    request.method === "DELETE"
+      && new URL(request.url).pathname === `/api/voice/sessions/${sessionId}`
+  )), SESSION_ID);
+  expect(await page.evaluate(() => ({
+    active: window.speechSynthesis.active,
+    terminal: window.__socketEvents.filter((frame) => (
+      frame.type === "voice_local_playout_event"
+        && ["interrupted", "failed"].includes(frame.phase)
+    )).map((frame) => [frame.phase, frame.reason]),
+  }))).toEqual({
+    active: null,
+    terminal: [["interrupted", "stopped_by_user"]],
   });
 });
 
@@ -2576,6 +3027,293 @@ test("a hanging local engine reaches typed fallback within the activation budget
     rooms: window.__rooms.length,
     gumCalls: window.__gumCalls,
   }))).toEqual({ sessions: 0, rooms: 0, gumCalls: 0 });
+});
+
+
+test("a click coalesces with in-flight backend discovery before local activation", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await registration(page);
+  await queueRouteResponse(
+    page,
+    "/api/voice/v2/capability",
+    200,
+    localCapabilityResponse(),
+    125,
+  );
+  await receive(page, bindingFrame(scope));
+  await receive(page, composerFrame(scope));
+  await queueRouteResponse(page, "/api/voice/v2/sessions", 201, localSessionResponse());
+
+  await page.getByRole("button", { name: "Start voice conversation" }).click();
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_ready"
+  )));
+  expect(await page.evaluate(() => ({
+    capabilityGets: window.__voiceFetches.filter((request) => (
+      request.method === "GET"
+        && new URL(request.url).pathname === "/api/voice/v2/capability"
+    )).length,
+    sessionPosts: window.__voiceFetches.filter((request) => (
+      request.method === "POST"
+        && new URL(request.url).pathname === "/api/voice/v2/sessions"
+    )).length,
+    rooms: window.__rooms.length,
+    gumCalls: window.__gumCalls,
+  }))).toEqual({ capabilityGets: 1, sessionPosts: 1, rooms: 0, gumCalls: 0 });
+});
+
+
+test("local activation retries one network loss and honors an initially muted session", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await registration(page);
+  await queueRouteResponse(page, "/api/voice/v2/capability", 200, localCapabilityResponse());
+  await receive(page, bindingFrame(scope));
+  await receive(page, composerFrame(scope));
+  await queueRejectedRouteResponse(page, "/api/voice/v2/sessions");
+  await queueRouteResponse(
+    page,
+    "/api/voice/v2/sessions",
+    201,
+    localSessionResponse({ microphoneEnabled: false }),
+  );
+
+  await page.getByRole("button", { name: "Start voice conversation" }).click();
+  await expect(page.locator("#astral-voice-feedback"))
+    .toHaveAttribute("data-state", "suspended");
+  const posts = await page.evaluate(() => window.__voiceFetches.filter((request) => (
+    request.method === "POST"
+      && new URL(request.url).pathname === "/api/voice/v2/sessions"
+  )));
+  expect(posts).toHaveLength(2);
+  expect(posts[1].body.activation_id).toBe(posts[0].body.activation_id);
+  expect(await page.evaluate(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_ready"
+  )))).toBe(false);
+});
+
+
+test("a canonical local activation conflict fails closed without inventing takeover authority", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await registration(page);
+  await queueRouteResponse(page, "/api/voice/v2/capability", 200, localCapabilityResponse());
+  await receive(page, bindingFrame(scope));
+  await receive(page, composerFrame(scope));
+  await queueRouteResponse(page, "/api/voice/v2/sessions", 409, {
+    reason: "stale_session",
+    current_session_id: SESSION_ID,
+  });
+
+  await page.getByRole("button", { name: "Start voice conversation" }).click();
+  await expect(page.locator("#astral-voice-feedback"))
+    .toHaveAttribute("data-reason", "stale_session");
+  expect(await page.evaluate(() => ({
+    ready: window.__socketEvents.some((frame) => frame.type === "voice_local_ready"),
+    rooms: window.__rooms.length,
+    gumCalls: window.__gumCalls,
+  }))).toEqual({ ready: false, rooms: 0, gumCalls: 0 });
+});
+
+
+for (const probeFailure of [
+  {
+    title: "synchronous local availability failure",
+    availabilityFault: "throw",
+    reason: "local_recognition_unavailable",
+  },
+  {
+    title: "rejected local availability check",
+    availabilityFault: "reject",
+    reason: "local_recognition_unavailable",
+  },
+  {
+    title: "unsupported local recognition locale",
+    availability: "unsupported",
+    reason: "local_recognition_locale_unavailable",
+  },
+  {
+    title: "denied microphone permission",
+    speechMode: "denied",
+    reason: "microphone_permission_denied",
+  },
+  {
+    title: "missing local synthesis voice",
+    localVoice: false,
+    reason: "local_synthesis_locale_unavailable",
+  },
+  {
+    title: "missing local audio output",
+    audioOutput: false,
+    reason: "no_audio_output",
+  },
+]) {
+  test(`${probeFailure.title} stays typed-only`, async ({ page }) => {
+    await installHarness(page, {
+      speechMode: probeFailure.speechMode || "local",
+      speechAvailability: probeFailure.availability || "available",
+      localVoice: probeFailure.localVoice ?? true,
+      audioOutput: probeFailure.audioOutput ?? true,
+    });
+    const scope = await registration(page);
+    await queueRouteResponse(page, "/api/voice/v2/capability", 200, localCapabilityResponse());
+    await receive(page, bindingFrame(scope));
+    await receive(page, composerFrame(scope));
+    if (probeFailure.availabilityFault) {
+      await page.evaluate((fault) => {
+        window.SpeechRecognition.available = fault === "throw"
+          ? () => { throw new Error("synthetic availability failure"); }
+          : () => Promise.reject(new Error("synthetic availability rejection"));
+      }, probeFailure.availabilityFault);
+    }
+
+    await page.getByRole("button", { name: "Start voice conversation" }).click();
+    await expect(page.locator("#astral-voice-feedback"))
+      .toHaveAttribute("data-reason", probeFailure.reason, { timeout: 2500 });
+    expect(await page.evaluate(() => ({
+      sessionPosts: window.__voiceFetches.filter((request) => (
+        request.method === "POST"
+          && new URL(request.url).pathname === "/api/voice/v2/sessions"
+      )).length,
+      rooms: window.__rooms.length,
+      gumCalls: window.__gumCalls,
+    }))).toEqual({ sessionPosts: 0, rooms: 0, gumCalls: 0 });
+  });
+}
+
+
+test("native recognition error and end paths report bound failures and resume", async ({ page }) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 1);
+
+  await page.evaluate(() => window.__speechRecognizers[0].onend());
+  await page.waitForFunction(() => window.__speechRecognizers.length === 2);
+
+  await page.evaluate(() => window.__speechRecognizers[1].emitResult("error pending", false));
+  await page.waitForFunction(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )).length === 1);
+  const erroredStart = await page.evaluate(() => window.__socketEvents.find((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )));
+  await receive(page, localTurnBoundFrame(scope, erroredStart));
+  await page.evaluate(() => window.__speechRecognizers[1].emitError("network"));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 3);
+
+  await page.evaluate(() => window.__speechRecognizers[2].emitResult("end pending", false));
+  await page.waitForFunction(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )).length === 2);
+  const endedStart = await page.evaluate(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_recognition_started"
+  )).at(-1));
+  await receive(page, localTurnBoundFrame(scope, endedStart, {
+    turn_id: "77777777-7777-4777-8777-777777777777",
+    submission_id: "88888888-8888-4888-8888-888888888888",
+    request_generation: "99999999-9999-4999-8999-999999999999",
+  }));
+  await page.evaluate(() => window.__speechRecognizers[2].onend());
+  await page.waitForFunction(() => window.__speechRecognizers.length === 4);
+
+  expect(await page.evaluate(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_recognition_failed"
+  )).map((frame) => frame.reason))).toEqual([
+    "local_recognition_failed",
+    "local_recognition_failed",
+  ]);
+});
+
+
+test("queued local announcements fail content-free when the local voice disappears", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  const first = localAnnouncementFrame(scope);
+  await receive(page, first);
+  await page.waitForFunction(() => window.__speechUtterances.length === 1);
+  await page.evaluate(() => window.__speechUtterances[0].onstart());
+  await receive(page, localAnnouncementFrame(scope, {
+    announcement_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    announcement_sequence: 2,
+  }));
+  await receive(page, localAnnouncementFrame(scope, {
+    announcement_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    announcement_sequence: 3,
+  }));
+  await page.waitForTimeout(75);
+  await page.evaluate(() => {
+    window.speechSynthesis.getVoices = () => [];
+    window.__speechUtterances[0].onend();
+  });
+  await page.waitForFunction(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_playout_event" && frame.phase === "failed"
+  )).length === 2);
+
+  const failures = await page.evaluate(() => window.__socketEvents.filter((frame) => (
+    frame.type === "voice_local_playout_event" && frame.phase === "failed"
+  )));
+  expect(failures.map((frame) => frame.reason)).toEqual([
+    "local_synthesis_failed",
+    "local_synthesis_failed",
+  ]);
+  expect(failures.every((frame) => !Object.hasOwn(frame, "text"))).toBe(true);
+});
+
+
+test("a local utterance constructor failure reports one content-free terminal event", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.evaluate(() => {
+    window.SpeechSynthesisUtterance = class {
+      constructor() { throw new Error("synthetic utterance construction failure"); }
+    };
+  });
+  await receive(page, localAnnouncementFrame(scope));
+  await page.waitForFunction(() => window.__socketEvents.some((frame) => (
+    frame.type === "voice_local_playout_event" && frame.phase === "failed"
+  )));
+  const failure = await page.evaluate(() => window.__socketEvents.find((frame) => (
+    frame.type === "voice_local_playout_event" && frame.phase === "failed"
+  )));
+  expect(failure.reason).toBe("local_synthesis_failed");
+  expect(failure).not.toHaveProperty("text");
+  expect(await page.evaluate(() => window.__speechUtterances.length)).toBe(0);
+});
+
+
+test("a local server mute state synchronously stops capture and clears interim text", async ({
+  page,
+}) => {
+  await installHarness(page, { speechMode: "local" });
+  const scope = await startClientLocalVoice(page);
+  await receive(page, localSessionReadyFrame(scope));
+  await page.waitForFunction(() => window.__speechRecognizers.length === 1);
+  await page.evaluate(() => window.__speechRecognizers[0].emitResult("private interim", false));
+  await page.waitForFunction(() => (
+    document.querySelector("#astral-voice-transcript").textContent.includes("private interim")
+  ));
+
+  await receive(page, sessionState(scope, "muted", "ready", {
+    media_grant_revision: 2,
+    microphone_enabled: true,
+    speech_muted: true,
+    foreground_active: true,
+  }));
+  expect(await page.evaluate(() => ({
+    stopped: window.__speechRecognizers[0].stopped,
+    transcript: document.querySelector("#astral-voice-transcript").textContent,
+  }))).toEqual({ stopped: true, transcript: "" });
 });
 
 

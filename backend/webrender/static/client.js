@@ -110,9 +110,12 @@
   var voiceLocalLastAnnouncementSequence = 0;
   var voiceLocalLastMuteRevision = 0;
   var voiceLocalLastConsentRevision = 0;
+  var voiceLocalStopInFlight = false;
+  var voiceLocalStopResetPending = false;
   var voiceLocalAnnouncementIngress = [];
   var voiceLocalAnnouncementDigesting = null;
   var voiceLocalAnnouncementDraining = false;
+  var voiceLocalAnnouncementEpoch = 0;
   var voiceLocalAnnouncementQueue = [];
   var voiceLocalActiveAnnouncement = null;
   var voiceLocalEchoUntil = 0;
@@ -1035,15 +1038,18 @@
     });
   }
 
-  async function hasClientLocalMicrophone() {
+  async function clientLocalAudioDevices() {
     if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== "function") {
-      return false;
+      return { has_microphone: false, has_audio_output: false };
     }
     try {
       var devices = await navigator.mediaDevices.enumerateDevices();
-      return devices.some(function (device) { return device.kind === "audioinput"; });
+      return {
+        has_microphone: devices.some(function (device) { return device.kind === "audioinput"; }),
+        has_audio_output: devices.some(function (device) { return device.kind === "audiooutput"; }),
+      };
     } catch (e) {
-      return false;
+      return { has_microphone: false, has_audio_output: false };
     }
   }
 
@@ -1108,12 +1114,17 @@
           ? "microphone_permission_denied" : "microphone_permission_not_determined",
       };
     }
-    var microphoneResult = await clientLocalAwait(hasClientLocalMicrophone(), deadlineAt);
-    if (!microphoneResult.completed) {
+    var audioDevicesResult = await clientLocalAwait(clientLocalAudioDevices(), deadlineAt);
+    if (!audioDevicesResult.completed) {
       return { eligible: false, reason: "local_session_not_ready" };
     }
-    var hasMicrophone = !microphoneResult.error && microphoneResult.value;
-    if (!hasMicrophone) return { eligible: false, reason: "no_microphone" };
+    var audioDevices = !audioDevicesResult.error && audioDevicesResult.value;
+    if (!audioDevices || !audioDevices.has_microphone) {
+      return { eligible: false, reason: "no_microphone" };
+    }
+    if (!audioDevices.has_audio_output) {
+      return { eligible: false, reason: "no_audio_output" };
+    }
     var voiceResult = await clientLocalAwait(waitForClientLocalVoice(locale), deadlineAt);
     if (!voiceResult.completed) {
       return { eligible: false, reason: "local_session_not_ready" };
@@ -1855,7 +1866,7 @@
       // A generation-fenced semantic no-op renews only the crash/reconnect
       // lease. It is deliberately not an interaction and cannot postpone the
       // server-owned five-minute true-idle deadline.
-      patchVoiceSession({
+      patchVoiceSession(voiceSpeechBackend === "client_local" ? {} : {
         foreground_active: true,
         foreground_reason: "foreground",
       });
@@ -2678,6 +2689,8 @@
     voiceLocalLastAnnouncementSequence = 0;
     voiceLocalLastMuteRevision = 0;
     voiceLocalLastConsentRevision = 0;
+    voiceLocalStopInFlight = false;
+    voiceLocalStopResetPending = false;
     clearClientLocalPendingFinal();
     voiceSession = Object.assign({}, result.body, {
       device_id: voiceDeviceId,
@@ -3275,7 +3288,7 @@
       if (voiceLocalRecognition !== state || state.epoch !== voiceStateEpoch
           || state.cancelled || state.final_sent) return;
       var transcript = "";
-      var isFinal = false;
+      var hasInterim = false;
       var remainingScalars = voiceLocalRequirements.max_final_unicode_scalars;
       var oversized = false;
       for (var index = 0; index < event.results.length; index++) {
@@ -3290,7 +3303,7 @@
           }
           transcript += result[0].transcript;
           remainingScalars -= scalarLength;
-          if (result.isFinal) isFinal = true;
+          if (result.isFinal !== true) hasInterim = true;
         }
       }
       if (oversized) {
@@ -3302,7 +3315,7 @@
       }
       if (!transcript) return;
       if (!state.started_sent && !clientLocalRecognitionStarted(state)) return;
-      if (!isFinal) {
+      if (hasInterim) {
         if (voiceTranscriptEl) {
           voiceTranscriptEl.textContent = "Hearing: " + transcript;
           voiceTranscriptEl.setAttribute("data-final", "false");
@@ -3447,9 +3460,16 @@
         || frame.applied_chat_context_revision !== frame.chat_context_revision
         || frame.foreground_active !== true
         || frame.microphone_enabled !== true
-        || frame.speech_muted !== false
+        || frame.speech_muted !== false || voiceLocalStopInFlight
         || !isRfc3339Utc(frame.lease_expires_at)
         || Date.parse(frame.lease_expires_at) <= Date.now()) return false;
+    if (voiceLocalStopResetPending) {
+      voiceLocalLastAnnouncementSequence = 0;
+      voiceLocalLastMuteRevision = 0;
+      voiceLocalLastConsentRevision = 0;
+      voiceLocalStopInFlight = false;
+      voiceLocalStopResetPending = false;
+    }
     voiceSession = Object.assign({}, voiceSession, {
       state: "active",
       foreground_active: true,
@@ -3590,22 +3610,35 @@
     else settleClientLocalAnnouncementQueue();
   }
 
-  function cancelClientLocalPlayout(reason, report) {
+  function cancelClientLocalPlayout(reason) {
     var active = voiceLocalActiveAnnouncement;
-    voiceLocalAnnouncementQueue.forEach(function (frame) { frame.text = ""; });
+    var queued = voiceLocalAnnouncementQueue;
+    var ingress = voiceLocalAnnouncementIngress;
+    var digesting = voiceLocalAnnouncementDigesting;
+    voiceLocalAnnouncementEpoch += 1;
     voiceLocalAnnouncementQueue = [];
+    voiceLocalAnnouncementIngress = [];
+    voiceLocalAnnouncementDigesting = null;
     if (active) {
       active.terminal = true;
       if (active.timer) clearTimeout(active.timer);
       voiceLocalActiveAnnouncement = null;
-      if (report) sendClientLocalPlayoutEvent(
-        active,
-        active.started ? "interrupted" : "failed",
-        reason || "stopped_by_user"
-      );
-      active.frame.text = "";
     }
     try { if (window.speechSynthesis) window.speechSynthesis.cancel(); } catch (e) {}
+    ingress.forEach(function (frame) { frame.text = ""; });
+    if (digesting) digesting.text = "";
+    if (active) sendClientLocalPlayoutEvent(
+      active,
+      active.started ? "interrupted" : "failed",
+      reason || "stopped_by_user"
+    );
+    if (active) active.frame.text = "";
+    queued.forEach(function (frame) {
+      sendClientLocalPlayoutEvent(
+        { frame: frame }, "failed", reason || "stopped_by_user"
+      );
+      frame.text = "";
+    });
     voiceLocalEchoUntil = Date.now()
       + (voiceLocalRequirements && voiceLocalRequirements.echo_suppression_milliseconds || 500);
   }
@@ -3722,13 +3755,15 @@
         || new TextEncoder().encode(frame.text).length
           > voiceLocalRequirements.max_announcement_utf8_bytes) return false;
     var epoch = voiceStateEpoch;
+    var announcementEpoch = voiceLocalAnnouncementEpoch;
     var expectedSequence = voiceLocalLastAnnouncementSequence + 1;
     var digestResult = await clientLocalAwait(
       clientLocalSha256(frame.text), Date.parse(frame.expires_at)
     );
     if (!digestResult.completed || digestResult.error) return false;
     var digest = digestResult.value;
-    if (epoch !== voiceStateEpoch || !clientLocalAnnouncementAuthorityCurrent(frame)
+    if (epoch !== voiceStateEpoch || announcementEpoch !== voiceLocalAnnouncementEpoch
+        || !clientLocalAnnouncementAuthorityCurrent(frame)
         || frame.announcement_sequence !== expectedSequence
         || voiceLocalLastAnnouncementSequence + 1 !== expectedSequence
         || frame.mute_revision < voiceLocalLastMuteRevision
@@ -3784,11 +3819,9 @@
     if (voiceLocalEchoTimer != null) clearTimeout(voiceLocalEchoTimer);
     voiceLocalEchoTimer = null;
     stopClientLocalRecognition("local_recognition_cancelled", !clearSession);
-    cancelClientLocalPlayout("stopped_by_user", false);
-    voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
-    voiceLocalAnnouncementIngress = [];
-    if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
-    voiceLocalAnnouncementDigesting = null;
+    cancelClientLocalPlayout(
+      clearSession ? "stopped_by_user" : "local_audio_interrupted"
+    );
     clearClientLocalTranscript();
     voiceLocalReady = false;
     if (clearSession) clearClientLocalPendingFinal();
@@ -3798,6 +3831,7 @@
       voiceLocalLastAnnouncementSequence = 0;
       voiceLocalLastMuteRevision = 0;
       voiceLocalLastConsentRevision = 0;
+      voiceLocalStopResetPending = false;
       voiceLocalRequirements = null;
       voiceSpeechBackend = null;
       voiceLocalResuming = false;
@@ -3840,11 +3874,9 @@
 
   function pauseVoiceCaptureForChatTransition() {
     if (voiceSpeechBackend === "client_local") {
+      voiceLocalReady = false;
       stopClientLocalRecognition("local_recognition_cancelled", true);
-      cancelClientLocalPlayout("local_audio_interrupted", true);
-      voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
-      voiceLocalAnnouncementIngress = [];
-      if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
+      cancelClientLocalPlayout("local_audio_interrupted");
       clearClientLocalTranscript();
       return;
     }
@@ -3880,7 +3912,11 @@
         return;
       }
       voiceVisibleChatTarget = null;
-      applyVoiceCaptureState();
+      if (sync.succeeded && voiceSpeechBackend === "client_local") {
+        resumeClientLocalSpeech();
+      } else {
+        applyVoiceCaptureState();
+      }
     });
   }
 
@@ -3901,14 +3937,18 @@
   function stopVoiceSpeech() {
     var fence = currentVoiceFence();
     if (!fence || !voiceBindingIsCurrent()) return;
-    // Stop is a realtime local action first.  Purge the active/queued Web
-    // Audio graph synchronously before starting the generation-fenced server
+    // Stop is a realtime local action first. Purge the active/queued local
+    // synthesis and capture owners before starting the generation-fenced server
     // request so a slow or failed network path cannot leave stale speech
     // audible.  The server request below still owns the authoritative speech
     // epoch and existing error/state semantics.
     if (voiceSpeechBackend === "client_local") {
-      cancelClientLocalPlayout("stopped_by_user", true);
-      scheduleClientLocalRecognition();
+      cancelClientLocalPlayout("stopped_by_user");
+      stopClientLocalRecognition("stopped_by_user", true);
+      clearClientLocalTranscript();
+      voiceLocalReady = false;
+      voiceLocalStopInFlight = true;
+      voiceLocalStopResetPending = false;
     } else {
       clearVoiceAudioElements();
     }
@@ -3916,8 +3956,15 @@
       expected_generation: fence.generation,
       expected_media_grant_revision: fence.media_grant_revision,
     }).then(function (result) {
-      if (!result.ok) setVoiceFeedback("error", result.body && result.body.code || "speech_error",
-        result.body && result.body.message, true);
+      if (voiceSpeechBackend === "client_local") voiceLocalStopInFlight = false;
+      if (!result.ok) {
+        setVoiceFeedback("error", result.body && result.body.code || "speech_error",
+          result.body && result.body.message, true);
+      } else if (voiceSpeechBackend === "client_local" && voiceSession
+          && voiceBindingIsCurrent()) {
+        voiceLocalStopResetPending = true;
+        resumeClientLocalSpeech();
+      }
     });
   }
 
@@ -3951,11 +3998,9 @@
           if (voiceSpeechBackend === "client_local" && voiceSession) {
             if (!enable) {
               voiceLocalResumeMicrophoneEnabled = false;
+              voiceLocalReady = false;
               stopClientLocalRecognition("stopped_by_user", true);
-              cancelClientLocalPlayout("stopped_by_user", true);
-              voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
-              voiceLocalAnnouncementIngress = [];
-              if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
+              cancelClientLocalPlayout("stopped_by_user");
               clearClientLocalTranscript();
             }
           }
@@ -3963,6 +4008,7 @@
         }).then(function (updated) {
           if (voiceSpeechBackend === "client_local" && voiceSession) {
             voiceLocalResumeMicrophoneEnabled = voiceSession.microphone_enabled;
+            if (updated) voiceLocalReady = false;
           }
           if (updated && enable && voiceSpeechBackend === "client_local" && !voiceLocalReady) {
             resumeClientLocalSpeech();
@@ -3976,15 +4022,14 @@
         patchVoiceSession({ speech_muted: mute }, function () {
           if (voiceSpeechBackend === "client_local" && voiceSession) {
             if (mute) {
+              voiceLocalReady = false;
               stopClientLocalRecognition("stopped_by_user", true);
-              cancelClientLocalPlayout("stopped_by_user", true);
-              voiceLocalAnnouncementIngress.forEach(function (frame) { frame.text = ""; });
-              voiceLocalAnnouncementIngress = [];
-              if (voiceLocalAnnouncementDigesting) voiceLocalAnnouncementDigesting.text = "";
+              cancelClientLocalPlayout("stopped_by_user");
               clearClientLocalTranscript();
             }
           }
         }).then(function (updated) {
+          if (updated && voiceSpeechBackend === "client_local") voiceLocalReady = false;
           if (updated && !mute && voiceSpeechBackend === "client_local" && !voiceLocalReady) {
             resumeClientLocalSpeech();
           }
@@ -4033,8 +4078,9 @@
             || !voiceSession.microphone_enabled || voiceSession.speech_muted
             || !voiceSession.chat_context_synced
             || voiceSession.visible_chat_id !== activeChatId)) {
+        voiceLocalReady = false;
         stopClientLocalRecognition("local_recognition_cancelled", true);
-        cancelClientLocalPlayout("local_audio_interrupted", true);
+        cancelClientLocalPlayout("local_audio_interrupted");
         clearClientLocalTranscript();
       }
     }
@@ -4936,6 +4982,9 @@
         navigator.mediaDevices.enumerateDevices().then(function (devices) {
           if (!devices.some(function (device) { return device.kind === "audioinput"; })) {
             handleVoiceMediaLoss("no_microphone");
+          } else if (voiceSpeechBackend === "client_local"
+              && !devices.some(function (device) { return device.kind === "audiooutput"; })) {
+            handleVoiceMediaLoss("no_audio_output");
           }
         }).catch(function () {});
       });
