@@ -421,7 +421,7 @@
       "sourcePath": "backend/tests/test_voice_rote_capabilities_065.py",
       "sourceBlob": "958fd40e2e94bdd4bbfa4f3f856c437fd53648f9",
       "sourceMode": "100644",
-      "resultSha256": "856cc832b4a7dc7df6553d080c33689a9d071e76c5fd22615c53b997779d8ff0",
+      "resultSha256": "a1f4f203c48260f2891a7af4b961c7fef7992b4954b234dcc79c8434a1446f0d",
       "task": "T016",
       "reason": "Cover strict half-duplex client-local capability normalization and fail-closed typed fallback before ROTE implementation."
     },

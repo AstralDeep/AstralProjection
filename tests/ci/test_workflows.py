@@ -236,6 +236,12 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     assert text.count("== 'success'") == 3
 
 
+def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
+    python = _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "python")
+
+    assert "python -m pytest -q -p no:cacheprovider" in python
+
+
 def test_gitleaks_history_exempts_only_reviewed_fixture_fingerprints() -> None:
     ignore = ROOT / ".gitleaksignore"
 

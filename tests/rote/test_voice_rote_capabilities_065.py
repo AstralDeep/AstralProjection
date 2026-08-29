@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from rote.capabilities import DeviceProfile, DeviceType
 from rote.adapter import ComponentAdapter
 
@@ -193,3 +195,95 @@ def test_client_local_missing_installed_recognition_asset_is_unavailable() -> No
     result = ComponentAdapter.adapt_voice_capability(profile)
     assert result["disposition"] == "typed_fallback"
     assert result["reason"] == "local_recognition_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("device_updates", "voice_updates", "reason"),
+    (
+        ({}, {"contract": "client_local/v2"}, "client_contract_upgrade_required"),
+        ({"voice_transport": "livekit"}, {}, "client_contract_upgrade_required"),
+        ({"has_microphone": False}, {}, "no_microphone"),
+        ({"has_audio_output": False}, {}, "no_audio_output"),
+        ({"microphone_permission": "denied"}, {}, "microphone_permission_denied"),
+        (
+            {"microphone_permission": "not_determined"},
+            {},
+            "microphone_permission_not_determined",
+        ),
+        (
+            {},
+            {"recognition_permission": "not_determined"},
+            "speech_recognition_permission_not_determined",
+        ),
+        (
+            {},
+            {"recognition_processing": "unsupported"},
+            "local_processing_not_guaranteed",
+        ),
+        (
+            {},
+            {"recognition_installation": "downloadable"},
+            "local_language_download_required",
+        ),
+        (
+            {},
+            {"recognition_installation": "installing"},
+            "local_language_installing",
+        ),
+        (
+            {},
+            {"recognition_installation": "failed"},
+            "local_language_install_failed",
+        ),
+        (
+            {},
+            {"recognition_locale": "unavailable"},
+            "local_recognition_locale_unavailable",
+        ),
+        (
+            {},
+            {"synthesis_processing": "unsupported"},
+            "local_processing_not_guaranteed",
+        ),
+        (
+            {},
+            {"synthesis_locale": "unavailable"},
+            "local_synthesis_locale_unavailable",
+        ),
+    ),
+)
+def test_client_local_readiness_failures_remain_closed_typed_fallbacks(
+    device_updates: dict[str, object],
+    voice_updates: dict[str, object],
+    reason: str,
+) -> None:
+    """Every unavailable local capability retains the typed-only contract."""
+    voice = {
+        "contract": "client_local/v1",
+        "configured_locale": "en-US",
+        "recognition_permission": "authorized",
+        "recognition_processing": "guaranteed_local",
+        "recognition_locale": "ready",
+        "recognition_installation": "ready",
+        "synthesis_processing": "guaranteed_local",
+        "synthesis_locale": "ready",
+    }
+    voice.update(voice_updates)
+    device = _voice_device(
+        voice_transport="client_local",
+        full_duplex=False,
+        voice=voice,
+    )
+    device.update(device_updates)
+
+    assert ComponentAdapter.adapt_voice_capability(DeviceProfile.from_dict(device)) == {
+        "available": False,
+        "disposition": "typed_fallback",
+        "reason": reason,
+        "speech_backend": "client_local",
+        "transport": "client_local",
+        "contract": "client_local/v1",
+        "configured_locale": "en-US",
+        "full_duplex": False,
+        "typed_fallback": True,
+    }
