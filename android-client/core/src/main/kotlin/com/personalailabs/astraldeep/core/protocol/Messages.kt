@@ -1,3 +1,7 @@
+// The frozen local-v2 manifest's exact field vocabulary stays inline so schema
+// review can compare each declared shape directly.
+@file:Suppress("ktlint:standard:max-line-length")
+
 package com.personalailabs.astraldeep.core.protocol
 
 import com.personalailabs.astraldeep.core.chrome.ChromeMenuModel
@@ -229,18 +233,40 @@ data class VoiceSubmissionRejected(
 )
 
 enum class LocalVoiceDisposition(val wireValue: String) {
-    READY("ready"), TYPED_FALLBACK("typed_fallback"), REJECTED("rejected"),
-    PERMISSION_DENIED("permission_denied"), FINAL("final"), SPEAKING("speaking"), FINISHED("finished"),
+    READY("ready"),
+    TYPED_FALLBACK("typed_fallback"),
+    REJECTED("rejected"),
+    PERMISSION_DENIED("permission_denied"),
+    FINAL("final"),
+    SPEAKING("speaking"),
+    FINISHED("finished"),
 }
 
 /** Strict data-only local capability; it cannot select a backend or runtime. */
 data class LocalVoiceCapability(val disposition: LocalVoiceDisposition, val payload: JsonObject) {
     companion object {
-        private val fields = setOf("contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale")
-        private val unavailable = setOf("schema_version", "speech_backend", "status", "reason", "checked_at", "expires_at", "supported_transports", "requirements")
+        private val fields =
+            setOf("contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale")
+        private val unavailable =
+            setOf(
+                "schema_version",
+                "speech_backend",
+                "status",
+                "reason",
+                "checked_at",
+                "expires_at",
+                "supported_transports",
+                "requirements",
+            )
+
         fun fromJson(value: JsonObject): LocalVoiceCapability? {
             if (value["status"] != null) {
-                if (value.keys !in setOf(unavailable, unavailable + "retry_after_seconds") || value.string("schema_version") != "2" || value.string("speech_backend") != "client_local" || value.string("status") != "unavailable" || value.string("reason") !in LocalVoiceFrame.reasons || value.array("supported_transports")?.mapNotNull { it.jsonPrimitive.contentOrNull } != listOf("client_local") || value.obj("requirements") == null) return null
+                if (value.keys !in setOf(unavailable, unavailable + "retry_after_seconds") || value.string("schema_version") != "2" || value.string("speech_backend") != "client_local" || value.string("status") != "unavailable" || value.string("reason") !in LocalVoiceFrame.reasons || value.array("supported_transports")?.mapNotNull {
+                        it.jsonPrimitive.contentOrNull
+                    } != listOf("client_local") || value.obj("requirements") == null
+                ) {
+                    return null
+                }
                 return LocalVoiceCapability(LocalVoiceDisposition.TYPED_FALLBACK, value)
             }
             if (value.keys != fields || value.string("contract") != "client_local/v1" || value.string("transport") != "client_local" || value["full_duplex"]?.jsonPrimitive?.booleanOrNull != false || value.string("recognition_processing") != "guaranteed_local" || value.string("synthesis_processing") != "guaranteed_local") return null
@@ -256,39 +282,64 @@ data class LocalVoiceCapability(val disposition: LocalVoiceDisposition, val payl
 /** Exact v2 local frame. Invalid/unknown values are intentionally untyped. */
 data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposition, val payload: JsonObject) {
     companion object {
-        val reasons = setOf("ready", "client_contract_upgrade_required", "client_readiness_required", "microphone_permission_not_determined", "microphone_permission_denied", "speech_recognition_permission_not_determined", "speech_recognition_permission_denied", "no_microphone", "no_audio_output", "local_processing_not_guaranteed", "local_recognition_unavailable", "local_synthesis_unavailable", "local_recognition_locale_unavailable", "local_synthesis_locale_unavailable", "local_language_download_required", "local_language_installing", "local_language_install_failed", "local_capture_not_ready", "local_session_not_ready", "local_recognition_failed", "local_recognition_cancelled", "local_synthesis_failed", "local_audio_interrupted", "local_engine_lost", "local_announcement_expired", "stopped_by_user", "stale_connection", "stale_session", "stale_speech_revision", "stale_chat_context", "stale_local_turn", "duplicate_local_final", "altered_local_final", "local_final_empty", "local_final_oversized", "local_final_malformed", "local_language_mismatch", "announcement_stale_sequence", "announcement_suppressed_muted", "announcement_suppressed_background", "announcement_consent_invalid", "announcement_invalid", "invalid_binding", "capacity_exhausted", "asr_unavailable", "authentication_required", "backend_mismatch", "backend_selection_invalid", "feature_disabled", "internal_error", "takeover_required", "tts_unavailable", "unsupported_speech_backend", "worker_unavailable")
-        private val common = setOf("type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision")
-        private val fields = mapOf(
-            "voice_local_ready" to common + setOf("contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale", "client_sequence"),
-            "voice_local_session_ready" to common + setOf("contract", "transport", "configured_locale", "chat_id", "chat_context_revision", "applied_chat_context_revision", "foreground_active", "microphone_enabled", "speech_muted", "lease_expires_at"),
-            "voice_local_recognition_started" to common + setOf("client_turn_id", "chat_id", "chat_context_revision", "recognition_sequence"),
-            "voice_local_turn_bound" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "binding_expires_at"),
-            "voice_local_final" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "final", "recognized_locale", "text", "text_digest_sha256"),
-            "voice_local_recognition_failed" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason"),
-            "voice_local_final_rejected" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason", "retry_policy", "occurred_at"),
-            "voice_local_announcement" to common + setOf("announcement_id", "announcement_sequence", "turn_id", "kind", "output_policy", "locale", "text", "text_digest_sha256", "expires_at", "foreground_required", "mute_revision", "consent_revision"),
-            "voice_local_playout_event" to common + setOf("announcement_id", "announcement_sequence", "turn_id", "kind", "phase", "client_sequence", "observed_at"),
-        )
+        val reasons =
+            setOf("ready", "client_contract_upgrade_required", "client_readiness_required", "microphone_permission_not_determined", "microphone_permission_denied", "speech_recognition_permission_not_determined", "speech_recognition_permission_denied", "no_microphone", "no_audio_output", "local_processing_not_guaranteed", "local_recognition_unavailable", "local_synthesis_unavailable", "local_recognition_locale_unavailable", "local_synthesis_locale_unavailable", "local_language_download_required", "local_language_installing", "local_language_install_failed", "local_capture_not_ready", "local_session_not_ready", "local_recognition_failed", "local_recognition_cancelled", "local_synthesis_failed", "local_audio_interrupted", "local_engine_lost", "local_announcement_expired", "stopped_by_user", "stale_connection", "stale_session", "stale_speech_revision", "stale_chat_context", "stale_local_turn", "duplicate_local_final", "altered_local_final", "local_final_empty", "local_final_oversized", "local_final_malformed", "local_language_mismatch", "announcement_stale_sequence", "announcement_suppressed_muted", "announcement_suppressed_background", "announcement_consent_invalid", "announcement_invalid", "invalid_binding", "capacity_exhausted", "asr_unavailable", "authentication_required", "backend_mismatch", "backend_selection_invalid", "feature_disabled", "internal_error", "takeover_required", "tts_unavailable", "unsupported_speech_backend", "worker_unavailable")
+        private val common =
+            setOf(
+                "type",
+                "schema_version",
+                "speech_backend",
+                "device_id",
+                "connection_generation",
+                "session_id",
+                "generation",
+                "speech_revision",
+            )
+        private val fields =
+            mapOf(
+                "voice_local_ready" to common + setOf("contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale", "client_sequence"),
+                "voice_local_session_ready" to common + setOf("contract", "transport", "configured_locale", "chat_id", "chat_context_revision", "applied_chat_context_revision", "foreground_active", "microphone_enabled", "speech_muted", "lease_expires_at"),
+                "voice_local_recognition_started" to common + setOf("client_turn_id", "chat_id", "chat_context_revision", "recognition_sequence"),
+                "voice_local_turn_bound" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "binding_expires_at"),
+                "voice_local_final" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "final", "recognized_locale", "text", "text_digest_sha256"),
+                "voice_local_recognition_failed" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason"),
+                "voice_local_final_rejected" to common + setOf("client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason", "retry_policy", "occurred_at"),
+                "voice_local_announcement" to common + setOf("announcement_id", "announcement_sequence", "turn_id", "kind", "output_policy", "locale", "text", "text_digest_sha256", "expires_at", "foreground_required", "mute_revision", "consent_revision"),
+                "voice_local_playout_event" to common + setOf("announcement_id", "announcement_sequence", "turn_id", "kind", "phase", "client_sequence", "observed_at"),
+            )
+
         fun fromJson(value: JsonObject): LocalVoiceFrame? {
             val type = value.string("type") ?: return null
-            if (value.keys != fields[type] || value.string("schema_version") != "2" || value.string("speech_backend") != "client_local" || listOf("device_id", "connection_generation", "session_id").any { !isUuid4(value.string(it)) } || value.int("generation")?.takeIf { it > 0 } == null || value.int("speech_revision")?.takeIf { it > 0 } == null) return null
-            val disposition = when (type) {
-                "voice_local_final" -> if (value["final"]?.jsonPrimitive?.booleanOrNull == true && !value.string("text").isNullOrBlank() && value.string("text")!!.length <= 8000 && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true) LocalVoiceDisposition.FINAL else return null
-                "voice_local_recognition_failed", "voice_local_final_rejected" -> if (value.string("reason") in reasons) LocalVoiceDisposition.REJECTED else return null
-                "voice_local_announcement" -> if ((value.string("text")?.toByteArray()?.size ?: 601) <= 600) LocalVoiceDisposition.SPEAKING else return null
-                "voice_local_playout_event" -> if (value.string("phase") in setOf("started", "finished", "failed", "suppressed")) LocalVoiceDisposition.FINISHED else return null
-                else -> LocalVoiceDisposition.READY
+            if (value.keys != fields[type] || value.string("schema_version") != "2" || value.string("speech_backend") != "client_local" ||
+                listOf("device_id", "connection_generation", "session_id").any {
+                    !isUuid4(value.string(it))
+                } || value.int("generation")?.takeIf { it > 0 } == null || value.int("speech_revision")?.takeIf { it > 0 } == null
+            ) {
+                return null
             }
+            val disposition =
+                when (type) {
+                    "voice_local_final" -> if (value["final"]?.jsonPrimitive?.booleanOrNull == true && !value.string("text").isNullOrBlank() && value.string("text")!!.length <= 8000 && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true) LocalVoiceDisposition.FINAL else return null
+                    "voice_local_recognition_failed", "voice_local_final_rejected" -> if (value.string("reason") in reasons) LocalVoiceDisposition.REJECTED else return null
+                    "voice_local_announcement" -> if ((value.string("text")?.toByteArray()?.size ?: 601) <= 600) LocalVoiceDisposition.SPEAKING else return null
+                    "voice_local_playout_event" -> if (value.string("phase") in setOf("started", "finished", "failed", "suppressed")) LocalVoiceDisposition.FINISHED else return null
+                    else -> LocalVoiceDisposition.READY
+                }
             return LocalVoiceFrame(type, disposition, value)
         }
     }
 }
 
 private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+
 private fun JsonObject.int(key: String): Int? = this[key]?.jsonPrimitive?.intOrNull
+
 private fun JsonObject.obj(key: String): JsonObject? = this[key] as? JsonObject
+
 private fun JsonObject.array(key: String): JsonArray? = this[key] as? JsonArray
-private fun isUuid4(value: String?): Boolean = value?.matches(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) == true
+
+private fun isUuid4(value: String?): Boolean =
+    value?.matches(Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")) == true
 
 /** Content-free manifest that must precede a worker audio track. */
 data class VoiceAnnouncementMedia(
