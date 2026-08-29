@@ -1830,7 +1830,7 @@ public struct VoiceLocalFrame: Sendable, Equatable {
             else { return nil }
             disposition = .speaking
         case "voice_local_playout_event":
-            guard ["started", "finished", "failed", "suppressed"].contains(object["phase"]?.stringValue),
+            guard ["started", "finished", "interrupted", "failed"].contains(object["phase"]?.stringValue),
                 voiceTimestamp(object["observed_at"]) != nil,
                 object["reason"] == nil || voiceLocalReasons.contains(object["reason"]?.stringValue ?? "")
             else { return nil }

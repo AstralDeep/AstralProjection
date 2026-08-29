@@ -258,6 +258,33 @@ _VOICE_LOCAL_FIELDS: dict[str, frozenset[str]] = {
     },
 }
 
+_CLIENT_LOCAL_REQUIREMENTS = {
+    "session_contract": "voice-rest/v2-client-local",
+    "local_frame_contract": "client_local/v1",
+    "configured_locale": "en-US",
+    "recognition_must_be_local": True,
+    "synthesis_must_be_local": True,
+    "installation_policy": "explicit_user_action_only",
+    "requirement_revision": 1,
+    "max_final_unicode_scalars": 8000,
+    "max_announcement_utf8_bytes": 600,
+    "announcement_ttl_seconds": 10,
+    "echo_suppression_milliseconds": 500,
+}
+
+
+def _exact_client_local_requirements(value: object) -> bool:
+    """Match JSON requirements without Python bool/int/float coercion."""
+
+    return bool(
+        isinstance(value, dict)
+        and set(value) == set(_CLIENT_LOCAL_REQUIREMENTS)
+        and all(
+            type(value[name]) is type(expected) and value[name] == expected
+            for name, expected in _CLIENT_LOCAL_REQUIREMENTS.items()
+        )
+    )
+
 
 @dataclass(frozen=True)
 class VoiceLocalValue:
@@ -284,6 +311,15 @@ def parse_client_local_capability(payload: object) -> Optional[VoiceLocalValue]:
     }
     if "status" in payload:
         status = payload.get("status")
+        try:
+            checked_at = datetime.fromisoformat(
+                _utc(payload.get("checked_at"), "checked_at")[:-1] + "+00:00"
+            )
+            expires_at = datetime.fromisoformat(
+                _utc(payload.get("expires_at"), "expires_at")[:-1] + "+00:00"
+            )
+        except WindowsProtocolError:
+            return None
         if (
             set(payload) != unavailable
             and set(payload) != unavailable | {"retry_after_seconds"}
@@ -292,7 +328,16 @@ def parse_client_local_capability(payload: object) -> Optional[VoiceLocalValue]:
             or status not in {"requires_client_readiness", "unavailable"}
             or payload.get("reason") not in _VOICE_LOCAL_REASONS
             or payload.get("supported_transports") != ["client_local"]
-            or not isinstance(payload.get("requirements"), dict)
+            or not _exact_client_local_requirements(payload.get("requirements"))
+            or expires_at <= checked_at
+            or (
+                "retry_after_seconds" in payload
+                and (
+                    isinstance(payload["retry_after_seconds"], bool)
+                    or not isinstance(payload["retry_after_seconds"], int)
+                    or not 1 <= payload["retry_after_seconds"] <= 300
+                )
+            )
             or (
                 status == "requires_client_readiness"
                 and payload.get("reason") != "client_readiness_required"
@@ -419,11 +464,18 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
             return None
         disposition = "rejected"
     elif frame_type == "voice_local_announcement":
+        text = payload.get("text")
+        kind = payload.get("kind")
         if (
-            not isinstance(payload.get("text"), str)
-            or len(payload["text"].encode()) > 600
-            or payload.get("kind") not in _VOICE_PLAYOUT_KINDS
-            or payload.get("output_policy") != "lifecycle"
+            not isinstance(text, str)
+            or not text
+            or unicodedata.normalize("NFC", text) != text
+            or any(unicodedata.category(char) in {"Cc", "Cs"} for char in text)
+            or len(text.encode()) > 600
+            or kind not in _VOICE_PLAYOUT_KINDS
+            or payload.get("output_policy") not in {"lifecycle", "full_recap"}
+            or (kind == "greeting" and payload.get("turn_id") is not None)
+            or (kind != "greeting" and not _is_uuid4(payload.get("turn_id")))
             or not isinstance(payload.get("locale"), str)
             or re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", payload["locale"]) is None
             or not isinstance(payload.get("text_digest_sha256"), str)
@@ -433,7 +485,7 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
             return None
         disposition = "speaking"
     elif frame_type == "voice_local_playout_event":
-        if payload.get("phase") not in {"started", "finished", "failed", "suppressed"} or (
+        if payload.get("phase") not in {"started", "finished", "interrupted", "failed"} or (
             payload.get("reason") is not None and payload.get("reason") not in _VOICE_LOCAL_REASONS
         ):
             return None
@@ -1481,6 +1533,7 @@ class LocalOperationSubmission:
     action: str
     chat_id: Optional[str]
     label: str = "Submitting…"
+    voice_turn_id: Optional[str] = None
 
     def validate(self) -> None:
         _uuid4(self.submission_id, "submission_id")
@@ -1489,6 +1542,8 @@ class LocalOperationSubmission:
             raise WindowsProtocolError("submission action must be snake case")
         if self.chat_id is not None:
             _uuid4(self.chat_id, "chat_id")
+        if self.voice_turn_id is not None:
+            _uuid4(self.voice_turn_id, "voice_turn_id")
         if not isinstance(self.label, str) or not self.label.strip():
             raise WindowsProtocolError("submission label must be non-empty")
 
@@ -1600,6 +1655,7 @@ class VoiceTranscriptSubmission:
             request_generation=str(self.transcript["request_generation"]),
             action="chat_message",
             chat_id=str(self.transcript["chat_id"]),
+            voice_turn_id=str(self.transcript["turn_id"]),
         )
 
     def expired(self, now: Optional[datetime] = None) -> bool:
@@ -1987,6 +2043,8 @@ class OrchestratorClient(QObject):
         self._had_session = False
         self._pending: deque[str] = deque()
         self._voice_pending: dict[str, VoiceTranscriptSubmission] = {}
+        self._voice_local_ack_lock = threading.Lock()
+        self._voice_local_pending_ack: Optional[dict[str, Any]] = None
         self._queued_replay_preparation_required = False
 
     def require_queued_replay_preparation(self) -> None:
@@ -2088,10 +2146,57 @@ class OrchestratorClient(QObject):
             is_voice_ack = (
                 frame_type == "user_message_acked" and msg.get("voice_turn_id") is not None
             )
-            if not settled and (frame_type == "voice_submission_rejected" or is_voice_ack):
+            local_ack_settled = (
+                not settled
+                and is_voice_ack
+                and self._settle_voice_local_ack(msg)
+            )
+            if not settled and (
+                frame_type == "voice_submission_rejected"
+                or (is_voice_ack and not local_ack_settled)
+            ):
                 self._safe_status(f"protocol_error:{frame_type}")
                 return False
         return True
+
+    def _settle_voice_local_ack(self, frame: dict[str, Any]) -> bool:
+        """Consume one exact ACK registered by an outbound v2-local final."""
+
+        required = {
+            "type",
+            "schema_version",
+            "chat_id",
+            "message_id",
+            "submission_id",
+            "request_generation",
+            "connection_generation",
+            "voice_turn_id",
+        }
+        with self._voice_local_ack_lock:
+            pending = self._voice_local_pending_ack
+            valid = bool(
+                pending is not None
+                and set(frame) == required
+                and frame.get("type") == "user_message_acked"
+                and frame.get("schema_version") == "1"
+                and frame.get("connection_generation") == self.connection_generation
+                and all(
+                    frame.get(name) == pending.get(name)
+                    for name in (
+                        "chat_id",
+                        "submission_id",
+                        "request_generation",
+                        "connection_generation",
+                        "voice_turn_id",
+                    )
+                )
+                and isinstance(frame.get("message_id"), int)
+                and not isinstance(frame.get("message_id"), bool)
+                and frame["message_id"] >= 1
+            )
+            if valid:
+                self._voice_local_pending_ack = None
+        return valid
 
     @property
     def connected(self) -> bool:
@@ -2102,6 +2207,15 @@ class OrchestratorClient(QObject):
 
     def stop(self) -> None:
         self._stop = True
+        if self._loop and self._ws:
+            try:
+                asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
+            except RuntimeError:
+                pass
+
+    def request_reconnect(self) -> None:
+        """Close the current socket without disabling the reconnect loop."""
+
         if self._loop and self._ws:
             try:
                 asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
@@ -2153,6 +2267,8 @@ class OrchestratorClient(QObject):
         """The register_ui handshake frame, rebuilt per (re)connect so
         ``session_id`` reflects the chat that was open when the drop happened."""
         self.connection_generation = str(uuid.uuid4())
+        with self._voice_local_ack_lock:
+            self._voice_local_pending_ack = None
         try:
             self.connection_generation_changed.emit(self.connection_generation)
         except RuntimeError:
@@ -2549,7 +2665,7 @@ class OrchestratorClient(QObject):
         self._send_voice_frame(submission.to_frame(self.connection_generation))
         return local
 
-    def send_voice_local_frame(self, frame: dict[str, Any]) -> None:
+    def send_voice_local_frame(self, frame: dict[str, Any]) -> bool:
         """Send one exact current-socket client-local frame without v1 proof wrapping."""
 
         parsed = parse_voice_local_frame(frame)
@@ -2564,7 +2680,49 @@ class OrchestratorClient(QObject):
         connection = _uuid4(frame.get("connection_generation"), "connection_generation")
         if connection != self.connection_generation:
             raise WindowsProtocolError("voice local frame connection is stale")
-        self._send_voice_frame(copy.deepcopy(frame))
+        registered_ack: Optional[dict[str, Any]] = None
+        previous_ack: Optional[dict[str, Any]] = None
+        if frame["type"] == "voice_local_final":
+            registered_ack = {
+                "chat_id": frame["chat_id"],
+                "submission_id": frame["submission_id"],
+                "request_generation": frame["request_generation"],
+                "connection_generation": frame["connection_generation"],
+                "voice_turn_id": frame["turn_id"],
+            }
+            with self._voice_local_ack_lock:
+                previous_ack = self._voice_local_pending_ack
+                if previous_ack is not None and previous_ack != registered_ack:
+                    raise WindowsProtocolError(
+                        "another client-local final is awaiting acknowledgement"
+                    )
+                if previous_ack is not None:
+                    registered_ack = previous_ack
+                self._voice_local_pending_ack = registered_ack
+        sent = self._send_voice_frame(copy.deepcopy(frame)) is not False
+        if not sent and registered_ack is not None:
+            with self._voice_local_ack_lock:
+                if self._voice_local_pending_ack is registered_ack:
+                    self._voice_local_pending_ack = previous_ack
+        return sent
+
+    def forget_voice_local_final(self, value: dict[str, Any]) -> bool:
+        """Forget only the exact content-free correlation owned by ``value``."""
+
+        if not isinstance(value, dict):
+            return False
+        expected = {
+            "chat_id": value.get("chat_id"),
+            "submission_id": value.get("submission_id"),
+            "request_generation": value.get("request_generation"),
+            "connection_generation": value.get("connection_generation"),
+            "voice_turn_id": value.get("turn_id"),
+        }
+        with self._voice_local_ack_lock:
+            if self._voice_local_pending_ack != expected:
+                return False
+            self._voice_local_pending_ack = None
+        return True
 
     def send_correlated_new_chat(
         self,
@@ -2602,19 +2760,24 @@ class OrchestratorClient(QObject):
         future.add_done_callback(self._consume_host_send_result)
         return True
 
-    def _send_voice_frame(self, frame: dict[str, Any]) -> None:
+    def _send_voice_frame(self, frame: dict[str, Any]) -> bool:
         """Send without the ordinary offline queue; the proof-bound store retries."""
 
         loop = self._loop
         ws = self._ws
         if not self._connected or loop is None or ws is None:
             self._safe_status("voice_submission_pending")
-            return
-        future = asyncio.run_coroutine_threadsafe(
-            ws.send(json.dumps(frame, ensure_ascii=False, separators=(",", ":"))),
-            loop,
-        )
+            return False
+        try:
+            future = asyncio.run_coroutine_threadsafe(
+                ws.send(json.dumps(frame, ensure_ascii=False, separators=(",", ":"))),
+                loop,
+            )
+        except RuntimeError:
+            self._safe_status("voice_submission_pending")
+            return False
         future.add_done_callback(self._consume_host_send_result)
+        return True
 
     def send_voice_playout_event(self, frame: dict[str, Any]) -> None:
         """Send one strict, content-free local playout observation.

@@ -339,7 +339,7 @@ data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposit
                     "voice_local_recognition_failed" -> if (value.string("reason") in reasons) LocalVoiceDisposition.REJECTED else return null
                     "voice_local_final_rejected" -> if (value.string("reason") in reasons && value.string("retry_policy") in setOf("none", "explicit_user_retry")) LocalVoiceDisposition.REJECTED else return null
                     "voice_local_announcement" -> if ((value.string("text")?.toByteArray()?.size ?: 601) <= 600 && value.string("kind") in localKinds && value.string("output_policy") == "lifecycle" && value.string("locale")?.matches(Regex("^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")) == true && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true && value["foreground_required"]?.jsonPrimitive?.booleanOrNull != null) LocalVoiceDisposition.SPEAKING else return null
-                    "voice_local_playout_event" -> if (value.string("phase") in setOf("started", "finished", "failed", "suppressed") && (value["reason"] == null || value.string("reason") in reasons)) LocalVoiceDisposition.FINISHED else return null
+                    "voice_local_playout_event" -> if (value.string("phase") in setOf("started", "finished", "interrupted", "failed") && (value["reason"] == null || value.string("reason") in reasons)) LocalVoiceDisposition.FINISHED else return null
                     else -> return null
                 }
             return LocalVoiceFrame(type, disposition, value)

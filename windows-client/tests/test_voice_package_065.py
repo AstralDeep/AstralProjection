@@ -32,14 +32,18 @@ def test_frozen_spec_collects_qtmultimedia_and_livekit_native_closure() -> None:
 
 def test_frozen_spec_collects_qt_text_to_speech_plugin_and_first_party_helper() -> None:
     source = SPEC.read_text(encoding="utf-8")
+    voice_source = (ROOT / "astral_client" / "voice.py").read_text(encoding="utf-8")
 
     assert 'collect_submodules("PySide6.QtTextToSpeech")' in source
     assert 'collect_dynamic_libs(\n            "PySide6",' in source
-    assert '"qtexttospeech_*.dll"' in source
+    assert '"qtexttospeech_sapi.dll"' in source
     assert '"libqtexttospeech_*.dylib"' in source
     assert '"PySide6.QtTextToSpeech"' in source
     assert '("asr-helper/publish/AstralSpeechHelper.exe", "asr-helper")' in source
     assert '("asr-helper/helper-source-hashes.json", "asr-helper")' in source
+    assert 'QTextToSpeech(self._engine_name, self)' in voice_source
+    assert 'self._engine_name = "sapi"' in voice_source
+    assert '!= "qtexttospeech_sapi.dll"' in source
     excludes = source[source.index("excludes = [") : source.index("a = Analysis(")]
     assert "PySide6.QtTextToSpeech" not in excludes
 
@@ -53,8 +57,12 @@ def test_helper_product_is_deterministic_warning_clean_and_dependency_free() -> 
     assert "<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>" in project
     assert "<TreatWarningsAsErrors>true</TreatWarningsAsErrors>" in project
     assert "<PackageReference" not in project
+    assert '<Compile Remove="tests\\**\\*.cs" />' in project
     assert 'Name="WriteHelperBuildProvenance"' in project
     assert "GetFileHash" in project
+    assert 'PropertyName="_HelperSourceManifestHash"' in project
+    assert 'PropertyName="_HelperExecutableHash"' in project
+    assert "%(_HashedHelper" not in project
     assert "helper-build-provenance.json" in project
     assert source_hashes["schema_version"] == 1
     assert set(source_hashes["files"]) == {
@@ -87,6 +95,9 @@ def test_helper_test_dependencies_are_exact_locked_and_isolated_from_product() -
         )
         assert lock["dependencies"][".NETFramework,Version=v4.8"][package]["resolved"] == version
     assert 'PrivateAssets="all"' in test_project
+    assert lock["dependencies"][".NETFramework,Version=v4.8"]["astralspeechhelper"] == {
+        "type": "Project"
+    }
 
     product_inputs = "\n".join(
         [
@@ -105,8 +116,11 @@ def test_freeze_verifies_helper_source_provenance_and_executable_digest() -> Non
     source = SPEC.read_text(encoding="utf-8")
 
     assert "helper-build-provenance.json" in source
-    assert 'if _helper_provenance.get("source_manifest_sha256")' in source
-    assert 'if _helper_provenance.get("executable_sha256")' in source
+    assert "def _matches_sha256(value, path):" in source
+    assert 're.fullmatch(r"[0-9A-Fa-f]{64}", value)' in source
+    assert "value.lower() == _sha256(path)" in source
+    assert '_helper_provenance.get("source_manifest_sha256")' in source
+    assert '_helper_provenance.get("executable_sha256")' in source
     assert "helper build provenance is invalid" in source
 
 
@@ -115,13 +129,14 @@ def test_csharp_suite_exercises_program_and_recognition_lifecycle() -> None:
 
     for name in (
         "MainRejectsInvalidProcessArguments",
-        "RunWritesReadyBeforeReading",
+        "RunProvesHostBeforeWritingReady",
         "RunRejectsStopBeforeStart",
         "RunRejectsRepeatedStart",
         "RunRejectsTruncatedActiveInput",
-        "RunStopsAndShutsDownOnce",
-        "RecognitionSessionDeduplicatesFinal",
-        "RecognitionSessionWritesBoundedError",
+        "RunSerializesPersistentCyclesWithStoppedAcknowledgements",
+        "RecognitionSessionAcceptsSameFinalInTwoAcknowledgedCyclesAndFencesStaleEngine",
+        "RecognitionCycleWriterBoundsTerminalAndPreventsPostStoppedOutput",
+        "RecognitionCycleWriterClassifiesInvalidUnicodeAsError",
     ):
         assert name in tests
 

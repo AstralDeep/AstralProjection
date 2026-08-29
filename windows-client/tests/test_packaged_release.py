@@ -8,6 +8,7 @@ check additionally uses its short-lived staging access token.
 from __future__ import annotations
 
 import ctypes
+import io
 import json
 import os
 from pathlib import Path
@@ -105,6 +106,66 @@ def test_entrypoint_resolves_profile_and_validation_before_importing_qt():
     assert "--validate-deployment" not in (ROOT / "astral_client" / "app.py").read_text(
         encoding="utf-8"
     )
+
+
+def _frozen_archive() -> tuple[Path, object, set[str]]:
+    exe = _candidate_exe()
+    from PyInstaller.archive.readers import CArchiveReader
+
+    archive = CArchiveReader(str(exe))
+    names = {name.replace("\\", "/").lower() for name in archive.toc}
+    return exe, archive, names
+
+
+def test_actual_frozen_archive_contains_only_qualified_local_speech_runtime():
+    _exe, _archive, names = _frozen_archive()
+    required = {
+        "asr-helper/astralspeechhelper.exe",
+        "asr-helper/helper-build-provenance.json",
+        "asr-helper/helper-source-hashes.json",
+        "pyside6/qttexttospeech.pyd",
+        "pyside6/qt6texttospeech.dll",
+        "pyside6/plugins/texttospeech/qtexttospeech_sapi.dll",
+    }
+
+    assert required <= names
+    assert not any("qtexttospeech_mock" in name for name in names)
+    assert not any("qtexttospeech_winrt" in name for name in names)
+    assert not any(
+        forbidden in name
+        for name in names
+        for forbidden in (
+            "astralspeechhelper.tests",
+            "mstest",
+            "microsoft.testplatform",
+            "microsoft.codecoverage",
+        )
+    )
+
+
+def test_actual_frozen_helper_completes_ready_shutdown_pipe_smoke(tmp_path):
+    _exe, archive, _names = _frozen_archive()
+    helper_entry = next(
+        name
+        for name in archive.toc
+        if name.replace("\\", "/").lower() == "asr-helper/astralspeechhelper.exe"
+    )
+    helper = tmp_path / "AstralSpeechHelper.exe"
+    helper.write_bytes(archive.extract(helper_entry))
+
+    from astral_client.voice import encode_helper_frame, read_helper_frame
+
+    result = subprocess.run(
+        [str(helper), "--stdio"],
+        input=encode_helper_frame("shutdown"),
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr.decode("utf-8", "replace")
+    output = io.BytesIO(result.stdout)
+    assert read_helper_frame(output) == ("ready", 0, b'{"locale":"en-US"}')
+    assert output.read() == b""
 
 
 def test_actual_frozen_exe_validates_profile_worker_and_lock_without_qt(tmp_path):

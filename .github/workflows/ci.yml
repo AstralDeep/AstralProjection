@@ -74,16 +74,170 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.11"
-      - run: python -m pip install --require-hashes -r windows-client/requirements-release.lock.txt
-      - run: python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
-      - run: python -m pip install --no-deps --no-build-isolation .
-      - env:
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: "10.0.400"
+      - name: Verify the exact native SDK
+        shell: pwsh
+        run: |
+          if ((dotnet --version).Trim() -ne "10.0.400") {
+            throw "unexpected .NET SDK"
+          }
+      - name: Install the locked Windows release runtime
+        run: python -m pip install --require-hashes -r windows-client/requirements-release.lock.txt
+      - name: Restore the native helper from its exact lock
+        run: dotnet restore windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj --locked-mode
+      - name: Verify native helper formatting
+        shell: pwsh
+        run: |
+          dotnet format windows-client\asr-helper\AstralSpeechHelper.csproj `
+            --verify-no-changes --no-restore
+          dotnet format windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj `
+            --verify-no-changes --no-restore
+      - name: Build the native helper and isolated tests
+        run: >-
+          dotnet build windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj
+          --configuration Release --no-restore
+      - name: Test the deterministic native helper with Cobertura
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build\075\coverage\windows-csharp-raw | Out-Null
+          dotnet test windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj `
+            --configuration Release --no-restore --no-build `
+            --filter "TestCategory!=HostCapability" `
+            --settings windows-client\asr-helper\tests\coverage.runsettings `
+            --collect:"Code Coverage" `
+            --results-directory build\075\coverage\windows-csharp-raw `
+            -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+          $reports = @(Get-ChildItem build\075\coverage\windows-csharp-raw `
+            -Recurse -Filter '*.cobertura.xml')
+          if ($reports.Count -ne 1) {
+            throw "expected exactly one C# Cobertura report"
+          }
+          Copy-Item $reports[0].FullName build\075\coverage\windows-csharp.xml
+      - name: Probe installed en-US SAPI capability
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.Speech
+          $supported = @(
+            [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers() |
+              Where-Object {
+                $_.Culture.Name -eq 'en-US' -and @(
+                  $_.SupportedAudioFormats | Where-Object {
+                    $_.SamplesPerSecond -eq 16000 -and
+                    $_.BitsPerSample -eq 16 -and
+                    $_.ChannelCount -eq 1
+                  }
+                ).Count -gt 0
+              }
+          ).Count -gt 0
+          if (-not $supported) {
+            Write-Host "Windows runner is typed-only: no installed en-US 16-kHz recognizer"
+            exit 0
+          }
+          dotnet test windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj `
+            --configuration Release --no-restore --no-build `
+            --filter "TestCategory=HostCapability"
+      - name: Publish deterministic helper and verify provenance
+        shell: pwsh
+        run: |
+          $publish = 'windows-client\asr-helper\publish'
+          $allowed = @(
+            'AstralSpeechHelper.exe',
+            'AstralSpeechHelper.exe.config',
+            'AstralSpeechHelper.pdb',
+            'helper-build-provenance.json'
+          ) | Sort-Object
+
+          function Get-VerifiedHelperHash([string] $directory) {
+            $actual = @(Get-ChildItem $directory -File | ForEach-Object Name | Sort-Object)
+            if (($actual -join "`n") -ne ($allowed -join "`n")) {
+              throw "helper publish allowlist mismatch: $($actual -join ', ')"
+            }
+            $provenance = Get-Content "$directory\helper-build-provenance.json" -Raw |
+              ConvertFrom-Json
+            $keys = @($provenance.PSObject.Properties.Name | Sort-Object)
+            if (($keys -join ',') -ne 'executable_sha256,schema_version,source_manifest_sha256' -or
+                $provenance.schema_version -ne 1) {
+              throw "helper provenance shape is invalid"
+            }
+            foreach ($value in @(
+              $provenance.source_manifest_sha256,
+              $provenance.executable_sha256
+            )) {
+              if ($value -cnotmatch '^[0-9A-Fa-f]{64}$') {
+                throw "helper provenance digest is invalid"
+              }
+            }
+            $sourceHash = (Get-FileHash `
+              windows-client\asr-helper\helper-source-hashes.json -Algorithm SHA256).Hash
+            $executableHash = (Get-FileHash `
+              "$directory\AstralSpeechHelper.exe" -Algorithm SHA256).Hash
+            if ($provenance.source_manifest_sha256.ToLowerInvariant() -ne
+                $sourceHash.ToLowerInvariant() -or
+                $provenance.executable_sha256.ToLowerInvariant() -ne
+                $executableHash.ToLowerInvariant()) {
+              throw "helper provenance does not match its inputs"
+            }
+            return $executableHash
+          }
+
+          if (Test-Path -LiteralPath $publish) {
+            Remove-Item -LiteralPath $publish -Recurse -Force
+          }
+          dotnet clean windows-client\asr-helper\AstralSpeechHelper.csproj `
+            --configuration Release
+          dotnet publish windows-client\asr-helper\AstralSpeechHelper.csproj `
+            --configuration Release --no-restore --output $publish
+          $firstHash = Get-VerifiedHelperHash $publish
+
+          Remove-Item -LiteralPath $publish -Recurse -Force
+          dotnet clean windows-client\asr-helper\AstralSpeechHelper.csproj `
+            --configuration Release
+          dotnet publish windows-client\asr-helper\AstralSpeechHelper.csproj `
+            --configuration Release --no-restore --output $publish
+          $secondHash = Get-VerifiedHelperHash $publish
+          if ($firstHash -ne $secondHash) {
+            throw "helper publish is not byte reproducible"
+          }
+      - name: Freeze the release-only Windows executable
+        working-directory: windows-client
+        run: python -m PyInstaller --noconfirm --clean AstralDeep.spec
+      - name: Install locked CI tooling and Projection package
+        shell: pwsh
+        run: |
+          python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
+          python -m pip install --no-deps --no-build-isolation .
+      - name: Enforce changed native helper coverage
+        run: >-
+          diff-cover build/075/coverage/windows-csharp.xml
+          --compare-branch origin/main --fail-under=90
+      - name: Run Windows source tests with changed-line coverage
+        shell: pwsh
+        env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: windows-client
-        run: python -m pytest windows-client/tests -q
+        run: |
+          python -m pytest windows-client\tests -q -p no:cacheprovider `
+            --cov=windows-client\astral_client --cov-branch `
+            --cov-report=xml:build\075\coverage\windows-python.xml
+          diff-cover build\075\coverage\windows-python.xml `
+            --compare-branch origin/main --fail-under=90
+      - name: Run actual frozen Windows package smokes
+        env:
+          ASTRAL_WINDOWS_EXE: ${{ github.workspace }}\windows-client\dist\AstralDeep.exe
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: windows-client
+        run: >-
+          python -m pytest
+          windows-client\tests\test_packaged_release.py
+          windows-client\tests\test_helper_integrity_075.py
+          -q -p no:cacheprovider
 
   required:
     if: always()

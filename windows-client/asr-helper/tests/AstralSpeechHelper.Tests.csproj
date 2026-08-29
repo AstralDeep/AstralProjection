@@ -12,6 +12,11 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="System.Speech">
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\AstralSpeechHelper.csproj" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" PrivateAssets="all" />
     <PackageReference Include="MSTest.TestAdapter" Version="4.3.3" PrivateAssets="all" />

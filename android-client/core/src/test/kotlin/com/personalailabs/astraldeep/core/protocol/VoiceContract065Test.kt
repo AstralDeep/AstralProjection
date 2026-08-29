@@ -105,7 +105,7 @@ class VoiceContract065Test {
     }
 
     @Test
-    fun feature075RejectsInvalidDeclaredValuesAndAcceptsOptionalPlayoutReason() {
+    fun feature075RejectsInvalidDeclaredValuesAndValidatesPlayoutPhaseAndReason() {
         val vectors = localFixture.getValue("vectors").jsonArray
         val ready =
             vectors.first { it.jsonObject["id"]!!.jsonPrimitive.content == "L-P01-supported-half-duplex" }
@@ -116,8 +116,12 @@ class VoiceContract065Test {
         val playout =
             vectors.first { it.jsonObject["id"]!!.jsonPrimitive.content == "L-P04-playout-finished" }
                 .jsonObject.getValue("payload").jsonObject.toMutableMap()
-        playout["reason"] = JsonPrimitive("announcement_suppressed_muted")
+        playout["phase"] = JsonPrimitive("interrupted")
+        playout["reason"] = JsonPrimitive("local_audio_interrupted")
         assertEquals(LocalVoiceDisposition.FINISHED, LocalVoiceFrame.fromJson(JsonObject(playout))?.disposition)
+
+        playout["phase"] = JsonPrimitive("suppressed")
+        assertNull(LocalVoiceFrame.fromJson(JsonObject(playout)))
     }
 
     @Test

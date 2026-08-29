@@ -72,7 +72,7 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertNil(VoiceLocalFrame(frame: frame))
     }
 
-    func testClientLocalV2RejectsInvalidDeclaredValuesAndAcceptsOptionalPlayoutReason() throws {
+    func testClientLocalV2RejectsInvalidDeclaredValuesAndValidatesPlayoutPhaseAndReason() throws {
         let root = try JSONValue.parse(Data(contentsOf: try localFixtureURL()))
         let vectors = try XCTUnwrap(root["vectors"]?.arrayValue)
         var ready = try XCTUnwrap(
@@ -84,10 +84,16 @@ final class VoiceContract065Tests: XCTestCase {
 
         var playout = try XCTUnwrap(
             vectors.first { $0["id"]?.stringValue == "L-P04-playout-finished" }?["payload"]?.objectValue)
-        playout["reason"] = .string("announcement_suppressed_muted")
+        playout["phase"] = .string("interrupted")
+        playout["reason"] = .string("local_audio_interrupted")
         let optional = try XCTUnwrap(
             InboundFrame.parse(String(decoding: try JSONValue.object(playout).encoded(), as: UTF8.self)))
         XCTAssertEqual(VoiceLocalFrame(frame: optional)?.disposition, .finished)
+
+        playout["phase"] = .string("suppressed")
+        let suppressed = try XCTUnwrap(
+            InboundFrame.parse(String(decoding: try JSONValue.object(playout).encoded(), as: UTF8.self)))
+        XCTAssertNil(VoiceLocalFrame(frame: suppressed))
     }
 
     private func localFixtureURL() throws -> URL {
