@@ -40,11 +40,17 @@ _profile_path = _root / "deployment" / "release-profile.json"
 _runtime_manifest_path = _root / "deployment" / "runtime-manifest.json"
 _release_lock_path = _root / "requirements-release.lock.txt"
 _requirements_input_path = _root / "requirements.in"
+_helper_path = _root / "asr-helper" / "publish" / "AstralSpeechHelper.exe"
+_helper_provenance_path = _root / "asr-helper" / "publish" / "helper-build-provenance.json"
+_helper_source_manifest_path = _root / "asr-helper" / "helper-source-hashes.json"
 for _required in (
     _profile_path,
     _runtime_manifest_path,
     _release_lock_path,
     _requirements_input_path,
+    _helper_path,
+    _helper_provenance_path,
+    _helper_source_manifest_path,
 ):
     if not _required.is_file():
         raise SystemExit(f"required Windows release input is missing: {_required.name}")
@@ -56,6 +62,17 @@ _profile_canonical = json.dumps(
 ).encode("utf-8")
 def _sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+_helper_provenance = json.loads(_helper_provenance_path.read_text(encoding="utf-8-sig"))
+if set(_helper_provenance) != {
+    "schema_version", "source_manifest_sha256", "executable_sha256"
+} or _helper_provenance.get("schema_version") != 1:
+    raise SystemExit("helper build provenance is invalid")
+if _helper_provenance.get("source_manifest_sha256") != _sha256(_helper_source_manifest_path):
+    raise SystemExit("helper build provenance is invalid")
+if _helper_provenance.get("executable_sha256") != _sha256(_helper_path):
+    raise SystemExit("helper build provenance is invalid")
 
 
 if __version__ != "0.4.0" or _profile.get("client_version") != __version__:
@@ -178,6 +195,7 @@ a = Analysis(
         ("requirements-release.lock.txt", "deployment"),
         ("requirements.in", "deployment"),
         ("asr-helper/helper-source-hashes.json", "asr-helper"),
+        ("asr-helper/publish/helper-build-provenance.json", "asr-helper"),
     ]
     + collect_data_files("livekit", include_py_files=False),
     hiddenimports=hiddenimports,

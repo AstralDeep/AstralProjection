@@ -52,6 +52,8 @@ from .protocol import (
     VOICE_TRANSCRIPT_TOPIC,
     VoiceTranscriptSubmission,
     WindowsProtocolError,
+    parse_client_local_capability,
+    parse_voice_local_frame,
     validate_voice_recovery_envelope,
 )
 
@@ -364,6 +366,7 @@ class WindowsSpeechHelper:
         self._write_lock = threading.Lock()
         self._on_final: Optional[Callable[[str], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
+        self._state = "new"
 
     def _launch(self) -> bool:
         if self._process is not None and self._process.poll() is None:
@@ -395,6 +398,7 @@ class WindowsSpeechHelper:
             if value != {"locale": "en-US"}:
                 raise ValueError("helper readiness is invalid")
             self._ready = True
+            self._state = "ready"
             return True
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
             self._fail_closed()
@@ -423,9 +427,13 @@ class WindowsSpeechHelper:
     ) -> None:
         if not self.capability():
             raise RuntimeError("local_recognition_unavailable")
+        if self._state != "ready":
+            self._fail_closed()
+            raise RuntimeError("invalid_helper_state")
         self._on_final = on_final
         self._on_error = on_error
         self._send("start", b'{"locale":"en-US","sample_rate":48000,"channels":1}')
+        self._state = "recognizing"
         if self._reader is None or not self._reader.is_alive():
             self._reader = threading.Thread(target=self._read_loop, daemon=True)
             self._reader.start()
@@ -457,8 +465,12 @@ class WindowsSpeechHelper:
     def stop_recognition(self) -> None:
         if self._process is None or self._process.poll() is not None:
             return
+        if self._state != "recognizing":
+            self._fail_closed()
+            raise RuntimeError("invalid_helper_state")
         try:
             self._send("stop")
+            self._state = "ready"
         except RuntimeError:
             pass
 
@@ -466,6 +478,7 @@ class WindowsSpeechHelper:
         process = self._process
         self._process = None
         self._ready = False
+        self._state = "closed"
         self._on_final = None
         self._on_error = None
         if process is not None and process.poll() is None:
@@ -552,6 +565,8 @@ class QtLocalSpeechAdapter:
         self._seen_finals: set[str] = set()
         self._recognition_requested = False
         self._engine_available = True
+        self._restart_generation = 0
+        self._helper_recognizing = False
 
     def capability(self) -> dict[str, Any]:
         if not self._engine_available or not self.helper.capability():
@@ -570,6 +585,7 @@ class QtLocalSpeechAdapter:
         self._on_final = on_final
         self._on_error = on_error
         self._recognition_requested = True
+        self._restart_generation += 1
         return self._start_capture()
 
     def _start_capture(self) -> bool:
@@ -577,6 +593,7 @@ class QtLocalSpeechAdapter:
             return False
         try:
             self.helper.start_recognition(self._helper_final, self._helper_error)
+            self._helper_recognizing = True
             self.audio.start_capture(self._feed_pcm)
             return True
         except (RuntimeError, ValueError):
@@ -614,7 +631,9 @@ class QtLocalSpeechAdapter:
         self._engine_available = False
         self._recognition_requested = False
         self.audio.stop_capture()
-        self.helper.stop_recognition()
+        if self._helper_recognizing:
+            self.helper.stop_recognition()
+            self._helper_recognizing = False
         self.tts.stop()
         if callback is not None:
             callback("local_engine_lost")
@@ -628,32 +647,50 @@ class QtLocalSpeechAdapter:
         if not self._engine_available or not self.tts.capability(locale):
             on_phase("failed")
             return False
+        self._restart_generation += 1
+        restart_generation = self._restart_generation
         self.audio.stop_capture()
-        self.helper.stop_recognition()
+        if self._helper_recognizing:
+            self.helper.stop_recognition()
+            self._helper_recognizing = False
 
         def terminal(phase: str) -> None:
             if phase not in {"started", "finished", "interrupted", "failed"}:
                 phase = "failed"
             on_phase(phase)
             if phase != "started" and self._recognition_requested and self._engine_available:
-                self._schedule(500, self._start_capture)
+                self._schedule(
+                    500,
+                    lambda: (
+                        self._start_capture()
+                        if restart_generation == self._restart_generation
+                        else False
+                    ),
+                )
 
         self.tts.speak(text, locale, terminal)
         return True
 
     def stop_recognition(self) -> None:
+        self._restart_generation += 1
         self._recognition_requested = False
         self.audio.stop_capture()
-        self.helper.stop_recognition()
+        if self._helper_recognizing:
+            self.helper.stop_recognition()
+            self._helper_recognizing = False
 
     def stop_all(self) -> None:
+        self._restart_generation += 1
         self._recognition_requested = False
         self.audio.stop_capture()
-        self.helper.stop_recognition()
+        if self._helper_recognizing:
+            self.helper.stop_recognition()
+            self._helper_recognizing = False
         self.tts.stop()
         self._seen_finals.clear()
 
     def close(self) -> None:
+        self._restart_generation += 1
         self._recognition_requested = False
         self.audio.stop_capture()
         self.tts.stop()
@@ -742,6 +779,17 @@ class VoiceHttpClient:
 
     def capability(self) -> dict[str, Any]:
         return self._request("GET", "/api/voice/capability")
+
+    def capability_v2(self) -> dict[str, Any]:
+        return self._request("GET", "/api/voice/v2/capability")
+
+    def create_local(self, body: dict[str, Any], scope: dict[str, str]) -> dict[str, Any]:
+        return self._request("POST", "/api/voice/v2/sessions", body, scope)
+
+    def takeover_local(
+        self, session_id: str, body: dict[str, Any], scope: dict[str, str]
+    ) -> dict[str, Any]:
+        return self._request("POST", f"/api/voice/v2/sessions/{session_id}/takeover", body, scope)
 
     def create(self, body: dict[str, Any], scope: dict[str, str]) -> dict[str, Any]:
         return self._request("POST", "/api/voice/sessions", body, scope)
@@ -843,7 +891,9 @@ class VoiceHttpClient:
                 payload = json.loads(raw.decode("utf-8", "replace"))
             except (ValueError, TypeError):
                 payload = {}
-            code = payload.get("code") if isinstance(payload, dict) else None
+            code = (
+                payload.get("code") or payload.get("reason") if isinstance(payload, dict) else None
+            )
             if code == "voice_takeover_required" and isinstance(
                 payload.get("current_session"), dict
             ):
@@ -2251,6 +2301,7 @@ class VoiceController(QObject):
         media: Optional[Any] = None,
         run_async: Optional[Callable[[Callable[[], None]], None]] = None,
         lease_timer: Optional[Any] = None,
+        local_speech: Optional[Any] = None,
         parent: Optional[QObject] = None,
     ) -> None:
         super().__init__(parent)
@@ -2263,6 +2314,7 @@ class VoiceController(QObject):
         self.audio = audio or QtAudioBackend(self)
         self.http = http or VoiceHttpClient(http_base, token_provider)
         self.media = media or LiveKitRoomSession()
+        self.local_speech = local_speech or QtLocalSpeechAdapter(audio=self.audio)
         self._run_async = run_async or self._start_thread
         self.control_binding: Optional[str] = None
         self.control_binding_id: Optional[str] = None
@@ -2277,6 +2329,13 @@ class VoiceController(QObject):
         self.microphone_enabled = False
         self.speech_muted = False
         self.state = "off"
+        self.speech_backend = "llm_factory"
+        self.lease_expires_at: Optional[datetime] = None
+        self._local_client_sequence = 0
+        self._local_recognition_sequence = 0
+        self._local_turn: Optional[dict[str, Any]] = None
+        self._local_final_sent: set[str] = set()
+        self._local_announcement_sequence = 0
         self.takeover_session_id: Optional[str] = None
         self.takeover_generation: Optional[int] = None
         self.takeover_grant_revision: Optional[int] = None
@@ -2299,6 +2358,7 @@ class VoiceController(QObject):
         self._session_ending = False
         self._remote_recovery: Optional[dict[str, Any]] = None
         self._remote_recovery_attempted = False
+        self._media_epoch = 0
         self._lease_timer = lease_timer or QTimer(self)
         self._lease_timer.setInterval(_FOREGROUND_LEASE_RENEWAL_MS)
         self._lease_timer.setSingleShot(False)
@@ -2319,6 +2379,8 @@ class VoiceController(QObject):
 
     def accept_frame(self, frame: dict[str, Any]) -> bool:
         frame_type = frame.get("type") if isinstance(frame, dict) else None
+        if isinstance(frame_type, str) and frame_type.startswith("voice_local_"):
+            return self._accept_local_frame(frame)
         if frame_type == "voice_control_binding":
             return self._accept_binding(frame)
         if frame_type == "composer_state":
@@ -2670,6 +2732,20 @@ class VoiceController(QObject):
 
         def _work() -> None:
             try:
+                capability_v2 = getattr(self.http, "capability_v2", None)
+                if callable(capability_v2):
+                    try:
+                        selection = capability_v2()
+                    except VoiceHttpError as exc:
+                        if exc.code not in {"backend_mismatch", "unsupported_speech_backend"}:
+                            raise
+                    else:
+                        if (
+                            isinstance(selection, dict)
+                            and selection.get("speech_backend") == "client_local"
+                        ):
+                            self._activate_local(action, activation_id, chat_id, scope, selection)
+                            return
                 ready = self.http.capability()
                 if not isinstance(ready, dict):
                     raise WindowsProtocolError("voice capability response is malformed")
@@ -2708,6 +2784,7 @@ class VoiceController(QObject):
                     raise WindowsProtocolError("stale voice activation response")
                 session, grant = self._validate_activation(response, chat_id)
                 self.session_id = session["session_id"]
+                self.speech_backend = "llm_factory"
                 self._session_ending = False
                 self.generation = session["generation"]
                 self.media_grant_revision = session["media_grant_revision"]
@@ -2717,19 +2794,14 @@ class VoiceController(QObject):
                 self.microphone_enabled = bool(session["microphone_enabled"])
                 self._foreground_microphone_enabled = self.microphone_enabled
                 self.speech_muted = bool(session["speech_muted"])
+                self.lease_expires_at = _timestamp(session["lease_expires_at"])
                 self._seen_sequences.clear()
                 self._submitted_turns.clear()
                 self._reset_announcement_ledger()
                 self._activation_id = None
                 self._remote_recovery = None
                 self._remote_recovery_attempted = False
-                self.media.connect(
-                    grant,
-                    self.audio,
-                    self._on_media_data,
-                    self._on_media_state,
-                    self._on_media_playout,
-                )
+                self._connect_remote_media(grant)
                 self._lease_start_requested.emit()
             except (VoiceHttpError, WindowsProtocolError) as exc:
                 if self._activation_id == activation_id:
@@ -2740,6 +2812,308 @@ class VoiceController(QObject):
                     self._set_status("error", str(exc))
 
         self._run_async(_work)
+
+    def _local_capability(self) -> dict[str, Any]:
+        local = self.local_speech.capability()
+        audio = self.audio.capability()
+        if not local.get("eligible"):
+            raise WindowsProtocolError(str(local.get("reason") or "local_engine_lost"))
+        return {
+            "contract": "client_local/v1",
+            "transport": "client_local",
+            "configured_locale": "en-US",
+            "full_duplex": False,
+            "has_microphone": bool(audio.get("has_microphone")),
+            "has_audio_output": bool(audio.get("has_audio_output")),
+            "microphone_permission": "authorized",
+            "recognition_permission": "authorized",
+            "recognition_processing": "guaranteed_local",
+            "recognition_locale": "ready",
+            "recognition_installation": "ready",
+            "synthesis_processing": "guaranteed_local",
+            "synthesis_locale": "ready",
+        }
+
+    def _activate_local(
+        self,
+        action: str,
+        activation_id: str,
+        chat_id: str,
+        scope: dict[str, str],
+        selection: object,
+    ) -> None:
+        parsed_selection = parse_client_local_capability(selection)
+        if parsed_selection is None or parsed_selection.disposition != "client_readiness_required":
+            raise WindowsProtocolError("client-local capability selection is malformed")
+        try:
+            capability = self._local_capability()
+        except WindowsProtocolError as exc:
+            self._activation_id = None
+            self._set_status("unavailable", str(exc))
+            return
+        body = {
+            "schema_version": "2",
+            "activation_id": activation_id,
+            "device_id": self.device_id,
+            "device_kind": "windows",
+            "visible_chat_id": chat_id,
+            "foreground_active": True,
+            "client_capability": capability,
+        }
+        if action == "voice_session_takeover":
+            if not (
+                _uuid4(self.takeover_session_id)
+                and _positive(self.takeover_generation)
+                and _positive(self.takeover_grant_revision)
+            ):
+                raise WindowsProtocolError("There is no current voice session to take over.")
+            body["expected_generation"] = self.takeover_generation
+            body["expected_speech_revision"] = self.takeover_grant_revision
+            response = self.http.takeover_local(self.takeover_session_id, body, scope)
+        else:
+            response = self.http.create_local(body, scope)
+        session = self._validate_local_session(response, chat_id)
+        if self._activation_id != activation_id:
+            raise WindowsProtocolError("stale voice activation response")
+        self.session_id = session["session_id"]
+        self.speech_backend = "client_local"
+        self.generation = session["generation"]
+        self.media_grant_revision = session["speech_revision"]
+        self.visible_chat_id = session["visible_chat_id"]
+        self.chat_context_revision = session["chat_context_revision"]
+        self.microphone_enabled = session["microphone_enabled"]
+        self.speech_muted = session["speech_muted"]
+        self._activation_id = None
+        self._local_final_sent.clear()
+        self._local_turn = None
+        self._send_local_frame(
+            {
+                **self._local_common("voice_local_ready"),
+                **capability,
+                "client_sequence": self._next_local_sequence(),
+            }
+        )
+
+    def _validate_local_session(self, value: object, chat_id: str) -> dict[str, Any]:
+        required = {
+            "schema_version",
+            "session_id",
+            "speech_backend",
+            "transport",
+            "generation",
+            "speech_revision",
+            "state",
+            "visible_chat_id",
+            "chat_context_revision",
+            "applied_chat_context_revision",
+            "chat_context_synced",
+            "foreground_active",
+            "microphone_enabled",
+            "speech_muted",
+            "configured_locale",
+            "idle_expires_at",
+        }
+        if (
+            not isinstance(value, dict)
+            or set(value) != required
+            or not (
+                value.get("schema_version") == "2"
+                and _uuid4(value.get("session_id"))
+                and value.get("speech_backend") == value.get("transport") == "client_local"
+                and _positive(value.get("generation"))
+                and _positive(value.get("speech_revision"))
+                and value.get("state") in {"starting", "active"}
+                and value.get("visible_chat_id") == chat_id
+                and _positive(value.get("chat_context_revision"))
+                and isinstance(value.get("chat_context_synced"), bool)
+                and value.get("foreground_active") is True
+                and isinstance(value.get("microphone_enabled"), bool)
+                and isinstance(value.get("speech_muted"), bool)
+                and value.get("configured_locale") == "en-US"
+                and (
+                    _timestamp(value.get("idle_expires_at"))
+                    or datetime.min.replace(tzinfo=timezone.utc)
+                )
+                > datetime.now(timezone.utc)
+            )
+        ):
+            raise WindowsProtocolError("client-local session is malformed")
+        return value
+
+    def _local_common(self, frame_type: str) -> dict[str, Any]:
+        connection = self.connection_provider()
+        if not (
+            self.speech_backend == "client_local"
+            and _uuid4(connection)
+            and _uuid4(self.session_id)
+            and _positive(self.generation)
+            and _positive(self.media_grant_revision)
+        ):
+            raise WindowsProtocolError("client-local session is not current")
+        return {
+            "type": frame_type,
+            "schema_version": "2",
+            "speech_backend": "client_local",
+            "device_id": self.device_id,
+            "connection_generation": connection,
+            "session_id": self.session_id,
+            "generation": self.generation,
+            "speech_revision": self.media_grant_revision,
+        }
+
+    def _next_local_sequence(self) -> int:
+        self._local_client_sequence += 1
+        return self._local_client_sequence
+
+    def _send_local_frame(self, frame: dict[str, Any]) -> None:
+        self.transport.send_voice_local_frame(frame)
+
+    def _accept_local_frame(self, frame: dict[str, Any]) -> bool:
+        parsed = parse_voice_local_frame(frame)
+        if parsed is None or self.speech_backend != "client_local":
+            return False
+        payload = parsed.payload
+        if any(
+            (
+                payload.get("device_id") != self.device_id,
+                payload.get("connection_generation") != self.connection_provider(),
+                payload.get("session_id") != self.session_id,
+                payload.get("generation") != self.generation,
+                payload.get("speech_revision") != self.media_grant_revision,
+            )
+        ):
+            return False
+        frame_type = payload["type"]
+        if frame_type == "voice_local_session_ready":
+            lease = _timestamp(payload.get("lease_expires_at"))
+            if (
+                payload.get("chat_id") != self.visible_chat_id
+                or payload.get("chat_context_revision")
+                != payload.get("applied_chat_context_revision")
+                or lease is None
+                or lease <= datetime.now(timezone.utc)
+            ):
+                return False
+            self.chat_context_revision = payload["chat_context_revision"]
+            self.microphone_enabled = payload["microphone_enabled"]
+            self.speech_muted = payload["speech_muted"]
+            self.lease_expires_at = lease
+            self._start_local_recognition()
+            return True
+        if frame_type == "voice_local_turn_bound":
+            if (
+                self._local_turn is None
+                or payload.get("client_turn_id") != self._local_turn["client_turn_id"]
+                or payload.get("recognition_sequence") != self._local_turn["recognition_sequence"]
+            ):
+                return False
+            self._local_turn = dict(payload)
+            return True
+        if frame_type == "voice_local_final_rejected":
+            self.local_speech.stop_all()
+            self._set_status("unavailable", str(payload.get("reason")))
+            return True
+        if frame_type == "voice_local_announcement":
+            return self._accept_local_announcement(payload)
+        return False
+
+    def _start_local_recognition(self) -> None:
+        if self.speech_muted or not self.microphone_enabled or not self._foreground_active:
+            return
+        self._local_recognition_sequence += 1
+        self._local_turn = {
+            "client_turn_id": str(uuid.uuid4()),
+            "recognition_sequence": self._local_recognition_sequence,
+        }
+        self._send_local_frame(
+            {
+                **self._local_common("voice_local_recognition_started"),
+                "client_turn_id": self._local_turn["client_turn_id"],
+                "chat_id": self.visible_chat_id,
+                "chat_context_revision": self.chat_context_revision,
+                "recognition_sequence": self._local_recognition_sequence,
+            }
+        )
+        if not self.local_speech.start_recognition(self._on_local_final, self._on_local_error):
+            self._on_local_error("local_recognition_unavailable")
+
+    def _on_local_final(self, text: str) -> None:
+        turn = self._local_turn
+        if turn is None or "turn_id" not in turn:
+            return
+        try:
+            text = canonicalize_local_final(text)
+        except ValueError:
+            self._on_local_error("local_final_malformed")
+            return
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        if turn["client_turn_id"] in self._local_final_sent:
+            return
+        frame = {
+            **self._local_common("voice_local_final"),
+            **{
+                name: turn[name]
+                for name in (
+                    "client_turn_id",
+                    "turn_id",
+                    "submission_id",
+                    "request_generation",
+                    "chat_id",
+                    "chat_context_revision",
+                    "recognition_sequence",
+                )
+            },
+            "final": True,
+            "recognized_locale": "en-US",
+            "text": text,
+            "text_digest_sha256": digest,
+        }
+        self._send_local_frame(frame)
+        self._local_final_sent.add(turn["client_turn_id"])
+        self.transcript_changed.emit(text, True)
+
+    def _on_local_error(self, reason: str) -> None:
+        self.local_speech.stop_all()
+        self._set_status("unavailable", str(reason or "local_engine_lost"))
+
+    def _accept_local_announcement(self, payload: dict[str, Any]) -> bool:
+        expiry = _timestamp(payload.get("expires_at"))
+        digest = hashlib.sha256(payload["text"].encode("utf-8")).hexdigest()
+        sequence = payload["announcement_sequence"]
+        if (
+            digest != payload["text_digest_sha256"]
+            or expiry is None
+            or expiry <= datetime.now(timezone.utc)
+            or sequence <= self._local_announcement_sequence
+            or self.speech_muted
+            or not self._foreground_active
+        ):
+            return False
+        self._local_announcement_sequence = sequence
+
+        def phase(value: str) -> None:
+            if value not in {"started", "finished", "interrupted", "failed"}:
+                value = "failed"
+            event = {
+                **self._local_common("voice_local_playout_event"),
+                **{
+                    name: payload[name]
+                    for name in (
+                        "announcement_id",
+                        "announcement_sequence",
+                        "turn_id",
+                        "kind",
+                    )
+                },
+                "phase": value,
+                "client_sequence": self._next_local_sequence(),
+                "observed_at": datetime.now(timezone.utc)
+                .isoformat(timespec="milliseconds")
+                .replace("+00:00", "Z"),
+            }
+            self._send_local_frame(event)
+
+        return bool(self.local_speech.speak(payload["text"], payload["locale"], phase))
 
     def _validate_activation(
         self, response: object, chat_id: str
@@ -2843,6 +3217,21 @@ class VoiceController(QObject):
         ):
             raise WindowsProtocolError("voice media grant is invalid")
         return session, grant
+
+    def _connect_remote_media(self, grant: dict[str, Any]) -> None:
+        self._media_epoch += 1
+        epoch = self._media_epoch
+
+        def current(callback: Callable[..., None]) -> Callable[..., None]:
+            return lambda *args: callback(*args) if epoch == self._media_epoch else None
+
+        self.media.connect(
+            grant,
+            self.audio,
+            current(self._on_media_data),
+            current(self._on_media_state),
+            current(self._on_media_playout),
+        )
 
     def _scope(self) -> dict[str, str]:
         connection = self.connection_provider()
@@ -3237,6 +3626,8 @@ class VoiceController(QObject):
         self._lease_stop_requested.emit()
         if not self._has_session():
             return
+        if self.speech_backend == "client_local":
+            self.local_speech.stop_all()
         self._foreground_microphone_enabled = self.microphone_enabled
         self.media.set_microphone_enabled(False)
         self.media.stop_playback()
@@ -3254,7 +3645,10 @@ class VoiceController(QObject):
         # generation-fenced server request still runs below and still owns its
         # error semantics, but network latency must never leave stale speech
         # playing after the user has pressed Stop.
-        self.media.stop_playback()
+        if self.speech_backend == "client_local":
+            self.local_speech.stop_all()
+        else:
+            self.media.stop_playback()
         try:
             scope = self._scope()
         except WindowsProtocolError as exc:
@@ -3276,6 +3670,8 @@ class VoiceController(QObject):
 
     def _end(self) -> None:
         self._lease_stop_requested.emit()
+        if self.speech_backend == "client_local":
+            self.local_speech.stop_all()
         if not self._has_session():
             self._teardown("off", "Voice is off.")
             return
@@ -3325,7 +3721,14 @@ class VoiceController(QObject):
         self.control_binding_expires_at = None
         self._activation_id = None
         if self._has_session():
+            if self.speech_backend == "client_local":
+                self.local_speech.stop_all()
+                self._teardown(
+                    "unavailable", "Voice control is reconnecting; typed chat still works."
+                )
+                return
             self._lease_stop_requested.emit()
+            self._media_epoch += 1
             self.media.close()
             self.audio.stop_all()
             self._remote_recovery = {
@@ -3334,6 +3737,7 @@ class VoiceController(QObject):
                 "media_grant_revision": self.media_grant_revision,
                 "worker_identity": self.worker_identity,
                 "visible_chat_id": self.visible_chat_id,
+                "lease_expires_at": self.lease_expires_at,
             }
             self._remote_recovery_attempted = False
             self._set_status("reconnecting", "Voice control is reconnecting…")
@@ -3350,8 +3754,39 @@ class VoiceController(QObject):
         if not isinstance(session, dict) or not isinstance(grant_state, dict):
             raise WindowsProtocolError("voice recovery state is malformed")
         expiry = _timestamp(grant_state.get("expires_at"))
+        lease_expiry = _timestamp(session.get("lease_expires_at"))
+        retained_lease = expected.get("lease_expires_at")
+        required_session = {
+            "session_id",
+            "device_id",
+            "device_kind",
+            "transport",
+            "state",
+            "generation",
+            "media_grant_revision",
+            "owner_connection_generation",
+            "visible_chat_id",
+            "applied_visible_chat_id",
+            "chat_context_revision",
+            "applied_chat_context_revision",
+            "chat_context_synced",
+            "foreground_active",
+            "foreground_reason",
+            "foreground_changed_at",
+            "speech_muted",
+            "microphone_enabled",
+            "lease_expires_at",
+            "started_at",
+            "idle_expires_at",
+        }
         if (
-            set(grant_state) != {"transport", "media_grant_revision", "status", "expires_at"}
+            set(session) != required_session
+            or session.get("state") != "active"
+            or lease_expiry is None
+            or lease_expiry <= datetime.now(timezone.utc)
+            or not isinstance(retained_lease, datetime)
+            or retained_lease <= datetime.now(timezone.utc)
+            or set(grant_state) != {"transport", "media_grant_revision", "status", "expires_at"}
             or grant_state.get("transport") != "livekit"
             or grant_state.get("status") not in {"active", "pending_worker"}
             or not _positive(grant_state.get("media_grant_revision"))
@@ -3378,6 +3813,11 @@ class VoiceController(QObject):
             or self.control_binding is None
             or not self._has_session()
         ):
+            return
+        retained_lease = expected.get("lease_expires_at")
+        if not isinstance(retained_lease, datetime) or retained_lease <= datetime.now(timezone.utc):
+            self._remote_recovery_attempted = True
+            self._set_status("error", "Voice recovery lease expired.")
             return
         self._remote_recovery_attempted = True
         try:
@@ -3432,13 +3872,8 @@ class VoiceController(QObject):
                 self._foreground_microphone_enabled = self.microphone_enabled
                 self.speech_muted = bool(session["speech_muted"])
                 self._remote_recovery = None
-                self.media.connect(
-                    grant,
-                    self.audio,
-                    self._on_media_data,
-                    self._on_media_state,
-                    self._on_media_playout,
-                )
+                self.lease_expires_at = _timestamp(session["lease_expires_at"])
+                self._connect_remote_media(grant)
                 self._lease_start_requested.emit()
             except (VoiceHttpError, WindowsProtocolError) as exc:
                 message = _refusal_line(exc.code) if isinstance(exc, VoiceHttpError) else str(exc)
@@ -3452,8 +3887,11 @@ class VoiceController(QObject):
 
     def close(self) -> None:
         self._lease_stop_requested.emit()
+        self._media_epoch += 1
         self.media.close()
         self.audio.stop_all()
+        if self.speech_backend == "client_local":
+            self.local_speech.close()
         self.control_binding = None
 
     def _has_session(self) -> bool:
@@ -3465,8 +3903,11 @@ class VoiceController(QObject):
 
     def _teardown(self, state: str, message: str) -> None:
         self._lease_stop_requested.emit()
+        self._media_epoch += 1
         self.media.close()
         self.audio.stop_all()
+        if self.speech_backend == "client_local":
+            self.local_speech.stop_all()
         self.session_id = None
         self.generation = None
         self.media_grant_revision = None
@@ -3476,6 +3917,9 @@ class VoiceController(QObject):
         self.microphone_enabled = False
         self._foreground_microphone_enabled = False
         self.speech_muted = False
+        self.speech_backend = "llm_factory"
+        self.lease_expires_at = None
+        self._local_turn = None
         self._seen_sequences.clear()
         self._submitted_turns.clear()
         self._turn_sequences.clear()

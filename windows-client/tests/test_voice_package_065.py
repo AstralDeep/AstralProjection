@@ -53,6 +53,9 @@ def test_helper_product_is_deterministic_warning_clean_and_dependency_free() -> 
     assert "<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>" in project
     assert "<TreatWarningsAsErrors>true</TreatWarningsAsErrors>" in project
     assert "<PackageReference" not in project
+    assert 'Name="WriteHelperBuildProvenance"' in project
+    assert "GetFileHash" in project
+    assert "helper-build-provenance.json" in project
     assert source_hashes["schema_version"] == 1
     assert set(source_hashes["files"]) == {
         "AstralSpeechHelper.csproj",
@@ -96,6 +99,31 @@ def test_helper_test_dependencies_are_exact_locked_and_isolated_from_product() -
         assert package not in product_inputs
     assert "asr-helper/tests" not in product_inputs
     assert ".Tests.dll" not in product_inputs
+
+
+def test_freeze_verifies_helper_source_provenance_and_executable_digest() -> None:
+    source = SPEC.read_text(encoding="utf-8")
+
+    assert "helper-build-provenance.json" in source
+    assert 'if _helper_provenance.get("source_manifest_sha256")' in source
+    assert 'if _helper_provenance.get("executable_sha256")' in source
+    assert "helper build provenance is invalid" in source
+
+
+def test_csharp_suite_exercises_program_and_recognition_lifecycle() -> None:
+    tests = "\n".join(path.read_text(encoding="utf-8") for path in (HELPER / "tests").glob("*.cs"))
+
+    for name in (
+        "MainRejectsInvalidProcessArguments",
+        "RunWritesReadyBeforeReading",
+        "RunRejectsStopBeforeStart",
+        "RunRejectsRepeatedStart",
+        "RunRejectsTruncatedActiveInput",
+        "RunStopsAndShutsDownOnce",
+        "RecognitionSessionDeduplicatesFinal",
+        "RecognitionSessionWritesBoundedError",
+    ):
+        assert name in tests
 
 
 def test_runtime_manifest_offline_evidence_binds_livekit_release_lock() -> None:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import io
+import hashlib
 import struct
+import urllib.error
 
 import pytest
 
@@ -27,6 +29,8 @@ _MISSING_API = tuple(name for name in _REQUIRED_API if not hasattr(voice_module,
 HELPER_MAX_PCM_BYTES = getattr(voice_module, "HELPER_MAX_PCM_BYTES", 0)
 HELPER_MAX_TEXT_BYTES = getattr(voice_module, "HELPER_MAX_TEXT_BYTES", 0)
 QtLocalSpeechAdapter = getattr(voice_module, "QtLocalSpeechAdapter", None)
+VoiceController = getattr(voice_module, "VoiceController", None)
+VoiceHttpClient = getattr(voice_module, "VoiceHttpClient", None)
 WindowsSpeechHelper = getattr(voice_module, "WindowsSpeechHelper", None)
 canonicalize_local_final = getattr(voice_module, "canonicalize_local_final", None)
 encode_helper_frame = getattr(voice_module, "encode_helper_frame", None)
@@ -126,6 +130,21 @@ class FakeAudio:
         self.stopped += 1
         self.capture_callback = None
 
+    def capability(self):
+        return {
+            "has_microphone": True,
+            "has_audio_output": True,
+            "microphone_permission": "authorized",
+            "full_duplex": True,
+            "transport": "livekit",
+        }
+
+    def request_microphone_permission(self, callback) -> None:
+        callback("authorized")
+
+    def stop_all(self) -> None:
+        self.stop_capture()
+
 
 class FakeTts:
     def __init__(self, ready: bool = True) -> None:
@@ -152,6 +171,259 @@ class FakeScheduler:
 
     def __call__(self, delay_ms: int, callback) -> None:
         self.calls.append((delay_ms, callback))
+
+
+DEVICE = "00000000-0000-4000-8000-000000000001"
+CONNECTION = "00000000-0000-4000-8000-000000000002"
+CHAT = "00000000-0000-4000-8000-000000000003"
+SESSION = "00000000-0000-4000-8000-000000000004"
+TURN = "00000000-0000-4000-8000-000000000005"
+SUBMISSION = "00000000-0000-4000-8000-000000000006"
+REQUEST = "00000000-0000-4000-8000-000000000007"
+BINDING = "v1." + "a" * 64 + "." + "b" * 43
+
+
+class FakeLocalTransport:
+    def __init__(self) -> None:
+        self.connection_generation = CONNECTION
+        self.local_frames = []
+
+    def send_voice_local_frame(self, frame) -> None:
+        self.local_frames.append(frame)
+
+
+class FakeLocalHttp:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def capability_v2(self):
+        self.calls.append(("capability_v2",))
+        return {
+            "schema_version": "2",
+            "speech_backend": "client_local",
+            "status": "requires_client_readiness",
+            "reason": "client_readiness_required",
+            "checked_at": "2026-08-28T12:00:00Z",
+            "expires_at": "2099-08-28T12:00:10Z",
+            "supported_transports": ["client_local"],
+            "requirements": {
+                "session_contract": "voice-rest/v2-client-local",
+                "local_frame_contract": "client_local/v1",
+                "configured_locale": "en-US",
+                "recognition_must_be_local": True,
+                "synthesis_must_be_local": True,
+                "installation_policy": "explicit_user_action_only",
+                "requirement_revision": 1,
+                "max_final_unicode_scalars": 8000,
+                "max_announcement_utf8_bytes": 600,
+                "announcement_ttl_seconds": 10,
+                "echo_suppression_milliseconds": 500,
+            },
+        }
+
+    def create_local(self, body, scope):
+        self.calls.append(("create_local", body, scope))
+        return {
+            "schema_version": "2",
+            "session_id": SESSION,
+            "speech_backend": "client_local",
+            "transport": "client_local",
+            "generation": 1,
+            "speech_revision": 1,
+            "state": "starting",
+            "visible_chat_id": CHAT,
+            "chat_context_revision": 1,
+            "applied_chat_context_revision": None,
+            "chat_context_synced": False,
+            "foreground_active": True,
+            "microphone_enabled": True,
+            "speech_muted": False,
+            "configured_locale": "en-US",
+            "idle_expires_at": "2099-08-28T12:10:00Z",
+        }
+
+
+class FakeLocalSpeech:
+    def __init__(self, eligible=True) -> None:
+        self.eligible = eligible
+        self.started = 0
+        self.spoken = []
+        self.stopped = 0
+        self.on_final = None
+        self.on_error = None
+
+    def capability(self):
+        return {
+            "eligible": self.eligible,
+            "reason": "ready" if self.eligible else "local_recognition_unavailable",
+        }
+
+    def start_recognition(self, on_final, on_error):
+        self.started += 1
+        self.on_final = on_final
+        self.on_error = on_error
+        return True
+
+    def speak(self, text, locale, on_phase):
+        self.spoken.append((text, locale))
+        on_phase("started")
+        on_phase("finished")
+        return True
+
+    def stop_all(self):
+        self.stopped += 1
+
+    def close(self):
+        self.stopped += 1
+
+
+class FakeNoRemoteMedia:
+    def __getattr__(self, name):
+        raise AssertionError(f"client_local used remote media: {name}")
+
+
+def _local_controller(*, eligible=True):
+    transport = FakeLocalTransport()
+    http = FakeLocalHttp()
+    speech = FakeLocalSpeech(eligible)
+    controller = VoiceController(
+        device_id=DEVICE,
+        token_provider=lambda: "token",
+        http_base="http://127.0.0.1:8001",
+        connection_provider=lambda: transport.connection_generation,
+        chat_provider=lambda: CHAT,
+        transport=transport,
+        audio=FakeAudio(),
+        local_speech=speech,
+        http=http,
+        media=FakeNoRemoteMedia(),
+        run_async=lambda work: work(),
+    )
+    assert controller.accept_frame(
+        {
+            "type": "voice_control_binding",
+            "schema_version": "1",
+            "device_id": DEVICE,
+            "connection_generation": CONNECTION,
+            "binding_id": "00000000-0000-4000-8000-000000000008",
+            "binding": BINDING,
+            "expires_at": "2099-08-28T12:00:00Z",
+        }
+    )
+    return controller, transport, http, speech
+
+
+def _local_common(frame_type):
+    return {
+        "type": frame_type,
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": DEVICE,
+        "connection_generation": CONNECTION,
+        "session_id": SESSION,
+        "generation": 1,
+        "speech_revision": 1,
+    }
+
+
+def test_controller_uses_selected_client_local_without_remote_media_or_fallback() -> None:
+    controller, transport, http, speech = _local_controller()
+
+    controller.handle_action("voice_session_start")
+
+    create = next(call for call in http.calls if call[0] == "create_local")
+    assert create[1]["schema_version"] == "2"
+    assert create[1]["client_capability"]["transport"] == "client_local"
+    assert create[1]["client_capability"]["full_duplex"] is False
+    assert transport.local_frames[-1]["type"] == "voice_local_ready"
+    assert controller.speech_backend == "client_local"
+
+    unavailable, _transport, fallback_http, _speech = _local_controller(eligible=False)
+    unavailable.handle_action("voice_session_start")
+    assert [call[0] for call in fallback_http.calls] == ["capability_v2"]
+    assert unavailable.state == "unavailable"
+
+
+def test_v2_backend_mismatch_preserves_reason_for_remote_selection() -> None:
+    error = urllib.error.HTTPError(
+        "http://127.0.0.1/api/voice/v2/capability",
+        409,
+        "Conflict",
+        {},
+        io.BytesIO(b'{"error":"voice_unavailable","reason":"backend_mismatch"}'),
+    )
+    client = VoiceHttpClient(
+        "http://127.0.0.1",
+        lambda: "token",
+        opener=lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+    with pytest.raises(voice_module.VoiceHttpError) as failure:
+        client.capability_v2()
+    assert failure.value.code == "backend_mismatch"
+
+
+def test_controller_binds_local_final_once_and_speaks_only_authorized_announcement() -> None:
+    controller, transport, _http, speech = _local_controller()
+    controller.handle_action("voice_session_start")
+    ready = {
+        **_local_common("voice_local_session_ready"),
+        "contract": "client_local/v1",
+        "transport": "client_local",
+        "configured_locale": "en-US",
+        "chat_id": CHAT,
+        "chat_context_revision": 1,
+        "applied_chat_context_revision": 1,
+        "foreground_active": True,
+        "microphone_enabled": True,
+        "speech_muted": False,
+        "lease_expires_at": "2099-08-28T12:10:00Z",
+    }
+    assert controller.accept_frame(ready)
+    started = transport.local_frames[-1]
+    assert started["type"] == "voice_local_recognition_started"
+    assert speech.started == 1
+    bound = {
+        **_local_common("voice_local_turn_bound"),
+        "client_turn_id": started["client_turn_id"],
+        "turn_id": TURN,
+        "submission_id": SUBMISSION,
+        "request_generation": REQUEST,
+        "chat_id": CHAT,
+        "chat_context_revision": 1,
+        "recognition_sequence": 1,
+        "binding_expires_at": "2099-08-28T12:02:00Z",
+    }
+    assert controller.accept_frame(bound)
+    speech.on_final("Do the authorized work")
+    speech.on_final("Do the authorized work")
+    finals = [frame for frame in transport.local_frames if frame["type"] == "voice_local_final"]
+    assert len(finals) == 1
+    assert finals[0]["text_digest_sha256"] == hashlib.sha256(b"Do the authorized work").hexdigest()
+
+    announcement = {
+        **_local_common("voice_local_announcement"),
+        "announcement_id": "00000000-0000-4000-8000-000000000009",
+        "announcement_sequence": 1,
+        "turn_id": TURN,
+        "kind": "result",
+        "output_policy": "lifecycle",
+        "locale": "en-US",
+        "text": "Authorized result",
+        "text_digest_sha256": hashlib.sha256(b"Authorized result").hexdigest(),
+        "expires_at": "2099-08-28T12:00:10Z",
+        "foreground_required": True,
+        "mute_revision": 1,
+        "consent_revision": 1,
+    }
+    altered = {**announcement, "announcement_sequence": 2, "text": "Altered"}
+    assert not controller.accept_frame(altered)
+    assert controller.accept_frame(announcement)
+    assert speech.spoken == [("Authorized result", "en-US")]
+    assert [
+        frame["phase"]
+        for frame in transport.local_frames
+        if frame["type"] == "voice_local_playout_event"
+    ] == ["started", "finished"]
 
 
 def test_helper_protocol_round_trip_and_rejects_malformed_or_oversized_frames() -> None:
@@ -283,7 +555,7 @@ def test_adapter_terminal_playout_and_crash_fail_closed_without_remote_fallback(
     helper.on_error("helper_crashed")
     assert errors == ["local_engine_lost"]
     assert audio.stopped >= 2
-    assert helper.stopped >= 2
+    assert helper.stopped == 1
     assert adapter.capability()["eligible"] is False
     assert "remote" not in adapter.capability()
 
@@ -303,7 +575,46 @@ def test_stop_logout_and_close_synchronously_clear_every_local_owner() -> None:
     adapter.close()
     assert audio.stopped == 2
     assert helper.closed == 1
-    assert tts.calls[-1] == ("stop",)
+
+
+def test_pending_echo_fence_restart_is_cancelled_by_stop() -> None:
+    audio = FakeAudio()
+    helper = FakeHelper()
+    tts = FakeTts()
+    scheduler = FakeScheduler()
+    adapter = QtLocalSpeechAdapter(audio=audio, helper=helper, tts=tts, schedule=scheduler)
+    assert adapter.start_recognition(lambda _text: None, lambda _reason: None)
+    assert adapter.speak("Current announcement", "en-US", lambda _phase: None)
+    tts.callback("finished")
+    assert scheduler.calls[-1][0] == 500
+
+    adapter.stop_all()
+    starts = helper.started
+    scheduler.calls[-1][1]()
+
+    assert helper.started == starts
+    assert audio.capture_callback is None
+
+
+def test_helper_rejects_stop_before_start_and_repeated_start_fail_closed(tmp_path) -> None:
+    helper_path = tmp_path / "AstralSpeechHelper.exe"
+    helper_path.write_bytes(b"first-party-helper")
+    first = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: first)
+    assert helper.capability()
+
+    with pytest.raises(RuntimeError, match="invalid_helper_state"):
+        helper.stop_recognition()
+    assert first.terminated == 1
+
+    second = FakeProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: second)
+    assert helper.capability()
+    helper._reader = type("Reader", (), {"is_alive": lambda self: True})()
+    helper.start_recognition(lambda _text: None, lambda _reason: None)
+    with pytest.raises(RuntimeError, match="invalid_helper_state"):
+        helper.start_recognition(lambda _text: None, lambda _reason: None)
+    assert second.terminated == 1
 
 
 @pytest.mark.parametrize(

@@ -3846,6 +3846,14 @@ class MainWindow(QMainWindow):
         if t == "voice_control_binding":
             self._voice_controller.accept_frame(msg)
             return
+        if t in {
+            "voice_local_session_ready",
+            "voice_local_turn_bound",
+            "voice_local_final_rejected",
+            "voice_local_announcement",
+        }:
+            self._voice_controller.accept_frame(msg)
+            return
         if t == "voice_session_state":
             accepted = self._voice_controller.accept_frame(msg)
             if accepted and msg.get("reason") == "speech_error":

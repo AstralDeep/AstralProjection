@@ -283,18 +283,28 @@ def parse_client_local_capability(payload: object) -> Optional[VoiceLocalValue]:
         "requirements",
     }
     if "status" in payload:
+        status = payload.get("status")
         if (
             set(payload) != unavailable
             and set(payload) != unavailable | {"retry_after_seconds"}
             or payload.get("schema_version") != "2"
             or payload.get("speech_backend") != "client_local"
-            or payload.get("status") != "unavailable"
+            or status not in {"requires_client_readiness", "unavailable"}
             or payload.get("reason") not in _VOICE_LOCAL_REASONS
             or payload.get("supported_transports") != ["client_local"]
             or not isinstance(payload.get("requirements"), dict)
+            or (
+                status == "requires_client_readiness"
+                and payload.get("reason") != "client_readiness_required"
+            )
         ):
             return None
-        return VoiceLocalValue("typed_fallback", payload)
+        return VoiceLocalValue(
+            "client_readiness_required"
+            if status == "requires_client_readiness"
+            else "typed_fallback",
+            payload,
+        )
     fields = {
         "contract",
         "transport",
@@ -2538,6 +2548,23 @@ class OrchestratorClient(QObject):
         self.submission.emit(local)
         self._send_voice_frame(submission.to_frame(self.connection_generation))
         return local
+
+    def send_voice_local_frame(self, frame: dict[str, Any]) -> None:
+        """Send one exact current-socket client-local frame without v1 proof wrapping."""
+
+        parsed = parse_voice_local_frame(frame)
+        if parsed is None or frame.get("type") not in {
+            "voice_local_ready",
+            "voice_local_recognition_started",
+            "voice_local_final",
+            "voice_local_recognition_failed",
+            "voice_local_playout_event",
+        }:
+            raise WindowsProtocolError("voice local frame is invalid")
+        connection = _uuid4(frame.get("connection_generation"), "connection_generation")
+        if connection != self.connection_generation:
+            raise WindowsProtocolError("voice local frame connection is stale")
+        self._send_voice_frame(copy.deepcopy(frame))
 
     def send_correlated_new_chat(
         self,

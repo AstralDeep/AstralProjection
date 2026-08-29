@@ -21,4 +21,21 @@
   <ItemGroup>
     <InternalsVisibleTo Include="AstralSpeechHelper.Tests" />
   </ItemGroup>
+  <Target Name="WriteHelperBuildProvenance" AfterTargets="Publish">
+    <ItemGroup>
+      <_HelperSourceManifest Include="$(MSBuildProjectDirectory)\helper-source-hashes.json" />
+      <_HelperExecutable Include="$(PublishDir)$(TargetFileName)" />
+    </ItemGroup>
+    <GetFileHash Files="@(_HelperSourceManifest)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_HashedHelperSourceManifest" />
+    </GetFileHash>
+    <GetFileHash Files="@(_HelperExecutable)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_HashedHelperExecutable" />
+    </GetFileHash>
+    <WriteLinesToFile
+      File="$(PublishDir)helper-build-provenance.json"
+      Lines='{&quot;schema_version&quot;:1,&quot;source_manifest_sha256&quot;:&quot;%(_HashedHelperSourceManifest.FileHash)&quot;,&quot;executable_sha256&quot;:&quot;%(_HashedHelperExecutable.FileHash)&quot;}'
+      Overwrite="true"
+      Encoding="UTF-8" />
+  </Target>
 </Project>

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 
 import pytest
 
@@ -489,6 +490,8 @@ def test_connection_rotation_reads_current_state_and_rejoins_once_with_new_grant
     controller, transport, http, media = _controller()
     controller.handle_action("voice_session_start")
     prior_on_data = media.on_data
+    prior_on_state = media.on_state
+    prior_on_playout = media.on_playout
     transport.connection_generation = "00000000-0000-4000-8000-000000000010"
     http.current_media_grant = lambda session_id, scope: (
         http.calls.append(("current_media_grant", session_id, scope))
@@ -523,8 +526,61 @@ def test_connection_rotation_reads_current_state_and_rejoins_once_with_new_grant
     assert [call[0] for call in http.calls].count("refresh_media_grant") == 1
 
     stale = _voice_transcript(final=True, text="old final")
+    stale["media_grant_revision"] = 5
     prior_on_data("astraldeep.voice.transcript.v1", "voice-worker-a", stale)
     assert not transport.sent
+    prior_on_state("disconnected", "old room closed")
+    controller._on_media_playout = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("old playout callback crossed media epoch")
+    )
+    prior_on_playout({}, "started")
+    assert controller.session_id == SESSION
+    assert controller.media_grant_revision == 5
+
+
+@pytest.mark.parametrize("mutation", ["extra", "inactive", "expired_lease"])
+def test_remote_recovery_current_state_is_exact_active_and_unexpired(qapp, mutation):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    transport.connection_generation = "00000000-0000-4000-8000-000000000010"
+
+    def current(_session_id, _scope):
+        value = _grant_state(connection=transport.connection_generation)
+        if mutation == "extra":
+            value["session"]["credential"] = "forbidden"
+        elif mutation == "inactive":
+            value["session"]["state"] = "suspended"
+        else:
+            value["session"]["lease_expires_at"] = "2020-01-01T00:00:00Z"
+        return value
+
+    http.current_media_grant = current
+    refreshes = []
+    http.refresh_media_grant = lambda *_args: refreshes.append(True)
+    controller.on_connection_rotated(transport.connection_generation)
+    binding = _binding()
+    binding["connection_generation"] = transport.connection_generation
+    binding["binding_id"] = "00000000-0000-4000-8000-000000000011"
+    assert controller.accept_frame(binding)
+
+    assert not refreshes
+    assert [call[0] for call in media.calls].count("connect") == 1
+    assert controller.state == "error"
+
+
+def test_remote_recovery_rejects_when_retained_lease_already_expired(qapp):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    controller.lease_expires_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    transport.connection_generation = "00000000-0000-4000-8000-000000000010"
+    controller.on_connection_rotated(transport.connection_generation)
+    binding = _binding()
+    binding["connection_generation"] = transport.connection_generation
+    binding["binding_id"] = "00000000-0000-4000-8000-000000000011"
+    assert controller.accept_frame(binding)
+
+    assert not any(call[0] == "current_media_grant" for call in http.calls)
+    assert [call[0] for call in media.calls].count("connect") == 1
 
 
 @pytest.mark.parametrize(
