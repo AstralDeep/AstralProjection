@@ -40,6 +40,61 @@ final class VoiceContract065Tests: XCTestCase {
         }
     }
 
+    func testClientLocalV2FixtureVectorsMapToClosedDispositionsAndBuildFinal() throws {
+        let root = try JSONValue.parse(Data(contentsOf: try localFixtureURL()))
+        XCTAssertEqual(root["schema_version"]?.stringValue, "2")
+        XCTAssertEqual(root["contract"]?.stringValue, "client_local/v1")
+        for vector in root["vectors"]?.arrayValue ?? [] {
+            let payload = try XCTUnwrap(vector["payload"])
+            let expected = try XCTUnwrap(vector["expected_disposition"]?.stringValue)
+            if vector["shape"]?.stringValue == "client_local_capability" {
+                XCTAssertEqual(VoiceLocalCapability(json: payload)?.disposition.rawValue, expected)
+            } else if vector["shape"]?.stringValue == "voice_capability_v2" {
+                XCTAssertEqual(VoiceLocalCapability(json: payload)?.disposition.rawValue, expected)
+            } else {
+                let frame = try XCTUnwrap(InboundFrame.parse(String(decoding: try payload.encoded(), as: UTF8.self)))
+                XCTAssertEqual(VoiceLocalFrame(frame: frame)?.disposition.rawValue, expected)
+                if expected == "final" {
+                    XCTAssertEqual(Outbound.voiceLocalFinal(try XCTUnwrap(VoiceLocalFrame(frame: frame))), payload)
+                }
+            }
+        }
+    }
+
+    func testClientLocalV2RejectsExtraFieldAndCannotCreateRemoteOrigin() throws {
+        let root = try JSONValue.parse(Data(contentsOf: try localFixtureURL()))
+        var payload = try XCTUnwrap(
+            root["vectors"]?.arrayValue?.first { $0["id"]?.stringValue == "L-P02-local-final" }?["payload"]?.objectValue
+        )
+        payload["unexpected"] = .bool(true)
+        let frame = try XCTUnwrap(
+            InboundFrame.parse(String(decoding: try JSONValue.object(payload).encoded(), as: UTF8.self)))
+        XCTAssertNil(VoiceLocalFrame(frame: frame))
+    }
+
+    func testClientLocalV2RejectsInvalidDeclaredValuesAndAcceptsOptionalPlayoutReason() throws {
+        let root = try JSONValue.parse(Data(contentsOf: try localFixtureURL()))
+        let vectors = try XCTUnwrap(root["vectors"]?.arrayValue)
+        var ready = try XCTUnwrap(
+            vectors.first { $0["id"]?.stringValue == "L-P01-supported-half-duplex" }?["payload"]?.objectValue)
+        ready["contract"] = .string("remote/v1")
+        let invalid = try XCTUnwrap(
+            InboundFrame.parse(String(decoding: try JSONValue.object(ready).encoded(), as: UTF8.self)))
+        XCTAssertNil(VoiceLocalFrame(frame: invalid))
+
+        var playout = try XCTUnwrap(
+            vectors.first { $0["id"]?.stringValue == "L-P04-playout-finished" }?["payload"]?.objectValue)
+        playout["reason"] = .string("announcement_suppressed_muted")
+        let optional = try XCTUnwrap(
+            InboundFrame.parse(String(decoding: try JSONValue.object(playout).encoded(), as: UTF8.self)))
+        XCTAssertEqual(VoiceLocalFrame(frame: optional)?.disposition, .finished)
+    }
+
+    private func localFixtureURL() throws -> URL {
+        try ManifestDriftTests.manifestURL().deletingLastPathComponent()
+            .appendingPathComponent("fixtures/voice_075/client_local_conformance.json")
+    }
+
     func testSharedC0ThroughC6PositiveAndNegativeVectors() throws {
         let fixture = try Fixture()
         let cases = fixture.root["cases"]?.arrayValue ?? []

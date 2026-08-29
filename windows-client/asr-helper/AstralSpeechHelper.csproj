@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>AstralSpeechHelper</AssemblyName>
+    <RootNamespace>AstralSpeechHelper</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Speech" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="AstralSpeechHelper.Tests" />
+  </ItemGroup>
+  <Target Name="WriteHelperBuildProvenance" AfterTargets="Publish">
+    <ItemGroup>
+      <_HelperSourceManifest Include="$(MSBuildProjectDirectory)\helper-source-hashes.json" />
+      <_HelperExecutable Include="$(PublishDir)$(TargetFileName)" />
+    </ItemGroup>
+    <GetFileHash Files="@(_HelperSourceManifest)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_HashedHelperSourceManifest" />
+    </GetFileHash>
+    <GetFileHash Files="@(_HelperExecutable)" Algorithm="SHA256">
+      <Output TaskParameter="Items" ItemName="_HashedHelperExecutable" />
+    </GetFileHash>
+    <WriteLinesToFile
+      File="$(PublishDir)helper-build-provenance.json"
+      Lines='{&quot;schema_version&quot;:1,&quot;source_manifest_sha256&quot;:&quot;%(_HashedHelperSourceManifest.FileHash)&quot;,&quot;executable_sha256&quot;:&quot;%(_HashedHelperExecutable.FileHash)&quot;}'
+      Overwrite="true"
+      Encoding="UTF-8" />
+  </Target>
+</Project>

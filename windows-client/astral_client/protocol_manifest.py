@@ -27,10 +27,10 @@ CLIENT_LOCAL_ACTIONS: frozenset[str] = frozenset({"attach_existing"})
 
 CLASSIFICATION: dict[str, str] = {
     # bootstrap
-    "rote_config": IGNORED,           # natives are full-capability; profile unused
+    "rote_config": IGNORED,  # natives are full-capability; profile unused
     "chrome_menu": HANDLED,
-    "user_preferences": HANDLED,      # theme boot (044)
-    "system_config": IGNORED,         # web dashboard payload; desktop uses agent_list
+    "user_preferences": HANDLED,  # theme boot (044)
+    "system_config": IGNORED,  # web dashboard payload; desktop uses agent_list
     "agent_list": HANDLED,
     # 058: the registration ack is the ONLY signal that a BYO agent's child
     # process was accepted — a refusal is total silence (no NAK frame exists),
@@ -43,26 +43,26 @@ CLASSIFICATION: dict[str, str] = {
     # below are HANDLED, never ignored — an ignored agent frame would silently
     # drop the user's own agent's traffic and look like a hang.
     "agent_bundle_deliver": HANDLED,  # write the bundle + spawn the child
-    "agent_tunnel": HANDLED,          # inbound agent frame -> the child's stdin
-    "agent_stop": HANDLED,            # terminate the child, drop routing
-    "agent_offline": HANDLED,         # server dropped routing for one of ours
+    "agent_tunnel": HANDLED,  # inbound agent frame -> the child's stdin
+    "agent_stop": HANDLED,  # terminate the child, drop routing
+    "agent_offline": HANDLED,  # server dropped routing for one of ours
     # auth
     "auth_required": HANDLED,
     # canvas / SDUI
     "ui_render": HANDLED,
-    "ui_update": IGNORED,             # legacy frame; server no longer targets natives
+    "ui_update": IGNORED,  # legacy frame; server no longer targets natives
     "ui_upsert": HANDLED,
-    "ui_append": IGNORED,             # legacy frame
+    "ui_append": IGNORED,  # legacy frame
     "ui_stream_data": HANDLED,
     # chrome
-    "chrome_render": HANDLED,         # web HTML region push -> status notice only
+    "chrome_render": HANDLED,  # web HTML region push -> status notice only
     "chrome_surface": HANDLED,
     # chat lifecycle / progress
     "chat_status": HANDLED,
     "chat_step": HANDLED,
     "chat_created": HANDLED,
     "chat_loaded": HANDLED,
-    "chat_deleted": IGNORED,          # cross-tab concern; desktop is single-window
+    "chat_deleted": IGNORED,  # cross-tab concern; desktop is single-window
     "history_list": HANDLED,
     "user_message_acked": HANDLED,
     "task_started": HANDLED,
@@ -85,11 +85,15 @@ CLASSIFICATION: dict[str, str] = {
     "voice_submission_rejected": HANDLED,
     "voice_transcript": HANDLED,
     "voice_announcement_media": HANDLED,
-    "heartbeat": IGNORED,             # transport keepalive
+    "voice_local_announcement": HANDLED,
+    "voice_local_final_rejected": HANDLED,
+    "voice_local_session_ready": HANDLED,
+    "voice_local_turn_bound": HANDLED,
+    "heartbeat": IGNORED,  # transport keepalive
     # streaming
     "stream_subscribed": HANDLED,
     "stream_unsubscribed": HANDLED,
-    "stream_list": IGNORED,           # no desktop surface enumerates streams
+    "stream_list": IGNORED,  # no desktop surface enumerates streams
     "stream_data": HANDLED,
     "stream_error": HANDLED,
     # workspace component verbs (055 US3: identity-keyed canvas reconcile +

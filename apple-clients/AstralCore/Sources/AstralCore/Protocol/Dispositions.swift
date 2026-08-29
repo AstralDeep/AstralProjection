@@ -48,7 +48,8 @@ public struct ClientDispositions: Sendable {
         "ui_stream_data", "ui_update", "ui_upsert",
         "user_message_acked",
         "voice_announcement_media", "voice_control_binding", "voice_session_state",
-        "voice_submission_rejected", "voice_transcript", "voice_turn_state",
+        "voice_local_announcement", "voice_local_final_rejected", "voice_local_session_ready",
+        "voice_local_turn_bound", "voice_submission_rejected", "voice_transcript", "voice_turn_state",
     ]
 
     /// Deliberately ignored on every Apple client (044 channel decisions —
@@ -222,8 +223,9 @@ public struct ClientDispositions: Sendable {
         "stream_list", "stream_subscribed", "stream_unsubscribed",
         "system_config", "task_completed", "task_started", "tool_progress",
         "ui_append", "ui_render", "ui_stream_data", "ui_update", "ui_upsert",
-        "user_message_acked", "user_preferences", "voice_announcement_media",
+        "user_message_acked", "user_preferences", "voice_announcement_media", "voice_local_announcement",
         "voice_control_binding", "voice_session_state", "voice_submission_rejected",
+        "voice_local_final_rejected", "voice_local_session_ready", "voice_local_turn_bound",
         "voice_transcript", "voice_turn_state", "workspace_timeline_mode",
     ]
 

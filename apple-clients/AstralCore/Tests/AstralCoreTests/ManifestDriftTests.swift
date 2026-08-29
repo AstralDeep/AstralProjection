@@ -110,14 +110,14 @@ final class ManifestDriftTests: XCTestCase {
             Set(manifest.componentTypes),
             Set(ClientDispositions.allComponentTypes),
             "component_types drift — update Dispositions.swift + parity matrix")
-        // 65 = 58 + the seven feature-065 server-to-client voice frames.
+        // 69 = 58 + seven remote-v1 and four client-local-v2 voice pushes.
         // The client-to-server voice_playout_event remains directional and is
         // pinned separately in frame_contracts.voice_065.client_frames.
         // (conversation_snapshot, operation_status, agent_lifecycle,
         // conversation_commit_ready, and three agent_host_* control frames).
         // Host-only frames remain explicitly ignored by author-only clients;
         // macOS hosting is enabled only by feature 059.
-        XCTAssertEqual(manifest.pushTypes.count, 65)
+        XCTAssertEqual(manifest.pushTypes.count, 69)
         XCTAssertEqual(manifest.componentTypes.count, 35)
         // 73 = 67 + the four feature-054 chrome_llm_sys_* admin actions
         //        + the two feature-055 component_refine/component_restore actions.
@@ -138,8 +138,9 @@ final class ManifestDriftTests: XCTestCase {
         let manifest = try loadManifest()
         let requiredFrames = Set([
             "composer_state", "voice_announcement_media", "voice_control_binding",
-            "voice_session_state", "voice_submission_rejected", "voice_transcript",
-            "voice_turn_state",
+            "voice_local_announcement", "voice_local_final_rejected", "voice_local_session_ready",
+            "voice_local_turn_bound", "voice_session_state", "voice_submission_rejected",
+            "voice_transcript", "voice_turn_state",
         ])
         let manifestFrames = Set(manifest.pushTypes.map(\.name))
         XCTAssertTrue(requiredFrames.isSubset(of: manifestFrames))
@@ -167,6 +168,17 @@ final class ManifestDriftTests: XCTestCase {
                 VoiceControlAction(rawValue: action),
                 "AstralCore must provide a typed reducer action for \(action)")
         }
+    }
+
+    func testClientLocalVoiceContractIsPinnedToClosedV2Dispositions() throws {
+        let data = try Data(contentsOf: try Self.manifestURL())
+        let root = try JSONValue.parse(data)
+        let contract = try XCTUnwrap(root["frame_contracts"]?["voice_075"]?.objectValue)
+        XCTAssertEqual(contract["schema_version"]?.stringValue, "2")
+        XCTAssertEqual(contract["local_frame_contract"]?.stringValue, "client_local/v1")
+        XCTAssertEqual(
+            contract["required_dispositions"]?.arrayValue?.compactMap(\.stringValue),
+            ["ready", "typed_fallback", "rejected", "permission_denied", "final", "speaking", "finished"])
     }
 
     func testRuntimeReliabilityFramesAndRegistrationDisposition() throws {

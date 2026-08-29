@@ -15,6 +15,7 @@ a `send_dropped:` status is emitted for the UI to surface.
 
 Runs the asyncio websocket loop in a daemon thread so the Qt UI stays responsive.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -78,6 +79,469 @@ class WindowsProtocolError(ValueError):
     """An inbound or outbound feature-060 wire value failed closed."""
 
 
+_VOICE_LOCAL_REASONS = frozenset(
+    {
+        "ready",
+        "client_contract_upgrade_required",
+        "client_readiness_required",
+        "microphone_permission_not_determined",
+        "microphone_permission_denied",
+        "speech_recognition_permission_not_determined",
+        "speech_recognition_permission_denied",
+        "no_microphone",
+        "no_audio_output",
+        "local_processing_not_guaranteed",
+        "local_recognition_unavailable",
+        "local_synthesis_unavailable",
+        "local_recognition_locale_unavailable",
+        "local_synthesis_locale_unavailable",
+        "local_language_download_required",
+        "local_language_installing",
+        "local_language_install_failed",
+        "local_capture_not_ready",
+        "local_session_not_ready",
+        "local_recognition_failed",
+        "local_recognition_cancelled",
+        "local_synthesis_failed",
+        "local_audio_interrupted",
+        "local_engine_lost",
+        "local_announcement_expired",
+        "stopped_by_user",
+        "stale_connection",
+        "stale_session",
+        "stale_speech_revision",
+        "stale_chat_context",
+        "stale_local_turn",
+        "duplicate_local_final",
+        "altered_local_final",
+        "local_final_empty",
+        "local_final_oversized",
+        "local_final_malformed",
+        "local_language_mismatch",
+        "announcement_stale_sequence",
+        "announcement_suppressed_muted",
+        "announcement_suppressed_background",
+        "announcement_consent_invalid",
+        "announcement_invalid",
+        "invalid_binding",
+        "capacity_exhausted",
+        "asr_unavailable",
+        "authentication_required",
+        "backend_mismatch",
+        "backend_selection_invalid",
+        "feature_disabled",
+        "internal_error",
+        "takeover_required",
+        "tts_unavailable",
+        "unsupported_speech_backend",
+        "worker_unavailable",
+    }
+)
+_VOICE_LOCAL_COMMON = frozenset(
+    {
+        "type",
+        "schema_version",
+        "speech_backend",
+        "device_id",
+        "connection_generation",
+        "session_id",
+        "generation",
+        "speech_revision",
+    }
+)
+_VOICE_LOCAL_FIELDS: dict[str, frozenset[str]] = {
+    "voice_local_ready": _VOICE_LOCAL_COMMON
+    | {
+        "contract",
+        "transport",
+        "configured_locale",
+        "full_duplex",
+        "has_microphone",
+        "has_audio_output",
+        "microphone_permission",
+        "recognition_permission",
+        "recognition_processing",
+        "recognition_locale",
+        "recognition_installation",
+        "synthesis_processing",
+        "synthesis_locale",
+        "client_sequence",
+    },
+    "voice_local_session_ready": _VOICE_LOCAL_COMMON
+    | {
+        "contract",
+        "transport",
+        "configured_locale",
+        "chat_id",
+        "chat_context_revision",
+        "applied_chat_context_revision",
+        "foreground_active",
+        "microphone_enabled",
+        "speech_muted",
+        "lease_expires_at",
+    },
+    "voice_local_recognition_started": _VOICE_LOCAL_COMMON
+    | {"client_turn_id", "chat_id", "chat_context_revision", "recognition_sequence"},
+    "voice_local_turn_bound": _VOICE_LOCAL_COMMON
+    | {
+        "client_turn_id",
+        "turn_id",
+        "submission_id",
+        "request_generation",
+        "chat_id",
+        "chat_context_revision",
+        "recognition_sequence",
+        "binding_expires_at",
+    },
+    "voice_local_final": _VOICE_LOCAL_COMMON
+    | {
+        "client_turn_id",
+        "turn_id",
+        "submission_id",
+        "request_generation",
+        "chat_id",
+        "chat_context_revision",
+        "recognition_sequence",
+        "final",
+        "recognized_locale",
+        "text",
+        "text_digest_sha256",
+    },
+    "voice_local_recognition_failed": _VOICE_LOCAL_COMMON
+    | {
+        "client_turn_id",
+        "turn_id",
+        "submission_id",
+        "request_generation",
+        "chat_id",
+        "chat_context_revision",
+        "recognition_sequence",
+        "reason",
+    },
+    "voice_local_final_rejected": _VOICE_LOCAL_COMMON
+    | {
+        "client_turn_id",
+        "turn_id",
+        "submission_id",
+        "request_generation",
+        "chat_id",
+        "chat_context_revision",
+        "recognition_sequence",
+        "reason",
+        "retry_policy",
+        "occurred_at",
+    },
+    "voice_local_announcement": _VOICE_LOCAL_COMMON
+    | {
+        "announcement_id",
+        "announcement_sequence",
+        "turn_id",
+        "kind",
+        "output_policy",
+        "locale",
+        "text",
+        "text_digest_sha256",
+        "expires_at",
+        "foreground_required",
+        "mute_revision",
+        "consent_revision",
+    },
+    "voice_local_playout_event": _VOICE_LOCAL_COMMON
+    | {
+        "announcement_id",
+        "announcement_sequence",
+        "turn_id",
+        "kind",
+        "phase",
+        "client_sequence",
+        "observed_at",
+    },
+}
+
+
+@dataclass(frozen=True)
+class VoiceLocalValue:
+    """Validated client-local v2 data with no engine, endpoint, or authority."""
+
+    disposition: str
+    payload: dict[str, Any]
+
+
+def parse_client_local_capability(payload: object) -> Optional[VoiceLocalValue]:
+    """Parse only exact client-local capability/rest values; unknown keys fail closed."""
+
+    if not isinstance(payload, dict):
+        return None
+    unavailable = {
+        "schema_version",
+        "speech_backend",
+        "status",
+        "reason",
+        "checked_at",
+        "expires_at",
+        "supported_transports",
+        "requirements",
+    }
+    if "status" in payload:
+        status = payload.get("status")
+        if (
+            set(payload) != unavailable
+            and set(payload) != unavailable | {"retry_after_seconds"}
+            or payload.get("schema_version") != "2"
+            or payload.get("speech_backend") != "client_local"
+            or status not in {"requires_client_readiness", "unavailable"}
+            or payload.get("reason") not in _VOICE_LOCAL_REASONS
+            or payload.get("supported_transports") != ["client_local"]
+            or not isinstance(payload.get("requirements"), dict)
+            or (
+                status == "requires_client_readiness"
+                and payload.get("reason") != "client_readiness_required"
+            )
+        ):
+            return None
+        return VoiceLocalValue(
+            "client_readiness_required"
+            if status == "requires_client_readiness"
+            else "typed_fallback",
+            payload,
+        )
+    fields = {
+        "contract",
+        "transport",
+        "configured_locale",
+        "full_duplex",
+        "has_microphone",
+        "has_audio_output",
+        "microphone_permission",
+        "recognition_permission",
+        "recognition_processing",
+        "recognition_locale",
+        "recognition_installation",
+        "synthesis_processing",
+        "synthesis_locale",
+    }
+    if (
+        set(payload) != fields
+        or payload.get("contract") != "client_local/v1"
+        or payload.get("transport") != "client_local"
+        or payload.get("full_duplex") is not False
+        or payload.get("recognition_processing") != "guaranteed_local"
+        or payload.get("synthesis_processing") != "guaranteed_local"
+    ):
+        return None
+    permission = payload.get("recognition_permission")
+    if permission not in {"authorized", "denied", "not_determined", "restricted"}:
+        return None
+    return VoiceLocalValue("permission_denied" if permission == "denied" else "ready", payload)
+
+
+def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
+    """Parse exact v2 local frames. Invalid frames deliberately become typed fallback."""
+
+    if not isinstance(payload, dict):
+        return None
+    frame_type = payload.get("type")
+    if (
+        not isinstance(frame_type, str)
+        or (
+            set(payload) != _VOICE_LOCAL_FIELDS.get(frame_type, frozenset())
+            and not (
+                frame_type == "voice_local_playout_event"
+                and set(payload) == _VOICE_LOCAL_FIELDS[frame_type] | {"reason"}
+            )
+        )
+        or payload.get("schema_version") != "2"
+        or payload.get("speech_backend") != "client_local"
+    ):
+        return None
+    if any(
+        not _is_uuid4(payload.get(name))
+        for name in ("device_id", "connection_generation", "session_id")
+    ) or any(
+        isinstance(payload.get(name), bool)
+        or not isinstance(payload.get(name), int)
+        or payload[name] < 1
+        for name in ("generation", "speech_revision")
+    ):
+        return None
+    if not _valid_voice_local_detail(payload):
+        return None
+    if frame_type == "voice_local_ready":
+        if not _valid_voice_local_runtime(payload):
+            return None
+        disposition = "ready"
+    elif frame_type == "voice_local_session_ready":
+        if (
+            payload.get("contract") != "client_local/v1"
+            or payload.get("transport") != "client_local"
+            or not _is_uuid4(payload.get("chat_id"))
+            or any(
+                isinstance(payload.get(name), bool)
+                or not isinstance(payload.get(name), int)
+                or payload[name] < 1
+                for name in ("chat_context_revision", "applied_chat_context_revision")
+            )
+            or not all(
+                isinstance(payload.get(name), bool)
+                for name in ("foreground_active", "microphone_enabled", "speech_muted")
+            )
+        ):
+            return None
+        disposition = "ready"
+    elif frame_type == "voice_local_recognition_started":
+        disposition = "ready"
+    elif frame_type == "voice_local_turn_bound":
+        disposition = "ready"
+    elif frame_type == "voice_local_final":
+        text = payload.get("text")
+        if (
+            payload.get("final") is not True
+            or not isinstance(text, str)
+            or not text.strip()
+            or len(text) > 8000
+            or not isinstance(payload.get("text_digest_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", payload["text_digest_sha256"]) is None
+            or not isinstance(payload.get("recognized_locale"), str)
+            or re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", payload["recognized_locale"])
+            is None
+        ):
+            return None
+        disposition = "final"
+    elif frame_type == "voice_local_recognition_failed":
+        if payload.get("reason") not in _VOICE_LOCAL_REASONS:
+            return None
+        disposition = "rejected"
+    elif frame_type == "voice_local_final_rejected":
+        if payload.get("reason") not in _VOICE_LOCAL_REASONS or payload.get("retry_policy") not in {
+            "none",
+            "explicit_user_retry",
+        }:
+            return None
+        disposition = "rejected"
+    elif frame_type == "voice_local_announcement":
+        if (
+            not isinstance(payload.get("text"), str)
+            or len(payload["text"].encode()) > 600
+            or payload.get("kind") not in _VOICE_PLAYOUT_KINDS
+            or payload.get("output_policy") != "lifecycle"
+            or not isinstance(payload.get("locale"), str)
+            or re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", payload["locale"]) is None
+            or not isinstance(payload.get("text_digest_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", payload["text_digest_sha256"]) is None
+            or not isinstance(payload.get("foreground_required"), bool)
+        ):
+            return None
+        disposition = "speaking"
+    elif frame_type == "voice_local_playout_event":
+        if payload.get("phase") not in {"started", "finished", "failed", "suppressed"} or (
+            payload.get("reason") is not None and payload.get("reason") not in _VOICE_LOCAL_REASONS
+        ):
+            return None
+        disposition = "finished"
+    else:
+        return None
+    return VoiceLocalValue(disposition, payload)
+
+
+def _valid_voice_local_runtime(payload: dict[str, Any]) -> bool:
+    return (
+        payload.get("contract") == "client_local/v1"
+        and payload.get("transport") == "client_local"
+        and payload.get("full_duplex") is False
+        and all(
+            isinstance(payload.get(name), bool) for name in ("has_microphone", "has_audio_output")
+        )
+        and payload.get("microphone_permission")
+        in {"authorized", "denied", "not_determined", "restricted"}
+        and payload.get("recognition_permission")
+        in {"authorized", "denied", "not_determined", "restricted"}
+        and payload.get("recognition_processing") == "guaranteed_local"
+        and payload.get("recognition_locale") == "ready"
+        and payload.get("recognition_installation") == "ready"
+        and payload.get("synthesis_processing") == "guaranteed_local"
+        and payload.get("synthesis_locale") == "ready"
+    )
+
+
+def _valid_voice_local_detail(payload: dict[str, Any]) -> bool:
+    for name in (
+        "client_turn_id",
+        "turn_id",
+        "submission_id",
+        "request_generation",
+        "chat_id",
+        "announcement_id",
+    ):
+        if name in payload and payload[name] is not None and not _is_uuid4(payload[name]):
+            return False
+    for name in (
+        "chat_context_revision",
+        "recognition_sequence",
+        "announcement_sequence",
+        "mute_revision",
+        "consent_revision",
+    ):
+        if name in payload and (
+            isinstance(payload[name], bool)
+            or not isinstance(payload[name], int)
+            or payload[name] < 1
+        ):
+            return False
+    if "client_sequence" in payload and (
+        isinstance(payload["client_sequence"], bool)
+        or not isinstance(payload["client_sequence"], int)
+        or payload["client_sequence"] < 0
+    ):
+        return False
+    for name in (
+        "binding_expires_at",
+        "occurred_at",
+        "expires_at",
+        "observed_at",
+        "lease_expires_at",
+    ):
+        if name in payload:
+            try:
+                _utc(payload[name], name)
+            except WindowsProtocolError:
+                return False
+    return True
+
+
+def build_voice_local_final(value: VoiceLocalValue) -> Optional[dict[str, Any]]:
+    """Return a bounded validated local-final frame without remote proof semantics."""
+
+    if value.disposition != "final" or value.payload.get("type") != "voice_local_final":
+        return None
+    return dict(value.payload)
+
+
+def validate_voice_recovery_envelope(
+    payload: object, expected_refresh_id: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate the exact, short-lived remote-v1 grant refresh envelope."""
+
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"refresh_id", "replayed", "replay_expires_at", "session", "grant"}
+        or payload.get("refresh_id") != expected_refresh_id
+        or not _is_uuid4(expected_refresh_id)
+        or not isinstance(payload.get("replayed"), bool)
+        or not isinstance(payload.get("session"), dict)
+        or not isinstance(payload.get("grant"), dict)
+    ):
+        raise WindowsProtocolError("voice grant recovery is malformed")
+    try:
+        replay_expiry = datetime.fromisoformat(
+            _utc(payload.get("replay_expires_at"), "replay_expires_at")[:-1] + "+00:00"
+        )
+    except WindowsProtocolError as exc:
+        raise WindowsProtocolError("voice grant recovery is malformed") from exc
+    if replay_expiry <= datetime.now(timezone.utc):
+        raise WindowsProtocolError("voice grant recovery is malformed")
+    return payload["session"], payload["grant"]
+
+
 def _uuid4(value: object, name: str) -> str:
     if not isinstance(value, str):
         raise WindowsProtocolError(f"{name} must be a UUID4 string")
@@ -91,12 +555,7 @@ def _uuid4(value: object, name: str) -> str:
 
 
 def _uint64(value: object, name: str) -> int:
-    if (
-        isinstance(value, bool)
-        or not isinstance(value, int)
-        or value < 0
-        or value > _MAX_UINT64
-    ):
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0 or value > _MAX_UINT64:
         raise WindowsProtocolError(f"{name} must be an unsigned 64-bit integer")
     return value
 
@@ -387,17 +846,13 @@ def decode_semantic_transcript(transcript: object) -> list[SemanticMessage]:
                 # 066 T023: exactly {type, text} plus an OPTIONAL bounded variant.
                 if set(part) == {"type", "text", "variant"}:
                     if part.get("variant") not in CANONICAL_TEXT_PART_VARIANTS:
-                        raise WindowsProtocolError(
-                            "text part variant is outside the canonical set"
-                        )
+                        raise WindowsProtocolError("text part variant is outside the canonical set")
                 else:
                     _exact(part, {"type", "text"}, "text part")
                 if not isinstance(part.get("text"), str):
                     raise WindowsProtocolError("text part must contain text")
                 safe_parts.append(
-                    SemanticPart(
-                        type="text", text=part["text"], variant=part.get("variant")
-                    )
+                    SemanticPart(type="text", text=part["text"], variant=part.get("variant"))
                 )
                 visible = visible or bool(part["text"])
             elif part_type == "components":
@@ -406,12 +861,9 @@ def decode_semantic_transcript(transcript: object) -> list[SemanticMessage]:
                 if not isinstance(components, list):
                     raise WindowsProtocolError("components part must contain an array")
                 safe_components = tuple(
-                    copy.deepcopy(_validate_component(component))
-                    for component in components
+                    copy.deepcopy(_validate_component(component)) for component in components
                 )
-                safe_parts.append(
-                    SemanticPart(type="components", components=safe_components)
-                )
+                safe_parts.append(SemanticPart(type="components", components=safe_components))
                 visible = visible or bool(safe_components)
             elif part_type == "structured":
                 _exact(part, {"type", "value", "plain_text"}, "structured part")
@@ -942,9 +1394,7 @@ class AdmissionRefusal:
         if self.retry_after_ms is not None:
             _uint64(self.retry_after_ms, "retry_after_ms")
             if not self.retryable:
-                raise WindowsProtocolError(
-                    "admission refusal retry_after_ms requires retryable"
-                )
+                raise WindowsProtocolError("admission refusal retry_after_ms requires retryable")
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AdmissionRefusal":
@@ -1008,10 +1458,7 @@ class AgentLifecycle:
                 "active lifecycle state requires revision and runtime instance"
             )
         if self.reason_code is not None:
-            if (
-                not isinstance(self.reason_code, str)
-                or self.reason_code not in self._REASON_CODES
-            ):
+            if not isinstance(self.reason_code, str) or self.reason_code not in self._REASON_CODES:
                 raise WindowsProtocolError("reason_code is not canonical")
         if not self.label:
             raise WindowsProtocolError("label must be non-empty")
@@ -1113,10 +1560,7 @@ class VoiceTranscriptSubmission:
             or text != text.strip()
             or unicodedata.normalize("NFC", text) != text
             or "\r" in text
-            or any(
-                ord(character) < 32 and character not in {"\t", "\n"}
-                for character in text
-            )
+            or any(ord(character) < 32 and character not in {"\t", "\n"} for character in text)
         ):
             raise WindowsProtocolError("final transcript text is not canonical")
         language = value["detected_language"]
@@ -1159,9 +1603,7 @@ class VoiceTranscriptSubmission:
         )
 
     def expired(self, now: Optional[datetime] = None) -> bool:
-        expiry = datetime.fromisoformat(
-            str(self.transcript["proof_expires_at"])[0:-1] + "+00:00"
-        )
+        expiry = datetime.fromisoformat(str(self.transcript["proof_expires_at"])[0:-1] + "+00:00")
         return expiry <= (now or datetime.now(timezone.utc))
 
     def to_frame(self, connection_generation: str) -> dict[str, Any]:
@@ -1254,7 +1696,10 @@ class AgentHostRegistration:
         if (
             not versions
             or tuple(sorted(set(versions))) != versions
-            or any(isinstance(value, bool) or not isinstance(value, int) or value <= 0 for value in versions)
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value <= 0
+                for value in versions
+            )
         ):
             raise WindowsProtocolError("runtime contract versions are invalid")
         if _SHA256.fullmatch(self.runtime_lock_sha256) is None:
@@ -1268,9 +1713,7 @@ class AgentHostRegistration:
         self.validate()
         return {
             "host_id": self.host_id,
-            "supported_runtime_contract_versions": list(
-                self.supported_runtime_contract_versions
-            ),
+            "supported_runtime_contract_versions": list(self.supported_runtime_contract_versions),
             "runtime_lock_sha256": self.runtime_lock_sha256,
             "platform": self.platform,
             "client_version": self.client_version,
@@ -1345,8 +1788,7 @@ class AgentHostRegistrationRefused:
                 "runtime_lock_mismatch details",
             )
             if any(
-                not isinstance(value, str)
-                or re.fullmatch(r"[0-9a-f]{12}", value) is None
+                not isinstance(value, str) or re.fullmatch(r"[0-9a-f]{12}", value) is None
                 for value in self.details.values()
             ):
                 raise WindowsProtocolError("runtime lock digest prefixes are invalid")
@@ -1421,6 +1863,7 @@ def parse_runtime_frame(data: dict[str, Any]) -> object:
     }.get(data.get("type"))
     return parser(data) if parser is not None else data
 
+
 #: Bounded outbound buffer while disconnected (matches the Android client).
 MAX_QUEUE = 64
 
@@ -1433,8 +1876,9 @@ BACKOFF_BASE_S = 1.0
 BACKOFF_MAX_S = 30.0
 
 
-def backoff_delay_s(attempt: int, base: float = BACKOFF_BASE_S,
-                    cap: float = BACKOFF_MAX_S) -> float:
+def backoff_delay_s(
+    attempt: int, base: float = BACKOFF_BASE_S, cap: float = BACKOFF_MAX_S
+) -> float:
     """Delay before reconnect ``attempt`` (1-based): base * 2^(attempt-1), capped.
 
     Mirrors the Android client's ``backoffDelayMs`` so both natives share the
@@ -1458,9 +1902,13 @@ def device_caps(
     server adapts to the desktop app's real capabilities, not the web view's."""
     caps = {
         "device_type": "windows",
-        "screen_width": width, "screen_height": height,
-        "viewport_width": width, "viewport_height": height,
-        "pixel_ratio": 1.0, "has_touch": False, "user_agent": "AstralWindowsClient/0.1",
+        "screen_width": width,
+        "screen_height": height,
+        "viewport_width": width,
+        "viewport_height": height,
+        "pixel_ratio": 1.0,
+        "has_touch": False,
+        "user_agent": "AstralWindowsClient/0.1",
         "connection_type": "wifi",
     }
     if supported_types:
@@ -1471,7 +1919,7 @@ def device_caps(
 
 
 class OrchestratorClient(QObject):
-    message = Signal(dict)        # any inbound server message {type: ...}
+    message = Signal(dict)  # any inbound server message {type: ...}
     # Synchronously emitted on the caller's thread before `_send` can perform
     # socket I/O. Native UI owners use this to render the client-only
     # "Submitting…" projection without claiming server acceptance.
@@ -1534,7 +1982,7 @@ class OrchestratorClient(QObject):
         self._ws = None
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._stop = False
-        self._auth_hold = False   # auth_required seen: don't loop on a bad token
+        self._auth_hold = False  # auth_required seen: don't loop on a bad token
         self._connected = False
         self._had_session = False
         self._pending: deque[str] = deque()
@@ -1624,10 +2072,7 @@ class OrchestratorClient(QObject):
             if parsed.host_id != self.host_id:
                 self._safe_status("protocol_error:agent_host_registered")
                 return False
-            if (
-                self.host_session_id is not None
-                and self.host_session_id != parsed.host_session_id
-            ):
+            if self.host_session_id is not None and self.host_session_id != parsed.host_session_id:
                 # A server session is immutable for one accepted connection.
                 # Only the next register_ui generation may bind another one.
                 self._safe_status("protocol_error:agent_host_registered")
@@ -1641,8 +2086,7 @@ class OrchestratorClient(QObject):
         if frame_type in {"user_message_acked", "voice_submission_rejected"}:
             settled = self.settle_voice_submission(msg)
             is_voice_ack = (
-                frame_type == "user_message_acked"
-                and msg.get("voice_turn_id") is not None
+                frame_type == "user_message_acked" and msg.get("voice_turn_id") is not None
             )
             if not settled and (frame_type == "voice_submission_rejected" or is_voice_ack):
                 self._safe_status(f"protocol_error:{frame_type}")
@@ -1729,9 +2173,7 @@ class OrchestratorClient(QObject):
             "resumed": self.resume_chat_id is not None,
         }
         if self.resume_chat_id is not None:
-            generation = self.begin_conversation_request(
-                "hydration", self.resume_chat_id
-            )
+            generation = self.begin_conversation_request("hydration", self.resume_chat_id)
             frame["resume"] = {
                 "schema_version": 1,
                 "active_chat_id": self.resume_chat_id,
@@ -1745,8 +2187,7 @@ class OrchestratorClient(QObject):
 
     async def _main(self) -> None:
         self._safe_status("connecting")
-        async with websockets.connect(self.url, max_size=16 * 1024 * 1024,
-                                      ping_interval=20) as ws:
+        async with websockets.connect(self.url, max_size=16 * 1024 * 1024, ping_interval=20) as ws:
             self._ws = ws
             self._had_session = True
             await ws.send(json.dumps(self._register_frame()))
@@ -1955,9 +2396,7 @@ class OrchestratorClient(QObject):
         chat_id = payload.get("chat_id")
         generation = payload.get("request_generation")
         purpose = payload.get("snapshot_purpose")
-        scoped_chat = _is_uuid4(chat_id) or (
-            chat_id is None and purpose == "commit"
-        )
+        scoped_chat = _is_uuid4(chat_id) or (chat_id is None and purpose == "commit")
         if (
             frame.get("action") in {"chat_message", "load_chat"}
             and scoped_chat
@@ -2040,15 +2479,9 @@ class OrchestratorClient(QObject):
             raise WindowsProtocolError("ui_event action must be snake case")
         safe_payload = dict(payload)
         supplied_submission = safe_payload.get("submission_id")
-        submission_id = (
-            supplied_submission
-            if _is_uuid4(supplied_submission)
-            else str(uuid.uuid4())
-        )
+        submission_id = supplied_submission if _is_uuid4(supplied_submission) else str(uuid.uuid4())
         supplied_request = safe_payload.get("request_generation")
-        request_generation = (
-            supplied_request if _is_uuid4(supplied_request) else str(uuid.uuid4())
-        )
+        request_generation = supplied_request if _is_uuid4(supplied_request) else str(uuid.uuid4())
         safe_payload["submission_id"] = submission_id
         safe_payload["request_generation"] = request_generation
         frame = {
@@ -2115,6 +2548,23 @@ class OrchestratorClient(QObject):
         self.submission.emit(local)
         self._send_voice_frame(submission.to_frame(self.connection_generation))
         return local
+
+    def send_voice_local_frame(self, frame: dict[str, Any]) -> None:
+        """Send one exact current-socket client-local frame without v1 proof wrapping."""
+
+        parsed = parse_voice_local_frame(frame)
+        if parsed is None or frame.get("type") not in {
+            "voice_local_ready",
+            "voice_local_recognition_started",
+            "voice_local_final",
+            "voice_local_recognition_failed",
+            "voice_local_playout_event",
+        }:
+            raise WindowsProtocolError("voice local frame is invalid")
+        connection = _uuid4(frame.get("connection_generation"), "connection_generation")
+        if connection != self.connection_generation:
+            raise WindowsProtocolError("voice local frame connection is stale")
+        self._send_voice_frame(copy.deepcopy(frame))
 
     def send_correlated_new_chat(
         self,
@@ -2193,13 +2643,9 @@ class OrchestratorClient(QObject):
             "observed_at",
         }
         supplied = set(frame) if isinstance(frame, dict) else set()
-        if supplied != required and supplied != required | {
-            "result_reserved_samples_after"
-        }:
+        if supplied != required and supplied != required | {"result_reserved_samples_after"}:
             raise WindowsProtocolError("voice playout fields are invalid")
-        if frame.get("type") != "voice_playout_event" or frame.get(
-            "schema_version"
-        ) != "1":
+        if frame.get("type") != "voice_playout_event" or frame.get("schema_version") != "1":
             raise WindowsProtocolError("voice playout discriminator is invalid")
         if frame.get("device_id") != self.device_id:
             raise WindowsProtocolError("voice playout device is invalid")
@@ -2291,9 +2737,7 @@ class OrchestratorClient(QObject):
 
     async def _resend_voice_pending(self, ws) -> None:
         for frame in self._pending_voice_frames():
-            await ws.send(
-                json.dumps(frame, ensure_ascii=False, separators=(",", ":"))
-            )
+            await ws.send(json.dumps(frame, ensure_ascii=False, separators=(",", ":")))
 
     def settle_voice_submission(self, frame: dict[str, Any]) -> bool:
         """Clear only a fully correlated current-connection ack/rejection."""
@@ -2360,17 +2804,14 @@ class OrchestratorClient(QObject):
             except WindowsProtocolError:
                 return False
             message = frame.get("message")
-            if message is not None and (
-                not isinstance(message, str) or len(message) > 240
-            ):
+            if message is not None and (not isinstance(message, str) or len(message) > 240):
                 return False
             valid = (
                 frame.get("schema_version") == "1"
                 and frame.get("session_id") == value["session_id"]
                 and frame.get("connection_generation") == self.connection_generation
                 and frame.get("generation") == value["generation"]
-                and frame.get("media_grant_revision")
-                == value["media_grant_revision"]
+                and frame.get("media_grant_revision") == value["media_grant_revision"]
                 and frame.get("client_turn_id") == value["client_turn_id"]
                 and frame.get("submission_id") == value["submission_id"]
                 and frame.get("request_generation") == value["request_generation"]
@@ -2444,9 +2885,7 @@ class OrchestratorClient(QObject):
         if chat_id:
             payload["chat_id"] = chat_id
         if chat_id is None or _is_uuid4(chat_id):
-            generation = request_generation or self.begin_conversation_request(
-                "commit", chat_id
-            )
+            generation = request_generation or self.begin_conversation_request("commit", chat_id)
             _uuid4(generation, "request_generation")
             self.request_generation = generation
             self.request_purpose = "commit"

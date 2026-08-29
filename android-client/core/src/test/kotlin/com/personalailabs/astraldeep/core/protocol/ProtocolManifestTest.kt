@@ -88,6 +88,10 @@ class ProtocolManifestTest {
             "voice_submission_rejected",
             "voice_transcript",
             "voice_announcement_media",
+            "voice_local_announcement",
+            "voice_local_final_rejected",
+            "voice_local_session_ready",
+            "voice_local_turn_bound",
         ).forEach { frame ->
             assertEquals(
                 ProtocolManifest.HANDLED,
@@ -95,6 +99,17 @@ class ProtocolManifestTest {
                 "$frame is required by feature 065 and may not drift to ignored",
             )
         }
+    }
+
+    @Test
+    fun client_local_voice_contract_is_pinned_to_closed_v2_dispositions() {
+        val contract = manifestRoot().getValue("frame_contracts").jsonObject.getValue("voice_075").jsonObject
+        assertEquals("2", contract.getValue("schema_version").jsonPrimitive.content)
+        assertEquals("client_local/v1", contract.getValue("local_frame_contract").jsonPrimitive.content)
+        assertEquals(
+            listOf("ready", "typed_fallback", "rejected", "permission_denied", "final", "speaking", "finished"),
+            contract.getValue("required_dispositions").jsonArray.map { it.jsonPrimitive.content },
+        )
     }
 
     @Test

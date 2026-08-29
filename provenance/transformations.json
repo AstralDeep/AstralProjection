@@ -16,9 +16,9 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "3bc9ce093e2b640cfb5092f21dc66b1f94a04da37b060fcfc8f3d75dd3706931",
-      "task": "T054/T057",
-      "reason": "Repoint generated Android voice fixtures to Projection while preserving registered application, redirect, and monotonic version identities."
+      "resultSha256": "7ac647a81edc5256279a7fb634fb2d381c801885b8dd3b5384b64a64e2850d7b",
+      "task": "T054/T057/T013/T014",
+      "reason": "Repoint generated Android voice fixtures to Projection, then hash-bind and bundle the standalone Feature 075 local conformance fixture without changing dependencies or registered identities."
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
@@ -30,20 +30,38 @@
       "reason": "Repoint Android renderer vocabulary parity to the standalone Projection contract."
     },
     {
+      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
+      "sourceBlob": "422b37a5f9dfe46919bc52df26b6f19ff7ca3929",
+      "sourceMode": "100644",
+      "resultSha256": "0864c31f8179763185ff6e96504455d45eb556e49fd7f8f5f9fde0f0639e2031",
+      "task": "T052",
+      "reason": "Implement the strict Android client-local voice frame and bound-final models while preserving remote-v1 behavior."
+    },
+    {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
       "sourceBlob": "efafbfe736f5fed5a6f2cab51aee5192200aaa78",
       "sourceMode": "100644",
-      "resultSha256": "a590ade1d74d876ca59c3e0be6f3ed3f634c62a56f4f3897ebf9ab696bc4bab2",
+      "resultSha256": "08f68fe267e4673ba02c2fecf9d92d3c14cb693d2efff0610f298d8e222385f3",
       "task": "T054",
       "reason": "Name the standalone Projection manifest as the current source for Android frame dispositions."
+    },
+    {
+      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
+      "sourceBlob": "4801ccf81355ce04ac24930bb37754c86cd2cd87",
+      "sourceMode": "100644",
+      "resultSha256": "f92778b427700d165c4cc1ebcf05de1261b06acab2f2e75a551fcb1b27a6ee6f",
+      "task": "T052",
+      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation."
     },
     {
       "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
       "sourceBlob": "12a4d46a3be93ea8784ff65518c69f6ec2b28d17",
       "sourceMode": "100644",
-      "resultSha256": "648a331d880a935aa8b106ad24ec8aec4d60fbb91bcbae686fcb10848cb7db95",
+      "resultSha256": "28a9a847bd084cf939345c75d266ffc5ffba27c357ce4aa06c45c3c897e07a5e",
       "task": "T054",
       "reason": "Repoint the Android protocol drift guard to the standalone Projection contract."
     },
@@ -52,9 +70,9 @@
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
       "sourceBlob": "91a34fb1ac6831ef090e90a79ad5bada51106a0e",
       "sourceMode": "100644",
-      "resultSha256": "f00c6078346852bbfe89c217f23491800d263159b2d76895cd68f5c5b7b157e5",
-      "task": "T054",
-      "reason": "Repoint the Android voice conformance consumer to the standalone Projection fixture."
+      "resultSha256": "8c324dafa175113a71f201ba4431beb1a097d9e2e2053d7c07bfc2728da4df76",
+      "task": "T054/T013/T014",
+      "reason": "Bind the Android voice conformance consumer to both standalone remote-v1 and client-local-v1 Projection fixtures."
     },
     {
       "path": "android-client/docs/play-store-release.md",
@@ -75,13 +93,22 @@
       "reason": "Make the committed Gradle wrapper user-executable so active Android CI can invoke the repository-owned wrapper directly."
     },
     {
+      "path": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
+      "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
+      "sourceBlob": "9fb8c3b036fc1c2c9dfa6a822163f796aee0af78",
+      "sourceMode": "100644",
+      "resultSha256": "c7dda2aea84d3f2a6cd9d10cd79bfa77826411803cd12c878ee92b5287fb5fe9",
+      "task": "T013",
+      "reason": "Record the pre-existing current-main 0dcf169 transformation that bumped MARKETING_VERSION from 1.3 to 1.4 across ten configurations so Feature 075's refreshed strict provenance ledger is complete."
+    },
+    {
       "path": "apple-clients/AstralCore/Package.swift",
       "sourcePath": "apple-clients/AstralCore/Package.swift",
       "sourceBlob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
       "sourceMode": "100644",
-      "resultSha256": "f9b7a7659109acc8c8f580b99e699034e143e5753a3b126c63c0efbab713039c",
-      "task": "T055",
-      "reason": "Repoint the Apple voice conformance resource to the standalone Projection fixture."
+      "resultSha256": "d1a77c01102c6ddc4e9716db3bc51854b7088828ce168faaeed7f390484da538",
+      "task": "T055/T013/T014",
+      "reason": "Bind the shared Apple package to hash-verified standalone remote-v1 and client-local-v1 Projection fixtures without adding a package dependency."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
@@ -97,9 +124,18 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
       "sourceMode": "100644",
-      "resultSha256": "eb194f716c01f2f847221967a55bc7a4329037cc8e2e862c936385ebd9ea1615",
+      "resultSha256": "21b3810f35f2857542103c876de09468547616011fe03994ac13748617f75025",
       "task": "T055",
       "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions."
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
+      "sourceBlob": "d19d554b034c250545b3c018df3039a8d7e2091c",
+      "sourceMode": "100644",
+      "resultSha256": "0eb372eb287d060cb3ca4485c39c890cf8b4f4fe92a3bef5aabcaa5804eaf3eb",
+      "task": "T050",
+      "reason": "Implement strict Apple client-local voice capability, frame, disposition, and bound-final protocol models."
     },
     {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
@@ -124,9 +160,18 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "d1c969acc6d7b592e4d9f854535eb1dcb9e611508db2a497070bb59b3c4e353a",
+      "resultSha256": "925a3dd668a975daa8019e2a29d338b9690dc7e33a9375416a4cd39f61e96ea1",
       "task": "T055",
       "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent."
+    },
+    {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
+      "sourceBlob": "9b3048e2704f78c916bb1c48f789602c075bbd1d",
+      "sourceMode": "100644",
+      "resultSha256": "89ca3feae8d4e94f472e0f8d5138802ec659e98a6b53c7b5cb3ad3856797edea",
+      "task": "T049",
+      "reason": "Exercise Apple client-local fixture parsing, bound-final construction, semantic denials, and unchanged remote-v1 proof behavior."
     },
     {
       "path": "apple-clients/KNOWN-ISSUES.md",
@@ -154,6 +199,33 @@
       "resultSha256": "c4a9616b56414e62d54f3e47333dc92518ddc47208e504330978a5dd48757f38",
       "task": "T226",
       "reason": "Remove repository-wide Ruff violations from the Apple icon generator without altering generated image bytes."
+    },
+    {
+      "path": "backend/rote/adapter.py",
+      "sourcePath": "backend/rote/adapter.py",
+      "sourceBlob": "ada87b7c601058cff8acbf9a62d11367406d0438",
+      "sourceMode": "100644",
+      "resultSha256": "ab65b1428e17acf6d7fb39ac36b08bc6403586a06a3bab87b786beb4fd49e602",
+      "task": "T017",
+      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition."
+    },
+    {
+      "path": "backend/rote/capabilities.py",
+      "sourcePath": "backend/rote/capabilities.py",
+      "sourceBlob": "f99b8e575640d0176bf855fbd6cf01cc5bde4790",
+      "sourceMode": "100644",
+      "resultSha256": "c6b49157808e79e020f2b0d3244957ee71d2560727a89185134b3a4ebb7b373c",
+      "task": "T017",
+      "reason": "Normalize the strict client_local/v1 half-duplex capability vocabulary without inferring local readiness from client identity."
+    },
+    {
+      "path": "backend/rote/fallback.py",
+      "sourcePath": "backend/rote/fallback.py",
+      "sourceBlob": "32e901e62c19a0a32f4465d5ac0f94bba0253745",
+      "sourceMode": "100644",
+      "resultSha256": "9edf5a4c9bb60e9540ab5a9da3c46d8292fe1e21cfa52bf7256f4a2b47bafd0c",
+      "task": "T017",
+      "reason": "Classify local speech readiness with closed reasons and preserve an explicit typed fallback for every unavailable posture."
     },
     {
       "path": "backend/webrender/chrome/menu_model.py",
@@ -313,9 +385,27 @@
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "5f13d0d922d3e86321dcd7fc43ddac6f21c4e64c5a9b426559389619cd8d8ea0",
+      "resultSha256": "093f4c267c9207113774eefa0cd4cb8e8a0f3a74f428e627249dd196256e9c80",
       "task": "T052/T063",
       "reason": "Name the standalone Projection manifest as the current error-frame contract source."
+    },
+    {
+      "path": "backend/webrender/templates/shell.html",
+      "sourcePath": "backend/webrender/templates/shell.html",
+      "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
+      "sourceMode": "100644",
+      "resultSha256": "5a9e750dcbcd3cc7d02ccd5ec4205144253a0f54fc031a8c6765abfe3c687504",
+      "task": "T042",
+      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter."
+    },
+    {
+      "path": "contracts/ui_protocol.json",
+      "sourcePath": "backend/shared/ui_protocol.json",
+      "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
+      "sourceMode": "100644",
+      "resultSha256": "864a4a7825895cd64fa078580514f149fb8fb84a03d76dbccd6a5d5761e02404",
+      "task": "T013/T015",
+      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest."
     },
     {
       "path": "scripts/windows_release_candidate.py",
@@ -325,6 +415,15 @@
       "resultSha256": "d77bcbdf53d5eba3617c574c3c504870918db0d07ea771410dc30bc26232dd51",
       "task": "T166",
       "reason": "Bind Windows candidate assembly to the exact LETS runtime release lock and protected-executor bundle."
+    },
+    {
+      "path": "tests/rote/test_voice_rote_capabilities_065.py",
+      "sourcePath": "backend/tests/test_voice_rote_capabilities_065.py",
+      "sourceBlob": "958fd40e2e94bdd4bbfa4f3f856c437fd53648f9",
+      "sourceMode": "100644",
+      "resultSha256": "a1f4f203c48260f2891a7af4b961c7fef7992b4954b234dcc79c8434a1446f0d",
+      "task": "T016",
+      "reason": "Cover strict half-duplex client-local capability normalization and fail-closed typed fallback before ROTE implementation."
     },
     {
       "path": "tests/webrender/test_accessibility_060.py",
@@ -349,9 +448,9 @@
       "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py",
       "sourceBlob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
       "sourceMode": "100644",
-      "resultSha256": "889d442a3595073df15eec9964ae89911be4c76002902a625c322d5c3d402ee2",
-      "task": "T043",
-      "reason": "Read the canonical voice fixture through the standalone Projection resource facade."
+      "resultSha256": "53d4e69e113b6eb34642599500d1cc0a5bb6ed49e23a337e9cb6b35d70849732",
+      "task": "T043/T013/T014",
+      "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant."
     },
     {
       "path": "tooling/web-ci/coverage-conversion-cli.mjs",
@@ -412,7 +511,7 @@
       "sourcePath": "tooling/web-ci/tests/voice-conversation-065.spec.js",
       "sourceBlob": "893e5722d552d1af9bfe16394f4a900e281f2a5d",
       "sourceMode": "100644",
-      "resultSha256": "27008189c584b34a659a2bf52660f965f14dc382bb3972ea2b83dbfd55e382fa",
+      "resultSha256": "eea4339a0330fad1555f297b95dafe5409995dfd7d7ab1b312b88132a31fb627",
       "task": "T052/T063",
       "reason": "Read browser voice conformance vectors from Projection's canonical standalone fixture path."
     },
@@ -421,7 +520,7 @@
       "sourcePath": "windows-client/AstralDeep.spec",
       "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
       "sourceMode": "100644",
-      "resultSha256": "2be8358d3e8da33e19fd0bbd2355cd272457fa4f3279f7753da0ac1dff8d3ae6",
+      "resultSha256": "0ce70cdd94453fd93c84ea2890c8ad776f2abfeb7f9f368eff7c7cc5d2a1f9f4",
       "task": "T166",
       "reason": "Package the protected BYO executor and exact LETS runtime artifacts in the Windows application candidate."
     },
@@ -433,6 +532,15 @@
       "resultSha256": "dd7680b127e2d267ae86ee9b5b7ae45d1681569f2e4ffdbf924a91a8c3d05610",
       "task": "T060/T062/T188",
       "reason": "Remove runtime repository trust overrides, document the inactive bounded bridge transition, and replace a broken monorepo schema link with the standalone fail-closed validator and provenance."
+    },
+    {
+      "path": "windows-client/astral_client/app.py",
+      "sourcePath": "windows-client/astral_client/app.py",
+      "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
+      "sourceMode": "100644",
+      "resultSha256": "aa0535af846c2b83be5d05a01906b96c727cbd6eb171e133eaaf0ccbbed1704b",
+      "task": "T059",
+      "reason": "Route authenticated local speech frames through the Windows application controller without changing remote-v1 dispatch."
     },
     {
       "path": "windows-client/astral_client/deployment.py",
@@ -457,7 +565,7 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "309e92be0ad63ded0c6c71288dc1c9bd2212810a208fce5b69eade4dbf109ea1",
+      "resultSha256": "d19c5670d2e633964721ee68940e41884d72ca978b2078724bb51bab43871747",
       "task": "T166",
       "reason": "Carry the exact runtime-v3 authority object and protected-executor disposition in the Windows delivery protocol."
     },
@@ -466,9 +574,18 @@
       "sourcePath": "windows-client/astral_client/protocol_manifest.py",
       "sourceBlob": "7b47e7e8a789b1d7a5b0fae543b3ff0665248148",
       "sourceMode": "100644",
-      "resultSha256": "94e23f0485ab43993abb347cc84662f6d5ee23fe3e44244f3cacafa0fab9f8dc",
+      "resultSha256": "30ce6c1b157d8c31c1d94441d13f008d89f2a19f969028ec49dd69fc53234115",
       "task": "T053",
       "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions."
+    },
+    {
+      "path": "windows-client/astral_client/voice.py",
+      "sourcePath": "windows-client/astral_client/voice.py",
+      "sourceBlob": "8cbf3a7bbe032abbd6d9f718e94ee8cafaef46c7",
+      "sourceMode": "100644",
+      "resultSha256": "e197dcddfe701db356dde7bceb2d77337938cfbce5bca37d65261d9a23420f3d",
+      "task": "T057/T059/T089",
+      "reason": "Implement the Windows local helper and TTS lifecycle, bound local frames, and exact remote-media recovery fences."
     },
     {
       "path": "windows-client/deployment/runtime-manifest.json",
@@ -511,9 +628,9 @@
       "sourcePath": "windows-client/tests/e2e_voice_065.py",
       "sourceBlob": "78e7984e4ed2f176c5ea98546dff685a4f3295b2",
       "sourceMode": "100644",
-      "resultSha256": "c31ebc82870f249a9fc5ba506f85cfc22fe2053e5304f98ac2f693e047419b30",
-      "task": "T053",
-      "reason": "Repoint Windows voice conformance to Projection's fixture and its local stdlib-only materializer instead of an absent Deep contract-CI module."
+      "resultSha256": "faee11d82e40352e02a99d50a26525de3286cd9817c383e651c2266b5a1f1de6",
+      "task": "T053/T013/T014",
+      "reason": "Bind Windows conformance to Projection's standalone remote-v1 and client-local-v1 fixtures without implementing a runtime adapter."
     },
     {
       "path": "windows-client/tests/test_byo_runtime_compatibility.py",
@@ -547,7 +664,7 @@
       "sourcePath": "windows-client/tests/test_protocol_manifest.py",
       "sourceBlob": "00114c40d6e0840afb3dc4d2996496b1b45fdd7f",
       "sourceMode": "100644",
-      "resultSha256": "82e871b058dcebb3a480974ccfe5e3142974a610adbf46d7653b9ef7119837d2",
+      "resultSha256": "5b8d56baad60b64835df656c1af8893eef989291f0a4dcf3b1471c264fd6c4f4",
       "task": "T053",
       "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract."
     },
@@ -588,6 +705,33 @@
       "reason": "Preserve runtime-v3 authority identity across bounded Windows task recovery and successor delivery."
     },
     {
+      "path": "windows-client/tests/test_voice_contract_065.py",
+      "sourcePath": "windows-client/tests/test_voice_contract_065.py",
+      "sourceBlob": "26f8ac37be3068733d6b7a9adaa7c9482cfe735d",
+      "sourceMode": "100644",
+      "resultSha256": "9a909daf899e276ed4d4ecb82954b98fa982d1887eea4f7bdefb75f3aa12bada",
+      "task": "T053",
+      "reason": "Prove strict Windows client-local frame semantics, bound finals, closed dispositions, and unchanged remote-v1 proof behavior."
+    },
+    {
+      "path": "windows-client/tests/test_voice_lifecycle_065.py",
+      "sourcePath": "windows-client/tests/test_voice_lifecycle_065.py",
+      "sourceBlob": "5632740842116b29f449ad3ff5f5ea86cc6f2f96",
+      "sourceMode": "100644",
+      "resultSha256": "4b6d646de75e59b39bc4815beb48ee7794ac482174891553ffef146f017d1340",
+      "task": "T058/T088",
+      "reason": "Exercise Windows local speech teardown, echo fencing, callback generations, and exact remote recovery rejection paths."
+    },
+    {
+      "path": "windows-client/tests/test_voice_package_065.py",
+      "sourcePath": "windows-client/tests/test_voice_package_065.py",
+      "sourceBlob": "121f3047230654a79cf9cf86ab9bb9ae0c526a31",
+      "sourceMode": "100644",
+      "resultSha256": "a0d8f565157166681d405d39ebfcb8716de2f14c48c0ab52bbe721803fc55cb9",
+      "task": "T058",
+      "reason": "Prove frozen Windows helper and Qt TTS packaging provenance while excluding test dependencies and assets."
+    },
+    {
       "path": "windows-client/win_agent/agent.py",
       "sourcePath": "windows-client/win_agent/agent.py",
       "sourceBlob": "d30ecec78c8753d1ea6cdcb278aff62a85c23a59",
@@ -623,11 +767,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "ea7009921982b2ba51d9337c50ca0c3b3204b61fd8b0e52a6f7804b393985cac"
+          "sha256": "5202d3778f17d47dafcf83528fbe1ff05a01aa5a429eed1f0aa603e33b0ae6ac"
         }
       ],
-      "task": "T056",
-      "reason": "Move the imported Android workflow into its active owner path, retain standalone paths, require the committed wrapper, and keep it read-only and secret-free."
+      "task": "T056/T015",
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",
@@ -638,11 +782,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "cd59795165c1548ddd71c8fe39ba232622f9f747e4d72ba9a59986f99939d3ab"
+          "sha256": "71fc3069872a483db09ecf583a2e59260e44dfa9a54b9126f8d1a8fe3d7cf91e"
         }
       ],
-      "task": "T056",
-      "reason": "Move the imported Apple workflow into its active owner path while preserving its exact platform matrix, unsigned coverage gates, read-only authority, and repo-contained explicit unit-plus-UI platform unions."
+      "task": "T056/T015",
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes."
     },
     {
       "path": "workflows-disabled/apple-release.yml",

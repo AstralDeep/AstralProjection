@@ -40,11 +40,17 @@ _profile_path = _root / "deployment" / "release-profile.json"
 _runtime_manifest_path = _root / "deployment" / "runtime-manifest.json"
 _release_lock_path = _root / "requirements-release.lock.txt"
 _requirements_input_path = _root / "requirements.in"
+_helper_path = _root / "asr-helper" / "publish" / "AstralSpeechHelper.exe"
+_helper_provenance_path = _root / "asr-helper" / "publish" / "helper-build-provenance.json"
+_helper_source_manifest_path = _root / "asr-helper" / "helper-source-hashes.json"
 for _required in (
     _profile_path,
     _runtime_manifest_path,
     _release_lock_path,
     _requirements_input_path,
+    _helper_path,
+    _helper_provenance_path,
+    _helper_source_manifest_path,
 ):
     if not _required.is_file():
         raise SystemExit(f"required Windows release input is missing: {_required.name}")
@@ -56,6 +62,17 @@ _profile_canonical = json.dumps(
 ).encode("utf-8")
 def _sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+_helper_provenance = json.loads(_helper_provenance_path.read_text(encoding="utf-8-sig"))
+if set(_helper_provenance) != {
+    "schema_version", "source_manifest_sha256", "executable_sha256"
+} or _helper_provenance.get("schema_version") != 1:
+    raise SystemExit("helper build provenance is invalid")
+if _helper_provenance.get("source_manifest_sha256") != _sha256(_helper_source_manifest_path):
+    raise SystemExit("helper build provenance is invalid")
+if _helper_provenance.get("executable_sha256") != _sha256(_helper_path):
+    raise SystemExit("helper build provenance is invalid")
 
 
 if __version__ != "0.4.0" or _profile.get("client_version") != __version__:
@@ -111,6 +128,9 @@ version_res = VSVersionInfo(
 
 hiddenimports = (
     collect_submodules("PySide6.QtCharts")
+    # Feature 075: QTextToSpeech and its Windows SAPI engine plugin are local
+    # synthesis runtime inputs. Keep both module and plugin closure explicit.
+    + collect_submodules("PySide6.QtTextToSpeech")
     # Feature 065: the frozen client is a direct-RTC participant. Keep the
     # exact livekit.rtc Python closure explicit so offline analysis cannot
     # silently omit lazily imported room/audio/data modules.
@@ -128,7 +148,7 @@ hiddenimports = (
     # modulegraph happens to follow — incidental, and it would break silently if
     # upstream reorganized that block. Collect the package explicitly.
     + collect_submodules("websockets")
-    + ["PySide6.QtCharts", "PySide6.QtMultimedia", "websockets",
+    + ["PySide6.QtCharts", "PySide6.QtMultimedia", "PySide6.QtTextToSpeech", "websockets",
        "livekit", "livekit.rtc",
        "win_agent", "win_agent.agent", "win_agent.tools",
        "win_agent.lets_executor",
@@ -154,7 +174,18 @@ a = Analysis(
     pathex=[],
     # The Windows livekit wheel carries its RTC FFI native artifact. Collect it
     # deliberately instead of relying on import discovery inside a one-file exe.
-    binaries=collect_dynamic_libs("livekit"),
+    binaries=(
+        collect_dynamic_libs("livekit")
+        + collect_dynamic_libs(
+            "PySide6",
+            search_patterns=[
+                "qtexttospeech_*.dll",
+                "libqtexttospeech_*.dylib",
+                "libqtexttospeech_*.so",
+            ],
+        )
+        + [("asr-helper/publish/AstralSpeechHelper.exe", "asr-helper")]
+    ),
     # The brand icon ships inside the bundle too, so the running app can set
     # its window/taskbar icon (assets resolve via sys._MEIPASS when frozen).
     datas=[
@@ -163,7 +194,10 @@ a = Analysis(
         ("deployment/runtime-manifest.json", "deployment"),
         ("requirements-release.lock.txt", "deployment"),
         ("requirements.in", "deployment"),
-    ] + collect_data_files("livekit", include_py_files=False),
+        ("asr-helper/helper-source-hashes.json", "asr-helper"),
+        ("asr-helper/publish/helper-build-provenance.json", "asr-helper"),
+    ]
+    + collect_data_files("livekit", include_py_files=False),
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},

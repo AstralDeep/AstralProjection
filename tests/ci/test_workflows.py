@@ -9,6 +9,16 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIVE = ROOT / ".github" / "workflows"
 INACTIVE = ROOT / "workflows-disabled"
 PYTHON_CI_LOCK = ROOT / "tooling" / "python-ci" / "requirements.lock.txt"
+REVIEWED_GITLEAKS_FIXTURE_FINGERPRINTS = frozenset(
+    {
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_remote_machines_surface.py:private-key:42",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:121",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:133",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:201",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:124",
+        "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:267",
+    }
+)
 
 
 def _job_ids(text: str) -> set[str]:
@@ -226,6 +236,22 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     assert text.count("== 'success'") == 3
 
 
+def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
+    python = _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "python")
+
+    assert "python -m pytest -q -p no:cacheprovider" in python
+
+
+def test_gitleaks_history_exempts_only_reviewed_fixture_fingerprints() -> None:
+    ignore = ROOT / ".gitleaksignore"
+
+    fingerprints = {
+        line for line in ignore.read_text(encoding="utf-8").splitlines() if line
+    }
+
+    assert fingerprints == REVIEWED_GITLEAKS_FIXTURE_FINGERPRINTS
+
+
 def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
     lock = PYTHON_CI_LOCK.read_text(encoding="utf-8")
@@ -318,6 +344,48 @@ def test_apple_ci_runs_when_its_coverage_exporter_changes() -> None:
 
     assert '- "scripts/**"' in push
     assert '- "scripts/**"' in pull_request
+
+
+@pytest.mark.parametrize("workflow_name", ("android-ci.yml", "apple-ci.yml"))
+def test_native_ci_push_and_pull_request_watch_voice_075_fixture(workflow_name: str) -> None:
+    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+    triggers = text.partition("on:\n")[2].partition("\npermissions:\n")[0]
+    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
+    pull_request = triggers.partition("  pull_request:\n")[2].partition("\n  schedule:\n")[0]
+    path = "contracts/fixtures/voice_075/client_local_conformance.json"
+
+    assert push.count(path) == 1
+    assert pull_request.count(path) == 1
+
+
+@pytest.mark.parametrize("workflow_name", ("android-ci.yml", "apple-ci.yml"))
+@pytest.mark.parametrize("event_name", ("push", "pull_request"))
+def test_native_ci_voice_075_path_guard_rejects_missing_event_filter(
+    workflow_name: str,
+    event_name: str,
+) -> None:
+    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+    path = "contracts/fixtures/voice_075/client_local_conformance.json"
+    lines = text.splitlines(keepends=True)
+    start = lines.index(f"  {event_name}:\n")
+    end = next(
+        (
+            index
+            for index in range(start + 1, len(lines))
+            if lines[index].startswith("  ") and not lines[index].startswith("    ")
+        ),
+        len(lines),
+    )
+    event_path = next(
+        index for index in range(start, end) if path in lines[index]
+    )
+    mutated = "".join(lines[:event_path] + lines[event_path + 1 :])
+
+    triggers = mutated.partition("on:\n")[2].partition("\npermissions:\n")[0]
+    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
+    pull_request = triggers.partition("  pull_request:\n")[2].partition("\n  schedule:\n")[0]
+    with pytest.raises(AssertionError):
+        assert push.count(path) == 1 and pull_request.count(path) == 1
 
 
 def test_native_ci_is_independently_read_only_secret_free_and_sha_pinned() -> None:

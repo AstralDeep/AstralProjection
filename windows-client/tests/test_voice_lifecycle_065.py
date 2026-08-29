@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timezone
 
 import pytest
 
 pytest.importorskip("PySide6")
 
 from astral_client.voice import VoiceController, VoiceHttpError  # noqa: E402
+from astral_client.protocol import validate_voice_recovery_envelope  # noqa: E402
 
 
 DEVICE = "00000000-0000-4000-8000-000000000001"
@@ -95,6 +97,14 @@ class FakeHttp:
     def stop_speech(self, session_id, body, scope):
         self.calls.append(("stop_speech", session_id, body, scope))
 
+    def current_media_grant(self, session_id, scope):
+        self.calls.append(("current_media_grant", session_id, scope))
+        return _grant_state()
+
+    def refresh_media_grant(self, session_id, body, scope):
+        self.calls.append(("refresh_media_grant", session_id, body, scope))
+        return _refresh_response(refresh_id=body["refresh_id"])
+
 
 class FakeMedia:
     def __init__(self):
@@ -162,6 +172,53 @@ def _activation_response(generation=2, grant_revision=4):
             "worker_identity": "voice-worker-a",
         },
     }
+
+
+def _grant_state(*, connection=CONNECTION, generation=2, grant_revision=4):
+    session = _activation_response(generation, grant_revision)["session"]
+    session["owner_connection_generation"] = connection
+    return {
+        "session": session,
+        "grant_state": {
+            "transport": "livekit",
+            "media_grant_revision": grant_revision,
+            "status": "active",
+            "expires_at": "2099-07-31T18:05:00Z",
+        },
+    }
+
+
+def _refresh_response(
+    *,
+    refresh_id,
+    connection=CONNECTION,
+    generation=2,
+    grant_revision=5,
+    worker="voice-worker-a",
+):
+    value = _activation_response(generation, grant_revision)
+    value["session"]["owner_connection_generation"] = connection
+    value["grant"]["worker_identity"] = worker
+    return {
+        "refresh_id": refresh_id,
+        "replayed": False,
+        "replay_expires_at": "2099-07-31T18:05:00Z",
+        **value,
+    }
+
+
+def test_remote_recovery_envelope_is_exact_and_refresh_bound(qapp):
+    refresh_id = "00000000-0000-4000-8000-000000000010"
+    value = _refresh_response(refresh_id=refresh_id)
+
+    session, grant = validate_voice_recovery_envelope(value, refresh_id)
+    assert session is value["session"]
+    assert grant is value["grant"]
+
+    with pytest.raises(ValueError, match="malformed"):
+        validate_voice_recovery_envelope({**value, "credential": "forbidden"}, refresh_id)
+    with pytest.raises(ValueError, match="malformed"):
+        validate_voice_recovery_envelope(value, "00000000-0000-4000-8000-000000000011")
 
 
 def _binding():
@@ -239,18 +296,14 @@ def test_turn_reducer_rejects_unknown_speech_outcome(qapp):
     controller, _transport, _http, _media = _controller()
     controller.handle_action("voice_session_start")
 
-    assert not controller.accept_frame(
-        _turn_state(speech_outcome="provider_failed")
-    )
+    assert not controller.accept_frame(_turn_state(speech_outcome="provider_failed"))
 
 
 def test_turn_reducer_rejects_speech_outcome_before_success(qapp):
     controller, _transport, _http, _media = _controller()
     controller.handle_action("voice_session_start")
 
-    assert not controller.accept_frame(
-        _turn_state(state="processing", speech_outcome="failed")
-    )
+    assert not controller.accept_frame(_turn_state(state="processing", speech_outcome="failed"))
 
 
 @pytest.mark.parametrize(
@@ -263,9 +316,7 @@ def test_turn_reducer_rejects_speech_outcome_before_success(qapp):
         ("abandoned", "listening"),
     ),
 )
-def test_terminal_turn_state_never_coerces_session_to_error(
-    qapp, turn_state, expected_phase
-):
+def test_terminal_turn_state_never_coerces_session_to_error(qapp, turn_state, expected_phase):
     controller, _transport, _http, _media = _controller()
     controller.handle_action("voice_session_start")
 
@@ -274,9 +325,7 @@ def test_terminal_turn_state_never_coerces_session_to_error(
 
 
 @pytest.mark.parametrize("audio", [FakeAudio(permission="denied"), FakeAudio(microphone=False)])
-def test_denial_or_missing_microphone_never_opens_session_and_keeps_text_fallback(
-    qapp, audio
-):
+def test_denial_or_missing_microphone_never_opens_session_and_keeps_text_fallback(qapp, audio):
     controller, _transport, http, media = _controller(audio)
     states = []
     controller.status_changed.connect(lambda state, message: states.append((state, message)))
@@ -422,18 +471,219 @@ def test_server_idle_permission_revoke_and_explicit_end_release_media(qapp):
     assert media.calls[-1] == ("close",)
 
 
-def test_connection_rotation_discards_volatile_binding_and_active_media(qapp):
+def test_connection_rotation_discards_binding_and_stops_media_but_retains_recovery_fence(qapp):
     controller, _transport, _http, media = _controller()
     controller.handle_action("voice_session_start")
 
-    controller.on_connection_rotated(
-        "00000000-0000-4000-8000-000000000010"
-    )
+    controller.on_connection_rotated("00000000-0000-4000-8000-000000000010")
 
     assert controller.control_binding is None
     assert controller.control_binding_id is None
-    assert controller.session_id is None
+    assert controller.session_id == SESSION
+    assert controller.generation == 2
+    assert controller.media_grant_revision == 4
+    assert controller.state == "reconnecting"
     assert media.calls[-1] == ("close",)
+
+
+def test_connection_rotation_reads_current_state_and_rejoins_once_with_new_grant(qapp):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    prior_on_data = media.on_data
+    prior_on_state = media.on_state
+    prior_on_playout = media.on_playout
+    transport.connection_generation = "00000000-0000-4000-8000-000000000010"
+    http.current_media_grant = lambda session_id, scope: (
+        http.calls.append(("current_media_grant", session_id, scope))
+        or _grant_state(connection=transport.connection_generation)
+    )
+    http.refresh_media_grant = lambda session_id, body, scope: (
+        http.calls.append(("refresh_media_grant", session_id, body, scope))
+        or _refresh_response(
+            refresh_id=body["refresh_id"], connection=transport.connection_generation
+        )
+    )
+
+    controller.on_connection_rotated(transport.connection_generation)
+    binding = _binding()
+    binding["connection_generation"] = transport.connection_generation
+    binding["binding_id"] = "00000000-0000-4000-8000-000000000011"
+    assert controller.accept_frame(binding)
+
+    assert [call[0] for call in http.calls].count("current_media_grant") == 1
+    assert [call[0] for call in http.calls].count("refresh_media_grant") == 1
+    refresh = next(call for call in http.calls if call[0] == "refresh_media_grant")
+    assert refresh[2]["expected_generation"] == 2
+    assert refresh[2]["expected_media_grant_revision"] == 4
+    assert refresh[2]["device_id"] == DEVICE
+    assert refresh[3]["connection_generation"] == transport.connection_generation
+    assert controller.session_id == SESSION
+    assert controller.generation == 2
+    assert controller.media_grant_revision == 5
+    assert [call[0] for call in media.calls].count("connect") == 2
+
+    controller.accept_frame(binding)
+    assert [call[0] for call in http.calls].count("refresh_media_grant") == 1
+
+    stale = _voice_transcript(final=True, text="old final")
+    stale["media_grant_revision"] = 5
+    prior_on_data("astraldeep.voice.transcript.v1", "voice-worker-a", stale)
+    assert not transport.sent
+    prior_on_state("disconnected", "old room closed")
+    controller._on_media_playout = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("old playout callback crossed media epoch")
+    )
+    prior_on_playout({}, "started")
+    assert controller.session_id == SESSION
+    assert controller.media_grant_revision == 5
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "extra",
+        "inactive",
+        "expired_lease",
+        "applied_chat_mismatch",
+        "chat_revision_mismatch",
+        "chat_revision_bool",
+        "applied_chat_revision_bool",
+        "chat_unsynced",
+    ],
+)
+def test_remote_recovery_current_state_is_exact_active_and_unexpired(qapp, mutation):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    transport.connection_generation = "00000000-0000-4000-8000-000000000010"
+
+    def current(_session_id, _scope):
+        value = _grant_state(connection=transport.connection_generation)
+        if mutation == "extra":
+            value["session"]["credential"] = "forbidden"
+        elif mutation == "inactive":
+            value["session"]["state"] = "suspended"
+        elif mutation == "expired_lease":
+            value["session"]["lease_expires_at"] = "2020-01-01T00:00:00Z"
+        elif mutation == "applied_chat_mismatch":
+            value["session"]["applied_visible_chat_id"] = TURN
+        elif mutation == "chat_revision_mismatch":
+            value["session"]["applied_chat_context_revision"] = 2
+        elif mutation == "chat_revision_bool":
+            value["session"]["chat_context_revision"] = True
+            value["session"]["applied_chat_context_revision"] = 1
+        elif mutation == "applied_chat_revision_bool":
+            value["session"]["chat_context_revision"] = 1
+            value["session"]["applied_chat_context_revision"] = True
+        else:
+            value["session"]["chat_context_synced"] = False
+        return value
+
+    http.current_media_grant = current
+    refreshes = []
+    http.refresh_media_grant = lambda *_args: refreshes.append(True)
+    controller.on_connection_rotated(transport.connection_generation)
+    binding = _binding()
+    binding["connection_generation"] = transport.connection_generation
+    binding["binding_id"] = "00000000-0000-4000-8000-000000000011"
+    assert controller.accept_frame(binding)
+
+    assert not refreshes
+    assert [call[0] for call in media.calls].count("connect") == 1
+    assert controller.state == "error"
+
+
+def test_remote_recovery_rejects_when_retained_lease_already_expired(qapp):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    controller.lease_expires_at = datetime(2020, 1, 1, tzinfo=timezone.utc)
+    transport.connection_generation = "00000000-0000-4000-8000-000000000010"
+    controller.on_connection_rotated(transport.connection_generation)
+    binding = _binding()
+    binding["connection_generation"] = transport.connection_generation
+    binding["binding_id"] = "00000000-0000-4000-8000-000000000011"
+    assert controller.accept_frame(binding)
+
+    assert not any(call[0] == "current_media_grant" for call in http.calls)
+    assert [call[0] for call in media.calls].count("connect") == 1
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_fragment"),
+    (
+        ("session", "session"),
+        ("generation", "session"),
+        ("current_grant", "session"),
+        ("grant_revision", "grant"),
+        ("worker", "worker"),
+    ),
+)
+def test_remote_recovery_rejects_stale_session_generation_grant_and_worker(
+    qapp, mutation, expected_fragment
+):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    transport.connection_generation = "00000000-0000-4000-8000-000000000010"
+    http.current_media_grant = lambda _session_id, _scope: _grant_state(
+        connection=transport.connection_generation,
+        grant_revision=5 if mutation == "current_grant" else 4,
+    )
+
+    refreshes = []
+
+    def refreshed(_session_id, body, _scope):
+        refreshes.append(body)
+        value = _refresh_response(
+            refresh_id=body["refresh_id"], connection=transport.connection_generation
+        )
+        if mutation == "session":
+            value["session"]["session_id"] = "00000000-0000-4000-8000-000000000012"
+            value["grant"]["session_id"] = value["session"]["session_id"]
+        elif mutation == "generation":
+            value["session"]["generation"] = 3
+            value["grant"]["generation"] = 3
+        elif mutation == "grant_revision":
+            value["grant"]["media_grant_revision"] = 4
+        else:
+            value["grant"]["worker_identity"] = "voice-worker-b"
+        return value
+
+    http.refresh_media_grant = refreshed
+    states = []
+    controller.status_changed.connect(lambda state, message: states.append((state, message)))
+    controller.on_connection_rotated(transport.connection_generation)
+    binding = _binding()
+    binding["connection_generation"] = transport.connection_generation
+    binding["binding_id"] = "00000000-0000-4000-8000-000000000011"
+    assert controller.accept_frame(binding)
+
+    assert [call[0] for call in media.calls].count("connect") == 1
+    assert controller.state == "error"
+    assert expected_fragment in states[-1][1].lower()
+    assert bool(refreshes) is (mutation != "current_grant")
+
+
+def test_remote_recovery_preserves_submitted_final_dedupe_across_rejoin(qapp):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    final = _voice_transcript(final=True, text="only once")
+    media.on_data("astraldeep.voice.transcript.v1", "voice-worker-a", final)
+    assert len(transport.sent) == 1
+
+    transport.connection_generation = "00000000-0000-4000-8000-000000000010"
+    http.current_media_grant = lambda _session_id, _scope: _grant_state(
+        connection=transport.connection_generation
+    )
+    http.refresh_media_grant = lambda _session_id, body, _scope: _refresh_response(
+        refresh_id=body["refresh_id"], connection=transport.connection_generation
+    )
+    controller.on_connection_rotated(transport.connection_generation)
+    binding = _binding()
+    binding["connection_generation"] = transport.connection_generation
+    binding["binding_id"] = "00000000-0000-4000-8000-000000000011"
+    assert controller.accept_frame(binding)
+
+    media.on_data("astraldeep.voice.transcript.v1", "voice-worker-a", final)
+    assert len(transport.sent) == 1
 
 
 def test_foreground_lease_heartbeat_is_fenced_content_free_and_stops_on_teardown(

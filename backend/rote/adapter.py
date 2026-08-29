@@ -14,6 +14,11 @@ from rote.capabilities import DeviceProfile, DeviceType
 class ComponentAdapter:
     """Stateless, recursive component transformer."""
 
+    @staticmethod
+    def adapt_voice_capability(profile: DeviceProfile) -> Dict[str, object]:
+        """Project normalized client-local facts into a closed ROTE disposition."""
+        return fallback.local_voice_disposition(profile.capabilities)
+
     @classmethod
     def adapt(cls, components: List[Dict], profile: DeviceProfile) -> List[Dict]:
         """Adapt a top-level list of components for the given device profile."""

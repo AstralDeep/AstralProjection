@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from pathlib import Path
 
 import pytest
 
@@ -17,6 +18,9 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QLineEdit, QPushButton  # noqa: E402
 
 from astral_client.protocol import (  # noqa: E402
+    build_voice_local_final,
+    parse_client_local_capability,
+    parse_voice_local_frame,
     OrchestratorClient,
     WindowsProtocolError,
     load_or_create_voice_device_id,
@@ -42,6 +46,163 @@ SUBMISSION = "00000000-0000-4000-8000-000000000007"
 REQUEST = "00000000-0000-4000-8000-000000000008"
 PROOF = "b" * 64
 ANNOUNCEMENT = "00000000-0000-4000-8000-000000000010"
+
+
+def test_client_local_v2_fixture_maps_to_closed_dispositions_and_builds_final():
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    assert fixture["schema_version"] == "2"
+    assert fixture["contract"] == "client_local/v1"
+    for vector in fixture["vectors"]:
+        payload = vector["payload"]
+        if vector["shape"] in {"client_local_capability", "voice_capability_v2"}:
+            parsed = parse_client_local_capability(payload)
+        else:
+            parsed = parse_voice_local_frame(payload)
+        assert parsed is not None, vector["id"]
+        assert parsed.disposition == vector["expected_disposition"]
+        if parsed.disposition == "final":
+            assert build_voice_local_final(parsed) == payload
+
+
+def test_client_local_v2_fails_closed_on_undeclared_fields():
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    payload = next(
+        vector["payload"]
+        for vector in json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+        if vector["id"] == "L-P02-local-final"
+    )
+    payload["unexpected"] = True
+    assert parse_voice_local_frame(payload) is None
+
+
+def test_client_local_v2_rejects_invalid_declared_values_and_accepts_optional_playout_reason():
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    vectors = json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+    ready = next(
+        vector["payload"] for vector in vectors if vector["id"] == "L-P01-supported-half-duplex"
+    ).copy()
+    ready["contract"] = "remote/v1"
+    assert parse_voice_local_frame(ready) is None
+
+    playout = next(
+        vector["payload"] for vector in vectors if vector["id"] == "L-P04-playout-finished"
+    ).copy()
+    playout["reason"] = "announcement_suppressed_muted"
+    assert parse_voice_local_frame(playout).disposition == "finished"
+
+
+def test_client_local_v2_rejects_corrupt_non_ready_semantics_and_unknown_playout_reason():
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    vectors = json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+    for identifier, key, value in (
+        ("L-P02-local-final", "recognized_locale", "bad locale"),
+        ("L-P03-authorized-announcement", "expires_at", "not-a-time"),
+        ("L-P04-playout-finished", "reason", "unknown_reason"),
+    ):
+        payload = next(vector["payload"] for vector in vectors if vector["id"] == identifier).copy()
+        payload[key] = value
+        assert parse_voice_local_frame(payload) is None, identifier
+
+
+def _local_lifecycle_frame(frame_type: str, **details: object) -> dict:
+    return {
+        "type": frame_type,
+        "schema_version": "2",
+        "speech_backend": "client_local",
+        "device_id": DEVICE,
+        "connection_generation": CONNECTION,
+        "session_id": SESSION,
+        "generation": 1,
+        "speech_revision": 2,
+        **details,
+    }
+
+
+def _assert_local_frame_corruptions_fail_closed(
+    valid: dict, corruptions: dict[str, object], required_field: str
+) -> None:
+    for field, value in corruptions.items():
+        assert parse_voice_local_frame({**valid, field: value}) is None, field
+    assert parse_voice_local_frame({key: value for key, value in valid.items() if key != required_field}) is None
+    assert parse_voice_local_frame({**valid, "unexpected": True}) is None
+
+
+def test_client_local_recognition_started_requires_declared_semantics_and_fails_closed():
+    valid = _local_lifecycle_frame(
+        "voice_local_recognition_started",
+        client_turn_id=CLIENT_TURN,
+        chat_id=CHAT,
+        chat_context_revision=3,
+        recognition_sequence=1,
+    )
+
+    parsed = parse_voice_local_frame(valid)
+    assert parsed is not None
+    assert parsed.disposition == "ready"
+    _assert_local_frame_corruptions_fail_closed(
+        valid,
+        {
+            "client_turn_id": "not-a-uuid",
+            "chat_id": "not-a-uuid",
+            "chat_context_revision": 0,
+            "recognition_sequence": 0,
+        },
+        "recognition_sequence",
+    )
+
+
+def test_client_local_turn_bound_requires_declared_semantics_and_fails_closed():
+    valid = _local_lifecycle_frame(
+        "voice_local_turn_bound",
+        client_turn_id=CLIENT_TURN,
+        turn_id=TURN,
+        submission_id=SUBMISSION,
+        request_generation=REQUEST,
+        chat_id=CHAT,
+        chat_context_revision=3,
+        recognition_sequence=1,
+        binding_expires_at="2026-08-28T12:05:00Z",
+    )
+
+    parsed = parse_voice_local_frame(valid)
+    assert parsed is not None
+    assert parsed.disposition == "ready"
+    _assert_local_frame_corruptions_fail_closed(
+        valid,
+        {
+            "client_turn_id": "not-a-uuid",
+            "turn_id": "not-a-uuid",
+            "submission_id": "not-a-uuid",
+            "request_generation": "not-a-uuid",
+            "chat_id": "not-a-uuid",
+            "chat_context_revision": 0,
+            "recognition_sequence": 0,
+            "binding_expires_at": "not-a-time",
+        },
+        "binding_expires_at",
+    )
+
+
+def test_client_local_v2_keeps_frozen_remote_v1_fixture_bytes():
+    fixture_path = (
+        Path(__file__).resolve().parents[2] / "contracts/fixtures/voice_065/client_conformance.json"
+    )
+    assert hashlib.sha256(fixture_path.read_bytes()).hexdigest() == (
+        "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
+    )
 
 
 def test_livekit_vendor_diagnostics_are_disabled_at_module_import() -> None:
@@ -205,9 +366,7 @@ def test_server_owned_composer_order_state_and_accessibility(qapp):
 
     assert widget.apply_composer_state(_composer_frame(), CONNECTION)
     buttons = widget.findChildren(QPushButton, "voiceComposerControl")
-    assert [button.accessibleName() for button in buttons] == [
-        "Start voice conversation"
-    ]
+    assert [button.accessibleName() for button in buttons] == ["Start voice conversation"]
     start = buttons[0]
     interface = QAccessible.queryAccessibleInterface(start)
     assert interface is not None
@@ -221,9 +380,7 @@ def test_server_owned_composer_order_state_and_accessibility(qapp):
 
     stale = _composer_frame(revision=0)
     assert not widget.apply_composer_state(stale, CONNECTION)
-    assert not widget.apply_composer_state(
-        _composer_frame(revision=2), "bad-connection"
-    )
+    assert not widget.apply_composer_state(_composer_frame(revision=2), "bad-connection")
     widget.close()
 
 
@@ -313,9 +470,7 @@ def test_terminal_voice_request_notice_persists_through_ordinary_voice_status(qa
     "newer_state",
     ("recognizing", "submitting", "accepted", "processing", "succeeded"),
 )
-def test_newer_voice_turn_clears_stale_terminal_request_notice(
-    qapp, newer_state
-):
+def test_newer_voice_turn_clears_stale_terminal_request_notice(qapp, newer_state):
     widget = VoiceComposerWidget()
     widget.set_voice_turn_status(
         "failed",
@@ -435,9 +590,7 @@ def test_turn_scoped_speech_error_cannot_overwrite_newer_success(qapp):
         ("abandoned", "listening"),
     ),
 )
-def test_terminal_turn_notice_does_not_change_session_to_error(
-    qapp, turn_state, expected_phase
-):
+def test_terminal_turn_notice_does_not_change_session_to_error(qapp, turn_state, expected_phase):
     widget = VoiceComposerWidget()
 
     widget.set_voice_turn_status(
@@ -516,9 +669,7 @@ def test_server_owned_composer_speech_error_keeps_text_result_wording(qapp):
     widget.close()
 
 
-def test_main_window_places_server_control_beside_usable_typed_input(
-    qapp, monkeypatch
-):
+def test_main_window_places_server_control_beside_usable_typed_input(qapp, monkeypatch):
     monkeypatch.setenv("ASTRAL_WIN_AGENT", "0")
     monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
     monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
@@ -533,9 +684,7 @@ def test_main_window_places_server_control_beside_usable_typed_input(
     frame["connection_generation"] = connection
     window._on_message(frame)
 
-    control = window._voice_widget.findChild(
-        QPushButton, "voiceComposerControl"
-    )
+    control = window._voice_widget.findChild(QPushButton, "voiceComposerControl")
     assert control is not None
     assert control.accessibleName() == "Start voice conversation"
     assert window._input.isEnabled()
@@ -544,9 +693,7 @@ def test_main_window_places_server_control_beside_usable_typed_input(
     window.close()
 
 
-def test_main_window_routes_turn_failures_and_speech_errors_to_persistent_notice(
-    qapp, monkeypatch
-):
+def test_main_window_routes_turn_failures_and_speech_errors_to_persistent_notice(qapp, monkeypatch):
     monkeypatch.setenv("ASTRAL_WIN_AGENT", "0")
     monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
     monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
@@ -637,9 +784,7 @@ def test_main_window_keeps_normal_success_for_nonfailed_speech_outcome(
     window.close()
 
 
-def test_main_window_routes_failed_speech_outcome_without_session_error(
-    qapp, monkeypatch
-):
+def test_main_window_routes_failed_speech_outcome_without_session_error(qapp, monkeypatch):
     monkeypatch.setenv("ASTRAL_WIN_AGENT", "0")
     monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
     monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
@@ -666,10 +811,7 @@ def test_main_window_routes_failed_speech_outcome_without_session_error(
     assert notice.text().splitlines() == [
         "⚠ Speech playback failed.",
         "The result audio could not be delivered.",
-        (
-            "The text result is still available in the conversation. "
-            "Typed chat remains available."
-        ),
+        ("The text result is still available in the conversation. Typed chat remains available."),
     ]
     assert notice.property("noticeKind") == "speech_error"
     assert window._voice_controller.state != "error"
@@ -724,8 +866,7 @@ def test_voice_http_calls_are_authenticated_and_connection_bound(qapp):
     assert all(timeout == 3.5 for _request, timeout in requests)
     assert requests[0][0].full_url == "https://voice.example/api/voice/capability"
     assert requests[-1][0].full_url.endswith(
-        f"/api/voice/sessions/{SESSION}?expected_generation=2&"
-        "expected_media_grant_revision=4"
+        f"/api/voice/sessions/{SESSION}?expected_generation=2&expected_media_grant_revision=4"
     )
     for index, (request, _timeout) in enumerate(requests):
         headers = {key.lower(): value for key, value in request.header_items()}
@@ -739,9 +880,7 @@ def test_voice_http_calls_are_authenticated_and_connection_bound(qapp):
 
 
 def test_final_transcript_builds_only_strict_normal_chat_message(qapp):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     sent: list[dict] = []
     client._send_voice_frame = lambda frame: sent.append(frame)
@@ -784,9 +923,7 @@ def test_final_transcript_builds_only_strict_normal_chat_message(qapp):
     ),
 )
 def test_partial_empty_tampered_or_malformed_transcripts_never_dispatch(qapp, changes):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     value = _transcript()
     value.update(changes)
@@ -797,9 +934,7 @@ def test_partial_empty_tampered_or_malformed_transcripts_never_dispatch(qapp, ch
 
 
 def test_voice_submission_retries_exact_ids_on_new_connection_until_matching_ack(qapp):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     client._send_voice_frame = lambda _frame: None
     client.send_voice_transcript(_transcript())
@@ -834,9 +969,7 @@ def test_voice_submission_retries_exact_ids_on_new_connection_until_matching_ack
 
 
 def test_matching_rejection_is_terminal_and_never_automatically_reused(qapp):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     client._send_voice_frame = lambda _frame: None
     client.send_voice_transcript(_transcript())
@@ -865,9 +998,7 @@ def test_matching_rejection_is_terminal_and_never_automatically_reused(qapp):
 
 
 def test_reconnect_flushes_retained_voice_after_ordinary_queue(qapp):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     client._send_voice_frame = lambda _frame: None
     client.send_voice_transcript(_transcript())
@@ -884,12 +1015,8 @@ def test_reconnect_flushes_retained_voice_after_ordinary_queue(qapp):
     assert [frame["action"] for frame in sent] == ["get_history", "chat_message"]
 
 
-def test_correlated_new_chat_uses_current_socket_and_exact_strict_shape(
-    qapp, monkeypatch
-):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+def test_correlated_new_chat_uses_current_socket_and_exact_strict_shape(qapp, monkeypatch):
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     client._connected = True
     sent: list[dict] = []
@@ -907,6 +1034,7 @@ def test_correlated_new_chat_uses_current_socket_and_exact_strict_shape(
 
     client._loop = FakeLoop()
     client._ws = FakeWs()
+
     def immediate(coro, _loop):
         asyncio.run(coro)
         return FakeFuture()
@@ -933,9 +1061,7 @@ def test_correlated_new_chat_uses_current_socket_and_exact_strict_shape(
 
 
 def test_playout_event_is_strict_content_free_and_never_offline_queued(qapp):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     sent: list[dict] = []
     client._send_voice_frame = lambda frame: sent.append(frame)
@@ -963,12 +1089,8 @@ def test_playout_event_is_strict_content_free_and_never_offline_queued(qapp):
         {"client_sequence": -1},
     ),
 )
-def test_playout_event_rejects_stale_malformed_or_content_bearing_frames(
-    qapp, changes
-):
-    client = OrchestratorClient(
-        "ws://127.0.0.1:9/ws", "token", device_id=DEVICE
-    )
+def test_playout_event_rejects_stale_malformed_or_content_bearing_frames(qapp, changes):
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
     client.connection_generation = CONNECTION
     sent: list[dict] = []
     client._send_voice_frame = lambda frame: sent.append(frame)

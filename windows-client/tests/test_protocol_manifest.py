@@ -59,6 +59,21 @@ def test_client_local_actions_matches_manifest():
     assert CLIENT_LOCAL_ACTIONS == frozenset(data["client_local_actions"])
 
 
+def test_client_local_voice_contract_is_pinned_to_closed_v2_dispositions():
+    contract = _manifest()["frame_contracts"]["voice_075"]
+    assert contract["schema_version"] == "2"
+    assert contract["local_frame_contract"] == "client_local/v1"
+    assert contract["required_dispositions"] == [
+        "ready",
+        "typed_fallback",
+        "rejected",
+        "permission_denied",
+        "final",
+        "speaking",
+        "finished",
+    ]
+
+
 def test_classification_values_are_valid():
     assert set(CLASSIFICATION.values()) <= {HANDLED, IGNORED}
 
@@ -94,6 +109,10 @@ def test_voice_frames_are_explicitly_handled_and_unknowns_remain_unclassified():
     voice_frames = {
         "composer_state",
         "voice_announcement_media",
+        "voice_local_announcement",
+        "voice_local_final_rejected",
+        "voice_local_session_ready",
+        "voice_local_turn_bound",
         "voice_control_binding",
         "voice_session_state",
         "voice_submission_rejected",
