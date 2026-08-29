@@ -364,23 +364,28 @@ class WindowsSpeechHelper:
         self._ready = False
         self._reader: Optional[threading.Thread] = None
         self._state_lock = threading.RLock()
+        self._launch_lock = threading.Lock()
         self._write_lock = threading.Lock()
         self._on_final: Optional[Callable[[str], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
         self._state = "new"
+        self._lifecycle_generation = 0
 
     def _launch(self) -> bool:
-        if self._process is not None and self._process.poll() is None:
-            return True
         if not self.helper_path.is_file():
             return False
+        with self._state_lock:
+            generation = self._lifecycle_generation
+            self._ready = False
+            self._state = "launching"
         environment = {
             key: self._environment[key]
             for key in self._ENV_ALLOWLIST
             if key in self._environment and self._environment[key]
         }
+        process = None
         try:
-            self._process = self._popen(
+            process = self._popen(
                 [str(self.helper_path), "--stdio"],
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
@@ -390,24 +395,43 @@ class WindowsSpeechHelper:
                 shell=False,
                 close_fds=True,
             )
-            if self._process.stdout is None:
+            with self._state_lock:
+                if generation != self._lifecycle_generation or self._state != "launching":
+                    stale = True
+                else:
+                    self._process = process
+                    stale = False
+            if stale:
+                self._terminate_process(process)
+                return False
+            if process.stdout is None:
                 raise ValueError("helper stdout is unavailable")
-            kind, payload = read_helper_frame(self._process.stdout)
+            kind, payload = read_helper_frame(process.stdout)
             if kind != "ready":
                 raise ValueError("helper did not become ready")
             value = json.loads(payload.decode("utf-8"))
             if value != {"locale": "en-US"}:
                 raise ValueError("helper readiness is invalid")
-            self._ready = True
-            self._state = "ready"
-            return True
+            with self._state_lock:
+                if (
+                    generation != self._lifecycle_generation
+                    or self._process is not process
+                    or self._state != "launching"
+                ):
+                    return False
+                self._ready = True
+                self._state = "ready"
+                return True
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError):
-            self._fail_closed()
+            self._fail_closed(expected_process=process, expected_generation=generation)
             return False
 
     def capability(self) -> bool:
-        with self._state_lock:
-            return self._ready or self._launch()
+        with self._launch_lock:
+            with self._state_lock:
+                if self._ready:
+                    return True
+            return self._launch()
 
     def _send(self, kind: str, payload: bytes | str = b"") -> None:
         process = self._process
@@ -419,7 +443,7 @@ class WindowsSpeechHelper:
                 process.stdin.write(frame)
                 process.stdin.flush()
         except OSError as exc:
-            self._fail_closed()
+            self._fail_closed(expected_process=process)
             raise RuntimeError("local_engine_lost") from exc
 
     def start_recognition(
@@ -427,9 +451,9 @@ class WindowsSpeechHelper:
         on_final: Callable[[str], None],
         on_error: Callable[[str], None],
     ) -> None:
+        if not self.capability():
+            raise RuntimeError("local_recognition_unavailable")
         with self._state_lock:
-            if not self.capability():
-                raise RuntimeError("local_recognition_unavailable")
             if self._state != "ready":
                 self._fail_closed()
                 raise RuntimeError("invalid_helper_state")
@@ -442,7 +466,9 @@ class WindowsSpeechHelper:
                 self._reader.start()
 
     def _read_loop(self) -> None:
-        process = self._process
+        with self._state_lock:
+            process = self._process
+            generation = self._lifecycle_generation
         try:
             while process is self._process and process is not None and process.stdout is not None:
                 kind, payload = read_helper_frame(process.stdout)
@@ -454,8 +480,11 @@ class WindowsSpeechHelper:
                     raise ValueError("helper error")
         except (OSError, UnicodeError, ValueError):
             callback = self._on_error
-            self._fail_closed()
-            if callback is not None:
+            failed = self._fail_closed(
+                expected_process=process,
+                expected_generation=generation,
+            )
+            if failed and callback is not None:
                 callback("local_engine_lost")
 
     def feed_pcm(self, pcm: bytes) -> None:
@@ -481,27 +510,49 @@ class WindowsSpeechHelper:
             except RuntimeError:
                 pass
 
-    def _fail_closed(self) -> None:
+    @staticmethod
+    def _terminate_process(process: Any) -> None:
+        if process is not None and process.poll() is None:
+            try:
+                process.terminate()
+                process.wait(timeout=1)
+            except (OSError, subprocess.TimeoutExpired):
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+
+    def _fail_closed(
+        self,
+        *,
+        expected_process: Any = None,
+        expected_generation: Optional[int] = None,
+    ) -> bool:
         with self._state_lock:
+            if (
+                expected_generation is not None
+                and expected_generation != self._lifecycle_generation
+            ):
+                return False
+            if expected_process is not None and self._process is not expected_process:
+                return False
             process = self._process
             self._process = None
             self._ready = False
             self._state = "closed"
+            self._lifecycle_generation += 1
             self._on_final = None
             self._on_error = None
-            if process is not None and process.poll() is None:
-                try:
-                    process.terminate()
-                    process.wait(timeout=1)
-                except (OSError, subprocess.TimeoutExpired):
-                    try:
-                        process.kill()
-                    except OSError:
-                        pass
+        self._terminate_process(process)
+        return True
 
     def close(self) -> None:
         with self._state_lock:
-            if self._process is not None and self._process.poll() is None:
+            if (
+                self._state != "launching"
+                and self._process is not None
+                and self._process.poll() is None
+            ):
                 try:
                     self._send("shutdown")
                 except RuntimeError:

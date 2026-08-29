@@ -89,6 +89,28 @@ class FakeProcess:
         return 0
 
 
+class BlockingReadyStdout(FakeStdout):
+    def __init__(self, frames: list[bytes]) -> None:
+        super().__init__(frames)
+        self.read_started = threading.Event()
+        self.release = threading.Event()
+
+    def read(self, size: int = -1) -> bytes:
+        self.read_started.set()
+        self.release.wait(5)
+        return super().read(size)
+
+
+class BlockingReadyProcess(FakeProcess):
+    def __init__(self, frames: list[bytes]) -> None:
+        super().__init__(frames)
+        self.stdout = BlockingReadyStdout(frames)
+
+    def terminate(self) -> None:
+        super().terminate()
+        self.stdout.release.set()
+
+
 class FakeHelper:
     def __init__(self, ready: bool = True) -> None:
         self.ready = ready
@@ -478,6 +500,35 @@ def test_helper_launch_uses_only_inherited_pipes_and_scrubbed_environment(tmp_pa
     }
     assert "network" not in kwargs
     assert list(tmp_path.iterdir()) == [helper_path]
+
+
+def test_helper_close_cancels_blocked_readiness_without_stale_ready(tmp_path) -> None:
+    helper_path = tmp_path / "AstralSpeechHelper.exe"
+    helper_path.write_bytes(b"first-party-helper")
+    process = BlockingReadyProcess([encode_helper_frame("ready", b'{"locale":"en-US"}')])
+    helper = WindowsSpeechHelper(helper_path=helper_path, popen=lambda *_args, **_kwargs: process)
+    capability_result = []
+    probe = threading.Thread(
+        target=lambda: capability_result.append(helper.capability()), daemon=True
+    )
+    probe.start()
+    assert process.stdout.read_started.wait(1)
+
+    closer = threading.Thread(target=helper.close, daemon=True)
+    closer.start()
+    closer.join(0.2)
+    closed_promptly = not closer.is_alive()
+    if not closed_promptly:
+        process.stdout.release.set()
+    probe.join(1)
+    closer.join(1)
+
+    assert closed_promptly
+    assert process.terminated == 1
+    assert capability_result == [False]
+    assert not helper._ready
+    assert helper._process is None
+    assert helper._state == "closed"
 
 
 def test_adapter_requires_both_local_engines_and_reports_typed_fallback() -> None:
