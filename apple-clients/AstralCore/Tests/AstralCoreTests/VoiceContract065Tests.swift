@@ -63,23 +63,30 @@ final class VoiceContract065Tests: XCTestCase {
 
     func testClientLocalV2RejectsExtraFieldAndCannotCreateRemoteOrigin() throws {
         let root = try JSONValue.parse(Data(contentsOf: try localFixtureURL()))
-        var payload = try XCTUnwrap(root["vectors"]?.arrayValue?.first { $0["id"]?.stringValue == "L-P02-local-final" }?["payload"]?.objectValue)
+        var payload = try XCTUnwrap(
+            root["vectors"]?.arrayValue?.first { $0["id"]?.stringValue == "L-P02-local-final" }?["payload"]?.objectValue
+        )
         payload["unexpected"] = .bool(true)
-        let frame = try XCTUnwrap(InboundFrame.parse(String(decoding: try JSONValue.object(payload).encoded(), as: UTF8.self)))
+        let frame = try XCTUnwrap(
+            InboundFrame.parse(String(decoding: try JSONValue.object(payload).encoded(), as: UTF8.self)))
         XCTAssertNil(VoiceLocalFrame(frame: frame))
     }
 
     func testClientLocalV2RejectsInvalidDeclaredValuesAndAcceptsOptionalPlayoutReason() throws {
         let root = try JSONValue.parse(Data(contentsOf: try localFixtureURL()))
         let vectors = try XCTUnwrap(root["vectors"]?.arrayValue)
-        var ready = try XCTUnwrap(vectors.first { $0["id"]?.stringValue == "L-P01-supported-half-duplex" }?["payload"]?.objectValue)
+        var ready = try XCTUnwrap(
+            vectors.first { $0["id"]?.stringValue == "L-P01-supported-half-duplex" }?["payload"]?.objectValue)
         ready["contract"] = .string("remote/v1")
-        let invalid = try XCTUnwrap(InboundFrame.parse(String(decoding: try JSONValue.object(ready).encoded(), as: UTF8.self)))
+        let invalid = try XCTUnwrap(
+            InboundFrame.parse(String(decoding: try JSONValue.object(ready).encoded(), as: UTF8.self)))
         XCTAssertNil(VoiceLocalFrame(frame: invalid))
 
-        var playout = try XCTUnwrap(vectors.first { $0["id"]?.stringValue == "L-P04-playout-finished" }?["payload"]?.objectValue)
+        var playout = try XCTUnwrap(
+            vectors.first { $0["id"]?.stringValue == "L-P04-playout-finished" }?["payload"]?.objectValue)
         playout["reason"] = .string("announcement_suppressed_muted")
-        let optional = try XCTUnwrap(InboundFrame.parse(String(decoding: try JSONValue.object(playout).encoded(), as: UTF8.self)))
+        let optional = try XCTUnwrap(
+            InboundFrame.parse(String(decoding: try JSONValue.object(playout).encoded(), as: UTF8.self)))
         XCTAssertEqual(VoiceLocalFrame(frame: optional)?.disposition, .finished)
     }
 

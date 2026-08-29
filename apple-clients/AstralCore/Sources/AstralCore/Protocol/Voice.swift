@@ -1644,7 +1644,10 @@ extension Outbound {
 /// Closed UI outcomes for the client-local v2 transport. These values carry no
 /// engine, endpoint, credential, or authority selector.
 public enum VoiceLocalDisposition: String, Sendable, CaseIterable {
-    case ready, typedFallback = "typed_fallback", rejected, permissionDenied = "permission_denied"
+    case ready
+    case typedFallback = "typed_fallback"
+    case rejected
+    case permissionDenied = "permission_denied"
     case final, speaking, finished
 }
 
@@ -1669,15 +1672,51 @@ private let voiceLocalReasons: Set<String> = [
 ]
 
 private let voiceLocalFrameFields: [String: Set<String>] = [
-    "voice_local_ready": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale", "client_sequence"],
-    "voice_local_session_ready": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "contract", "transport", "configured_locale", "chat_id", "chat_context_revision", "applied_chat_context_revision", "foreground_active", "microphone_enabled", "speech_muted", "lease_expires_at"],
-    "voice_local_recognition_started": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "chat_id", "chat_context_revision", "recognition_sequence"],
-    "voice_local_turn_bound": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "binding_expires_at"],
-    "voice_local_final": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "final", "recognized_locale", "text", "text_digest_sha256"],
-    "voice_local_recognition_failed": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason"],
-    "voice_local_final_rejected": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason", "retry_policy", "occurred_at"],
-    "voice_local_announcement": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "output_policy", "locale", "text", "text_digest_sha256", "expires_at", "foreground_required", "mute_revision", "consent_revision"],
-    "voice_local_playout_event": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "phase", "client_sequence", "observed_at"],
+    "voice_local_ready": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "contract", "transport", "configured_locale", "full_duplex", "has_microphone",
+        "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing",
+        "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale", "client_sequence",
+    ],
+    "voice_local_session_ready": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "contract", "transport", "configured_locale", "chat_id", "chat_context_revision",
+        "applied_chat_context_revision", "foreground_active", "microphone_enabled", "speech_muted", "lease_expires_at",
+    ],
+    "voice_local_recognition_started": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "client_turn_id", "chat_id", "chat_context_revision", "recognition_sequence",
+    ],
+    "voice_local_turn_bound": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id",
+        "chat_context_revision", "recognition_sequence", "binding_expires_at",
+    ],
+    "voice_local_final": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id",
+        "chat_context_revision", "recognition_sequence", "final", "recognized_locale", "text", "text_digest_sha256",
+    ],
+    "voice_local_recognition_failed": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id",
+        "chat_context_revision", "recognition_sequence", "reason",
+    ],
+    "voice_local_final_rejected": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id",
+        "chat_context_revision", "recognition_sequence", "reason", "retry_policy", "occurred_at",
+    ],
+    "voice_local_announcement": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "output_policy", "locale",
+        "text", "text_digest_sha256", "expires_at", "foreground_required", "mute_revision", "consent_revision",
+    ],
+    "voice_local_playout_event": [
+        "type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation",
+        "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "phase", "client_sequence",
+        "observed_at",
+    ],
 ]
 
 public struct VoiceLocalCapability: Sendable, Equatable {
@@ -1686,20 +1725,36 @@ public struct VoiceLocalCapability: Sendable, Equatable {
 
     public init?(json: JSONValue) {
         guard let object = json.objectValue else { return nil }
-        if object["schema_version"]?.stringValue == "2", object["speech_backend"]?.stringValue == "client_local", object["status"] != nil {
-            let required: Set<String> = ["schema_version", "speech_backend", "status", "reason", "checked_at", "expires_at", "supported_transports", "requirements"]
+        if object["schema_version"]?.stringValue == "2", object["speech_backend"]?.stringValue == "client_local",
+            object["status"] != nil
+        {
+            let required: Set<String> = [
+                "schema_version", "speech_backend", "status", "reason", "checked_at", "expires_at",
+                "supported_transports", "requirements",
+            ]
             guard voiceExact(object, required: required, optional: ["retry_after_seconds"]),
-                object["status"]?.stringValue == "unavailable", voiceLocalReasons.contains(object["reason"]?.stringValue ?? ""),
+                object["status"]?.stringValue == "unavailable",
+                voiceLocalReasons.contains(object["reason"]?.stringValue ?? ""),
                 voiceTimestamp(object["checked_at"]) != nil, voiceTimestamp(object["expires_at"]) != nil,
                 object["supported_transports"]?.arrayValue?.compactMap(\.stringValue) == ["client_local"],
-                object["requirements"]?.objectValue != nil else { return nil }
+                object["requirements"]?.objectValue != nil
+            else { return nil }
             self.disposition = .typedFallback
         } else {
-            let required: Set<String> = ["contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale"]
-            guard voiceExact(object, required: required), object["contract"]?.stringValue == "client_local/v1", object["transport"]?.stringValue == "client_local", voiceLanguage(object["configured_locale"]) != nil,
-                object["full_duplex"]?.boolValue == false, object["has_microphone"]?.boolValue != nil, object["has_audio_output"]?.boolValue != nil,
-                ["authorized", "denied", "not_determined", "restricted"].contains(object["recognition_permission"]?.stringValue),
-                object["recognition_processing"]?.stringValue == "guaranteed_local", object["synthesis_processing"]?.stringValue == "guaranteed_local" else { return nil }
+            let required: Set<String> = [
+                "contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output",
+                "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale",
+                "recognition_installation", "synthesis_processing", "synthesis_locale",
+            ]
+            guard voiceExact(object, required: required), object["contract"]?.stringValue == "client_local/v1",
+                object["transport"]?.stringValue == "client_local", voiceLanguage(object["configured_locale"]) != nil,
+                object["full_duplex"]?.boolValue == false, object["has_microphone"]?.boolValue != nil,
+                object["has_audio_output"]?.boolValue != nil,
+                ["authorized", "denied", "not_determined", "restricted"].contains(
+                    object["recognition_permission"]?.stringValue),
+                object["recognition_processing"]?.stringValue == "guaranteed_local",
+                object["synthesis_processing"]?.stringValue == "guaranteed_local"
+            else { return nil }
             self.disposition = object["recognition_permission"]?.stringValue == "denied" ? .permissionDenied : .ready
         }
         self.payload = json
@@ -1715,14 +1770,23 @@ public struct VoiceLocalFrame: Sendable, Equatable {
 
     public init?(frame: InboundFrame) {
         guard let object = frame.payload.objectValue, let fields = voiceLocalFrameFields[frame.name],
-            Set(object.keys) == fields || (frame.name == "voice_local_playout_event" && Set(object.keys) == fields.union(["reason"])), object["type"]?.stringValue == frame.name,
+            Set(object.keys) == fields
+                || (frame.name == "voice_local_playout_event" && Set(object.keys) == fields.union(["reason"])),
+            object["type"]?.stringValue == frame.name,
             object["schema_version"]?.stringValue == "2", object["speech_backend"]?.stringValue == "client_local",
             voiceUUID4(object["device_id"]) != nil, voiceUUID4(object["connection_generation"]) != nil,
             voiceUUID4(object["session_id"]) != nil, voiceInteger(object["generation"], minimum: 1) != nil,
-            voiceInteger(object["speech_revision"], minimum: 1) != nil else { return nil }
-        let identifiers = ["client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "announcement_id"]
-        guard identifiers.allSatisfy({ object[$0] == nil || object[$0] == .null || voiceUUID4(object[$0]) != nil }) else { return nil }
-        for field in ["chat_context_revision", "recognition_sequence", "announcement_sequence", "client_sequence", "mute_revision", "consent_revision"] where object[field] != nil {
+            voiceInteger(object["speech_revision"], minimum: 1) != nil
+        else { return nil }
+        let identifiers = [
+            "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "announcement_id",
+        ]
+        guard identifiers.allSatisfy({ object[$0] == nil || object[$0] == .null || voiceUUID4(object[$0]) != nil })
+        else { return nil }
+        for field in [
+            "chat_context_revision", "recognition_sequence", "announcement_sequence", "client_sequence",
+            "mute_revision", "consent_revision",
+        ] where object[field] != nil {
             guard voiceInteger(object[field], minimum: field == "client_sequence" ? 0 : 1) != nil else { return nil }
         }
         switch frame.name {
@@ -1730,11 +1794,13 @@ public struct VoiceLocalFrame: Sendable, Equatable {
             guard voiceLocalRuntime(object) else { return nil }
             disposition = .ready
         case "voice_local_session_ready":
-            guard object["contract"]?.stringValue == "client_local/v1", object["transport"]?.stringValue == "client_local", voiceLanguage(object["configured_locale"]) != nil,
+            guard object["contract"]?.stringValue == "client_local/v1",
+                object["transport"]?.stringValue == "client_local", voiceLanguage(object["configured_locale"]) != nil,
                 voiceUUID4(object["chat_id"]) != nil, voiceInteger(object["chat_context_revision"], minimum: 1) != nil,
                 voiceInteger(object["applied_chat_context_revision"], minimum: 1) != nil,
                 object["foreground_active"]?.boolValue != nil, object["microphone_enabled"]?.boolValue != nil,
-                object["speech_muted"]?.boolValue != nil, voiceTimestamp(object["lease_expires_at"]) != nil else { return nil }
+                object["speech_muted"]?.boolValue != nil, voiceTimestamp(object["lease_expires_at"]) != nil
+            else { return nil }
             disposition = .ready
         case "voice_local_recognition_started":
             guard voiceUUID4(object["client_turn_id"]) != nil, voiceUUID4(object["chat_id"]) != nil else { return nil }
@@ -1743,20 +1809,31 @@ public struct VoiceLocalFrame: Sendable, Equatable {
             guard voiceTimestamp(object["binding_expires_at"]) != nil else { return nil }
             disposition = .ready
         case "voice_local_final":
-            guard object["final"]?.boolValue == true, let text = object["text"]?.stringValue, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.count <= 8_000, voiceLanguage(object["recognized_locale"]) != nil, voiceMatches(object["text_digest_sha256"]?.stringValue ?? "", voiceSHA256Pattern) else { return nil }
+            guard object["final"]?.boolValue == true, let text = object["text"]?.stringValue,
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.count <= 8_000,
+                voiceLanguage(object["recognized_locale"]) != nil,
+                voiceMatches(object["text_digest_sha256"]?.stringValue ?? "", voiceSHA256Pattern)
+            else { return nil }
             disposition = .final
         case "voice_local_final_rejected", "voice_local_recognition_failed":
             guard voiceLocalReasons.contains(object["reason"]?.stringValue ?? "") else { return nil }
             if frame.name == "voice_local_final_rejected" {
-                guard ["none", "explicit_user_retry"].contains(object["retry_policy"]?.stringValue), voiceTimestamp(object["occurred_at"]) != nil else { return nil }
+                guard ["none", "explicit_user_retry"].contains(object["retry_policy"]?.stringValue),
+                    voiceTimestamp(object["occurred_at"]) != nil
+                else { return nil }
             }
             disposition = .rejected
         case "voice_local_announcement":
-            guard let text = object["text"]?.stringValue, text.utf8.count <= 600, voiceMatches(object["text_digest_sha256"]?.stringValue ?? "", voiceSHA256Pattern), voiceTimestamp(object["expires_at"]) != nil else { return nil }
+            guard let text = object["text"]?.stringValue, text.utf8.count <= 600,
+                voiceMatches(object["text_digest_sha256"]?.stringValue ?? "", voiceSHA256Pattern),
+                voiceTimestamp(object["expires_at"]) != nil
+            else { return nil }
             disposition = .speaking
         case "voice_local_playout_event":
-            guard ["started", "finished", "failed", "suppressed"].contains(object["phase"]?.stringValue), voiceTimestamp(object["observed_at"]) != nil,
-                object["reason"] == nil || voiceLocalReasons.contains(object["reason"]?.stringValue ?? "") else { return nil }
+            guard ["started", "finished", "failed", "suppressed"].contains(object["phase"]?.stringValue),
+                voiceTimestamp(object["observed_at"]) != nil,
+                object["reason"] == nil || voiceLocalReasons.contains(object["reason"]?.stringValue ?? "")
+            else { return nil }
             disposition = .finished
         default:
             disposition = .ready
@@ -1767,14 +1844,18 @@ public struct VoiceLocalFrame: Sendable, Equatable {
 }
 
 private func voiceLocalRuntime(_ object: [String: JSONValue]) -> Bool {
-    object["contract"]?.stringValue == "client_local/v1" && object["transport"]?.stringValue == "client_local" &&
-        voiceLanguage(object["configured_locale"]) != nil && object["full_duplex"]?.boolValue == false &&
-        object["has_microphone"]?.boolValue != nil && object["has_audio_output"]?.boolValue != nil &&
-        ["authorized", "denied", "not_determined", "restricted"].contains(object["microphone_permission"]?.stringValue) &&
-        ["authorized", "denied", "not_determined", "restricted"].contains(object["recognition_permission"]?.stringValue) &&
-        object["recognition_processing"]?.stringValue == "guaranteed_local" && object["recognition_locale"]?.stringValue == "ready" &&
-        object["recognition_installation"]?.stringValue == "ready" && object["synthesis_processing"]?.stringValue == "guaranteed_local" &&
-        object["synthesis_locale"]?.stringValue == "ready"
+    object["contract"]?.stringValue == "client_local/v1" && object["transport"]?.stringValue == "client_local"
+        && voiceLanguage(object["configured_locale"]) != nil && object["full_duplex"]?.boolValue == false
+        && object["has_microphone"]?.boolValue != nil && object["has_audio_output"]?.boolValue != nil
+        && ["authorized", "denied", "not_determined", "restricted"].contains(
+            object["microphone_permission"]?.stringValue)
+        && ["authorized", "denied", "not_determined", "restricted"].contains(
+            object["recognition_permission"]?.stringValue)
+        && object["recognition_processing"]?.stringValue == "guaranteed_local"
+        && object["recognition_locale"]?.stringValue == "ready"
+        && object["recognition_installation"]?.stringValue == "ready"
+        && object["synthesis_processing"]?.stringValue == "guaranteed_local"
+        && object["synthesis_locale"]?.stringValue == "ready"
 }
 
 extension Outbound {

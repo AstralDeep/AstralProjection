@@ -133,7 +133,7 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
       "sourceBlob": "d19d554b034c250545b3c018df3039a8d7e2091c",
       "sourceMode": "100644",
-      "resultSha256": "5ec6e76247284a620cba18921896da820ebcb50fb46ac3c5fff775cc29c1919e",
+      "resultSha256": "0eb372eb287d060cb3ca4485c39c890cf8b4f4fe92a3bef5aabcaa5804eaf3eb",
       "task": "T050",
       "reason": "Implement strict Apple client-local voice capability, frame, disposition, and bound-final protocol models."
     },
@@ -169,7 +169,7 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
       "sourceBlob": "9b3048e2704f78c916bb1c48f789602c075bbd1d",
       "sourceMode": "100644",
-      "resultSha256": "2b89c8b2ce138a8b05324769c67f4980a692c85397ebc7110f740d451d9c62ff",
+      "resultSha256": "89ca3feae8d4e94f472e0f8d5138802ec659e98a6b53c7b5cb3ad3856797edea",
       "task": "T049",
       "reason": "Exercise Apple client-local fixture parsing, bound-final construction, semantic denials, and unchanged remote-v1 proof behavior."
     },
