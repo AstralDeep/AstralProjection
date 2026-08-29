@@ -506,6 +506,32 @@ def build_voice_local_final(value: VoiceLocalValue) -> Optional[dict[str, Any]]:
     return dict(value.payload)
 
 
+def validate_voice_recovery_envelope(
+    payload: object, expected_refresh_id: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Validate the exact, short-lived remote-v1 grant refresh envelope."""
+
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != {"refresh_id", "replayed", "replay_expires_at", "session", "grant"}
+        or payload.get("refresh_id") != expected_refresh_id
+        or not _is_uuid4(expected_refresh_id)
+        or not isinstance(payload.get("replayed"), bool)
+        or not isinstance(payload.get("session"), dict)
+        or not isinstance(payload.get("grant"), dict)
+    ):
+        raise WindowsProtocolError("voice grant recovery is malformed")
+    try:
+        replay_expiry = datetime.fromisoformat(
+            _utc(payload.get("replay_expires_at"), "replay_expires_at")[:-1] + "+00:00"
+        )
+    except WindowsProtocolError as exc:
+        raise WindowsProtocolError("voice grant recovery is malformed") from exc
+    if replay_expiry <= datetime.now(timezone.utc):
+        raise WindowsProtocolError("voice grant recovery is malformed")
+    return payload["session"], payload["grant"]
+
+
 def _uuid4(value: object, name: str) -> str:
     if not isinstance(value, str):
         raise WindowsProtocolError(f"{name} must be a UUID4 string")

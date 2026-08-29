@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "files": {
+    "AstralSpeechHelper.csproj": "f68b77ffa29f0414dc8b9c2a4ca80ea4a6c6fe661fcc6e53d11d1279093ea09b",
+    "BoundedAudioStream.cs": "1731fb92c9e08f454640bb3e730595d75f535cf1bf468b96b19cb44701b79b75",
+    "FrameProtocol.cs": "682dce9f16bf83fa1cfba16ac7822f8a75fba5267a52f478f90c6f07163e3033",
+    "Program.cs": "55db365f115b7843d84a58826a66e8cb6befa4b5569d43d18a15745e205e82f4"
+  }
+}
