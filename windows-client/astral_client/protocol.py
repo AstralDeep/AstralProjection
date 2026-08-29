@@ -378,6 +378,10 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
         ):
             return None
         disposition = "ready"
+    elif frame_type == "voice_local_recognition_started":
+        disposition = "ready"
+    elif frame_type == "voice_local_turn_bound":
+        disposition = "ready"
     elif frame_type == "voice_local_final":
         text = payload.get("text")
         if (
@@ -393,12 +397,29 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
         ):
             return None
         disposition = "final"
-    elif frame_type in {"voice_local_recognition_failed", "voice_local_final_rejected"}:
+    elif frame_type == "voice_local_recognition_failed":
         if payload.get("reason") not in _VOICE_LOCAL_REASONS:
             return None
         disposition = "rejected"
+    elif frame_type == "voice_local_final_rejected":
+        if payload.get("reason") not in _VOICE_LOCAL_REASONS or payload.get("retry_policy") not in {
+            "none",
+            "explicit_user_retry",
+        }:
+            return None
+        disposition = "rejected"
     elif frame_type == "voice_local_announcement":
-        if not isinstance(payload.get("text"), str) or len(payload["text"].encode()) > 600:
+        if (
+            not isinstance(payload.get("text"), str)
+            or len(payload["text"].encode()) > 600
+            or payload.get("kind") not in _VOICE_PLAYOUT_KINDS
+            or payload.get("output_policy") != "lifecycle"
+            or not isinstance(payload.get("locale"), str)
+            or re.fullmatch(r"[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*", payload["locale"]) is None
+            or not isinstance(payload.get("text_digest_sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", payload["text_digest_sha256"]) is None
+            or not isinstance(payload.get("foreground_required"), bool)
+        ):
             return None
         disposition = "speaking"
     elif frame_type == "voice_local_playout_event":
@@ -408,7 +429,7 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
             return None
         disposition = "finished"
     else:
-        disposition = "ready"
+        return None
     return VoiceLocalValue(disposition, payload)
 
 
