@@ -11,13 +11,16 @@ preserved exactly:
 | AppAuth redirect URI | `com.personalailabs.astraldeep:/oauth2redirect` |
 | Documented upload-key alias | `astral-upload` (must be reconciled with the retained local signing configuration before release) |
 | Migration version-code floor | `5` |
-| Current version name | `1.3` |
+| Current candidate version code | `6` |
+| Current candidate version name | `1.4` |
 
 Repository transfer does not reset Play Console version codes. Every upload to
 any Play track must use a `versionCode` greater than every prior upload. The
 checked-in floor prevents an accidental source regression below the migration
-baseline, but the release operator must still compare the next value with Play
-Console immediately before building.
+baseline. Authenticated Play Console's all-app-bundles inventory on 2026-08-29
+confirmed that the highest upload on every track is `5 (1.3)`, making candidate
+code `6` strictly monotonic. The release operator must repeat that check
+immediately before building because another track could receive a newer upload.
 
 ## Signing continuity
 
@@ -39,12 +42,17 @@ not match the historical `astral-upload` runbook value. The build does not
 rewrite or reject that private configuration. Before release, the operator must
 resolve the discrepancy by checking the actual upload certificate against Play
 Console; guessing or changing the alias from repository code is unsafe.
+Authenticated Play Console on 2026-08-30 reported the registered upload-key
+certificate SHA-256 fingerprint as
+`56:B9:C6:4F:88:49:1E:88:76:DA:F2:E7:AB:84:99:F6:E2:28:10:AE:87:0E:0F:43:BF:AE:E9:F7:D0:D4:96:7B`.
+This is public verification metadata, not a private key. Recheck it immediately
+before upload and require an exact match from the signed candidate.
 
 Before any release:
 
 1. confirm the Projection checkout still ignores both local property files;
 2. confirm `applicationId` and redirect scheme match the table, then reconcile
-   the retained key alias with the upload certificate registered in Play;
+   the retained key alias and require its certificate SHA-256 to match Play;
 3. choose a version code strictly above the highest Play Console upload;
 4. build `:app:bundleRelease` locally and inspect the signing certificate;
 5. retain the source checkout and old workflow until signed-build continuity is

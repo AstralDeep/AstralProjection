@@ -16,9 +16,9 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "7ac647a81edc5256279a7fb634fb2d381c801885b8dd3b5384b64a64e2850d7b",
-      "task": "T054/T057/T013/T014",
-      "reason": "Repoint generated Android voice fixtures to Projection, then hash-bind and bundle the standalone Feature 075 local conformance fixture without changing dependencies or registered identities."
+      "resultSha256": "9fe3736d4e0d069c5fd7c9b88e1d0ec85b0204a6491b937afb6d4b8c0a3e6279",
+      "task": "T054/T057/T013/T014/T102",
+      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities."
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
@@ -97,9 +97,27 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
       "sourceBlob": "9fb8c3b036fc1c2c9dfa6a822163f796aee0af78",
       "sourceMode": "100644",
-      "resultSha256": "c7dda2aea84d3f2a6cd9d10cd79bfa77826411803cd12c878ee92b5287fb5fe9",
-      "task": "T013",
-      "reason": "Record the pre-existing current-main 0dcf169 transformation that bumped MARKETING_VERSION from 1.3 to 1.4 across ten configurations so Feature 075's refreshed strict provenance ledger is complete."
+      "resultSha256": "9f3c49dc6ad524c046882155112663fc90b2a013fb33e5de7e3100ce4504ea4f",
+      "task": "T013/T102",
+      "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override."
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
+      "sourceBlob": "f361e8ffee74f4cecccd6cd2b7b5b39850f35f8a",
+      "sourceMode": "100644",
+      "resultSha256": "2e3fe1559d6a84bd2e3624a15f244287cdea4625d1d7f9f889de06f7856f97cb",
+      "task": "T065/T066",
+      "reason": "Fence delayed Apple voice activation across End, close, authentication expiry, and connection replacement, and compensating-end stale successful start or takeover results before media can connect."
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
+      "sourceBlob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
+      "sourceMode": "100644",
+      "resultSha256": "8f89199df7caffcea3255916aaf900c8dbc1d569cf9f32cc8cef9b014198921f",
+      "task": "T065/T066",
+      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection."
     },
     {
       "path": "apple-clients/AstralCore/Package.swift",
@@ -529,18 +547,27 @@
       "sourcePath": "windows-client/AstralDeep.spec",
       "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
       "sourceMode": "100644",
-      "resultSha256": "7f4a9d48b2d6cba3ace38836c827cc65869063e6fdeca65c3e57b1304188f3e5",
-      "task": "T166/T058/T059",
-      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin in the Windows application candidate."
+      "resultSha256": "bfbd7bf7452791fc9b324170d886b771ffd604798db296ff6eace49af76a890b",
+      "task": "T166/T058/T059/T102",
+      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0."
     },
     {
       "path": "windows-client/README.md",
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "834311bb39a717346f52f02efa177c5b77969ec20a8dc62cf05915e71cebbacd",
-      "task": "T060/T062/T188/T056/T058/T104",
-      "reason": "Document standalone trust validation plus the reproducible Windows helper build, coverage, integrity, frozen-package, and live-verification gates."
+      "resultSha256": "d8797ae9c97d4cce8b73fd996edeeabe3ba1e4048e8d2cffa018bbfa329df1d5",
+      "task": "T060/T062/T188/T056/T058/T104/T102",
+      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile."
+    },
+    {
+      "path": "windows-client/astral_client/__init__.py",
+      "sourcePath": "windows-client/astral_client/__init__.py",
+      "sourceBlob": "813cef4ea157a2f0c56b2e816396c6a0f380eb58",
+      "sourceMode": "100644",
+      "resultSha256": "5885b18ed635d546f7a01f82a32f1968bcfe6113fc4a8587c75b5f3583c8638c",
+      "task": "T102",
+      "reason": "Advance the native Windows client identity from 0.4.0 to the 0.5.0 release candidate."
     },
     {
       "path": "windows-client/astral_client/app.py",
@@ -556,9 +583,9 @@
       "sourcePath": "windows-client/astral_client/deployment.py",
       "sourceBlob": "0483064234542ed0033353ee4551735228781990",
       "sourceMode": "100644",
-      "resultSha256": "86afee658546d74bdea2b852409cec2409c488d53925c8add377d8d97efed89d",
-      "task": "T166",
-      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation."
+      "resultSha256": "e770b4d5818b1d7f5e1aca6ef2fce956b87e305692b11481b94ec273c2639d38",
+      "task": "T166/T102",
+      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation and a 0.5.0 generic-development identity."
     },
     {
       "path": "windows-client/astral_client/integrity.py",
@@ -597,13 +624,22 @@
       "reason": "Implement the Windows local helper and TTS lifecycle with launch/close barriers, bound local frames, one-shot acknowledgements, and exact remote-media recovery fences."
     },
     {
+      "path": "windows-client/deployment/release-profile.json",
+      "sourcePath": "windows-client/deployment/release-profile.json",
+      "sourceBlob": "751fff03c1b3ff8838e35186d1105f26fa4f6696",
+      "sourceMode": "100644",
+      "resultSha256": "e7d3e3507ef3f9c073cc23cf22202d8be1c840ddc8765822713564e4c16cbe82",
+      "task": "T102",
+      "reason": "Bind the reviewed production deployment profile to Windows release 0.5.0 without changing authority, endpoints, credentials, or override policy."
+    },
+    {
       "path": "windows-client/deployment/runtime-manifest.json",
       "sourcePath": "windows-client/deployment/runtime-manifest.json",
       "sourceBlob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
       "sourceMode": "100644",
-      "resultSha256": "b4e7722bc485d417c7ac908d15de9112ad3e906d645195f4cbc96aa5496ea674",
-      "task": "T166",
-      "reason": "Declare runtime contract v3 and the protected-executor file in the signed Windows deployment bundle."
+      "resultSha256": "9cf8d1f8e74e776626751189caa6983f19002369e17f6554e0bff70450b075ef",
+      "task": "T166/T102",
+      "reason": "Declare runtime contract v3 and the protected-executor file while binding the Windows 0.5.0 release/profile identities and canonical profile digest."
     },
     {
       "path": "windows-client/main.py",
@@ -642,13 +678,22 @@
       "reason": "Bind Windows conformance to Projection's standalone remote-v1 and client-local-v1 fixtures without implementing a runtime adapter."
     },
     {
+      "path": "windows-client/tests/release_evidence_060.py",
+      "sourcePath": "windows-client/tests/release_evidence_060.py",
+      "sourceBlob": "21b46644204d9d509e129dfcde32dce6bc202584",
+      "sourceMode": "100644",
+      "resultSha256": "c65845f0f2bc41f990b3376208cd622120e8d6d72c7ebd18408b7f95d8bfb300",
+      "task": "T102",
+      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity."
+    },
+    {
       "path": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
       "sourceMode": "100644",
-      "resultSha256": "8964ce7570788db6e700f763d577a0d764b096ab39136b1c5449919550a8a2a5",
-      "task": "T166",
-      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, and legacy-v2 mediation."
+      "resultSha256": "2209e857a47cd75ac3fe5318a539a8b70321d9801256bd87e1bfb030ffe601d6",
+      "task": "T166/T102",
+      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata."
     },
     {
       "path": "windows-client/tests/test_byo_supervision_060.py",
@@ -658,6 +703,15 @@
       "resultSha256": "6bd5dab851730af46c30d4f9e2eeac9dec492ba36d08d99a807cf5b074905857",
       "task": "T166",
       "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path."
+    },
+    {
+      "path": "windows-client/tests/test_deployment_profile_060.py",
+      "sourcePath": "windows-client/tests/test_deployment_profile_060.py",
+      "sourceBlob": "1a71b8dd3865abab13a6ac954223e928477c1f8a",
+      "sourceMode": "100644",
+      "resultSha256": "836a83b57cdee3916edba4b17d3531f1f25c3bd76dc11398f9a9f439fb1da14c",
+      "task": "T102",
+      "reason": "Verify the 0.5.0 production and generic-development deployment identities, canonical digest, precedence, and packaged validation contract."
     },
     {
       "path": "windows-client/tests/test_integrity.py",
@@ -682,9 +736,9 @@
       "sourcePath": "windows-client/tests/test_packaged_release.py",
       "sourceBlob": "d2388022214b169fd9438ea80ece7206ad736758",
       "sourceMode": "100644",
-      "resultSha256": "2132fd08194fabf1bcbda69a7208c735a05d7fe658fed1be6d2bb5c687b8017f",
-      "task": "T058/T104",
-      "reason": "Inspect the actual frozen archive for the qualified speech runtime and smoke the embedded helper over its inherited pipes."
+      "resultSha256": "7f701e9a4582dc77c02ae605d58596dbdb59179ddf0b17c2528c76fe2849e166",
+      "task": "T058/T104/T102",
+      "reason": "Inspect the actual frozen archive for the qualified speech runtime, smoke the embedded helper, and verify the 0.5.0 packaged deployment report."
     },
     {
       "path": "windows-client/tests/test_protocol_manifest.py",
@@ -838,9 +892,9 @@
       "sourcePath": ".github/workflows/build-windows-candidate.yml",
       "sourceBlob": "8fc92178a67ef67703b7e17e1ed7a15df5aa3867",
       "sourceMode": "100644",
-      "resultSha256": "ff77096cb58e381616b0d180d2464a2c22308cd17d5ad8936a3a72f286589b77",
-      "task": "T056",
-      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free."
+      "resultSha256": "b97bba743535bada288fbf2010d03ea8cdabbab32f03d64e209128a29b6b2a57",
+      "task": "T056/T102",
+      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate."
     },
     {
       "path": "workflows-disabled/release-apple-evidence-normalizer.yml",

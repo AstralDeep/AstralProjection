@@ -1743,6 +1743,7 @@ final class AppleVoiceSessionController {
     private var pendingNewChat: (submission: String, request: String)?
     private var pendingActivation = false
     private var pendingTakeoverActivation = false
+    private var pendingActivationEpoch: Int?
     private var pendingCapability: AppleVoiceMediaCapability?
     private var activationInFlight = false
     private var mediaConnectInFlight = false
@@ -1756,6 +1757,7 @@ final class AppleVoiceSessionController {
     private var suspensionTask: Task<Void, Never>?
     private var recoveryTask: Task<Void, Never>?
     private var lifecycleEpoch = 0
+    private var activationEpoch = 0
     private var foregroundEligible = true
     private var sessionIsLocked = false
     private var audioInterruptionActive = false
@@ -1836,6 +1838,7 @@ final class AppleVoiceSessionController {
             deviceKind: deviceKind, connectionGeneration: connectionGeneration,
             visibleChatId: visibleChatId)
         if changed {
+            invalidateActivation()
             reserializePendingFinals(for: connectionGeneration)
             stopLeaseRenewal()
             lifecycleEpoch += 1
@@ -1917,26 +1920,41 @@ final class AppleVoiceSessionController {
         }
         guard !pendingActivation, !pendingTakeoverActivation, !activationInFlight else { return }
         endRequested = false
+        activationEpoch &+= 1
+        let expectedActivationEpoch = activationEpoch
         refreshAudioRouteBaseline()
         pendingActivation = true
+        pendingActivationEpoch = expectedActivationEpoch
         if connection?.visibleChatId == nil {
             requestCorrelatedNewChat()
             return
         }
         let capability = await permissionProvider()
+        guard expectedActivationEpoch == activationEpoch,
+            pendingActivationEpoch == expectedActivationEpoch,
+            pendingActivation, !endRequested
+        else { return }
         pendingCapability = capability
-        await continueActivationIfReady()
+        await continueActivationIfReady(expectedActivationEpoch: expectedActivationEpoch)
     }
 
     func takeover() async {
         guard let target = takeoverTarget else { return }
         guard !pendingActivation, !pendingTakeoverActivation, !activationInFlight else { return }
         endRequested = false
+        activationEpoch &+= 1
+        let expectedActivationEpoch = activationEpoch
         refreshAudioRouteBaseline()
         pendingTakeoverActivation = true
+        pendingActivationEpoch = expectedActivationEpoch
         let capability = await permissionProvider()
+        guard expectedActivationEpoch == activationEpoch,
+            pendingActivationEpoch == expectedActivationEpoch,
+            pendingTakeoverActivation, !endRequested
+        else { return }
         pendingCapability = capability
-        await continueTakeoverIfReady(target: target)
+        await continueTakeoverIfReady(
+            target: target, expectedActivationEpoch: expectedActivationEpoch)
     }
 
     func perform(_ action: VoiceControlAction) async {
@@ -1959,12 +1977,17 @@ final class AppleVoiceSessionController {
 
     func sceneBecameActive() {
         foregroundEligible = true
-        if pendingActivation {
-            Task { await continueActivationIfReady() }
+        if pendingActivation, let expectedActivationEpoch = pendingActivationEpoch {
+            Task { await continueActivationIfReady(expectedActivationEpoch: expectedActivationEpoch) }
             return
         }
-        if pendingTakeoverActivation, let target = takeoverTarget {
-            Task { await continueTakeoverIfReady(target: target) }
+        if pendingTakeoverActivation, let target = takeoverTarget,
+            let expectedActivationEpoch = pendingActivationEpoch
+        {
+            Task {
+                await continueTakeoverIfReady(
+                    target: target, expectedActivationEpoch: expectedActivationEpoch)
+            }
             return
         }
         scheduleRecovery()
@@ -2052,6 +2075,7 @@ final class AppleVoiceSessionController {
             remoteEnd = nil
         }
         lifecycleEpoch += 1
+        invalidateActivation()
         stopLeaseRenewal()
         suspensionTask?.cancel()
         suspensionTask = nil
@@ -2068,11 +2092,6 @@ final class AppleVoiceSessionController {
         takeoverTarget = nil
         currentTurn = nil
         terminalNotice = nil
-        pendingNewChat = nil
-        pendingActivation = false
-        pendingTakeoverActivation = false
-        pendingCapability = nil
-        activationInFlight = false
         mediaConnectInFlight = false
         recoveryRequired = false
         endRequested = false
@@ -2158,9 +2177,16 @@ final class AppleVoiceSessionController {
         rebuildBinding()
         startLeaseRenewalIfNeeded()
         scheduleRecovery()
-        if pendingActivation { Task { await continueActivationIfReady() } }
-        if pendingTakeoverActivation, let target = takeoverTarget {
-            Task { await continueTakeoverIfReady(target: target) }
+        if pendingActivation, let expectedActivationEpoch = pendingActivationEpoch {
+            Task { await continueActivationIfReady(expectedActivationEpoch: expectedActivationEpoch) }
+        }
+        if pendingTakeoverActivation, let target = takeoverTarget,
+            let expectedActivationEpoch = pendingActivationEpoch
+        {
+            Task {
+                await continueTakeoverIfReady(
+                    target: target, expectedActivationEpoch: expectedActivationEpoch)
+            }
         }
     }
 
@@ -2272,6 +2298,7 @@ final class AppleVoiceSessionController {
     private func consumeChatCreated(_ frame: InboundFrame) {
         guard let value = CorrelatedVoiceChatCreated(frame: frame),
             let pending = pendingNewChat,
+            let expectedActivationEpoch = pendingActivationEpoch,
             value.connectionGeneration == connection?.connectionGeneration,
             value.submissionId == pending.submission,
             value.requestGeneration == pending.request
@@ -2287,8 +2314,12 @@ final class AppleVoiceSessionController {
             } else {
                 capability = await permissionProvider()
             }
+            guard expectedActivationEpoch == activationEpoch,
+                pendingActivationEpoch == expectedActivationEpoch,
+                pendingActivation, !endRequested
+            else { return }
             pendingCapability = capability
-            await continueActivationIfReady()
+            await continueActivationIfReady(expectedActivationEpoch: expectedActivationEpoch)
         }
     }
 
@@ -2307,10 +2338,15 @@ final class AppleVoiceSessionController {
         feedback("connecting", "chat_context_unavailable", "Creating a chat for voice…")
     }
 
-    private func continueActivationIfReady() async {
-        guard pendingActivation, let capability = pendingCapability else { return }
+    private func continueActivationIfReady(expectedActivationEpoch: Int) async {
+        guard expectedActivationEpoch == activationEpoch,
+            pendingActivationEpoch == expectedActivationEpoch,
+            pendingActivation, !endRequested,
+            let capability = pendingCapability
+        else { return }
         if let failure = capabilityFailure(capability) {
             pendingActivation = false
+            pendingActivationEpoch = nil
             pendingCapability = nil
             feedback("error", failure)
             return
@@ -2325,22 +2361,33 @@ final class AppleVoiceSessionController {
             return
         }
         pendingActivation = false
+        pendingActivationEpoch = nil
         pendingCapability = nil
         activationInFlight = true
         feedback("connecting", "ready")
         let outcome = await api.start(
             binding: binding, activationId: uuid(), capability: capability)
+        guard expectedActivationEpoch == activationEpoch, !endRequested else {
+            await compensateStaleStartedOutcome(outcome, binding: binding)
+            return
+        }
         await apply(outcome, expected: binding)
+        guard expectedActivationEpoch == activationEpoch, !endRequested else { return }
         activationInFlight = false
         scheduleRecovery()
     }
 
-    private func continueTakeoverIfReady(target: AppleVoiceTakeoverTarget) async {
-        guard pendingTakeoverActivation, takeoverTarget == target,
+    private func continueTakeoverIfReady(
+        target: AppleVoiceTakeoverTarget, expectedActivationEpoch: Int
+    ) async {
+        guard expectedActivationEpoch == activationEpoch,
+            pendingActivationEpoch == expectedActivationEpoch,
+            pendingTakeoverActivation, takeoverTarget == target, !endRequested,
             let capability = pendingCapability
         else { return }
         if let failure = capabilityFailure(capability) {
             pendingTakeoverActivation = false
+            pendingActivationEpoch = nil
             pendingCapability = nil
             feedback("error", failure)
             return
@@ -2355,13 +2402,19 @@ final class AppleVoiceSessionController {
             return
         }
         pendingTakeoverActivation = false
+        pendingActivationEpoch = nil
         pendingCapability = nil
         activationInFlight = true
         feedback("connecting", "ready", "Taking over voice on this device…")
         let outcome = await api.takeover(
             binding: binding, activationId: uuid(), target: target,
             capability: capability)
+        guard expectedActivationEpoch == activationEpoch, !endRequested else {
+            await compensateStaleStartedOutcome(outcome, binding: binding)
+            return
+        }
         await apply(outcome, expected: binding)
+        guard expectedActivationEpoch == activationEpoch, !endRequested else { return }
         activationInFlight = false
         scheduleRecovery()
     }
@@ -2784,6 +2837,7 @@ final class AppleVoiceSessionController {
 
     private func end() async {
         endRequested = true
+        invalidateActivation()
         terminalNotice = nil
         lifecycleEpoch += 1
         stopLeaseRenewal()
@@ -2808,6 +2862,23 @@ final class AppleVoiceSessionController {
         let ended = await api.end(binding: binding, fence: fence)
         clearMediaSession(retainPending: true)
         feedback(ended ? "ended" : "error", ended ? "ended_by_user" : "stale_generation")
+    }
+
+    private func invalidateActivation() {
+        activationEpoch &+= 1
+        pendingNewChat = nil
+        pendingActivation = false
+        pendingTakeoverActivation = false
+        pendingActivationEpoch = nil
+        pendingCapability = nil
+        activationInFlight = false
+    }
+
+    private func compensateStaleStartedOutcome(
+        _ outcome: AppleVoiceStartOutcome, binding: AppleVoiceUIBinding
+    ) async {
+        guard case .started(let session, _) = outcome else { return }
+        _ = await api.end(binding: binding, fence: AppleVoiceSessionFence(session: session))
     }
 
     private func suspendMedia(reason: String) {
@@ -3057,6 +3128,7 @@ final class AppleVoiceSessionController {
 
     private func invalidateForAuthentication() {
         lifecycleEpoch += 1
+        invalidateActivation()
         stopLeaseRenewal()
         suspensionTask?.cancel()
         suspensionTask = nil
@@ -3073,11 +3145,6 @@ final class AppleVoiceSessionController {
         takeoverTarget = nil
         currentTurn = nil
         terminalNotice = nil
-        pendingNewChat = nil
-        pendingActivation = false
-        pendingTakeoverActivation = false
-        pendingCapability = nil
-        activationInFlight = false
         mediaConnectInFlight = false
         recoveryRequired = false
         endRequested = false

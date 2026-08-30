@@ -693,7 +693,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 96
+    assert len(paths) == 102
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
 
     moved_workflows = {
@@ -715,7 +715,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 423
+    assert len(extracted) - len(changed_paths) == 417
 
     for entry in record["entries"]:
         path = entry["path"]

@@ -29,7 +29,7 @@ Orchestrator (:8001)  ──WebSocket /ws──►  OrchestratorClient (asyncio 
 
 ## Deployment profile and precedence
 
-The official 0.4.0 executable contains one reviewed, non-secret production
+The 0.5.0 release candidate contains one reviewed, non-secret production
 profile at `deployment/release-profile.json`. It resolves that whole profile
 before importing Qt, starting authentication, opening a transport, or hosting
 an agent. A clean install therefore opens without the **Configure AstralDeep**
