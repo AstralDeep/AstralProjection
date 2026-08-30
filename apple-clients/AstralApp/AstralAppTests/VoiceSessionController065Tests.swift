@@ -943,6 +943,183 @@ final class VoiceSessionController065Tests: XCTestCase {
         XCTAssertEqual(media.connectCount, 1)
     }
 
+    func testEndPreventsPendingPermissionActivationFromCreatingANewSession() async {
+        let api = FakeVoiceAPI()
+        api.startOutcome = .started(restSession(synced: true), grant())
+        let media = FakeVoiceMedia()
+        let permission = DeferredVoicePermission()
+        let controller = AppleVoiceSessionController(
+            api: api, media: media, permissionProvider: { await permission.request() },
+            uuid: { "00000000-0000-4000-8000-00000000000f" })
+        install(controller)
+        controller.consume(frame(activeComposer()))
+
+        let activation = Task { await controller.activate() }
+        for _ in 0..<20 where permission.requestCount == 0 { await Task.yield() }
+        XCTAssertEqual(permission.requestCount, 1)
+
+        await controller.perform(.end)
+        permission.resolve(
+            .init(
+                hasMicrophone: true, hasAudioOutput: true,
+                microphonePermission: "authorized", fullDuplex: true))
+        await activation.value
+
+        XCTAssertEqual(api.endCount, 1)
+        XCTAssertEqual(api.startCount, 0)
+        XCTAssertEqual(media.connectCount, 0)
+        XCTAssertEqual(controller.phase, "ended")
+    }
+
+    func testEndPreventsInFlightActivationFromReactivatingMedia() async {
+        let api = FakeVoiceAPI()
+        let replacementSession = "00000000-0000-4000-8000-000000000099"
+        api.startOutcome = .started(
+            restSession(synced: true, sessionId: replacementSession),
+            grant(sessionId: replacementSession))
+        api.holdNextStart = true
+        let media = FakeVoiceMedia()
+        let controller = makeController(api: api, media: media)
+        install(controller)
+        controller.consume(frame(activeComposer()))
+
+        let activation = Task { await controller.activate() }
+        for _ in 0..<20 where api.startCount == 0 { await Task.yield() }
+        XCTAssertEqual(api.startCount, 1)
+
+        await controller.perform(.end)
+        api.releaseStart()
+        await activation.value
+
+        XCTAssertEqual(api.endCount, 2)
+        XCTAssertEqual(
+            api.endFences,
+            [
+                AppleVoiceSessionFence(
+                    sessionId: voiceSession, generation: 1, mediaGrantRevision: 2),
+                AppleVoiceSessionFence(
+                    sessionId: replacementSession, generation: 1, mediaGrantRevision: 2),
+            ])
+        XCTAssertEqual(media.connectCount, 0)
+        XCTAssertEqual(controller.phase, "ended")
+    }
+
+    func testEndCompensatesForAStaleSuccessfulTakeover() async {
+        let api = FakeVoiceAPI()
+        let replacementSession = "00000000-0000-4000-0000-000000000098"
+        api.startOutcome = .takeoverRequired(
+            .init(
+                sessionId: voiceSession, deviceKind: "android", deviceLabel: "Pixel",
+                generation: 1, mediaGrantRevision: 2), nil)
+        api.takeoverOutcome = .started(
+            restSession(synced: true, sessionId: replacementSession),
+            grant(sessionId: replacementSession))
+        api.holdNextTakeover = true
+        let media = FakeVoiceMedia()
+        let controller = makeController(api: api, media: media)
+        install(controller)
+        controller.consume(frame(activeComposer()))
+        await controller.activate()
+
+        let takeover = Task { await controller.takeover() }
+        for _ in 0..<20 where api.takeoverCount == 0 { await Task.yield() }
+        XCTAssertEqual(api.takeoverCount, 1)
+
+        await controller.perform(.end)
+        api.releaseTakeover()
+        await takeover.value
+
+        XCTAssertEqual(api.endCount, 2)
+        XCTAssertEqual(
+            api.endFences,
+            [
+                AppleVoiceSessionFence(
+                    sessionId: voiceSession, generation: 1, mediaGrantRevision: 2),
+                AppleVoiceSessionFence(
+                    sessionId: replacementSession, generation: 1, mediaGrantRevision: 2),
+            ])
+        XCTAssertEqual(media.connectCount, 0)
+        XCTAssertEqual(controller.phase, "ended")
+    }
+
+    func testClosePreventsInFlightActivationFromReactivatingMedia() async {
+        let api = FakeVoiceAPI()
+        api.startOutcome = .started(restSession(synced: true), grant())
+        api.holdNextStart = true
+        let media = FakeVoiceMedia()
+        let controller = makeController(api: api, media: media)
+        install(controller)
+
+        let activation = Task { await controller.activate() }
+        for _ in 0..<20 where api.startCount == 0 { await Task.yield() }
+        XCTAssertEqual(api.startCount, 1)
+
+        controller.close()
+        api.releaseStart()
+        await activation.value
+
+        XCTAssertEqual(api.endCount, 1)
+        XCTAssertEqual(
+            api.lastEndFence,
+            AppleVoiceSessionFence(
+                sessionId: voiceSession, generation: 1, mediaGrantRevision: 2))
+        XCTAssertEqual(media.connectCount, 0)
+        XCTAssertEqual(controller.phase, "off")
+    }
+
+    func testAuthenticationExpiryPreventsInFlightActivationFromReactivatingMedia() async {
+        let api = FakeVoiceAPI()
+        api.startOutcome = .started(restSession(synced: true), grant())
+        api.holdNextStart = true
+        let media = FakeVoiceMedia()
+        let controller = makeController(api: api, media: media)
+        install(controller)
+
+        let activation = Task { await controller.activate() }
+        for _ in 0..<20 where api.startCount == 0 { await Task.yield() }
+        XCTAssertEqual(api.startCount, 1)
+
+        controller.consume(frame("{\"type\":\"auth_required\",\"reason\":\"expired\"}"))
+        api.releaseStart()
+        await activation.value
+
+        XCTAssertEqual(api.endCount, 1)
+        XCTAssertEqual(
+            api.lastEndFence,
+            AppleVoiceSessionFence(
+                sessionId: voiceSession, generation: 1, mediaGrantRevision: 2))
+        XCTAssertEqual(media.connectCount, 0)
+        XCTAssertEqual(controller.phase, "unavailable")
+    }
+
+    func testConnectionGenerationChangePreventsInFlightActivationFromBindingToTheNewConnection() async {
+        let api = FakeVoiceAPI()
+        api.startOutcome = .started(restSession(synced: true), grant())
+        api.holdNextStart = true
+        let media = FakeVoiceMedia()
+        let controller = makeController(api: api, media: media)
+        install(controller)
+
+        let activation = Task { await controller.activate() }
+        for _ in 0..<20 where api.startCount == 0 { await Task.yield() }
+        XCTAssertEqual(api.startCount, 1)
+
+        controller.installUIConnection(
+            token: "access-token", serverBase: URL(string: "https://example.test/")!,
+            deviceId: device, deviceKind: "ios", connectionGeneration: otherConnection,
+            visibleChatId: chat)
+        controller.consume(frame(binding(connectionGeneration: otherConnection)))
+        api.releaseStart()
+        await activation.value
+
+        XCTAssertEqual(api.endCount, 1)
+        XCTAssertEqual(
+            api.lastEndFence,
+            AppleVoiceSessionFence(
+                sessionId: voiceSession, generation: 1, mediaGrantRevision: 2))
+        XCTAssertEqual(media.connectCount, 0)
+    }
+
     func testActiveSceneWithoutSuspensionDoesNotRecoverConnectedMedia() async {
         let api = FakeVoiceAPI()
         api.startOutcome = .started(restSession(synced: true), grant())
@@ -1569,11 +1746,11 @@ final class VoiceSessionController065Tests: XCTestCase {
     }
 
     private func restSession(
-        synced: Bool, revision: Int = 2, microphone: Bool? = nil,
+        synced: Bool, sessionId: String? = nil, revision: Int = 2, microphone: Bool? = nil,
         speechMuted: Bool = false
     ) -> AppleVoiceRestSession {
         AppleVoiceRestSession(
-            sessionId: voiceSession, deviceId: device, deviceKind: "ios",
+            sessionId: sessionId ?? voiceSession, deviceId: device, deviceKind: "ios",
             transport: "livekit",
             ownerConnectionGeneration: connection, visibleChatId: chat,
             appliedVisibleChatId: synced ? chat : nil, generation: 1,
@@ -1584,18 +1761,18 @@ final class VoiceSessionController065Tests: XCTestCase {
             leaseExpiresAt: "2099-07-31T12:01:00Z")
     }
 
-    private func grant(revision: Int = 2) -> AppleLiveKitGrant {
+    private func grant(sessionId: String? = nil, revision: Int = 2) -> AppleLiveKitGrant {
         AppleLiveKitGrant(
-            grantId: "grant-01", sessionId: voiceSession, generation: 1,
+            grantId: "grant-01", sessionId: sessionId ?? voiceSession, generation: 1,
             mediaGrantRevision: revision, expiresAt: "2099-07-31T12:02:00Z",
             url: "wss://voice.example.test", joinToken: String(repeating: "a", count: 64),
             roomName: "voice-room", participantIdentity: "ios-client-01",
             workerIdentity: "voice-worker-01")
     }
 
-    private func binding() -> String {
+    private func binding(connectionGeneration: String? = nil) -> String {
         """
-        {"type":"voice_control_binding","schema_version":"1","device_id":"\(device)","connection_generation":"\(connection)","binding_id":"00000000-0000-4000-8000-00000000000a","binding":"synthetic-binding-value-000000000000","expires_at":"2099-07-31T12:10:00Z"}
+        {"type":"voice_control_binding","schema_version":"1","device_id":"\(device)","connection_generation":"\(connectionGeneration ?? connection)","binding_id":"00000000-0000-4000-8000-00000000000a","binding":"synthetic-binding-value-000000000000","expires_at":"2099-07-31T12:10:00Z"}
         """
     }
 
@@ -1863,6 +2040,22 @@ private final class FakeAudioCapabilitySource {
 }
 
 @MainActor
+private final class DeferredVoicePermission {
+    private var continuation: CheckedContinuation<AppleVoiceMediaCapability, Never>?
+    private(set) var requestCount = 0
+
+    func request() async -> AppleVoiceMediaCapability {
+        requestCount += 1
+        return await withCheckedContinuation { continuation = $0 }
+    }
+
+    func resolve(_ capability: AppleVoiceMediaCapability) {
+        continuation?.resume(returning: capability)
+        continuation = nil
+    }
+}
+
+@MainActor
 private final class FakeVoiceAPI: AppleVoiceControlAPI {
     var startOutcome: AppleVoiceStartOutcome = .failed("voice_unavailable", nil)
     var takeoverOutcome: AppleVoiceStartOutcome = .failed("voice_unavailable", nil)
@@ -1871,19 +2064,33 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
     var takeoverCount = 0
     var refreshIds: [String] = []
     var endCount = 0
+    var endFences: [AppleVoiceSessionFence] = []
     var lastEndFence: AppleVoiceSessionFence?
     var stopCount = 0
     var lastUpdate: [String: JSONValue]?
     var updates: [[String: JSONValue]] = []
     var updatedSession: AppleVoiceRestSession?
     var updateShouldFail = false
+    var holdNextStart = false
+    var holdNextTakeover = false
+    private var startContinuation: CheckedContinuation<AppleVoiceStartOutcome, Never>?
+    private var takeoverContinuation: CheckedContinuation<AppleVoiceStartOutcome, Never>?
 
     func start(
         binding: AppleVoiceUIBinding, activationId: String,
         capability: AppleVoiceMediaCapability
     ) async -> AppleVoiceStartOutcome {
         startCount += 1
+        if holdNextStart {
+            holdNextStart = false
+            return await withCheckedContinuation { startContinuation = $0 }
+        }
         return startOutcome
+    }
+
+    func releaseStart() {
+        startContinuation?.resume(returning: startOutcome)
+        startContinuation = nil
     }
 
     func takeover(
@@ -1891,7 +2098,16 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
         target: AppleVoiceTakeoverTarget, capability: AppleVoiceMediaCapability
     ) async -> AppleVoiceStartOutcome {
         takeoverCount += 1
+        if holdNextTakeover {
+            holdNextTakeover = false
+            return await withCheckedContinuation { takeoverContinuation = $0 }
+        }
         return takeoverOutcome
+    }
+
+    func releaseTakeover() {
+        takeoverContinuation?.resume(returning: takeoverOutcome)
+        takeoverContinuation = nil
     }
 
     func update(
@@ -1925,6 +2141,7 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
     ) async -> Bool { true }
     func end(binding: AppleVoiceUIBinding, fence: AppleVoiceSessionFence) async -> Bool {
         endCount += 1
+        endFences.append(fence)
         lastEndFence = fence
         return true
     }
