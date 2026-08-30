@@ -30,10 +30,11 @@ def test_android_store_and_oidc_identity_remain_registered_values() -> None:
     assert 'val registeredApplicationId = "com.personalailabs.astraldeep"' in gradle
     assert 'val registeredRedirectScheme = "com.personalailabs.astraldeep"' in gradle
     assert "val migrationVersionCodeFloor = 5" in gradle
-    assert "val currentVersionCode = 5" in gradle
+    assert "val currentVersionCode = 6" in gradle
     assert "check(currentVersionCode >= migrationVersionCodeFloor)" in gradle
     assert "applicationId = registeredApplicationId" in gradle
     assert "versionCode = currentVersionCode" in gradle
+    assert 'versionName = "1.4"' in gradle
     assert 'manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme' in gradle
 
     redirect_uri = "com.personalailabs.astraldeep:/oauth2redirect"
@@ -100,8 +101,13 @@ def test_apple_export_options_preserve_manual_store_signing() -> None:
 
 
 def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
+    project = _text("apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj")
     app = _plist("apple-clients/AstralApp/Info.plist")
     watch = _plist("apple-clients/AstralApp/WatchInfo.plist")
 
+    assert project.count("CURRENT_PROJECT_VERSION = 2;") == 10
+    assert project.count("MARKETING_VERSION = 1.5;") == 10
+    assert "CURRENT_PROJECT_VERSION = 1;" not in project
+    assert "MARKETING_VERSION = 1.4;" not in project
     assert app["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
     assert watch["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"

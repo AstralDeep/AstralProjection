@@ -97,9 +97,9 @@ to these identities. A repository rename or redirect proves none of them.
 
 | Platform | Repository observation | Store-authoritative value |
 |---|---|---|
-| Android | `versionCode` migration floor and current source value are both `5`; `versionName` is `1.3` | Highest Play upload is unknown locally; the next build must be strictly greater |
-| Apple | Source `CURRENT_PROJECT_VERSION` is `1`; the published legacy `apple-v1.2` workflow used GitHub run 41, and later non-release executions reached run 58 | Highest submitted App Store build is unknown locally; set the two protected build variables only after checking App Store Connect |
-| Windows | Live legacy baseline was `v0.4.0`; no Projection release exists | The bridge version is deliberately unselected in `contracts/windows-release-trust.json` |
+| Android | Candidate `versionCode` is `6`; `versionName` is `1.4` | Authenticated Play all-app-bundles inventory on 2026-08-29 found maximum `5 (1.3)` across every track; recheck before upload |
+| Apple | Candidate source is `MARKETING_VERSION 1.5` / `CURRENT_PROJECT_VERSION 2`; the published legacy `apple-v1.2` workflow used GitHub run 41, and later non-release executions reached run 58 | Highest submitted App Store build is unknown locally; set the protected build value only after checking App Store Connect |
+| Windows | Candidate source is `0.5.0`; live legacy baseline is `v0.4.0`; no Projection release exists | The bridge version is deliberately unselected in `contracts/windows-release-trust.json` |
 
 GitHub run numbers and checked-in project defaults are evidence leads, not
 store truth. Unknown store maxima are hard activation blockers, never values to

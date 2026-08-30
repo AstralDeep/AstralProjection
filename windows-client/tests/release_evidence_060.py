@@ -482,7 +482,7 @@ def test_windows_deployment_validation_report(tmp_path):
     assert result.returncode == 0, result.stderr
     value = json.loads(report.read_text(encoding="utf-8"))
     assert value["status"] == "valid"
-    assert value["client_version"] == "0.4.0"
+    assert value["client_version"] == "0.5.0"
     assert value["source"] == "bundled_release"
     assert value["byo_host_disposition"] == "authenticated_ui_tunnel"
     assert value["legacy_tools_disposition"] == "disabled"

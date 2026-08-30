@@ -83,7 +83,7 @@ val keystoreProperties =
 val registeredApplicationId = "com.personalailabs.astraldeep"
 val registeredRedirectScheme = "com.personalailabs.astraldeep"
 val migrationVersionCodeFloor = 5
-val currentVersionCode = 5
+val currentVersionCode = 6
 check(currentVersionCode >= migrationVersionCodeFloor) {
     "Android versionCode must not regress below the AstralProjection migration floor"
 }
@@ -153,7 +153,7 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = currentVersionCode
-        versionName = "1.3"
+        versionName = "1.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // AppAuth captures the OIDC redirect via this scheme (RedirectUriReceiverActivity).
