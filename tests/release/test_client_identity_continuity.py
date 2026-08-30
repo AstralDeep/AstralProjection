@@ -105,9 +105,10 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     app = _plist("apple-clients/AstralApp/Info.plist")
     watch = _plist("apple-clients/AstralApp/WatchInfo.plist")
 
-    assert project.count("CURRENT_PROJECT_VERSION = 2;") == 10
+    assert project.count("CURRENT_PROJECT_VERSION = 61;") == 10
     assert project.count("MARKETING_VERSION = 1.5;") == 10
     assert "CURRENT_PROJECT_VERSION = 1;" not in project
+    assert "CURRENT_PROJECT_VERSION = 2;" not in project
     assert "MARKETING_VERSION = 1.4;" not in project
     assert app["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
     assert watch["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"

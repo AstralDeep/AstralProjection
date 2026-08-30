@@ -97,9 +97,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
       "sourceBlob": "9fb8c3b036fc1c2c9dfa6a822163f796aee0af78",
       "sourceMode": "100644",
-      "resultSha256": "0c0357aba538ec0e769ee9958f0d59615378b3c41e8597cbf9f4f74505892d40",
+      "resultSha256": "9f3c49dc6ad524c046882155112663fc90b2a013fb33e5de7e3100ce4504ea4f",
       "task": "T013/T102",
-      "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-2 source release candidate while protected publication retains the monotonic store build override."
+      "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override."
     },
     {
       "path": "apple-clients/AstralCore/Package.swift",
