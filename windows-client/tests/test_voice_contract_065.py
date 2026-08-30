@@ -82,7 +82,7 @@ def test_client_local_v2_fails_closed_on_undeclared_fields():
     assert parse_voice_local_frame(payload) is None
 
 
-def test_client_local_v2_rejects_invalid_declared_values_and_accepts_optional_playout_reason():
+def test_client_local_v2_rejects_invalid_declared_values_and_validates_playout_phase_and_reason():
     fixture_path = (
         Path(__file__).resolve().parents[2]
         / "contracts/fixtures/voice_075/client_local_conformance.json"
@@ -97,8 +97,12 @@ def test_client_local_v2_rejects_invalid_declared_values_and_accepts_optional_pl
     playout = next(
         vector["payload"] for vector in vectors if vector["id"] == "L-P04-playout-finished"
     ).copy()
-    playout["reason"] = "announcement_suppressed_muted"
+    playout["phase"] = "interrupted"
+    playout["reason"] = "local_audio_interrupted"
     assert parse_voice_local_frame(playout).disposition == "finished"
+
+    playout["phase"] = "suppressed"
+    assert parse_voice_local_frame(playout) is None
 
 
 def test_client_local_v2_rejects_corrupt_non_ready_semantics_and_unknown_playout_reason():
@@ -115,6 +119,24 @@ def test_client_local_v2_rejects_corrupt_non_ready_semantics_and_unknown_playout
         payload = next(vector["payload"] for vector in vectors if vector["id"] == identifier).copy()
         payload[key] = value
         assert parse_voice_local_frame(payload) is None, identifier
+
+
+@pytest.mark.parametrize("surrogate", ["\ud800", "\udfff"])
+def test_client_local_announcement_rejects_lone_surrogate_without_raising(
+    surrogate: str,
+):
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    payload = next(
+        vector["payload"]
+        for vector in json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+        if vector["id"] == "L-P03-authorized-announcement"
+    ).copy()
+    payload["text"] = f"bad{surrogate}text"
+
+    assert parse_voice_local_frame(payload) is None
 
 
 def _local_lifecycle_frame(frame_type: str, **details: object) -> dict:
@@ -966,6 +988,144 @@ def test_voice_submission_retries_exact_ids_on_new_connection_until_matching_ack
     exact = dict(wrong, connection_generation=next_connection)
     assert client.settle_voice_submission(exact)
     assert TURN not in client._voice_pending
+
+
+def test_remote_voice_ack_is_admitted_once_only_after_exact_transport_settlement(qapp):
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
+    client.connection_generation = CONNECTION
+    client._send_voice_frame = lambda _frame: None
+    client.send_voice_transcript(_transcript())
+    acknowledgement = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": CHAT,
+        "message_id": 7,
+        "submission_id": SUBMISSION,
+        "request_generation": REQUEST,
+        "connection_generation": CONNECTION,
+        "voice_turn_id": TURN,
+    }
+
+    assert client._handle_runtime_frame(acknowledgement)
+    assert not client._handle_runtime_frame(acknowledgement)
+
+
+def test_client_local_ack_requires_registered_exact_final_and_is_one_shot(qapp):
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    final = next(
+        vector["payload"]
+        for vector in json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+        if vector["id"] == "L-P02-local-final"
+    )
+    acknowledgement = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": final["chat_id"],
+        "message_id": 7,
+        "submission_id": final["submission_id"],
+        "request_generation": final["request_generation"],
+        "connection_generation": final["connection_generation"],
+        "voice_turn_id": final["turn_id"],
+    }
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
+    client.connection_generation = CONNECTION
+    client._send_voice_frame = lambda _frame: None
+
+    assert not client._handle_runtime_frame(acknowledgement)
+
+    client.send_voice_local_frame(final)
+    ready = next(
+        vector["payload"]
+        for vector in json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+        if vector["id"] == "L-P01-supported-half-duplex"
+    )
+    client.send_voice_local_frame(ready)
+    assert client._handle_runtime_frame(acknowledgement)
+    assert not client._handle_runtime_frame(acknowledgement)
+
+
+def test_client_local_wrong_ack_does_not_consume_registered_exact_ack(qapp):
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    final = next(
+        vector["payload"]
+        for vector in json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+        if vector["id"] == "L-P02-local-final"
+    )
+    exact = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": final["chat_id"],
+        "message_id": 7,
+        "submission_id": final["submission_id"],
+        "request_generation": final["request_generation"],
+        "connection_generation": final["connection_generation"],
+        "voice_turn_id": final["turn_id"],
+    }
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
+    client.connection_generation = CONNECTION
+    client._send_voice_frame = lambda _frame: None
+    client.send_voice_local_frame(final)
+
+    for patch in (
+        {"chat_id": OTHER_TURN},
+        {"submission_id": OTHER_TURN},
+        {"request_generation": OTHER_TURN},
+        {"connection_generation": OTHER_CONNECTION},
+        {"voice_turn_id": OTHER_TURN},
+        {"message_id": 0},
+        {"message_id": True},
+    ):
+        assert not client._handle_runtime_frame({**exact, **patch}), patch
+        assert client._voice_local_pending_ack is not None
+    assert not client._handle_runtime_frame({**exact, "extra": True})
+    generic_ack = {key: value for key, value in exact.items() if key != "voice_turn_id"}
+    assert client._handle_runtime_frame(generic_ack)
+    assert client._voice_local_pending_ack is not None
+
+    assert client._handle_runtime_frame(exact)
+
+
+def test_client_local_ack_registration_is_idempotent_conflict_safe_and_forgettable(qapp):
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "contracts/fixtures/voice_075/client_local_conformance.json"
+    )
+    final = next(
+        vector["payload"]
+        for vector in json.loads(fixture_path.read_text(encoding="utf-8"))["vectors"]
+        if vector["id"] == "L-P02-local-final"
+    )
+    acknowledgement = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": final["chat_id"],
+        "message_id": 7,
+        "submission_id": final["submission_id"],
+        "request_generation": final["request_generation"],
+        "connection_generation": final["connection_generation"],
+        "voice_turn_id": final["turn_id"],
+    }
+    client = OrchestratorClient("ws://127.0.0.1:9/ws", "token", device_id=DEVICE)
+    client.connection_generation = CONNECTION
+    client._send_voice_frame = lambda _frame: None
+
+    assert client.send_voice_local_frame(final)
+    assert client.send_voice_local_frame(final)
+    with pytest.raises(WindowsProtocolError, match="another client-local final"):
+        client.send_voice_local_frame({**final, "turn_id": OTHER_TURN})
+
+    assert client.forget_voice_local_final(final)
+    assert not client._handle_runtime_frame(acknowledgement)
+
+    assert client.send_voice_local_frame(final)
+    client._register_frame()
+    assert not client._handle_runtime_frame(acknowledgement)
 
 
 def test_matching_rejection_is_terminal_and_never_automatically_reused(qapp):

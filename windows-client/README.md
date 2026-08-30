@@ -81,9 +81,17 @@ remains an optional credential input; it is not deployment configuration.
 
 ## Build the .exe
 
+The first-party speech helper uses the repository-pinned .NET SDK from
+[`../global.json`](../global.json). Restore its test-only packages from the
+committed lock, then publish the warning-clean product before freezing Python:
+
 ```powershell
 .venv\Scripts\python -m pip install --require-hashes -r requirements-release.lock.txt
-.venv\Scripts\pyinstaller --noconfirm --clean AstralDeep.spec
+dotnet restore asr-helper\tests\AstralSpeechHelper.Tests.csproj --locked-mode
+dotnet build asr-helper\tests\AstralSpeechHelper.Tests.csproj --configuration Release --no-restore
+dotnet publish asr-helper\AstralSpeechHelper.csproj `
+  --configuration Release --no-restore --no-build --output asr-helper\publish
+.venv\Scripts\python -m PyInstaller --noconfirm --clean AstralDeep.spec
 # → dist/AstralDeep.exe  (single-file, no console)
 .\dist\AstralDeep.exe --validate-deployment
 ```
@@ -94,12 +102,64 @@ environments. It runs the actual frozen worker and GUI smokes, records coverage,
 and archives the exact EXE with source/run/artifact identities. It does not
 sign, tag, publish, or create a release.
 
+### Client-local speech helper
+
+Client-local recognition uses the first-party .NET Framework 4.8
+`AstralSpeechHelper.exe`; synthesis uses Qt's Windows `sapi` text-to-speech
+engine. Both gates are exact: recognition requires a constructible installed
+`en-US` recognizer that advertises 16-kHz, 16-bit, mono PCM, and synthesis
+requires the `en_US` SAPI locale and voice. If any helper, signature, language,
+format, engine, or plugin check fails, local voice remains unavailable while
+typed chat stays available. There is no cloud-recognition fallback.
+
+The inherited-pipe helper protocol is documented in
+[`asr-helper/PROTOCOL.md`](asr-helper/PROTOCOL.md). Wire version 2 assigns each
+serialized recognition cycle a nonzero 16-bit ID. On cancellation the desktop
+waits for that cycle's `stopped` acknowledgement before reusing the helper;
+the acknowledgement is an output barrier, so no final or error for the stopped
+cycle may arrive afterward.
+
+`helper-source-hashes.json` binds the four product source inputs. Publish emits
+`helper-build-provenance.json`, which binds that manifest and the resulting
+helper executable. The freeze rejects missing or mismatched provenance and
+generates a constant-only Python module inside the PyInstaller PYZ containing
+the exact bundled-helper SHA-256. At runtime the client hashes the helper,
+requires Windows `WinVerifyTrust` to accept its embedded Authenticode signature,
+then hashes it again before launch to reject replacement during verification.
+An adjacent manifest cannot change the embedded runtime expectation.
+
+Ordinary local and CI candidates are deliberately unsigned, so the real
+`WinVerifyTrust` probe reports `signature_invalid`; they are build and package
+evidence, not release-ready local-speech artifacts. A protected release must
+sign the helper before freeze, regenerate its provenance for the signed bytes,
+and separately sign the outer application through the authorized release lane.
+
 ## Tests
 
-```bash
-QT_QPA_PLATFORM=offscreen .venv/Scripts/python -m pytest -q tests/test_renderer.py
+The active Windows owner gate in [`../.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+pins .NET SDK 10.0.400, verifies both native projects with `dotnet format`, runs
+the deterministic helper tests with Cobertura and 90% changed-line coverage,
+classifies the installed en-US SAPI posture, verifies reproducible publish
+provenance, freezes the release-only environment, and exercises the resulting
+archive and executable. The focused local commands are:
+
+```powershell
+dotnet format asr-helper\AstralSpeechHelper.csproj --verify-no-changes --no-restore
+dotnet format asr-helper\tests\AstralSpeechHelper.Tests.csproj --verify-no-changes --no-restore
+dotnet test asr-helper\tests\AstralSpeechHelper.Tests.csproj `
+  --configuration Release --no-restore --no-build `
+  --filter "TestCategory!=HostCapability" `
+  --settings asr-helper\tests\coverage.runsettings `
+  --collect:"Code Coverage" `
+  -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+$env:QT_QPA_PLATFORM = "offscreen"
+$env:PYTHONPATH = "."
+.venv\Scripts\python -m pytest tests -q -p no:cacheprovider
+$env:ASTRAL_WINDOWS_EXE = (Resolve-Path dist\AstralDeep.exe).Path
+.venv\Scripts\python -m pytest tests\test_packaged_release.py `
+  tests\test_helper_integrity_075.py -q -p no:cacheprovider
 # live end-to-end against a mock-auth orchestrator:
-QT_QPA_PLATFORM=offscreen .venv/Scripts/python tests/e2e_live.py --prompt "roll 3 dice"
+.venv\Scripts\python tests\e2e_live.py --prompt "roll 3 dice"
 ```
 
 ## Auth

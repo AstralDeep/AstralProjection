@@ -64,15 +64,51 @@ def _sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _matches_sha256(value, path):
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[0-9A-Fa-f]{64}", value) is not None
+        and value.lower() == _sha256(path)
+    )
+
+
 _helper_provenance = json.loads(_helper_provenance_path.read_text(encoding="utf-8-sig"))
 if set(_helper_provenance) != {
     "schema_version", "source_manifest_sha256", "executable_sha256"
 } or _helper_provenance.get("schema_version") != 1:
     raise SystemExit("helper build provenance is invalid")
-if _helper_provenance.get("source_manifest_sha256") != _sha256(_helper_source_manifest_path):
+if not _matches_sha256(
+    _helper_provenance.get("source_manifest_sha256"), _helper_source_manifest_path
+):
     raise SystemExit("helper build provenance is invalid")
-if _helper_provenance.get("executable_sha256") != _sha256(_helper_path):
+if not _matches_sha256(_helper_provenance.get("executable_sha256"), _helper_path):
     raise SystemExit("helper build provenance is invalid")
+
+# Bind runtime execution to the exact helper bytes that Analysis will embed.
+# This constant-only module is imported from the PYZ; it is deliberately not a
+# data file adjacent to the extracted helper, where it could be replaced along
+# with that executable. A protected release may sign the helper before this
+# point, then regenerate provenance so the signed bytes become the expectation.
+_helper_sha256 = _sha256(_helper_path)
+_helper_digest_module_name = "_astral_helper_integrity_expected"
+_helper_digest_module_root = _root / "build" / "generated-helper-integrity"
+_helper_digest_module_path = _helper_digest_module_root / (
+    f"{_helper_digest_module_name}.py"
+)
+_helper_digest_module_source = (
+    '"""Generated at freeze time from the exact bundled helper bytes."""\n'
+    f'EXPECTED_HELPER_SHA256 = "{_helper_sha256}"\n'
+)
+_helper_digest_module_root.mkdir(parents=True, exist_ok=True)
+_helper_digest_module_path.write_text(
+    _helper_digest_module_source, encoding="utf-8", newline="\n"
+)
+if (
+    _helper_digest_module_path.read_text(encoding="utf-8")
+    != _helper_digest_module_source
+    or re.fullmatch(r"[0-9a-f]{64}", _helper_sha256) is None
+):
+    raise SystemExit("generated helper integrity module is invalid")
 
 
 if __version__ != "0.4.0" or _profile.get("client_version") != __version__:
@@ -154,6 +190,7 @@ hiddenimports = (
        "win_agent.lets_executor",
        "win_agent.byo_host", "win_agent.byo_worker",
        "astral_client.phi_gate", "astral_client.audit_log", "astral_client.integrity",
+       "astral_client.helper_integrity", _helper_digest_module_name,
        "astral_client.confirm",
        "psutil", "pyperclip", "sigstore", "astralprims", "lets", "nacl",
        # Feature 074: this helper is reached through a pre-Qt frozen-exe
@@ -171,7 +208,7 @@ excludes = [
 
 a = Analysis(
     ["main.py"],
-    pathex=[],
+    pathex=[str(_helper_digest_module_root)],
     # The Windows livekit wheel carries its RTC FFI native artifact. Collect it
     # deliberately instead of relying on import discovery inside a one-file exe.
     binaries=(
@@ -179,7 +216,7 @@ a = Analysis(
         + collect_dynamic_libs(
             "PySide6",
             search_patterns=[
-                "qtexttospeech_*.dll",
+                "qtexttospeech_sapi.dll",
                 "libqtexttospeech_*.dylib",
                 "libqtexttospeech_*.so",
             ],
@@ -205,6 +242,19 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
+# The PySide hook collects every text-to-speech plugin. Retain only the real
+# Windows SAPI backend so a packaged client can never report the silent mock
+# plugin as a local-synthesis capability.
+a.binaries = [
+    entry
+    for entry in a.binaries
+    if not (
+        pathlib.PurePosixPath(entry[0].replace("\\", "/")).parent.name.lower()
+        == "texttospeech"
+        and pathlib.PurePosixPath(entry[0].replace("\\", "/")).name.lower()
+        != "qtexttospeech_sapi.dll"
+    )
+]
 pyz = PYZ(a.pure)
 
 exe = EXE(

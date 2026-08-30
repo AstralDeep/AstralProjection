@@ -2993,6 +2993,55 @@ class MainWindow(QMainWindow):
             )
         return submission
 
+    def _finish_local_submission_from_ack(
+        self, frame: dict[str, Any]
+    ) -> Optional[LocalOperationSubmission]:
+        """Settle one modern ACK only against its exact local projection."""
+
+        required = {
+            "type",
+            "schema_version",
+            "chat_id",
+            "message_id",
+            "submission_id",
+            "request_generation",
+            "connection_generation",
+            "voice_turn_id",
+        }
+        supplied = set(frame) if isinstance(frame, dict) else set()
+        if supplied != required:
+            return None
+        submission = self._pending_submissions_by_id.get(
+            str(frame.get("submission_id") or "")
+        )
+        voice_turn_id = frame.get("voice_turn_id")
+        if (
+            submission is None
+            or frame.get("type") != "user_message_acked"
+            or frame.get("schema_version") != "1"
+            or isinstance(frame.get("message_id"), bool)
+            or not isinstance(frame.get("message_id"), int)
+            or frame["message_id"] < 1
+            or frame.get("request_generation") != submission.request_generation
+            or submission.action != "chat_message"
+            or frame.get("connection_generation")
+            != self._continuity.connection_generation
+            or frame.get("connection_generation")
+            != getattr(self.client, "connection_generation", None)
+            or not _canonical_uuid4(frame.get("chat_id"))
+            or (
+                submission.chat_id is not None
+                and frame.get("chat_id") != submission.chat_id
+            )
+            or (
+                voice_turn_id is not None
+                and not _canonical_uuid4(voice_turn_id)
+            )
+            or voice_turn_id != submission.voice_turn_id
+        ):
+            return None
+        return self._finish_local_submission_by_id(submission.submission_id)
+
     def _discard_local_submission(self, submission: object) -> bool:
         """Settle exactly one identity removed from the bounded queue."""
 
@@ -4099,7 +4148,13 @@ class MainWindow(QMainWindow):
                 # Another (or no) chat: the banner carries a tap-to-open link.
                 self._show_banner(text, kind, chat_id=chat)
         elif t == "user_message_acked":
-            self._finish_local_submission_by_id(str(msg.get("submission_id") or ""))
+            local_ack_claimed = self._voice_controller.owns_local_message_ack(msg)
+            voice_ack_handled = self._voice_controller.accept_frame(msg)
+            if local_ack_claimed and not voice_ack_handled:
+                return
+            submission = self._finish_local_submission_from_ack(msg)
+            if not voice_ack_handled and submission is None:
+                return
             if self._scoped_status_matches(msg):
                 self._set_turn_active(True)
                 self.topbar.set_status("Working…", T.VARIANT_COLORS["accent"][0])

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import pytest
 
@@ -26,6 +27,7 @@ TURN = "00000000-0000-4000-8000-000000000005"
 BINDING_ID = "00000000-0000-4000-8000-000000000009"
 BINDING = "v1." + "a" * 64 + "." + "b" * 43
 WORKER = "voice-worker-a"
+VOICE_NOW = datetime(2026, 7, 31, 18, 0, tzinfo=timezone.utc)
 
 
 def _uuid(index: int) -> str:
@@ -188,6 +190,7 @@ def _active_controller() -> tuple[VoiceController, _Transport, _ControllerMedia]
         http=_ControllerHttp(),
         media=media,
         run_async=lambda work: work(),
+        local_now=lambda: VOICE_NOW,
     )
     assert controller.accept_frame(
         {
@@ -197,7 +200,7 @@ def _active_controller() -> tuple[VoiceController, _Transport, _ControllerMedia]
             "connection_generation": CONNECTION,
             "binding_id": BINDING_ID,
             "binding": BINDING,
-            "expires_at": "2099-07-31T18:04:00Z",
+            "expires_at": "2026-07-31T18:04:00Z",
         }
     )
     controller.handle_action("voice_session_start")

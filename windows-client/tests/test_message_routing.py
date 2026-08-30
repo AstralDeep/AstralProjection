@@ -22,6 +22,7 @@ class _FakeClient:
     def __init__(self, *a, **k):
         self.sent = []
         self._sig = None
+        self.connection_generation = None
 
     class _Sig:
         def connect(self, *_a):
@@ -102,7 +103,34 @@ def test_classified_ignore_is_info_not_warning(win, caplog):
 # --- progress signals reach a terminal state (FR-006) -----------------------
 
 def test_progress_signals_and_terminal(win):
-    win._on_message({"type": "user_message_acked"})
+    chat_id = "00000000-0000-4000-8000-000000000001"
+    submission_id = "00000000-0000-4000-8000-000000000002"
+    request_generation = "00000000-0000-4000-8000-000000000003"
+    connection_generation = "00000000-0000-4000-8000-000000000004"
+    win.active_chat = chat_id
+    win.client.connection_generation = connection_generation
+    win._continuity.bind_connection(connection_generation)
+    win._continuity.open_request("commit", request_generation)
+    assert win._project_local_submission(
+        appmod.LocalOperationSubmission(
+            submission_id=submission_id,
+            request_generation=request_generation,
+            action="chat_message",
+            chat_id=chat_id,
+        )
+    )
+    win._on_message(
+        {
+            "type": "user_message_acked",
+            "schema_version": "1",
+            "chat_id": chat_id,
+            "message_id": 1,
+            "submission_id": submission_id,
+            "request_generation": request_generation,
+            "connection_generation": connection_generation,
+            "voice_turn_id": None,
+        }
+    )
     assert win._turn_active is True
     win._on_message({"type": "chat_step", "step": {"name": "search", "status": "completed"}})
     win._on_message({"type": "tool_progress", "label": "fetching page 2"})
@@ -110,6 +138,178 @@ def test_progress_signals_and_terminal(win):
     assert (not win._banner.isHidden())
     win._on_message({"type": "task_completed", "task_id": "t1"})
     assert win._turn_active is False
+
+
+def test_client_local_ack_must_be_accepted_by_voice_correlation_before_ui_mutates(win):
+    ack = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": "00000000-0000-4000-8000-000000000001",
+        "message_id": 1,
+        "submission_id": "00000000-0000-4000-8000-000000000002",
+        "request_generation": "00000000-0000-4000-8000-000000000003",
+        "connection_generation": "00000000-0000-4000-8000-000000000004",
+        "voice_turn_id": "00000000-0000-4000-8000-000000000005",
+    }
+    accepted: list[dict] = []
+    finished: list[str] = []
+    win._voice_controller.speech_backend = "client_local"
+    win._voice_controller.owns_local_message_ack = lambda _frame: True
+    win._voice_controller.accept_frame = lambda frame: accepted.append(frame) or False
+    win._finish_local_submission_by_id = finished.append
+    win._turn_active = False
+
+    win._on_message(ack)
+
+    assert accepted == [ack]
+    assert finished == []
+    assert win._turn_active is False
+
+    win._voice_controller.accept_frame = lambda frame: accepted.append(frame) or True
+    win._scoped_status_matches = lambda _frame: True
+    win._on_message(ack)
+
+    assert accepted == [ack, ack]
+    assert finished == []
+    assert win._turn_active is True
+
+
+@pytest.mark.parametrize("voice_turn_id", [pytest.param(None, id="null"), pytest.param("missing", id="missing")])
+def test_malformed_ack_claiming_pending_local_final_cannot_mutate_generic_ui(
+    win, voice_turn_id
+):
+    ack = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": "00000000-0000-4000-8000-000000000001",
+        "message_id": 1,
+        "submission_id": "00000000-0000-4000-8000-000000000002",
+        "request_generation": "00000000-0000-4000-8000-000000000003",
+        "connection_generation": "00000000-0000-4000-8000-000000000004",
+    }
+    if voice_turn_id != "missing":
+        ack["voice_turn_id"] = voice_turn_id
+    finished: list[str] = []
+    win._voice_controller.speech_backend = "client_local"
+    win._voice_controller.owns_local_message_ack = lambda _frame: True
+    win._voice_controller.accept_frame = lambda _frame: False
+    win._finish_local_submission_by_id = finished.append
+    win._turn_active = False
+
+    win._on_message(ack)
+
+    assert finished == []
+    assert not win._turn_active
+
+
+def test_duplicate_remote_voice_ack_cannot_resurrect_generic_working_state(win):
+    submission = appmod.LocalOperationSubmission(
+        submission_id="00000000-0000-4000-8000-000000000002",
+        request_generation="00000000-0000-4000-8000-000000000003",
+        action="chat_message",
+        chat_id="00000000-0000-4000-8000-000000000001",
+        voice_turn_id="00000000-0000-4000-8000-000000000005",
+    )
+    assert win._project_local_submission(submission)
+    ack = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": submission.chat_id,
+        "message_id": 1,
+        "submission_id": submission.submission_id,
+        "request_generation": submission.request_generation,
+        "connection_generation": "00000000-0000-4000-8000-000000000004",
+        "voice_turn_id": "00000000-0000-4000-8000-000000000005",
+    }
+    win._voice_controller.speech_backend = "llm_factory"
+    win._voice_controller.owns_local_message_ack = lambda _frame: False
+    win._voice_controller.accept_frame = lambda _frame: False
+    win._continuity.bind_connection(ack["connection_generation"])
+    win.client.connection_generation = ack["connection_generation"]
+    win._scoped_status_matches = lambda _frame: True
+
+    win._on_message(ack)
+    assert win._turn_active
+
+    win._turn_active = False
+    win._on_message(ack)
+
+    assert not win._turn_active
+
+
+def test_typed_ack_during_local_pending_final_settles_only_typed_projection(win):
+    local_pending = {
+        "submission_id": "00000000-0000-4000-8000-000000000009",
+        "connection_generation": "00000000-0000-4000-8000-000000000004",
+    }
+    win._voice_controller.speech_backend = "client_local"
+    win._voice_controller._local_pending_final = local_pending
+    typed = appmod.LocalOperationSubmission(
+        submission_id="00000000-0000-4000-8000-000000000002",
+        request_generation="00000000-0000-4000-8000-000000000003",
+        action="chat_message",
+        chat_id="00000000-0000-4000-8000-000000000001",
+    )
+    assert win._project_local_submission(typed)
+    connection = "00000000-0000-4000-8000-000000000004"
+    win.client.connection_generation = connection
+    win._continuity.bind_connection(connection)
+    win._continuity.open_request("commit", typed.request_generation)
+    win.active_chat = typed.chat_id
+    ack = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": typed.chat_id,
+        "message_id": 1,
+        "submission_id": typed.submission_id,
+        "request_generation": typed.request_generation,
+        "connection_generation": connection,
+        "voice_turn_id": None,
+    }
+
+    win._on_message(ack)
+
+    assert win._voice_controller._local_pending_final is local_pending
+    assert typed.submission_id not in win._pending_submissions_by_id
+    assert win._turn_active
+
+
+@pytest.mark.parametrize("wrong_field", ["request_generation", "connection_generation"])
+def test_wrong_typed_ack_during_local_pending_final_is_inert(win, wrong_field):
+    local_pending = {
+        "submission_id": "00000000-0000-4000-8000-000000000009",
+        "connection_generation": "00000000-0000-4000-8000-000000000004",
+    }
+    win._voice_controller.speech_backend = "client_local"
+    win._voice_controller._local_pending_final = local_pending
+    typed = appmod.LocalOperationSubmission(
+        submission_id="00000000-0000-4000-8000-000000000002",
+        request_generation="00000000-0000-4000-8000-000000000003",
+        action="chat_message",
+        chat_id="00000000-0000-4000-8000-000000000001",
+    )
+    assert win._project_local_submission(typed)
+    connection = "00000000-0000-4000-8000-000000000004"
+    win.client.connection_generation = connection
+    win._continuity.bind_connection(connection)
+    win.active_chat = typed.chat_id
+    ack = {
+        "type": "user_message_acked",
+        "schema_version": "1",
+        "chat_id": typed.chat_id,
+        "message_id": 1,
+        "submission_id": typed.submission_id,
+        "request_generation": typed.request_generation,
+        "connection_generation": connection,
+        "voice_turn_id": None,
+        wrong_field: "00000000-0000-4000-8000-000000000010",
+    }
+
+    win._on_message(ack)
+
+    assert win._voice_controller._local_pending_final is local_pending
+    assert typed.submission_id in win._pending_submissions_by_id
+    assert not win._turn_active
 
 
 # --- connection UX (FR-003) -------------------------------------------------

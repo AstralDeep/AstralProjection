@@ -13,19 +13,38 @@ namespace AstralSpeechHelper
         private readonly Queue<byte[]> chunks = new Queue<byte[]>();
         private int queuedBytes;
         private int chunkOffset;
+        private long readPosition;
         private bool completed;
 
         public override bool CanRead => true;
 
         public override bool CanSeek => false;
 
-        public override bool CanWrite => true;
+        public override bool CanWrite
+        {
+            get
+            {
+                lock (gate)
+                {
+                    return !completed;
+                }
+            }
+        }
 
-        public override long Length => throw new NotSupportedException();
+        // System.Speech wraps this stream as a COM IStream and snapshots Length
+        // before recognition starts. The maximum value represents a live source;
+        // Read still blocks until bounded PCM is available or Complete is called.
+        public override long Length => long.MaxValue;
 
         public override long Position
         {
-            get => throw new NotSupportedException();
+            get
+            {
+                lock (gate)
+                {
+                    return readPosition;
+                }
+            }
             set => throw new NotSupportedException();
         }
 
@@ -48,8 +67,6 @@ namespace AstralSpeechHelper
                 throw new InvalidDataException("PCM chunk is empty or oversized.");
             }
 
-            byte[] copy = new byte[count];
-            Buffer.BlockCopy(buffer, offset, copy, 0, count);
             lock (gate)
             {
                 if (completed || queuedBytes + count > CapacityBytes)
@@ -57,6 +74,8 @@ namespace AstralSpeechHelper
                     throw new InvalidDataException("PCM buffer capacity exceeded.");
                 }
 
+                byte[] copy = new byte[count];
+                Buffer.BlockCopy(buffer, offset, copy, 0, count);
                 chunks.Enqueue(copy);
                 queuedBytes += count;
                 Monitor.PulseAll(gate);
@@ -66,6 +85,11 @@ namespace AstralSpeechHelper
         public override int Read(byte[] buffer, int offset, int count)
         {
             ValidateBuffer(buffer, offset, count);
+            if (count == 0)
+            {
+                return 0;
+            }
+
             lock (gate)
             {
                 while (chunks.Count == 0 && !completed)
@@ -84,6 +108,7 @@ namespace AstralSpeechHelper
                 Buffer.BlockCopy(chunk, chunkOffset, buffer, offset, copied);
                 chunkOffset += copied;
                 queuedBytes -= copied;
+                readPosition += copied;
                 if (chunkOffset == chunk.Length)
                 {
                     chunks.Dequeue();

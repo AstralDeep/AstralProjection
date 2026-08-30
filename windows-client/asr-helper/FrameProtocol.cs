@@ -14,17 +14,21 @@ namespace AstralSpeechHelper
         Final = 6,
         Error = 7,
         Shutdown = 8,
+        Stopped = 9,
     }
 
     internal sealed class HelperFrame
     {
-        internal HelperFrame(FrameKind kind, byte[] payload)
+        internal HelperFrame(FrameKind kind, ushort recognitionId, byte[] payload)
         {
             Kind = kind;
+            RecognitionId = recognitionId;
             Payload = payload;
         }
 
         internal FrameKind Kind { get; }
+
+        internal ushort RecognitionId { get; }
 
         internal byte[] Payload { get; }
     }
@@ -35,6 +39,7 @@ namespace AstralSpeechHelper
         internal const int MaxPcmBytes = 32 * 1024;
         internal const int MaxTextBytes = 64 * 1024;
         internal const int MaxControlBytes = 4 * 1024;
+        internal const byte Version = 2;
 
         private static readonly byte[] Magic = Encoding.ASCII.GetBytes("ADSH");
 
@@ -52,13 +57,14 @@ namespace AstralSpeechHelper
                 throw new InvalidDataException("Invalid helper frame magic.");
             }
 
-            if (header[4] != 1 || header[6] != 0 || header[7] != 0
-                || !Enum.IsDefined(typeof(FrameKind), header[5]))
+            if (header[4] != Version || !Enum.IsDefined(typeof(FrameKind), header[5]))
             {
                 throw new InvalidDataException("Invalid helper frame header.");
             }
 
             FrameKind kind = (FrameKind)header[5];
+            ushort recognitionId = (ushort)(header[6] | (header[7] << 8));
+            ValidateRecognitionId(kind, recognitionId);
             uint rawLength = (uint)(header[8]
                 | (header[9] << 8)
                 | (header[10] << 16)
@@ -69,10 +75,17 @@ namespace AstralSpeechHelper
                 throw new InvalidDataException("Helper frame exceeds its bound.");
             }
 
-            return new HelperFrame(kind, ReadExact(input, checked((int)rawLength)));
+            return new HelperFrame(
+                kind,
+                recognitionId,
+                ReadExact(input, checked((int)rawLength)));
         }
 
-        internal static void Write(Stream output, FrameKind kind, byte[] payload)
+        internal static void Write(
+            Stream output,
+            FrameKind kind,
+            ushort recognitionId,
+            byte[] payload)
         {
             if (output == null)
             {
@@ -84,6 +97,12 @@ namespace AstralSpeechHelper
                 throw new ArgumentNullException(nameof(payload));
             }
 
+            if (!Enum.IsDefined(typeof(FrameKind), kind))
+            {
+                throw new InvalidDataException("Invalid helper frame kind.");
+            }
+
+            ValidateRecognitionId(kind, recognitionId);
             if (payload.Length > Limit(kind))
             {
                 throw new InvalidDataException("Helper frame exceeds its bound.");
@@ -91,8 +110,10 @@ namespace AstralSpeechHelper
 
             byte[] header = new byte[HeaderBytes];
             Buffer.BlockCopy(Magic, 0, header, 0, Magic.Length);
-            header[4] = 1;
+            header[4] = Version;
             header[5] = (byte)kind;
+            header[6] = (byte)(recognitionId & 0xff);
+            header[7] = (byte)((recognitionId >> 8) & 0xff);
             uint length = (uint)payload.Length;
             header[8] = (byte)(length & 0xff);
             header[9] = (byte)((length >> 8) & 0xff);
@@ -126,6 +147,21 @@ namespace AstralSpeechHelper
             }
 
             return MaxControlBytes;
+        }
+
+        private static void ValidateRecognitionId(FrameKind kind, ushort recognitionId)
+        {
+            bool cycleScoped = kind == FrameKind.Start
+                || kind == FrameKind.Pcm
+                || kind == FrameKind.Stop
+                || kind == FrameKind.Final
+                || kind == FrameKind.Error
+                || kind == FrameKind.Stopped;
+            if ((cycleScoped && recognitionId == 0)
+                || (!cycleScoped && recognitionId != 0))
+            {
+                throw new InvalidDataException("Invalid recognition cycle identifier.");
+            }
         }
 
         private static byte[] ReadExact(Stream input, int length)

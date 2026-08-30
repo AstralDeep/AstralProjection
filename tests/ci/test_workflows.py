@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import re
 import stat
 
@@ -80,6 +81,78 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
         "diff-cover build/074/coverage/projection-python.xml "
         "--compare-branch origin/main --fail-under=90"
     ) in python
+
+
+def _assert_windows_native_contract(text: str) -> None:
+    windows = _job_block(text, "windows")
+
+    assert "fetch-depth: 0" in windows
+    assert (
+        "actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1"
+        in windows
+    )
+    assert 'dotnet-version: "10.0.400"' in windows
+    for required in (
+        r"dotnet restore windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj --locked-mode",
+        r"dotnet format windows-client\asr-helper\AstralSpeechHelper.csproj `",
+        r"dotnet format windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj `",
+        r"dotnet build windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj",
+        '--filter "TestCategory!=HostCapability"',
+        r"--settings windows-client\asr-helper\tests\coverage.runsettings `",
+        '--collect:"Code Coverage"',
+        "Configuration.Format=cobertura",
+        "expected exactly one C# Cobertura report",
+        r"build\075\coverage\windows-csharp.xml",
+        r"dotnet publish windows-client\asr-helper\AstralSpeechHelper.csproj `",
+        "helper publish allowlist mismatch",
+        "helper provenance does not match its inputs",
+        "helper publish is not byte reproducible",
+        "python -m PyInstaller --noconfirm --clean AstralDeep.spec",
+        "diff-cover build/075/coverage/windows-csharp.xml",
+        r"python -m pytest windows-client\tests -q -p no:cacheprovider `",
+        r"--cov=windows-client\astral_client --cov-branch `",
+        r"diff-cover build\075\coverage\windows-python.xml `",
+        "ASTRAL_WINDOWS_EXE: ${{ github.workspace }}",
+        r"windows-client\tests\test_packaged_release.py",
+        r"windows-client\tests\test_helper_integrity_075.py",
+    ):
+        assert required in windows
+    helper_publish = _step_block(
+        windows, "Publish deterministic helper and verify provenance"
+    )
+    clean = r"dotnet clean windows-client\asr-helper\AstralSpeechHelper.csproj `"
+    publish = r"dotnet publish windows-client\asr-helper\AstralSpeechHelper.csproj `"
+    assert helper_publish.count(clean) == 2
+    assert helper_publish.count(publish) == 2
+    assert helper_publish.count("Get-VerifiedHelperHash $publish") == 2
+    assert helper_publish.count(
+        "--configuration Release --no-restore --output $publish"
+    ) == 2
+    assert "--no-build" not in helper_publish
+    assert "Remove-Item -LiteralPath $publish -Recurse -Force" in helper_publish
+    first_clean = helper_publish.index(clean)
+    first_publish = helper_publish.index(publish)
+    first_hash = helper_publish.index("$firstHash = Get-VerifiedHelperHash $publish")
+    second_clean = helper_publish.rindex(clean)
+    second_publish = helper_publish.rindex(publish)
+    second_hash = helper_publish.index("$secondHash = Get-VerifiedHelperHash $publish")
+    assert first_clean < first_publish < first_hash < second_clean
+    assert second_clean < second_publish < second_hash
+    assert (
+        "Remove-Item -LiteralPath $publish -Recurse -Force"
+        in helper_publish[first_hash:second_clean]
+    )
+    assert windows.count("--verify-no-changes") == 2
+    assert windows.count("--compare-branch origin/main --fail-under=90") == 2
+    release_install = windows.index(
+        "python -m pip install --require-hashes -r "
+        "windows-client/requirements-release.lock.txt"
+    )
+    frozen_build = windows.index("python -m PyInstaller --noconfirm --clean AstralDeep.spec")
+    tooling_install = windows.index(
+        "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
+    )
+    assert release_install < frozen_build < tooling_install
 
 
 def _assert_apple_platform_contract(apple: str) -> None:
@@ -208,6 +281,20 @@ def test_core_ci_is_active_read_only_and_projection_owned() -> None:
         assert re.fullmatch(r"[0-9a-f]{40}", action)
 
 
+def test_cross_platform_checkout_and_native_sdk_are_exactly_pinned() -> None:
+    attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
+    sdk = json.loads((ROOT / "global.json").read_text(encoding="utf-8"))
+
+    assert attributes == "* text=auto eol=lf\n"
+    assert sdk == {
+        "sdk": {
+            "version": "10.0.400",
+            "rollForward": "disable",
+            "allowPrerelease": False,
+        }
+    }
+
+
 def test_core_ci_runs_qualified_owner_gates() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
 
@@ -229,6 +316,7 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     assert "corepack npm exec -- playwright test" in text
     assert "QT_QPA_PLATFORM: offscreen" in text
     assert "PYTHONPATH: windows-client" in text
+    _assert_windows_native_contract(text)
     assert "if: always()" in text
     assert "needs: [python, web, windows]" in text
     for job in ("python", "web", "windows"):
@@ -308,6 +396,44 @@ def test_core_ci_rejects_trigger_or_python_coverage_weakening(
 
     with pytest.raises(AssertionError):
         _assert_core_trigger_and_python_coverage(mutated)
+
+
+@pytest.mark.parametrize(
+    ("needle", "replacement"),
+    (
+        ('dotnet-version: "10.0.400"', 'dotnet-version: "10.x"'),
+        (" --locked-mode", ""),
+        (" --verify-no-changes", ""),
+        ("Configuration.Format=cobertura", "Configuration.Format=coverage"),
+        (r"--settings windows-client\asr-helper\tests\coverage.runsettings `", ""),
+        ("helper publish allowlist mismatch", "publish completed"),
+        (
+            r"dotnet clean windows-client\asr-helper\AstralSpeechHelper.csproj `",
+            "dotnet --info",
+        ),
+        (
+            "--configuration Release --no-restore --output $publish",
+            "--configuration Release --no-restore --no-build --output $publish",
+        ),
+        ("python -m PyInstaller --noconfirm --clean AstralDeep.spec", ""),
+        ("ASTRAL_WINDOWS_EXE: ${{ github.workspace }}", "WINDOWS_EXE_DISABLED:"),
+        (
+            r"windows-client\tests\test_helper_integrity_075.py",
+            r"windows-client\tests\test_packaged_release.py",
+        ),
+        ("--compare-branch origin/main --fail-under=90", "--fail-under=89"),
+    ),
+)
+def test_windows_native_contract_rejects_gate_weakening(
+    needle: str,
+    replacement: str,
+) -> None:
+    text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
+    mutated = text.replace(needle, replacement)
+    assert mutated != text
+
+    with pytest.raises(AssertionError):
+        _assert_windows_native_contract(mutated)
 
 
 def test_native_ci_is_active_and_uses_standalone_paths() -> None:

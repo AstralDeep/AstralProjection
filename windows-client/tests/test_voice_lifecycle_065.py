@@ -23,6 +23,7 @@ SUBMISSION = "00000000-0000-4000-8000-000000000007"
 REQUEST = "00000000-0000-4000-8000-000000000008"
 BINDING_ID = "00000000-0000-4000-8000-000000000009"
 BINDING = "v1." + "a" * 64 + "." + "b" * 43
+VOICE_NOW = datetime(2026, 7, 31, 18, 0, tzinfo=timezone.utc)
 
 
 class FakeTransport:
@@ -229,7 +230,7 @@ def _binding():
         "connection_generation": CONNECTION,
         "binding_id": BINDING_ID,
         "binding": BINDING,
-        "expires_at": "2099-07-31T18:04:00Z",
+        "expires_at": "2026-07-31T18:04:00Z",
     }
 
 
@@ -276,6 +277,7 @@ def _controller(audio=None):
         http=http,
         media=media,
         run_async=lambda work: work(),
+        local_now=lambda: VOICE_NOW,
     )
     controller.accept_frame(_binding())
     return controller, transport, http, media
@@ -782,6 +784,7 @@ def test_navigation_does_not_rebind_recognition_time_background_turn(qapp):
         http=http,
         media=media,
         run_async=lambda work: work(),
+        local_now=lambda: VOICE_NOW,
     )
     controller.accept_frame(_binding())
     controller.handle_action("voice_session_start")

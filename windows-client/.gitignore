@@ -9,6 +9,7 @@ __pycache__/
 # PyInstaller build artifacts
 build/
 dist/
+asr-helper/publish/
 *.manifest
 shot_*.png
 shots/
