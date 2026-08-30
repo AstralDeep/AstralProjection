@@ -102,6 +102,24 @@
       "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override."
     },
     {
+      "path": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
+      "sourceBlob": "f361e8ffee74f4cecccd6cd2b7b5b39850f35f8a",
+      "sourceMode": "100644",
+      "resultSha256": "2e3fe1559d6a84bd2e3624a15f244287cdea4625d1d7f9f889de06f7856f97cb",
+      "task": "T065/T066",
+      "reason": "Fence delayed Apple voice activation across End, close, authentication expiry, and connection replacement, and compensating-end stale successful start or takeover results before media can connect."
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
+      "sourceBlob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
+      "sourceMode": "100644",
+      "resultSha256": "8f89199df7caffcea3255916aaf900c8dbc1d569cf9f32cc8cef9b014198921f",
+      "task": "T065/T066",
+      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection."
+    },
+    {
       "path": "apple-clients/AstralCore/Package.swift",
       "sourcePath": "apple-clients/AstralCore/Package.swift",
       "sourceBlob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
