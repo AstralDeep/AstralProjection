@@ -159,6 +159,9 @@
     {"name": "components_combined", "category": "component_verbs"},
     {"name": "components_condensed", "category": "component_verbs"},
     {"name": "composer_state", "category": "voice"},
+    {"name": "computer_host", "category": "presence"},
+    {"name": "computer_request", "category": "host"},
+    {"name": "computer_session", "category": "presence"},
     {"name": "conversation_commit_ready", "category": "chat"},
     {"name": "conversation_snapshot", "category": "chat"},
     {"name": "error", "category": "error", "shapes": ["code+message", "payload.message", "message"]},
@@ -208,6 +211,8 @@
     "chrome_author_generate", "chrome_author_list", "chrome_author_plan",
     "chrome_author_revise", "chrome_author_specify", "chrome_author_start",
     "chrome_author_tasks", "chrome_close",
+    "chrome_computer_forget", "chrome_computer_session_pause", "chrome_computer_session_resume",
+    "chrome_computer_session_start", "chrome_computer_session_stop",
     "chrome_credential_delete", "chrome_credentials_save", "chrome_draft_create",
     "chrome_dreaming_toggle", "chrome_dreaming_trigger", "chrome_job_delete",
     "chrome_job_pause", "chrome_job_resume", "chrome_job_run_now", "chrome_llm_clear",
@@ -220,7 +225,7 @@
     "chrome_safe_set", "chrome_skill_toggle", "chrome_theme_preset", "chrome_tour_event",
     "chrome_visibility_set", "chrome_workspace_timeline_live", "chrome_workspace_timeline_view",
     "combine_components", "component_action", "component_feedback", "component_refine",
-    "component_restore", "condense_components",
+    "component_restore", "computer_event", "computer_response", "condense_components",
     "delete_saved_component", "discover_agents", "draft_approve", "draft_discard",
     "draft_refine", "enable_recommended_agents", "feedback_amend", "feedback_retract",
     "get_agent_permissions", "get_dashboard", "get_history", "get_saved_components",
@@ -348,6 +353,22 @@
       "scope": "immutable candidate-owned applicability; missing or malformed is blocking",
       "introduced_by": "060-runtime-reliability-hardening (FR-050)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/personal-agent-runtime.md"
+    },
+    {
+      "field": "computer_host",
+      "shape": {
+        "host_id": "uuid4 (stable per desktop install)",
+        "name": "1-64 printable characters",
+        "platform": "windows | macos | linux",
+        "client_version": "strict SemVer",
+        "screens": ["{index, width, height, scale, primary} (1-8, exactly one primary)"],
+        "verbs": ["non-empty subset of the closed computer-host verb set"],
+        "protocol": 1
+      },
+      "carried_on": ["register_ui", "ui_event.computer_event (event=announce, under host)"],
+      "scope": "present only when the desktop owner switched on 'Allow remote control'; absent means the socket is not a controllable host; a malformed descriptor costs host eligibility, never the session",
+      "introduced_by": "076-remote-computer-control (FR-002)",
+      "contract": "specs/076-remote-computer-control/contracts/transport.md"
     }
   ],
   "component_types": [
