@@ -257,9 +257,21 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
     GWL_EXSTYLE, WS_EX_TOOLWINDOW = -20, 0x00000080
     DESKTOP_SWITCHDESKTOP = 0x0100
 
+    # Tick of the last input THIS process synthesized, whichever path sent it
+    # (``SendInput`` here, ``SetCursorPos`` in the injector). The presence
+    # detector treats input at or before this tick (+grace) as ours, so every
+    # synthesis path must stamp it — a focus_window ALT tap that did not used
+    # to pause the session as "someone is using this computer".
+    _last_injected_tick: int = 0
+
+    def _stamp_injected() -> None:
+        global _last_injected_tick
+        _last_injected_tick = int(_kernel32.GetTickCount())
+
     def _send(inputs: List[INPUT]) -> None:
         arr = (INPUT * len(inputs))(*inputs)
         sent = _user32.SendInput(len(inputs), arr, ctypes.sizeof(INPUT))
+        _stamp_injected()
         if sent != len(inputs):
             raise VerbError("failed", f"SendInput injected {sent}/{len(inputs)} events "
                                       f"(error {ctypes.get_last_error()})")
@@ -280,11 +292,13 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
         """Mouse/keyboard synthesis. Records the tick of its own last injection
         so the presence detector can tell human input from ours."""
 
-        def __init__(self) -> None:
-            self.last_injected_tick: int = 0
+        @property
+        def last_injected_tick(self) -> int:
+            return _last_injected_tick
 
-        def _stamp(self) -> None:
-            self.last_injected_tick = int(_kernel32.GetTickCount())
+        @staticmethod
+        def _stamp() -> None:
+            _stamp_injected()
 
         def move(self, px: int, py: int) -> None:
             if not _user32.SetCursorPos(int(px), int(py)):

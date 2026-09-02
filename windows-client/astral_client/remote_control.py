@@ -292,11 +292,16 @@ class RemoteControlController(QObject):
             # (the server's withdraw handling ends it; requests are refused).
             return
         fresh = self.session is None or self.session["session_id"] != session_id
+        resumed = (not fresh and self.session["state"] == "paused" and state == "active")
         self.session = {"session_id": session_id, "state": state,
                         "controller_label": str(msg.get("controller_label") or "other device"),
                         "pause_reason": msg.get("pause_reason")}
-        if fresh:
+        if fresh or resumed:
+            # A remote resume must re-baseline the presence detector exactly
+            # like a local one, or the input that caused the pause re-pauses
+            # the session on the next poll, forever.
             self._session_start_tick = self._tick()
+        if fresh:
             self._heartbeat.start()
             self._presence.start()
             self._beat()  # the acknowledgement the server waits for

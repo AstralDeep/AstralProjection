@@ -413,6 +413,50 @@ def test_local_input_pauses_and_socket_loss_ends(qapp, tmp_path):
     assert controller.session is None and controller._banner.visible is False
 
 
+def test_remote_resume_rebaselines_presence_like_a_local_one(qapp, tmp_path):
+    """A remote resume (a ``computer_session`` frame flipping paused → active)
+    must re-baseline the presence detector, or the very input that caused the
+    pause re-pauses the session on the next poll, forever."""
+    controller, sent = make_controller(tmp_path)
+    system = controller.executor.system
+    system.now = 5000
+    controller.handle_frame(_session_frame(controller))
+    system.input_tick = 7000  # a person
+    controller._poll_presence()
+    assert controller.session["state"] == "paused"
+    system.now = 9000
+    controller.handle_frame(_session_frame(controller, state="active"))
+    assert controller.session["state"] == "active"
+    controller._poll_presence()  # last input (7000) predates the resume (9000)
+    assert controller.session["state"] == "active"
+    system.input_tick = 9500  # the person is still there
+    controller._poll_presence()
+    assert controller.session["state"] == "paused"
+    assert sent[-1][1]["event"] == "paused"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="user32 synthesis is Windows-only")
+def test_focus_window_alt_tap_counts_as_our_own_input(monkeypatch):
+    """focus_window lifts the SetForegroundWindow lock with a synthetic ALT tap;
+    that tap must be stamped as OUR input or the presence detector pauses the
+    session as 'someone is using this computer' right after every focus."""
+    class _U32:
+        def IsIconic(self, hwnd): return 0
+        def ShowWindow(self, hwnd, cmd): return 1
+        def SetForegroundWindow(self, hwnd): return 1
+        def GetForegroundWindow(self): return 42
+        def SendInput(self, n, arr, size): return n
+    class _K32:
+        def GetTickCount(self): return 777_000
+    monkeypatch.setattr(cu, "_user32", _U32())
+    monkeypatch.setattr(cu, "_kernel32", _K32())
+    monkeypatch.setattr(cu, "_last_injected_tick", 0)
+    injector = cu.WindowsInjector()
+    assert injector.last_injected_tick == 0
+    assert cu.WindowsSystem.focus_window(42) is True
+    assert injector.last_injected_tick == 777_000
+
+
 def test_stop_is_the_kill_switch(qapp, tmp_path):
     controller, sent = make_controller(tmp_path)
     controller.handle_frame(_session_frame(controller))
