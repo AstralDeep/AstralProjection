@@ -2022,6 +2022,13 @@ class OrchestratorClient(QObject):
         # compatible; production construction never relies on it.
         self.host_id: str = _uuid4(host_id or str(uuid.uuid4()), "host_id")
         self.host_session_id: Optional[str] = None
+        # Feature 076: this desktop can be a COMPUTER HOST. ``computer_host`` is
+        # the descriptor announced at register_ui while the owner's "Allow
+        # remote control" switch is on (None otherwise); the capability string
+        # tells the server this client version could host, so the "My
+        # computers" surface can offer the switch on this device only.
+        self.computer_host: Optional[dict[str, Any]] = None
+        self.computer_host_capable: bool = False
         self.connection_generation: Optional[str] = None
         self.resume_chat_id: Optional[str] = None
         self.request_generation: Optional[str] = None
@@ -2277,6 +2284,8 @@ class OrchestratorClient(QObject):
         capabilities = ["render", "stream", "agent_host"]
         if isinstance(self.device.get("voice"), dict):
             capabilities.append("voice")
+        if self.computer_host_capable:
+            capabilities.append("computer_host_capable")
         frame = {
             "type": "register_ui",
             "token": self.token,
@@ -2288,6 +2297,8 @@ class OrchestratorClient(QObject):
             "device": self.device,
             "resumed": self.resume_chat_id is not None,
         }
+        if isinstance(self.computer_host, dict):
+            frame["computer_host"] = dict(self.computer_host)
         if self.resume_chat_id is not None:
             generation = self.begin_conversation_request("hydration", self.resume_chat_id)
             frame["resume"] = {

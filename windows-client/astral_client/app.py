@@ -88,6 +88,8 @@ from .streaming import stream_error_ops, stream_frame_to_ops, subscribe_ack_ops
 from .chrome import chrome_render_notice
 from .voice import QtAudioBackend, VoiceComposerWidget, VoiceController
 from . import rest
+from .remote_control import RemoteControlController
+from win_agent.computer_use import IS_WINDOWS as _REMOTE_CONTROL_PLATFORM_OK
 from win_agent.byo_host import (
     HOST_FRAME_TYPES,
     ByoAgentHost,
@@ -105,7 +107,10 @@ APP_USER_MODEL_ID = "AstralDeep.WindowsClient"
 # but they are not user work. Retain them for exact acknowledgement/terminal
 # handling without flashing the global activity banner on first load.
 _SILENT_LOCAL_STATUS_ACTIONS = frozenset(
-    {"discover_agents", "get_history", "register_external_agent", "watch_task"}
+    {"discover_agents", "get_history", "register_external_agent", "watch_task",
+     # Feature 076: host-side chatter (a response per verb, heartbeats) is
+     # machinery, not user work — never flash the activity banner for it.
+     "computer_event", "computer_response"}
 )
 
 
@@ -1939,6 +1944,17 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._byo.stop_all)
+        # Feature 076: this desktop as a computer host the owner drives from
+        # their other devices. Consent lives in the client's own settings
+        # (announced at register_ui); requests are executed here; the banner is
+        # the local kill switch. Shutdown ends any live session (FR-007).
+        self._remote = RemoteControlController(
+            send_event=lambda action, payload: self.client.send_event(action, payload),
+            notify=self._byo_notice.emit,
+        )
+        self._attach_remote_control()
+        if app is not None:
+            app.aboutToQuit.connect(self._remote.stop_all)
 
         self.topbar = TopBar(
             _user_from_token(token),
@@ -3143,6 +3159,14 @@ class MainWindow(QMainWindow):
             # chip locally — it is NOT forwarded to the server.
             self._stage_existing(payload or {})
             return
+        if action == "computer_host_consent":
+            # Feature 076: the "Allow remote control" switch on the My computers
+            # surface is decided HERE (the owner's own desktop), persisted, and
+            # announced/withdrawn on the live socket — never forwarded as-is.
+            self._remote.set_enabled(bool((payload or {}).get("enabled")))
+            self._attach_remote_control()
+            self.client.send_event("chrome_open", {"surface": "my_computers", "params": {}})
+            return
         if action == "chat_message":
             msg = payload.get("message", "")
             generation = (
@@ -3170,6 +3194,31 @@ class MainWindow(QMainWindow):
         else:
             self.client.send_event(action, payload, session_id=self.active_chat)
 
+    def _attach_remote_control(self) -> None:
+        """Feature 076: tell the transport what to announce at (re)register —
+        the descriptor while consent is on, and the capability that lets the
+        server offer the switch on this device."""
+        remote = getattr(self, "_remote", None)
+        client = getattr(self, "client", None)
+        if remote is None or client is None:
+            return
+        client.computer_host_capable = bool(_REMOTE_CONTROL_PLATFORM_OK)
+        try:
+            client.computer_host = remote.descriptor()
+        except Exception:  # noqa: BLE001 — never block registration on a descriptor
+            logger.debug("076: descriptor build failed", exc_info=True)
+            client.computer_host = None
+
+    def _refresh_my_computers_surface(self) -> None:
+        """Feature 076: presence/session changes re-request the surface if the
+        user is looking at it (the server re-renders; no client-side model)."""
+        dialog = self._surface_dialog
+        if dialog is None or not dialog.isVisible():
+            return
+        if getattr(dialog, "_surface", "") != "my_computers":
+            return
+        self.client.send_event("chrome_open", {"surface": "my_computers", "params": {}})
+
     def _emit_chrome(self, action: str, payload: dict) -> None:
         """Actions from native chrome dialogs (agents)."""
         self.client.send_event(action, payload, session_id=self.active_chat)
@@ -3181,6 +3230,9 @@ class MainWindow(QMainWindow):
         # reconnecting:<n> / closed:<why> / auth_required:<reason> /
         # send_dropped:<action>. The connection banner mirrors it; errors and
         # drop notices reuse the same banner.
+        remote = getattr(self, "_remote", None)
+        if remote is not None:
+            remote.on_transport_status(s)
         if s.startswith("send_dropped:"):
             action = s.split(":", 1)[1] or "message"
             self._show_banner(
@@ -3392,6 +3444,7 @@ class MainWindow(QMainWindow):
         # The rebuilt transport keeps registering with the open chat's id so
         # the server resumes that chat's fan-out + task replay (055).
         self.client.session_id = self.active_chat or "win-client"
+        self._attach_remote_control()
         self.client.message.connect(self._on_message)
         self.client.status.connect(self._on_status)
         submission_signal = getattr(self.client, "submission", None)
@@ -4226,6 +4279,14 @@ class MainWindow(QMainWindow):
             # so a restart honors the stored preset.
             self._user_prefs = msg.get("preferences") or {}
             self._apply_theme_pref(self._user_prefs.get("theme"))
+        elif t in ("computer_request", "computer_session", "computer_host"):
+            # Feature 076: execute a verb / mirror the session banner / refresh
+            # an open "My computers" surface when presence changes.
+            remote = getattr(self, "_remote", None)
+            if remote is not None:
+                remote.handle_frame(msg)
+                if t != "computer_request":
+                    self._refresh_my_computers_surface()
         elif t in HOST_FRAME_TYPES and self._byo_enabled:
             # 060: acknowledgement/inventory plus fenced delivery/tunnel/stop
             # for agents hosted by this installation.

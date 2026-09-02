@@ -237,7 +237,7 @@
     "voice_session_end", "voice_session_start", "voice_session_takeover",
     "voice_speech_mute_set", "voice_speech_stop", "voice_visible_chat_update", "watch_task"
   ],
-  "client_local_actions": ["attach_existing"],
+  "client_local_actions": ["attach_existing", "computer_host_consent"],
   "additive_fields": [
     {
       "field": "voice_origin",
