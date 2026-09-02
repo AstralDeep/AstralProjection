@@ -53,6 +53,15 @@ MAX_WINDOWS = 100
 JPEG_QUALITY = 70
 MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH = 320, 1920, 1280
 
+#: Command interpreters. Typing or pressing keys while one of these owns the
+#: foreground window is a command by another route, so it is refused here;
+#: commands go through ``run_command``, which the owner approves (spec D2).
+TERMINAL_PROCESSES = frozenset({
+    "powershell.exe", "pwsh.exe", "cmd.exe", "windowsterminal.exe", "wt.exe", "conhost.exe",
+    "openconsole.exe", "mintty.exe", "bash.exe", "wsl.exe", "wslhost.exe", "ubuntu.exe",
+    "python.exe", "python3.exe", "ipython.exe", "node.exe", "psql.exe",
+})
+
 
 class VerbError(Exception):
     """A typed refusal the transport reports as ``{"ok": False, "error": …}``."""
@@ -399,6 +408,22 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
             return out
 
         @staticmethod
+        def foreground_process() -> str:
+            """Lower-cased image name of the process owning the foreground window."""
+            hwnd = _user32.GetForegroundWindow()
+            if not hwnd:
+                return ""
+            pid = wt.DWORD(0)
+            _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+            if not pid.value:
+                return ""
+            try:
+                import psutil
+                return psutil.Process(pid.value).name().lower()
+            except Exception:  # noqa: BLE001
+                return ""
+
+        @staticmethod
         def focus_window(hwnd: int) -> bool:
             if _user32.IsIconic(hwnd):
                 _user32.ShowWindow(hwnd, SW_RESTORE)
@@ -633,6 +658,22 @@ class Executor:
             raise VerbError("out_of_range", f"{xk}/{yk} must be integers")
         return to_physical(self.last_geometry, x, y, self.primary_physical)
 
+    def _refuse_terminal_keyboard(self) -> None:
+        """Keyboard input into a command interpreter is a command by another
+        route — refused with the next action (``run_command``) spelled out."""
+        system = self.system
+        getter = getattr(system, "foreground_process", None) if system is not None else None
+        if getter is None:
+            return
+        try:
+            process = str(getter() or "").lower()
+        except Exception:  # noqa: BLE001
+            return
+        if process in TERMINAL_PROCESSES:
+            raise VerbError("confirmation_required",
+                            f"the foreground window is a terminal ({process}); typing into it is not "
+                            "allowed — use run_command, which asks the owner to approve")
+
     def _locked_check(self) -> None:
         system = self.system
         if system is not None and getattr(system, "screen_locked", None) and system.screen_locked():
@@ -728,10 +769,12 @@ class Executor:
             text = args.get("text")
             if not isinstance(text, str) or not text or len(text) > MAX_TEXT_CHARS:
                 raise VerbError("out_of_range", f"text must be 1-{MAX_TEXT_CHARS} characters")
+            self._refuse_terminal_keyboard()
             injector.type_text(text)
             return {"chars": len(text)}
         if verb == "press_keys":
             mods, vk = parse_chord(str(args.get("keys") or ""))
+            self._refuse_terminal_keyboard()
             injector.press(mods, vk)
             return {"keys": str(args.get("keys"))}
         raise VerbError("unsupported", f"{verb!r} is not a verb this computer executes")

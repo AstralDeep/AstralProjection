@@ -78,6 +78,11 @@ class FakeSystem:
     def screen_locked(self):
         return self.locked
 
+    foreground = "notepad.exe"
+
+    def foreground_process(self):
+        return self.foreground
+
     def last_input_tick(self):
         return self.input_tick
 
@@ -171,6 +176,20 @@ def test_executor_input_verbs_use_the_capture_geometry():
     with pytest.raises(cu.VerbError) as exc:
         ex.run("format_disk", {})
     assert exc.value.code == "unsupported"
+
+
+def test_keyboard_into_a_terminal_is_refused_with_run_command_as_the_next_action():
+    ex = make_executor()
+    ex.system.foreground = "powershell.exe"
+    for verb, args in (("type_text", {"text": "Get-Date"}), ("press_keys", {"keys": "enter"})):
+        with pytest.raises(cu.VerbError) as exc:
+            ex.run(verb, args)
+        assert exc.value.code == "confirmation_required" and "run_command" in exc.value.message
+    assert ex.injector.calls == []
+    # clicking a terminal window is still fine (it does not run anything)
+    ex.run("click", {"x": 1, "y": 1})
+    ex.system.foreground = "notepad.exe"
+    assert ex.run("type_text", {"text": "hi"}) == {"chars": 2}
 
 
 def test_executor_refuses_input_while_locked():
