@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices
 
 from . import theme as T
+from . import icons as _icons
 from .auth import LoginCancelled
 from . import confirm as _confirm
 from . import integrity as _integrity
@@ -88,6 +89,8 @@ from .streaming import stream_error_ops, stream_frame_to_ops, subscribe_ack_ops
 from .chrome import chrome_render_notice
 from .voice import QtAudioBackend, VoiceComposerWidget, VoiceController
 from . import rest
+from .remote_control import RemoteControlController
+from win_agent.computer_use import IS_WINDOWS as _REMOTE_CONTROL_PLATFORM_OK
 from win_agent.byo_host import (
     HOST_FRAME_TYPES,
     ByoAgentHost,
@@ -105,7 +108,10 @@ APP_USER_MODEL_ID = "AstralDeep.WindowsClient"
 # but they are not user work. Retain them for exact acknowledgement/terminal
 # handling without flashing the global activity banner on first load.
 _SILENT_LOCAL_STATUS_ACTIONS = frozenset(
-    {"discover_agents", "get_history", "register_external_agent", "watch_task"}
+    {"discover_agents", "get_history", "register_external_agent", "watch_task",
+     # Feature 076: host-side chatter (a response per verb, heartbeats) is
+     # machinery, not user work — never flash the activity banner for it.
+     "computer_event", "computer_response"}
 )
 
 
@@ -1154,16 +1160,21 @@ class TopBar(QFrame):
         # Recent chats — reopen a past conversation. Speech-bubble glyph, NOT a
         # clock: the clock belongs to the server-model "Workspace timeline"
         # control that sits right beside it (same call as android RootScaffold).
-        self.recent_btn = QPushButton("💬")
+        self.recent_btn = QPushButton(_icons.GLYPH_FALLBACK["chats"])
         self.recent_btn.setToolTip("Recent chats")
         self.recent_btn.setAccessibleName("Recent chats")
         self.recent_btn.setObjectName("iconGhost")
         self.recent_btn.clicked.connect(on_recent)
         # Settings gear → dropdown built from the server-owned menu model.
-        self.settings_btn = QPushButton("⚙")
+        self.settings_btn = QPushButton(_icons.GLYPH_FALLBACK["gear"])
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setAccessibleName("Settings")
         self.settings_btn.setObjectName("iconGhost")
+        # The glyphs above are only the fallback: the buttons draw the same SVG
+        # line icons as the web top bar (icons.py) — emoji text rendered by
+        # Segoe UI Emoji came out half-coloured and smeared on Windows.
+        self._svg_buttons = [(self.recent_btn, "chats"), (self.settings_btn, "gear")]
+        self.apply_icons()
         # Menu chrome (surface, radius, subtle primary hover) comes from the
         # global QMenu rules in theme.build_stylesheet() — web parity.
         self._menu = QMenu(self)
@@ -1199,21 +1210,24 @@ class TopBar(QFrame):
         # Until the server model arrives, offer just Sign out (always safe).
         self._rebuild_menu({"sections": [], "signout": {"label": "Sign out", "action": "logout"}})
 
-    #: Server top-bar action icon names → a glyph (falls back to the label).
-    #: The names are the model's own (`webrender/chrome/menu_model.py`), and the
-    #: glyph choices mirror web's `_ICON_SVG` vocabulary in `chrome/topbar.py`.
-    #: `sparkle` (Pulse digest) was MISSING, so Pulse was the one control still
-    #: rendering as a text label beside its icon-only neighbours; `pulse`,
-    #: `activity` and `clock` are names the server never sends and are kept only
-    #: as tolerant aliases.
+    #: Server top-bar action icon names → the text FALLBACK glyph (the real
+    #: rendering is the SVG in icons.py, the same paths as web's `_ICON_SVG`
+    #: vocabulary in `chrome/topbar.py`). `pulse`, `activity` and `clock` are
+    #: names the server never sends and are kept only as tolerant aliases.
     _ACTION_ICONS = {
-        "sparkle": "✨",
-        "history": "🕓",
-        "gear": "⚙",
-        "pulse": "✨",
-        "activity": "✨",
-        "clock": "🕓",
+        name: _icons.GLYPH_FALLBACK[key] for name, key in _icons.ACTION_ICON_NAMES.items()
     }
+
+    def apply_icons(self) -> None:
+        """(Re)paint every SVG icon button in the current palette — called at
+        construction, after the server model rebuilds the action buttons, and
+        after a theme change (the icon colour is baked into the pixmap)."""
+        for btn, name in list(getattr(self, "_svg_buttons", [])):
+            try:
+                if not _icons.apply(btn, name, T.MUTED, T.TEXT):
+                    btn.setText(_icons.GLYPH_FALLBACK.get(name, btn.text()))
+            except Exception:  # noqa: BLE001 — a dead widget after a rebuild
+                logger.debug("icon apply failed for %s", name, exc_info=True)
 
     def set_menu_model(self, model: dict) -> None:
         """(Re)build the Settings dropdown AND the top-bar action buttons from the
@@ -1234,6 +1248,8 @@ class TopBar(QFrame):
             if item.widget():
                 item.widget().deleteLater()
         self._action_buttons = []
+        self._svg_buttons = [pair for pair in getattr(self, "_svg_buttons", [])
+                             if pair[0] in (self.recent_btn, self.settings_btn)]
         for a in actions or []:
             if not isinstance(a, dict):
                 continue
@@ -1248,6 +1264,9 @@ class TopBar(QFrame):
             btn = QPushButton(glyph if glyph else str(label))
             if glyph:
                 btn.setObjectName("iconGhost")
+                svg_name = _icons.name_for_action(a.get("icon"))
+                if svg_name:
+                    self._svg_buttons.append((btn, svg_name))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setToolTip(str(label))
             btn.setAccessibleName(str(label))
@@ -1256,6 +1275,7 @@ class TopBar(QFrame):
             )
             self._actions_lay.addWidget(btn)
             self._action_buttons.append(btn)
+        self.apply_icons()
 
     def _rebuild_menu(self, parsed: dict) -> None:
         self._menu.clear()
@@ -1939,6 +1959,17 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._byo.stop_all)
+        # Feature 076: this desktop as a computer host the owner drives from
+        # their other devices. Consent lives in the client's own settings
+        # (announced at register_ui); requests are executed here; the banner is
+        # the local kill switch. Shutdown ends any live session (FR-007).
+        self._remote = RemoteControlController(
+            send_event=lambda action, payload: self.client.send_event(action, payload),
+            notify=self._byo_notice.emit,
+        )
+        self._attach_remote_control()
+        if app is not None:
+            app.aboutToQuit.connect(self._remote.stop_all)
 
         self.topbar = TopBar(
             _user_from_token(token),
@@ -1978,12 +2009,14 @@ class MainWindow(QMainWindow):
 
         # Feature 044 (US4): a paperclip → Upload files… / Choose from your files,
         # and a chips strip (above the input) for staged attachments.
-        self._attach_btn = QPushButton("📎")
+        self._attach_btn = QPushButton(_icons.GLYPH_FALLBACK["paperclip"])
         self._attach_btn.setToolTip("Attach files")
         self._attach_btn.setAccessibleName("Attach files")
         # Same square icon-button treatment as the voice controls beside it and
-        # as web's `.astral-attach-btn` (066 style parity).
+        # as web's `.astral-attach-btn` (066 style parity); SVG glyph like the
+        # top bar (emoji text renders badly on Windows), text as the fallback.
         self._attach_btn.setObjectName("iconGhost")
+        _icons.apply(self._attach_btn, "paperclip", T.MUTED, T.TEXT)
         self._attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # Menu chrome comes from the global QMenu rules in the theme QSS.
         attach_menu = QMenu(self._attach_btn)
@@ -2254,6 +2287,13 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None and hasattr(T, "build_stylesheet"):
             app.setStyleSheet(T.build_stylesheet() + getattr(T, "ROOT_BG_STYLE", ""))
+        # The SVG icon colour is baked into the pixmap: repaint in the new palette.
+        topbar = getattr(self, "topbar", None)
+        if topbar is not None and hasattr(topbar, "apply_icons"):
+            topbar.apply_icons()
+        attach = getattr(self, "_attach_btn", None)
+        if attach is not None:
+            _icons.apply(attach, "paperclip", T.MUTED, T.TEXT)
         # setStyleSheet above restyles the QSS-driven widgets (buttons, inputs,
         # tables), but the SDUI canvas content is styled INLINE from the palette
         # at render time, so re-render it to pick up the new palette (US5).
@@ -3143,6 +3183,14 @@ class MainWindow(QMainWindow):
             # chip locally — it is NOT forwarded to the server.
             self._stage_existing(payload or {})
             return
+        if action == "computer_host_consent":
+            # Feature 076: the "Allow remote control" switch on the My computers
+            # surface is decided HERE (the owner's own desktop), persisted, and
+            # announced/withdrawn on the live socket — never forwarded as-is.
+            self._remote.set_enabled(bool((payload or {}).get("enabled")))
+            self._attach_remote_control()
+            self.client.send_event("chrome_open", {"surface": "my_computers", "params": {}})
+            return
         if action == "chat_message":
             msg = payload.get("message", "")
             generation = (
@@ -3170,6 +3218,31 @@ class MainWindow(QMainWindow):
         else:
             self.client.send_event(action, payload, session_id=self.active_chat)
 
+    def _attach_remote_control(self) -> None:
+        """Feature 076: tell the transport what to announce at (re)register —
+        the descriptor while consent is on, and the capability that lets the
+        server offer the switch on this device."""
+        remote = getattr(self, "_remote", None)
+        client = getattr(self, "client", None)
+        if remote is None or client is None:
+            return
+        client.computer_host_capable = bool(_REMOTE_CONTROL_PLATFORM_OK)
+        try:
+            client.computer_host = remote.descriptor()
+        except Exception:  # noqa: BLE001 — never block registration on a descriptor
+            logger.debug("076: descriptor build failed", exc_info=True)
+            client.computer_host = None
+
+    def _refresh_my_computers_surface(self) -> None:
+        """Feature 076: presence/session changes re-request the surface if the
+        user is looking at it (the server re-renders; no client-side model)."""
+        dialog = self._surface_dialog
+        if dialog is None or not dialog.isVisible():
+            return
+        if getattr(dialog, "_surface", "") != "my_computers":
+            return
+        self.client.send_event("chrome_open", {"surface": "my_computers", "params": {}})
+
     def _emit_chrome(self, action: str, payload: dict) -> None:
         """Actions from native chrome dialogs (agents)."""
         self.client.send_event(action, payload, session_id=self.active_chat)
@@ -3181,6 +3254,9 @@ class MainWindow(QMainWindow):
         # reconnecting:<n> / closed:<why> / auth_required:<reason> /
         # send_dropped:<action>. The connection banner mirrors it; errors and
         # drop notices reuse the same banner.
+        remote = getattr(self, "_remote", None)
+        if remote is not None:
+            remote.on_transport_status(s)
         if s.startswith("send_dropped:"):
             action = s.split(":", 1)[1] or "message"
             self._show_banner(
@@ -3392,6 +3468,7 @@ class MainWindow(QMainWindow):
         # The rebuilt transport keeps registering with the open chat's id so
         # the server resumes that chat's fan-out + task replay (055).
         self.client.session_id = self.active_chat or "win-client"
+        self._attach_remote_control()
         self.client.message.connect(self._on_message)
         self.client.status.connect(self._on_status)
         submission_signal = getattr(self.client, "submission", None)
@@ -4226,6 +4303,14 @@ class MainWindow(QMainWindow):
             # so a restart honors the stored preset.
             self._user_prefs = msg.get("preferences") or {}
             self._apply_theme_pref(self._user_prefs.get("theme"))
+        elif t in ("computer_request", "computer_session", "computer_host"):
+            # Feature 076: execute a verb / mirror the session banner / refresh
+            # an open "My computers" surface when presence changes.
+            remote = getattr(self, "_remote", None)
+            if remote is not None:
+                remote.handle_frame(msg)
+                if t != "computer_request":
+                    self._refresh_my_computers_surface()
         elif t in HOST_FRAME_TYPES and self._byo_enabled:
             # 060: acknowledgement/inventory plus fenced delivery/tunnel/stop
             # for agents hosted by this installation.

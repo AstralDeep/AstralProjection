@@ -157,6 +157,10 @@ _BYO_AGENTS_ITEM = MenuItem("my-agents", "My agents", "agent_authoring")
 # Flag-gated (FF_REMOTE_COMPUTE, default OFF) like "My agents": absent from every
 # client's menu when off. Per-user (not admin), so admin_only stays False.
 _REMOTE_MACHINES_ITEM = MenuItem("remote-machines", "Remote machines", "remote_machines")
+# Feature 076 — the ONLY affordance that opens the "My computers" surface (the
+# user's own desktops with remote control switched on). Flag-gated
+# (FF_COMPUTER_USE, default OFF) like the two items above; per-user.
+_MY_COMPUTERS_ITEM = MenuItem("my-computers", "My computers", "my_computers")
 _HELP_ITEMS: Tuple[MenuItem, ...] = (
     MenuItem("tour", "Take the tour", "tour"),
     MenuItem("guide", "User guide", "guide"),
@@ -179,6 +183,7 @@ def build_menu_model(
     pulse_enabled: bool = False,
     byo_enabled: bool = False,
     remote_enabled: bool = False,
+    computer_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
@@ -191,6 +196,7 @@ def build_menu_model(
             reads the host's feature-flag implementation.
         byo_enabled: host-resolved "My agents" (BYO authoring) presence.
         remote_enabled: host-resolved remote-machine inventory presence.
+        computer_enabled: host-resolved "My computers" (feature 076) presence.
         include_admin: whether the ADMIN TOOLS group is eligible at all. The web
             passes ``True`` (admins see it). Native clients (Windows/Android)
             pass ``False`` — admin settings are web-only, so the group is omitted
@@ -206,6 +212,7 @@ def build_menu_model(
     show_pulse = bool(pulse_enabled)
     show_byo = bool(byo_enabled)
     show_remote = bool(remote_enabled)
+    show_computer = bool(computer_enabled)
 
     topbar: List[TopBarControl] = [
         TopBarControl("brand", "brand"),
@@ -239,6 +246,7 @@ def build_menu_model(
         _ACCOUNT_ITEMS
         + ((_BYO_AGENTS_ITEM,) if show_byo else ())
         + ((_REMOTE_MACHINES_ITEM,) if show_remote else ())
+        + ((_MY_COMPUTERS_ITEM,) if show_computer else ())
     )
     groups: List[MenuGroup] = [
         MenuGroup("account", "Account", account_items),
@@ -256,6 +264,7 @@ def menu_model_dict(
     pulse_enabled: bool = False,
     byo_enabled: bool = False,
     remote_enabled: bool = False,
+    computer_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
@@ -270,6 +279,7 @@ def menu_model_dict(
         pulse_enabled=pulse_enabled,
         byo_enabled=byo_enabled,
         remote_enabled=remote_enabled,
+        computer_enabled=computer_enabled,
         include_admin=include_admin,
         include_tour=include_tour,
     ).to_dict()

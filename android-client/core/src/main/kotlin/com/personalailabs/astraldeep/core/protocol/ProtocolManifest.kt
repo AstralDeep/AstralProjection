@@ -114,6 +114,13 @@ object ProtocolManifest {
             "agent_bundle_deliver" to IGNORED,
             "agent_stop" to IGNORED,
             "agent_offline" to IGNORED,
+            // Feature 076 (remote computer control): a phone is a CONTROLLER,
+            // never a host — computer_request is addressed to the desktop only
+            // and is an explicit drop here. Presence/session changes re-request
+            // an open "My computers" surface (server-rendered; no local model).
+            "computer_request" to IGNORED,
+            "computer_session" to HANDLED,
+            "computer_host" to HANDLED,
             // scheduler notifications + errors (044)
             "notification" to HANDLED,
             "error" to HANDLED,

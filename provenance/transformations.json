@@ -21,6 +21,24 @@
       "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities."
     },
     {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
+      "sourceBlob": "cc0db0d610d90f1135f447d016267a28412d9068",
+      "sourceMode": "100644",
+      "resultSha256": "eb5ace10608619d370bea87734c552b3ba8ba83a5783ab835bc3a55e960bd4dc",
+      "task": "T040",
+      "reason": "Decode base64 data:image URLs locally so the image primitive can show remote-control screenshots (feature 076)."
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
+      "sourceBlob": "d241aacb0fb0710105e25b81d30f754bd8419611",
+      "sourceMode": "100644",
+      "resultSha256": "7d2057c6b30550218dcd3569a3be26d77564d8726b7c7a4754a144828d1b3521",
+      "task": "T041",
+      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076)."
+    },
+    {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
       "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
       "sourceBlob": "239b4834de2c932cdbbd1e905c2e7994d2cbc283",
@@ -34,27 +52,27 @@
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
       "sourceBlob": "422b37a5f9dfe46919bc52df26b6f19ff7ca3929",
       "sourceMode": "100644",
-      "resultSha256": "47135e0a710762d891b6ac1169f22fe7c925d2aa717d73da6e2aac8c711398e9",
-      "task": "T052/T071",
-      "reason": "Implement the strict Android client-local voice frame, bound-final models, and canonical content-free playout phases while preserving remote-v1 behavior."
+      "resultSha256": "48c63630af8314dec110b36666920832da08c34a099aba26f583a4f57d969811",
+      "task": "T052/T071/T040",
+      "reason": "Implement the strict Android client-local voice frame, bound-final models, and canonical content-free playout phases while preserving remote-v1 behavior. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
       "sourceBlob": "efafbfe736f5fed5a6f2cab51aee5192200aaa78",
       "sourceMode": "100644",
-      "resultSha256": "08f68fe267e4673ba02c2fecf9d92d3c14cb693d2efff0610f298d8e222385f3",
-      "task": "T054",
-      "reason": "Name the standalone Projection manifest as the current source for Android frame dispositions."
+      "resultSha256": "2d2a8af888b7d11848efb4ec4a178ba95a753aac629265bbcfd12c58498a88d5",
+      "task": "T054/T040",
+      "reason": "Name the standalone Projection manifest as the current source for Android frame dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
       "sourceBlob": "4801ccf81355ce04ac24930bb37754c86cd2cd87",
       "sourceMode": "100644",
-      "resultSha256": "f92778b427700d165c4cc1ebcf05de1261b06acab2f2e75a551fcb1b27a6ee6f",
-      "task": "T052",
-      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation."
+      "resultSha256": "3ef48b7fae2d8ae59a87b3b628c5672ba09a9bcc389fe1ea158e4a98184c5a5b",
+      "task": "T052/T040",
+      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
@@ -142,9 +160,9 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
       "sourceMode": "100644",
-      "resultSha256": "21b3810f35f2857542103c876de09468547616011fe03994ac13748617f75025",
-      "task": "T055",
-      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions."
+      "resultSha256": "97ed5f3635cd8ab041757d456961f6ed8b864c704bc6fd8e11e7ed856804dbfe",
+      "task": "T055/T040",
+      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
@@ -178,9 +196,9 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "925a3dd668a975daa8019e2a29d338b9690dc7e33a9375416a4cd39f61e96ea1",
-      "task": "T055",
-      "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent."
+      "resultSha256": "4279dd4e2a6e650305b0e881f7b9098309219c1e61bc99a9b2bbd9f14cc1bad1",
+      "task": "T055/T040",
+      "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
@@ -250,9 +268,9 @@
       "sourcePath": "backend/webrender/chrome/menu_model.py",
       "sourceBlob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
       "sourceMode": "100644",
-      "resultSha256": "ce1c54e0ea7029db3f5282460aefce2963e4c86fecf5a24130d46bc63aeab0a8",
-      "task": "T044",
-      "reason": "Replace lazy Deep feature-flag imports with explicit host-supplied presentation state."
+      "resultSha256": "ac7059dfc5fd863fd7f58734ce24d62adab76e98a00f0cd1b3566d65fa90da52",
+      "task": "T044/T040",
+      "reason": "Replace lazy Deep feature-flag imports with explicit host-supplied presentation state. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "backend/webrender/chrome/surfaces/__init__.py",
@@ -394,9 +412,9 @@
       "sourcePath": "backend/webrender/chrome/topbar.py",
       "sourceBlob": "60411d8364415d1cd1ef687ce59457673d8c62cb",
       "sourceMode": "100644",
-      "resultSha256": "1dbbff7d5051674d36a889f90ce5dfb06cf0929207ce92746eff7e98847ebd29",
-      "task": "T044",
-      "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection."
+      "resultSha256": "79b09c0392204a7fb76df7d4d96c5575ca655f65dbd41102e59c142b94366d7f",
+      "task": "T044/T040",
+      "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "backend/webrender/static/client.js",
@@ -421,9 +439,9 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "864a4a7825895cd64fa078580514f149fb8fb84a03d76dbccd6a5d5761e02404",
-      "task": "T013/T015",
-      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest."
+      "resultSha256": "4fee0d22438fddc01abdd02b4bbad7784097c03a20011319c7d667d98a8ac8cd",
+      "task": "T013/T015/T040",
+      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "scripts/windows_release_candidate.py",
@@ -574,9 +592,9 @@
       "sourcePath": "windows-client/astral_client/app.py",
       "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
       "sourceMode": "100644",
-      "resultSha256": "5b64ae63502a4abbf681171a5cfe17f5309dfb65ff4c596edce65d1cf2303bf0",
-      "task": "T059/T071/T088",
-      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch."
+      "resultSha256": "103ba4b4a3e8e916c05cfd35342fe823d49f4c09a2f0f4130933e626af3c744b",
+      "task": "T059/T071/T088/T040",
+      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "windows-client/astral_client/deployment.py",
@@ -601,18 +619,18 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "5d2295b4dcd5639457eb3121e94d13ca15feda3cd2f13afbe0e38d3825a2d6e6",
-      "task": "T166/T054/T071/T089",
-      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol."
+      "resultSha256": "f27ad0d7567da71f76ee8cb23b2394e1f0478c21d900afc7b6ac371c8e7f7fd8",
+      "task": "T166/T054/T071/T089/T040",
+      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "windows-client/astral_client/protocol_manifest.py",
       "sourcePath": "windows-client/astral_client/protocol_manifest.py",
       "sourceBlob": "7b47e7e8a789b1d7a5b0fae543b3ff0665248148",
       "sourceMode": "100644",
-      "resultSha256": "30ce6c1b157d8c31c1d94441d13f008d89f2a19f969028ec49dd69fc53234115",
-      "task": "T053",
-      "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions."
+      "resultSha256": "e4b0e0776922017c341190010975eb220495100f34ef90cda5fff7f01d6130f2",
+      "task": "T053/T040",
+      "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
       "path": "windows-client/astral_client/voice.py",

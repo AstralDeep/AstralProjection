@@ -117,7 +117,10 @@ final class ManifestDriftTests: XCTestCase {
         // conversation_commit_ready, and three agent_host_* control frames).
         // Host-only frames remain explicitly ignored by author-only clients;
         // macOS hosting is enabled only by feature 059.
-        XCTAssertEqual(manifest.pushTypes.count, 69)
+        // 72 = 69 + the three feature-076 remote-computer-control pushes
+        //        (computer_request host-only; computer_host / computer_session
+        //        presence — ignored on Apple pending the Mac follow-up).
+        XCTAssertEqual(manifest.pushTypes.count, 72)
         XCTAssertEqual(manifest.componentTypes.count, 35)
         // 73 = 67 + the four feature-054 chrome_llm_sys_* admin actions
         //        + the two feature-055 component_refine/component_restore actions.
@@ -131,7 +134,10 @@ final class ManifestDriftTests: XCTestCase {
         //        (chrome_machine_credential_set/delete + chrome_machine_retrust),
         //        same generic path.
         // 102 = 94 + the eight feature-065 server-owned composer actions.
-        XCTAssertEqual(manifest.acceptActions.count, 102)
+        // 109 = 102 + the seven feature-076 actions (computer_event /
+        //        computer_response — host-only; five chrome_computer_* session
+        //        controls posted through the generic SDUI action path).
+        XCTAssertEqual(manifest.acceptActions.count, 109)
     }
 
     func testConversationalVoiceFramesAndActionsAreClassifiedExactly() throws {

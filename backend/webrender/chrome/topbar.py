@@ -191,6 +191,7 @@ def render_topbar(
     pulse_enabled: bool = False,
     byo_enabled: bool = False,
     remote_enabled: bool = False,
+    computer_enabled: bool = False,
 ) -> str:
     """Inner HTML for ``<header id="astral-topbar">`` — brand, status, Settings.
 
@@ -205,6 +206,7 @@ def render_topbar(
         pulse_enabled=pulse_enabled,
         byo_enabled=byo_enabled,
         remote_enabled=remote_enabled,
+        computer_enabled=computer_enabled,
     )
 
     # Left cluster: brand. Right cluster: status + New chat + interactive

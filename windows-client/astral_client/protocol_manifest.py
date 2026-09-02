@@ -23,7 +23,7 @@ IGNORED = "ignored"
 #: ``client_local_actions`` — a packaged build has no repo tree to probe, so
 #: the value lives here and ``tests/test_protocol_manifest.py`` asserts the two
 #: stay in sync.
-CLIENT_LOCAL_ACTIONS: frozenset[str] = frozenset({"attach_existing"})
+CLIENT_LOCAL_ACTIONS: frozenset[str] = frozenset({"attach_existing", "computer_host_consent"})
 
 CLASSIFICATION: dict[str, str] = {
     # bootstrap
@@ -46,6 +46,13 @@ CLASSIFICATION: dict[str, str] = {
     "agent_tunnel": HANDLED,  # inbound agent frame -> the child's stdin
     "agent_stop": HANDLED,  # terminate the child, drop routing
     "agent_offline": HANDLED,  # server dropped routing for one of ours
+    # Feature 076 (remote computer control): this desktop IS the computer
+    # host. A request must be executed and answered (an ignored one would
+    # look like a hang on the phone); a session frame shows/hides the banner;
+    # presence of the owner's OTHER computers only refreshes an open surface.
+    "computer_request": HANDLED,
+    "computer_session": HANDLED,
+    "computer_host": HANDLED,
     # auth
     "auth_required": HANDLED,
     # canvas / SDUI
