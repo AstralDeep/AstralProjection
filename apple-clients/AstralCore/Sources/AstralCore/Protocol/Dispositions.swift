@@ -71,6 +71,15 @@ public struct ClientDispositions: Sendable {
         "agent_tunnel":
             "BYO agent frames — relayed only by a hosting desktop; author-only clients ignore (matches Android)",
         "audit_append": "admin audit surface is web-only (044); natives fetch audit via REST",
+        // Feature 076 remote computer control — an Apple client is a CONTROLLER,
+        // never a host: computer_request is addressed to the desktop only. The
+        // presence/session pushes are ignored in this feature (the surface, the
+        // live image and the approval card all ride the generic SDUI path);
+        // the Mac-side follow-up promotes them to a surface refresh (matches
+        // Android's HANDLED refresh) once it can be built and verified on macOS.
+        "computer_host": "076 presence of another of the owner's computers — surface refresh pending the Apple follow-up",
+        "computer_request": "076 host-only verb request — addressed to the desktop; controllers ignore (matches Android)",
+        "computer_session": "076 remote-control session change — surface refresh pending the Apple follow-up",
         "chrome_render": "raw-HTML chrome region is web-only; natives use chrome_surface",
         "heartbeat": "keepalive; the transport layer answers (matches Windows/Android)",
         "llm_config_ack": "natives use the LLM chrome-surface round trip (044)",
@@ -215,7 +224,8 @@ public struct ClientDispositions: Sendable {
         "chat_status", "chat_step", "chrome_menu", "chrome_render",
         "chrome_surface", "combine_error", "combine_status",
         "component_deleted", "component_save_error", "component_saved",
-        "components_combined", "components_condensed", "composer_state", "conversation_commit_ready",
+        "components_combined", "components_condensed", "composer_state",
+        "computer_host", "computer_request", "computer_session", "conversation_commit_ready",
         "conversation_snapshot",
         "error", "heartbeat", "history_list", "llm_config_ack",
         "llm_usage_report", "notification", "operation_status",

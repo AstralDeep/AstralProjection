@@ -413,6 +413,16 @@ class AppViewModel(
                             // result landing in the OPEN chat re-issues load_chat so
                             // narrative + canvas refresh without a manual reopen.
                             continuityReloadTarget(before, msg)?.let(::requestChatRefresh)
+                            // Feature 076: a presence/session change for one of the
+                            // owner's computers re-requests an open "My computers"
+                            // surface — the server re-renders it; the phone keeps
+                            // no model of hosts or sessions.
+                            if (msg is Inbound.ComputerPresence &&
+                                after.screen == Screen.Surface &&
+                                after.pendingSurfaceKey == "my_computers"
+                            ) {
+                                retryPendingSurface()
+                            }
                         }
                 }
                 launch {

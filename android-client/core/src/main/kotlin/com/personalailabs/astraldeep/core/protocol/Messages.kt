@@ -764,6 +764,18 @@ sealed interface Inbound {
     ) : Inbound
 
     /**
+     * Feature 076 — presence of one of the owner's computers (`computer_host`) or
+     * a remote-control session change on it (`computer_session`). The phone keeps
+     * no model of either: an open "My computers" surface is re-requested so the
+     * server re-renders it. [type] names which of the two frames arrived.
+     */
+    data class ComputerPresence(
+        val type: String,
+        val hostId: String?,
+        val state: String?,
+    ) : Inbound
+
+    /**
      * Boot/refresh of stored user preferences (`user_preferences`, feature 044).
      * [theme] is the raw `preferences.theme` object (preset|colors|color_key+value);
      * the :app reducer interprets it into the live palette (US5 restyle).

@@ -143,6 +143,8 @@ object Wire {
                     taskId = root.obj("payload")?.str("task_id") ?: root.str("task_id"),
                     chatId = root.obj("payload")?.str("chat_id") ?: root.str("chat_id"),
                 )
+            "computer_session", "computer_host" ->
+                Inbound.ComputerPresence(type = type, hostId = root.str("host_id"), state = root.str("state"))
             "notification" ->
                 Inbound.Notification(
                     title = root.str("title"),
