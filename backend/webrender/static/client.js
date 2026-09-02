@@ -7505,6 +7505,9 @@
       modalReturnFocus = document.activeElement;
       modalRoot.innerHTML = htmlStr;
       processSideEffects(modalRoot);
+      // Feature 077: the "My agents & skills" surface carries the user's
+      // current /commands — refresh the typeahead without a reload.
+      if (typeof window.__astralRefreshCommands === "function") window.__astralRefreshCommands(modalRoot);
       var card = modalRoot.querySelector(".astral-modal-card");
       if (card) card.focus();
       maybeStartTour();
@@ -7889,9 +7892,12 @@
 
 /* Feature 040 (US5): slash-command typeahead. Discovery only — the server
    rewrites a "/command" into a normal prompt; nothing here invokes a tool. The
-   curated list mirrors orchestrator/slash_commands.COMMANDS. */
+   curated list mirrors orchestrator/slash_commands.COMMANDS. Feature 077: the
+   user's own skill commands join it — fetched once from GET /api/chrome/commands
+   and refreshed whenever the "My agents & skills" surface renders (its root
+   carries data-astral-commands with the current set). */
 (function () {
-  var COMMANDS = [
+  var CURATED = [
     { name: "/help", desc: "show available commands" },
     { name: "/agents", desc: "list your enabled agents" },
     { name: "/summarize", desc: "summarize a link or text" },
@@ -7899,9 +7905,41 @@
     { name: "/weather", desc: "weather + forecast" },
     { name: "/download", desc: "get the Windows desktop app" }
   ];
+  var COMMANDS = CURATED.slice();
   var input = document.getElementById("astral-input");
   var menu = document.getElementById("astral-slash-menu");
   if (!input || !menu) return;
+
+  function setMine(mine) {
+    var seen = {};
+    var merged = [];
+    CURATED.forEach(function (c) { seen[c.name] = true; merged.push(c); });
+    (mine || []).forEach(function (c) {
+      if (!c || typeof c.name !== "string" || seen[c.name]) return;
+      seen[c.name] = true;
+      merged.push({ name: c.name, desc: String(c.desc || "your skill"), mine: true });
+    });
+    COMMANDS = merged;
+  }
+  function loadMine() {
+    var token = window.__ASTRAL_TOKEN__ || "";
+    if (!token || typeof fetch !== "function") return;
+    fetch((window.__ASTRAL_API_URL__ || "") + "/api/chrome/commands",
+          { headers: { Authorization: "Bearer " + token }, credentials: "same-origin", cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data || !Array.isArray(data.commands)) return;
+        setMine(data.commands.filter(function (c) { return c && c.mine; }));
+      })
+      .catch(function () { /* discovery only — the server still expands typed commands */ });
+  }
+  window.__astralRefreshCommands = function (root) {
+    var holder = root && root.querySelector ? root.querySelector("[data-astral-commands]") : null;
+    if (!holder) return;
+    try { setMine(JSON.parse(holder.getAttribute("data-astral-commands") || "[]")); }
+    catch (e) { /* malformed attribute: keep the current list */ }
+  };
+  loadMine();
 
   function hide() { menu.classList.add("hidden"); menu.innerHTML = ""; }
 
@@ -7918,7 +7956,7 @@
       n.textContent = c.name;
       var d = document.createElement("span");
       d.className = "astral-slash-desc";
-      d.textContent = c.desc;
+      d.textContent = (c.mine ? "your skill · " : "") + c.desc;
       item.appendChild(n);
       item.appendChild(d);
       // mousedown (not click) fires before the input blur that would hide us.
