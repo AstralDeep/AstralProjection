@@ -178,18 +178,27 @@ def test_executor_input_verbs_use_the_capture_geometry():
     assert exc.value.code == "unsupported"
 
 
-def test_keyboard_into_a_terminal_is_refused_with_run_command_as_the_next_action():
+def test_keyboard_into_a_terminal_needs_the_owners_approval():
     ex = make_executor()
     ex.system.foreground = "powershell.exe"
     for verb, args in (("type_text", {"text": "Get-Date"}), ("press_keys", {"keys": "enter"})):
         with pytest.raises(cu.VerbError) as exc:
             ex.run(verb, args)
-        assert exc.value.code == "confirmation_required" and "run_command" in exc.value.message
+        assert exc.value.code == "confirmation_required" and "confirm_action" in exc.value.message
     assert ex.injector.calls == []
+    # the server passes the owner's approval as terminal_ok → allowed
+    assert ex.run("type_text", {"text": "Get-Date", "terminal_ok": True}) == {"chars": 8}
+    assert ex.run("press_keys", {"keys": "enter", "terminal_ok": True}) == {"keys": "enter"}
+    # a spoofed truthy-but-not-True value is not an approval
+    with pytest.raises(cu.VerbError):
+        ex.run("type_text", {"text": "x", "terminal_ok": "yes"})
     # clicking a terminal window is still fine (it does not run anything)
     ex.run("click", {"x": 1, "y": 1})
     ex.system.foreground = "notepad.exe"
     assert ex.run("type_text", {"text": "hi"}) == {"chars": 2}
+    with pytest.raises(cu.VerbError) as exc:
+        ex.run("run_command", {"command": "dir"})
+    assert exc.value.code == "unsupported"
 
 
 def test_executor_refuses_input_while_locked():
@@ -245,18 +254,6 @@ def test_executor_file_verbs(tmp_path):
         ex.run("delete_path", {"path": str(sub)})  # not empty
 
 
-def test_executor_run_command_is_bounded(tmp_path):
-    ex = make_executor()
-    out = ex.run("run_command", {"command": "echo hello", "cwd": str(tmp_path), "timeout_s": 10})
-    assert out["exit_code"] == 0 and "hello" in out["stdout"] and out["duration_ms"] >= 0
-    with pytest.raises(cu.VerbError) as exc:
-        ex.run("run_command", {"command": "", "timeout_s": 5})
-    assert exc.value.code == "out_of_range"
-    with pytest.raises(cu.VerbError) as exc:
-        ex.run("run_command", {"command": "echo x", "cwd": str(tmp_path / "missing")})
-    assert exc.value.code == "not_found"
-
-
 # ── settings + descriptor ─────────────────────────────────────────────────────
 
 def _settings(tmp_path):
@@ -279,7 +276,7 @@ def test_descriptor_matches_the_transport_contract(tmp_path):
     d = rc.build_descriptor(s, screens=[{"index": 0, "width": 2560, "height": 1440, "scale": 1.0, "primary": True}])
     assert set(d) == {"host_id", "name", "platform", "client_version", "screens", "verbs", "protocol"}
     assert d["platform"] == "windows" and d["protocol"] == 1
-    assert d["verbs"] == list(cu.VERBS) and len(d["verbs"]) == 20
+    assert d["verbs"] == list(cu.VERBS) and len(d["verbs"]) == 19
     assert d["screens"][0]["primary"] is True
 
 

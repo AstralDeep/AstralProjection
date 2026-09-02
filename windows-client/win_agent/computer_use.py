@@ -39,23 +39,22 @@ VERBS: Tuple[str, ...] = (
     "screenshot", "list_windows", "get_clipboard", "read_file", "list_dir", "wait",
     "click", "double_click", "right_click", "move", "drag", "scroll", "type_text",
     "press_keys", "focus_window", "open_app", "set_clipboard",
-    "run_command", "write_file", "delete_path",
+    "write_file", "delete_path",
 )
 
 MAX_TEXT_CHARS = 4000
 MAX_CLIPBOARD_CHARS = 16 * 1024
 MAX_READ_BYTES = 262_144
 MAX_WRITE_BYTES = 256 * 1024
-MAX_COMMAND_TIMEOUT_S = 300
-MAX_OUTPUT_BYTES = 64 * 1024
 MAX_DIR_ENTRIES = 500
 MAX_WINDOWS = 100
 JPEG_QUALITY = 70
 MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH = 320, 1920, 1280
 
 #: Command interpreters. Typing or pressing keys while one of these owns the
-#: foreground window is a command by another route, so it is refused here;
-#: commands go through ``run_command``, which the owner approves (spec D2).
+#: foreground window is running a command, so it is refused unless the request
+#: carries the owner's approval (``terminal_ok`` — granted by the server after
+#: an approved confirm_action / shell open_app, spec D2).
 TERMINAL_PROCESSES = frozenset({
     "powershell.exe", "pwsh.exe", "cmd.exe", "windowsterminal.exe", "wt.exe", "conhost.exe",
     "openconsole.exe", "mintty.exe", "bash.exe", "wsl.exe", "wslhost.exe", "ubuntu.exe",
@@ -595,35 +594,6 @@ def delete_path(path_value: Any) -> Dict[str, Any]:
     return {"path": str(path), "deleted": True}
 
 
-def run_command(command: Any, cwd: Any, timeout_s: Any) -> Dict[str, Any]:
-    if not isinstance(command, str) or not command.strip() or len(command) > 2000:
-        raise VerbError("out_of_range", "command must be a non-empty string of at most 2000 characters")
-    try:
-        timeout = max(1, min(int(timeout_s or 60), MAX_COMMAND_TIMEOUT_S))
-    except (TypeError, ValueError):
-        raise VerbError("out_of_range", "timeout_s must be an integer")
-    workdir = str(_abs_path(cwd, must_exist=True)) if cwd else str(Path.home())
-    argv = (["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", command]
-            if IS_WINDOWS else ["/bin/sh", "-c", command])
-    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-    started = time.monotonic()
-    try:
-        proc = subprocess.run(argv, cwd=workdir, capture_output=True, timeout=timeout,
-                              creationflags=flags)
-    except subprocess.TimeoutExpired as exc:
-        out = (exc.stdout or b"")[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace")
-        raise VerbError("timeout", f"command still running after {timeout} s; partial output: {out[:500]}")
-    except OSError as exc:
-        raise VerbError("failed", f"could not start the command: {exc}")
-    duration_ms = int((time.monotonic() - started) * 1000)
-    stdout = proc.stdout or b""
-    stderr = proc.stderr or b""
-    truncated = len(stdout) > MAX_OUTPUT_BYTES or len(stderr) > MAX_OUTPUT_BYTES // 4
-    return {"exit_code": int(proc.returncode), "stdout": stdout[:MAX_OUTPUT_BYTES].decode("utf-8", errors="replace"),
-            "stderr": stderr[:MAX_OUTPUT_BYTES // 4].decode("utf-8", errors="replace"),
-            "truncated": truncated, "duration_ms": duration_ms}
-
-
 # ── the executor ──────────────────────────────────────────────────────────────
 
 class Executor:
@@ -658,9 +628,11 @@ class Executor:
             raise VerbError("out_of_range", f"{xk}/{yk} must be integers")
         return to_physical(self.last_geometry, x, y, self.primary_physical)
 
-    def _refuse_terminal_keyboard(self) -> None:
-        """Keyboard input into a command interpreter is a command by another
-        route — refused with the next action (``run_command``) spelled out."""
+    def _refuse_terminal_keyboard(self, args: Dict[str, Any]) -> None:
+        """Keyboard input into a command interpreter runs a command — refused
+        unless the server passed the owner's approval (``terminal_ok``)."""
+        if args.get("terminal_ok") is True:
+            return
         system = self.system
         getter = getattr(system, "foreground_process", None) if system is not None else None
         if getter is None:
@@ -671,8 +643,8 @@ class Executor:
             return
         if process in TERMINAL_PROCESSES:
             raise VerbError("confirmation_required",
-                            f"the foreground window is a terminal ({process}); typing into it is not "
-                            "allowed — use run_command, which asks the owner to approve")
+                            f"the foreground window is a terminal ({process}); typing into it needs the "
+                            "owner's approval — call confirm_action describing the command, then retry")
 
     def _locked_check(self) -> None:
         system = self.system
@@ -713,8 +685,6 @@ class Executor:
             return write_file(args.get("path"), args.get("content"), args.get("if_exists"))
         if verb == "delete_path":
             return delete_path(args.get("path"))
-        if verb == "run_command":
-            return run_command(args.get("command"), args.get("cwd"), args.get("timeout_s"))
         if verb == "open_app":
             app, is_path = validate_app(args.get("app"))
             argv = args.get("args") or []
@@ -769,12 +739,12 @@ class Executor:
             text = args.get("text")
             if not isinstance(text, str) or not text or len(text) > MAX_TEXT_CHARS:
                 raise VerbError("out_of_range", f"text must be 1-{MAX_TEXT_CHARS} characters")
-            self._refuse_terminal_keyboard()
+            self._refuse_terminal_keyboard(args)
             injector.type_text(text)
             return {"chars": len(text)}
         if verb == "press_keys":
             mods, vk = parse_chord(str(args.get("keys") or ""))
-            self._refuse_terminal_keyboard()
+            self._refuse_terminal_keyboard(args)
             injector.press(mods, vk)
             return {"keys": str(args.get("keys"))}
         raise VerbError("unsupported", f"{verb!r} is not a verb this computer executes")
