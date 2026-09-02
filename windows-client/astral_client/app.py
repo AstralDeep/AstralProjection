@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices
 
 from . import theme as T
+from . import icons as _icons
 from .auth import LoginCancelled
 from . import confirm as _confirm
 from . import integrity as _integrity
@@ -1159,16 +1160,21 @@ class TopBar(QFrame):
         # Recent chats — reopen a past conversation. Speech-bubble glyph, NOT a
         # clock: the clock belongs to the server-model "Workspace timeline"
         # control that sits right beside it (same call as android RootScaffold).
-        self.recent_btn = QPushButton("💬")
+        self.recent_btn = QPushButton(_icons.GLYPH_FALLBACK["chats"])
         self.recent_btn.setToolTip("Recent chats")
         self.recent_btn.setAccessibleName("Recent chats")
         self.recent_btn.setObjectName("iconGhost")
         self.recent_btn.clicked.connect(on_recent)
         # Settings gear → dropdown built from the server-owned menu model.
-        self.settings_btn = QPushButton("⚙")
+        self.settings_btn = QPushButton(_icons.GLYPH_FALLBACK["gear"])
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setAccessibleName("Settings")
         self.settings_btn.setObjectName("iconGhost")
+        # The glyphs above are only the fallback: the buttons draw the same SVG
+        # line icons as the web top bar (icons.py) — emoji text rendered by
+        # Segoe UI Emoji came out half-coloured and smeared on Windows.
+        self._svg_buttons = [(self.recent_btn, "chats"), (self.settings_btn, "gear")]
+        self.apply_icons()
         # Menu chrome (surface, radius, subtle primary hover) comes from the
         # global QMenu rules in theme.build_stylesheet() — web parity.
         self._menu = QMenu(self)
@@ -1204,21 +1210,24 @@ class TopBar(QFrame):
         # Until the server model arrives, offer just Sign out (always safe).
         self._rebuild_menu({"sections": [], "signout": {"label": "Sign out", "action": "logout"}})
 
-    #: Server top-bar action icon names → a glyph (falls back to the label).
-    #: The names are the model's own (`webrender/chrome/menu_model.py`), and the
-    #: glyph choices mirror web's `_ICON_SVG` vocabulary in `chrome/topbar.py`.
-    #: `sparkle` (Pulse digest) was MISSING, so Pulse was the one control still
-    #: rendering as a text label beside its icon-only neighbours; `pulse`,
-    #: `activity` and `clock` are names the server never sends and are kept only
-    #: as tolerant aliases.
+    #: Server top-bar action icon names → the text FALLBACK glyph (the real
+    #: rendering is the SVG in icons.py, the same paths as web's `_ICON_SVG`
+    #: vocabulary in `chrome/topbar.py`). `pulse`, `activity` and `clock` are
+    #: names the server never sends and are kept only as tolerant aliases.
     _ACTION_ICONS = {
-        "sparkle": "✨",
-        "history": "🕓",
-        "gear": "⚙",
-        "pulse": "✨",
-        "activity": "✨",
-        "clock": "🕓",
+        name: _icons.GLYPH_FALLBACK[key] for name, key in _icons.ACTION_ICON_NAMES.items()
     }
+
+    def apply_icons(self) -> None:
+        """(Re)paint every SVG icon button in the current palette — called at
+        construction, after the server model rebuilds the action buttons, and
+        after a theme change (the icon colour is baked into the pixmap)."""
+        for btn, name in list(getattr(self, "_svg_buttons", [])):
+            try:
+                if not _icons.apply(btn, name, T.MUTED, T.TEXT):
+                    btn.setText(_icons.GLYPH_FALLBACK.get(name, btn.text()))
+            except Exception:  # noqa: BLE001 — a dead widget after a rebuild
+                logger.debug("icon apply failed for %s", name, exc_info=True)
 
     def set_menu_model(self, model: dict) -> None:
         """(Re)build the Settings dropdown AND the top-bar action buttons from the
@@ -1239,6 +1248,8 @@ class TopBar(QFrame):
             if item.widget():
                 item.widget().deleteLater()
         self._action_buttons = []
+        self._svg_buttons = [pair for pair in getattr(self, "_svg_buttons", [])
+                             if pair[0] in (self.recent_btn, self.settings_btn)]
         for a in actions or []:
             if not isinstance(a, dict):
                 continue
@@ -1253,6 +1264,9 @@ class TopBar(QFrame):
             btn = QPushButton(glyph if glyph else str(label))
             if glyph:
                 btn.setObjectName("iconGhost")
+                svg_name = _icons.name_for_action(a.get("icon"))
+                if svg_name:
+                    self._svg_buttons.append((btn, svg_name))
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setToolTip(str(label))
             btn.setAccessibleName(str(label))
@@ -1261,6 +1275,7 @@ class TopBar(QFrame):
             )
             self._actions_lay.addWidget(btn)
             self._action_buttons.append(btn)
+        self.apply_icons()
 
     def _rebuild_menu(self, parsed: dict) -> None:
         self._menu.clear()
@@ -1994,12 +2009,14 @@ class MainWindow(QMainWindow):
 
         # Feature 044 (US4): a paperclip → Upload files… / Choose from your files,
         # and a chips strip (above the input) for staged attachments.
-        self._attach_btn = QPushButton("📎")
+        self._attach_btn = QPushButton(_icons.GLYPH_FALLBACK["paperclip"])
         self._attach_btn.setToolTip("Attach files")
         self._attach_btn.setAccessibleName("Attach files")
         # Same square icon-button treatment as the voice controls beside it and
-        # as web's `.astral-attach-btn` (066 style parity).
+        # as web's `.astral-attach-btn` (066 style parity); SVG glyph like the
+        # top bar (emoji text renders badly on Windows), text as the fallback.
         self._attach_btn.setObjectName("iconGhost")
+        _icons.apply(self._attach_btn, "paperclip", T.MUTED, T.TEXT)
         self._attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         # Menu chrome comes from the global QMenu rules in the theme QSS.
         attach_menu = QMenu(self._attach_btn)
@@ -2270,6 +2287,13 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None and hasattr(T, "build_stylesheet"):
             app.setStyleSheet(T.build_stylesheet() + getattr(T, "ROOT_BG_STYLE", ""))
+        # The SVG icon colour is baked into the pixmap: repaint in the new palette.
+        topbar = getattr(self, "topbar", None)
+        if topbar is not None and hasattr(topbar, "apply_icons"):
+            topbar.apply_icons()
+        attach = getattr(self, "_attach_btn", None)
+        if attach is not None:
+            _icons.apply(attach, "paperclip", T.MUTED, T.TEXT)
         # setStyleSheet above restyles the QSS-driven widgets (buttons, inputs,
         # tables), but the SDUI canvas content is styled INLINE from the palette
         # at render time, so re-render it to pick up the new palette (US5).
