@@ -619,7 +619,7 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "f27ad0d7567da71f76ee8cb23b2394e1f0478c21d900afc7b6ac371c8e7f7fd8",
+      "resultSha256": "6b56987d4d5fd22e7f82bf012931249e20838dc3106c2db6e8e9b43a9032a7e9",
       "task": "T166/T054/T071/T089/T040",
       "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -664,7 +664,7 @@
       "sourcePath": "windows-client/main.py",
       "sourceBlob": "7b9c2fba21cb01b78cc90f531ae3712b366d9542",
       "sourceMode": "100644",
-      "resultSha256": "48e6196d3a97347404a1c48362eecf3b78cb06c5a3b497c3d1964acda47a0778",
+      "resultSha256": "56e0dc7813371470f406fd19cc9035cada61cca868ab55bfd0cc5ea8d36cb6f9",
       "task": "T166",
       "reason": "Propagate authenticated host-session identity into the runtime-v3 Windows BYO authority boundary."
     },
@@ -709,7 +709,7 @@
       "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
       "sourceMode": "100644",
-      "resultSha256": "1b718d615692688baa2c74b3f1473c61323f5e10e8d0f4a5a6aaecd8d63e01d1",
+      "resultSha256": "5af1d0df800832b7ee9d37cbae567231e6d724e02472827bd7916412a1a1ea1d",
       "task": "T166/T102",
       "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata."
     },
@@ -853,7 +853,7 @@
       "sourcePath": "windows-client/win_agent/byo_host.py",
       "sourceBlob": "6ed2071b286421438f09c14cc6725540e2de370e",
       "sourceMode": "100644",
-      "resultSha256": "e2d7e2692b9433a333e0674bf747da9cc8a6d51cdd18cec2715d51929f0fffb8",
+      "resultSha256": "3549c845b5818d00b57676fa1452b3bfcba630cf8860e172f8f5ec09c44cff82",
       "task": "T166",
       "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch."
     },

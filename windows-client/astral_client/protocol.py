@@ -3023,10 +3023,14 @@ class OrchestratorClient(QObject):
         session frame before that connection receives its acknowledgement.
         """
 
-        if (
-            not isinstance(frame, dict)
-            or not isinstance(frame.get("type"), str)
-            or not frame["type"].startswith("agent_")
+        frame_type = frame.get("type") if isinstance(frame, dict) else None
+        # The v3 host vocabulary: the agent_* lifecycle frames AND the child's
+        # tool result, which the server's host-frame adapter names
+        # ``mcp_response``. The old ``agent_`` prefix test refused every result
+        # a personal agent ever produced — the server saw only timeouts (077
+        # live finding).
+        if not isinstance(frame_type, str) or not (
+            frame_type.startswith("agent_") or frame_type == "mcp_response"
         ):
             raise WindowsProtocolError("agent host frame is invalid")
         loop = self._loop

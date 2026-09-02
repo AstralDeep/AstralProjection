@@ -1092,3 +1092,21 @@ def test_a_revision_that_ran_once_survives_the_next_inventory_scan(tmp_path) -> 
     with open(os.path.join(revision_dir, "extra.py"), "w") as fh:
         fh.write("x")
     assert restarted._installed_revision(AGENT_ID, REVISION_ID) is None
+
+
+def test_send_host_frame_accepts_the_childs_tool_result() -> None:
+    """Feature 077 live finding: the host's transport guard accepted only
+    ``agent_*`` frames, so the child's ``mcp_response`` — the one frame that
+    carries a tool result — was refused on the way out and every personal-agent
+    call timed out on the server."""
+    from astral_client.protocol import OrchestratorClient, WindowsProtocolError
+
+    client = OrchestratorClient("ws://127.0.0.1/ws", "token", host_id=HOST_ID)
+    client.send_host_frame({"type": "mcp_response", "request_id": str(uuid.uuid4()),
+                            "request_generation": str(uuid.uuid4()), "fence": {}, "result": {}})
+    client.send_host_frame({"type": "agent_runtime_heartbeat", "host_session_id": HOST_SESSION_ID})
+    assert list(client._pending) == []            # never queued for replay either way
+    with pytest.raises(WindowsProtocolError):
+        client.send_host_frame({"type": "chat_message", "message": "not a host frame"})
+    with pytest.raises(WindowsProtocolError):
+        client.send_host_frame({"type": "mcp_request"})

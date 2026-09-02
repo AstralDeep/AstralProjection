@@ -125,6 +125,21 @@ def main(argv=None) -> int:
 
         return worker_main([sys.argv[0], *arguments])
 
+    # Diagnostics: ASTRAL_CLIENT_LOG_LEVEL=INFO (or DEBUG) routes the client's
+    # logging to stderr at that level. Without it Python's last-resort handler
+    # shows WARNING and above only — a request the host forwards or relays is
+    # logged at INFO, so a live "why did my agent time out" needs this.
+    import logging as _logging
+    import os as _os
+
+    _level = (_os.environ.get("ASTRAL_CLIENT_LOG_LEVEL") or "").strip().upper()
+    if _level in ("DEBUG", "INFO", "WARNING", "ERROR"):
+        _logging.basicConfig(
+            level=getattr(_logging, _level),
+            format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+            stream=sys.stderr,
+        )
+
     from astral_client import __version__
     from astral_client.deployment import DeploymentProfileError, resolve_startup
 

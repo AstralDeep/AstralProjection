@@ -1398,8 +1398,10 @@ class ByoAgentHost:
     def _send_v3_frame(self, frame: dict[str, Any]) -> None:
         try:
             self._send_frame(frame)
-        except Exception:  # noqa: BLE001 - transport loss triggers host teardown
-            logger.debug("BYO v3 frame send failed: %s", frame.get("type"), exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - transport loss triggers host teardown
+            # WARNING, not debug: a frame that dies here (a result, a state, a
+            # heartbeat) is invisible on the server except as a timeout.
+            logger.warning("BYO v3 frame send failed: %s (%s)", frame.get("type"), exc)
 
     def _prelaunch_failure(
         self,
