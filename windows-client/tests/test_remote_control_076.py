@@ -79,9 +79,13 @@ class FakeSystem:
         return self.locked
 
     foreground = "notepad.exe"
+    foreground_window_class = "notepad"
 
     def foreground_process(self):
         return self.foreground
+
+    def foreground_class(self):
+        return self.foreground_window_class
 
     def last_input_tick(self):
         return self.input_tick
@@ -196,6 +200,18 @@ def test_keyboard_into_a_terminal_needs_the_owners_approval():
     ex.run("click", {"x": 1, "y": 1})
     ex.system.foreground = "notepad.exe"
     assert ex.run("type_text", {"text": "hi"}) == {"chars": 2}
+    # a console-hosted REPL (python/node/psql …) is a terminal by WINDOW CLASS,
+    # while the same image name as a GUI program (this client) is not
+    ex.system.foreground, ex.system.foreground_window_class = "python.exe", "ConsoleWindowClass"
+    with pytest.raises(cu.VerbError) as exc:
+        ex.run("type_text", {"text": "import os"})
+    assert exc.value.code == "confirmation_required"
+    ex.system.foreground_window_class = "Qt6152QWindowIcon"
+    assert ex.run("type_text", {"text": "hi"}) == {"chars": 2}
+    ex.system.foreground, ex.system.foreground_window_class = "windowsterminal.exe", "CASCADIA_HOSTING_WINDOW_CLASS"
+    with pytest.raises(cu.VerbError):
+        ex.run("press_keys", {"keys": "enter"})
+    ex.system.foreground, ex.system.foreground_window_class = "notepad.exe", "notepad"
     with pytest.raises(cu.VerbError) as exc:
         ex.run("run_command", {"command": "dir"})
     assert exc.value.code == "unsupported"

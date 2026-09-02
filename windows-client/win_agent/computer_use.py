@@ -55,11 +55,19 @@ MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH = 320, 1920, 1280
 #: foreground window is running a command, so it is refused unless the request
 #: carries the owner's approval (``terminal_ok`` — granted by the server after
 #: an approved confirm_action / shell open_app, spec D2).
+#: Terminal EMULATORS by image name. Console programs (cmd, powershell, a
+#: python/node/psql REPL, bash under WSL …) are not listed: every one of them
+#: lives inside a console host window, which :data:`TERMINAL_WINDOW_CLASSES`
+#: catches by class — while ``python.exe`` as a GUI program (this client) or
+#: ``node.exe`` as an Electron host is NOT a terminal and must not be refused.
 TERMINAL_PROCESSES = frozenset({
     "powershell.exe", "pwsh.exe", "cmd.exe", "windowsterminal.exe", "wt.exe", "conhost.exe",
-    "openconsole.exe", "mintty.exe", "bash.exe", "wsl.exe", "wslhost.exe", "ubuntu.exe",
-    "python.exe", "python3.exe", "ipython.exe", "node.exe", "psql.exe",
+    "openconsole.exe", "mintty.exe", "alacritty.exe", "wezterm-gui.exe", "hyper.exe",
+    "tabby.exe", "conemu.exe", "conemu64.exe", "cmder.exe", "putty.exe", "kitty.exe",
 })
+#: Window classes that host a command interpreter: the classic console
+#: (conhost / OpenConsole) and Windows Terminal.
+TERMINAL_WINDOW_CLASSES = frozenset({"consolewindowclass", "cascadia_hosting_window_class"})
 
 
 class VerbError(Exception):
@@ -234,6 +242,8 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
     _user32.OpenInputDesktop.restype = wt.HANDLE
     _user32.CloseDesktop.argtypes = (wt.HANDLE,)
     _user32.GetForegroundWindow.restype = wt.HWND
+    _user32.GetClassNameW.argtypes = (wt.HWND, ctypes.c_wchar_p, ctypes.c_int)
+    _user32.GetClassNameW.restype = ctypes.c_int
     _user32.SetForegroundWindow.argtypes = (wt.HWND,)
     _user32.ShowWindow.argtypes = (wt.HWND, ctypes.c_int)
     _user32.IsIconic.argtypes = (wt.HWND,)
@@ -435,6 +445,17 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
                 return psutil.Process(pid.value).name().lower()
             except Exception:  # noqa: BLE001
                 return ""
+
+        @staticmethod
+        def foreground_class() -> str:
+            """Lower-cased window class of the foreground window ('' if none)."""
+            hwnd = _user32.GetForegroundWindow()
+            if not hwnd:
+                return ""
+            buf = ctypes.create_unicode_buffer(256)
+            if not _user32.GetClassNameW(hwnd, buf, 256):
+                return ""
+            return buf.value.lower()
 
         @staticmethod
         def focus_window(hwnd: int) -> bool:
@@ -655,7 +676,14 @@ class Executor:
             process = str(getter() or "").lower()
         except Exception:  # noqa: BLE001
             return
-        if process in TERMINAL_PROCESSES:
+        window_class = ""
+        class_getter = getattr(system, "foreground_class", None)
+        if class_getter is not None:
+            try:
+                window_class = str(class_getter() or "").lower()
+            except Exception:  # noqa: BLE001
+                window_class = ""
+        if process in TERMINAL_PROCESSES or window_class in TERMINAL_WINDOW_CLASSES:
             raise VerbError("confirmation_required",
                             f"the foreground window is a terminal ({process}); typing into it needs the "
                             "owner's approval — call confirm_action describing the command, then retry")
