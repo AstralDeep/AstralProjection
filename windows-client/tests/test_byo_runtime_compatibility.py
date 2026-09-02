@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -1047,3 +1048,47 @@ def test_prelaunch_fence_accepts_the_servers_explicit_null_process_id() -> None:
         ByoAgentHost._prelaunch_fence(dict(base, process_id=str(uuid.uuid4())))
     with pytest.raises(ValueError):
         ByoAgentHost._prelaunch_fence(dict(base, extra=1))
+
+
+def test_a_revision_that_ran_once_survives_the_next_inventory_scan(tmp_path) -> None:
+    """Feature 077 live finding: Python wrote ``__pycache__`` into the revision
+    directory when the worker imported the agent, the exact-listing check then
+    called the revision corrupt on the next reconnect and DELETED it — every
+    personal agent that had ever run vanished at the next client restart."""
+    files = _bundle()
+    first_supervisor = _RecordingSupervisor()
+    first = ByoAgentHost(
+        send_frame=lambda _frame: None,
+        base_dir=str(tmp_path),
+        host_id=HOST_ID,
+        process_supervisor=first_supervisor,
+    )
+    first.handle_frame(_ack())
+    assert first.handle_frame(_delivery(files)) is True
+    # the worker is launched with byte-code writing off …
+    launch_env = first_supervisor.spawns[0].get("environment") or first_supervisor.spawns[0].get("env") or {}
+    assert launch_env.get("PYTHONDONTWRITEBYTECODE") == "1"
+    first.stop_all()
+    # … but an older install (or a manual run) may have left the cache behind
+    revision_dir = os.path.join(str(tmp_path), AGENT_ID, "revisions", REVISION_ID)
+    os.makedirs(os.path.join(revision_dir, "__pycache__"))
+    with open(os.path.join(revision_dir, "__pycache__", "agent_main.cpython-311.pyc"), "wb") as fh:
+        fh.write(b"\x00")
+
+    frames: list[dict] = []
+    restarted = ByoAgentHost(
+        send_frame=frames.append,
+        base_dir=str(tmp_path),
+        host_id=HOST_ID,
+        process_supervisor=_RecordingSupervisor(),
+    )
+    restarted.on_ui_connected()
+    restarted.handle_frame(_ack(inventory_required=True))
+    inventory = frames[-1]
+    assert inventory["type"] == "agent_host_inventory"
+    assert [e["revision_id"] for e in inventory["entries"]] == [REVISION_ID]
+    assert os.path.isfile(os.path.join(revision_dir, "agent_main.py"))   # not deleted
+    # a genuinely foreign file is still corruption
+    with open(os.path.join(revision_dir, "extra.py"), "w") as fh:
+        fh.write("x")
+    assert restarted._installed_revision(AGENT_ID, REVISION_ID) is None

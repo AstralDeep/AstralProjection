@@ -994,9 +994,12 @@ class ByoAgentHost:
         if compatibility is not None or not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
             return None
         try:
-            if set(os.listdir(directory)) != set(BUNDLE_FILE_NAMES) | {
-                _RUNTIME_METADATA_FILE
-            }:
+            # Python writes __pycache__ into the bundle directory the first
+            # time the worker imports the agent; that is byte-code cache, not
+            # bundle content. Treating it as corruption deleted every personal
+            # agent that had ever run on the next reconnect (077 live finding).
+            present = {name for name in os.listdir(directory) if name != "__pycache__"}
+            if present != set(BUNDLE_FILE_NAMES) | {_RUNTIME_METADATA_FILE}:
                 return None
             files = {}
             for name in BUNDLE_FILE_NAMES:
@@ -1522,6 +1525,9 @@ class ByoAgentHost:
         fence = dict(prelaunch_fence, process_id=str(process_id))
         environment.update(
             {
+                # Keep the immutable revision directory byte-for-byte the
+                # delivered bundle: no __pycache__ beside the audited files.
+                "PYTHONDONTWRITEBYTECODE": "1",
                 "ASTRAL_RUNTIME_FENCE_JSON": json.dumps(
                     fence, sort_keys=True, separators=(",", ":")
                 ),
@@ -1724,6 +1730,7 @@ class ByoAgentHost:
         if not self._valid_request_identity(frame):
             logger.warning("dropping unfenced request result for %s", child.agent_id)
             return
+        logger.info("BYO %s result %s relayed", child.agent_id, frame.get("request_id"))
         self._send_v3_frame(frame)
 
     def _emit_runtime_heartbeat(self, child: _RuntimeChild) -> None:
@@ -1850,35 +1857,53 @@ class ByoAgentHost:
         return True
 
     def _to_runtime_child(self, msg: dict[str, Any]) -> None:
+        # Every drop below is logged: a request that vanishes here surfaces on
+        # the server only as a timeout, which is indistinguishable from a
+        # hung agent (feature 077 live finding).
         try:
             fence = self._full_fence(msg.get("fence"))
-        except ValueError:
+        except ValueError as exc:
+            logger.warning("BYO request dropped: %s", exc)
             return
         with self._lock:
             child = self._runtime_children.get(fence["process_id"])
-        if child is None or child.fence != fence or not child.alive():
+        if child is None:
+            logger.warning("BYO request dropped: no child for process %s", fence["process_id"])
+            return
+        if child.fence != fence:
+            logger.warning("BYO %s request dropped: fence differs from the child's", child.agent_id)
+            return
+        if not child.alive():
+            logger.warning("BYO %s request dropped: child is not alive", child.agent_id)
             return
         frame = msg.get("frame")
         if frame is None:
+            logger.warning("BYO %s request dropped: no frame", child.agent_id)
             return
         if isinstance(frame, str):
             try:
                 parsed = json.loads(frame)
             except (ValueError, TypeError):
+                logger.warning("BYO %s request dropped: frame is not JSON", child.agent_id)
                 return
         else:
             parsed = frame
-        if (
-            not isinstance(parsed, dict)
-            or parsed.get("fence") != fence
-            or not self._valid_request_identity(parsed)
-        ):
+        if not isinstance(parsed, dict):
+            logger.warning("BYO %s request dropped: frame is not an object", child.agent_id)
+            return
+        if parsed.get("fence") != fence:
+            logger.warning("BYO %s request dropped: inner fence differs", child.agent_id)
+            return
+        if not self._valid_request_identity(parsed):
+            logger.warning("BYO %s request dropped: request identity invalid", child.agent_id)
             return
         text = frame if isinstance(frame, str) else json.dumps(frame)
         try:
             child.supervised.write_line(text)
         except (OSError, ValueError, BrokenPipeError):
             logger.warning("BYO %s stdin closed; request dropped", child.agent_id)
+            return
+        logger.info("BYO %s request %s forwarded", child.agent_id, parsed.get("request_id"))
 
     # --- lifecycle --------------------------------------------------------- #
 
