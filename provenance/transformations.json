@@ -196,7 +196,7 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "4279dd4e2a6e650305b0e881f7b9098309219c1e61bc99a9b2bbd9f14cc1bad1",
+      "resultSha256": "9e9c1177eeab36d10379c3e56e9541f05d3302d326c274a65ebc03da9274afed",
       "task": "T055/T040",
       "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -439,7 +439,7 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "4fee0d22438fddc01abdd02b4bbad7784097c03a20011319c7d667d98a8ac8cd",
+      "resultSha256": "50712113c828731037c96b2f4297d3e427328bbff2ee3a0daaec55ccc5e13e4c",
       "task": "T013/T015/T040",
       "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },

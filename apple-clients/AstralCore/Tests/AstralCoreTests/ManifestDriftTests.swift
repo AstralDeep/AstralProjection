@@ -137,7 +137,11 @@ final class ManifestDriftTests: XCTestCase {
         // 109 = 102 + the seven feature-076 actions (computer_event /
         //        computer_response — host-only; five chrome_computer_* session
         //        controls posted through the generic SDUI action path).
-        XCTAssertEqual(manifest.acceptActions.count, 109)
+        // 117 = 109 + the eight feature-077 actions (chrome_author_quick_* ×4,
+        //        chrome_user_skill_* ×4) — all posted through the generic SDUI
+        //        action path from the My agents & skills surface, no new
+        //        client code.
+        XCTAssertEqual(manifest.acceptActions.count, 117)
     }
 
     func testConversationalVoiceFramesAndActionsAreClassifiedExactly() throws {
