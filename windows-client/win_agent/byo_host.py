@@ -1122,7 +1122,16 @@ class ByoAgentHost:
             "runtime_instance_id",
             "lifecycle_generation",
         }
-        if not isinstance(value, dict) or set(value) != expected:
+        if not isinstance(value, dict):
+            raise ValueError("pre-launch fence fields are invalid")
+        # The server's canonical RuntimeFence serializes with process_id=None
+        # before launch (its dataclass to_dict); a pre-launch fence carries no
+        # process yet, so an explicit null IS the pre-launch shape. A non-null
+        # process_id here would be a post-launch fence on the wrong frame.
+        value = dict(value)
+        if "process_id" in value and value["process_id"] is None:
+            value.pop("process_id")
+        if set(value) != expected:
             raise ValueError("pre-launch fence fields are invalid")
         if not isinstance(value["agent_id"], str) or not _SAFE_ID.match(value["agent_id"]):
             raise ValueError("agent_id is invalid")

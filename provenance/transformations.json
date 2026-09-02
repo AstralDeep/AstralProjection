@@ -709,7 +709,7 @@
       "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
       "sourceMode": "100644",
-      "resultSha256": "2209e857a47cd75ac3fe5318a539a8b70321d9801256bd87e1bfb030ffe601d6",
+      "resultSha256": "b509800444ed4267316ea3edf1a40ad60a080cb611c7dc97001917c017e262f4",
       "task": "T166/T102",
       "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata."
     },
@@ -853,7 +853,7 @@
       "sourcePath": "windows-client/win_agent/byo_host.py",
       "sourceBlob": "6ed2071b286421438f09c14cc6725540e2de370e",
       "sourceMode": "100644",
-      "resultSha256": "593587b71da3359bcfd12bcee48391b0ca1671b75a2eeb208e0c2f0e22275f6d",
+      "resultSha256": "57078ad51068a130f008b916cd722cb8630b6fa89e33d607cc98e63309979dc6",
       "task": "T166",
       "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch."
     },

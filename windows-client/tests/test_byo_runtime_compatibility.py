@@ -1021,3 +1021,29 @@ def test_agent_host_ack_model_is_frozen_and_exact() -> None:
     assert isinstance(parsed, AgentHostRegistered)
     with pytest.raises(Exception):
         parsed.host_session_id = str(uuid.uuid4())  # type: ignore[misc]
+
+
+def test_prelaunch_fence_accepts_the_servers_explicit_null_process_id() -> None:
+    """Feature 077 live finding: Deep's canonical ``RuntimeFence.to_dict()``
+    serializes ``process_id: None`` before launch (a dataclass ``asdict``), and
+    the host refused every real delivery as 'pre-launch fence fields are
+    invalid' — the express lane's first delivered agent was discarded on the
+    PC. An explicit null IS the pre-launch shape; a bound process on this frame
+    is still refused."""
+    from win_agent.byo_host import ByoAgentHost
+
+    base = {
+        "agent_id": AGENT_ID,
+        "host_id": HOST_ID,
+        "host_session_id": HOST_SESSION_ID,
+        "delivery_id": DELIVERY_ID,
+        "revision_id": REVISION_ID,
+        "runtime_instance_id": RUNTIME_INSTANCE_ID,
+        "lifecycle_generation": 14,
+    }
+    assert ByoAgentHost._prelaunch_fence(dict(base, process_id=None)) == base
+    assert ByoAgentHost._prelaunch_fence(dict(base)) == base
+    with pytest.raises(ValueError, match="pre-launch fence fields are invalid"):
+        ByoAgentHost._prelaunch_fence(dict(base, process_id=str(uuid.uuid4())))
+    with pytest.raises(ValueError):
+        ByoAgentHost._prelaunch_fence(dict(base, extra=1))
