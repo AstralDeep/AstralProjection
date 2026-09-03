@@ -160,9 +160,9 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
       "sourceMode": "100644",
-      "resultSha256": "97ed5f3635cd8ab041757d456961f6ed8b864c704bc6fd8e11e7ed856804dbfe",
+      "resultSha256": "36faf78077070d82f0d6d821c258e669ef8456d9785f3b123300a1c6f9f0e475",
       "task": "T055/T040",
-      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Wrap the two 122-column computer_host/computer_request disposition entries to satisfy strict recursive swift-format (lineLength 120)."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
