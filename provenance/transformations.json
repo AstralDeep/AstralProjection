@@ -574,27 +574,27 @@
       "sourcePath": "windows-client/AstralDeep.spec",
       "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
       "sourceMode": "100644",
-      "resultSha256": "bfbd7bf7452791fc9b324170d886b771ffd604798db296ff6eace49af76a890b",
+      "resultSha256": "5b4d15636c82d3eec46cc4ea40cd4f4828018efe37bc54af4d3e0184d9851eee",
       "task": "T166/T058/T059/T102",
-      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0."
+      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/README.md",
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "d8797ae9c97d4cce8b73fd996edeeabe3ba1e4048e8d2cffa018bbfa329df1d5",
+      "resultSha256": "c4494bfbb54d9733cb667b7a13b751264e94daea5685e7a74025644ffa109a1a",
       "task": "T060/T062/T188/T056/T058/T104/T102",
-      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile."
+      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/astral_client/__init__.py",
       "sourcePath": "windows-client/astral_client/__init__.py",
       "sourceBlob": "813cef4ea157a2f0c56b2e816396c6a0f380eb58",
       "sourceMode": "100644",
-      "resultSha256": "5885b18ed635d546f7a01f82a32f1968bcfe6113fc4a8587c75b5f3583c8638c",
+      "resultSha256": "82a02923a021e16f44b0e9272cff3e790a697023b6f4238c3d17cd0bd49f27a6",
       "task": "T102",
-      "reason": "Advance the native Windows client identity from 0.4.0 to the 0.5.0 release candidate."
+      "reason": "Advance the native Windows client identity from 0.4.0 to the 0.5.0 release candidate. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/astral_client/app.py",
@@ -610,9 +610,9 @@
       "sourcePath": "windows-client/astral_client/deployment.py",
       "sourceBlob": "0483064234542ed0033353ee4551735228781990",
       "sourceMode": "100644",
-      "resultSha256": "e770b4d5818b1d7f5e1aca6ef2fce956b87e305692b11481b94ec273c2639d38",
+      "resultSha256": "a9efb18a4ef676738c9e055ba03f076f495b4223ada34c2ddb48d0d923bcd134",
       "task": "T166/T102",
-      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation and a 0.5.0 generic-development identity."
+      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation and a 0.5.0 generic-development identity. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/astral_client/integrity.py",
@@ -655,18 +655,18 @@
       "sourcePath": "windows-client/deployment/release-profile.json",
       "sourceBlob": "751fff03c1b3ff8838e35186d1105f26fa4f6696",
       "sourceMode": "100644",
-      "resultSha256": "e7d3e3507ef3f9c073cc23cf22202d8be1c840ddc8765822713564e4c16cbe82",
+      "resultSha256": "d5be95848ef106db5f5f3a77f189a7d5a4f5bdbf452e5180586d2b9badd7a430",
       "task": "T102",
-      "reason": "Bind the reviewed production deployment profile to Windows release 0.5.0 without changing authority, endpoints, credentials, or override policy."
+      "reason": "Bind the reviewed production deployment profile to Windows release 0.5.0 without changing authority, endpoints, credentials, or override policy. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/deployment/runtime-manifest.json",
       "sourcePath": "windows-client/deployment/runtime-manifest.json",
       "sourceBlob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
       "sourceMode": "100644",
-      "resultSha256": "9cf8d1f8e74e776626751189caa6983f19002369e17f6554e0bff70450b075ef",
+      "resultSha256": "91f87c1fda4f383e418034657d3e43863379d19dccf848a0ce1f0209255aad4f",
       "task": "T166/T102",
-      "reason": "Declare runtime contract v3 and the protected-executor file while binding the Windows 0.5.0 release/profile identities and canonical profile digest."
+      "reason": "Declare runtime contract v3 and the protected-executor file while binding the Windows 0.5.0 release/profile identities and canonical profile digest. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/main.py",
@@ -709,18 +709,18 @@
       "sourcePath": "windows-client/tests/release_evidence_060.py",
       "sourceBlob": "21b46644204d9d509e129dfcde32dce6bc202584",
       "sourceMode": "100644",
-      "resultSha256": "c65845f0f2bc41f990b3376208cd622120e8d6d72c7ebd18408b7f95d8bfb300",
+      "resultSha256": "cb544fd3d52a2ce9265dc1031e2b2ba38d01aa20843a9cdc52ce201b688cca6e",
       "task": "T102",
-      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity."
+      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
       "sourceMode": "100644",
-      "resultSha256": "7f3c7db643c86cfa16e11bfd815639f644a400c9ac1b3d5459434ac6c61457f2",
+      "resultSha256": "c9cf8d8f861460a1da05ec49a2c584214bea85df21796104f5533449905b99e3",
       "task": "T166/T102",
-      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata."
+      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/tests/test_byo_supervision_060.py",
@@ -736,9 +736,9 @@
       "sourcePath": "windows-client/tests/test_deployment_profile_060.py",
       "sourceBlob": "1a71b8dd3865abab13a6ac954223e928477c1f8a",
       "sourceMode": "100644",
-      "resultSha256": "836a83b57cdee3916edba4b17d3531f1f25c3bd76dc11398f9a9f439fb1da14c",
+      "resultSha256": "a058363a0dc18ab40d5389b231fe220dd57b012d9eee89cb10a6df34db4409e7",
       "task": "T102",
-      "reason": "Verify the 0.5.0 production and generic-development deployment identities, canonical digest, precedence, and packaged validation contract."
+      "reason": "Verify the 0.5.0 production and generic-development deployment identities, canonical digest, precedence, and packaged validation contract. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/tests/test_integrity.py",
@@ -763,9 +763,9 @@
       "sourcePath": "windows-client/tests/test_packaged_release.py",
       "sourceBlob": "d2388022214b169fd9438ea80ece7206ad736758",
       "sourceMode": "100644",
-      "resultSha256": "7f701e9a4582dc77c02ae605d58596dbdb59179ddf0b17c2528c76fe2849e166",
+      "resultSha256": "707970f29a7c8372c89cd52b7c13470ca34f00d5aadc8aef0c6cadebd5a51620",
       "task": "T058/T104/T102",
-      "reason": "Inspect the actual frozen archive for the qualified speech runtime, smoke the embedded helper, and verify the 0.5.0 packaged deployment report."
+      "reason": "Inspect the actual frozen archive for the qualified speech runtime, smoke the embedded helper, and verify the 0.5.0 packaged deployment report. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "windows-client/tests/test_protocol_manifest.py",
@@ -919,9 +919,9 @@
       "sourcePath": ".github/workflows/build-windows-candidate.yml",
       "sourceBlob": "8fc92178a67ef67703b7e17e1ed7a15df5aa3867",
       "sourceMode": "100644",
-      "resultSha256": "b97bba743535bada288fbf2010d03ea8cdabbab32f03d64e209128a29b6b2a57",
+      "resultSha256": "6cfc24b7264fba027c917a65794a8dffd5deac07664ee7ee3135606fa3443413",
       "task": "T056/T102",
-      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate."
+      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate. Feature 078: advance the Windows client identity to 0.5.1 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
     },
     {
       "path": "workflows-disabled/release-apple-evidence-normalizer.yml",

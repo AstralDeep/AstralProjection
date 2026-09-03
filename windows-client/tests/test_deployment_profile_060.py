@@ -35,7 +35,7 @@ def _profile(**changes):
 def _generic(**changes):
     value = _profile(
         profile_id="astraldeep-local-developer",
-        release_id="generic-developer-0.5.0",
+        release_id="generic-developer-0.5.1",
         distribution="generic_developer",
         local_only=True,
         authority="http://127.0.0.1:8080/realms/Astral",
@@ -67,7 +67,7 @@ def _write(path: Path, value: dict) -> Path:
 def test_reviewed_release_profile_is_complete_strict_and_nonlocal():
     effective = resolve_effective_profile(
         bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     assert effective.source == "bundled_release"
     assert effective.profile.distribution == "production"
@@ -157,7 +157,7 @@ def test_whole_profile_precedence_is_managed_cli_persisted_bundled(tmp_path):
         persisted_profile_json=json.dumps(persisted),
         command_line_profile_path=cli,
         managed_profile_path=managed,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     assert result.source == "managed_override"
     assert result.profile.profile_id == "managed-profile"
@@ -166,7 +166,7 @@ def test_whole_profile_precedence_is_managed_cli_persisted_bundled(tmp_path):
         bundled_profile_path=bundled,
         persisted_profile_json=json.dumps(persisted),
         command_line_profile_path=cli,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     assert result.source == "command_line_override"
     assert result.profile.profile_id == "cli-profile"
@@ -174,7 +174,7 @@ def test_whole_profile_precedence_is_managed_cli_persisted_bundled(tmp_path):
     result = resolve_effective_profile(
         bundled_profile_path=bundled,
         persisted_profile_json=json.dumps(persisted),
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     assert result.source == "persisted_override"
     assert result.profile.profile_id == "persisted-profile"
@@ -194,7 +194,7 @@ def test_higher_precedence_profile_does_not_probe_broken_persisted_state(
     cli = resolve_startup(
         ["--deployment-profile", str(selected)],
         resource_root=ROOT,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
         frozen=True,
         environment={},
     )
@@ -203,7 +203,7 @@ def test_higher_precedence_profile_does_not_probe_broken_persisted_state(
     managed = resolve_startup(
         [],
         resource_root=ROOT,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
         frozen=True,
         environment={"ASTRAL_MANAGED_DEPLOYMENT_PROFILE": str(selected)},
     )
@@ -218,7 +218,7 @@ def test_invalid_selected_override_never_falls_back(tmp_path):
         resolve_effective_profile(
             bundled_profile_path=bundled,
             command_line_profile_path=invalid,
-            expected_client_version="0.5.0",
+            expected_client_version="0.5.1",
         )
 
 
@@ -231,7 +231,7 @@ def test_disallowed_override_never_falls_back(tmp_path):
         resolve_effective_profile(
             bundled_profile_path=bundled,
             command_line_profile_path=cli,
-            expected_client_version="0.5.0",
+            expected_client_version="0.5.1",
         )
 
 
@@ -240,7 +240,7 @@ def test_resolution_is_immutable_and_digest_is_canonical(tmp_path):
     assert canonical_profile_digest(reordered) == canonical_profile_digest(_profile())
     effective = resolve_effective_profile(
         bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     with pytest.raises(FrozenInstanceError):
         effective.source = "different"
@@ -252,7 +252,7 @@ def test_resolved_profile_does_not_reread_environment(monkeypatch):
     monkeypatch.setenv("ASTRAL_WS_URL", "ws://127.0.0.1:1/ws")
     effective = resolve_effective_profile(
         bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
         environment={},
     )
     monkeypatch.setenv("ASTRAL_WS_URL", "ws://127.0.0.1:2/ws")
@@ -266,7 +266,7 @@ def test_built_in_tools_agent_consumes_the_same_profile_identity(monkeypatch):
 
     effective = resolve_effective_profile(
         bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
         environment={},
     )
     monkeypatch.setenv("AGENT_API_KEY", "must-not-be-reread")
@@ -285,7 +285,7 @@ def test_every_packaged_runtime_consumer_agrees_on_profile_and_endpoint():
 
     effective = resolve_effective_profile(
         bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
         environment={},
     )
     window = SimpleNamespace(
@@ -305,11 +305,11 @@ def test_every_packaged_runtime_consumer_agrees_on_profile_and_endpoint():
 def test_redacted_report_contains_identity_not_connection_values():
     effective = resolve_effective_profile(
         bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     report = effective.redacted_report()
     encoded = json.dumps(report, sort_keys=True)
-    assert report["profile_id"] == "astraldeep-production-uky-0.5.0"
+    assert report["profile_id"] == "astraldeep-production-uky-0.5.1"
     assert report["profile_sha256"] == effective.digest
     assert "iam.ai.uky.edu" not in encoded
     assert "sandbox.ai.uky.edu" not in encoded
@@ -320,14 +320,14 @@ def test_redacted_report_contains_identity_not_connection_values():
 def test_packaged_validation_binds_profile_lock_input_and_worker():
     effective = resolve_effective_profile(
         bundled_profile_path=RELEASE_PROFILE,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     report = validate_packaged_deployment(
         effective,
         runtime_manifest_path=RUNTIME_MANIFEST,
         requirements_lock_path=RELEASE_LOCK,
         requirements_input_path=REQUIREMENTS_INPUT,
-        expected_client_version="0.5.0",
+        expected_client_version="0.5.1",
     )
     assert report["status"] == "valid"
     assert report["worker_entrypoint"] == "AstralDeep.exe --byo-worker"

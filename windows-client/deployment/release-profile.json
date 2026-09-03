@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "profile_id": "astraldeep-production-uky-0.5.0",
-  "release_id": "windows-0.5.0",
-  "client_version": "0.5.0",
+  "profile_id": "astraldeep-production-uky-0.5.1",
+  "release_id": "windows-0.5.1",
+  "client_version": "0.5.1",
   "distribution": "production",
   "local_only": false,
   "authority": "https://iam.ai.uky.edu/realms/Astral",
