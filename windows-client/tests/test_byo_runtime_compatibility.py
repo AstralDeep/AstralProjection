@@ -658,6 +658,11 @@ def test_invalid_inventory_is_all_or_nothing_and_valid_delete_removes_revision(
     )
     restarted.handle_frame(valid)
     assert not revision_dir.exists()
+    # The last revision's deletion takes the empty ``revisions/`` shell and the
+    # agent root with it — a leftover root is reported as an installed agent by
+    # ``inventory()`` (rig finding 2026-09-03).
+    assert not (tmp_path / AGENT_ID).exists()
+    assert restarted.inventory() == []
     assert supervisor.spawns == []
 
 

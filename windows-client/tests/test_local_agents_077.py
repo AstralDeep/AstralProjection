@@ -77,6 +77,35 @@ def test_inventory_is_derived_and_read_only(tmp_path):
     assert bh._bundle_display_name(str(tmp_path / "nowhere")) == ""
 
 
+def test_inventory_skips_and_prunes_a_root_whose_revisions_are_gone(tmp_path):
+    """Rig finding (2026-09-03): after reconciliation deleted an agent's last
+    revision, the empty ``<agent>/revisions`` shell stayed behind and the dialog
+    listed it as an installed, offline agent named by its id."""
+    host = _host(tmp_path)
+    (tmp_path / "ua-ghost-9" / "revisions").mkdir(parents=True)
+    kept = tmp_path / "ua-kept-8" / "revisions" / "rev-1"
+    kept.mkdir(parents=True)
+    (kept / "manifest.json").write_text(json.dumps({"name": "Kept"}))
+    legacy = _install(tmp_path, "ua-legacy-7", "Legacy")
+    by_id = {r["agent_id"]: r for r in host.inventory()}
+    assert set(by_id) == {"ua-kept-8", "ua-legacy-7"}
+    assert by_id["ua-kept-8"]["status"] == "offline" and by_id["ua-legacy-7"]["directory"] == legacy
+    host._prune_empty_agent_root("ua-ghost-9")
+    assert not (tmp_path / "ua-ghost-9").exists()
+    host._prune_empty_agent_root("ua-kept-8")          # still holds a revision: untouched
+    host._prune_empty_agent_root("ua-legacy-7")        # legacy flat bundle: untouched
+    assert kept.is_dir() and os.path.isdir(legacy)
+    host._prune_empty_agent_root("ua-absent-0")        # nothing there: no error
+    # The host's own inventory pass sweeps ghosts left by earlier deletions —
+    # and a root whose only revision it just discarded as partial (the
+    # pre-existing corruption rule) becomes one too. Legacy bundles are untouched.
+    (tmp_path / "ua-ghost-3" / "revisions").mkdir(parents=True)
+    assert host._local_inventory() == []
+    assert not (tmp_path / "ua-ghost-3").exists()
+    assert not (tmp_path / "ua-kept-8").exists()
+    assert os.path.isdir(legacy)
+
+
 def test_dialog_lists_refreshes_and_stops_through_the_host(qapp, tmp_path):
     host = _host(tmp_path)
     running_dir = _install(tmp_path, "ua-greeter-1", "Greeter")
