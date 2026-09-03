@@ -30,7 +30,7 @@ def test_android_store_and_oidc_identity_remain_registered_values() -> None:
     assert 'val registeredApplicationId = "com.personalailabs.astraldeep"' in gradle
     assert 'val registeredRedirectScheme = "com.personalailabs.astraldeep"' in gradle
     assert "val migrationVersionCodeFloor = 5" in gradle
-    assert "val currentVersionCode = 6" in gradle
+    assert "val currentVersionCode = 7" in gradle
     assert "check(currentVersionCode >= migrationVersionCodeFloor)" in gradle
     assert "applicationId = registeredApplicationId" in gradle
     assert "versionCode = currentVersionCode" in gradle

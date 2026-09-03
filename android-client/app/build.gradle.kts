@@ -83,7 +83,7 @@ val keystoreProperties =
 val registeredApplicationId = "com.personalailabs.astraldeep"
 val registeredRedirectScheme = "com.personalailabs.astraldeep"
 val migrationVersionCodeFloor = 5
-val currentVersionCode = 6
+val currentVersionCode = 7
 check(currentVersionCode >= migrationVersionCodeFloor) {
     "Android versionCode must not regress below the AstralProjection migration floor"
 }
