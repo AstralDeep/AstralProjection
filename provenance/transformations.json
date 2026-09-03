@@ -196,7 +196,7 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "4279dd4e2a6e650305b0e881f7b9098309219c1e61bc99a9b2bbd9f14cc1bad1",
+      "resultSha256": "9e9c1177eeab36d10379c3e56e9541f05d3302d326c274a65ebc03da9274afed",
       "task": "T055/T040",
       "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -268,7 +268,7 @@
       "sourcePath": "backend/webrender/chrome/menu_model.py",
       "sourceBlob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
       "sourceMode": "100644",
-      "resultSha256": "ac7059dfc5fd863fd7f58734ce24d62adab76e98a00f0cd1b3566d65fa90da52",
+      "resultSha256": "38cc8577639d08d6541344236ef7d05b1dfefd8c083b4b48acc91a5635e80dfd",
       "task": "T044/T040",
       "reason": "Replace lazy Deep feature-flag imports with explicit host-supplied presentation state. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -412,7 +412,7 @@
       "sourcePath": "backend/webrender/chrome/topbar.py",
       "sourceBlob": "60411d8364415d1cd1ef687ce59457673d8c62cb",
       "sourceMode": "100644",
-      "resultSha256": "79b09c0392204a7fb76df7d4d96c5575ca655f65dbd41102e59c142b94366d7f",
+      "resultSha256": "f9066585ef4fad9fcfc81c4fd362d5e38334a4568788071907dcedb81eea9960",
       "task": "T044/T040",
       "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -421,7 +421,7 @@
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "093f4c267c9207113774eefa0cd4cb8e8a0f3a74f428e627249dd196256e9c80",
+      "resultSha256": "362821ea122501439f69c1e0029589777dd55381968d79982bf8b6f992eb5c6b",
       "task": "T052/T063",
       "reason": "Name the standalone Projection manifest as the current error-frame contract source."
     },
@@ -439,7 +439,7 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "4fee0d22438fddc01abdd02b4bbad7784097c03a20011319c7d667d98a8ac8cd",
+      "resultSha256": "50712113c828731037c96b2f4297d3e427328bbff2ee3a0daaec55ccc5e13e4c",
       "task": "T013/T015/T040",
       "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -592,7 +592,7 @@
       "sourcePath": "windows-client/astral_client/app.py",
       "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
       "sourceMode": "100644",
-      "resultSha256": "103ba4b4a3e8e916c05cfd35342fe823d49f4c09a2f0f4130933e626af3c744b",
+      "resultSha256": "a801994b9aea1845cc6229a530f8338f3563f945b0d8be46386d8032d344c7c4",
       "task": "T059/T071/T088/T040",
       "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -619,7 +619,7 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "f27ad0d7567da71f76ee8cb23b2394e1f0478c21d900afc7b6ac371c8e7f7fd8",
+      "resultSha256": "6b56987d4d5fd22e7f82bf012931249e20838dc3106c2db6e8e9b43a9032a7e9",
       "task": "T166/T054/T071/T089/T040",
       "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
@@ -664,7 +664,7 @@
       "sourcePath": "windows-client/main.py",
       "sourceBlob": "7b9c2fba21cb01b78cc90f531ae3712b366d9542",
       "sourceMode": "100644",
-      "resultSha256": "48e6196d3a97347404a1c48362eecf3b78cb06c5a3b497c3d1964acda47a0778",
+      "resultSha256": "56e0dc7813371470f406fd19cc9035cada61cca868ab55bfd0cc5ea8d36cb6f9",
       "task": "T166",
       "reason": "Propagate authenticated host-session identity into the runtime-v3 Windows BYO authority boundary."
     },
@@ -709,7 +709,7 @@
       "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
       "sourceMode": "100644",
-      "resultSha256": "2209e857a47cd75ac3fe5318a539a8b70321d9801256bd87e1bfb030ffe601d6",
+      "resultSha256": "5af1d0df800832b7ee9d37cbae567231e6d724e02472827bd7916412a1a1ea1d",
       "task": "T166/T102",
       "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata."
     },
@@ -853,7 +853,7 @@
       "sourcePath": "windows-client/win_agent/byo_host.py",
       "sourceBlob": "6ed2071b286421438f09c14cc6725540e2de370e",
       "sourceMode": "100644",
-      "resultSha256": "b6d3a896f990f2c6fd859d883b15db18517eadf7419d42bfafc3904eed5a815b",
+      "resultSha256": "3549c845b5818d00b57676fa1452b3bfcba630cf8860e172f8f5ec09c44cff82",
       "task": "T166",
       "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch."
     },

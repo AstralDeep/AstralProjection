@@ -152,7 +152,10 @@ _ACCOUNT_ITEMS: Tuple[MenuItem, ...] = (
 # (FF_BYO_AGENTS, default OFF) exactly like Pulse: with the flag off the item is
 # absent from every client's menu, and the surface + its handlers refuse anyway
 # (defence in depth — a menu is a hint, never an authorization).
-_BYO_AGENTS_ITEM = MenuItem("my-agents", "My agents", "agent_authoring")
+_BYO_AGENTS_ITEM = MenuItem("my-agents", "My agents & skills", "agent_authoring")
+# Feature 077 — the same surface with only the skills half when personal agents
+# are off (FF_BYO_AGENTS) but user skills are on (FF_USER_SKILLS, default ON).
+_SKILLS_ONLY_ITEM = MenuItem("my-agents", "My skills", "agent_authoring")
 # Feature 063 — the ONLY affordance that opens the Remote machines inventory.
 # Flag-gated (FF_REMOTE_COMPUTE, default OFF) like "My agents": absent from every
 # client's menu when off. Per-user (not admin), so admin_only stays False.
@@ -184,6 +187,7 @@ def build_menu_model(
     byo_enabled: bool = False,
     remote_enabled: bool = False,
     computer_enabled: bool = False,
+    skills_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
@@ -197,6 +201,9 @@ def build_menu_model(
         byo_enabled: host-resolved "My agents" (BYO authoring) presence.
         remote_enabled: host-resolved remote-machine inventory presence.
         computer_enabled: host-resolved "My computers" (feature 076) presence.
+        skills_enabled: host-resolved user-skills presence (feature 077). With
+            ``byo_enabled`` the item reads "My agents & skills"; alone it reads
+            "My skills" — the same ``agent_authoring`` surface either way.
         include_admin: whether the ADMIN TOOLS group is eligible at all. The web
             passes ``True`` (admins see it). Native clients (Windows/Android)
             pass ``False`` — admin settings are web-only, so the group is omitted
@@ -213,6 +220,7 @@ def build_menu_model(
     show_byo = bool(byo_enabled)
     show_remote = bool(remote_enabled)
     show_computer = bool(computer_enabled)
+    show_skills = bool(skills_enabled)
 
     topbar: List[TopBarControl] = [
         TopBarControl("brand", "brand"),
@@ -244,7 +252,7 @@ def build_menu_model(
     )
     account_items = (
         _ACCOUNT_ITEMS
-        + ((_BYO_AGENTS_ITEM,) if show_byo else ())
+        + ((_BYO_AGENTS_ITEM,) if show_byo else ((_SKILLS_ONLY_ITEM,) if show_skills else ()))
         + ((_REMOTE_MACHINES_ITEM,) if show_remote else ())
         + ((_MY_COMPUTERS_ITEM,) if show_computer else ())
     )
@@ -265,6 +273,7 @@ def menu_model_dict(
     byo_enabled: bool = False,
     remote_enabled: bool = False,
     computer_enabled: bool = False,
+    skills_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
@@ -280,6 +289,7 @@ def menu_model_dict(
         byo_enabled=byo_enabled,
         remote_enabled=remote_enabled,
         computer_enabled=computer_enabled,
+        skills_enabled=skills_enabled,
         include_admin=include_admin,
         include_tour=include_tour,
     ).to_dict()

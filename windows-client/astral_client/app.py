@@ -1117,9 +1117,15 @@ class TopBar(QFrame):
     the web. Connection/integrity status is carried in the mark's tooltip so the
     bar stays clean."""
 
-    def __init__(self, user: str, on_new_chat, on_recent, on_open_surface, on_sign_out):
+    def __init__(self, user: str, on_new_chat, on_recent, on_open_surface, on_sign_out,
+                 local_items=None):
         super().__init__()
         self.setObjectName("topbar")
+        #: Feature 077: client-local Settings entries — ``[(label, callable)]`` —
+        #: appended after the server-owned groups under their own heading.
+        #: Server model + client-local acts, one menu; the model stays the
+        #: single definition of everything that is a server surface.
+        self._local_items = list(local_items or [])
         # Web #astral-topbar: translucent bg-tinted glass band with a soft
         # bottom hairline (Qt has no backdrop blur; the alpha tint over the
         # root's nebula glows gives the same layered read).
@@ -1303,6 +1309,20 @@ class TopBar(QFrame):
                 act.triggered.connect(
                     lambda _checked=False, s=surface, ln=label: self._emit_open(s, ln)
                 )
+                self._menu.addAction(act)
+        if self._local_items:
+            head = QLabel("THIS PC")
+            head.setStyleSheet(
+                f"color:{T.MUTED}; font-size:10px; font-weight:700; "
+                "letter-spacing:1px; padding:6px 24px 2px 24px; background:transparent;"
+            )
+            ha = QWidgetAction(self._menu)
+            ha.setDefaultWidget(head)
+            ha.setEnabled(False)
+            self._menu.addAction(ha)
+            for label, handler in self._local_items:
+                act = QAction(_btn_label(label), self._menu)
+                act.triggered.connect(lambda _checked=False, h=handler: h())
                 self._menu.addAction(act)
         self._menu.addSeparator()
         # Red Sign out at the very bottom (a QWidgetAction so we can color it).
@@ -1977,6 +1997,9 @@ class MainWindow(QMainWindow):
             self._open_history,  # Recent chats
             self._open_surface,
             self._sign_out,
+            # Feature 077: the person at the PC can see and stop what runs here.
+            local_items=([("Agents on this PC", self._open_local_agents)]
+                         if self._byo_enabled else []),
         )
 
         self.rail = ChatRail()
@@ -2613,6 +2636,17 @@ class MainWindow(QMainWindow):
         """Feature 044 (T040): re-request a settings surface that failed to load
         in time (the SurfaceDialog re-arms its in-flight state; we re-send)."""
         self.client.send_event("chrome_open", {"surface": surface, "params": params or {}})
+
+    def _open_local_agents(self) -> None:
+        """Feature 077: the client-local "Agents on this PC" window."""
+        from .local_agents import LocalAgentsDialog
+        dialog = getattr(self, "_local_agents_dialog", None)
+        if dialog is None:
+            dialog = LocalAgentsDialog(getattr(self, "_byo", None), parent=self)
+            self._local_agents_dialog = dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def _open_history(self) -> None:
         if self._history_dialog is None:

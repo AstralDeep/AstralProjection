@@ -422,6 +422,30 @@ def worker_argv(agent_dir: str) -> List[str]:
     return [sys.executable, main_py, "--byo-worker", agent_dir]
 
 
+def _bundle_display_name(directory: Optional[str]) -> str:
+    """The agent's display name from its bundle manifest (``manifest.json``
+    ``name``), searched one level down too for a v3 revision root. Best effort:
+    "" when nothing readable is there."""
+    if not directory:
+        return ""
+    candidates = [os.path.join(directory, "manifest.json")]
+    try:
+        for entry in sorted(os.listdir(directory)):
+            candidates.append(os.path.join(directory, entry, "manifest.json"))
+    except OSError:
+        pass
+    for path in candidates:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            continue
+        name = data.get("name") if isinstance(data, dict) else None
+        if isinstance(name, str) and name.strip():
+            return name.strip()[:80]
+    return ""
+
+
 class _Child:
     """One supervised user agent."""
 
@@ -548,6 +572,24 @@ class ByoAgentHost:
         self._launching_runtime_instances: set[str] = set()
         self._lock = threading.Lock()
         self._rehydrated = False
+
+    def _installed_agent_ids(self) -> List[str]:
+        """Agent ids with a bundle on disk (legacy flat dirs and v3 revision
+        roots alike); staging dirs are never agents."""
+        try:
+            entries = sorted(os.listdir(self._base_dir))
+        except OSError:
+            return []
+        out = []
+        for name in entries:
+            if name.endswith(_PENDING_SUFFIX) or name.startswith("."):
+                continue
+            if not _SAFE_ID.match(name):
+                continue
+            directory = os.path.join(self._base_dir, name)
+            if os.path.isdir(directory):
+                out.append(name)
+        return out
 
     def _agent_dir(self, agent_id: str) -> Optional[str]:
         """The on-disk directory for one agent, or None if the id cannot own one.
@@ -952,9 +994,12 @@ class ByoAgentHost:
         if compatibility is not None or not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
             return None
         try:
-            if set(os.listdir(directory)) != set(BUNDLE_FILE_NAMES) | {
-                _RUNTIME_METADATA_FILE
-            }:
+            # Python writes __pycache__ into the bundle directory the first
+            # time the worker imports the agent; that is byte-code cache, not
+            # bundle content. Treating it as corruption deleted every personal
+            # agent that had ever run on the next reconnect (077 live finding).
+            present = {name for name in os.listdir(directory) if name != "__pycache__"}
+            if present != set(BUNDLE_FILE_NAMES) | {_RUNTIME_METADATA_FILE}:
                 return None
             files = {}
             for name in BUNDLE_FILE_NAMES:
@@ -1080,7 +1125,16 @@ class ByoAgentHost:
             "runtime_instance_id",
             "lifecycle_generation",
         }
-        if not isinstance(value, dict) or set(value) != expected:
+        if not isinstance(value, dict):
+            raise ValueError("pre-launch fence fields are invalid")
+        # The server's canonical RuntimeFence serializes with process_id=None
+        # before launch (its dataclass to_dict); a pre-launch fence carries no
+        # process yet, so an explicit null IS the pre-launch shape. A non-null
+        # process_id here would be a post-launch fence on the wrong frame.
+        value = dict(value)
+        if "process_id" in value and value["process_id"] is None:
+            value.pop("process_id")
+        if set(value) != expected:
             raise ValueError("pre-launch fence fields are invalid")
         if not isinstance(value["agent_id"], str) or not _SAFE_ID.match(value["agent_id"]):
             raise ValueError("agent_id is invalid")
@@ -1344,8 +1398,10 @@ class ByoAgentHost:
     def _send_v3_frame(self, frame: dict[str, Any]) -> None:
         try:
             self._send_frame(frame)
-        except Exception:  # noqa: BLE001 - transport loss triggers host teardown
-            logger.debug("BYO v3 frame send failed: %s", frame.get("type"), exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - transport loss triggers host teardown
+            # WARNING, not debug: a frame that dies here (a result, a state, a
+            # heartbeat) is invisible on the server except as a timeout.
+            logger.warning("BYO v3 frame send failed: %s (%s)", frame.get("type"), exc)
 
     def _prelaunch_failure(
         self,
@@ -1471,6 +1527,9 @@ class ByoAgentHost:
         fence = dict(prelaunch_fence, process_id=str(process_id))
         environment.update(
             {
+                # Keep the immutable revision directory byte-for-byte the
+                # delivered bundle: no __pycache__ beside the audited files.
+                "PYTHONDONTWRITEBYTECODE": "1",
                 "ASTRAL_RUNTIME_FENCE_JSON": json.dumps(
                     fence, sort_keys=True, separators=(",", ":")
                 ),
@@ -1673,6 +1732,7 @@ class ByoAgentHost:
         if not self._valid_request_identity(frame):
             logger.warning("dropping unfenced request result for %s", child.agent_id)
             return
+        logger.info("BYO %s result %s relayed", child.agent_id, frame.get("request_id"))
         self._send_v3_frame(frame)
 
     def _emit_runtime_heartbeat(self, child: _RuntimeChild) -> None:
@@ -1799,35 +1859,53 @@ class ByoAgentHost:
         return True
 
     def _to_runtime_child(self, msg: dict[str, Any]) -> None:
+        # Every drop below is logged: a request that vanishes here surfaces on
+        # the server only as a timeout, which is indistinguishable from a
+        # hung agent (feature 077 live finding).
         try:
             fence = self._full_fence(msg.get("fence"))
-        except ValueError:
+        except ValueError as exc:
+            logger.warning("BYO request dropped: %s", exc)
             return
         with self._lock:
             child = self._runtime_children.get(fence["process_id"])
-        if child is None or child.fence != fence or not child.alive():
+        if child is None:
+            logger.warning("BYO request dropped: no child for process %s", fence["process_id"])
+            return
+        if child.fence != fence:
+            logger.warning("BYO %s request dropped: fence differs from the child's", child.agent_id)
+            return
+        if not child.alive():
+            logger.warning("BYO %s request dropped: child is not alive", child.agent_id)
             return
         frame = msg.get("frame")
         if frame is None:
+            logger.warning("BYO %s request dropped: no frame", child.agent_id)
             return
         if isinstance(frame, str):
             try:
                 parsed = json.loads(frame)
             except (ValueError, TypeError):
+                logger.warning("BYO %s request dropped: frame is not JSON", child.agent_id)
                 return
         else:
             parsed = frame
-        if (
-            not isinstance(parsed, dict)
-            or parsed.get("fence") != fence
-            or not self._valid_request_identity(parsed)
-        ):
+        if not isinstance(parsed, dict):
+            logger.warning("BYO %s request dropped: frame is not an object", child.agent_id)
+            return
+        if parsed.get("fence") != fence:
+            logger.warning("BYO %s request dropped: inner fence differs", child.agent_id)
+            return
+        if not self._valid_request_identity(parsed):
+            logger.warning("BYO %s request dropped: request identity invalid", child.agent_id)
             return
         text = frame if isinstance(frame, str) else json.dumps(frame)
         try:
             child.supervised.write_line(text)
         except (OSError, ValueError, BrokenPipeError):
             logger.warning("BYO %s stdin closed; request dropped", child.agent_id)
+            return
+        logger.info("BYO %s request %s forwarded", child.agent_id, parsed.get("request_id"))
 
     # --- lifecycle --------------------------------------------------------- #
 
@@ -2016,6 +2094,53 @@ class ByoAgentHost:
                 if child.alive()
             ]
         return list(dict.fromkeys(legacy + runtime))
+
+    def inventory(self) -> List[Dict[str, Any]]:
+        """Feature 077 — what this PC hosts, for the client-local "Agents on
+        this PC" view: one entry per installed personal agent with its DERIVED
+        status (``online`` registered and alive · ``starting`` alive, not yet
+        registered · ``offline`` installed, no live child), pid, directory and
+        revision. Read-only; never touches a child."""
+        entries: Dict[str, Dict[str, Any]] = {}
+        with self._lock:
+            for agent_id, child in self._children.items():
+                alive = child.alive()
+                entries[agent_id] = {
+                    "agent_id": agent_id,
+                    "name": _bundle_display_name(child.dir) or agent_id,
+                    "status": ("online" if (alive and child.registered)
+                               else "starting" if alive else "offline"),
+                    "pid": getattr(child.proc, "pid", None) if alive else None,
+                    "directory": child.dir,
+                    "revision": "",
+                }
+            for child in self._runtime_children.values():
+                alive = child.alive()
+                installed = child.installed
+                entries[child.agent_id] = {
+                    "agent_id": child.agent_id,
+                    "name": _bundle_display_name(installed.directory) or child.agent_id,
+                    "status": ("online" if (alive and child.registered)
+                               else "starting" if alive else "offline"),
+                    "pid": getattr(child.proc, "pid", None) if alive else None,
+                    "directory": installed.directory,
+                    "revision": installed.revision_id,
+                }
+        # Installed-but-not-running bundles (a stopped agent, or one waiting for
+        # its next start) are still "on this PC".
+        try:
+            for agent_id in self._installed_agent_ids():
+                if agent_id not in entries:
+                    directory = self._agent_dir(agent_id)
+                    entries[agent_id] = {
+                        "agent_id": agent_id,
+                        "name": _bundle_display_name(directory) or agent_id,
+                        "status": "offline", "pid": None,
+                        "directory": directory, "revision": "",
+                    }
+        except Exception:  # noqa: BLE001 — a listing failure hides nothing that runs
+            logger.debug("077: installed-agent listing failed", exc_info=True)
+        return sorted(entries.values(), key=lambda e: (e["status"] != "online", e["name"].lower()))
 
     # --- revision staging (T027) ------------------------------------------- #
 
