@@ -77,8 +77,10 @@ public struct ClientDispositions: Sendable {
         // live image and the approval card all ride the generic SDUI path);
         // the Mac-side follow-up promotes them to a surface refresh (matches
         // Android's HANDLED refresh) once it can be built and verified on macOS.
-        "computer_host": "076 presence of another of the owner's computers — surface refresh pending the Apple follow-up",
-        "computer_request": "076 host-only verb request — addressed to the desktop; controllers ignore (matches Android)",
+        "computer_host":
+            "076 presence of another of the owner's computers — surface refresh pending the Apple follow-up",
+        "computer_request":
+            "076 host-only verb request — addressed to the desktop; controllers ignore (matches Android)",
         "computer_session": "076 remote-control session change — surface refresh pending the Apple follow-up",
         "chrome_render": "raw-HTML chrome region is web-only; natives use chrome_surface",
         "heartbeat": "keepalive; the transport layer answers (matches Windows/Android)",
