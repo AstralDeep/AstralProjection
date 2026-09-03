@@ -111,8 +111,8 @@ if (
     raise SystemExit("generated helper integrity module is invalid")
 
 
-if __version__ != "0.5.0" or _profile.get("client_version") != __version__:
-    raise SystemExit("Windows release profile and client version must both be 0.5.0")
+if __version__ != "0.5.1" or _profile.get("client_version") != __version__:
+    raise SystemExit("Windows release profile and client version must both be 0.5.1")
 if _manifest.get("client_version") != __version__:
     raise SystemExit("Windows runtime manifest version does not match the client")
 if _manifest.get("release_id") != _profile.get("release_id"):

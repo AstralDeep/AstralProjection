@@ -414,7 +414,7 @@ def test_protocol_registration_uses_persisted_identity_and_structured_metadata(
         "supported_runtime_contract_versions": [3],
         "runtime_lock_sha256": RUNTIME_LOCK_SHA256,
         "platform": "windows",
-        "client_version": "0.5.0",
+        "client_version": "0.5.1",
     }
     assert "host_session_id" not in frame["agent_host"]
 
