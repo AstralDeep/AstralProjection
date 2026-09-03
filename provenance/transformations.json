@@ -16,9 +16,9 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "9fe3736d4e0d069c5fd7c9b88e1d0ec85b0204a6491b937afb6d4b8c0a3e6279",
+      "resultSha256": "d1ceb9dbd111d3ef8030e74496061115965ed612aa46512045ee7bc9f4f3f705",
       "task": "T054/T057/T013/T014/T102",
-      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities."
+      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03."
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
@@ -100,6 +100,15 @@
       "resultSha256": "91b89d07e53518c921450e8481f738b97996eff3b9dace0927934e56e2acd1ad",
       "task": "T057",
       "reason": "Point the release runbook at the owned currentVersionCode constant and require exact Play Console upload-certificate fingerprint reconciliation instead of alias or subject-name assumptions."
+    },
+    {
+      "path": "android-client/gradle/libs.versions.toml",
+      "sourcePath": "android-client/gradle/libs.versions.toml",
+      "sourceBlob": "6cec66b5b4c4842d9f0a7ea9fbc3216885a850c3",
+      "sourceMode": "100644",
+      "resultSha256": "82828ae879287fe521102d9e3c1492342173ef1c41715438f4213f42f3dc2d1b",
+      "task": "T078",
+      "reason": "Feature 078: raise targetSdk and compileSdk from 35 to 36 to satisfy the Google Play target API level requirement (Play refused the targetSdk-35 bundle on 2026-09-03). Dependency versions are unchanged."
     },
     {
       "path": "android-client/gradlew",

@@ -97,7 +97,7 @@ to these identities. A repository rename or redirect proves none of them.
 
 | Platform | Repository observation | Store-authoritative value |
 |---|---|---|
-| Android | Candidate `versionCode` is `6`; `versionName` is `1.4` | Authenticated Play all-app-bundles inventory on 2026-08-29 found maximum `5 (1.3)` across every track; recheck before upload |
+| Android | Candidate `versionCode` is `7`; `versionName` is `1.4`; `targetSdk`/`compileSdk` 36 | Play refused the `6 (1.4)` targetSdk-35 bundle on 2026-09-03 (target API 36 required), consuming code `6`; recheck the all-app-bundles inventory before upload |
 | Apple | Candidate source is `MARKETING_VERSION 1.5` / `CURRENT_PROJECT_VERSION 61` | Authenticated App Store Connect on 2026-08-30 confirmed iOS and macOS `1.4 (60)`; reserve `ASTRAL_APPLE_LAST_SUBMITTED_BUILD=60` and a base of at least `61`, then recheck immediately before upload |
 | Windows | Candidate source is `0.5.0`; live legacy baseline is `v0.4.0`; no Projection release exists | The bridge version is deliberately unselected in `contracts/windows-release-trust.json` |
 

@@ -578,8 +578,10 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
+        # Feature 078: targetSdk/compileSdk 35 -> 36 for the Play target-API
+        # requirement; every dependency coordinate and version is unchanged.
         "android-client/gradle/libs.versions.toml": (
-            "f28e58d74f1a33e8ec59590469d61095a218956d249c1e28d1d2a1adba90fa8d"
+            "82828ae879287fe521102d9e3c1492342173ef1c41715438f4213f42f3dc2d1b"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"
@@ -693,7 +695,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 104
+    assert len(paths) == 105
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
 
     moved_workflows = {
@@ -715,7 +717,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 415
+    assert len(extracted) - len(changed_paths) == 414
 
     for entry in record["entries"]:
         path = entry["path"]

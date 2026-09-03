@@ -11,15 +11,17 @@ preserved exactly:
 | AppAuth redirect URI | `com.personalailabs.astraldeep:/oauth2redirect` |
 | Documented upload-key alias | `astral-upload` (must be reconciled with the retained local signing configuration before release) |
 | Migration version-code floor | `5` |
-| Current candidate version code | `6` |
+| Current candidate version code | `7` |
 | Current candidate version name | `1.4` |
 
 Repository transfer does not reset Play Console version codes. Every upload to
 any Play track must use a `versionCode` greater than every prior upload. The
 checked-in floor prevents an accidental source regression below the migration
 baseline. Authenticated Play Console's all-app-bundles inventory on 2026-08-29
-confirmed that the highest upload on every track is `5 (1.3)`, making candidate
-code `6` strictly monotonic. The release operator must repeat that check
+confirmed that the highest upload on every track is `5 (1.3)`. On 2026-09-03 the
+`6 (1.4)` bundle signed by the composition-owned `android-release` lane was
+uploaded and refused by Play policy (targetSdk 35 < required 36), which consumes
+code `6`; the candidate is therefore `7 (1.4)` with `targetSdk`/`compileSdk` 36. The release operator must repeat that check
 immediately before building because another track could receive a newer upload.
 
 ## Signing continuity
