@@ -422,6 +422,21 @@ def worker_argv(agent_dir: str) -> List[str]:
     return [sys.executable, main_py, "--byo-worker", agent_dir]
 
 
+def _root_has_bundle(directory: str) -> bool:
+    """True when an agent root still holds code: a legacy flat bundle
+    (``agent_main.py`` beside the root) or at least one v3 revision directory
+    under ``revisions/``. An empty ``revisions/`` shell — what is left after
+    the last revision was deleted at reconciliation — is not an agent."""
+    if os.path.isfile(os.path.join(directory, "agent_main.py")):
+        return True
+    revisions = os.path.join(directory, "revisions")
+    try:
+        return any(os.path.isdir(os.path.join(revisions, name))
+                   for name in os.listdir(revisions))
+    except OSError:
+        return False
+
+
 def _bundle_display_name(directory: Optional[str]) -> str:
     """The agent's display name from its bundle manifest (``manifest.json``
     ``name``), searched one level down too for a v3 revision root. Best effort:
@@ -575,7 +590,10 @@ class ByoAgentHost:
 
     def _installed_agent_ids(self) -> List[str]:
         """Agent ids with a bundle on disk (legacy flat dirs and v3 revision
-        roots alike); staging dirs are never agents."""
+        roots alike); staging dirs are never agents, and neither is a v3 root
+        whose last revision has been deleted (an empty ``revisions/`` shell —
+        rig finding 2026-09-03: two of them showed up as installed, offline
+        agents in "Agents on this PC")."""
         try:
             entries = sorted(os.listdir(self._base_dir))
         except OSError:
@@ -587,9 +605,24 @@ class ByoAgentHost:
             if not _SAFE_ID.match(name):
                 continue
             directory = os.path.join(self._base_dir, name)
-            if os.path.isdir(directory):
+            if os.path.isdir(directory) and _root_has_bundle(directory):
                 out.append(name)
         return out
+
+    def _prune_empty_agent_root(self, agent_id: str) -> None:
+        """After the last v3 revision of ``agent_id`` is deleted, remove the
+        now-empty ``revisions/`` shell and the agent root — otherwise the root
+        outlives the agent as a ghost entry. Never touches a root that still
+        holds a revision or a legacy bundle."""
+        directory = self._agent_dir(agent_id)
+        if directory is None or not os.path.isdir(directory) or _root_has_bundle(directory):
+            return
+        for path in (os.path.join(directory, "revisions"), directory):
+            try:
+                os.rmdir(path)
+            except OSError:
+                return
+        _fsync_directory(self._base_dir)
 
     def _agent_dir(self, agent_id: str) -> Optional[str]:
         """The on-disk directory for one agent, or None if the id cannot own one.
@@ -1044,6 +1077,9 @@ class ByoAgentHost:
                     if os.path.isdir(candidate):
                         shutil.rmtree(candidate, ignore_errors=True)
                         _fsync_directory(revisions_dir)
+            # A root left with no revision at all (an earlier deletion, or the
+            # sweep above) is a ghost: prune it so it never reads as installed.
+            self._prune_empty_agent_root(agent_id)
         return entries
 
     @staticmethod
@@ -1374,6 +1410,7 @@ class ByoAgentHost:
             if decision == "delete":
                 shutil.rmtree(installed.directory, ignore_errors=True)
                 _fsync_directory(os.path.dirname(installed.directory))
+                self._prune_empty_agent_root(installed.agent_id)
         with self._lock:
             self._inventory_completed = True
             self._inventory_id = None
