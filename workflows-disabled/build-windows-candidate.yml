@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   windows-candidate:
-    name: Windows 0.5.1 build-once candidate
+    name: Windows 0.5.2 build-once candidate
     if: ${{ false }}
     runs-on: windows-latest
     timeout-minutes: 90
