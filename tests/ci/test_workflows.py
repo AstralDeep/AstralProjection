@@ -367,9 +367,13 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
 
     python_job = _job_block(text, "python")
     assert "PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build" in python_job
-    assert 'requires = ["setuptools==80.10.2"]' in (ROOT / "pyproject.toml").read_text(
+    assert 'requires = ["setuptools==83.0.0"]' in (ROOT / "pyproject.toml").read_text(
         encoding="utf-8"
     )
+    assert (
+        "setuptools==83.0.0 --hash=sha256:"
+        "29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3"
+    ) in lock
 
 
 @pytest.mark.parametrize(

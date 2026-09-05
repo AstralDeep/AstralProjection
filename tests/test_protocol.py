@@ -545,8 +545,10 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
 
 def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
     immutable_manifests = {
+        # Feature 079: approved build-only setuptools security update to 83.0.0;
+        # every third-party runtime/model dependency remains unchanged.
         "tooling/python-ci/requirements.lock.txt": (
-            "4359fb05e72eb3596ad7c450c37c0bb217f7ff2505e920e899ff736d0d1d2554"
+            "a91870671b818da8bd06565b6b21af406a4c96cbb812f0006db730d36a1e1d59"
         ),
         "tooling/web-ci/package.json": (
             "a28102990f9ec4cb8891f7020baa7e91c7994f949eee8c25afe9d9abe4746825"
@@ -587,7 +589,7 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"
         ),
         "pyproject.toml": (
-            "4b0becf7655428f715cba9b47c718ad3ceda5f87802efc40c924a9f6fc9baa79"
+            "274cca390a5b4ad83233dd5ed19e35aadb2a5e1948efe35c278387ffcd5991de"
         ),
     }
     assert set(immutable_manifests) == {
