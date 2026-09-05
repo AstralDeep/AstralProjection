@@ -7598,6 +7598,9 @@
       if (el.type === "checkbox") fields[name] = el.checked;
       else if (el.type === "radio") { if (el.checked) fields[name] = el.value; }
       else if (el.type === "number") fields[name] = el.value === "" ? null : Number(el.value);
+      else if (el.tagName === "SELECT" && el.multiple) {
+        fields[name] = Array.from(el.selectedOptions, function(option) { return option.value; });
+      }
       else fields[name] = el.value;
     }
     return fields;

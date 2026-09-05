@@ -59,6 +59,19 @@ def test_client_local_actions_matches_manifest():
     assert CLIENT_LOCAL_ACTIONS == frozenset(data["client_local_actions"])
 
 
+def test_persistent_assignment_actions_use_existing_generic_surface():
+    expected = {
+        "chrome_assignment_create", "chrome_assignment_revise",
+        "chrome_assignment_pause", "chrome_assignment_resume",
+        "chrome_assignment_stop", "chrome_assignment_revoke",
+        "chrome_assignment_run_now", "chrome_assignment_approval_decide",
+    }
+    assert {a for a in _manifest()["accept_actions"] if a.startswith("chrome_assignment_")} == expected
+    assert is_handled("chrome_surface")
+    assert is_handled("ui_render")
+    assert is_handled("notification")
+
+
 def test_client_local_voice_contract_is_pinned_to_closed_v2_dispositions():
     contract = _manifest()["frame_contracts"]["voice_075"]
     assert contract["schema_version"] == "2"

@@ -47,6 +47,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Render persistent assignment browser fixtures from shared views
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/079/browser-fixtures
+          for mode in create revise detail expired error; do
+            python tooling/web-ci/fixtures/persistent-agents-079.py "$mode" > "build/079/browser-fixtures/$mode.json"
+          done
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: "24"
@@ -65,10 +76,11 @@ jobs:
           docker run --rm --init \
             --user "$(id -u):$(id -g)" \
             --env HOME=/tmp \
+            --env ASTRAL_ASSIGNMENT_FIXTURE_DIR=/workspace/build/079/browser-fixtures \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace/tooling/web-ci \
             "$image" \
-            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && corepack npm exec -- playwright test tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js --browser=chromium --workers=1'
+            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && corepack npm exec -- playwright test tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js --browser=chromium --workers=1'
 
   windows:
     runs-on: windows-latest

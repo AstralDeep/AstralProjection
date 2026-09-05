@@ -262,9 +262,14 @@ def _render_fields(component: Mapping[str, object]) -> str:
         elif kind in {"select", "checklist"}:
             options = raw.get("options") or []
             multiple = " multiple" if kind == "checklist" else ""
+            selected = (
+                {clean_text(item) for item in raw["default"]}
+                if kind == "checklist" and isinstance(raw.get("default"), (list, tuple))
+                else {default}
+            )
             option_html = "".join(
                 f'<option value="{escape(clean_text(option))}"'
-                f"{' selected' if clean_text(option) == default else ''}>"
+                f"{' selected' if clean_text(option) in selected else ''}>"
                 f"{escape(clean_text(option))}</option>"
                 for option in options
                 if not isinstance(option, Mapping)
