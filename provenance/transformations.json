@@ -205,7 +205,7 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "de6e5296fb29f4244ed7122583734eb724ef3724512bd02a153f0b3cd8b01b1f",
+      "resultSha256": "22576ffc66cd9a2593ffdff1db3efdcf27b419a6f2b1fb145ace1a7e7cec40eb",
       "task": "T055/T040/T023",
       "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
