@@ -208,6 +208,21 @@ def test_watch_has_bounded_status_chat_controls_and_explicit_handoff(mode):
     assert view.layout.mode == "watch"
 
 
+@pytest.mark.parametrize("lifecycle", ["stopped", "completed"])
+@pytest.mark.parametrize("mode", ["list", "detail"])
+def test_terminal_watch_guidance_preserves_status_and_history_without_restart_commands(lifecycle, mode):
+    row = assignment(lifecycle=lifecycle, safe_error="assignment_phi_refused")
+    view = build_assignments_view(state(mode, assignment=row, assignments=[row]),
+                                  layout=LayoutView(mode="watch"))
+    encoded = json.dumps(view.to_dict())
+    assert "Status of Release watch" in encoded
+    assert "assignment_phi_refused" in encoded
+    assert "Baseline saved" in encoded
+    assert "phone or computer" in encoded
+    assert all(f"{command} Release watch" not in encoded for command in ("Pause", "Resume", "Stop"))
+    assert not buttons(view)
+
+
 def test_disabled_error_unknown_and_malformed_views_fail_visibly():
     for changes, message in [
         ({"enabled": False}, "turned off"), ({"error": "Store unavailable"}, "Store unavailable"),

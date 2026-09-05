@@ -325,7 +325,9 @@ def build_assignments_view(
         for item in rows:
             name = _display(_definition(item).get("name"), "Ongoing agent")[:120]
             components.append(card(name, _summary(item, wrist=True)))
-            components.append(text(f'Use chat: "Status of {name}", "Pause {name}", "Resume {name}", or "Stop {name}".', "caption"))
+            guidance = (f'Use chat: "Status of {name}".' if item.get("lifecycle") in {"stopped", "completed"}
+                        else f'Use chat: "Status of {name}", "Pause {name}", "Resume {name}", or "Stop {name}".')
+            components.append(text(guidance, "caption"))
         components.append(alert("For detailed instructions, creation or sensitive review, continue in AstralDeep on your phone or computer in the same conversation.", "info"))
     elif mode in {"create", "revise"}:
         components = _form(state, row, mode)
