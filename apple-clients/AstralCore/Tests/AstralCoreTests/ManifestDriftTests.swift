@@ -155,7 +155,8 @@ final class ManifestDriftTests: XCTestCase {
             "chrome_assignment_run_now", "chrome_assignment_approval_decide",
         ]
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_assignment_") }), expected)
-        XCTAssertTrue(Set(manifest.pushTypes.map(\.name)).isDisjoint(with: ["assignment_state", "assignment_approval"]))
+        XCTAssertTrue(
+            Set(manifest.pushTypes.map(\.name)).isDisjoint(with: ["assignment_state", "assignment_approval"]))
         // Wrist status and full-client handoff are selected by the server from
         // the same assignment snapshot; no native assignment menu is defined.
     }
