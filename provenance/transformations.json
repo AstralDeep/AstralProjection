@@ -79,9 +79,9 @@
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
       "sourceBlob": "12a4d46a3be93ea8784ff65518c69f6ec2b28d17",
       "sourceMode": "100644",
-      "resultSha256": "28a9a847bd084cf939345c75d266ffc5ffba27c357ce4aa06c45c3c897e07a5e",
-      "task": "T054",
-      "reason": "Repoint the Android protocol drift guard to the standalone Projection contract."
+      "resultSha256": "63e73061275abf5916d122cf8536b56ed5bc78f3435ee03f2c6670c31f66f9d6",
+      "task": "T054/T023",
+      "reason": "Repoint the Android protocol drift guard to the standalone Projection contract. Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
     {
       "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
@@ -205,9 +205,9 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "9e9c1177eeab36d10379c3e56e9541f05d3302d326c274a65ebc03da9274afed",
-      "task": "T055/T040",
-      "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "22576ffc66cd9a2593ffdff1db3efdcf27b419a6f2b1fb145ace1a7e7cec40eb",
+      "task": "T055/T040/T023",
+      "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
     {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
@@ -430,9 +430,9 @@
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "362821ea122501439f69c1e0029589777dd55381968d79982bf8b6f992eb5c6b",
-      "task": "T052/T063",
-      "reason": "Name the standalone Projection manifest as the current error-frame contract source."
+      "resultSha256": "47b397e585e9ab08702c4183c8dcc946523512042d97bb569173d862faebd71d",
+      "task": "T052/T063/T029",
+      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections."
     },
     {
       "path": "backend/webrender/templates/shell.html",
@@ -448,9 +448,9 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "50712113c828731037c96b2f4297d3e427328bbff2ee3a0daaec55ccc5e13e4c",
-      "task": "T013/T015/T040",
-      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "c00dcdd8c98306780b871a14bb676847569ccb5efbabf0aa32f8e6df96b7438d",
+      "task": "T013/T015/T040/T023",
+      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
     {
       "path": "scripts/windows_release_candidate.py",
@@ -772,9 +772,9 @@
       "sourcePath": "windows-client/tests/test_protocol_manifest.py",
       "sourceBlob": "00114c40d6e0840afb3dc4d2996496b1b45fdd7f",
       "sourceMode": "100644",
-      "resultSha256": "5b8d56baad60b64835df656c1af8893eef989291f0a4dcf3b1471c264fd6c4f4",
-      "task": "T053",
-      "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract."
+      "resultSha256": "1dc1c22d83a4725f0a5e9c7f9904ba0cf091231e26b93d569afd893e9d885eea",
+      "task": "T053/T023",
+      "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract. Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
     {
       "path": "windows-client/tests/test_release_lock_060.py",

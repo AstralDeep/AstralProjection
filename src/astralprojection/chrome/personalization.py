@@ -7,6 +7,8 @@ import re
 
 from astralprojection.models import ChromeViewModel, ComponentView, LayoutView, ThemeView
 
+from .assignments import build_assignments_view
+
 from ._components import (
     alert,
     badge,
@@ -544,6 +546,7 @@ def build_personalization_view(
     execution_enabled: bool = False,
     dreaming_enabled: bool = True,
     sweeps: Iterable[Mapping[str, object]] = (),
+    assignment_state: Mapping[str, object] | None = None,
     error: str | None = None,
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
@@ -551,6 +554,8 @@ def build_personalization_view(
     """Build the shared tab shell around one personalization subview."""
     valid_tabs = {key for key, _label in _PERSONALIZATION_TABS}
     active = tab if tab in valid_tabs else "soul"
+    if active == "schedule" and assignment_state is not None and layout and layout.mode == "watch":
+        return build_assignments_view(assignment_state, theme=theme, layout=layout)
     tabs = container(
         [
             button(
@@ -577,6 +582,14 @@ def build_personalization_view(
             theme=theme,
             layout=layout,
         )
+        if assignment_state is not None:
+            assignments = build_assignments_view(assignment_state, theme=theme, layout=layout)
+            inner = build_view(
+                "personalization", "Personalization",
+                [text("Ongoing agents", "h3"), *assignments.components,
+                 text("Scheduled tasks", "h3"), *inner.components],
+                theme=theme, layout=layout,
+            )
     else:
         inner = build_dreaming_view(
             enabled=dreaming_enabled,

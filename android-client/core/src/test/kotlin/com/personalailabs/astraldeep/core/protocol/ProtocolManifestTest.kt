@@ -66,6 +66,30 @@ class ProtocolManifestTest {
     }
 
     @Test
+    fun persistent_assignment_actions_use_existing_generic_surface() {
+        val expected =
+            setOf(
+                "chrome_assignment_create",
+                "chrome_assignment_revise",
+                "chrome_assignment_pause",
+                "chrome_assignment_resume",
+                "chrome_assignment_stop",
+                "chrome_assignment_revoke",
+                "chrome_assignment_run_now",
+                "chrome_assignment_approval_decide",
+            )
+        val actual =
+            manifestRoot().getValue("accept_actions").jsonArray
+                .map { it.jsonPrimitive.content }
+                .filter { it.startsWith("chrome_assignment_") }
+                .toSet()
+        assertEquals(expected, actual)
+        listOf("chrome_surface", "ui_render", "notification").forEach { frame ->
+            assertTrue(ProtocolManifest.isHandled(frame))
+        }
+    }
+
+    @Test
     fun core_loop_frames_are_handled() {
         listOf(
             "ui_render", "ui_upsert", "chat_status", "error", "auth_required",

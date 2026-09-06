@@ -141,7 +141,24 @@ final class ManifestDriftTests: XCTestCase {
         //        chrome_user_skill_* ×4) — all posted through the generic SDUI
         //        action path from the My agents & skills surface, no new
         //        client code.
-        XCTAssertEqual(manifest.acceptActions.count, 117)
+        // 125 = 117 + the eight feature-079 persistent-assignment actions;
+        //       full clients post these through the existing SDUI action path.
+        XCTAssertEqual(manifest.acceptActions.count, 125)
+    }
+
+    func testPersistentAssignmentActionsUseExistingSurfaceFrames() throws {
+        let manifest = try loadManifest()
+        let expected: Set<String> = [
+            "chrome_assignment_create", "chrome_assignment_revise",
+            "chrome_assignment_pause", "chrome_assignment_resume",
+            "chrome_assignment_stop", "chrome_assignment_revoke",
+            "chrome_assignment_run_now", "chrome_assignment_approval_decide",
+        ]
+        XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_assignment_") }), expected)
+        XCTAssertTrue(
+            Set(manifest.pushTypes.map(\.name)).isDisjoint(with: ["assignment_state", "assignment_approval"]))
+        // Wrist status and full-client handoff are selected by the server from
+        // the same assignment snapshot; no native assignment menu is defined.
     }
 
     func testConversationalVoiceFramesAndActionsAreClassifiedExactly() throws {
