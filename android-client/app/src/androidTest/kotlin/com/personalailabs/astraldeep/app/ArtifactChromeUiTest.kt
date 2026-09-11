@@ -22,7 +22,8 @@ import org.junit.Test
 
 /**
  * Feature 055 US4/US5 (T036/T040/T045) — the per-component chrome end to end:
- * the provenance badge renders from the stamped field, the overflow's Refine…
+ * ordinary grounded badges stay hidden while estimated/generated warnings
+ * render from the stamped field, the overflow's Refine…
  * entry sends `component_refine`, and an export entry hits the download path.
  */
 class ArtifactChromeUiTest {
@@ -46,15 +47,33 @@ class ArtifactChromeUiTest {
         }
     }
 
-    private fun table() =
+    private fun table(provenance: String = "grounded") =
         Component.fromJson(
-            attrs("""{"type":"table","component_id":"wc_abc","title":"Sales","headers":["a"],"rows":[["1"]],"provenance":"grounded"}"""),
+            attrs("""{"type":"table","component_id":"wc_abc","title":"Sales","headers":["a"],"rows":[["1"]],"provenance":"$provenance"}"""),
         )
 
     @Test
-    fun stamped_provenance_renders_the_badge() {
-        host(table())
-        rule.onNodeWithText("✓ tool data").assertIsDisplayed()
+    fun grounded_provenance_keeps_actions_without_a_badge() {
+        val component = table()
+        host(component)
+        assertEquals(JsonPrimitive("grounded"), component.attributes["provenance"])
+        rule.onNodeWithText("✓ tool data").assertDoesNotExist()
+        rule.onNodeWithContentDescription("Component actions").assertIsDisplayed()
+    }
+
+    @Test
+    fun estimated_provenance_keeps_its_warning_and_actions() {
+        host(table("estimated"))
+        rule.onNodeWithText("≈ estimated").assertIsDisplayed()
+        rule.onNodeWithText("✓ tool data").assertDoesNotExist()
+        rule.onNodeWithContentDescription("Component actions").assertIsDisplayed()
+    }
+
+    @Test
+    fun generated_provenance_keeps_its_warning_and_actions() {
+        host(table("generated"))
+        rule.onNodeWithText("✦ AI-generated").assertIsDisplayed()
+        rule.onNodeWithText("✓ tool data").assertDoesNotExist()
         rule.onNodeWithContentDescription("Component actions").assertIsDisplayed()
     }
 
