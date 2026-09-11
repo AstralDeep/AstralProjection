@@ -223,6 +223,50 @@ test("floating conversation restores to the right without losing its draft", asy
 });
 
 
+test("responsive conversation toggles reflect the visible transcript after resize and New chat", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await installHarness(page);
+  await page.addStyleTag({ path: resolve(ROOT, "backend/webrender/static/astral.css") });
+  await page.evaluate(() => {
+    document.querySelector("#astral-chat-toggle").classList.add("astral-chat-toggle");
+    document.querySelector("#astral-msgs-toggle").classList.add("astral-msgs-toggle");
+  });
+  await receive(page, snapshot((await registration(page)).frame));
+  const messages = page.locator("#astral-msgs-toggle");
+  const conversation = page.locator("#astral-chat-toggle");
+  const transcript = page.locator("#astral-chat");
+  await messages.click();
+  await expect(messages).toHaveAttribute("aria-expanded", "true");
+  await expect(transcript).toBeVisible();
+  await page.locator("#astral-input").fill("Preserve this draft\nAcross breakpoints");
+
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "collapsed");
+  await expect(transcript).toBeHidden();
+  await expect(messages).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-label", "Show conversation");
+  await conversation.click();
+  await expect(conversation).toHaveAttribute("aria-expanded", "true");
+  await expect(transcript).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "stacked");
+  await expect(transcript).toBeHidden();
+  await expect(messages).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-label", "Show conversation");
+  await expect(page.locator("#astral-input")).toHaveValue("Preserve this draft\nAcross breakpoints");
+  await messages.click();
+  await expect(messages).toHaveAttribute("aria-expanded", "true");
+  await expect(transcript).toBeVisible();
+  await page.getByRole("button", { name: "New chat" }).click();
+  await expect(messages).toHaveAttribute("aria-expanded", "false");
+  await expect(messages).toBeHidden();
+  await expect(transcript).toBeHidden();
+});
+
+
 async function receive(page, frame) {
   await page.evaluate((value) => window.__sockets.at(-1).receive(value), frame);
 }
@@ -916,6 +960,175 @@ test("explicit new chat clears the locator while socket loss does not", async ({
 });
 
 
+async function stageExistingFile(page, id = "old-draft-file", name = "old-draft.txt") {
+  await page.evaluate(({ attachmentId, filename }) => {
+    const button = document.createElement("button");
+    button.className = "astral-attach-existing";
+    button.dataset.attachmentId = attachmentId;
+    button.dataset.filename = filename;
+    document.body.append(button);
+    button.click();
+    button.remove();
+  }, { attachmentId: id, filename: name });
+}
+
+
+test("new chat clears its multiline draft and attachments while accepted background work survives", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+  const draft = "Unsent 088 draft\nKeep this second line.";
+  await page.locator("#astral-input").fill(draft);
+  await stageExistingFile(page);
+  await page.locator("#astral-bg-btn").click();
+  await receive(page, { type: "task_started", payload: {
+    task_id: OPERATION_A, chat_id: CHAT_ID, title: "Already accepted work",
+  } });
+  // Authentication recovery for the same owner must preserve the whole draft.
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2);
+  await expect(page.locator("#astral-input")).toHaveValue(draft);
+  await expect(page.locator("#astral-attachments")).toContainText("old-draft.txt");
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "true");
+  await page.locator("#astral-attach-btn").click();
+  await expect(page.locator(".astral-attach-menu")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "New chat" }).click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-input")).toBeFocused();
+  await expect(page.locator("#astral-attachments")).toBeEmpty();
+  await expect(page.locator("#astral-attach-input")).toHaveValue("");
+  await expect(page.locator(".astral-attach-menu")).toHaveCount(0);
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#astral-bgtasks")).toContainText("Already accepted work");
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await page.locator("#astral-input").fill("Fresh request");
+  await page.locator("#astral-input").press("Enter");
+  const sent = await page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "chat_message").frame);
+  expect(sent.session_id).toBe(OTHER_CHAT_ID);
+  expect(sent.payload.message).toBe("Fresh request");
+  expect(sent.payload.attachments).toBeUndefined();
+  expect(sent.payload.async_mode).toBeUndefined();
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_A, chat_id: CHAT_ID, status: "completed", summary: "Earlier work completed",
+  } });
+  await expect(page.locator("#astral-bgtasks")).toBeEmpty();
+  await expect(page.locator("#astral-toasts")).toContainText("Earlier work completed");
+});
+
+
+for (const locator of [true, false]) {
+  test(`new chat cancels offline messages without dropping queued settings (locator=${locator})`, async ({ page }) => {
+    await installHarness(page, { locator });
+    await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+    await page.evaluate(() => window.__sockets.at(-1).close());
+    await stageExistingFile(page);
+    await page.locator("#astral-bg-btn").click();
+    await page.locator("#astral-input").fill("Old queued message");
+    await page.locator("#astral-input").press("Enter");
+    await expect(page.locator(".astral-bubble-queued")).toContainText("Old queued message");
+    await page.evaluate(() => {
+      const button = document.createElement("button");
+      button.className = "astral-action";
+      button.dataset.action = "chrome_open";
+      button.dataset.payload = JSON.stringify({ surface: "settings" });
+      document.body.append(button);
+      button.click();
+      button.remove();
+    });
+    await page.getByRole("button", { name: "New chat" }).click();
+    await expect(page.locator("#astral-toasts")).toContainText("Queued messages cleared for the new chat.");
+    await page.clock.runFor(5000);
+    const actions = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "ui_event").map((event) => event.frame));
+    expect(actions.filter((frame) => frame.action === "chat_message")).toEqual([]);
+    expect(actions.filter((frame) => frame.action === "chrome_open")).toHaveLength(1);
+    expect(actions.filter((frame) => frame.action === "new_chat")).toHaveLength(1);
+    await expect(page.locator("#astral-chat")).not.toContainText("Old queued message");
+    await expect(page.locator("#astral-attachments")).toBeEmpty();
+    await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  });
+}
+
+
+test("new chat cancels the offline expiry callback without restoring the discarded draft", async ({ page }) => {
+  await installHarness(page);
+  await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+  await page.evaluate(() => {
+    window.fetch = () => new Promise(() => {}); // Keep reconnect pending beyond the queue deadline.
+    window.__sockets.at(-1).close();
+  });
+  await page.locator("#astral-input").fill("Discarded offline draft");
+  await page.locator("#astral-input").press("Enter");
+  await page.getByRole("button", { name: "New chat" }).click();
+  await page.clock.runFor(46000);
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-chat")).toBeEmpty();
+  await expect(page.locator("#astral-status")).not.toContainText("your message was not sent");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+test("ordinary same-owner reconnect still sends the queued text, attachment and background choice", async ({ page }) => {
+  await installHarness(page);
+  await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await stageExistingFile(page);
+  await page.locator("#astral-bg-btn").click();
+  await page.locator("#astral-input").fill("Intended queued message");
+  await page.locator("#astral-input").press("Enter");
+  await page.clock.runFor(5000);
+  const sent = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.action === "chat_message").map((event) => event.frame));
+  expect(sent).toHaveLength(1);
+  expect(sent[0].session_id).toBe(CHAT_ID);
+  expect(sent[0].payload.message).toBe("Intended queued message");
+  expect(sent[0].payload.attachments).toEqual([{ attachment_id: "old-draft-file", filename: "old-draft.txt", category: "file" }]);
+  expect(sent[0].payload.async_mode).toBe(true);
+  await expect(page.locator(".astral-bubble-queued")).toHaveCount(0);
+});
+
+
+for (const outcome of ["success", "denial", "network_failure"]) {
+  test(`late upload ${outcome} cannot change the new chat composer`, async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => {
+      const original = window.fetch;
+      window.fetch = (url, options) => {
+        if (!String(url).endsWith("/api/upload")) return original(url, options);
+        return new Promise((resolve, reject) => {
+          window.__finishUpload = (result) => {
+            if (result === "network_failure") { reject(new Error("test failure")); return; }
+            resolve({ ok: result === "success", status: result === "success" ? 200 : 403,
+              json: async () => result === "success"
+                ? { attachment_id: "discarded-upload", parser_status: "preparing" }
+                : { detail: "Discarded upload denial" } });
+          };
+        });
+      };
+    });
+    await page.locator("#astral-attach-input").setInputFiles({
+      name: "discarded-upload.txt", mimeType: "text/plain", buffer: Buffer.from("synthetic fixture"),
+    });
+    await expect(page.locator("#astral-attachments")).toContainText("discarded-upload.txt");
+    await page.getByRole("button", { name: "New chat" }).click();
+    await page.locator("#astral-input").fill("Fresh draft\nSecond line");
+    await stageExistingFile(page, "fresh-file", "fresh-file.txt");
+    const currentStatus = await page.locator("#astral-status").textContent();
+    await page.evaluate((result) => window.__finishUpload(result), outcome);
+    await expect(page.locator("#astral-input")).toHaveValue("Fresh draft\nSecond line");
+    await expect(page.locator("#astral-attachments .astral-chip")).toHaveCount(1);
+    await expect(page.locator("#astral-attachments")).toContainText("fresh-file.txt");
+    await expect(page.locator("#astral-attachments")).not.toContainText("discarded-upload");
+    await expect(page.locator("#astral-status")).toHaveText(currentStatus);
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  });
+}
+
+
 test("sign-out and confirmed deletion are definitive locator clears", async ({ page }) => {
   await installHarness(page);
   await receive(page, { type: "chat_deleted", chat_id: OTHER_CHAT_ID });
@@ -1418,7 +1631,7 @@ test("IME Enter and Enter in another textarea never send the composer", async ({
 });
 
 
-test("textarea slash discovery selection and Escape remain usable", async ({ page }) => {
+test("textarea slash discovery selection, Escape and New chat remain usable", async ({ page }) => {
   await installHarness(page, { locator: false });
   await page.locator("#astral-input").fill("/help");
   await expect(page.locator("#astral-slash-menu")).not.toHaveClass(/hidden/);
@@ -1426,6 +1639,13 @@ test("textarea slash discovery selection and Escape remain usable", async ({ pag
   await expect(page.locator("#astral-input")).toHaveValue("/help ");
   await page.locator("#astral-input").fill("/help");
   await page.locator("#astral-input").press("Escape");
+  await expect(page.locator("#astral-slash-menu")).toHaveClass(/hidden/);
+  await page.locator("#astral-input").fill("/help");
+  await expect(page.locator("#astral-slash-menu")).not.toHaveClass(/hidden/);
+  // Programmatic activation proves reset, independently of the delayed blur cleanup.
+  await page.locator("#astral-newchat-btn").evaluate((button) => button.click());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-slash-menu")).toBeEmpty();
   await expect(page.locator("#astral-slash-menu")).toHaveClass(/hidden/);
   await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
 });

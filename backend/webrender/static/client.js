@@ -284,6 +284,7 @@
     setWorkspaceView("start");
     closeHistoryOverlay();
     document.body.classList.remove("astral-chat-open", "astral-msgs-open");
+    syncChatVisibilityControls();
     timelineMode = false;
     if (reason === "account_switch" || reason === "definitive_sign_out") {
       clearPrivateAccountState();
@@ -675,6 +676,21 @@
     } catch (e) {}
     applyLayoutClass();
   }
+  function syncChatVisibilityControls() {
+    var layout = document.body.getAttribute("data-astral-layout");
+    var conversation = document.getElementById("astral-chat-toggle");
+    var messages = document.getElementById("astral-msgs-toggle");
+    // Breakpoint changes clear the corresponding CSS classes. Their controls
+    // must report the resulting visibility, not the last click in another mode.
+    var expanded = layout === "collapsed" && document.body.classList.contains("astral-chat-open");
+    if (conversation) {
+      conversation.setAttribute("aria-expanded", expanded ? "true" : "false");
+      conversation.setAttribute("title", expanded ? "Hide conversation" : "Show conversation");
+      conversation.setAttribute("aria-label", expanded ? "Hide conversation" : "Show conversation");
+    }
+    if (messages) messages.setAttribute("aria-expanded",
+      layout === "stacked" && document.body.classList.contains("astral-msgs-open") ? "true" : "false");
+  }
   function applyLayoutClass() {
     var w = window.innerWidth, mode;
     if (w < 700) mode = "stacked";
@@ -695,6 +711,7 @@
       if (mode !== "collapsed") document.body.classList.remove("astral-chat-open");
       if (mode === "split") clearChatUnread();
     }
+    syncChatVisibilityControls();
     syncTopbarChatToggle();
   }
   applyDeviceProfile(detectDeviceType());
@@ -7019,6 +7036,24 @@
       setVoiceFeedback("connecting", "chat_context_unavailable", "Creating the new voice chat context…", true);
     }
     clearActiveChatLocator("explicit_new_chat", activeChatId);
+    // Only unsent chat requests belong to the discarded composer. Keeping
+    // them would replay the old draft in the new chat after reconnect.
+    var cancelledMessages = 0;
+    pendingActions = pendingActions.filter(function (entry) {
+      if (entry.label !== "chat_message") return true;
+      clearTimeout(entry.timer);
+      cancelledMessages += 1;
+      return false;
+    });
+    if (cancelledMessages) showToast("Queued messages cleared for the new chat.", "info");
+    if (input) {
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    clearStagedAttachments();
+    if (attachInput) attachInput.value = "";
+    closeAttachMenu();
+    setBgArmed(false);
     activeChatId = null;
     timelineMode = false;
     streamSeq = {};
@@ -7096,6 +7131,7 @@
     var n = chat.children.length;
     msgsToggle.hidden = n === 0;
     if (n === 0) document.body.classList.remove("astral-msgs-open");
+    syncChatVisibilityControls();
     if (msgsLabel) msgsLabel.textContent = n ? "Messages (" + n + ")" : "Messages";
   }
   if (window.MutationObserver && chat) new MutationObserver(syncMsgsToggle).observe(chat, { childList: true });
@@ -7612,7 +7648,7 @@
         return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
       })
       .then(function (res) {
-        if (ownerEpoch !== accountPrivacyEpoch) return;
+        if (ownerEpoch !== accountPrivacyEpoch || stagedAttachments.indexOf(entry) === -1) return;
         if (!res.ok) {
           entry.state = "failed";
           entry.note = (res.body && (res.body.detail || res.body.message)) || ("error " + res.status);
@@ -7634,7 +7670,7 @@
         renderAttachments();
       })
       .catch(function () {
-        if (ownerEpoch !== accountPrivacyEpoch) return;
+        if (ownerEpoch !== accountPrivacyEpoch || stagedAttachments.indexOf(entry) === -1) return;
         entry.state = "failed"; entry.note = "network error";
         setStatus("Couldn't attach " + file.name);
         renderAttachments();
