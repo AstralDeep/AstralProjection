@@ -276,6 +276,7 @@ object Wire {
         attachments: List<ChatAttachment> = emptyList(),
         requestGeneration: String? = null,
         submissionId: String? = null,
+        asyncMode: Boolean = false,
     ): String =
         encodeUiEvent(
             action = "chat_message",
@@ -283,6 +284,7 @@ object Wire {
             payload =
                 buildJsonObject {
                     put("message", message)
+                    if (asyncMode) put("async_mode", true)
                     if (chatId != null) put("chat_id", chatId)
                     if (attachments.isNotEmpty()) {
                         putJsonArray("attachments") {

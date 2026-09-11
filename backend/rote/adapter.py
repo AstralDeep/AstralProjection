@@ -64,6 +64,16 @@ class ComponentAdapter:
         for key in ("id", "component_id", "provenance"):
             if comp_val := src.get(key):
                 out.setdefault(key, comp_val)
+        # 088: native start placement must survive capability adaptation
+        # (e.g. a watch's grid becomes a container). This is a presentation
+        # hint, never permission to extract a nested or identified result.
+        identity = src.get("component_id", src.get("id"))
+        role = src.get("data-welcome")
+        if (isinstance(role, str)
+                and role in {"intro", "permission", "examples", "example", "more"}
+                and (identity is None
+                     or isinstance(identity, str) and identity.startswith("wel_"))):
+            out.setdefault("data-welcome", role)
         return out
 
     @classmethod
@@ -551,7 +561,19 @@ class ComponentAdapter:
         # Watch: keep only primary buttons
         if profile.device_type == DeviceType.WATCH:
             if comp.get("variant", "primary") != "primary":
-                return None
+                # 088's ordinary prompt shortcuts are secondary visually,
+                # but use the same authenticated chat submission as dictation.
+                # Keep only their declared, bounded interaction; this does not
+                # promote arbitrary secondary actions or bypass host limits.
+                identity = comp.get("component_id", comp.get("id"))
+                payload = comp.get("payload")
+                message = payload.get("message") if isinstance(payload, dict) else None
+                if not (comp.get("data-welcome") == "example"
+                        and (identity is None or isinstance(identity, str)
+                             and identity.startswith("wel_"))
+                        and comp.get("action") == "chat_message"
+                        and isinstance(message, str) and message.strip()):
+                    return None
         return comp
 
     @classmethod

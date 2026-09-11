@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
@@ -19,19 +20,24 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.welcomePlacementRole
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -52,11 +58,20 @@ fun Renderer.registerLayoutRenderers(): Renderer =
         register("collapsible") { c -> CollapsiblePrimitive(c) { render(it) } }
     }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun GridPrimitive(
     c: Component,
     renderChild: @Composable (Component) -> Unit,
 ) {
+    if (welcomePlacementRole(c) == "examples") {
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) { c.children.forEach { renderChild(it) } }
+        return
+    }
     val cols = (c.int("columns") ?: 2).coerceAtLeast(1)
     // The authored column count is a wide-screen hint: honoring it verbatim on
     // a phone gives each cell width/N and wraps content character-by-character.
@@ -83,6 +98,23 @@ private fun GridPrimitive(
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeroPrimitive(c: Component) {
+    if (welcomePlacementRole(c) == "intro") {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            c.str("eyebrow")?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            c.str("title")?.let {
+                Text(
+                    it,
+                    fontSize = 36.sp,
+                    lineHeight = 43.sp,
+                    fontWeight = FontWeight.Medium,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
+            c.str("subtitle")?.let { Text(it, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        return
+    }
     val gradient = c.str("variant") == "gradient"
     val primary = MaterialTheme.colorScheme.primary
     Card(modifier = Modifier.fillMaxWidth()) {
@@ -227,12 +259,30 @@ private fun ProgressPrimitive(c: Component) {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun CollapsiblePrimitive(
     c: Component,
     renderChild: @Composable (Component) -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    if (welcomePlacementRole(c) == "more") {
+        Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text((if (expanded) "⌄ " else "› ") + (c.str("title") ?: "Details"), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (expanded) {
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    c.children.forEach { renderChild(it) }
+                }
+            }
+        }
+        return
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(

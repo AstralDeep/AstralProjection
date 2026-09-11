@@ -29,12 +29,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.rest.AuditEvent
 import com.personalailabs.astraldeep.app.transport.ConnectionState
+import com.personalailabs.astraldeep.app.ui.theme.AstralMono
 import com.personalailabs.astraldeep.core.protocol.Agent
 import com.personalailabs.astraldeep.core.protocol.ChatSummary
 import com.personalailabs.astraldeep.core.protocol.Inbound
@@ -225,7 +225,7 @@ private fun AuditCard(event: AuditEvent) {
             if (expanded) {
                 event.outcomeDetail?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 event.detail?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = AstralMono)
                 }
                 event.id?.let {
                     Text("id: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

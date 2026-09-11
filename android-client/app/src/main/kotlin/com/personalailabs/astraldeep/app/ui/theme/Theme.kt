@@ -2,12 +2,16 @@ package com.personalailabs.astraldeep.app.ui.theme
 
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import com.personalailabs.astraldeep.app.R
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -42,6 +46,28 @@ object AstralColors {
     val BackdropBrush =
         Brush.verticalGradient(listOf(Color(0xFF0F1221), Color(0xFF141A33), Color(0xFF0F1221)))
 }
+
+val AstralSans = FontFamily(Font(R.font.inter_latin))
+val AstralMono = FontFamily(Font(R.font.jetbrains_mono_latin))
+private val baseTypography = Typography()
+private val astralTypography =
+    Typography(
+        displayLarge = baseTypography.displayLarge.copy(fontFamily = AstralSans),
+        displayMedium = baseTypography.displayMedium.copy(fontFamily = AstralSans),
+        displaySmall = baseTypography.displaySmall.copy(fontFamily = AstralSans),
+        headlineLarge = baseTypography.headlineLarge.copy(fontFamily = AstralSans),
+        headlineMedium = baseTypography.headlineMedium.copy(fontFamily = AstralSans),
+        headlineSmall = baseTypography.headlineSmall.copy(fontFamily = AstralSans),
+        titleLarge = baseTypography.titleLarge.copy(fontFamily = AstralSans),
+        titleMedium = baseTypography.titleMedium.copy(fontFamily = AstralSans),
+        titleSmall = baseTypography.titleSmall.copy(fontFamily = AstralSans),
+        bodyLarge = baseTypography.bodyLarge.copy(fontFamily = AstralSans),
+        bodyMedium = baseTypography.bodyMedium.copy(fontFamily = AstralSans),
+        bodySmall = baseTypography.bodySmall.copy(fontFamily = AstralSans),
+        labelLarge = baseTypography.labelLarge.copy(fontFamily = AstralSans),
+        labelMedium = baseTypography.labelMedium.copy(fontFamily = AstralSans),
+        labelSmall = baseTypography.labelSmall.copy(fontFamily = AstralSans),
+    )
 
 private val AstralDarkColors =
     darkColorScheme(
@@ -233,5 +259,5 @@ fun AstralTheme(
     content: @Composable () -> Unit,
 ) {
     val scheme = palette?.let { paletteToColorScheme(it) } ?: AstralDarkColors
-    MaterialTheme(colorScheme = scheme, content = content)
+    MaterialTheme(colorScheme = scheme, typography = astralTypography, content = content)
 }

@@ -26,13 +26,13 @@ import com.personalailabs.astraldeep.app.voice.VoiceTerminalNotice
 import com.personalailabs.astraldeep.app.voice.VoiceTerminalNoticeKind
 import com.personalailabs.astraldeep.app.voice.VoiceUiState
 import com.personalailabs.astraldeep.core.protocol.VoiceControl
-import java.security.MessageDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.security.MessageDigest
 
 /** Connected Android permission/capability and TalkBack evidence for feature 065. */
 @RunWith(AndroidJUnit4::class)
@@ -206,9 +206,12 @@ class VoiceConversation065InstrumentedTest {
     @Test
     fun terminalVoiceNoticeDoesNotClearTypedComposerText() {
         val voiceState = mutableStateOf(VoiceUiState(phase = "listening"))
+        val draft = mutableStateOf("")
         rule.setContent {
             AstralTheme {
                 InputBar(
+                    input = draft.value,
+                    onInputChange = { draft.value = it },
                     staged = emptyList(),
                     readOnly = false,
                     voice = voiceState.value,

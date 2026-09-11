@@ -9,6 +9,7 @@ import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.jlleitschuh.gradle.ktlint.tasks.BaseKtLintCheckTask
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -21,6 +22,33 @@ plugins {
     alias(libs.plugins.kover)
     alias(libs.plugins.ktlint)
 }
+
+// AGP 9's built-in Kotlin integration is not discovered by ktlint 12's Android
+// source-set adapter. Keep the existing check/format lifecycle authoritative for
+// every maintained Kotlin source until that adapter supports built-in Kotlin.
+tasks.withType<BaseKtLintCheckTask>().configureEach {
+    source(fileTree("src") { include("**/*.kt") })
+}
+
+val prepareWorkspace088Resources =
+    tasks.register<Sync>("prepareWorkspace088Resources") {
+        from(rootProject.file("../contracts/assets/fonts")) {
+            include("*.ttf")
+            rename { it.replace('-', '_') }
+        }
+        into(layout.buildDirectory.dir("generated/workspace088/res/font"))
+    }
+val prepareWorkspace088Charts =
+    tasks.register<Sync>("prepareWorkspace088Charts") {
+        from(rootProject.file("../contracts/assets/charts")) { include("chart.html") }
+        from(rootProject.file("../backend/webrender/static/vendor")) { include("plotly.min.js") }
+        from(rootProject.file("../contracts/assets/fonts")) {
+            include("*-OFL.txt")
+            into("font-licenses")
+        }
+        into(layout.buildDirectory.dir("generated/workspace088/assets"))
+    }
+tasks.named("preBuild") { dependsOn(prepareWorkspace088Resources, prepareWorkspace088Charts) }
 
 @CacheableTask
 abstract class CopyCanonicalVoiceFixture065Task : DefaultTask() {
@@ -202,6 +230,9 @@ android {
     }
 
     sourceSets {
+        getByName("main").res.directories.add("build/generated/workspace088/res")
+        getByName("main").assets.directories.add("build/generated/workspace088/assets")
+        getByName("androidTest").assets.directories.add("../../contracts/fixtures/workspace_088")
         getByName("test").resources.directories.add(
             "build/generated/voice-fixture-065/testResources",
         )

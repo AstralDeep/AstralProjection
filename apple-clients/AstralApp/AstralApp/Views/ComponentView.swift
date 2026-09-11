@@ -42,71 +42,78 @@ struct ComponentView: View {
     }
 
     var body: some View {
-        switch component.type {
-        case "text":
-            textView
-        case "alert":
-            alertView
-        case "card":
-            cardView
-        case "collapsible":
+        if WorkspaceWelcome.role(of: component) == .examples {
+            WelcomeExamplesLayout { childViews }
+                .frame(maxWidth: .infinity)
+        } else if WorkspaceWelcome.role(of: component) == .more {
             CollapsibleComponent(component: component)
-        case "container":
-            containerView
-        case "grid":
-            gridView
-        case "metric":
-            metricView
-        case "badge":
-            badgeView
-        case "hero":
-            heroView
-        case "list":
-            listView
-        case "keyvalue":
-            keyValueView
-        case "timeline":
-            timelineView
-        case "rating":
-            ratingView
-        case "table":
-            TableComponent(component: component)
-        case "code":
-            codeView
-        case "image":
-            imageView
-        case "progress":
-            progressView
-        case "divider":
-            Divider().overlay(p.border)
-        case "button":
-            buttonView
-        case "file_upload":
-            // Not a live control here — the chat input owns attachment staging.
-            // A generic action button would emit a bogus component_action and
-            // earn a server error alert.
-            fileUploadHint
-        case "input":
-            InputComponent(component: component)
-        case "param_picker":
-            ParamPickerComponent(component: component)
-        case "tabs":
-            TabsComponent(component: component)
-        case "color_picker":
-            ColorPickerComponent(component: component)
-        case "chat_history":
-            chatHistoryView
-        case "bar_chart", "line_chart", "pie_chart", "plotly_chart":
-            ChartComponent(component: component)
-        case "file_download", "download_card":
-            DownloadComponent(component: component)
-        case "skeleton":
-            skeletonView
-        case "theme_apply":
-            Color.clear.frame(height: 0)
-                .onAppear { theme.apply(spec: component.raw["attributes"] ?? component.raw) }
-        default:
-            fallbackView
+        } else {
+            switch component.type {
+            case "text":
+                textView
+            case "alert":
+                alertView
+            case "card":
+                cardView
+            case "collapsible":
+                CollapsibleComponent(component: component)
+            case "container":
+                containerView
+            case "grid":
+                gridView
+            case "metric":
+                metricView
+            case "badge":
+                badgeView
+            case "hero":
+                heroView
+            case "list":
+                listView
+            case "keyvalue":
+                keyValueView
+            case "timeline":
+                timelineView
+            case "rating":
+                ratingView
+            case "table":
+                TableComponent(component: component)
+            case "code":
+                codeView
+            case "image":
+                imageView
+            case "progress":
+                progressView
+            case "divider":
+                Divider().overlay(p.border)
+            case "button":
+                buttonView
+            case "file_upload":
+                // Not a live control here — the chat input owns attachment staging.
+                // A generic action button would emit a bogus component_action and
+                // earn a server error alert.
+                fileUploadHint
+            case "input":
+                InputComponent(component: component)
+            case "param_picker":
+                ParamPickerComponent(component: component)
+            case "tabs":
+                TabsComponent(component: component)
+            case "color_picker":
+                ColorPickerComponent(component: component)
+            case "chat_history":
+                chatHistoryView
+            case "bar_chart", "line_chart", "pie_chart", "plotly_chart":
+                ChartComponent(component: component)
+            case "file_download", "download_card":
+                DownloadComponent(component: component)
+            case "skeleton":
+                skeletonView
+            case "theme_apply":
+                Color.clear.frame(height: 0)
+                    .onAppear { theme.apply(spec: component.raw["attributes"] ?? component.raw) }
+            default:
+                fallbackView
+            }
         }
     }
 
@@ -133,11 +140,11 @@ struct ComponentView: View {
 
     private func fontForVariant(_ v: String?) -> Font {
         switch v {
-        case "h1": return .largeTitle.bold()
-        case "h2": return .title.bold()
-        case "h3": return .title3.bold()
-        case "caption": return .caption
-        default: return .body
+        case "h1": return AstralTypography.largeTitle.bold()
+        case "h2": return AstralTypography.title.bold()
+        case "h3": return AstralTypography.title3.bold()
+        case "caption": return AstralTypography.caption
+        default: return AstralTypography.body
         }
     }
 
@@ -150,7 +157,7 @@ struct ComponentView: View {
             Image(systemName: alertIcon).foregroundStyle(color)
             VStack(alignment: .leading, spacing: 2) {
                 if let title = component.title, !title.isEmpty {
-                    markdown(title).font(.subheadline.bold()).foregroundStyle(color)
+                    markdown(title).font(AstralTypography.subheadline.bold()).foregroundStyle(color)
                 }
                 MarkdownBlockView(source: component.message ?? component.fallbackText)
                     .foregroundStyle(p.text)
@@ -239,11 +246,11 @@ struct ComponentView: View {
             Rectangle().fill(color).frame(width: 3)
             VStack(alignment: .leading, spacing: 2) {
                 markdown(component.title ?? component.label ?? "")
-                    .font(.caption).foregroundStyle(p.muted)
+                    .font(AstralTypography.caption).foregroundStyle(p.muted)
                     .textCase(.uppercase)
-                Text(component.value ?? "—").font(.title.bold()).foregroundStyle(p.text)
+                Text(component.value ?? "—").font(AstralTypography.title.bold()).foregroundStyle(p.text)
                 if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
-                    markdown(sub).font(.caption).foregroundStyle(p.muted)
+                    markdown(sub).font(AstralTypography.caption).foregroundStyle(p.muted)
                 }
             }
             Spacer(minLength: 0)
@@ -257,7 +264,7 @@ struct ComponentView: View {
     private var badgeView: some View {
         let color = p.variant(component.variant)
         return Text(component.label ?? component.fallbackText)
-            .font(.caption.bold())
+            .font(AstralTypography.caption.bold())
             .foregroundStyle(color)
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(color.opacity(0.18), in: Capsule())
@@ -266,7 +273,25 @@ struct ComponentView: View {
     /// Hero variants match the web renderer: default = surface + soft border,
     /// `gradient` = subtle 135° wash (primary 18% → secondary 8%) with a 3 pt
     /// top accent bar, `subtle` = 2% text wash — never a full-strength banner.
+    @ViewBuilder
     private var heroView: some View {
+        if WorkspaceWelcome.role(of: component) == .intro {
+            VStack(spacing: 8) {
+                markdown(component.raw["heading"]?.stringValue ?? component.title ?? "")
+                    .font(AstralTypography.largeTitle.weight(.medium)).foregroundStyle(p.text)
+                if let subtitle = component.raw["subtitle"]?.stringValue {
+                    markdown(subtitle).foregroundStyle(p.muted)
+                }
+            }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 8)
+        } else {
+            ordinaryHero
+        }
+    }
+
+    private var ordinaryHero: some View {
         let variant = component.variant ?? "default"
         return VStack(alignment: .leading, spacing: 0) {
             if variant == "gradient" {
@@ -274,10 +299,10 @@ struct ComponentView: View {
             }
             VStack(alignment: .leading, spacing: 6) {
                 if let eyebrow = component.raw["eyebrow"]?.stringValue, !eyebrow.isEmpty {
-                    Text(eyebrow).font(.caption.bold()).foregroundStyle(p.primary).textCase(.uppercase)
+                    Text(eyebrow).font(AstralTypography.caption.bold()).foregroundStyle(p.primary).textCase(.uppercase)
                 }
                 markdown(component.raw["heading"]?.stringValue ?? component.title ?? "")
-                    .font(.title.bold()).foregroundStyle(p.text)
+                    .font(AstralTypography.title.bold()).foregroundStyle(p.text)
                 if let sub = component.raw["subtitle"]?.stringValue ?? component.raw["subheading"]?.stringValue {
                     markdown(sub).foregroundStyle(p.muted)
                 }
@@ -286,7 +311,7 @@ struct ComponentView: View {
                     HStack {
                         ForEach(Array(badges.enumerated()), id: \.offset) { _, b in
                             Text(b["label"]?.stringValue ?? b.displayText)
-                                .font(.caption.bold())
+                                .font(AstralTypography.caption.bold())
                                 .padding(.horizontal, 8).padding(.vertical, 3)
                                 .background(p.primary.opacity(0.18), in: Capsule())
                                 .foregroundStyle(p.text)
@@ -346,7 +371,7 @@ struct ComponentView: View {
                     Spacer(minLength: 12)
                     Text(pair.1).foregroundStyle(p.text)
                 }
-                .font(.callout)
+                .font(AstralTypography.callout)
             }
         }
         .padding(12)
@@ -364,12 +389,12 @@ struct ComponentView: View {
                         .frame(width: 8, height: 8).padding(.top, 5)
                     VStack(alignment: .leading, spacing: 1) {
                         if let time = item["time"]?.stringValue, !time.isEmpty {
-                            Text(time).font(.caption2).foregroundStyle(p.muted)
+                            Text(time).font(AstralTypography.caption2).foregroundStyle(p.muted)
                         }
                         markdown(item["title"]?.stringValue ?? item["label"]?.stringValue ?? item.displayText)
-                            .font(.callout).foregroundStyle(p.text)
+                            .font(AstralTypography.callout).foregroundStyle(p.text)
                         if let desc = item["description"]?.stringValue, !desc.isEmpty {
-                            markdown(desc).font(.caption).foregroundStyle(p.muted)
+                            markdown(desc).font(AstralTypography.caption).foregroundStyle(p.muted)
                         }
                     }
                     Spacer(minLength: 0)
@@ -384,7 +409,7 @@ struct ComponentView: View {
         let maxValue = Int(component.raw["max_value"]?.numberValue ?? component.raw["max"]?.numberValue ?? 5)
         return VStack(alignment: .leading, spacing: 2) {
             if let label = component.label ?? component.title, !label.isEmpty {
-                markdown(label).font(.caption).foregroundStyle(p.muted)
+                markdown(label).font(AstralTypography.caption).foregroundStyle(p.muted)
             }
             HStack(spacing: 2) {
                 ForEach(0..<max(maxValue, 1), id: \.self) { i in
@@ -395,12 +420,12 @@ struct ComponentView: View {
                 // it by default; 3.5/5 must not read as four stars flat).
                 if component.raw["show_value"]?.boolValue != false {
                     Text("\(rawValue.formatted(.number.precision(.fractionLength(0...1))))/\(maxValue)")
-                        .font(.caption.weight(.semibold)).foregroundStyle(p.text)
+                        .font(AstralTypography.caption.weight(.semibold)).foregroundStyle(p.text)
                         .padding(.leading, 4)
                 }
             }
             if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
-                markdown(sub).font(.caption).foregroundStyle(p.muted)
+                markdown(sub).font(AstralTypography.caption).foregroundStyle(p.muted)
             }
         }
     }
@@ -410,7 +435,7 @@ struct ComponentView: View {
     private var codeView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             Text(component.textContent ?? component.raw["code"]?.stringValue ?? "")
-                .font(.callout.monospaced())
+                .font(AstralTypography.mono(16))
                 .textSelection(.enabled)
                 .padding(12)
         }
@@ -433,7 +458,7 @@ struct ComponentView: View {
                 if let caption = component.raw["caption"]?.stringValue ?? component.raw["alt"]?.stringValue,
                     !caption.isEmpty
                 {
-                    Text(caption).font(.caption).foregroundStyle(p.muted)
+                    Text(caption).font(AstralTypography.caption).foregroundStyle(p.muted)
                 }
             }
         }
@@ -444,11 +469,11 @@ struct ComponentView: View {
             // The wire caption field is `label` (progress has no `title`).
             if let label = component.label ?? component.title, !label.isEmpty {
                 HStack {
-                    markdown(label).font(.caption).foregroundStyle(p.muted)
+                    markdown(label).font(AstralTypography.caption).foregroundStyle(p.muted)
                     Spacer(minLength: 8)
                     if component.raw["show_percentage"]?.boolValue != false {
                         Text("\(Int((progressFraction * 100).rounded()))%")
-                            .font(.caption).foregroundStyle(p.muted)
+                            .font(AstralTypography.caption).foregroundStyle(p.muted)
                     }
                 }
             }
@@ -464,16 +489,23 @@ struct ComponentView: View {
 
     // MARK: interactive
 
+    @ViewBuilder
     private var buttonView: some View {
         let label = component.label ?? component.title ?? "Continue"
         let variant = component.variant ?? "primary"
-        return Button {
+        let button = Button {
             let action = component.raw["action"]?.stringValue ?? "component_action"
             model.emit(action, payload: component.raw["payload"]?.objectValue ?? [:])
         } label: {
-            Text(label).frame(maxWidth: variant == "primary" ? .infinity : nil)
+            Text(label).fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
         }
-        .buttonStyle(AstralButtonStyle(palette: p, variant: variant))
+        .disabled(component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false)
+        if WorkspaceWelcome.isExample(component) {
+            button.buttonStyle(WelcomeExampleButtonStyle(palette: p))
+        } else {
+            button.buttonStyle(AstralButtonStyle(palette: p, variant: variant))
+        }
     }
 
     private var chatHistoryView: some View {
@@ -490,16 +522,16 @@ struct ComponentView: View {
                                 Text(item["title"]?.stringValue ?? "Chat").foregroundStyle(p.text)
                                 if isTruthy(item["saved"]) {
                                     Image(systemName: "star.fill")
-                                        .font(.caption2).foregroundStyle(p.accent)
+                                        .font(AstralTypography.caption2).foregroundStyle(p.accent)
                                         .accessibilityLabel("Has saved components")
                                 }
                                 Spacer(minLength: 6)
                                 if let time = item["time"]?.stringValue, !time.isEmpty {
-                                    Text(time).font(.caption2).foregroundStyle(p.muted)
+                                    Text(time).font(AstralTypography.caption2).foregroundStyle(p.muted)
                                 }
                             }
                             if let preview = item["preview"]?.stringValue, !preview.isEmpty {
-                                Text(preview).font(.caption).foregroundStyle(p.muted).lineLimit(1)
+                                Text(preview).font(AstralTypography.caption).foregroundStyle(p.muted).lineLimit(1)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -528,7 +560,7 @@ struct ComponentView: View {
         VStack(alignment: .leading, spacing: 2) {
             markdown(component.fallbackText).foregroundStyle(p.text)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(component.type).font(.caption2).foregroundStyle(p.muted.opacity(0.7))
+            Text(component.type).font(AstralTypography.caption2).foregroundStyle(p.muted.opacity(0.7))
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -542,7 +574,7 @@ struct ComponentView: View {
         if let title = component.title, !title.isEmpty {
             HStack(spacing: 6) {
                 Rectangle().fill(p.gradient).frame(width: 3, height: 16)
-                markdown(title).font(.headline).foregroundStyle(p.text)
+                markdown(title).font(AstralTypography.headline).foregroundStyle(p.text)
             }
         }
     }
@@ -558,7 +590,7 @@ struct ComponentView: View {
                 "Attach files with the paperclip in the chat input",
                 systemImage: "paperclip"
             )
-            .font(.caption).foregroundStyle(p.muted)
+            .font(AstralTypography.caption).foregroundStyle(p.muted)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -592,7 +624,7 @@ struct AstralButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         let label = configuration.label
-            .font(.callout.weight(.semibold))
+            .font(AstralTypography.callout.weight(.semibold))
             .padding(.horizontal, 14).padding(.vertical, 9)
         switch variant {
         case "secondary", "ghost":
@@ -625,9 +657,13 @@ struct AstralButtonStyle: ButtonStyle {
 /// release assets) are fetched without credentials.
 struct DownloadComponent: View {
     let component: AstralComponent
+    var automaticallyStart = false
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @State private var phase = Phase.idle
+    @State private var downloadTask: Task<Void, Never>?
+    @State private var temporaryFile: URL?
+    @State private var savePanel: NSSavePanelHolder?
     private var p: AstralPalette { theme.palette }
 
     enum Phase: Equatable {
@@ -652,11 +688,11 @@ struct DownloadComponent: View {
             // platform) — web parity; the button alone says none of it.
             if let title = component.title, !title.isEmpty {
                 Text(InlineMarkdown.attributed(title))
-                    .font(.subheadline.bold()).foregroundStyle(p.text)
+                    .font(AstralTypography.subheadline.bold()).foregroundStyle(p.text)
             }
             if let desc = component.raw["description"]?.stringValue, !desc.isEmpty {
                 Text(InlineMarkdown.attributed(desc))
-                    .font(.caption).foregroundStyle(p.muted)
+                    .font(AstralTypography.caption).foregroundStyle(p.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             let meta = [
@@ -666,7 +702,7 @@ struct DownloadComponent: View {
             .compactMap { $0 }.filter { !$0.isEmpty }
             if !meta.isEmpty {
                 Text(meta.joined(separator: " • "))
-                    .font(.caption2).foregroundStyle(p.muted)
+                    .font(AstralTypography.caption2).foregroundStyle(p.muted)
             }
             switch phase {
             case .idle:
@@ -681,18 +717,18 @@ struct DownloadComponent: View {
             case .fetching:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Downloading…").font(.callout).foregroundStyle(p.muted)
+                    Text("Downloading…").font(AstralTypography.callout).foregroundStyle(p.muted)
                 }
             case .done(let file):
                 #if os(macOS)
                     HStack(spacing: 8) {
                         Image(systemName: "checkmark.circle.fill").foregroundStyle(p.success)
                         Text("Saved \(file.lastPathComponent)")
-                            .font(.callout).foregroundStyle(p.text)
+                            .font(AstralTypography.callout).foregroundStyle(p.text)
                         Button("Show in Finder") {
                             NSWorkspace.shared.activateFileViewerSelecting([file])
                         }
-                        .font(.callout)
+                        .font(AstralTypography.callout)
                         .tint(p.primary)
                     }
                 #else
@@ -707,9 +743,9 @@ struct DownloadComponent: View {
                 HStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(p.warning)
-                    Text(why).font(.caption).foregroundStyle(p.muted)
+                    Text(why).font(AstralTypography.caption).foregroundStyle(p.muted)
                     Button("Retry") { download() }
-                        .font(.callout).tint(p.primary)
+                        .font(AstralTypography.callout).tint(p.primary)
                 }
             }
             if urlString == nil,
@@ -717,24 +753,43 @@ struct DownloadComponent: View {
                 let pageURL = URL(string: page), !page.isEmpty
             {
                 Link("Open the releases page", destination: pageURL)
-                    .font(.caption).tint(p.primary)
+                    .font(AstralTypography.caption).tint(p.primary)
             }
         }
+        .task {
+            if automaticallyStart, case .idle = phase { download() }
+        }
+        .onDisappear { cancelDownload() }
+        .onChange(of: model.downloadOwner) { _, _ in cancelDownload() }
+
+    }
+
+    private func cancelDownload() {
+        downloadTask?.cancel()
+        downloadTask = nil
+        savePanel?.cancel()
+        savePanel = nil
+        if let file = temporaryFile { RestClient.removeTemporaryDownload(file) }
+        temporaryFile = nil
+        phase = .idle
     }
 
     private func download() {
         guard let urlString else { return }
+        cancelDownload()
         phase = .fetching
-        let rest = model.rest
-        let suggested = filename
-        Task {
+        let owner = model.downloadOwner
+        downloadTask = Task { @MainActor in
             do {
-                let file = try await rest.downloadFile(
-                    from: urlString,
-                    suggestedFilename: suggested)
-                await MainActor.run { finish(with: file) }
-            } catch {
-                await MainActor.run {
+                let file = try await model.downloadArtifact(from: urlString, suggestedFilename: filename)
+                guard !Task.isCancelled, model.downloadOwner == owner else {
+                    RestClient.removeTemporaryDownload(file)
+                    return
+                }
+                temporaryFile = file
+                finish(with: file, owner: owner)
+            } catch is CancellationError {} catch {
+                if !Task.isCancelled, model.downloadOwner == owner {
                     phase = .failed("Download failed — check your connection and try again.")
                 }
             }
@@ -742,28 +797,46 @@ struct DownloadComponent: View {
     }
 
     @MainActor
-    private func finish(with file: URL) {
+    private func finish(with file: URL, owner: AppModel.DownloadOwner) {
         #if os(macOS)
-            let panel = NSSavePanel()
+            let holder = NSSavePanelHolder()
+            savePanel = holder
+            let panel = holder.panel
             panel.nameFieldStringValue = file.lastPathComponent
             panel.canCreateDirectories = true
-            if panel.runModal() == .OK, let destination = panel.url {
-                do {
-                    if FileManager.default.fileExists(atPath: destination.path) {
-                        try FileManager.default.removeItem(at: destination)
-                    }
-                    try FileManager.default.copyItem(at: file, to: destination)
-                    phase = .done(destination)
-                } catch {
-                    phase = .failed(error.localizedDescription)
+            panel.begin { response in
+                defer {
+                    RestClient.removeTemporaryDownload(file)
+                    temporaryFile = nil
+                    savePanel = nil
                 }
-            } else {
-                phase = .idle  // user cancelled the save panel
+                guard model.downloadOwner == owner, !Task.isCancelled else { return }
+                if response == .OK, let destination = panel.url {
+                    do {
+                        if FileManager.default.fileExists(atPath: destination.path) {
+                            try FileManager.default.removeItem(at: destination)
+                        }
+                        try FileManager.default.copyItem(at: file, to: destination)
+                        phase = .done(destination)
+                    } catch { phase = .failed("The file could not be saved.") }
+                } else {
+                    phase = .idle
+                }
             }
         #else
             phase = .done(file)
         #endif
     }
+}
+
+@MainActor
+private final class NSSavePanelHolder {
+    #if os(macOS)
+        let panel = NSSavePanel()
+        func cancel() { panel.cancel(nil) }
+    #else
+        func cancel() {}
+    #endif
 }
 
 /// Table with server-driven pagination (emits `table_paginate`).
@@ -776,14 +849,14 @@ struct TableComponent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let title = component.title, !title.isEmpty {
-                Text(InlineMarkdown.attributed(title)).font(.headline).foregroundStyle(p.text)
+                Text(InlineMarkdown.attributed(title)).font(AstralTypography.headline).foregroundStyle(p.text)
             }
             ScrollView(.horizontal, showsIndicators: false) {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 4) {
                     if !component.tableHeaders.isEmpty {
                         GridRow {
                             ForEach(Array(component.tableHeaders.enumerated()), id: \.offset) { _, header in
-                                Text(header).font(.caption.bold()).foregroundStyle(p.muted)
+                                Text(header).font(AstralTypography.caption.bold()).foregroundStyle(p.muted)
                             }
                         }
                         Divider().overlay(p.border)
@@ -791,7 +864,7 @@ struct TableComponent: View {
                     ForEach(Array(component.tableRows.enumerated()), id: \.offset) { _, row in
                         GridRow {
                             ForEach(Array(row.enumerated()), id: \.offset) { _, cell in
-                                Text(cell).font(.callout).foregroundStyle(p.text)
+                                Text(cell).font(AstralTypography.callout).foregroundStyle(p.text)
                             }
                         }
                     }
@@ -816,12 +889,12 @@ struct TableComponent: View {
                 Button("‹ Prev") { paginate(offset: max(offset - size, 0), size: size) }
                     .disabled(offset <= 0)
                 Spacer()
-                Text("rows \(start)–\(end) of \(Int(total))").font(.caption).foregroundStyle(p.muted)
+                Text("rows \(start)–\(end) of \(Int(total))").font(AstralTypography.caption).foregroundStyle(p.muted)
                 Spacer()
                 Button("Next ›") { paginate(offset: offset + size, size: size) }
                     .disabled(end >= Int(total))
             }
-            .font(.caption)
+            .font(AstralTypography.caption)
             .tint(p.primary)
             .padding(.top, 4)
         }
@@ -849,7 +922,7 @@ struct InputComponent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             if let label = component.label, !label.isEmpty {
-                Text(label).font(.caption).foregroundStyle(p.muted)
+                Text(label).font(AstralTypography.caption).foregroundStyle(p.muted)
             }
             HStack {
                 TextField(component.raw["placeholder"]?.stringValue ?? "", text: $value)
@@ -893,14 +966,14 @@ struct ParamPickerComponent: View {
         VStack(alignment: .leading, spacing: 8) {
             if let title = component.title, !title.isEmpty {
                 Text(InlineMarkdown.attributed(title))
-                    .font(.headline).foregroundStyle(p.text)
+                    .font(AstralTypography.headline).foregroundStyle(p.text)
                     .accessibilityIdentifier(
                         hasLLMSave ? "llm-provider-form-title" : "param-picker-form-title")
             }
             // The form's operative instructions live here (web parity).
             if let desc = component.raw["description"]?.stringValue, !desc.isEmpty {
                 Text(InlineMarkdown.attributed(desc))
-                    .font(.caption).foregroundStyle(p.muted)
+                    .font(AstralTypography.caption).foregroundStyle(p.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
@@ -936,7 +1009,7 @@ struct ParamPickerComponent: View {
                     // drop AXValue, so XCUIElement.value (and VoiceOver's value
                     // readout) read as empty on macOS.
                     Text(operation.presentedLabel)
-                        .font(.caption)
+                        .font(AstralTypography.caption)
                         .foregroundStyle(operation.errorCode == nil ? p.muted : p.error)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("llm-save-status")
@@ -976,7 +1049,7 @@ struct ParamPickerComponent: View {
         let label = field["label"]?.stringValue ?? name
         let kind = field["kind"]?.stringValue ?? field["type"]?.stringValue ?? "text"
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(p.muted)
+            Text(label).font(AstralTypography.caption).foregroundStyle(p.muted)
             switch kind {
             case "boolean", "checkbox":
                 Toggle(
@@ -1016,7 +1089,7 @@ struct ParamPickerComponent: View {
                             get: { flags["\(name).\(option)"] ?? false },
                             set: { flags["\(name).\(option)"] = $0 })
                     )
-                    .font(.callout).tint(p.primary)
+                    .font(AstralTypography.callout).tint(p.primary)
                     .accessibilityIdentifier("param-field-\(name)-\(option)")
                     .accessibilityLabel(option)
                     .accessibilityValue(
@@ -1161,7 +1234,7 @@ struct TabsComponent: View {
                 HStack(spacing: 10) {
                     ForEach(Array(tabs.enumerated()), id: \.offset) { index, tab in
                         Button(tab["label"]?.stringValue ?? "Tab \(index + 1)") { selection = index }
-                            .font(.callout.weight(selection == index ? .bold : .regular))
+                            .font(AstralTypography.callout.weight(selection == index ? .bold : .regular))
                             .foregroundStyle(selection == index ? p.primary : p.muted)
                     }
                 }
@@ -1189,33 +1262,42 @@ struct CollapsibleComponent: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let welcome = WorkspaceWelcome.role(of: component) == .more
+        VStack(alignment: welcome ? .center : .leading, spacing: 8) {
             Button {
                 withAnimation { expanded.toggle() }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 8) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").foregroundStyle(p.muted)
-                    // astralprims always serializes `title` (default "") — treat
-                    // empty as missing like the web does, never a blank header.
-                    Text(
-                        InlineMarkdown.attributed(
-                            (component.title?.isEmpty == false) ? component.title! : "Details")
-                    )
-                    .font(.headline).foregroundStyle(p.text)
-                    Spacer(minLength: 0)
+                    Text(InlineMarkdown.attributed(component.title?.isEmpty == false ? component.title! : "Details"))
+                        .font(welcome ? AstralTypography.subheadline : AstralTypography.headline)
+                        .foregroundStyle(welcome ? p.muted : p.text)
+                    if !welcome { Spacer(minLength: 0) }
                 }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             if expanded {
-                ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                    ComponentView(component: child)
+                if welcome {
+                    WelcomeExamplesLayout {
+                        ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
+                            ComponentView(component: child)
+                        }
+                    }
+                } else {
+                    ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
+                        ComponentView(component: child)
+                    }
                 }
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .padding(welcome ? 0 : 12)
+        .frame(maxWidth: .infinity, alignment: welcome ? .center : .leading)
+        .background(welcome ? Color.clear : p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
     }
+
 }
 
 /// Color picker → live restyle + `save_theme` (feature 044 US5 parity).
@@ -1258,186 +1340,35 @@ struct ColorPickerComponent: View {
     }
 }
 
-/// Native bar/line/pie chart (parity with the other clients' canvas draws).
+/// The native shell hosts the exact bundled web Plotly renderer in an isolated
+/// ephemeral document. Server data never becomes executable HTML or authority.
 struct ChartComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
-    private var p: AstralPalette { theme.palette }
-
-    private typealias Series = (name: String?, values: [Double])
+    @Environment(\.astralViewportWidth) private var viewportWidth
+    @State private var slotWidth: CGFloat = 704
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if let title = component.title, !title.isEmpty {
-                Text(InlineMarkdown.attributed(title)).font(.headline).foregroundStyle(p.text)
+                Text(InlineMarkdown.attributed(title))
+                    .font(AstralTypography.headline).foregroundStyle(theme.palette.text)
             }
-            let series = allSeries
-            if series.isEmpty {
-                Text("[\(component.type)]").font(.caption).foregroundStyle(p.muted)
-            } else {
-                chart(series)
-                    .frame(height: 160)
-                    .frame(maxWidth: .infinity)
-                legend(series)
-            }
+            OfflineChartView(component: component, viewportWidth: viewportWidth)
+                .frame(
+                    height: OfflineChartDocument.height(
+                        component: component, viewportWidth: viewportWidth, slotWidth: slotWidth - 24)
+                )
+                .frame(maxWidth: .infinity)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
-    }
-
-    private var seriesColors: [Color] {
-        [p.primary, p.secondary, p.accent, p.success, p.warning, p.error]
-    }
-
-    @ViewBuilder
-    private func chart(_ series: [Series]) -> some View {
-        switch component.type {
-        case "pie_chart":
-            pie(series.first?.values ?? [])
-        case "line_chart":
-            lines(series)
-        default:
-            bars(series)
-        }
-    }
-
-    /// Named multi-trace charts get a legend (the weather daily forecast is a
-    /// two-trace High/Low bar chart — unnamed single traces stay clean). The
-    /// pie draws only the first trace, so a multi-trace legend would name
-    /// series that aren't on screen.
-    @ViewBuilder
-    private func legend(_ series: [Series]) -> some View {
-        if series.count > 1 && component.type != "pie_chart" {
-            HStack(spacing: 10) {
-                ForEach(Array(series.enumerated()), id: \.offset) { index, s in
-                    HStack(spacing: 4) {
-                        Circle().fill(seriesColors[index % seriesColors.count])
-                            .frame(width: 7, height: 7)
-                        Text(s.name ?? "Series \(index + 1)")
-                            .font(.caption2).foregroundStyle(p.muted)
-                    }
-                }
+        .background(theme.palette.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .background {
+            GeometryReader { geometry in
+                Color.clear.onAppear { slotWidth = geometry.size.width }
+                    .onChange(of: geometry.size.width) { _, width in slotWidth = width }
             }
         }
-    }
-
-    /// Bars grow away from a TRUE zero baseline (negatives hang below it),
-    /// normalized across every series — mixed-sign data renders honestly and
-    /// can never produce a negative frame height. Missing indices in ragged
-    /// traces draw nothing, never a fabricated zero bar.
-    private func bars(_ series: [Series]) -> some View {
-        let all = series.flatMap(\.values)
-        let top = max(all.max() ?? 0, 0)
-        let bottom = min(all.min() ?? 0, 0)
-        let range = top - bottom
-        let baseline = range > 0 ? (0 - bottom) / range : 0
-        let groups = series.map(\.values.count).max() ?? 0
-        return GeometryReader { geo in
-            HStack(alignment: .bottom, spacing: 3) {
-                ForEach(0..<max(groups, 1), id: \.self) { index in
-                    HStack(alignment: .bottom, spacing: 1) {
-                        ForEach(Array(series.enumerated()), id: \.offset) { s, trace in
-                            if index < trace.values.count, range > 0 {
-                                let fraction = (trace.values[index] - bottom) / range
-                                let lower = min(max(min(fraction, baseline), 0), 1)
-                                let upper = min(max(max(fraction, baseline), 0), 1)
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(
-                                        series.count > 1
-                                            ? AnyShapeStyle(seriesColors[s % seriesColors.count])
-                                            : AnyShapeStyle(p.gradient)
-                                    )
-                                    .frame(height: max(geo.size.height * CGFloat(upper - lower), 1))
-                                    .padding(.bottom, geo.size.height * CGFloat(lower))
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Color.clear.frame(maxWidth: .infinity)
-                            }
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(maxHeight: .infinity, alignment: .bottom)
-        }
-    }
-
-    private func lines(_ series: [Series]) -> some View {
-        let all = series.flatMap(\.values)
-        let maxV = all.max() ?? 1
-        let minV = all.min() ?? 0
-        let range = maxV - minV
-        return GeometryReader { geo in
-            ForEach(Array(series.enumerated()), id: \.offset) { s, trace in
-                Path { path in
-                    for (i, v) in trace.values.enumerated() {
-                        let x =
-                            trace.values.count > 1
-                            ? geo.size.width * CGFloat(i) / CGFloat(trace.values.count - 1) : 0
-                        let y =
-                            range > 0
-                            ? geo.size.height * (1 - CGFloat((v - minV) / range))
-                            : geo.size.height / 2
-                        if i == 0 { path.move(to: CGPoint(x: x, y: y)) } else { path.addLine(to: CGPoint(x: x, y: y)) }
-                    }
-                }
-                .stroke(
-                    series.count > 1 ? seriesColors[s % seriesColors.count] : p.primary,
-                    style: StrokeStyle(lineWidth: 2, lineJoin: .round))
-            }
-        }
-    }
-
-    private func pie(_ values: [Double]) -> some View {
-        let positive = values.filter { $0 > 0 }
-        let total = positive.reduce(0, +)
-        let colors = seriesColors
-        return Canvas { context, size in
-            let radius = min(size.width, size.height) / 2
-            let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            var start = Angle.degrees(-90)
-            for (i, v) in positive.enumerated() where total > 0 {
-                let sweep = Angle.degrees(360 * v / total)
-                var path = Path()
-                path.move(to: center)
-                path.addArc(
-                    center: center, radius: radius, startAngle: start,
-                    endAngle: start + sweep, clockwise: false)
-                context.fill(path, with: .color(colors[i % colors.count]))
-                start = start + sweep
-            }
-        }
-    }
-
-    /// Every series in the payload — simple values, chart.js-style datasets,
-    /// or plotly traces (`y` for bar/line/scatter, `values` for pie).
-    private var allSeries: [Series] {
-        if let values = component.raw["values"]?.arrayValue {
-            let nums = values.compactMap { $0.numberValue }
-            return nums.isEmpty ? [] : [(nil, nums)]
-        }
-        if let datasets = component.raw["datasets"]?.arrayValue {
-            let traces: [Series] = datasets.compactMap { ds in
-                guard let data = ds["data"]?.arrayValue else { return nil }
-                let nums = data.compactMap { $0.numberValue }
-                guard !nums.isEmpty else { return nil }
-                return (ds["label"]?.stringValue ?? ds["name"]?.stringValue, nums)
-            }
-            if !traces.isEmpty { return traces }
-        }
-        if let data = component.raw["data"]?.arrayValue {
-            if data.first?.numberValue != nil {
-                return [(nil, data.compactMap { $0.numberValue })]
-            }
-            let traces: [Series] = data.compactMap { trace in
-                guard let vals = trace["y"]?.arrayValue ?? trace["values"]?.arrayValue else { return nil }
-                let nums = vals.compactMap { $0.numberValue }
-                guard !nums.isEmpty else { return nil }
-                return (trace["name"]?.stringValue, nums)
-            }
-            if !traces.isEmpty { return traces }
-        }
-        return []
     }
 }

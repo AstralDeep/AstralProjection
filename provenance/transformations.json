@@ -16,9 +16,9 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "d1ceb9dbd111d3ef8030e74496061115965ed612aa46512045ee7bc9f4f3f705",
-      "task": "T054/T057/T013/T014/T102",
-      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03."
+      "resultSha256": "0b9054585889bd86884cae32c825dcde4432b6fa090cf59356d27ce145a3b55b",
+      "task": "T054/T057/T013/T014/T102/T056/T060",
+      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries."
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
@@ -30,6 +30,42 @@
       "reason": "Feature 088 review: Verify ordinary grounded badges stay hidden while the server trust mark, estimated and generated warnings, and component actions remain available in Android instrumentation."
     },
     {
+      "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ReleaseEvidenceInstrumentedTest.kt",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ReleaseEvidenceInstrumentedTest.kt",
+      "sourceBlob": "cbe379b313c3e39dc281204f5192b6a96e70c992",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
+      "resultSha256": "db384bf4f21097b1dcf1229009bcc988c2f79f3d36f02f4c6f0206ff23f2373a"
+    },
+    {
+      "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/VoiceConversation065InstrumentedTest.kt",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/VoiceConversation065InstrumentedTest.kt",
+      "sourceBlob": "6b58ee3852e30bbc3cb988895e4e8262c0445100",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
+      "resultSha256": "1c2af1cc895e4dbb728cf75c6cc77de7380597721e5ae9f84e83fc5d33e90f46"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt",
+      "sourceBlob": "4f7e94f65ef6f4dd5c2976029ed38679a58d43ff",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "ab2dea2a59de77d97b4fdfab98cc5abbe9b2752370b32b517e9530428f7dcb15"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
+      "sourceBlob": "206e2005284e02f41047381e70302c9048b548e2",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "3f9ff873458aac449910206b4e42a21931e59dcebb143cab5dd587de3e3ac16e"
+    },
+    {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
       "sourceBlob": "ec76d3c82c5ce03f7ac62989685d572c83815593",
@@ -37,6 +73,51 @@
       "task": "T056",
       "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions.",
       "resultSha256": "c9ecf1a140eea90faa326bc3c573d9d1f110c83be82837a172433d67f9449d6a"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Basic.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Basic.kt",
+      "sourceBlob": "21fbe9a7893bbafb1841b4beb8125b35940f30cb",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "09aa9b19bade3fe46204249350aa3d8ce578486df0ab830fc6d44746686db6e3"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Charts.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Charts.kt",
+      "sourceBlob": "42b763cdc9ce4d89f2e5c8410d215c6bd352b224",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "99ed7fd89d1242f8ab15cb247d933bf60003fad2acfa11e959fd7da993dca7e9"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Data.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Data.kt",
+      "sourceBlob": "dc5bd0e6294c540ea44a765fc043e8f01e4eb940",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "a26ad47fcd4264ed935d4ec6af319716972d0462cb0f2d9e1f23f5390f0f94da"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Input.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Input.kt",
+      "sourceBlob": "0c23123bd7dff8b2c94e18a7bebbbf16638ae4a4",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "d68af6f9c5cbe9a3f2b0ef6f6b5e3783427327b1baaed3d4032b393d4a2f2e20"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Layout.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Layout.kt",
+      "sourceBlob": "b792f1dce68192b7cd64371e768f95ce29ac2c0d",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "2d941296e37b635a1b15d26a30b4b009df7985a0319a57c3516285b1b14dce77"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
@@ -48,13 +129,58 @@
       "reason": "Decode base64 data:image URLs locally so the image primitive can show remote-control screenshots (feature 076)."
     },
     {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
+      "sourceBlob": "25a71eb2c805119e642c5cc5cc4c456e47776fec",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "7018658cbafed4a91e535976b0bf6816b467433576f5b014c0e7af7e40f41fa1"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",
+      "sourceBlob": "e6ff616138233eaf811a567ff5b2bad7f4020d3e",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "c428d5a219bebebc4d23b6b941c2132c0e6c163757667671188a4a0cc36804cd"
+    },
+    {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourceBlob": "d241aacb0fb0710105e25b81d30f754bd8419611",
       "sourceMode": "100644",
-      "resultSha256": "7d2057c6b30550218dcd3569a3be26d77564d8726b7c7a4754a144828d1b3521",
-      "task": "T041",
-      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076)."
+      "resultSha256": "5e3f73b7c3bfed1419678b1429dc688ac7f0c0a669aaf0b21d7cfc5614f77867",
+      "task": "T041/T056/T060",
+      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries."
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
+      "sourceBlob": "6fbaa0b83e865d0055a0ca4fd645e8ca7ccc7e04",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "0571b8afd197763acf018eb94179e38965151dfa10422c4ff801c4d4dbd97fed"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/theme/Theme.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/theme/Theme.kt",
+      "sourceBlob": "6293e3e06908ee9318913196ef3207fdda544f0b",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "94f61bdfdf9bce604684d9165280151a88eac5b13918a13b75cbdffbce90f645"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController.kt",
+      "sourceBlob": "1fbdf6029c1ab1aecc655c004a2595679b987e7f",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
+      "resultSha256": "56897f6d0dd7447ebb4da04cffbc6331747cb741687afc4621bfb757ff0891cc"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
@@ -64,6 +190,33 @@
       "resultSha256": "3c2e1dd66ebf9defa3443def9ed2888e599d0913bbb50ffc59a2a894e4a0882f",
       "task": "T054",
       "reason": "Repoint Android renderer vocabulary parity to the standalone Projection contract."
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ChromeSurfaceReducerTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ChromeSurfaceReducerTest.kt",
+      "sourceBlob": "f3c28c3b7686a4e8b3cc12b3ecad142445b5f005",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "32473e8356e53a4bbacd19da7b0bee8b095af8035b69a67a55a7bc9d290ae35b"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/LayoutModeTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/LayoutModeTest.kt",
+      "sourceBlob": "46e233fedba752c4fba7ac66f0ce087460720309",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "ebec29bca2d050e05e755101b208459a7cf57bf0eacdcdef68f7f89603ad16d9"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController065Test.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController065Test.kt",
+      "sourceBlob": "1f9fd43ef9ea057a6ebce7a3008381d4b21576cf",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
+      "resultSha256": "e08c84b5375a51cfc385261ff494454b3952ded0be0e48435a398d748c99cc40"
     },
     {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
@@ -88,9 +241,9 @@
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
       "sourceBlob": "4801ccf81355ce04ac24930bb37754c86cd2cd87",
       "sourceMode": "100644",
-      "resultSha256": "3ef48b7fae2d8ae59a87b3b628c5672ba09a9bcc389fe1ea158e4a98184c5a5b",
-      "task": "T052/T040",
-      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "65d06518d89eb254b3015272a51d553815ec66630dd4dd2610e96da94f31425a",
+      "task": "T052/T040/T056/T060",
+      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries."
     },
     {
       "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
@@ -109,6 +262,15 @@
       "resultSha256": "944f019de2cb6b7a00428c2d279e2faaf49a7e894b46cba28500310ed9c42926",
       "task": "T054/T013/T014/T071",
       "reason": "Bind the Android voice conformance consumer to both standalone remote-v1 and client-local-v1 Projection fixtures, including canonical playout phases."
+    },
+    {
+      "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/WireTest.kt",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/WireTest.kt",
+      "sourceBlob": "fbab913a948c72581666156ce21aaf12363be29c",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "d7d51de06ce576b89ea9aa23855e47b91196541aff71f43ab57b2b1cf6fca6b1"
     },
     {
       "path": "android-client/docs/play-store-release.md",
@@ -147,13 +309,85 @@
       "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override."
     },
     {
+      "path": "apple-clients/AstralApp/AstralApp/AppModel.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/AppModel.swift",
+      "sourceBlob": "d41e7b743730ae8bfd49e21068e838c2f07bf799",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "b5d0de6b560775c28fefcbaed4f1d27d30d2ad600577194b6fa7b6900faec89d"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
+      "sourceBlob": "cb822bfcd36782eb2f87a74c6ac8313c9847b94c",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "e72aacf9ce88bf6aa157b9f593cb205f01c16acf09e0ffe3c7bd48969218b782"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
+      "sourceBlob": "390ea1e60d03b65b1db25955560055ef207c39ba",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "eb4def8265e15f7ef1b2fab7d4f76571aeb98b46c0b49492605695b6f9cdb682"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
+      "sourceBlob": "ae7a39f349d86b489910d22985b20a9067f165e2",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "f9d7c3be07e3ee18d37430393c55271165f7b6ec77460aad70a4721d6ad82000"
+    },
+    {
       "path": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
       "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
       "sourceBlob": "eddd7f1759eb83dd8836e4ef58080dd1de0cb070",
       "sourceMode": "100644",
-      "task": "T057",
-      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions.",
-      "resultSha256": "97323aae9948780300efdd5c5b888317cd2a4c7a6a760c54db4404d2ef872273"
+      "task": "T057/T061",
+      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions. Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "804ba82d160eab4d4a560f0a70c1a1aaaf64e1ff9a07ed4d50c20ed1af663748"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift",
+      "sourceBlob": "698310891434a11385b3e8436981f0bbfc631e59",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "82d4bff9373308d68996446876b284c40557545eec75c6ed75991f9bc29647aa"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/MarkdownBlockView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/MarkdownBlockView.swift",
+      "sourceBlob": "a3192ca22b6c46c2e737ee057904526aab60740f",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "02ced592243d912bf7d550ce69b0e392f689f374300e9748125cc66c1d24fd61"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/RootView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/RootView.swift",
+      "sourceBlob": "8290b380f4ee3979984255013712a7946a530590",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "055d9e136aa50e95e76e3fefc8ef05339565847692494dec243dd28e2fccd849"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/Screens.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/Screens.swift",
+      "sourceBlob": "4f8bf9a340b0a199e76761175c0f1943f1167ba4",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "49581f3d276487199900a8a50d039f49cef56ab0218f36f00cc17df5cb16f4ee"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
@@ -178,9 +412,18 @@
       "sourcePath": "apple-clients/AstralCore/Package.swift",
       "sourceBlob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
       "sourceMode": "100644",
-      "resultSha256": "d1a77c01102c6ddc4e9716db3bc51854b7088828ce168faaeed7f390484da538",
-      "task": "T055/T013/T014",
-      "reason": "Bind the shared Apple package to hash-verified standalone remote-v1 and client-local-v1 Projection fixtures without adding a package dependency."
+      "resultSha256": "cfff897a02154bbf0098621024b6c7e9bf71d3db497dcce5343cc6a49a3428a0",
+      "task": "T055/T013/T014/T057/T061",
+      "reason": "Bind the shared Apple package to hash-verified standalone remote-v1 and client-local-v1 Projection fixtures without adding a package dependency. Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries."
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/API/Rest.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/API/Rest.swift",
+      "sourceBlob": "a5b686d4bc48f2484b93eefb20ce47cabd951ca1",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "f09cddee6c327de260baeb1eb46a0e68c385e7e0074424989251d84a2c7faa67"
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
@@ -196,9 +439,9 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
       "sourceMode": "100644",
-      "resultSha256": "36faf78077070d82f0d6d821c258e669ef8456d9785f3b123300a1c6f9f0e475",
-      "task": "T055/T040",
-      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Wrap the two 122-column computer_host/computer_request disposition entries to satisfy strict recursive swift-format (lineLength 120)."
+      "resultSha256": "4b29b036f0a7f6bde77c1a92bd1559176b2048c3c604c865cb4ee149a56ae325",
+      "task": "T055/T040/T057/T061",
+      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Wrap the two 122-column computer_host/computer_request disposition entries to satisfy strict recursive swift-format (lineLength 120). Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
@@ -246,6 +489,60 @@
       "reason": "Exercise Apple client-local fixture parsing, bound-final construction, canonical playout phases, semantic denials, and unchanged remote-v1 proof behavior."
     },
     {
+      "path": "apple-clients/AstralWatch/AstralWatchApp.swift",
+      "sourcePath": "apple-clients/AstralWatch/AstralWatchApp.swift",
+      "sourceBlob": "25aa48938009986ec4fad7081aa3424b98ee2130",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "7f01e2fb2dc95c0ce8cbac39c3e426ec223affc89c5d5107dc3fa8189d3286cf"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/DeviceLoginView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/DeviceLoginView.swift",
+      "sourceBlob": "5b01c522b59d6bcf0c58ad4ceea18104d79ace74",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "cac31c8ad204b2ef8f71f5e8592611ea2f725f29ec233e968e7a1ed633a34929"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/WatchChatView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchChatView.swift",
+      "sourceBlob": "64a9845bc5d933ab251797320c930160d5056114",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "c03ffb922ff925eb9861f70bb3b78bd33546ce0fab8b93e38c26459e4c353ab0"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
+      "sourceBlob": "6877aa7a83db820af007e7b93e28c8b98d56c968",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "349024c6d4cc532815cde8bc7794675e02e97bef588d18bff5ef0b6064febf63"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/WatchHomeView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchHomeView.swift",
+      "sourceBlob": "48dbda13367284ef0a85916ef20e27dd141b3601",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "eef92a85555aa0518783a33c7f10383c111f581431ddd224b3fab667924afc53"
+    },
+    {
+      "path": "apple-clients/AstralWatch/WatchModel.swift",
+      "sourcePath": "apple-clients/AstralWatch/WatchModel.swift",
+      "sourceBlob": "8164768c856633459b8d169a81fd15055ba889dc",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "ea9a4590d385d5458c9e4442ac9b3030cfb2fe165c7d5f222867d665b5ad92ef"
+    },
+    {
       "path": "apple-clients/KNOWN-ISSUES.md",
       "sourcePath": "apple-clients/KNOWN-ISSUES.md",
       "sourceBlob": "d2b6482f3f8ed21b25c1a344dad1f08ae5e12dd4",
@@ -277,9 +574,9 @@
       "sourcePath": "backend/rote/adapter.py",
       "sourceBlob": "ada87b7c601058cff8acbf9a62d11367406d0438",
       "sourceMode": "100644",
-      "resultSha256": "0684b1b3f2f7b28c1b73a093deae1f8a14a91adee621590f263e7c3cbecbf828",
+      "resultSha256": "8b8065a35cad141418c6b627a0c86da66d686cdb8870c90b2ad7fbfce3ec8ea9",
       "task": "T017/T054",
-      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition. Feature 088 review: Adapt phone chart geometry by viewport capabilities and preserve every Plotly point in static table fallbacks."
+      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition. Feature 088 review: Adapt phone chart geometry by viewport capabilities and preserve every Plotly point in static table fallbacks. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates."
     },
     {
       "path": "backend/rote/capabilities.py",
@@ -493,9 +790,9 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "c00dcdd8c98306780b871a14bb676847569ccb5efbabf0aa32f8e6df96b7438d",
-      "task": "T013/T015/T040/T023",
-      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
+      "resultSha256": "6aaedc3862e4d256f513371471df47b2505363d9991747972104acc56ee9b95b",
+      "task": "T013/T015/T040/T023/T054",
+      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates."
     },
     {
       "path": "scripts/windows_release_candidate.py",

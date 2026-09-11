@@ -1,10 +1,8 @@
 package com.personalailabs.astraldeep.app
 
-import android.app.DownloadManager
-import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.os.Environment
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -55,7 +53,11 @@ import com.personalailabs.astraldeep.app.render.Emit
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.ThemeSink
 import com.personalailabs.astraldeep.app.render.renderers.registerAllRenderers
+import com.personalailabs.astraldeep.app.rest.ArtifactDownload
 import com.personalailabs.astraldeep.app.rest.AstralRest
+import com.personalailabs.astraldeep.app.rest.artifactDownloadUrl
+import com.personalailabs.astraldeep.app.rest.publicDownloadBrowserUrl
+import com.personalailabs.astraldeep.app.rest.safeDownloadFilename
 import com.personalailabs.astraldeep.app.transport.ConnectionState
 import com.personalailabs.astraldeep.app.transport.OrchestratorClient
 import com.personalailabs.astraldeep.app.transport.deviceCapabilities
@@ -68,12 +70,15 @@ import com.personalailabs.astraldeep.app.ui.theme.AstralTheme
 import com.personalailabs.astraldeep.app.voice.LiveKitVoiceMediaClient
 import com.personalailabs.astraldeep.app.voice.OkHttpVoiceControlApi
 import com.personalailabs.astraldeep.app.voice.VoiceSessionController
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val client by lazy { OrchestratorClient(AppConfig.WS_URL) }
@@ -91,25 +96,69 @@ class MainActivity : ComponentActivity() {
         KeycloakLogout(keycloakEndpoints(AppConfig.KEYCLOAK_AUTHORITY).endSessionEndpoint)
     }
 
-    /** Download an authed backend file (`/api/download/...`) to the device's public
-     * Downloads via the system DownloadManager, forwarding the session bearer token. */
+    private data class PendingDownload(val url: String, val owner: ConversationResumeStore.AccountIdentity)
+
+    private var pendingDownload: PendingDownload? = null
+    private val saveDownload =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
+            val pending = pendingDownload
+            pendingDownload = null
+            if (uri != null && pending == null) {
+                Toast.makeText(this, "Download expired. Select the file again.", Toast.LENGTH_LONG).show()
+            }
+            if (uri != null && pending != null) {
+                lifecycleScope.launch {
+                    try {
+                        withContext(Dispatchers.IO) {
+                            val token = authToken.value.orEmpty()
+                            check(ConversationResumeStore.accountFromAccessToken(token) == pending.owner) { "Account changed" }
+                            val temporary = File.createTempFile("astral-download-", ".tmp", cacheDir)
+                            try {
+                                temporary.outputStream().use { destination ->
+                                    ArtifactDownload(AppConfig.API_BASE, allowLocalHttp = BuildConfig.DEBUG)
+                                        .copyTo(pending.url, token, destination)
+                                }
+                                ensureActive()
+                                check(
+                                    ConversationResumeStore.accountFromAccessToken(authToken.value.orEmpty()) == pending.owner,
+                                ) { "Account changed" }
+                                val destination = contentResolver.openOutputStream(uri, "wt") ?: error("Could not open destination")
+                                destination.use { output -> temporary.inputStream().use { it.copyTo(output) } }
+                            } finally {
+                                temporary.delete()
+                            }
+                        }
+                        Toast.makeText(this@MainActivity, "File saved", Toast.LENGTH_SHORT).show()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Download failed. Return to this account and try again.",
+                            Toast.LENGTH_LONG,
+                        ).show()
+                    }
+                }
+            }
+        }
+
     private fun downloadFile(
         url: String,
         filename: String,
     ) {
+        if (pendingDownload != null) return
         try {
-            val full = if (url.startsWith("http")) url else AppConfig.API_BASE.trimEnd('/') + url
-            val req =
-                DownloadManager.Request(Uri.parse(full))
-                    .addRequestHeader("Authorization", "Bearer ${authToken.value.orEmpty()}")
-                    .setTitle(filename)
-                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
-            (getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
-            Toast.makeText(this, "Downloading $filename…", Toast.LENGTH_SHORT).show()
-        } catch (e: Exception) {
-            Log.w("MainActivity", "download failed: ${e.message}")
-            Toast.makeText(this, "Download failed", Toast.LENGTH_SHORT).show()
+            publicDownloadBrowserUrl(AppConfig.API_BASE, url)?.let { publicUrl ->
+                startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(publicUrl.toString())))
+                return
+            }
+            val owner = ConversationResumeStore.accountFromAccessToken(authToken.value.orEmpty()) ?: error("Sign in required")
+            artifactDownloadUrl(AppConfig.API_BASE, url, allowLocalHttp = BuildConfig.DEBUG)
+            pendingDownload = PendingDownload(url, owner)
+            saveDownload.launch(safeDownloadFilename(filename))
+        } catch (_: Exception) {
+            pendingDownload = null
+            Toast.makeText(this, "This file cannot be downloaded securely from this server.", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -214,7 +263,7 @@ class MainActivity : ComponentActivity() {
                             signInError.value = route.error
                         }
                     }
-                    RootScaffold(vm, renderer, onSignOut = ::signOut)
+                    RootScaffold(vm, renderer, onSignOut = { signOut(vm) })
                 }
             }
         }
@@ -241,7 +290,7 @@ class MainActivity : ComponentActivity() {
      * revocation — the backend `/api/auth/logout` first, direct Keycloak logout as
      * the fallback — so the refresh token dies even when the backend is down.
      */
-    private fun signOut() {
+    private fun signOut(vm: AppViewModel) {
         voiceController.logout()
         // Clear the LOCAL session SYNCHRONOUSLY on the main thread first, so
         // sign-out is durable even if the Activity is destroyed an instant later.
@@ -258,9 +307,12 @@ class MainActivity : ComponentActivity() {
                     Log.w("MainActivity", "conversation locator clear failed during sign-out")
                 }
             }
-        store.clear()
-        signInError.value = null
-        authToken.value = null
+        vm.signOut {
+            pendingDownload = null
+            store.clear()
+            signInError.value = null
+            authToken.value = null
+        }
         if (refresh.isNullOrBlank()) return
         // Best-effort server-side revocation off the main thread — fine to be
         // cancelled at onDestroy, the local session is already gone.

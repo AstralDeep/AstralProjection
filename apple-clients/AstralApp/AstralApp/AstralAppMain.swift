@@ -20,12 +20,14 @@ struct AstralApp: App {
 
     init() {
         NoStoreHTTP.prepareForLaunch()
+        AstralTypography.registerFonts()
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(model)
+                .font(AstralTypography.body)
                 .environment(model.themeStore)
                 .tint(model.themeStore.palette.primary)
                 .preferredColorScheme(.dark)

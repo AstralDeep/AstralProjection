@@ -3,7 +3,6 @@ package com.personalailabs.astraldeep.app.voice
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.AudioFormat
-import android.media.AudioTrack as AndroidAudioTrack
 import android.util.Log
 import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.VoiceAnnouncementMedia
@@ -23,13 +22,6 @@ import io.livekit.android.room.track.RemoteAudioTrack
 import io.livekit.android.room.track.RemoteTrackPublication
 import io.livekit.android.room.track.Track
 import io.livekit.android.util.LoggingLevel
-import java.net.URI
-import java.nio.ByteBuffer
-import java.time.Instant
-import java.util.UUID
-import java.util.concurrent.TimeUnit
-import kotlin.math.max
-import kotlin.math.min
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -65,6 +57,14 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import java.net.URI
+import java.nio.ByteBuffer
+import java.time.Instant
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+import kotlin.math.max
+import kotlin.math.min
+import android.media.AudioTrack as AndroidAudioTrack
 
 const val VOICE_TRANSCRIPT_TOPIC = "astraldeep.voice.transcript.v1"
 const val VOICE_ANNOUNCEMENT_TOPIC = "astraldeep.voice.announcement.v1"
@@ -376,9 +376,15 @@ interface VoiceControlApi {
         fields: JsonObject,
     ): Result<VoiceRestSession>
 
-    suspend fun stopSpeech(binding: VoiceUiBinding, session: VoiceRestSession): Boolean
+    suspend fun stopSpeech(
+        binding: VoiceUiBinding,
+        session: VoiceRestSession,
+    ): Boolean
 
-    suspend fun end(binding: VoiceUiBinding, session: VoiceRestSession): Boolean
+    suspend fun end(
+        binding: VoiceUiBinding,
+        session: VoiceRestSession,
+    ): Boolean
 }
 
 sealed interface VoiceMediaEvent {
@@ -1273,8 +1279,9 @@ class VoiceSessionController(
                 _state.update { it.copy(takeover = null) }
                 if (outcome.session.chatContextSynced) {
                     connectMedia(outcome.grant, outcome.session, sessionFence(outcome.session))
+                } else {
+                    feedback("connecting", "chat_context_unavailable", "Waiting for the voice chat context…")
                 }
-                else feedback("connecting", "chat_context_unavailable", "Waiting for the voice chat context…")
             }
         }
     }
@@ -2210,8 +2217,11 @@ class OkHttpVoiceControlApi(
             }
         val result = request(binding, "/api/voice/sessions/${session.sessionId}", "PATCH", body)
         val parsed = result.body?.let(::parseSession)
-        return if (result.status in 200..299 && parsed != null) Result.success(parsed)
-        else Result.failure(VoiceControlFailure(problemCode(result.body)))
+        return if (result.status in 200..299 && parsed != null) {
+            Result.success(parsed)
+        } else {
+            Result.failure(VoiceControlFailure(problemCode(result.body)))
+        }
     }
 
     override suspend fun stopSpeech(
@@ -2376,11 +2386,9 @@ class OkHttpVoiceControlApi(
 
     private data class NullableValue<out T>(val value: T?)
 
-    private fun JsonObject.str(key: String): String? =
-        (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
+    private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.contentOrNull
 
-    private fun JsonObject.bool(key: String): Boolean? =
-        (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
+    private fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull
 
     private fun JsonObject.positiveInt(key: String): Int? =
         (this[key] as? JsonPrimitive)?.takeIf { !it.isString }?.intOrNull?.takeIf { it > 0 }
@@ -2389,8 +2397,7 @@ class OkHttpVoiceControlApi(
 
     private fun JsonObject.uuid(key: String): String? = str(key)?.takeIf(::isUuid4)
 
-    private fun JsonObject.opaque(key: String): String? =
-        str(key)?.takeIf { it.length in 1..128 && OPAQUE.matches(it) }
+    private fun JsonObject.opaque(key: String): String? = str(key)?.takeIf { it.length in 1..128 && OPAQUE.matches(it) }
 
     private fun JsonObject.nullableUuid(key: String): NullableValue<String>? {
         val value = this[key] ?: return null
@@ -2418,7 +2425,6 @@ class OkHttpVoiceControlApi(
 
         private fun isTimestamp(value: String): Boolean = runCatching { Instant.parse(value) }.isSuccess
 
-        private fun isWebSocketUrl(value: String): Boolean =
-            runCatching { URI(value).scheme in setOf("ws", "wss") }.getOrDefault(false)
+        private fun isWebSocketUrl(value: String): Boolean = runCatching { URI(value).scheme in setOf("ws", "wss") }.getOrDefault(false)
     }
 }

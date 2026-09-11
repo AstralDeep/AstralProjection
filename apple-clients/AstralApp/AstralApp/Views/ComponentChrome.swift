@@ -22,6 +22,7 @@ struct ComponentChrome: View {
     var onRefine: ((RefineTarget) -> Void)?
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @State private var showingExport = false
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -34,6 +35,11 @@ struct ComponentChrome: View {
                 baseComponent
             }
             ProvenanceBadge(kind: component.raw["provenance"]?.stringValue)
+        }
+        .sheet(isPresented: $showingExport) {
+            if let url = csvExportURL {
+                ExportDownloadSheet(url: url, filename: "astraldeep-table.csv")
+            }
         }
     }
 
@@ -71,8 +77,10 @@ struct ComponentChrome: View {
                 Label("Refine…", systemImage: "wand.and.stars")
             }
         }
-        if let url = csvExportURL {
-            Link(destination: url) {
+        if csvExportURL != nil {
+            Button {
+                showingExport = true
+            } label: {
                 Label("Export as CSV", systemImage: "square.and.arrow.up")
             }
         }
@@ -93,7 +101,7 @@ struct ProvenanceBadge: View {
                 Text(icon)
                 Text(label)
             }
-            .font(.caption2)
+            .font(AstralTypography.caption2)
             .foregroundStyle(color.opacity(0.75))
             .accessibilityLabel("Provenance: \(label)")
         }
@@ -125,9 +133,9 @@ struct RefineSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(target.title.isEmpty ? "Refine this component" : "Refine \(target.title)")
-                .font(.headline).foregroundStyle(p.text)
+                .font(AstralTypography.headline).foregroundStyle(p.text)
             Text("Describe the change. The component updates in place — earlier versions stay restorable.")
-                .font(.caption).foregroundStyle(p.muted)
+                .font(AstralTypography.caption).foregroundStyle(p.muted)
                 .fixedSize(horizontal: false, vertical: true)
             TextField("e.g. sort by total, highest first", text: $instruction, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
@@ -154,5 +162,34 @@ struct RefineSheet: View {
         guard !trimmed.isEmpty else { return }
         model.refineComponent(target.componentId, instruction: trimmed)
         dismiss()
+    }
+}
+
+/// Exports use the authenticated download facade already used by generated
+/// files. A system browser cannot inherit this app's bearer session.
+struct ExportDownloadSheet: View {
+    let url: URL
+    let filename: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            DownloadComponent(
+                component: AstralComponent(
+                    type: "file_download",
+                    raw: .object([
+                        "type": .string("file_download"), "download_url": .string(url.absoluteString),
+                        "filename": .string(filename), "label": .string("Export"),
+                    ])), automaticallyStart: true
+            )
+            .padding(24)
+            .frame(minWidth: 280, minHeight: 150)
+            .navigationTitle("Export")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Close") { dismiss() }
+                }
+            }
+        }
     }
 }

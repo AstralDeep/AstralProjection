@@ -158,10 +158,23 @@ final class AppModel: NSObject {
     var screen: Screen = .chat
     var activeChatId: String?
 
-    var turns: [ChatTurn] = []
-    var canvas: [AstralComponent] = []
-    var transientTurns: [ChatTurn] = []
-    var transientCanvas: [AstralComponent]?
+    // Ephemeral, account-owned presentation state. A disconnected transport or
+    // a resized view never clears a draft; account changes and New chat do.
+    var composerDraft = ""
+    var runInBackground = false
+    var workspaceStarted = false
+    var turns: [ChatTurn] = [] {
+        didSet { if !turns.isEmpty { workspaceStarted = true } }
+    }
+    var canvas: [AstralComponent] = [] {
+        didSet { if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true } }
+    }
+    var transientTurns: [ChatTurn] = [] {
+        didSet { if !transientTurns.isEmpty { workspaceStarted = true } }
+    }
+    var transientCanvas: [AstralComponent]? {
+        didSet { if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true } }
+    }
     var pendingCanvas: [AstralComponent] = []
     var turnActive = false
     var pendingReplace = false
@@ -228,6 +241,9 @@ final class AppModel: NSObject {
             return canvasHistory[idx].components
         }
         return transientCanvas ?? canvas
+    }
+    var workspaceCanvas: [AstralComponent] {
+        workspaceStarted ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
     }
     var visibleTurns: [ChatTurn] { turns + transientTurns }
     var isViewingHistory: Bool { viewingIndex != nil }
@@ -386,6 +402,35 @@ final class AppModel: NSObject {
         activeChatId = conversationResumeStore.load(for: account)?.chatId
     }
 
+    struct DownloadOwner: Equatable {
+        let account: ConversationAccount?
+        let generation: Int
+        let signedIn: Bool
+    }
+
+    var downloadOwner: DownloadOwner {
+        DownloadOwner(account: conversationAccount, generation: sessionGeneration, signedIn: signedIn)
+    }
+
+    func downloadArtifact(
+        from url: String, suggestedFilename: String?,
+        operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        let owner = downloadOwner
+        guard owner.signedIn else { throw CancellationError() }
+        let file: URL
+        if let operation {
+            file = try await operation()
+        } else {
+            file = try await rest.downloadFile(from: url, suggestedFilename: suggestedFilename)
+        }
+        guard !Task.isCancelled, downloadOwner == owner else {
+            RestClient.removeTemporaryDownload(file)
+            throw CancellationError()
+        }
+        return file
+    }
+
     /// Build one reconnect registration and open its hydration fence before
     /// any welcome or transient frame can be reduced.
     func registrationFrame(token: String, resumed: Bool) -> String {
@@ -443,6 +488,7 @@ final class AppModel: NSObject {
         requestGeneration: String,
         purpose: ConversationGenerationPurpose
     ) -> Bool {
+        workspaceStarted = true
         let resetRevision =
             continuity.activeChatId != nil
             && continuity.activeChatId != chatId
@@ -831,6 +877,12 @@ final class AppModel: NSObject {
     /// Internal (not private) so XCTests can drive frames through the reducer.
     func handleFrame(_ frame: InboundFrame) {
         voice.consume(frame)
+        if workspaceStarted, ["ui_render", "ui_update"].contains(frame.name),
+            frame.renderTarget != "chat", !frame.renderComponents.isEmpty,
+            !WorkspaceWelcome.containsWork(frame.renderComponents)
+        {
+            return
+        }
         if continuity.connectionGeneration != nil,
             ["ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"]
                 .contains(frame.name)
@@ -1895,6 +1947,9 @@ final class AppModel: NSObject {
         stepTrail = []
         asyncDetached = false
         pendingCommitRequestGeneration = nil
+        composerDraft = ""
+        runInBackground = false
+        workspaceStarted = false
     }
 
     private func beginLocalOperationSubmission(
@@ -2053,8 +2108,11 @@ final class AppModel: NSObject {
                     role: "user",
                     text: bubble))
         }
+        workspaceStarted = true
+        let background = runInBackground
+        runInBackground = false
         turnActive = true
-        pendingReplace = true
+        pendingReplace = !background
         pendingCanvas = []
         liveOpsThisTurn = false
         // 055 uniform rule: purge the ephemeral welcome (`wel_` identities)
@@ -2081,6 +2139,7 @@ final class AppModel: NSObject {
             chatId: activeChatId)
 
         var payload: [String: JSONValue] = ["message": .string(text)]
+        if background { payload["async_mode"] = .bool(true) }
         if let cid = activeChatId { payload["chat_id"] = .string(cid) }
         if !ready.isEmpty {
             payload["attachments"] = .array(
@@ -2103,6 +2162,7 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        var payload = payload
         if action == "attach_existing" {
             if stageExistingAttachment(payload) {
                 let filename = payload["filename"]?.stringValue ?? "file"
@@ -2114,8 +2174,16 @@ final class AppModel: NSObject {
         }
         if timelineReadOnly && timelineMutations.contains(action) { return }
         if action == "chat_message" {
+            workspaceStarted = true
+            let background = runInBackground
+            runInBackground = false
+            if background {
+                var fields = payload.objectValue ?? [:]
+                fields["async_mode"] = .bool(true)
+                payload = .object(fields)
+            }
             turnActive = true
-            pendingReplace = true
+            pendingReplace = !background
             pendingCanvas = []
             liveOpsThisTurn = false
             if continuity.connectionGeneration == nil {
@@ -2396,6 +2464,7 @@ final class AppModel: NSObject {
     }
 
     func openChat(_ chatId: String) {
+        workspaceStarted = true
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
@@ -2456,8 +2525,6 @@ final class AppModel: NSObject {
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
         if mandatorySurface { return }  // 054: the pinned surface can't be replaced client-side
         switch surface {
-        case "agents": goTo(.agents)
-        case "audit": goTo(.audit)
         default:
             sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
             screen = .surface

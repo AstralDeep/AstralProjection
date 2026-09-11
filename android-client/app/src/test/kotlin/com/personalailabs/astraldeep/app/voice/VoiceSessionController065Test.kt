@@ -348,7 +348,10 @@ class VoiceSessionController065Test {
         runTest {
             val fixture = fixture(this)
             val reports = mutableListOf<com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent>()
-            fixture.controller.setPlayoutReporter { reports += it; true }
+            fixture.controller.setPlayoutReporter {
+                reports += it
+                true
+            }
             fixture.controller.activate(capability())
             fixture.media.emit(
                 VoiceMediaEvent.Data(
@@ -390,7 +393,10 @@ class VoiceSessionController065Test {
         runTest {
             val fixture = fixture(this)
             val reports = mutableListOf<com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent>()
-            fixture.controller.setPlayoutReporter { reports += it; true }
+            fixture.controller.setPlayoutReporter {
+                reports += it
+                true
+            }
             fixture.controller.activate(capability())
             fixture.media.emit(
                 VoiceMediaEvent.Data(
@@ -427,7 +433,10 @@ class VoiceSessionController065Test {
         runTest {
             val fixture = fixture(this)
             val reports = mutableListOf<com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent>()
-            fixture.controller.setPlayoutReporter { reports += it; true }
+            fixture.controller.setPlayoutReporter {
+                reports += it
+                true
+            }
             fixture.controller.activate(capability())
             fixture.media.emit(
                 VoiceMediaEvent.Data(
@@ -640,9 +649,12 @@ class VoiceSessionController065Test {
             assertEquals("foreground", fixture.api.updateCalls.last().fields["foreground_reason"]?.jsonPrimitive?.contentOrNull)
             advanceTimeBy(20_000)
             runCurrent()
-            assertEquals(foregroundUpdates + 2, fixture.api.updateCalls.count {
-                it.fields["foreground_active"]?.jsonPrimitive?.booleanOrNull == true
-            })
+            assertEquals(
+                foregroundUpdates + 2,
+                fixture.api.updateCalls.count {
+                    it.fields["foreground_active"]?.jsonPrimitive?.booleanOrNull == true
+                },
+            )
 
             fixture.controller.end()
             val callsAfterEnd = fixture.api.updateCalls.size

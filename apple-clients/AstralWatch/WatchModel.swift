@@ -39,13 +39,22 @@ final class WatchModel {
     var login: DeviceLoginStart?
     var loginExpiresAt: Date = .distantFuture
     var recents: [ChatSummary] = []
-    var entries: [Entry] = []
+    var workspaceStarted = false
+    var entries: [Entry] = [] {
+        didSet { if !entries.isEmpty { workspaceStarted = true } }
+    }
     /// The live canvas — identity-keyed workspace components. `ui_upsert` ops
     /// apply in place (replace/remove by component_id) instead of stacking
     /// duplicate transcript entries (FR-013 as it reaches the watch).
-    var canvas: [AstralComponent] = []
-    var transientEntries: [Entry] = []
-    var transientCanvas: [AstralComponent]?
+    var canvas: [AstralComponent] = [] {
+        didSet { if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true } }
+    }
+    var transientEntries: [Entry] = [] {
+        didSet { if !transientEntries.isEmpty { workspaceStarted = true } }
+    }
+    var transientCanvas: [AstralComponent]? {
+        didSet { if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true } }
+    }
     var statusText: String?
     /// Separates live progress from informational/error notices so the watch
     /// never presents a terminal message with an indeterminate spinner.
@@ -60,6 +69,9 @@ final class WatchModel {
 
     var visibleEntries: [Entry] { entries + transientEntries }
     var visibleCanvas: [AstralComponent] { transientCanvas ?? canvas }
+    var workspaceCanvas: [AstralComponent] {
+        workspaceStarted ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
+    }
     var pendingSurfaceRequestGenerations: Set<String> {
         Set(
             localOperationSubmissions.values.compactMap { submission in
@@ -305,6 +317,7 @@ final class WatchModel {
         requestGeneration: String,
         purpose: ConversationGenerationPurpose
     ) -> Bool {
+        workspaceStarted = true
         let resetRevision =
             continuity.activeChatId != nil
             && continuity.activeChatId != chatId
@@ -630,6 +643,12 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        if workspaceStarted, ["ui_render", "ui_update"].contains(frame.name),
+            frame.renderTarget != "chat", !frame.renderComponents.isEmpty,
+            !WorkspaceWelcome.containsWork(frame.renderComponents)
+        {
+            return
+        }
         // Dispositions: ClientDispositions.watch — unlisted/ignored frames
         // fall through the default silently (FR-003).
         switch frame.name {
@@ -1043,6 +1062,8 @@ final class WatchModel {
         errorBanner = nil
         pendingCommitRequestGeneration = nil
         seqState.removeAll()
+        pendingDictation = ""
+        workspaceStarted = false
     }
 
     private func beginLocalOperationSubmission(
@@ -1155,6 +1176,7 @@ final class WatchModel {
     }
 
     func openChat(_ chat: ChatSummary) {
+        workspaceStarted = true
         pendingVoiceActivation = nil
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chat.id, for: account) else { return }
@@ -1185,6 +1207,18 @@ final class WatchModel {
             voiceBridge.setCaptureEnabled(false)
             Task { await self.updateVoiceVisibleChat(chat.id) }
         }
+    }
+
+    /// Welcome examples use the same authenticated chat request as dictation.
+    /// Preserve an unsent draft; never dispatch other native button actions.
+    @discardableResult
+    func sendWelcomeExample(_ component: AstralComponent) -> Bool {
+        guard let message = WorkspaceWelcome.chatMessage(of: component) else { return false }
+        let draft = pendingDictation
+        pendingDictation = message
+        sendPending()
+        pendingDictation = draft
+        return true
     }
 
     /// Dictated text goes through the STANDARD chat path (FR-029) after the

@@ -48,11 +48,11 @@ struct DeviceLoginView: View {
                     .font(.system(.title3, design: .monospaced).bold())
                     .accessibilityLabel("Sign-in code \(login.userCode)")
                 Text("Scan with your phone camera, or enter the code at")
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Text(login.verificationURI)
-                    .font(.footnote.weight(.medium))
+                    .font(AstralTypography.footnote.weight(.medium))
                     .multilineTextAlignment(.center)
                 CountdownLine(until: model.loginExpiresAt)
             } else {
@@ -64,11 +64,11 @@ struct DeviceLoginView: View {
     private func failure(title: String, message: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle")
-                .font(.title2)
+                .font(AstralTypography.title2)
                 .foregroundStyle(WatchBrand.warning)
-            Text(title).font(.headline)
+            Text(title).font(AstralTypography.headline)
             Text(message)
-                .font(.footnote)
+                .font(AstralTypography.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { model.beginDeviceLogin() }
@@ -84,7 +84,7 @@ struct CountdownLine: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let remaining = max(0, Int(until.timeIntervalSince(context.date)))
             Text(remaining > 0 ? "Code refreshes in \(remaining)s" : "Refreshing…")
-                .font(.footnote)
+                .font(AstralTypography.footnote)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }

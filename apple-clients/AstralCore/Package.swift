@@ -57,7 +57,7 @@ let package = Package(
         .library(name: "AstralCore", targets: ["AstralCore"])
     ],
     targets: [
-        .target(name: "AstralCore", path: "Sources/AstralCore"),
+        .target(name: "AstralCore", path: "Sources/AstralCore", resources: [.process("Resources/Fonts")]),
         .testTarget(
             name: "AstralCoreTests",
             dependencies: ["AstralCore"],

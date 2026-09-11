@@ -10,6 +10,7 @@ struct RootView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
 
+    @State private var viewportWidth: CGFloat = 1024
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -23,19 +24,7 @@ struct RootView: View {
         .background(rootBackground.ignoresSafeArea())
     }
 
-    /// The web/Windows signature ambient glows: secondary 10% top-right,
-    /// primary 8% bottom-left over the flat bg (astral.css body layers).
-    private var rootBackground: some View {
-        ZStack {
-            p.bg
-            RadialGradient(
-                colors: [p.secondary.opacity(0.10), .clear],
-                center: .topTrailing, startRadius: 0, endRadius: 500)
-            RadialGradient(
-                colors: [p.primary.opacity(0.08), .clear],
-                center: .bottomLeading, startRadius: 0, endRadius: 500)
-        }
-    }
+    private var rootBackground: some View { p.bg }
 
     private var signedIn: some View {
         VStack(spacing: 0) {
@@ -47,6 +36,7 @@ struct RootView: View {
                 BannerBar(text: banner, isError: model.bannerIsError) { model.dismissBanner() }
             }
             surface
+                .environment(\.astralViewportWidth, viewportWidth)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(p.bg.ignoresSafeArea())
@@ -56,11 +46,13 @@ struct RootView: View {
             GeometryReader { geo in
                 Color.clear
                     .onAppear {
+                        viewportWidth = geo.size.width
                         model.viewportChanged(
                             width: Int(geo.size.width),
                             height: Int(geo.size.height))
                     }
                     .onChange(of: geo.size) { _, size in
+                        viewportWidth = size.width
                         model.viewportChanged(
                             width: Int(size.width),
                             height: Int(size.height))
@@ -138,12 +130,13 @@ struct AstralTopBar: View {
             model.newChat()
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "plus").font(.caption2.bold())
-                Text("New").font(.caption.bold())
+                Image(systemName: "plus").font(AstralTypography.caption2.bold())
+                Text("New").font(AstralTypography.caption.bold())
             }
-            .foregroundStyle(.white)
+            .foregroundStyle(p.text)
             .padding(.horizontal, 11).padding(.vertical, 7)
-            .background(p.gradient, in: Capsule())
+            .background(p.surface2, in: Capsule())
+            .overlay(Capsule().stroke(p.border))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("New chat")
@@ -199,7 +192,7 @@ struct ConnectionStrip: View {
     let label: String
     var body: some View {
         Text(label)
-            .font(.caption)
+            .font(AstralTypography.caption)
             .foregroundStyle(theme.palette.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14).padding(.vertical, 5)
@@ -216,10 +209,10 @@ struct BannerBar: View {
     var body: some View {
         let color = isError ? theme.palette.error : theme.palette.info
         HStack(spacing: 8) {
-            Text(text).font(.footnote).foregroundStyle(theme.palette.text)
+            Text(text).font(AstralTypography.footnote).foregroundStyle(theme.palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: onDismiss) {
-                Image(systemName: "xmark").font(.caption).foregroundStyle(theme.palette.muted)
+                Image(systemName: "xmark").font(AstralTypography.caption).foregroundStyle(theme.palette.muted)
             }
             .buttonStyle(.plain)
         }
@@ -245,14 +238,14 @@ struct SignInView: View {
                 model.signIn()
             } label: {
                 Label("Sign in with SSO", systemImage: "person.badge.key")
-                    .font(.headline)
+                    .font(AstralTypography.headline)
                     .frame(maxWidth: 320)
                     .padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
             .accessibilityLabel("Sign in with single sign-on")
             if let error = model.signInError {
-                Text(error).font(.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
+                Text(error).font(AstralTypography.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
             }
             Spacer().frame(height: 48)
         }

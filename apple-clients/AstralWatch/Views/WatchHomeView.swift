@@ -14,7 +14,7 @@ struct WatchHomeView: View {
                         .onAppear { model.newConversation() }
                 } label: {
                     Label("New conversation", systemImage: "plus.bubble.fill")
-                        .font(.headline)
+                        .font(AstralTypography.headline)
                 }
             }
 
@@ -39,7 +39,7 @@ struct WatchHomeView: View {
                     } icon: {
                         Image(systemName: "waveform.path.ecg")
                     }
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .ignore)
                     .accessibilityIdentifier(accessibility.identifier)
@@ -56,7 +56,7 @@ struct WatchHomeView: View {
                     model.accountName.isEmpty ? "Signed in" : model.accountName,
                     systemImage: "person.crop.circle"
                 )
-                .font(.footnote)
+                .font(AstralTypography.footnote)
                 .foregroundStyle(.secondary)
                 Button(role: .destructive) {
                     Task { await model.signOut() }
@@ -70,7 +70,7 @@ struct WatchHomeView: View {
         .overlay(alignment: .bottom) {
             if !model.connected {
                 Text("Reconnecting…")
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                     .padding(4)
                     .background(.ultraThinMaterial, in: Capsule())
             }

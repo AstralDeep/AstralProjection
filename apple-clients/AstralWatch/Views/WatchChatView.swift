@@ -11,37 +11,27 @@ struct WatchChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
-                    ForEach(model.visibleEntries) { entry in
-                        entryView(entry).id(entry.id)
-                    }
-                    // The live canvas: identity-keyed in the MODEL (upserts
-                    // morph components in place); watch views are stateless,
-                    // so positional ForEach identity is safe here.
-                    ForEach(Array(model.visibleCanvas.enumerated()), id: \.offset) { _, comp in
-                        WatchComponentView(component: comp)
-                    }
-                    .id("canvas")
-                    if let status = model.statusText {
-                        let accessibility = WatchAccessibility060.operationStatus(status)
-                        HStack(spacing: 4) {
-                            if model.statusShowsActivity {
-                                ProgressView().controlSize(.mini)
-                            }
-                            Text(InlineMarkdown.attributed(status))
-                                .font(.footnote).foregroundStyle(.secondary)
+                    if !model.workspaceStarted {
+                        welcome(.intro)
+                        welcome(.permission)
+                        notices
+                        inputArea
+                        welcome(.examples)
+                        welcome(.more)
+                    } else {
+                        ForEach(model.visibleEntries) { entry in
+                            entryView(entry).id(entry.id)
                         }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityIdentifier(accessibility.identifier)
-                        .accessibilityLabel(accessibility.name)
-                        .accessibilityValue(accessibility.state)
-                        .accessibilityAddTraits(.updatesFrequently)
+                        // The live canvas: identity-keyed in the MODEL (upserts
+                        // morph components in place); watch views are stateless,
+                        // so positional ForEach identity is safe here.
+                        ForEach(Array(model.workspaceCanvas.enumerated()), id: \.offset) { _, comp in
+                            WatchComponentView(component: comp)
+                        }
+                        .id("canvas")
+                        notices
+                        inputArea
                     }
-                    if let banner = model.errorBanner {
-                        Label(banner, systemImage: "exclamationmark.triangle")
-                            .font(.footnote)
-                            .foregroundStyle(WatchBrand.warning)
-                    }
-                    inputArea
                 }
             }
             .onChange(of: model.visibleEntries.count) { _, _ in
@@ -49,7 +39,7 @@ struct WatchChatView: View {
                     withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
-            .onChange(of: model.visibleCanvas.count) { _, count in
+            .onChange(of: model.workspaceCanvas.count) { _, count in
                 if count > 0 { withAnimation { proxy.scrollTo("canvas", anchor: .bottom) } }
             }
         }
@@ -91,13 +81,44 @@ struct WatchChatView: View {
     }
 
     @ViewBuilder
+    private var notices: some View {
+        if let status = model.statusText {
+            let accessibility = WatchAccessibility060.operationStatus(status)
+            HStack(spacing: 4) {
+                if model.statusShowsActivity {
+                    ProgressView().controlSize(.mini)
+                }
+                Text(InlineMarkdown.attributed(status))
+                    .font(AstralTypography.footnote).foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier(accessibility.identifier)
+            .accessibilityLabel(accessibility.name)
+            .accessibilityValue(accessibility.state)
+            .accessibilityAddTraits(.updatesFrequently)
+        }
+        if let banner = model.errorBanner {
+            Label(banner, systemImage: "exclamationmark.triangle")
+                .font(AstralTypography.footnote)
+                .foregroundStyle(WatchBrand.warning)
+        }
+    }
+
+    private func welcome(_ role: WorkspaceWelcome.Role) -> some View {
+        ForEach(Array(WorkspaceWelcome.components(model.visibleCanvas, for: role).enumerated()), id: \.offset) {
+            _, component in
+            WatchComponentView(component: component)
+        }
+    }
+
+    @ViewBuilder
     private func entryView(_ entry: WatchModel.Entry) -> some View {
         switch entry {
         case .user(_, let text, let attachments):
             VStack(alignment: .trailing, spacing: 3) {
                 if !text.isEmpty {
                     Text(text)
-                        .font(.footnote)
+                        .font(AstralTypography.footnote)
                         .padding(6)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .background(
@@ -108,7 +129,7 @@ struct WatchChatView: View {
                 // on the watch — these only mirror what the turn carried.
                 ForEach(attachments, id: \.self) { name in
                     Label(name, systemImage: "paperclip")
-                        .font(.caption2)
+                        .font(AstralTypography.caption2)
                         .lineLimit(1)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.gray.opacity(0.25), in: Capsule())
@@ -120,7 +141,7 @@ struct WatchChatView: View {
             // the phone's ChatBubble) — flatten blocks and parse inline spans;
             // never show asterisks or `##`/fence syntax.
             Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(text)))
-                .font(.footnote).foregroundStyle(.secondary)
+                .font(AstralTypography.footnote).foregroundStyle(.secondary)
         case .turn(_, let components):
             VStack(alignment: .leading, spacing: 6) {
                 ForEach(Array(components.enumerated()), id: \.offset) { _, comp in
@@ -153,7 +174,7 @@ struct WatchChatView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("“\(model.pendingDictation)”")
-                        .font(.footnote)
+                        .font(AstralTypography.footnote)
                         .italic()
                     HStack {
                         Button("Send") { model.sendPending() }
@@ -168,7 +189,7 @@ struct WatchChatView: View {
                         .accessibilityLabel(WatchAccessibility060.discard.name)
                         .accessibilityValue(WatchAccessibility060.discard.state)
                     }
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                 }
             }
         }
@@ -198,14 +219,14 @@ struct WatchChatView: View {
             .accessibilityLabel("Start voice conversation")
             .accessibilityValue("Checking voice availability")
             Text("Checking voice availability…")
-                .font(.caption2)
+                .font(AstralTypography.caption2)
                 .foregroundStyle(.secondary)
         } else if model.primaryVoiceControl == nil, model.voiceComposer != nil {
             // Composer present but no visible primary (e.g. this watch owns a
             // suspended session): surface the honest state label instead of
             // nothing.
             Text(model.voiceStatusLabel)
-                .font(.caption2)
+                .font(AstralTypography.caption2)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("voice.conversation.state")
                 .accessibilityLabel("Voice conversation")
@@ -258,7 +279,7 @@ struct WatchChatView: View {
                     ProgressView().controlSize(.mini)
                 }
                 Text(model.voiceStatusLabel)
-                    .font(.caption2)
+                    .font(AstralTypography.caption2)
                     .foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .ignore)
@@ -268,7 +289,7 @@ struct WatchChatView: View {
 
             if let partial = model.voicePartialTranscript, !partial.isEmpty {
                 Text(partial)
-                    .font(.caption2)
+                    .font(AstralTypography.caption2)
                     .italic()
                     .lineLimit(3)
                     .accessibilityLabel("Voice transcript: \(partial)")
@@ -302,13 +323,13 @@ private struct WatchVoiceTerminalNoticeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Label(notice.title, systemImage: "exclamationmark.triangle.fill")
-                .font(.caption.bold())
+                .font(AstralTypography.caption.bold())
                 .foregroundStyle(WatchBrand.error)
             Text(notice.serverMessage)
-                .font(.caption2)
+                .font(AstralTypography.caption2)
             if let guidance = notice.guidance {
                 Text(guidance)
-                    .font(.caption2)
+                    .font(AstralTypography.caption2)
             }
         }
         .padding(7)

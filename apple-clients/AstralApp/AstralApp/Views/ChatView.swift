@@ -21,16 +21,6 @@ import UniformTypeIdentifiers
 // width bound always beats the preference so the rail can never crush the
 // composer below ~20 visible characters (FR-004). pt ≈ CSS px keeps the
 // breakpoints in parity with the web client's 700/1024.
-private enum ShellLayoutMode {
-    case stacked, collapsed, split
-
-    static func forWidth(_ width: CGFloat, pref: String) -> ShellLayoutMode {
-        if width < 700 { return .stacked }
-        if pref == "closed" { return .collapsed }
-        if width < 1024 { return .collapsed }
-        return .split
-    }
-}
 
 struct ChatShell: View {
     @Environment(AppModel.self) var model
@@ -41,7 +31,9 @@ struct ChatShell: View {
     // switch: a resize across a breakpoint swaps the shell (new structural
     // identity), and view-local state would silently discard typed-but-unsent
     // text or dismiss an open timeline/refine sheet mid-edit.
-    @State private var draft = ""
+    private var draft: Binding<String> {
+        Binding(get: { model.composerDraft }, set: { model.composerDraft = $0 })
+    }
     @State private var showTimeline = false
     @State private var refineTarget: RefineTarget?
     var body: some View {
@@ -77,26 +69,61 @@ struct ChatShell: View {
 
     @ViewBuilder
     private func shell(size: CGSize) -> some View {
-        switch ShellLayoutMode.forWidth(size.width, pref: chatPref) {
-        case .stacked:
-            StackedShell(
-                draft: $draft, showTimeline: $showTimeline,
-                refineTarget: $refineTarget)
-        case .collapsed:
-            CollapsedShell(
-                containerSize: size, draft: $draft,
-                showTimeline: $showTimeline, refineTarget: $refineTarget,
-                onPinRail: { chatPref = "open" })
-        case .split:
-            SplitShell(
-                containerSize: size, draft: $draft,
-                showTimeline: $showTimeline, refineTarget: $refineTarget,
-                onCollapseRail: { chatPref = "closed" })
+        if !model.workspaceStarted {
+            StartShell(containerSize: size, draft: draft)
+        } else {
+            switch WorkspaceLayout.forWidth(Double(size.width), preference: chatPref) {
+            case .stacked:
+                StackedShell(
+                    draft: draft, showTimeline: $showTimeline,
+                    refineTarget: $refineTarget)
+            case .collapsed:
+                CollapsedShell(
+                    containerSize: size, draft: draft,
+                    showTimeline: $showTimeline, refineTarget: $refineTarget,
+                    onPinRail: { chatPref = "open" })
+            case .split:
+                SplitShell(
+                    containerSize: size, draft: draft,
+                    showTimeline: $showTimeline, refineTarget: $refineTarget,
+                    onCollapseRail: { chatPref = "closed" })
+            }
         }
     }
 }
 
 // MARK: - Layouts
+
+/// The same server-authored welcome components surround the one composer.
+/// Width only changes their arrangement; no native copy or example catalog exists.
+private struct StartShell: View {
+    @Environment(AppModel.self) var model
+    let containerSize: CGSize
+    @Binding var draft: String
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 16) {
+                welcome(.intro)
+                welcome(.permission)
+                InputBar(input: $draft)
+                welcome(.examples)
+                welcome(.more)
+            }
+            .frame(maxWidth: 704)
+            .padding(.horizontal, 20).padding(.vertical, 32)
+            .frame(maxWidth: .infinity, minHeight: containerSize.height)
+        }
+        .accessibilityIdentifier("workspace-start")
+    }
+
+    private func welcome(_ role: WorkspaceWelcome.Role) -> some View {
+        ForEach(Array(WorkspaceWelcome.components(model.visibleCanvas, for: role).enumerated()), id: \.offset) {
+            _, component in
+            ComponentView(component: component)
+        }
+    }
+}
 
 private struct StackedShell: View {
     @Environment(AppModel.self) var model
@@ -175,7 +202,7 @@ private struct CollapsedShell: View {
             if drawerOpen {
                 HStack(spacing: 6) {
                     Text("CONVERSATION")
-                        .font(.caption2.bold()).foregroundStyle(p.muted)
+                        .font(AstralTypography.caption2.bold()).foregroundStyle(p.muted)
                     Spacer()
                     // The pin can only take effect where split is reachable
                     // (≥1024pt — width bound beats preference); below that it
@@ -183,7 +210,7 @@ private struct CollapsedShell: View {
                     if containerSize.width >= 1024 {
                         Button(action: onPinRail) {
                             Image(systemName: "sidebar.trailing")
-                                .font(.caption.weight(.semibold)).foregroundStyle(p.muted)
+                                .font(AstralTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
                                 .frame(width: 28, height: 28)
                         }
                         .buttonStyle(.plain)
@@ -195,6 +222,18 @@ private struct CollapsedShell: View {
                 ChatList().frame(height: drawerHeight)
                 Divider().overlay(p.border)
             }
+            if containerSize.width >= 1024, !drawerOpen {
+                HStack {
+                    Spacer()
+                    Button(action: onPinRail) {
+                        Label("Show conversation sidebar", systemImage: "sidebar.trailing")
+                            .font(AstralTypography.caption).foregroundStyle(p.muted)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("workspace-restore-rail")
+                }
+                .padding(.horizontal, 14).padding(.top, 10)
+            }
             if model.turnActive { StepTrailView(lines: model.stepTrail) }
             HStack(alignment: .bottom, spacing: 2) {
                 ChatDrawerToggle(unread: unread, open: drawerOpen) {
@@ -202,7 +241,7 @@ private struct CollapsedShell: View {
                     if drawerOpen { unread = 0 }
                 }
                 .padding(.leading, 8).padding(.bottom, 12)
-                InputBar(input: $draft)
+                InputBar(input: $draft, framed: false)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -253,11 +292,11 @@ private struct RailHeader: View {
     var body: some View {
         HStack(spacing: 6) {
             Text("CONVERSATION")
-                .font(.caption2.bold()).foregroundStyle(theme.palette.muted)
+                .font(AstralTypography.caption2.bold()).foregroundStyle(theme.palette.muted)
             Spacer()
             Button(action: onCollapse) {
                 Image(systemName: "chevron.right.2")
-                    .font(.caption.weight(.semibold))
+                    .font(AstralTypography.caption.weight(.semibold))
                     .foregroundStyle(theme.palette.muted)
                     .frame(width: 28, height: 28)
             }
@@ -315,7 +354,7 @@ private struct CanvasArea: View {
     private var p: AstralPalette { theme.palette }
 
     private var canvasItems: [(key: String, comp: AstralComponent)] {
-        model.visibleCanvas.enumerated().map { index, comp in
+        model.workspaceCanvas.enumerated().map { index, comp in
             (comp.componentId ?? "anon-\(index)", comp)
         }
     }
@@ -349,7 +388,7 @@ private struct CanvasArea: View {
                     Group {
                         if model.showSkeleton {
                             SkeletonCanvas()
-                        } else if model.visibleCanvas.isEmpty {
+                        } else if model.workspaceCanvas.isEmpty {
                             EmptyCanvasHint()
                         } else {
                             ScrollView {
@@ -379,7 +418,7 @@ private struct CanvasArea: View {
                     HStack(spacing: 8) {
                         // 055 US5 (T045): canvas HTML export, opened in the
                         // system browser (session-authed route).
-                        if !model.visibleCanvas.isEmpty, !model.showSkeleton,
+                        if !model.workspaceCanvas.isEmpty, !model.showSkeleton,
                             let exportURL = model.exportCanvasURL()
                         {
                             CanvasExportPill(url: exportURL)
@@ -399,12 +438,15 @@ private struct CanvasArea: View {
 private struct CanvasExportPill: View {
     @Environment(ThemeStore.self) var theme
     let url: URL
+    @State private var showingExport = false
     private var p: AstralPalette { theme.palette }
     var body: some View {
-        Link(destination: url) {
+        Button {
+            showingExport = true
+        } label: {
             HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.up").font(.caption2)
-                Text("Export").font(.caption.weight(.medium))
+                Image(systemName: "square.and.arrow.up").font(AstralTypography.caption2)
+                Text("Export").font(AstralTypography.caption.weight(.medium))
             }
             .foregroundStyle(p.text)
             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -413,6 +455,9 @@ private struct CanvasExportPill: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Export this canvas as HTML")
+        .sheet(isPresented: $showingExport) {
+            ExportDownloadSheet(url: url, filename: "astraldeep-canvas.html")
+        }
     }
 }
 
@@ -438,11 +483,10 @@ private struct EmptyCanvasHint: View {
     private var p: AstralPalette { theme.palette }
     var body: some View {
         VStack(spacing: 8) {
-            Text("✨").font(.system(size: 40))
             Text("Your generated interface appears here")
-                .font(.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
+                .font(AstralTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
             Text("Ask something below and AstralDeep will build a live interface for it.")
-                .font(.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
+                .font(AstralTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -458,14 +502,15 @@ private struct ReadOnlyBanner: View {
         HStack(spacing: 8) {
             Image(systemName: "clock.arrow.circlepath").foregroundStyle(p.primary)
             VStack(alignment: .leading, spacing: 1) {
-                Text("Viewing a previous canvas").font(.footnote.weight(.semibold)).foregroundStyle(p.text)
+                Text("Viewing a previous canvas").font(AstralTypography.footnote.weight(.semibold)).foregroundStyle(
+                    p.text)
                 if let label, !label.isEmpty {
-                    Text(label).font(.caption).foregroundStyle(p.muted).lineLimit(1)
+                    Text(label).font(AstralTypography.caption).foregroundStyle(p.muted).lineLimit(1)
                 }
             }
             Spacer(minLength: 8)
             Button("Back to live", action: onBackToLive)
-                .font(.caption.weight(.medium))
+                .font(AstralTypography.caption.weight(.medium))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(p.primary, in: Capsule())
@@ -484,8 +529,8 @@ private struct TimelinePill: View {
     var body: some View {
         Button(action: onClick) {
             HStack(spacing: 6) {
-                Image(systemName: "clock.arrow.circlepath").font(.caption2)
-                Text("History (\(count))").font(.caption.weight(.medium))
+                Image(systemName: "clock.arrow.circlepath").font(AstralTypography.caption2)
+                Text("History (\(count))").font(AstralTypography.caption.weight(.medium))
             }
             .foregroundStyle(p.text)
             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -503,9 +548,9 @@ private struct CanvasTimelineOverlay: View {
     private var p: AstralPalette { theme.palette }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Previous canvases").font(.headline).foregroundStyle(p.text)
+            Text("Previous canvases").font(AstralTypography.headline).foregroundStyle(p.text)
             Text("Read-only snapshots from earlier turns in this chat.")
-                .font(.caption).foregroundStyle(p.muted)
+                .font(AstralTypography.caption).foregroundStyle(p.muted)
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(Array(history.enumerated()).reversed(), id: \.offset) { idx, snap in
@@ -517,7 +562,7 @@ private struct CanvasTimelineOverlay: View {
                                     Text(snap.label.isEmpty ? "Canvas \(idx + 1)" : snap.label)
                                         .foregroundStyle(p.text).lineLimit(1)
                                     Text("\(snap.components.count) component\(snap.components.count == 1 ? "" : "s")")
-                                        .font(.caption).foregroundStyle(p.muted)
+                                        .font(AstralTypography.caption).foregroundStyle(p.muted)
                                 }
                                 Spacer()
                                 Text("›").foregroundStyle(p.muted)
@@ -552,7 +597,7 @@ private struct StepTrailView: View {
             // identity hazard `ForEach(id: \.self)` had when a step repeats
             // (two `✗ run_job` lines in one turn).
             Text(lines.suffix(4).joined(separator: "\n"))
-                .font(.caption2).foregroundStyle(theme.palette.muted)
+                .font(AstralTypography.caption2).foregroundStyle(theme.palette.muted)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -589,12 +634,12 @@ private struct MessagesPanel: View {
                     withAnimation { expanded.toggle() }
                 } label: {
                     HStack(spacing: 8) {
-                        Text(expanded ? "▼" : "▲").font(.caption2).foregroundStyle(p.muted)
-                        Text("Messages").font(.subheadline.weight(.medium)).foregroundStyle(p.text)
-                        Text("(\(visible.count))").font(.caption).foregroundStyle(p.muted)
+                        Text(expanded ? "▼" : "▲").font(AstralTypography.caption2).foregroundStyle(p.muted)
+                        Text("Messages").font(AstralTypography.subheadline.weight(.medium)).foregroundStyle(p.text)
+                        Text("(\(visible.count))").font(AstralTypography.caption).foregroundStyle(p.muted)
                         Spacer()
                         if !expanded, let status = model.statusText {
-                            Text(status).font(.caption).foregroundStyle(p.muted).lineLimit(1)
+                            Text(status).font(AstralTypography.caption).foregroundStyle(p.muted).lineLimit(1)
                         }
                     }
                     .padding(.horizontal, 16).padding(.vertical, 10)
@@ -669,11 +714,11 @@ private struct StatusLine: View {
                     ProgressView().controlSize(.small)
                 } else {
                     Image(systemName: "ellipsis")
-                        .font(.caption2.weight(.semibold))
+                        .font(AstralTypography.caption2.weight(.semibold))
                         .accessibilityHidden(true)
                 }
             }
-            Text(text).font(.caption).foregroundStyle(theme.palette.muted)
+            Text(text).font(AstralTypography.caption).foregroundStyle(theme.palette.muted)
         }
     }
 }
@@ -705,7 +750,7 @@ private struct ChatBubble: View {
                         ComponentView(component: component)
                     }
                 }
-                .font(.subheadline)
+                .font(AstralTypography.subheadline)
                 .padding(.horizontal, 14).padding(.vertical, 10)
                 // User turns are the web's 20% primary tint + 30% border —
                 // not a saturated pill (cross-client bubble convention).
@@ -736,14 +781,14 @@ private struct ReasoningSnippet: View {
                 withAnimation { expanded.toggle() }
             } label: {
                 HStack(spacing: 6) {
-                    Text(expanded ? "▼" : "▶").font(.caption2).foregroundStyle(p.muted)
-                    Text("Reasoning").font(.caption.weight(.medium)).foregroundStyle(p.muted)
+                    Text(expanded ? "▼" : "▶").font(AstralTypography.caption2).foregroundStyle(p.muted)
+                    Text("Reasoning").font(AstralTypography.caption.weight(.medium)).foregroundStyle(p.muted)
                     Spacer(minLength: 0)
                 }
             }
             .buttonStyle(.plain)
             if expanded {
-                Text(text).font(.caption).foregroundStyle(p.text)
+                Text(text).font(AstralTypography.caption).foregroundStyle(p.text)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
@@ -760,6 +805,7 @@ private struct InputBar: View {
     // Owned by ChatShell so the draft survives layout-mode switches
     // (stacked/collapsed/split give this view a new structural identity).
     @Binding var input: String
+    var framed = true
     @State private var showImporter = false
     #if os(iOS)
         @State private var showPhotoPicker = false
@@ -773,7 +819,7 @@ private struct InputBar: View {
         VStack(alignment: .leading, spacing: 6) {
             if model.mutationsLocked {
                 Text("Viewing history — messaging is paused. Return to the live view to continue.")
-                    .font(.caption).foregroundStyle(p.muted)
+                    .font(AstralTypography.caption).foregroundStyle(p.muted)
                     .padding(.horizontal, 6)
             }
             if !model.staged.isEmpty {
@@ -784,29 +830,23 @@ private struct InputBar: View {
                     HStack(spacing: 6) {
                         ForEach(slashCommands.filter { $0.hasPrefix(input) }, id: \.self) { cmd in
                             Button(cmd) { input = cmd + " " }
-                                .font(.caption.monospaced()).foregroundStyle(p.primary)
+                                .font(AstralTypography.mono(12)).foregroundStyle(p.primary)
                         }
                     }
                 }
             }
             VoiceComposerNotices()
-            HStack(spacing: 6) {
-                // P11 cross-client composer order — voice leads the input row
-                // (Android: mic · input · paperclip · send; Windows: ghost
-                // buttons beside the field), instead of a floating chip row.
-                VoiceComposerControls()
-                TextField("Message AstralDeep…", text: $input, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .accessibilityIdentifier("chat-composer-input")
-                    .accessibilityLabel("Message AstralDeep")
-                    .submitLabel(.send)
-                    .lineLimit(1...4)
-                    .disabled(model.mutationsLocked)
-                    .focused($focused)
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(p.surface2, in: RoundedRectangle(cornerRadius: 22))
-                    .overlay(RoundedRectangle(cornerRadius: 22).stroke(p.border))
-                    .onSubmit(send)
+            TextField("Ask anything…", text: $input, axis: .vertical)
+                .textFieldStyle(.plain)
+                .accessibilityIdentifier("chat-composer-input")
+                .accessibilityLabel("Message AstralDeep")
+                .lineLimit(2...8)
+                .submitLabel(.send)
+                .onSubmit(send)
+                .disabled(model.mutationsLocked)
+                .focused($focused)
+                .padding(.horizontal, 4).padding(.vertical, 8)
+            ComposerControlsLayout(spacing: 6) {
                 Menu {
                     Button("Upload a file") { showImporter = true }
                     #if os(iOS)
@@ -815,14 +855,34 @@ private struct InputBar: View {
                     Button("Choose from your files") { model.openSurface("attachments") }
                 } label: {
                     Image(systemName: "paperclip").font(.system(size: 18)).foregroundStyle(p.muted)
+                        .frame(width: 44, height: 44)
                 }
                 .disabled(model.mutationsLocked)
-                .accessibilityLabel("Attach a file")
+                .accessibilityLabel("Attach files")
+                Button {
+                    model.runInBackground.toggle()
+                } label: {
+                    Image(systemName: "clock")
+                        .font(.system(size: 18))
+                        .foregroundStyle(model.runInBackground ? p.primary : p.muted)
+                        .frame(width: 44, height: 44)
+                        .background(
+                            model.runInBackground ? p.primary.opacity(0.12) : .clear,
+                            in: RoundedRectangle(cornerRadius: 10))
+                }
+                .buttonStyle(.plain)
+                .disabled(model.mutationsLocked)
+                .accessibilityLabel("Run in background")
+                .accessibilityValue(model.runInBackground ? "On" : "Off")
+                .help("Run the next message in the background")
+                VoiceComposerControls()
                 SendButton(enabled: canSend) { send() }
             }
         }
-        .padding(.horizontal, 8).padding(.vertical, 8)
-        .background(p.surface)
+        .padding(12)
+        .background(framed ? p.surface : .clear, in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(framed ? p.border : .clear))
+        .padding(8)
         .fileImporter(
             isPresented: $showImporter, allowedContentTypes: [.item],
             allowsMultipleSelection: true
@@ -852,7 +912,8 @@ private struct InputBar: View {
 
     private var canSend: Bool {
         !model.mutationsLocked
-            && (!input.trimmingCharacters(in: .whitespaces).isEmpty || model.staged.contains { $0.state == "ready" })
+            && (!input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                || model.staged.contains { $0.state == "ready" })
     }
 
     private func send() {
@@ -900,12 +961,12 @@ private struct VoiceComposerNotices: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Image(systemName: "ellipsis")
-                            .font(.caption2.weight(.semibold))
+                            .font(AstralTypography.caption2.weight(.semibold))
                             .accessibilityHidden(true)
                     }
                 }
             }
-            .font(.caption)
+            .font(AstralTypography.caption)
             .foregroundStyle(p.muted)
             .padding(.horizontal, 6)
             .accessibilityElement(children: .combine)
@@ -1016,19 +1077,19 @@ private struct VoiceTerminalNoticeView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.body.weight(.semibold))
+                .font(AstralTypography.body.weight(.semibold))
                 .foregroundStyle(p.error)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(notice.title)
-                    .font(.caption.weight(.bold))
+                    .font(AstralTypography.caption.weight(.bold))
                     .foregroundStyle(p.text)
                 Text(notice.serverMessage)
-                    .font(.caption)
+                    .font(AstralTypography.caption)
                     .foregroundStyle(p.text)
                 if let guidance = notice.guidance {
                     Text(guidance)
-                        .font(.caption)
+                        .font(AstralTypography.caption)
                         .foregroundStyle(p.text)
                 }
             }
@@ -1059,18 +1120,18 @@ private struct AttachmentChips: View {
             HStack(spacing: 6) {
                 ForEach(staged) { att in
                     HStack(spacing: 6) {
-                        Text(marker(att.state)).font(.caption2)
+                        Text(marker(att.state)).font(AstralTypography.caption2)
                         VStack(alignment: .leading, spacing: 0) {
-                            Text(att.filename).font(.caption).foregroundStyle(p.text)
+                            Text(att.filename).font(AstralTypography.caption).foregroundStyle(p.text)
                                 .lineLimit(1).frame(maxWidth: 160, alignment: .leading)
                             if let note = att.note, !note.isEmpty {
-                                Text(note).font(.caption2).foregroundStyle(p.muted).lineLimit(1)
+                                Text(note).font(AstralTypography.caption2).foregroundStyle(p.muted).lineLimit(1)
                             }
                         }
                         Button {
                             onRemove(att.uid)
                         } label: {
-                            Image(systemName: "xmark").font(.caption2).foregroundStyle(p.muted)
+                            Image(systemName: "xmark").font(AstralTypography.caption2).foregroundStyle(p.muted)
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Remove \(att.filename)")
@@ -1102,6 +1163,48 @@ private struct GlyphButton: View {
         }
         .buttonStyle(.plain)
         .disabled(!enabled)
+    }
+}
+
+/// Wrap controls at their intrinsic widths instead of squeezing the text
+/// editor. The final Send control aligns to the trailing edge of its row.
+private struct ComposerControlsLayout: Layout {
+    var spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        return CGSize(width: width, height: positions(width: width, subviews: subviews).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = positions(width: bounds.width, subviews: subviews)
+        for (index, subview) in subviews.enumerated() {
+            subview.place(
+                at: CGPoint(
+                    x: bounds.minX + result.points[index].x,
+                    y: bounds.minY + result.points[index].y),
+                proposal: .unspecified)
+        }
+    }
+
+    private func positions(width: CGFloat, subviews: Subviews) -> (points: [CGPoint], height: CGFloat) {
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var points: [CGPoint] = []
+        for (index, subview) in subviews.enumerated() {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > width {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            if index == subviews.count - 1 { x = max(x, width - size.width) }
+            points.append(CGPoint(x: x, y: y))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return (points, y + rowHeight)
     }
 }
 

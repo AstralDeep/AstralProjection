@@ -711,7 +711,9 @@ class ReleaseEvidenceInstrumentedTest {
         resume: ConversationResume? = null,
     ) : AutoCloseable {
         private val frames = LinkedBlockingDeque<Inbound>()
+
         @Volatile private var failure: String? = null
+
         @Volatile var componentsSeen: Int = 0
             private set
         private val socket: WebSocket

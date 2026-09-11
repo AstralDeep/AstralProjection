@@ -15,7 +15,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -23,6 +22,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.theme.AstralMono
 
 /**
  * A small, dependency-free Markdown renderer for Compose — the Android analogue of
@@ -97,7 +97,7 @@ private fun CodeBlock(code: String) {
     ) {
         Text(
             text = code,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = AstralMono,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(10.dp),
         )
@@ -143,7 +143,7 @@ fun inlineMarkdown(text: String): AnnotatedString =
                 text[i] == '`' -> {
                     val end = text.indexOf('`', i + 1)
                     if (end >= 0) {
-                        withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(text.substring(i + 1, end)) }
+                        withStyle(SpanStyle(fontFamily = AstralMono)) { append(text.substring(i + 1, end)) }
                         i = end + 1
                     } else {
                         append(text[i])

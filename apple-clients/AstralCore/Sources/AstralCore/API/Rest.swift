@@ -117,15 +117,18 @@ public struct RestClient: Sendable {
 
     public let serverBase: URL
     private let transport: Transport
+    private let downloadSession: URLSession?
     private let tokenProvider: @Sendable () async -> String?
 
     public init(
         serverBase: URL,
         tokenProvider: @escaping @Sendable () async -> String?,
-        transport: Transport? = nil
+        transport: Transport? = nil,
+        downloadSession: URLSession? = nil
     ) {
         self.serverBase = serverBase
         self.tokenProvider = tokenProvider
+        self.downloadSession = downloadSession
         self.transport =
             transport ?? { request in
                 let (data, response) = try await NoStoreHTTP.session.data(for: request)
@@ -257,28 +260,72 @@ public struct RestClient: Sendable {
         from urlString: String,
         suggestedFilename: String? = nil
     ) async throws -> URL {
-        guard let url = URL(string: urlString, relativeTo: serverBase)?.absoluteURL else {
-            throw URLError(.badURL)
-        }
-        var req = NoStoreHTTP.request(url: url)
-        if url.host == serverBase.host, let token = await tokenProvider() {
-            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        let (data, response) = try await NoStoreHTTP.session.data(for: req)
-        guard let http = response as? HTTPURLResponse,
-            (200...299).contains(http.statusCode)
-        else {
+        let req = try await downloadRequest(from: urlString)
+        let (bytes, response) = try await (downloadSession ?? NoStoreHTTP.session).bytes(
+            for: req, delegate: DownloadRedirectDelegate(original: req))
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        var name = suggestedFilename ?? http.suggestedFilename ?? url.lastPathComponent
-        if name.isEmpty || name == "/" { name = "download" }
+        let limit = 64 * 1024 * 1024
+        guard response.expectedContentLength <= limit else { throw URLError(.dataLengthExceedsMaximum) }
+        try Task.checkCancellation()
+        let name = DownloadPolicy.filename(
+            suggestedFilename ?? http.suggestedFilename ?? req.url?.lastPathComponent ?? "download")
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("astral-downloads", isDirectory: true)
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let destination = dir.appendingPathComponent(name)
-        try data.write(to: destination)
+        var complete = false
+        defer { if !complete { try? FileManager.default.removeItem(at: dir) } }
+        guard
+            FileManager.default.createFile(
+                atPath: destination.path, contents: nil, attributes: [.posixPermissions: 0o600])
+        else {
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let file = try FileHandle(forWritingTo: destination)
+        defer { try? file.close() }
+        var chunk = Data()
+        chunk.reserveCapacity(64 * 1024)
+        var count = 0
+        for try await byte in bytes {
+            count += 1
+            guard count <= limit else { throw URLError(.dataLengthExceedsMaximum) }
+            chunk.append(byte)
+            if chunk.count == 64 * 1024 {
+                try Task.checkCancellation()
+                try file.write(contentsOf: chunk)
+                chunk.removeAll(keepingCapacity: true)
+            }
+        }
+        try Task.checkCancellation()
+        if !chunk.isEmpty { try file.write(contentsOf: chunk) }
+        complete = true
         return destination
+    }
+
+    /// Removes only private temporary files produced by this download facade.
+    public static func removeTemporaryDownload(_ file: URL) {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("astral-downloads", isDirectory: true)
+            .standardizedFileURL
+        let directory = file.standardizedFileURL.deletingLastPathComponent()
+        guard directory.deletingLastPathComponent() == root, UUID(uuidString: directory.lastPathComponent) != nil else {
+            return
+        }
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Testable request construction; fetching and redirects reuse this exact
+    /// request, so URL policy cannot diverge from the authorization decision.
+    func downloadRequest(from urlString: String) async throws -> URLRequest {
+        let url = try DownloadPolicy.resolve(urlString, relativeTo: serverBase)
+        var request = NoStoreHTTP.request(url: url)
+        if DownloadPolicy.sameOrigin(url, serverBase), let token = await tokenProvider() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        return request
     }
 
     /// Toggle one tool's permission (feature-013 per-(tool,kind) shape):

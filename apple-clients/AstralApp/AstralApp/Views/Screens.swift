@@ -21,7 +21,7 @@ struct AgentsView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Agents").font(.title2.bold()).foregroundStyle(p.text)
+                            Text("Agents").font(AstralTypography.title2.bold()).foregroundStyle(p.text)
                             Spacer()
                             Button("Enable recommended") { model.enableRecommended() }
                                 .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
@@ -57,15 +57,15 @@ private struct AgentCard: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text((expanded ? "▼ " : "▶ ") + agent.name)
-                            .font(.headline).foregroundStyle(p.text)
+                            .font(AstralTypography.headline).foregroundStyle(p.text)
                         if !agent.description.isEmpty {
-                            Text(agent.description).font(.caption).foregroundStyle(p.muted)
+                            Text(agent.description).font(AstralTypography.caption).foregroundStyle(p.muted)
                         }
                         Text("\(agent.enabledCount) / \(agent.tools.count) tools enabled")
-                            .font(.caption2).foregroundStyle(p.muted)
+                            .font(AstralTypography.caption2).foregroundStyle(p.muted)
                         if let lifecycle = model.agentLifecycles[agent.id] {
                             Text(lifecycle.label)
-                                .font(.caption2.weight(.semibold))
+                                .font(AstralTypography.caption2.weight(.semibold))
                                 .foregroundStyle(lifecycle.state == "failed" ? p.error : p.muted)
                                 .accessibilityLabel("\(agent.name) status: \(lifecycle.label)")
                                 .accessibilityAddTraits(.updatesFrequently)
@@ -85,14 +85,14 @@ private struct AgentCard: View {
             }
             if expanded {
                 if agent.tools.isEmpty {
-                    Text("This agent exposes no tools.").font(.caption).foregroundStyle(p.muted)
+                    Text("This agent exposes no tools.").font(AstralTypography.caption).foregroundStyle(p.muted)
                 }
                 ForEach(agent.tools, id: \.self) { tool in
                     HStack(alignment: .top, spacing: 8) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(tool).font(.subheadline).foregroundStyle(p.text)
+                            Text(tool).font(AstralTypography.subheadline).foregroundStyle(p.text)
                             if let desc = agent.toolDescriptions[tool], !desc.isEmpty {
-                                Text(desc).font(.caption).foregroundStyle(p.muted)
+                                Text(desc).font(AstralTypography.caption).foregroundStyle(p.muted)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -157,14 +157,14 @@ private struct AuditCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text([event.eventClass, event.action].compactMap { $0 }.joined(separator: " · "))
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(p.text)
+                    .font(AstralTypography.subheadline.weight(.semibold)).foregroundStyle(p.text)
                 Text([event.outcome, event.recordedAt].compactMap { $0 }.joined(separator: "  "))
-                    .font(.caption).foregroundStyle(p.muted)
+                    .font(AstralTypography.caption).foregroundStyle(p.muted)
                 if expanded {
-                    if let od = event.outcomeDetail { Text(od).font(.caption).foregroundStyle(p.text) }
-                    if let d = event.detail { Text(d).font(.caption.monospaced()).foregroundStyle(p.text) }
+                    if let od = event.outcomeDetail { Text(od).font(AstralTypography.caption).foregroundStyle(p.text) }
+                    if let d = event.detail { Text(d).font(AstralTypography.mono(12)).foregroundStyle(p.text) }
                     if let id = event.id {
-                        Text("id: \(id)").font(.caption2).foregroundStyle(p.muted)
+                        Text("id: \(id)").font(AstralTypography.caption2).foregroundStyle(p.muted)
                     }
                 }
             }
@@ -191,7 +191,7 @@ struct SurfaceView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .firstTextBaseline) {
                             Text(surface.title.isEmpty ? "Settings" : surface.title)
-                                .font(.title2.bold()).foregroundStyle(p.text)
+                                .font(AstralTypography.title2.bold()).foregroundStyle(p.text)
                             Spacer()
                             // Web has the modal ✕ and Android the system Back;
                             // without this the surface could only be left via
@@ -219,9 +219,9 @@ struct SurfaceView: View {
             } else if timedOut {
                 VStack(spacing: 12) {
                     Text("Couldn't load this settings screen")
-                        .font(.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
+                        .font(AstralTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
                     Text("The server didn't send it in time. Check your connection and try again.")
-                        .font(.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
+                        .font(AstralTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
                     Button("Retry") {
                         timedOut = false
                         model.retryPendingSurface()

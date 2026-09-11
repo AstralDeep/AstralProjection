@@ -1,5 +1,6 @@
 package com.personalailabs.astraldeep.app.render.renderers
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -16,6 +18,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -148,6 +151,16 @@ private fun ButtonPrimitive(
     val action = c.str("action")
     val label = c.str("label") ?: "Button"
     val onClick = { if (action != null) emit.event(action, c.payload()) }
+    if (c.str("data-welcome") == "example" && c.id?.startsWith("wel_") != false) {
+        OutlinedButton(
+            onClick = onClick,
+            enabled = action != null,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text(label) }
+        return
+    }
     when (c.str("variant") ?: "primary") {
         "secondary" ->
             FilledTonalButton(onClick = onClick, enabled = action != null) { Text(label) }

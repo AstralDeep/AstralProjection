@@ -1,10 +1,13 @@
 package com.personalailabs.astraldeep.app.render.renderers
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
@@ -18,7 +21,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Emit
@@ -71,19 +77,46 @@ private fun TablePrimitive(
     val total = c.int("total_rows")
     val size = c.int("page_size")
     val offset = c.int("page_offset") ?: 0
-    Column(modifier = Modifier.fillMaxWidth()) {
-        if (headers.isNotEmpty()) {
-            Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                headers.forEach { h ->
-                    Text(h, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-                }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val bodyStyle = MaterialTheme.typography.bodySmall
+    val headerStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+    val columnCount = maxOf(headers.size, rows.maxOfOrNull { it.size } ?: 0)
+    val widths =
+        remember(headers, rows, density, bodyStyle, headerStyle) {
+            List(columnCount) { index ->
+                val texts = rows.map { it.getOrNull(index).orEmpty() }
+                val bodyWidth = texts.maxOfOrNull { measurer.measure(it, style = bodyStyle).size.width } ?: 0
+                val headerWidth = measurer.measure(headers.getOrNull(index).orEmpty(), style = headerStyle).size.width
+                with(density) { maxOf(bodyWidth, headerWidth).toDp() }.coerceAtLeast(72.dp) + 24.dp
             }
-            HorizontalDivider()
         }
-        rows.forEach { row ->
-            Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                row.forEach { cell ->
-                    Text(cell, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("table-scroll")) {
+            if (headers.isNotEmpty()) {
+                Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                    headers.forEachIndexed { index, h ->
+                        Text(
+                            h,
+                            modifier = Modifier.width(widths[index]).padding(horizontal = 12.dp),
+                            maxLines = 1,
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+                HorizontalDivider()
+            }
+            rows.forEach { row ->
+                Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                    row.forEachIndexed { index, cell ->
+                        Text(
+                            cell,
+                            modifier = Modifier.width(widths[index]).padding(horizontal = 12.dp),
+                            maxLines = 1,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }

@@ -14,6 +14,29 @@ import kotlin.test.assertTrue
 
 class WireTest {
     @Test
+    fun background_chat_retains_ordinary_submission_and_attachment_contract() {
+        val normal = Json.parseToJsonElement(Wire.encodeChatMessage("hello", "chatA")).jsonObject
+        assertTrue("async_mode" !in normal.getValue("payload").jsonObject)
+        val background =
+            Json.parseToJsonElement(
+                Wire.encodeChatMessage(
+                    "hello",
+                    "chatA",
+                    listOf(ChatAttachment("a1", "notes.txt", "file")),
+                    requestGeneration = "00000000-0000-4000-8000-000000000011",
+                    submissionId = "00000000-0000-4000-8000-000000000012",
+                    asyncMode = true,
+                ),
+            ).jsonObject
+        assertEquals("chat_message", background.getValue("action").jsonPrimitive.content)
+        val payload = background.getValue("payload").jsonObject
+        assertEquals("true", payload.getValue("async_mode").jsonPrimitive.content)
+        assertEquals("00000000-0000-4000-8000-000000000012", payload.getValue("submission_id").jsonPrimitive.content)
+        assertEquals("00000000-0000-4000-8000-000000000011", payload.getValue("request_generation").jsonPrimitive.content)
+        assertEquals("a1", payload.getValue("attachments").jsonArray.single().jsonObject.getValue("attachment_id").jsonPrimitive.content)
+    }
+
+    @Test
     fun encodes_identified_ui_event_at_envelope_and_payload_levels() {
         val requestGeneration = "00000000-0000-4000-8000-000000000011"
         val submissionId = "00000000-0000-4000-8000-000000000012"

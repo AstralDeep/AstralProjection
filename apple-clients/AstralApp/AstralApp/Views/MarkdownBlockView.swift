@@ -34,7 +34,7 @@ struct MarkdownBlockView: View {
         case .code(let text):
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text)
-                    .font(.callout.monospaced())
+                    .font(AstralTypography.mono(16))
                     .textSelection(.enabled)
                     .padding(10)
             }
@@ -72,10 +72,10 @@ struct MarkdownBlockView: View {
 
     private func headingFont(_ level: Int) -> Font {
         switch level {
-        case 1: return .title2.bold()
-        case 2: return .title3.bold()
-        case 3: return .headline
-        default: return .subheadline.bold()
+        case 1: return AstralTypography.title2.bold()
+        case 2: return AstralTypography.title3.bold()
+        case 3: return AstralTypography.headline
+        default: return AstralTypography.subheadline.bold()
         }
     }
 }
