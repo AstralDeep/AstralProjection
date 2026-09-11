@@ -1451,8 +1451,6 @@ def _r_skeleton(c, ctx):
 # yellow, generated=muted. ``None`` color resolves to T.MUTED at render time
 # (the palette is live-themable, so colors can't be captured at import).
 _PROVENANCE_BADGES = {
-    "grounded": ("✓", "tool data", "success",
-                 "Sourced from a tool result"),
     "estimated": ("≈", "estimated", "warning",
                   "Estimated / low-confidence value"),
     "generated": ("✦", "AI-generated", None,

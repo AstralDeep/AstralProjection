@@ -147,6 +147,23 @@ class ComponentAdapter:
     @classmethod
     def _to_table(cls, comp: Dict, supported) -> Dict:
         ctype = str(comp.get("type", "")).strip().lower()
+        if ctype == "plotly_chart" and isinstance(comp.get("data"), list):
+            # Plotly traces are columnar x/y (or labels/values) arrays. Never
+            # reduce a multi-day, multi-series chart to its first value.
+            rows = []
+            for index, trace in enumerate(comp["data"]):
+                if not isinstance(trace, dict):
+                    continue
+                values = trace.get("y", trace.get("values"))
+                labels = trace.get("x", trace.get("labels", []))
+                if not isinstance(values, list) or not isinstance(labels, list):
+                    continue
+                name = trace.get("name") or f"Series {index + 1}"
+                rows.extend([name, labels[i] if i < len(labels) else i + 1, value]
+                            for i, value in enumerate(values))
+            if rows:
+                return {"type": "table", "title": comp.get("title") or "Chart data",
+                        "headers": ["Series", "Label", "Value"], "rows": rows}
         if ctype == "keyvalue":
             rows = [[it.get("label", ""), it.get("value", "")]
                     for it in (comp.get("items") or []) if isinstance(it, dict)]
@@ -349,6 +366,18 @@ class ComponentAdapter:
     @classmethod
     def _adapt_chart(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
         if profile.supports_charts:
+            if (comp.get("type") == "plotly_chart"
+                    and 0 < profile.capabilities.viewport_width < 700):
+                raw = comp.get("layout")
+                layout = dict(raw) if isinstance(raw, dict) else {}
+                layout.pop("width", None)
+                layout.update(autosize=True, height=260)
+                layout["margin"] = {"l": 44, "r": 12, "t": 32, "b": 60}
+                for axis in ("xaxis", "yaxis"):
+                    current = layout.get(axis)
+                    layout[axis] = {**(current if isinstance(current, dict) else {}),
+                                    "automargin": True}
+                return {**comp, "layout": layout}
             return comp
 
         # Degrade chart → metric card
@@ -387,7 +416,7 @@ class ComponentAdapter:
         plotly_data = comp.get("data", [])
         if plotly_data and isinstance(plotly_data, list):
             first = plotly_data[0]
-            y = first.get("y", [])
+            y = first.get("y", []) if isinstance(first, dict) else []
             if y:
                 return y[0]
         return "N/A"

@@ -21,6 +21,15 @@
       "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03."
     },
     {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
+      "sourceBlob": "ec76d3c82c5ce03f7ac62989685d572c83815593",
+      "sourceMode": "100644",
+      "task": "T056",
+      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions.",
+      "resultSha256": "c9ecf1a140eea90faa326bc3c573d9d1f110c83be82837a172433d67f9449d6a"
+    },
+    {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
       "sourceBlob": "cc0db0d610d90f1135f447d016267a28412d9068",
@@ -127,6 +136,15 @@
       "resultSha256": "9f3c49dc6ad524c046882155112663fc90b2a013fb33e5de7e3100ce4504ea4f",
       "task": "T013/T102",
       "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override."
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
+      "sourceBlob": "eddd7f1759eb83dd8836e4ef58080dd1de0cb070",
+      "sourceMode": "100644",
+      "task": "T057",
+      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions.",
+      "resultSha256": "97323aae9948780300efdd5c5b888317cd2a4c7a6a760c54db4404d2ef872273"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
@@ -250,9 +268,9 @@
       "sourcePath": "backend/rote/adapter.py",
       "sourceBlob": "ada87b7c601058cff8acbf9a62d11367406d0438",
       "sourceMode": "100644",
-      "resultSha256": "ab65b1428e17acf6d7fb39ac36b08bc6403586a06a3bab87b786beb4fd49e602",
-      "task": "T017",
-      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition."
+      "resultSha256": "0684b1b3f2f7b28c1b73a093deae1f8a14a91adee621590f263e7c3cbecbf828",
+      "task": "T017/T054",
+      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition. Feature 088 review: Adapt phone chart geometry by viewport capabilities and preserve every Plotly point in static table fallbacks."
     },
     {
       "path": "backend/rote/capabilities.py",
@@ -421,9 +439,18 @@
       "sourcePath": "backend/webrender/chrome/topbar.py",
       "sourceBlob": "60411d8364415d1cd1ef687ce59457673d8c62cb",
       "sourceMode": "100644",
-      "resultSha256": "f9066585ef4fad9fcfc81c4fd362d5e38334a4568788071907dcedb81eea9960",
-      "task": "T044/T040",
-      "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "0ec288b627e3c9e20d01f82b4cdba47059318cade9c50da6b2f86f42fc9136ac",
+      "task": "T044/T040/T008",
+      "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 review: Move restoration of the desktop conversation rail into the floating composer."
+    },
+    {
+      "path": "backend/webrender/renderer.py",
+      "sourcePath": "backend/webrender/renderer.py",
+      "sourceBlob": "21f98cc84bd4d81670f8c1fece4ab119468206ce",
+      "sourceMode": "100644",
+      "task": "T008",
+      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels.",
+      "resultSha256": "53f3fd3d38b47b4541939ab6cc7709c5eaa9483f307344cc30736aeb0f7415e5"
     },
     {
       "path": "backend/webrender/static/astral.css",
@@ -431,26 +458,26 @@
       "sourceBlob": "a4a7714b1479db47ad1550018b6ad9610cc56d9a",
       "sourceMode": "100644",
       "task": "T008",
-      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts.",
-      "resultSha256": "90ac6d4784c799b2d346423ded44768ab606e78bd7f1c0fb62888bc183204048"
+      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state.",
+      "resultSha256": "c672553ca702e761992cab490dbd3896b89bbb1795f1831b4e527202d500bb8e"
     },
     {
       "path": "backend/webrender/static/client.js",
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "eecc516aa405e6d418b946d66faa1bc368ed74461c8b46ed8e255ba01d5a8d3c",
+      "resultSha256": "9563386217a74a9191009b18b95f54653bc33e3f3e008a70a96c085dab746261",
       "task": "T052/T063/T029/T008/T009",
-      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior."
+      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior. Feature 088 review: Restore floating chat to the rail, resize charts with their canvas, and create inert visual canvas downloads bound to authorization, owner, chat and committed render revision."
     },
     {
       "path": "backend/webrender/templates/shell.html",
       "sourcePath": "backend/webrender/templates/shell.html",
       "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
       "sourceMode": "100644",
-      "resultSha256": "4fa194eec185d45166d0d11682f5317d6e7729773e5366713bd1173a2b4da71b",
+      "resultSha256": "d4a2ff0b4a69b5e672c80f54856fde2196f09d5ec07b76e287ea967a20ee0e9f",
       "task": "T042/T008",
-      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls."
+      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer."
     },
     {
       "path": "contracts/ui_protocol.json",
@@ -487,6 +514,24 @@
       "resultSha256": "1548b992668481e2ef3e3b940afaded4eb3d800adb0bf118561c82331dbd1d7d",
       "task": "T043/T049",
       "reason": "Resolve assets through packaged resources and exercise accessibility against the public pure supplied-state builders."
+    },
+    {
+      "path": "tests/webrender/test_export_document.py",
+      "sourcePath": "backend/tests/webrender/test_export_document.py",
+      "sourceBlob": "370ed14cbd077337f604520437ac34ccb3037803",
+      "sourceMode": "100644",
+      "task": "T008",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "8d1daa5081ac523a7a4d3041789410a5540604ac63c68edc565aac7c6175e729"
+    },
+    {
+      "path": "tests/webrender/test_provenance.py",
+      "sourcePath": "backend/tests/webrender/test_provenance.py",
+      "sourceBlob": "7230719fdad10c38309b94d472c0adc92010d989",
+      "sourceMode": "100644",
+      "task": "T008",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "412cb843482a94235e60aa1d9b9ea5c9a8a6f1fcb113a0b03b0663e495408f6c"
     },
     {
       "path": "tests/webrender/test_render_a11y.py",
@@ -538,9 +583,9 @@
       "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
       "sourceMode": "100644",
-      "resultSha256": "906b865dd2f3719b9908b2866029f0e511a13aa0d1c4bd2b182f61ae46ca554d",
+      "resultSha256": "c6ad8c08e936751232b7ed759b46a2db2ddd2cc59c356b8306c5a99e8685381e",
       "task": "T052/T063/T008/T009",
-      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures."
+      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding."
     },
     {
       "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",
@@ -649,6 +694,15 @@
       "resultSha256": "e4b0e0776922017c341190010975eb220495100f34ef90cda5fff7f01d6130f2",
       "task": "T053/T040",
       "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+    },
+    {
+      "path": "windows-client/astral_client/renderer.py",
+      "sourcePath": "windows-client/astral_client/renderer.py",
+      "sourceBlob": "0dd02dd95f36f1e97a74566441d59d3a01fde072",
+      "sourceMode": "100644",
+      "task": "T055",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "e7c761955cfeb5e53940bdcab8fea365daba4530f05a3bba1cf0560b911f8238"
     },
     {
       "path": "windows-client/astral_client/voice.py",
@@ -784,6 +838,15 @@
       "resultSha256": "1dc1c22d83a4725f0a5e9c7f9904ba0cf091231e26b93d569afd893e9d885eea",
       "task": "T053/T023",
       "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract. Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
+    },
+    {
+      "path": "windows-client/tests/test_provenance_badge.py",
+      "sourcePath": "windows-client/tests/test_provenance_badge.py",
+      "sourceBlob": "dbb1f009bdbc4a779b793c48d4e0fff4c0b63a3d",
+      "sourceMode": "100644",
+      "task": "T055",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "378771b7afd8651776cb724a2126b54dc5a16d5f314e439ae73e4eb67eec2d23"
     },
     {
       "path": "windows-client/tests/test_release_lock_060.py",

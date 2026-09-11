@@ -38,7 +38,6 @@ def _card(provenance=None, cid="wc_1"):
 # --- the badge itself ---------------------------------------------------------
 
 @pytest.mark.parametrize("kind,text", [
-    ("grounded", "tool data"),
     ("estimated", "estimated"),
     ("generated", "AI-generated"),
 ])
@@ -53,13 +52,14 @@ def test_badge_colors_match_theme_conventions(qapp):
     grounded = provenance_badge({"type": "card", "provenance": "grounded"})
     estimated = provenance_badge({"type": "card", "provenance": "estimated"})
     generated = provenance_badge({"type": "card", "provenance": "generated"})
-    assert T.VARIANT_COLORS["success"][0] in grounded.styleSheet()
+    assert grounded is None
     assert T.VARIANT_COLORS["warning"][0] in estimated.styleSheet()
     assert T.MUTED in generated.styleSheet()
 
 
 @pytest.mark.parametrize("comp", [
     {"type": "card"},                                  # field absent
+    {"type": "card", "provenance": "grounded"},        # quiet tool-result baseline
     {"type": "card", "provenance": "verified"},        # outside the vocabulary
     {"type": "card", "provenance": ""},
     {"type": "card", "provenance": None},
@@ -74,9 +74,9 @@ def test_badge_absent_or_unknown_renders_nothing(qapp, comp):
 # --- render() chrome wiring ---------------------------------------------------
 
 def test_top_level_render_carries_badge(qapp):
-    w = render(_card("grounded"), _ctx(), top_level=True)
+    w = render(_card("estimated"), _ctx(), top_level=True)
     b = _badge_of(w)
-    assert b is not None and "tool data" in b.text()
+    assert b is not None and "estimated" in b.text()
     # The wrapper keeps the workspace identity for canvas reconciliation.
     assert w.property("component_id") == "wc_1"
 
@@ -90,7 +90,7 @@ def test_top_level_render_without_field_is_unwrapped(qapp):
 
 def test_nested_children_never_grow_badges(qapp):
     # _tag_source stamps nested children too — only the top level is badged.
-    comp = _card("grounded")
+    comp = _card("estimated")
     comp["content"] = [
         {"type": "text", "content": "child", "provenance": "grounded"},
         {"type": "alert", "message": "m", "provenance": "generated"},
@@ -111,7 +111,7 @@ def test_default_render_ignores_provenance(qapp):
 def test_canvas_full_render_badges_components(qapp):
     c = Canvas(_ctx())
     c.set_components([_card("grounded", "wc_a"), _card(None, "wc_b")])
-    assert _badge_of(c._by_id["wc_a"]) is not None
+    assert _badge_of(c._by_id["wc_a"]) is None
     assert _badge_of(c._by_id["wc_b"]) is None
 
 

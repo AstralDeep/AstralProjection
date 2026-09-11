@@ -239,6 +239,8 @@ fun ArtifactFooter(
  */
 @Composable
 private fun ProvenanceBadge(p: Provenance) {
+    // Keep the trust stamp in the model; ordinary tool results need no badge.
+    if (p == Provenance.Grounded) return
     val tone =
         when (p) {
             Provenance.Grounded -> Color(0xFF22C55E)

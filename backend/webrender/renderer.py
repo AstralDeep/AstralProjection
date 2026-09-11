@@ -1271,11 +1271,9 @@ def _provenance_footer(component: Dict[str, Any]) -> str:
         return ""
     kind = provenance_of(component)
     if kind == "grounded":
-        tool = _subtree_tool_source(component)
-        agent = component.get("_source_agent")
-        title = ("Data from the %s agent%s" % (agent, f" ({tool})" if tool else "")
-                 if agent else "Sourced from a tool result")
-        icon, label, tone = "✓", "tool data", "text-green-400/70"
+        # Ordinary tool results need no repeated success decoration. The
+        # server-stamped provenance remains available to audit and export.
+        return ""
     elif kind == "estimated":
         title = "Estimated / low-confidence value"
         icon, label, tone = "≈", "estimated", "text-yellow-400/70"

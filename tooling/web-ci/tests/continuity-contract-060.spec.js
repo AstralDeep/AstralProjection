@@ -80,6 +80,9 @@ function htmlShell() {
     <header id="astral-topbar"><a id="logout" href="/auth/logout">Sign out</a></header>
     <button id="astral-newchat-btn" type="button">New chat</button>
     <button id="astral-chats-btn" type="button"></button>
+    <button id="astral-collapse-btn" type="button"></button>
+    <button id="astral-chat-toggle" type="button"></button>
+    <button id="astral-restore-chat-btn" type="button" hidden></button>
     <button id="astral-msgs-toggle" type="button"></button>
     <span id="astral-msgs-label"></span>
     <div id="astral-history"></div>
@@ -195,6 +198,29 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
 async function registration(page) {
   return page.evaluate(() => window.__socketEvents.find((event) => event.frame.type === "register_ui"));
 }
+
+test("floating conversation restores to the right without losing its draft", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installHarness(page);
+  await page.locator("#astral-input").fill("Keep my draft");
+  await page.locator("#astral-collapse-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "collapsed");
+  await expect(page.locator("#astral-restore-chat-btn")).toBeVisible();
+  await page.locator("#astral-chat-toggle").click();
+  await expect(page.locator("body")).toHaveClass(/astral-chat-open/u);
+  await expect(page.locator("#astral-restore-chat-btn")).toBeVisible();
+  await page.locator("#astral-restore-chat-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "split");
+  await expect(page.locator("#astral-input")).toHaveValue("Keep my draft");
+  await expect(page.locator("#astral-input")).toBeFocused();
+  await expect(page.locator("#astral-restore-chat-btn")).toBeHidden();
+  await page.setViewportSize({ width: 768, height: 900 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "collapsed");
+  await expect(page.locator("#astral-restore-chat-btn")).toBeHidden();
+  await page.setViewportSize({ width: 393, height: 852 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "stacked");
+  await expect(page.locator("#astral-restore-chat-btn")).toBeHidden();
+});
 
 
 async function receive(page, frame) {
@@ -1137,7 +1163,15 @@ test("authentication recovery to a different owner replaces the socket before ac
 
 
 async function installDeferredAccountEffect(page, effect) {
-  await page.evaluate((kind) => {
+  const fonts = {};
+  if (effect === "export") {
+    const { frame } = await registration(page);
+    await receive(page, snapshot(frame));
+    for (const name of ["inter-latin.woff2", "jetbrains-mono-latin.woff2"]) {
+      fonts[name] = (await readFile(resolve(ROOT, "backend/webrender/static/fonts", name))).toString("base64");
+    }
+  }
+  await page.evaluate(({ kind, fonts }) => {
     window.__effectDownloads = [];
     window.__effectClipboard = [];
     const click = HTMLAnchorElement.prototype.click;
@@ -1150,12 +1184,17 @@ async function installDeferredAccountEffect(page, effect) {
     } });
     const original = window.fetch;
     window.fetch = (url, options) => {
+      if (String(url).includes("/static/fonts/")) {
+        const name = String(url).split("/").at(-1);
+        return Promise.resolve(new Response(Uint8Array.from(atob(fonts[name]), char => char.charCodeAt(0))));
+      }
       if (!String(url).includes(kind === "export" ? "/api/export/" : "/api/share")) return original(url, options);
       window.__effectAuthorization = options.headers.Authorization;
       return new Promise((resolve, reject) => {
         window.__finishAccountEffect = (result) => {
           if (result === "network_failure") { reject(new Error("Private effect error")); return; }
           resolve({ ok: result === "success", status: result === "success" ? 200 : 403,
+            headers: new Headers({ "X-Astral-Render-Revision": new URL(url).searchParams.get("render_revision") || "0" }),
             blob: async () => new Blob(["Private export content"]),
             json: async () => result === "success"
               ? { share_url: "https://candidate.example/s/private-owner-a" }
@@ -1170,7 +1209,7 @@ async function installDeferredAccountEffect(page, effect) {
     document.body.append(button);
     button.click();
     button.remove();
-  }, effect);
+  }, { kind: effect, fonts });
   expect(await page.evaluate(() => window.__effectAuthorization)).toBe(`Bearer ${TOKEN}`);
 }
 
@@ -1199,10 +1238,9 @@ for (const effect of ["export", "share"]) {
       window.__finishAccountEffect("success");
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
-    const count = await page.evaluate((kind) => (
+    await expect.poll(() => page.evaluate((kind) => (
       kind === "export" ? window.__effectDownloads.length : window.__effectClipboard.length
-    ), effect);
-    expect(count).toBe(1);
+    ), effect)).toBe(1);
   });
 }
 

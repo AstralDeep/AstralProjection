@@ -713,28 +713,16 @@
   var chatToggleBtn = document.getElementById("astral-chat-toggle");
   var chatUnreadEl = document.getElementById("astral-chat-unread");
   var chatUnread = 0;
-  // Collapse-trap fix: an always-discoverable topbar twin of the composer
-  // toggle, visible exactly while the conversation is hidden. The topbar is
-  // injected server-side, so resolve lazily (the first applyLayoutClass runs
-  // before this block).
+  // Keep the restore action in the floating panel, including while its
+  // transcript is open. A sidebar is offered only where it fits.
   function topbarChatBtn() {
-    return document.getElementById("astral-topbar-chat-btn");
+    return document.getElementById("astral-restore-chat-btn");
   }
   function syncTopbarChatToggle() {
     var btn = topbarChatBtn();
     if (!btn) return;
     var layout = document.body.getAttribute("data-astral-layout");
-    var hidden = layout === "collapsed"
-      && !document.body.classList.contains("astral-chat-open");
-    btn.hidden = !hidden;
-    var badge = document.getElementById("astral-topbar-chat-unread");
-    if (badge) {
-      // Hoisting guard: the first applyLayoutClass runs before chatUnread
-      // is initialized.
-      var count = typeof chatUnread === "number" ? chatUnread : 0;
-      badge.hidden = count === 0;
-      badge.textContent = count > 9 ? "9+" : String(count);
-    }
+    btn.hidden = layout !== "collapsed" || window.innerWidth < 1024;
   }
   function clearChatUnread() {
     chatUnread = 0;
@@ -767,18 +755,14 @@
     var open = document.body.classList.toggle("astral-chat-open");
     chatToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
     chatToggleBtn.setAttribute("title", open ? "Hide conversation" : "Show conversation");
+    chatToggleBtn.setAttribute("aria-label", open ? "Hide conversation" : "Show conversation");
     if (open) clearChatUnread();
     syncTopbarChatToggle();
   });
-  // Re-pin the rail from collapsed mode: double-click the transcript toggle.
-  if (chatToggleBtn) chatToggleBtn.addEventListener("dblclick", function () {
-    setChatLayoutPref("open");
-  });
-  // The topbar twin restores the conversation in ONE click: re-pin the rail
-  // where the width allows a usable composer, otherwise open the drawer.
+  // One click restores the sidebar without changing conversation or draft.
   document.addEventListener("click", function (event) {
     var btn = event.target && event.target.closest
-      ? event.target.closest("#astral-topbar-chat-btn") : null;
+      ? event.target.closest("#astral-restore-chat-btn") : null;
     if (!btn) return;
     setWorkspaceView("work");
     setChatLayoutPref("open");
@@ -791,6 +775,7 @@
       clearChatUnread();
     }
     syncTopbarChatToggle();
+    if (input) input.focus();
   });
   // Coarse-pointer component chrome: tap a component to reveal its actions.
   document.addEventListener("click", function (e) {
@@ -5406,6 +5391,18 @@
   }
 
   // ---- Plotly chart init from server-rendered data-chart placeholders ----
+  var chartResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(function (entries) {
+    entries.forEach(function (entry) {
+      var chart = entry.target;
+      if (!chart.isConnected) { chartResizeObserver.unobserve(chart); return; }
+      var width = Math.round(entry.contentRect.width);
+      if (!width || chart.dataset.plotWidth === String(width)) return;
+      chart.dataset.plotWidth = String(width);
+      if (typeof Plotly !== "undefined" && chart.dataset.rendered) {
+        Promise.resolve(Plotly.Plots.resize(chart)).catch(function () {});
+      }
+    });
+  });
   function initCharts(root) {
     if (typeof Plotly === "undefined") {
       if (root.querySelectorAll(".astral-chart").length) {
@@ -5440,7 +5437,24 @@
         layout = Object.assign(layout, spec.layout || {});
         cfg = Object.assign(cfg, spec.config || {});
       } else continue;
-      try { Plotly.newPlot(el, traces, layout, cfg); el.dataset.rendered = "1"; } catch (e) {}
+      // The host owns chart geometry. An author-supplied fixed width must not
+      // escape the canvas when its rail opens or the viewport becomes narrow.
+      delete layout.width;
+      layout.autosize = true;
+      cfg.responsive = true;
+      if (el.getBoundingClientRect().width < 500) {
+        layout.height = 260;
+        layout.margin = { l: 44, r: 12, t: 32, b: 60 };
+      }
+      ["xaxis", "yaxis"].forEach(function (axis) {
+        layout[axis] = Object.assign({}, layout[axis] || {}, { automargin: true });
+      });
+      try {
+        el._astralPlotReady = Promise.resolve(Plotly.newPlot(el, traces, layout, cfg));
+        el.dataset.rendered = "1";
+        if (chartResizeObserver) chartResizeObserver.observe(el);
+        el._astralPlotReady.catch(function () { delete el.dataset.rendered; });
+      } catch (e) {}
     }
   }
 
@@ -7295,20 +7309,133 @@
 
   // Exports are authenticated downloads: fetch with the bearer token, then
   // hand the blob to a temporary <a download> (a plain href can't carry auth).
-  function exportDownload(path, filename, appendChat) {
+  async function snapshotCanvasDocument() {
+    // Export only the mounted canvas. Chat, credentials, action payloads and
+    // author markup are never serialized; all nodes/attributes are rebuilt.
+    var doc = document.implementation.createHTMLDocument("AstralDeep workspace");
+    var policy = doc.createElement("meta");
+    policy.httpEquiv = "Content-Security-Policy";
+    policy.content = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'";
+    doc.head.prepend(policy);
+    var viewport = doc.createElement("meta");
+    viewport.name = "viewport";
+    viewport.content = "width=device-width, initial-scale=1";
+    doc.head.appendChild(viewport);
+    var charset = doc.createElement("meta");
+    charset.setAttribute("charset", "utf-8");
+    doc.head.prepend(charset);
+    var jobs = [], count = 0;
+    // Fonts are the same public, first-party-hosted assets the live shell uses.
+    // Embed their bytes so opening the file makes no server/network requests.
+    [["Inter", "inter-latin.woff2", "400 700"], ["JetBrains Mono", "jetbrains-mono-latin.woff2", "400"]].forEach(function (font) {
+      jobs.push(function () { return fetch(API_URL + "/static/fonts/" + font[1], { credentials: "omit" }).then(function (response) {
+        if (!response.ok) throw new Error("Could not include the canvas font in the download.");
+        return response.arrayBuffer();
+      }).then(function (buffer) {
+        if (buffer.byteLength > 1024 * 1024) throw new Error("Canvas font exceeds the export size limit.");
+        var bytes = new Uint8Array(buffer), binary = "";
+        for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        var css = doc.createElement("style");
+        css.textContent = "@font-face{font-family:'" + font[0] + "';font-style:normal;font-weight:" + font[2] + ";src:url(data:font/woff2;base64," + btoa(binary) + ") format('woff2')}";
+        doc.head.appendChild(css);
+      }); });
+    });
+    var allowed = /^(DIV|SPAN|P|H[1-6]|UL|OL|LI|TABLE|THEAD|TBODY|TFOOT|TR|TH|TD|CAPTION|COLGROUP|COL|DL|DT|DD|PRE|CODE|BLOCKQUOTE|STRONG|EM|B|I|U|S|BR|HR|A|IMG|DETAILS|SUMMARY|SECTION|ARTICLE|FIGURE|FIGCAPTION|LABEL|SMALL|SUP|SUB)$/;
+    function copyStyle(source, target) {
+      var style = getComputedStyle(source);
+      for (var i = 0; i < style.length; i++) {
+        var key = style[i], value = style.getPropertyValue(key);
+        // Computed values capture the selected theme without carrying any
+        // stylesheet, custom-property payload, animation or network URL.
+        if (key.indexOf("--") === 0 || /^(animation|transition)/.test(key) || /url\s*\(/i.test(value)) continue;
+        target.style.setProperty(key, value);
+      }
+      target.style.animation = "none";
+      target.style.transition = "none";
+    }
+    function copy(node) {
+      if (++count > 12000) throw new Error("Canvas is too large to export in one document.");
+      if (node.nodeType === Node.TEXT_NODE) return doc.createTextNode(node.textContent);
+      if (node.nodeType !== Node.ELEMENT_NODE) return null;
+      if (node.matches(".astral-component-chrome,.astral-pagination,.astral-provenance--grounded,.astral-transient-overlay,.astral-skeleton,[data-welcome]")) return null;
+      if (node.classList.contains("astral-chart")) {
+        if (typeof Plotly === "undefined" || !node.dataset.rendered) throw new Error("Charts are still loading. Try the download again when they appear.");
+        var chartImage = doc.createElement("img");
+        var rect = node.getBoundingClientRect();
+        chartImage.alt = node.getAttribute("aria-label") || "Chart";
+        chartImage.style.cssText = "display:block;width:100%;height:auto;max-width:100%";
+        jobs.push(function () { return Promise.resolve(node._astralPlotReady).then(function () {
+          return Plotly.toImage(node, { format: "png", width: Math.max(1, Math.round(rect.width)), height: Math.max(1, Math.round(rect.height)), scale: 2 });
+        }).then(function (url) {
+          if (!/^data:image\/png;base64,/.test(url)) throw new Error("Chart export did not produce an image.");
+          chartImage.src = url;
+        }); });
+        return chartImage;
+      }
+      if (!allowed.test(node.tagName) || getComputedStyle(node).display === "none") return null;
+      var out = doc.createElement(node.tagName.toLowerCase());
+      copyStyle(node, out);
+      Array.from(node.attributes).forEach(function (attr) {
+        if (/^(aria-[a-z-]+|role|colspan|rowspan|scope|open|start|reversed|dir|lang)$/.test(attr.name)) out.setAttribute(attr.name, attr.value);
+      });
+      if (node.tagName === "IMG") {
+        out.alt = node.alt || "Image";
+        // Copy loaded pixels; never refetch media or retain authenticated URLs.
+        var pixels = document.createElement("canvas");
+        pixels.width = Math.min(node.naturalWidth || 1, 4096);
+        pixels.height = Math.min(node.naturalHeight || 1, 4096);
+        try {
+          pixels.getContext("2d").drawImage(node, 0, 0, pixels.width, pixels.height);
+          out.src = pixels.toDataURL("image/png");
+        } catch (e) { throw new Error("An image cannot be copied into this offline download.", { cause: e }); }
+      }
+      Array.from(node.childNodes).forEach(function (child) { var next = copy(child); if (next) out.appendChild(next); });
+      return out;
+    }
+    copyStyle(document.body, doc.body);
+    doc.body.style.cssText += ";margin:0;height:auto;min-height:100vh;overflow:auto;display:block";
+    var main = doc.createElement("main");
+    copyStyle(canvas, main);
+    main.style.cssText += ";height:auto;max-height:none;overflow:visible;margin:0 auto;display:block";
+    main.style.width = Math.round(canvas.getBoundingClientRect().width) + "px";
+    main.style.maxWidth = "100%";
+    Array.from(canvas.children).forEach(function (child) {
+      if (!child.matches(".dynamic-renderer,.astral-component")) return;
+      var next = copy(child); if (next) main.appendChild(next);
+    });
+    if (!main.children.length) throw new Error("There is no canvas content to export yet.");
+    doc.body.appendChild(main);
+    await Promise.all(jobs.map(function (job) { return job(); }));
+    var html = "<!DOCTYPE html>" + doc.documentElement.outerHTML;
+    if (html.length > 32 * 1024 * 1024) throw new Error("Canvas export exceeds the 32 MB document limit.");
+    return new Blob([html], { type: "text/html;charset=utf-8" });
+  }
+
+  function exportDownload(path, filename, appendChat, visualCanvas) {
     var ownerEpoch = accountPrivacyEpoch;
+    var exportChatId = activeChatId;
+    var exportRevision = lastCommittedRenderRevision();
     var url = path;
+    if (visualCanvas) url += (url.indexOf("?") === -1 ? "?" : "&") + "render_revision=" + encodeURIComponent(exportRevision);
     if (appendChat) {
       if (!activeChatId) { showToast("Open a chat first — nothing to export yet.", "error"); return; }
       url += (url.indexOf("?") === -1 ? "?" : "&") + "chat_id=" + encodeURIComponent(activeChatId);
     }
-    fetch(API_URL + url, { headers: { Authorization: "Bearer " + token }, credentials: "same-origin" })
+    return fetch(API_URL + url, { headers: { Authorization: "Bearer " + token }, credentials: "same-origin" })
       .then(function (r) {
-        if (!r.ok) throw new Error("Export failed (" + r.status + ")");
+        if (!r.ok) throw new Error(r.status === 409 ? "Canvas changed. Reload the chat before exporting." : "Export failed (" + r.status + ")");
+        if (ownerEpoch !== accountPrivacyEpoch || exportChatId !== activeChatId) return null;
+        // The authenticated endpoint still authorizes and audits the export.
+        // After approval, capture exactly the visible canvas, including charts.
+        if (visualCanvas) {
+          if (lastCommittedRenderRevision() !== exportRevision || r.headers.get("X-Astral-Render-Revision") !== String(exportRevision)) throw new Error("Canvas changed. Reload the chat before exporting.");
+          return snapshotCanvasDocument();
+        }
         return r.blob();
       })
       .then(function (blob) {
-        if (ownerEpoch !== accountPrivacyEpoch) return;
+        if (!blob || ownerEpoch !== accountPrivacyEpoch || exportChatId !== activeChatId) return;
+        if (visualCanvas && lastCommittedRenderRevision() !== exportRevision) throw new Error("Canvas changed during export. Try the download again.");
         var a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = filename || "export";
@@ -7411,7 +7538,7 @@
     if (expCanvas) {
       if (!activeChatId) { showToast("Open a chat first — nothing to export yet.", "error"); return; }
       exportDownload("/api/export/canvas/" + encodeURIComponent(activeChatId) + ".html",
-        "canvas-" + activeChatId + ".html", false);
+        "canvas-" + activeChatId + ".html", false, true);
       return;
     }
     var share = t.closest && t.closest(".astral-share-btn");

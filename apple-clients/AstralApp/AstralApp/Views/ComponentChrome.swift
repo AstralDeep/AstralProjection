@@ -101,7 +101,7 @@ struct ProvenanceBadge: View {
 
     private var style: (String, String, Color)? {
         switch kind {
-        case "grounded": return ("✓", "tool data", p.success)
+        case "grounded": return nil
         case "estimated": return ("≈", "estimated", p.warning)
         case "generated": return ("✦", "AI-generated", p.muted)
         default: return nil
