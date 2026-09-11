@@ -21,6 +21,15 @@
       "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03."
     },
     {
+      "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
+      "sourceBlob": "83647aa5bf0a7cd3bcb5c6fc297885708f8bdf7b",
+      "sourceMode": "100644",
+      "resultSha256": "ebe92210a668b6e84003c9b18f4e7ec94cec81dc79791cd21a040932daebdbae",
+      "task": "T056",
+      "reason": "Feature 088 review: Verify ordinary grounded badges stay hidden while the server trust mark, estimated and generated warnings, and component actions remain available in Android instrumentation."
+    },
+    {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
       "sourceBlob": "ec76d3c82c5ce03f7ac62989685d572c83815593",
