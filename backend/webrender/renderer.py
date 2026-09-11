@@ -161,8 +161,17 @@ def _has_explicit_attr(comp: Dict[str, Any], name: str) -> bool:
 # Primitive renderers (parity with DynamicRenderer.tsx)
 
 def render_container(c):
-    # Live container emits no wrapper — just its children.
-    return render_children(_children(c))
+    # Ordinary containers remain transparent. ROTE collapses narrow welcome
+    # grids to containers, whose placement hint must still group their children.
+    content = render_children(_children(c))
+    role = _explicit_attrs(c).get("data-welcome")
+    identities = [c[key] for key in ("component_id", "id") if key in c]
+    if (isinstance(role, str)
+            and role in {"intro", "permission", "examples", "example", "more"}
+            and all(isinstance(identity, str) and identity.startswith("wel_")
+                    for identity in identities)):
+        return f'<div{_base_attrs(c)}>{content}</div>'
+    return content
 
 
 def render_text(c):

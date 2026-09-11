@@ -755,8 +755,8 @@
       "sourceBlob": "21f98cc84bd4d81670f8c1fece4ab119468206ce",
       "sourceMode": "100644",
       "task": "T008",
-      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels.",
-      "resultSha256": "53f3fd3d38b47b4541939ab6cc7709c5eaa9483f307344cc30736aeb0f7415e5"
+      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels. Feature 088 live mobile review: preserve escaped placement metadata on known welcome containers with absent or wel_ identity, so ROTE grid collapse cannot turn three welcome prompts into work content; preserve transparent ordinary containers and reject malformed hints. Reject every conflicting or malformed present identity field instead of allowing one identity to mask another.",
+      "resultSha256": "61f38f1ef8fc8dc0351cadb1ebe2856a09f66d212a6afcb1256d786a629ad803"
     },
     {
       "path": "backend/webrender/static/astral.css",
@@ -889,9 +889,9 @@
       "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
       "sourceMode": "100644",
-      "resultSha256": "36191df6e11f320485db70e54507fc251f5ee6be12759ede6f17e69401c3fc9b",
+      "resultSha256": "6d3965dda79bbe6bf31470d17648ef5b2038869699a3495b844f434a43c8fba5",
       "task": "T052/T063/T008/T009",
-      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset."
+      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset. Feature 088 live mobile review: consume actual ROTE/renderer HTML goldens for mobile New chat after a plaintext-only conversation, tablet re-adaptation and repeated New chat without losing welcome groups."
     },
     {
       "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",

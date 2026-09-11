@@ -1734,6 +1734,47 @@ test("new chat receives a fresh welcome in the same slots and account change cle
 });
 
 
+for (const rendering of ["workspace", "legacy"]) {
+  test(`mobile New chat retains every welcome slot before tablet re-adaptation (${rendering})`, async ({ page }) => {
+    // These exact HTML frames come from the real ROTE/renderer pipeline; the
+    // Python welcome-container test checks them against the shared source fixture.
+    const frames = JSON.parse(await readFile(resolve(ROOT, "tooling/web-ci/fixtures/welcome-rendering-088.json"), "utf8"));
+    await page.setViewportSize({ width: 390, height: 900 });
+    await installHarness(page);
+    await receive(page, snapshot((await registration(page)).frame, {
+      canvas: { target: "canvas", components: [] },
+    }));
+    await page.locator("#astral-msgs-toggle").click();
+    await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+    await page.locator("#astral-newchat-btn").click();
+    await receive(page, { type: "ui_render", target: "canvas", html: frames.mobile[rendering] });
+    await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+
+    async function expectCompleteWelcome() {
+      await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+      await expect(page.locator("#astral-start-intro")).toContainText("How can I help?");
+      await expect(page.locator("#astral-start-permission")).toContainText("Agents are off for this account");
+      await expect(page.locator('#astral-start-examples [data-action="chat_message"]')).toHaveCount(3);
+      await expect(page.locator("#astral-start-more")).toContainText("More examples");
+      await expect(page.locator('#astral-start-more [data-action="chat_message"]')).toHaveCount(3);
+      await expect(page.locator('#astral-canvas [data-action="chat_message"]')).toHaveCount(0);
+      await expect(page.locator("#astral-input")).toHaveValue("");
+    }
+    await expectCompleteWelcome();
+    // Both widths use the stacked shell, but ROTE changes mobile -> tablet.
+    // The capability update follows the New chat response under the normal lane.
+    await page.setViewportSize({ width: 694, height: 900 });
+    await receive(page, { type: "rote_config", device_profile: { device_type: "tablet" } });
+    await receive(page, { type: "ui_update", html: frames.tablet.legacy });
+    await expectCompleteWelcome();
+    await page.locator("#astral-newchat-btn").click();
+    await receive(page, { type: "ui_render", target: "canvas", html: frames.tablet[rendering] });
+    await receive(page, { type: "chat_created", payload: { chat_id: CHAT_ID } });
+    await expectCompleteWelcome();
+  });
+}
+
+
 test("late welcome cannot replace work content or repopulate the start slots", async ({ page }) => {
   await installHarness(page, { locator: false });
   await receive(page, { type: "ui_render", target: "canvas", html: "<p>Current work result</p>" });
