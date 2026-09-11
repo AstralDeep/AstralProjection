@@ -109,13 +109,10 @@
 
 /* 2. Base — page floor, typography, selection, focus, scrollbars */
 html, body { height: 100%; }
+.astral-app { height: 100vh; height: 100dvh; }
 body {
   margin: 0;
-  /* deep-space floor: two faint nebula glows over the bg token */
-  background:
-    radial-gradient(1100px 700px at 82% -12%, rgb(var(--astral-secondary) / 0.10), transparent 60%),
-    radial-gradient(900px 650px at -10% 102%, rgb(var(--astral-primary) / 0.08), transparent 55%),
-    var(--surface-0);
+  background: var(--surface-0);
   background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-sans);
@@ -152,16 +149,20 @@ body {
 }
 .scrollbar-thin { scrollbar-width: thin; }
 
-/* 3. Shell — top bar glass, canvas vs chat panel distinction, composer */
+/* 3. Shell — quiet surfaces, canvas vs chat panel distinction, composer */
 #astral-topbar {
   position: relative;
   z-index: 40;
-  background: rgb(var(--astral-bg) / 0.65);
-  backdrop-filter: blur(14px) saturate(1.2);
-  -webkit-backdrop-filter: blur(14px) saturate(1.2);
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
-  box-shadow: var(--shadow-1);
+  background: var(--surface-0);
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
 }
+#astral-topbar > div { padding: 1rem 1.5rem; }
+#astral-topbar button { min-height: 38px; }
+#astral-newchat-btn {
+  background: transparent;
+  border-color: rgb(var(--astral-text) / 0.13);
+}
+#astral-newchat-btn:hover { background: rgb(var(--astral-text) / 0.06); }
 #astral-settings-btn[aria-expanded="true"] {
   color: var(--text-primary);
   background: rgb(var(--astral-primary) / 0.15);
@@ -175,8 +176,10 @@ body {
 }
 .astral-menu-item { border-radius: var(--radius-sm); }
 
-/* canvas = open workspace on the page floor; chat = raised glass rail */
-.astral-canvas-panel { scrollbar-gutter: stable; }
+/* canvas = open workspace on the page floor; chat = a distinct quiet rail */
+.astral-canvas-panel { scrollbar-gutter: stable; order: 1; }
+.astral-chat-panel { order: 2; }
+.astral-start-slot { display: none; }
 
 /* empty canvas: the shared cross-client hint (client.js removes it on the
    first render with content and re-shows it when the canvas clears) */
@@ -202,15 +205,86 @@ body {
 }
 .astral-canvas-empty-sub { font-size: 13px; margin-top: 4px; }
 .astral-chat-panel {
-  background: rgb(var(--astral-surface) / 0.35);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-left: 1px solid rgb(255 255 255 / 0.06);
-  box-shadow: -8px 0 24px -12px rgb(0 0 0 / 0.4);
+  background: rgb(var(--astral-surface) / 0.45);
+  border-left: 1px solid rgb(var(--astral-text) / 0.08);
 }
 .astral-chat-form {
-  border-top: 1px solid rgb(255 255 255 / 0.06);
-  background: rgb(var(--astral-bg) / 0.45);
+  border-top: 1px solid rgb(var(--astral-text) / 0.08);
+  background: var(--surface-0);
+}
+.astral-composer-row { flex-wrap: wrap; }
+.astral-chat-form #astral-input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  min-height: 44px;
+  font-size: var(--font-base);
+  background: rgb(var(--astral-surface) / 0.6);
+  border-color: rgb(var(--astral-text) / 0.16);
+}
+.astral-chat-form button[type="submit"] {
+  margin-left: auto;
+  min-height: 44px;
+  background-image: none;
+  box-shadow: none;
+  text-shadow: none;
+}
+
+/* Welcome remains shared SDUI; its web type and choices stay deliberately quiet. */
+:is(#astral-canvas, .astral-start-slot) [data-welcome="intro"] {
+  max-width: 42rem;
+  margin: clamp(1rem, 5vh, 4rem) auto 1.5rem;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:is(#astral-canvas, .astral-start-slot) [data-welcome="examples"],
+:is(#astral-canvas, .astral-start-slot) [data-welcome="more"] {
+  max-width: 42rem;
+  margin-inline: auto;
+}
+:is(#astral-canvas, .astral-start-slot) [data-welcome="example"] {
+  min-width: 0;
+  min-height: 44px;
+  border-color: rgb(var(--astral-text) / 0.1);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: var(--weight-regular);
+  box-shadow: none;
+  white-space: normal;
+  line-height: 1.4;
+}
+:is(#astral-canvas, .astral-start-slot) [data-welcome="example"]:hover {
+  border-color: rgb(var(--astral-text) / 0.24);
+  background: rgb(var(--astral-text) / 0.04);
+  color: var(--text-primary);
+  transform: none;
+}
+:is(#astral-canvas, .astral-start-slot) [data-welcome="more"] {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+:is(#astral-canvas, .astral-start-slot) [data-welcome="more"] > summary { min-height: 44px; }
+:is(#astral-canvas, .astral-start-slot) [data-welcome="more"] > summary > span {
+  font-size: var(--font-sm);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-muted);
+}
+:is(#astral-canvas, .astral-start-slot) [data-welcome="more"] > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  border: 0;
+}
+:is(#astral-canvas, .astral-start-slot) [data-welcome="more"] > div > * { margin: 0; }
+@media (max-width: 699px) {
+  .astral-chat-form #astral-input { flex-basis: 100%; order: -1; }
+  /* Keep the existing compact navigation reachable when text is enlarged. */
+  #astral-topbar > div { padding-inline: 12px; gap: 8px; }
+  #astral-topbar > div > div:last-child { min-width: 0; gap: 8px; }
 }
 
 /* 4. Shared field + button polish (renderer adds .astral-field / .astral-btn
@@ -1034,8 +1108,7 @@ body[data-astral-layout="stacked"] .astral-chat-panel {
   max-width: 100%;
   flex: 0 0 auto;
   border-left: 0;
-  border-top: 1px solid rgb(255 255 255 / 0.08);
-  box-shadow: 0 -8px 24px -12px rgb(0 0 0 / 0.4);
+  border-top: 1px solid rgb(var(--astral-text) / 0.08);
 }
 body[data-astral-layout="stacked"] .astral-chats-btn { display: flex; }
 
@@ -1176,9 +1249,7 @@ body[data-astral-layout="stacked"] #astral-topbar img {
 }
 body[data-astral-layout="split"] .astral-rail-head { display: flex; }
 .astral-rail-title {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: var(--font-sm);
   color: var(--text-muted);
 }
 .astral-rail-collapse {
@@ -1287,11 +1358,9 @@ body[data-astral-layout="collapsed"] .astral-chat-panel {
   width: min(760px, calc(100vw - 28px));
   max-height: min(72vh, 640px);
   border-radius: 18px;
-  border: 1px solid rgb(255 255 255 / 0.1);
-  background: rgb(var(--astral-surface) / 0.88);
-  backdrop-filter: blur(18px) saturate(1.25);
-  -webkit-backdrop-filter: blur(18px) saturate(1.25);
-  box-shadow: 0 18px 48px -18px rgb(0 0 0 / 0.65);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-2);
   z-index: 40;
 }
 body[data-astral-layout="collapsed"] .astral-rail-head { display: none; }
@@ -1418,4 +1487,144 @@ body[data-astral-layout="collapsed"] .astral-chat-toggle.astral-peek { animation
   margin-top: 5px;
   font-size: 10px;
   color: var(--text-muted);
+}
+
+/* 088: one place to begin. The same composer remains mounted when work opens.
+   These rules adapt existing server-owned welcome components; no duplicate
+   example list, input, transcript or client-specific primitive is introduced. */
+.astral-chat-form .astral-composer-row {
+  padding: 0.75rem;
+  gap: 0.375rem;
+  background: var(--surface-3);
+  border: 1px solid rgb(var(--astral-text) / 0.16);
+  border-radius: 18px;
+}
+.astral-composer-row:focus-within {
+  border-color: rgb(var(--astral-primary) / 0.75);
+  box-shadow: 0 0 0 3px rgb(var(--astral-primary) / 0.09);
+}
+.astral-chat-form #astral-input {
+  order: -1;
+  flex: 1 1 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 4.25rem;
+  max-height: 10rem;
+  field-sizing: content;
+  resize: none;
+  padding: 0.375rem 0.375rem 0.75rem;
+  font: inherit;
+  line-height: 1.6;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  outline: none;
+}
+.astral-chat-form #astral-input::placeholder { color: var(--text-muted); opacity: 1; }
+.astral-chat-form .astral-attach-btn,
+.astral-chat-form .astral-voice-control {
+  width: 40px;
+  height: 40px;
+  border-color: transparent;
+  background: transparent;
+  border-radius: 10px;
+}
+.astral-chat-form .astral-attach-btn:hover,
+.astral-chat-form .astral-voice-control:hover:not(:disabled) {
+  background: rgb(var(--astral-text) / 0.06);
+}
+.astral-chat-form #astral-bg-btn[aria-pressed="true"] {
+  background: rgb(var(--astral-primary) / 0.18);
+  border-color: rgb(var(--astral-primary) / 0.5);
+}
+.astral-chat-form button[type="submit"] {
+  min-height: 40px;
+  padding: 0.5rem 1.125rem;
+  border-radius: 10px;
+}
+body[data-astral-view="start"] #astral-topbar { border-bottom-color: transparent; }
+body[data-astral-view="start"] main {
+  display: grid;
+  grid-template-columns: minmax(0, 44rem);
+  grid-auto-rows: min-content;
+  justify-content: center;
+  align-content: start;
+  padding: clamp(3rem, 18vh, 11rem) 1.5rem 3rem;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+}
+body[data-astral-view="start"] .astral-start-slot,
+body[data-astral-view="start"] .astral-start-slot > .astral-component,
+body[data-astral-view="start"] .astral-chat-panel {
+  display: contents;
+}
+body[data-astral-view="start"] #astral-canvas,
+body[data-astral-view="start"] .astral-rail-head,
+body[data-astral-view="start"] #astral-history,
+body[data-astral-view="start"] #astral-chat,
+body[data-astral-view="start"] #astral-msgs-toggle,
+body[data-astral-view="start"] #astral-chat-toggle,
+body[data-astral-view="start"] #astral-topbar-chat-btn {
+  display: none;
+}
+body[data-astral-view="start"] #astral-chats-btn { display: inline-flex; }
+body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="intro"] {
+  grid-row: 1;
+  margin: 0 0 2rem;
+  width: 100%;
+  max-width: none;
+  text-align: center;
+}
+body[data-astral-view="start"] [data-welcome="intro"] > div { justify-content: center; }
+body[data-astral-view="start"] [data-welcome="intro"] h2 {
+  font-size: clamp(1.875rem, 3.2vw, 2.5rem);
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: -0.045em;
+  text-wrap: balance;
+}
+body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="permission"] { grid-row: 2; margin: 0 0 1rem; }
+body[data-astral-view="start"] #astral-form {
+  grid-row: 3;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+body[data-astral-view="start"] .astral-composer-row {
+  padding: 1rem;
+  border-radius: 22px;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.12);
+}
+body[data-astral-view="start"] #astral-input { min-height: 5rem; }
+body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="examples"] {
+  grid-row: 4;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 1.5rem 0 0;
+  max-width: none;
+}
+body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="more"] {
+  grid-row: 5;
+  justify-self: center;
+  margin: 0.5rem 0 0;
+  max-width: 100%;
+}
+body[data-astral-view="start"] [data-welcome="more"] > summary {
+  width: fit-content;
+  margin-inline: auto;
+  gap: 0.5rem;
+  border-radius: 8px;
+}
+body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="more"] > div {
+  justify-content: center;
+}
+@media (max-width: 699px) {
+  body[data-astral-view="start"] main { padding: clamp(2rem, 10vh, 5rem) 12px 2rem; }
+  body[data-astral-view="start"] .astral-composer-row { padding: 12px; }
+  body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="intro"] { margin-bottom: 1.5rem; }
+  #astral-topbar > div { padding: 0.75rem; }
+  .astral-chat-form { padding: 0.625rem; }
 }

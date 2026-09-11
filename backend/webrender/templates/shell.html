@@ -35,26 +35,19 @@
     };
   </script>
 </head>
-<body class="bg-astral-bg text-astral-text">
-  <div class="flex flex-col h-screen">
+<body class="bg-astral-bg text-astral-text" data-astral-view="start">
+  <div class="astral-app flex flex-col h-screen">
     <!-- Server-rendered top bar + static settings menu (role-gated at GET /
-         time; see webrender/chrome/topbar.py). Glass/border styling lives in
+         time; see webrender/chrome/topbar.py). Surface/border styling lives in
          astral.css (#astral-topbar). -->
     <header id="astral-topbar" class="flex items-center">%%ASTRAL_TOPBAR%%</header>
     <main class="flex flex-1 min-h-0">
-      <!-- Canvas: server-rendered UI (astralprims primitives). The initial
-           welcome examples arrive over the normal ui_render path right after
-           register_ui (orchestrator/welcome.py) — never as shell HTML. -->
-      <section id="astral-canvas" data-tour-target="canvas.workspace" class="astral-canvas-panel flex-1 overflow-y-auto p-4 space-y-3">
-        <!-- Shared cross-client empty state (client.js removes it on the first
-             render with content and re-shows it when the canvas is cleared) -->
-        <div id="astral-canvas-empty" class="astral-canvas-empty">
-          <div class="astral-canvas-empty-glyph" aria-hidden="true">✦</div>
-          <p class="astral-canvas-empty-title">Your generated interface appears here</p>
-          <p class="astral-canvas-empty-sub">Ask something below and AstralDeep will build a live interface for it.</p>
-        </div>
-      </section>
-      <!-- Chat panel: raised glass rail. astral.css owns surface/border AND
+      <!-- Empty placement hosts for server-rendered welcome components. The
+           web adapter moves the original nodes here; it does not invent or
+           duplicate content. DOM order follows the visible start layout. -->
+      <div id="astral-start-intro" class="astral-start-slot"></div>
+      <div id="astral-start-permission" class="astral-start-slot"></div>
+      <!-- Chat panel: conversation rail. astral.css owns surface/border AND
            width/placement per layout mode (066): "split" right rail,
            "collapsed" floating composer + overlay drawer, "stacked" bottom
            sheet. No Tailwind width classes here — the mode CSS decides. -->
@@ -93,7 +86,9 @@
                leading "/"). Discovery only — the server expands the command
                into a normal prompt through the usual permission/audit gates. -->
           <div id="astral-slash-menu" class="astral-slash-menu hidden" role="listbox" aria-label="Slash commands"></div>
-          <div class="flex gap-2 items-center">
+          <div class="astral-composer-row flex gap-2 items-center">
+            <textarea id="astral-input" rows="2" autocomplete="off" aria-label="Message" placeholder="Ask anything…" data-tour-target="chat.input"
+                      class="astral-field flex-1 min-w-0 text-astral-text"></textarea>
             <!-- Attachment (paperclip) control. The hidden input carries class
                  astral-file-upload so the client.js change-listener handles
                  selection; accept list is injected server-side from the
@@ -115,9 +110,7 @@
                  default (disabled, honest reason) until the authoritative
                  composer_state frame replaces the host's children. -->
             <div id="astral-voice-controls" class="astral-voice-controls shrink-0" role="group"
-                 aria-label="Voice conversation controls"><button type="button" class="astral-voice-control" data-voice-key="voice-start" data-voice-action="voice_session_start" data-icon="microphone" data-default="1" disabled aria-pressed="false" aria-busy="false" aria-label="Start voice conversation" title="Checking voice availability…"><span class="astral-sr-only">Start voice conversation</span></button></div>
-            <input id="astral-input" type="text" autocomplete="off" placeholder="Message an agent…" data-tour-target="chat.input"
-                   class="astral-field flex-1 min-w-0 rounded-lg bg-white/5 border border-white/10 px-3 py-2 text-sm text-astral-text">
+                 aria-label="Voice conversation controls"><button type="button" class="astral-voice-control" data-voice-key="voice-start" data-voice-action="voice_session_start" data-icon="microphone" data-default="1" disabled aria-pressed="false" aria-busy="false" aria-label="Start voice conversation" title="Checking voice availability…"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"></rect><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"></path></svg><span class="astral-sr-only">Start voice conversation</span></button></div>
             <!-- 066: transcript toggle for the collapsed (floating-composer)
                  mode — unread badge; hidden on split/stacked by astral.css. -->
             <button type="button" id="astral-chat-toggle" class="astral-attach-btn astral-chat-toggle shrink-0"
@@ -156,6 +149,17 @@
           <div id="astral-voice-audio" hidden aria-hidden="true"></div>
         </form>
       </aside>
+      <div id="astral-start-examples" class="astral-start-slot"></div>
+      <div id="astral-start-more" class="astral-start-slot"></div>
+      <!-- Canvas: server-rendered UI (astralprims primitives). Welcome arrives
+           through the normal ui_render path, then adapts to the hosts above. -->
+      <section id="astral-canvas" data-tour-target="canvas.workspace" class="astral-canvas-panel flex-1 overflow-y-auto p-4 space-y-3">
+        <div id="astral-canvas-empty" class="astral-canvas-empty">
+          <div class="astral-canvas-empty-glyph" aria-hidden="true">✦</div>
+          <p class="astral-canvas-empty-title">Your results appear here</p>
+          <p class="astral-canvas-empty-sub">Ask a question to get started.</p>
+        </div>
+      </section>
     </main>
   </div>
   <!-- Chrome modal root (settings surfaces render here via chrome_render) -->

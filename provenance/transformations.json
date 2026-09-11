@@ -426,22 +426,31 @@
       "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
     },
     {
+      "path": "backend/webrender/static/astral.css",
+      "sourcePath": "backend/webrender/static/astral.css",
+      "sourceBlob": "a4a7714b1479db47ad1550018b6ad9610cc56d9a",
+      "sourceMode": "100644",
+      "task": "T008",
+      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts.",
+      "resultSha256": "90ac6d4784c799b2d346423ded44768ab606e78bd7f1c0fb62888bc183204048"
+    },
+    {
       "path": "backend/webrender/static/client.js",
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "47b397e585e9ab08702c4183c8dcc946523512042d97bb569173d862faebd71d",
-      "task": "T052/T063/T029",
-      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections."
+      "resultSha256": "eecc516aa405e6d418b946d66faa1bc368ed74461c8b46ed8e255ba01d5a8d3c",
+      "task": "T052/T063/T029/T008/T009",
+      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior."
     },
     {
       "path": "backend/webrender/templates/shell.html",
       "sourcePath": "backend/webrender/templates/shell.html",
       "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
       "sourceMode": "100644",
-      "resultSha256": "5a9e750dcbcd3cc7d02ccd5ec4205144253a0f54fc031a8c6765abfe3c687504",
-      "task": "T042",
-      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter."
+      "resultSha256": "4fa194eec185d45166d0d11682f5317d6e7729773e5366713bd1173a2b4da71b",
+      "task": "T042/T008",
+      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls."
     },
     {
       "path": "contracts/ui_protocol.json",
@@ -493,9 +502,9 @@
       "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py",
       "sourceBlob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
       "sourceMode": "100644",
-      "resultSha256": "53d4e69e113b6eb34642599500d1cc0a5bb6ed49e23a337e9cb6b35d70849732",
-      "task": "T043/T013/T014",
-      "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant."
+      "resultSha256": "039f70290308f01cc41c2f68d0298c9f737229d18170234f04dbd12adf2bf2c5",
+      "task": "T043/T013/T014/T008",
+      "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant. Feature 088: verify the accessible multiline typed composer remains available beside voice controls."
     },
     {
       "path": "tooling/web-ci/coverage-conversion-cli.mjs",
@@ -529,9 +538,9 @@
       "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
       "sourceMode": "100644",
-      "resultSha256": "caf788eb0444eac66325b48757e54090131ad084a4bad5b6caab8ee1542d1cbe",
-      "task": "T052/T063",
-      "reason": "Read the continuity contract from Projection's canonical standalone protocol path."
+      "resultSha256": "906b865dd2f3719b9908b2866029f0e511a13aa0d1c4bd2b182f61ae46ca554d",
+      "task": "T052/T063/T008/T009",
+      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures."
     },
     {
       "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",

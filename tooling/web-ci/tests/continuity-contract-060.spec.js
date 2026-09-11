@@ -84,10 +84,22 @@ function htmlShell() {
     <span id="astral-msgs-label"></span>
     <div id="astral-history"></div>
     <main>
-      <section id="astral-canvas"><div id="astral-canvas-empty">Empty</div></section>
+      <div id="astral-start-intro"></div>
+      <div id="astral-start-permission"></div>
       <div id="astral-chat"></div>
       <div id="astral-status"></div>
-      <form id="astral-form"><input id="astral-input"><button type="submit">Send</button></form>
+      <form id="astral-form"><textarea id="astral-input" rows="2"></textarea><button type="submit">Send</button></form>
+      <div id="astral-start-examples"></div>
+      <div id="astral-start-more"></div>
+      <section id="astral-canvas"><div id="astral-canvas-empty">Empty</div></section>
+      <div id="astral-attachments" class="hidden"></div>
+      <button id="astral-attach-btn" type="button"></button>
+      <input id="astral-attach-input" class="astral-file-upload" type="file" hidden>
+      <div id="astral-voice-controls"></div>
+      <div id="astral-voice-transcript"></div>
+      <div id="astral-voice-turn-notice"><span id="astral-voice-turn-notice-title"></span><span id="astral-voice-turn-notice-message"></span></div>
+      <button id="astral-bg-btn" type="button" aria-pressed="false"></button>
+      <div id="astral-slash-menu" class="hidden"></div>
       <div id="astral-modal"></div>
     </main>
   </body></html>`;
@@ -131,6 +143,7 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
         window.__socketEvents.push({
           frame,
           locatorAtSend: localStorage.getItem(window.__locatorKey),
+          viewAtSend: document.body.getAttribute("data-astral-view"),
         });
         // 066: the client gates action() sends behind the post-registration
         // rote_config verdict (socketReady + queue flush). Mirror the real
@@ -915,6 +928,165 @@ test("authenticated account switch clears only the previous account locator", as
 });
 
 
+test("sign-out erases private drafts and staged files even when navigation fails", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, { type: "task_completed", payload: { summary: "Private task result" } });
+  await page.locator("#astral-input").fill("Private draft for the first owner");
+  await page.evaluate(() => {
+    document.querySelector("#astral-history").textContent = "Private history";
+    document.querySelector("#astral-voice-transcript").textContent = "Private spoken request";
+    document.querySelector("#astral-voice-turn-notice-message").textContent = "Private voice error";
+    const tour = document.createElement("div");
+    tour.id = "astral-tour-card";
+    tour.textContent = "Private tour detail";
+    document.body.append(tour);
+    const button = document.createElement("button");
+    button.className = "astral-attach-existing";
+    button.setAttribute("data-attachment-id", "owner-a-file");
+    button.setAttribute("data-filename", "owner-a-private.txt");
+    document.body.append(button);
+    button.click();
+    button.remove();
+  });
+  await page.locator("#astral-bg-btn").click();
+  await expect(page.locator("#astral-attachments")).toContainText("owner-a-private.txt");
+  await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+  await page.locator("#logout").click();
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-attachments")).toBeEmpty();
+  await expect(page.locator("#astral-history")).toBeEmpty();
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#astral-voice-transcript")).toBeEmpty();
+  await expect(page.locator("#astral-voice-turn-notice-message")).toBeEmpty();
+  await expect(page.locator("#astral-tour-card")).toHaveCount(0);
+  await expect(page.locator("#astral-toasts")).toBeEmpty();
+  await receive(page, { type: "task_completed", payload: { summary: "Late private result" } });
+  await receive(page, { type: "auth_required" });
+  await expect(page.locator("#astral-toasts")).toBeEmpty();
+  expect(await page.evaluate(() => window.__sockets.length)).toBe(1);
+});
+
+
+test("replaced sockets cannot deliver old-owner content or disconnect the current socket", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sockets.at(-1).close();
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await page.waitForFunction(() => window.__sockets.length === 2 && window.__sockets.at(-1).readyState === 1);
+  await page.evaluate(() => {
+    window.__sockets[0].receive({ type: "task_completed", payload: { summary: "Old owner late result" } });
+    window.__sockets[0].onerror();
+  });
+  await expect(page.locator("body")).not.toContainText("Old owner late result");
+  expect(await page.evaluate(() => window.__sockets.at(-1).readyState)).toBe(1);
+});
+
+
+test("owner change erases a draft while same-owner authentication recovery retains it", async ({ page }) => {
+  await installHarness(page);
+  await page.locator("#astral-input").fill("Private draft for owner A");
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2);
+  await expect(page.locator("#astral-input")).toHaveValue("Private draft for owner A");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  // Reconnect obtains the next authenticated owner's identity.
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+
+test("queued owner-A work is discarded before owner-B registration can flush it", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sockets.at(-1).close();
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await page.locator("#astral-input").fill("Owner A queued private request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  const leaked = await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )));
+  expect(leaked).toEqual([]);
+  await expect(page.locator("#astral-chat")).not.toContainText("Owner A queued private request");
+});
+
+
+for (const outcome of ["success", "denial", "network_failure"]) {
+  test(`late owner-A upload ${outcome} cannot restore private UI after sign-out`, async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => {
+      const original = window.fetch;
+      window.fetch = (url, options) => {
+        if (!String(url).endsWith("/api/upload")) return original(url, options);
+        return new Promise((resolve, reject) => {
+          window.__finishUpload = (result) => {
+            if (result === "network_failure") { reject(new Error("test failure")); return; }
+            resolve({ ok: result === "success", status: result === "success" ? 200 : 403,
+              json: async () => result === "success"
+                ? { attachment_id: "owner-a-upload", parser_status: "preparing" }
+                : { detail: "Private upload denial" } });
+          };
+        });
+      };
+    });
+    await page.locator("#astral-attach-input").setInputFiles({
+      name: "owner-a-private.txt", mimeType: "text/plain", buffer: Buffer.from("synthetic fixture"),
+    });
+    await expect(page.locator("#astral-attachments")).toContainText("owner-a-private.txt");
+    await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+    await page.locator("#logout").click();
+    await page.evaluate((result) => window.__finishUpload(result), outcome);
+    await expect(page.locator("#astral-attachments")).toBeEmpty();
+    await expect(page.locator("#astral-status")).toBeEmpty();
+    await expect(page.locator("#astral-attach-input")).toHaveValue("");
+  });
+}
+
+
+test("late old-owner command discovery cannot replace the new owner's commands", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ oldToken, newToken }) => {
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (!String(url).endsWith("/api/chrome/commands")) return original(url, options);
+      if (options.headers.Authorization === `Bearer ${oldToken}`) {
+        return new Promise((resolve) => {
+          window.__finishOldCommands = () => resolve({ ok: true, json: async () => ({
+            commands: [{ name: "/private-a", desc: "Owner A private guidance", mine: true }],
+          }) });
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        commands: [{ name: "/private-b", desc: "Owner B guidance", mine: true }],
+      }) });
+    };
+    window.__astralResetCommands(oldToken);
+    window.__sessionToken = newToken;
+    window.__sessionSubject = "other-user";
+  }, { oldToken: TOKEN, newToken: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  await page.evaluate(() => window.__finishOldCommands());
+  await page.locator("#astral-input").fill("/private");
+  await expect(page.locator("#astral-slash-menu")).toContainText("/private-b");
+  await expect(page.locator("#astral-slash-menu")).not.toContainText("/private-a");
+});
+
+
 test("unknown locator schema is retained but never interpreted", async ({ page }) => {
   await page.addInitScript(({ key, chatId }) => {
     localStorage.setItem(key, JSON.stringify({
@@ -939,3 +1111,410 @@ test("URL-selected chat is persisted before its first registration", async ({ pa
   expect(event.frame.resume.active_chat_id).toBe(OTHER_CHAT_ID);
   expect(JSON.parse(event.locatorAtSend).chat_id).toBe(OTHER_CHAT_ID);
 });
+
+
+test("authentication recovery to a different owner replaces the socket before accepting more content", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  await page.evaluate(() => {
+    window.__sockets[0].receive({ type: "notification", title: "Owner A private title", body: "Private detail" });
+    window.__sockets[0].receive({ type: "chrome_render", region: "modal", html: "Owner A private modal" });
+  });
+  await expect(page.locator("body")).not.toContainText("Owner A private");
+  expect(await page.evaluate(() => window.__sockets.length)).toBe(2);
+  expect(await page.evaluate(() => window.__sockets[0].readyState)).toBe(3);
+  const registrations = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui"));
+  expect(registrations).toHaveLength(2);
+  expect(registrations[1].frame.connection_generation).not.toBe(registrations[0].frame.connection_generation);
+});
+
+
+async function installDeferredAccountEffect(page, effect) {
+  await page.evaluate((kind) => {
+    window.__effectDownloads = [];
+    window.__effectClipboard = [];
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) { window.__effectDownloads.push(this.download); return; }
+      click.call(this);
+    };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: async (text) => { window.__effectClipboard.push(text); },
+    } });
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (!String(url).includes(kind === "export" ? "/api/export/" : "/api/share")) return original(url, options);
+      window.__effectAuthorization = options.headers.Authorization;
+      return new Promise((resolve, reject) => {
+        window.__finishAccountEffect = (result) => {
+          if (result === "network_failure") { reject(new Error("Private effect error")); return; }
+          resolve({ ok: result === "success", status: result === "success" ? 200 : 403,
+            blob: async () => new Blob(["Private export content"]),
+            json: async () => result === "success"
+              ? { share_url: "https://candidate.example/s/private-owner-a" }
+              : { detail: "Private share denial" },
+          });
+        };
+      });
+    };
+    const button = document.createElement("button");
+    button.className = kind === "export" ? "astral-export-canvas" : "astral-share-btn";
+    button.setAttribute("data-share-scope", "canvas");
+    document.body.append(button);
+    button.click();
+    button.remove();
+  }, effect);
+  expect(await page.evaluate(() => window.__effectAuthorization)).toBe(`Bearer ${TOKEN}`);
+}
+
+
+for (const effect of ["export", "share"]) {
+  for (const outcome of ["success", "denial", "network_failure"]) {
+    test(`late owner-A ${effect} ${outcome} cannot download, copy or report private content after sign-out`, async ({ page }) => {
+      await installHarness(page);
+      await installDeferredAccountEffect(page, effect);
+      await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+      await page.locator("#logout").click();
+      await page.evaluate(async (result) => {
+        window.__finishAccountEffect(result);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }, outcome);
+      expect(await page.evaluate(() => window.__effectDownloads)).toEqual([]);
+      expect(await page.evaluate(() => window.__effectClipboard)).toEqual([]);
+      await expect(page.locator("#astral-toasts .astral-toast")).toHaveCount(0);
+    });
+  }
+
+  test(`same-owner ${effect} completion remains available`, async ({ page }) => {
+    await installHarness(page);
+    await installDeferredAccountEffect(page, effect);
+    await page.evaluate(async () => {
+      window.__finishAccountEffect("success");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    const count = await page.evaluate((kind) => (
+      kind === "export" ? window.__effectDownloads.length : window.__effectClipboard.length
+    ), effect);
+    expect(count).toBe(1);
+  });
+}
+
+
+for (const outcome of ["success", "failure"]) {
+  test(`a share clipboard ${outcome} after sign-out cannot restore a private toast`, async ({ page }) => {
+    await installHarness(page);
+    await installDeferredAccountEffect(page, "share");
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => new Promise((resolve, reject) => {
+        window.__finishClipboard = (result) => result === "success" ? resolve() : reject(new Error("Clipboard denied"));
+      });
+      window.__finishAccountEffect("success");
+    });
+    await page.waitForFunction(() => typeof window.__finishClipboard === "function");
+    await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+    await page.locator("#logout").click();
+    await page.evaluate(async (result) => {
+      window.__finishClipboard(result);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }, outcome);
+    await expect(page.locator("#astral-toasts .astral-toast")).toHaveCount(0);
+  });
+}
+
+
+test("a late session refresh cannot restore credentials or reconnect after sign-out", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (!String(url).endsWith("/auth/session")) return original(url, options);
+      return new Promise((resolve) => {
+        window.__finishSession = () => resolve({ json: async () => ({ authenticated: true, access_token: token }) });
+      });
+    };
+  }, { token: TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => typeof window.__finishSession === "function");
+  await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+  await page.locator("#logout").click();
+  await page.evaluate(async () => {
+    window.__finishSession();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(await page.evaluate(() => window.__ASTRAL_TOKEN__)).toBe("");
+  expect(await page.evaluate(() => window.__sockets.length)).toBe(1);
+  expect(await page.evaluate(() => window.__sockets[0].readyState)).toBe(3);
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length)).toBe(1);
+});
+
+
+test("a fresh empty conversation stays centered through welcome rendering and same-owner recovery", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await receive(page, { type: "ui_render", target: "canvas", html:
+    '<div class="dynamic-renderer"><section data-welcome="intro">How can I help?</section>'
+    + '<div data-welcome="examples"><button>Research brief</button></div>'
+    + '<div data-welcome="permission"><button>Enable recommended agents</button></div></div>' });
+  await page.locator("#astral-input").fill("A draft that has not been sent");
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length === 2);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await expect(page.locator("#astral-input")).toHaveValue("A draft that has not been sent");
+});
+
+
+test("an existing conversation selects work before its first registration", async ({ page }) => {
+  await installHarness(page);
+  expect((await registration(page)).viewAtSend).toBe("work");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+});
+
+
+test("ordinary first Send reveals work immediately and new chat returns to start", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("A normal first request");
+  await page.locator("#astral-input").press("Enter");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  const sent = await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )));
+  expect(sent).toHaveLength(1);
+  expect(sent[0].viewAtSend).toBe("work");
+  expect(sent[0].frame.payload.message).toBe("A normal first request");
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+test("a first offline Send reveals its queued conversation immediately", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.locator("#astral-input").fill("Queued first request");
+  await page.locator("#astral-input").press("Enter");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  await expect(page.locator("#astral-chat")).toContainText("Queued first request");
+});
+
+
+for (const target of ["canvas", "chat"]) {
+  test(`actual ${target} content reveals work without a welcome identifier or local Send`, async ({ page }) => {
+    await installHarness(page, { locator: false });
+    await receive(page, { type: "ui_render", target: "canvas", html: '<div class="dynamic-renderer"></div>', components: [] });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+    await receive(page, { type: "ui_render", target, html: "<p>A real response</p>" });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+    await receive(page, { type: "ui_render", target: "canvas", html: "", components: [] });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  });
+}
+
+
+for (const width of [1280, 850, 390]) {
+  test(`history remains reachable from the centered start view at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installHarness(page, { locator: false });
+    await receive(page, { type: "ui_render", target: "history", html: "<button>Previous conversation</button>" });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+    await page.locator("#astral-chats-btn").click();
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+    await expect(page.locator("body")).toHaveClass(/astral-history-open/);
+    if (width === 850) await expect(page.locator("body")).toHaveClass(/astral-chat-open/);
+    await expect(page.locator("#astral-history")).toContainText("Previous conversation");
+  });
+}
+
+
+test("owner change returns to start when the new owner has no saved conversation", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+test("textarea Shift+Enter creates a newline and Enter submits the full prompt", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("First line");
+  await page.locator("#astral-input").press("Shift+Enter");
+  await page.locator("#astral-input").pressSequentially("Second line");
+  await expect(page.locator("#astral-input")).toHaveValue("First line\nSecond line");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await page.locator("#astral-input").press("Enter");
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  const messages = await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )).map((event) => event.frame.payload.message));
+  expect(messages).toEqual(["First line\nSecond line"]);
+});
+
+
+test("IME Enter and Enter in another textarea never send the composer", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("Still composing");
+  await page.locator("#astral-input").dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await page.locator("#astral-input").dispatchEvent("keydown", { key: "Enter", keyCode: 229 });
+  await page.evaluate(() => {
+    const field = document.createElement("textarea");
+    field.id = "other-field";
+    document.body.append(field);
+  });
+  await page.locator("#other-field").fill("Other form");
+  await page.locator("#other-field").press("Enter");
+  await expect(page.locator("#astral-input")).toHaveValue("Still composing");
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )).length)).toBe(0);
+});
+
+
+test("textarea slash discovery selection and Escape remain usable", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("/help");
+  await expect(page.locator("#astral-slash-menu")).not.toHaveClass(/hidden/);
+  await page.locator("#astral-slash-menu button").first().dispatchEvent("mousedown");
+  await expect(page.locator("#astral-input")).toHaveValue("/help ");
+  await page.locator("#astral-input").fill("/help");
+  await page.locator("#astral-input").press("Escape");
+  await expect(page.locator("#astral-slash-menu")).toHaveClass(/hidden/);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+function welcomeHtml({ wrapped = true, permission = true, title = "How can I help?" } = {}) {
+  const content = [
+    ["intro", `<h2 data-welcome="intro">${title}</h2>`],
+    ...(permission ? [["permission", '<section data-welcome="permission"><button>Enable recommended agents</button></section>']] : []),
+    ["examples", '<div data-welcome="examples"><button id="welcome-example" class="astral-action" data-action="chat_message" data-payload=\'{"message":"A welcome example"}\'>Research brief</button></div>'],
+    ["more", '<details data-welcome="more"><summary>More examples</summary><button>Another example</button></details>'],
+  ];
+  return wrapped
+    ? '<div class="dynamic-renderer">' + content.map(([role, html]) => (
+      `<section class="astral-component" data-component-id="wel_${role}">${html}</section>`
+    )).join("") + "</div>"
+    : content.map(([, html]) => html).join("");
+}
+
+
+test("welcome slots adopt exact server nodes and preserve the mounted composer and voice controls", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("Unsent draft");
+  await page.evaluate((html) => {
+    window.__composerNode = document.getElementById("astral-form");
+    window.__inputNode = document.getElementById("astral-input");
+    window.__voiceNode = document.getElementById("astral-voice-controls");
+    window.__voiceControlNode = window.__voiceNode.firstElementChild;
+    window.__sockets.at(-1).receive({ type: "ui_render", target: "canvas", html });
+    window.__welcomeIntroNode = document.querySelector('#astral-canvas [data-component-id="wel_intro"]');
+  }, welcomeHtml());
+  await expect(page.locator("#astral-start-intro")).toContainText("How can I help?");
+  expect(await page.evaluate(() => (
+    document.getElementById("astral-start-intro").firstElementChild === window.__welcomeIntroNode
+    && document.getElementById("astral-form") === window.__composerNode
+    && document.getElementById("astral-input") === window.__inputNode
+    && document.getElementById("astral-voice-controls") === window.__voiceNode
+    && window.__voiceNode.firstElementChild === window.__voiceControlNode
+  ))).toBe(true);
+  await expect(page.locator("#astral-input")).toHaveValue("Unsent draft");
+  await expect(page.locator("#astral-canvas [data-welcome]")).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await page.locator("#astral-input").focus();
+  await page.keyboard.press("Tab");
+  await expect(page.locator('#astral-form button[type="submit"]')).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#welcome-example")).toBeFocused();
+});
+
+
+test("a repeated legacy welcome replaces each slot and removes obsolete permission content", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+  await expect(page.locator("#astral-start-permission")).toContainText("Enable recommended agents");
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml({ wrapped: false, permission: false, title: "Welcome again" }) });
+  await expect(page.locator("#astral-start-intro")).toHaveText("Welcome again");
+  await expect(page.locator("#astral-start-permission")).toBeEmpty();
+  await expect(page.locator('[data-welcome="examples"]')).toHaveCount(1);
+  await expect(page.locator('[data-welcome="more"]')).toHaveCount(1);
+  await page.locator("#welcome-example").click();
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )).map((event) => event.frame.payload.message))).toEqual(["A welcome example"]);
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+});
+
+
+test("new chat receives a fresh welcome in the same slots and account change clears them", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+  await page.locator("#welcome-example").click();
+  await page.locator("#astral-newchat-btn").click();
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml({ title: "A new start" }) });
+  // Deep sends the fresh welcome before assigning the empty chat's identity.
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await expect(page.locator("#astral-start-intro")).toHaveText("A new start");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2);
+  await expect(page.locator('[id^="astral-start-"]')).toHaveCount(4);
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+});
+
+
+test("late welcome cannot replace work content or repopulate the start slots", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: "<p>Current work result</p>" });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+  await expect(page.locator("#astral-canvas")).toHaveText("Current work result");
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+});
+
+
+test("unknown or nested welcome-like markers remain ordinary canvas content", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html:
+    '<div class="dynamic-renderer"><section class="astral-component" data-component-id="saved-widget">'
+    + '<div data-welcome="intro">Saved component content</div></section>'
+    + '<p data-welcome="unrecognized">Ordinary output</p></div>' });
+  await expect(page.locator("#astral-canvas")).toContainText("Saved component content");
+  await expect(page.locator("#astral-canvas")).toContainText("Ordinary output");
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+});
+
+
+for (const update of ["append", "upsert"]) {
+  test(`a partial welcome ${update} preserves the other slots and identity removal works`, async ({ page }) => {
+    await installHarness(page, { locator: false });
+    await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+    const html = '<section class="astral-component" data-component-id="wel_intro"><h2 data-welcome="intro">Updated heading</h2></section>';
+    await receive(page, update === "append"
+      ? { type: "ui_append", html }
+      : { type: "ui_upsert", ops: [{ op: "replace", component_id: "wel_intro", html }] });
+    await expect(page.locator("#astral-start-intro")).toHaveText("Updated heading");
+    await expect(page.locator("#astral-start-permission")).toContainText("Enable recommended agents");
+    await expect(page.locator("#astral-start-examples")).toContainText("Research brief");
+    await expect(page.locator("#astral-start-more")).toContainText("More examples");
+    await receive(page, { type: "ui_upsert", ops: [{ op: "remove", component_id: "wel_permission" }] });
+    await expect(page.locator("#astral-start-permission")).toBeEmpty();
+    await expect(page.locator("#astral-start-intro")).toHaveText("Updated heading");
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  });
+}
