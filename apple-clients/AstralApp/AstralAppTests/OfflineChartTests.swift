@@ -69,12 +69,37 @@ final class OfflineChartTests: XCTestCase {
         defer { coordinator.dismantle(view) }
         coordinator.update(view, component: chart, viewportWidth: 400)
         let state = try await waitForState(view)
-        XCTAssertTrue(["ready", "error"].contains(state))
+        XCTAssertEqual(state, "error")
         let inert = try await view.evaluateJavaScript("window.compromised === undefined")
         XCTAssertEqual(inert as? Bool, true)
         coordinator.update(view, component: try component(#"{"type":"bar_chart","datasets":[]}"#), viewportWidth: 400)
         let empty = try await waitForState(view, expected: "empty")
         XCTAssertEqual(empty, "empty")
+    }
+
+    func testNestedMarkerOptionsRetainOrdinaryObjectsAndInertPrototypeKeys() async throws {
+        let chart = try component(
+            ##"{"type":"plotly_chart","title":"Alpha vs Beta","data":[{"marker":{"color":"#6366F1","__proto__":{"chartPrototypeAttack":true},"constructor":{"prototype":{"chartPrototypeAttack":true}}},"type":"bar","x":["Alpha","Beta"],"y":[2.0,5.0]}],"layout":{"xaxis":{"categoryorder":"category ascending","tickangle":-45,"type":"category","automargin":true},"autosize":true,"height":260,"margin":{"l":44,"r":12,"t":32,"b":60},"yaxis":{"automargin":true}},"config":{}}"##
+        )
+        let coordinator = OfflineChartCoordinator()
+        let view = OfflineChartCoordinator.webView()
+        view.frame = CGRect(x: 0, y: 0, width: 393, height: 260)
+        defer { coordinator.dismantle(view) }
+        coordinator.update(view, component: chart, viewportWidth: 393)
+        let state = try await waitForState(view)
+        XCTAssertEqual(state, "ready")
+        let values = try await view.evaluateJavaScript("document.getElementById('chart').data[0].y.join(',')")
+        XCTAssertEqual(values as? String, "2,5")
+        let safe = try await view.evaluateJavaScript(
+            """
+            (function () {
+                const marker = document.getElementById('chart').data[0].marker;
+                return Object.getPrototypeOf(marker) === Object.prototype &&
+                    Object.prototype.hasOwnProperty.call(marker, '__proto__') &&
+                    ({}).chartPrototypeAttack === undefined;
+            })()
+            """)
+        XCTAssertEqual(safe as? Bool, true)
     }
 
     private func waitForState(_ view: WKWebView, expected: String? = nil) async throws -> String {

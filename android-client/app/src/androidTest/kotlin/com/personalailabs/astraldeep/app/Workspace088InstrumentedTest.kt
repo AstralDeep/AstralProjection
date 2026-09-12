@@ -3,12 +3,17 @@ package com.personalailabs.astraldeep.app
 import android.graphics.Bitmap
 import android.view.View
 import android.webkit.WebView
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
@@ -18,7 +23,11 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
 import com.personalailabs.astraldeep.app.render.CanvasHost
@@ -72,7 +81,10 @@ class Workspace088InstrumentedTest {
         File(context.filesDir, name).outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
-    private fun inspectChart(script: String): String? {
+    private fun inspectChart(
+        script: String,
+        waitForPaint: Boolean = true,
+    ): String? {
         var result: String? = null
         val completion = java.util.concurrent.CountDownLatch(1)
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -92,9 +104,13 @@ class Workspace088InstrumentedTest {
                 assertFalse(chart.settings.allowFileAccess)
                 assertFalse(chart.settings.allowContentAccess)
                 assertFalse(chart.settings.domStorageEnabled)
-                assertTrue(chart.width > 0 && chart.height > 0)
+                if (waitForPaint) assertTrue(chart.width > 0 && chart.height > 0)
                 chart.evaluateJavascript(script) {
                     result = it
+                    if (!waitForPaint) {
+                        completion.countDown()
+                        return@evaluateJavascript
+                    }
                     chart.postVisualStateCallback(
                         0,
                         object : WebView.VisualStateCallback() {
@@ -110,6 +126,93 @@ class Workspace088InstrumentedTest {
         }
         completion.await(5, java.util.concurrent.TimeUnit.SECONDS)
         return result
+    }
+
+    @Test
+    fun nested_bar_chart_survives_below_fold_creation_then_scroll_and_resize() {
+        val lines = (1..35).joinToString("\\n") { "Existing result line $it" }
+        val card =
+            Component.fromJson(
+                Json.parseToJsonElement(
+                    """{"type":"card","component_id":"card_below_fold","title":"Alpha vs Beta",
+                "content":[{"type":"text","content":"$lines"},
+                {"type":"bar_chart","component_id":"nested_bar","labels":["Alpha","Beta"],
+                "datasets":[{"data":[2,5]}]}]}""",
+                ).jsonObject,
+            )
+        val current = mutableStateOf(card)
+        rule.setContent { FixtureTheme { CanvasHost(listOf(current.value), Renderer(Emit { _, _ -> }).registerAllRenderers()) } }
+        var state: String? = null
+        rule.waitUntil(15000) {
+            state = inspectChart("document.documentElement.dataset.chartState", waitForPaint = false)
+            state in setOf("\"ready\"", "\"error\"")
+        }
+        assertEquals("\"ready\"", state)
+        rule.onNodeWithTag("offline-chart").performScrollTo().assertIsDisplayed()
+        assertEquals("\"2,5\"", inspectChart("document.getElementById('chart').data[0].y.join(',')"))
+        rule.runOnIdle { current.value = card.copy(children = card.children.drop(1)) }
+        rule.onNodeWithTag("offline-chart").assertIsDisplayed()
+        rule.waitUntil(15000) { inspectChart("document.documentElement.dataset.chartState") == "\"ready\"" }
+        capture("088-android-nested-bar.png")
+    }
+
+    @Test
+    fun prefetched_second_card_chart_remains_available_after_offscreen_wait() {
+        val lines = (1..30).joinToString("\\n") { "Existing result line $it" }
+        val first =
+            Component.fromJson(
+                Json.parseToJsonElement(
+                    """{"type":"card","component_id":"first","content":[{"type":"text","content":"$lines"}]}""",
+                ).jsonObject,
+            )
+        val chart =
+            Component.fromJson(
+                Json.parseToJsonElement(
+                    """{"type":"card","component_id":"second","title":"Alpha vs Beta","content":[
+            {"type":"bar_chart","id":"dynamic-chart","title":"Alpha vs Beta","labels":["Alpha","Beta"],"datasets":[{"data":[2.0,5.0]}]}]}""",
+                ).jsonObject,
+            )
+        rule.setContent {
+            FixtureTheme {
+                Box(Modifier.height(350.dp)) {
+                    CanvasHost(listOf(first, chart), Renderer(Emit { _, _ -> }).registerAllRenderers(), Modifier.testTag("fixture-canvas"))
+                }
+            }
+        }
+        rule.onNodeWithTag("fixture-canvas").performTouchInput {
+            swipe(Offset(center.x, center.y + 30), Offset(center.x, center.y), durationMillis = 400)
+        }
+        // A prefetched AndroidView can remain outside the viewport longer than
+        // the host's chart initialization deadline before the user scrolls.
+        Thread.sleep(12000)
+        rule.onNodeWithTag("fixture-canvas").performScrollToIndex(1)
+        rule.waitUntil(15000) { inspectChart("document.documentElement.dataset.chartState") == "\"ready\"" }
+        rule.onNodeWithTag("offline-chart").assertIsDisplayed()
+        assertEquals("\"2,5\"", inspectChart("document.getElementById('chart').data[0].y.join(',')"))
+        capture("088-android-prefetched-bar.png")
+    }
+
+    @Test
+    fun live_plotly_bar_shape_preserves_marker_and_category_axis() {
+        val chart =
+            Component.fromJson(
+                Json.parseToJsonElement(
+                    """{"type":"card","id":"chart-card","title":"Alpha vs Beta","content":[
+            {"type":"plotly_chart","id":"dynamic-chart","title":"Alpha vs Beta",
+            "data":[{"marker":{"color":"#6366F1"},"type":"bar","x":["Alpha","Beta"],"y":[2.0,5.0]}],
+            "layout":{"xaxis":{"categoryorder":"category ascending","tickangle":-45,"type":"category","automargin":true},
+            "autosize":true,"height":260,"margin":{"l":44,"r":12,"t":32,"b":60},"yaxis":{"automargin":true}},"config":{}}]}""",
+                ).jsonObject,
+            )
+        rule.setContent { FixtureTheme { CanvasHost(listOf(chart), Renderer(Emit { _, _ -> }).registerAllRenderers()) } }
+        var state: String? = null
+        rule.waitUntil(15000) {
+            state = inspectChart("document.documentElement.dataset.chartState", waitForPaint = false)
+            state in setOf("\"ready\"", "\"error\"")
+        }
+        assertEquals("\"ready\"", state)
+        assertEquals("\"2,5\"", inspectChart("document.getElementById('chart').data[0].y.join(',')"))
+        capture("088-android-live-plotly-shape.png")
     }
 
     @Test

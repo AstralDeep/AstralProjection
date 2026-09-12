@@ -57,8 +57,18 @@ def build() -> str:
   function scrub(value) {
     if (Array.isArray(value)) return value.map(scrub);
     if (value && typeof value === "object") {
-      var out = Object.create(null);
-      Object.keys(value).forEach(function (key) { out[key] = scrub(value[key]); });
+      // Plotly requires ordinary JSON objects for nested marker/layout options.
+      // Define own data properties so an authored __proto__ key stays inert.
+      var out = {};
+      Object.keys(value).forEach(function (key) {
+        // Image/tile sources must be self-contained in this offline document.
+        // Array-valued sources (for example Sankey indices) remain ordinary data.
+        if (key === "source" && typeof value[key] === "string" &&
+            !/^(data:image\/|blob:)/i.test(value[key])) throw new Error("External chart source");
+        Object.defineProperty(out, key, {
+          value: scrub(value[key]), enumerable: true, writable: true, configurable: true
+        });
+      });
       return out;
     }
     if (typeof value !== "string") return value;
