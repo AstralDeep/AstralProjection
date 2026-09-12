@@ -246,7 +246,7 @@ jobs:
           rm -rf "$result"
           rm -f "$report"
           derived="$PWD/build/060/app-${{ matrix.slug }}-unit-dd"
-          test_action=test
+          test_action='test'
           if [[ '${{ matrix.slug }}' == ios ]]; then
             xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
               -destination '${{ matrix.destination }}' -configuration Debug \
@@ -397,7 +397,7 @@ jobs:
             workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)
           fi
           derived="$PWD/build/060/app-${{ matrix.slug }}-ui-dd"
-          test_action=test
+          test_action='test'
           if [[ '${{ matrix.slug }}' == ios ]]; then
             xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
               -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \

@@ -1619,11 +1619,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "8d259beb74e0e2b7f04f9461a7835ffd00490efedcd8fa33e5376d1fd630af02"
+          "sha256": "01bda74d996a6a73410c35795975d1f4967fcf79ce888c5857009d289c26313d"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Build fixed iOS build-for-testing Products and retain separate raw test lanes, compiler-domain witnesses and selected binary archives for CI coverage qualification; complete Products retention belongs to the protected producer."
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Build fixed iOS build-for-testing Products and retain separate raw test lanes, compiler-domain witnesses and selected binary archives for CI coverage qualification; complete Products retention belongs to the protected producer. Quote the two literal test-action defaults so ShellCheck does not interpret them as command-output assignments; CI behavior and compiled client inputs are unchanged."
     },
     {
       "path": "workflows-disabled/apple-release.yml",
