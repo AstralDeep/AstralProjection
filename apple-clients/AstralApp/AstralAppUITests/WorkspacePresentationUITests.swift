@@ -181,8 +181,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             }
             app.buttons["Measurements"].tap()
             XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
-            app.buttons["Result details"].press(forDuration: 1)
-            let menuRefine = app.buttons["Refine…"]
+            let menuRefine = app.buttons["component-action-review-details-refine"]
             XCTAssertTrue(menuRefine.waitForExistence(timeout: 3))
             menuRefine.tap()
             XCTAssertTrue(app.staticTexts["Refine Result details"].waitForExistence(timeout: 3))

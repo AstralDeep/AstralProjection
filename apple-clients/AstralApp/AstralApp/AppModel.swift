@@ -430,6 +430,177 @@ final class AppModel: NSObject {
         DownloadOwner(account: conversationAccount, generation: sessionGeneration, signedIn: signedIn)
     }
 
+    struct ComponentActionContext: Identifiable, Equatable {
+        let id = UUID()
+        let action: ComponentActionKind
+        let owner: DownloadOwner
+        let server: URL
+        let chatId: String
+        let componentId: String
+        let component: AstralComponent
+    }
+
+    private var componentActionsInFlight: [ComponentActionContext] = []
+    private var componentPendingOperations: [String: ComponentActionContext] = [:]
+
+    /// Server metadata decides presence, while the current owner and exact
+    /// visible component bind each action to the place where it was opened.
+    func componentActionContext(for action: ComponentActionKind, component: AstralComponent) -> ComponentActionContext?
+    {
+        guard signedIn, downloadOwner.account != nil, screen == .chat, !mandatorySurface, workspaceStarted,
+            let chatId = activeChatId, !chatId.isEmpty,
+            let componentId = ComponentChromeModel.canonicalIdentity(of: component),
+            ComponentChromeModel.actions(from: component.raw["component_chrome"]).contains(where: { $0.kind == action }
+            ),
+            !action.requiresLiveCanvas || (!isViewingHistory && !timelineReadOnly)
+        else { return nil }
+        let matches = workspaceCanvas.filter { $0.raw["component_id"]?.stringValue == componentId }
+        guard matches.count == 1, matches.first == component else { return nil }
+        return ComponentActionContext(
+            action: action, owner: downloadOwner, server: serverBase, chatId: chatId,
+            componentId: componentId, component: component)
+    }
+
+    func componentActionIsCurrent(_ context: ComponentActionContext) -> Bool {
+        guard let current = componentActionContext(for: context.action, component: context.component) else {
+            return false
+        }
+        return current.owner == context.owner && current.server == context.server
+            && current.chatId == context.chatId && current.componentId == context.componentId
+    }
+
+    func componentActionInFlight(_ context: ComponentActionContext) -> Bool {
+        let contexts =
+            componentActionsInFlight
+            + componentPendingOperations.compactMap { submission, context in
+                localOperationSubmissions[submission] == nil ? nil : context
+            }
+        return contexts.contains {
+            $0.action == context.action && $0.owner == context.owner && $0.server == context.server
+                && $0.chatId == context.chatId && $0.componentId == context.componentId
+                && $0.component == context.component
+        }
+    }
+
+    /// A late credential refresh cannot dispatch a stale component request.
+    func componentAccessToken(
+        _ context: ComponentActionContext, resolve: (() async -> String?)? = nil
+    ) async -> String? {
+        guard !Task.isCancelled, componentActionIsCurrent(context) else { return nil }
+        let token: String?
+        if let resolve { token = await resolve() } else { token = await freshAccessToken() }
+        guard !Task.isCancelled, componentActionIsCurrent(context) else { return nil }
+        return token
+    }
+
+    private func componentRest(_ context: ComponentActionContext) -> RestClient {
+        RestClient(serverBase: context.server) { [weak self] in await self?.componentAccessToken(context) }
+    }
+
+    func refineComponent(_ context: ComponentActionContext, instruction: String) {
+        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard context.action == .refine, componentActionIsCurrent(context), !trimmed.isEmpty else { return }
+        sendComponentEvent(
+            context, action: "component_refine",
+            payload: .object([
+                "component_id": .string(context.componentId), "chat_id": .string(context.chatId),
+                "instruction": .string(trimmed),
+            ]))
+    }
+
+    /// Restoring sends the ordinary server-authorized event; no optimistic
+    /// canvas replacement, archived body, or descriptor-provided event executes.
+    func restoreComponent(_ context: ComponentActionContext, version: UInt64) {
+        guard context.action == .history, componentActionIsCurrent(context),
+            ComponentChromeModel.versions(from: context.component.raw["versions"]).contains(where: {
+                $0.number == version
+            })
+        else { return }
+        sendComponentEvent(
+            context, action: "component_restore",
+            payload: .object([
+                "component_id": .string(context.componentId), "chat_id": .string(context.chatId),
+                "version_no": .number(Double(version)),
+            ]))
+    }
+
+    private func sendComponentEvent(_ context: ComponentActionContext, action: String, payload: JSONValue) {
+        guard componentActionIsCurrent(context), !componentActionInFlight(context) else { return }
+        guard connected, let socket = ws, let connection = continuity.connectionGeneration else {
+            bannerIsError = true
+            errorBanner = "Reconnect before changing this component."
+            return
+        }
+        let identity = ClientOperationIdentity.fresh()
+        let wire = Outbound.uiEvent(
+            action: action, sessionId: context.chatId, payload: payload,
+            submissionId: identity.submissionId, requestGeneration: identity.requestGeneration)
+        beginLocalOperationSubmission(identity: identity, action: action, surface: "chat", chatId: context.chatId)
+        componentPendingOperations[identity.submissionId] = context
+        componentActionsInFlight.append(context)
+        Task { @MainActor in
+            defer { componentActionsInFlight.removeAll { $0.id == context.id } }
+            let sent = await socket.sendCurrentComponentEvent(wire) { [weak self] in
+                await self?.componentSendIsCurrent(context, socket: socket, connection: connection) ?? false
+            }
+            if sent {
+                outboundTap?(wire)
+            } else {
+                localOperationSubmissions.removeValue(forKey: identity.submissionId)
+                componentPendingOperations.removeValue(forKey: identity.submissionId)
+                if componentActionIsCurrent(context) {
+                    statusText = latestActiveOperationStatusText()
+                    bannerIsError = true
+                    errorBanner = "Couldn't send this component change. Reopen the action after reconnecting."
+                }
+            }
+        }
+    }
+
+    private func componentSendIsCurrent(_ context: ComponentActionContext, socket: WSClient, connection: String) -> Bool
+    {
+        connected && ws === socket && continuity.connectionGeneration == connection && componentActionIsCurrent(context)
+    }
+
+    func downloadComponentCSV(
+        _ context: ComponentActionContext, operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .csv, componentActionIsCurrent(context) else { throw CancellationError() }
+        guard !componentActionInFlight(context) else { throw WorkspaceActionError.alreadyRunning }
+        componentActionsInFlight.append(context)
+        defer { componentActionsInFlight.removeAll { $0.id == context.id } }
+        let file: URL
+        if let operation {
+            file = try await operation()
+        } else {
+            file = try await componentRest(context).downloadComponentCSV(
+                chatId: context.chatId, componentId: context.componentId)
+        }
+        guard !Task.isCancelled, componentActionIsCurrent(context) else {
+            RestClient.removeTemporaryDownload(file)
+            throw CancellationError()
+        }
+        return file
+    }
+
+    func shareComponent(
+        _ context: ComponentActionContext, operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .share, componentActionIsCurrent(context) else { throw CancellationError() }
+        guard !componentActionInFlight(context) else { throw WorkspaceActionError.alreadyRunning }
+        componentActionsInFlight.append(context)
+        defer { componentActionsInFlight.removeAll { $0.id == context.id } }
+        let url: URL
+        if let operation {
+            url = try await operation()
+        } else {
+            url = try await componentRest(context).shareComponent(
+                chatId: context.chatId, componentId: context.componentId)
+        }
+        guard !Task.isCancelled, componentActionIsCurrent(context) else { throw CancellationError() }
+        return url
+    }
+
     struct WorkspaceActionContext: Identifiable, Equatable {
         let id = UUID()
         let action: WorkspaceAction
@@ -1395,6 +1566,7 @@ final class AppModel: NSObject {
         guard let refusal = AdmissionRefusal(frame: frame),
             let submission = localOperationSubmissions.removeValue(forKey: refusal.submissionId)
         else { return false }
+        componentPendingOperations.removeValue(forKey: refusal.submissionId)
         if operationOwnsActiveChatTurn(
             action: submission.action,
             requestGeneration: submission.requestGeneration)
@@ -2222,6 +2394,9 @@ final class AppModel: NSObject {
     }
 
     private func clearLocalOperationSubmission(requestGeneration: String) {
+        for (submission, local) in localOperationSubmissions where local.requestGeneration == requestGeneration {
+            componentPendingOperations.removeValue(forKey: submission)
+        }
         localOperationSubmissions = localOperationSubmissions.filter {
             $0.value.requestGeneration != requestGeneration
         }
@@ -2262,6 +2437,7 @@ final class AppModel: NSObject {
     private func clearPendingOperationSubmissions() {
         let wasSubmitting = statusText == "Submitting…"
         localOperationSubmissions.removeAll()
+        componentPendingOperations.removeAll()
         if wasSubmitting { statusText = nil }
     }
 

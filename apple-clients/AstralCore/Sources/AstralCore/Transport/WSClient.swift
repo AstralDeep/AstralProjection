@@ -143,6 +143,28 @@ public actor WSClient {
         }
     }
 
+    /// Component edits target the exact view where they were invoked. They
+    /// cannot enter the reconnect queue, including after a failed send. The
+    /// callback runs after crossing actor isolation; recheck the same established
+    /// socket afterwards so validation cannot migrate an edit to another socket.
+    @discardableResult
+    public func sendCurrentComponentEvent(
+        _ text: String, isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard let replay = QueuedOperationReplay(frameText: text),
+            ["component_refine", "component_restore"].contains(replay.action),
+            established, let current = task, current.state == .running,
+            await isCurrent(), !Task.isCancelled,
+            established, task === current, current.state == .running
+        else { return false }
+        do {
+            try await current.send(.string(text))
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Send a proof-bound voice frame only on the socket that established its
     /// connection fence. A valid frame is intentionally dropped while
     /// disconnected; the voice controller owns bounded transcript retry, and

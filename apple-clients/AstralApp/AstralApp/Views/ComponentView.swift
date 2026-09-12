@@ -695,6 +695,7 @@ struct DownloadComponent: View {
     let component: AstralComponent
     var automaticallyStart = false
     var workspaceExport: AppModel.WorkspaceActionContext? = nil
+    var componentExport: AppModel.ComponentActionContext? = nil
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @State private var phase = Phase.idle
@@ -749,7 +750,7 @@ struct DownloadComponent: View {
                     Label(label, systemImage: "arrow.down.circle")
                 }
                 .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
-                .disabled(urlString == nil)
+                .disabled(urlString == nil && componentExport == nil)
                 .accessibilityLabel("Download \(filename ?? label)")
             case .fetching:
                 HStack(spacing: 8) {
@@ -804,6 +805,9 @@ struct DownloadComponent: View {
         .onChange(of: model.lastCommittedRenderRevision) { _, _ in
             if workspaceExport != nil { cancelDownload() }
         }
+        .onChange(of: componentExport.map(model.componentActionIsCurrent) ?? true) { _, current in
+            if !current { cancelDownload() }
+        }
 
     }
 
@@ -819,26 +823,33 @@ struct DownloadComponent: View {
     }
 
     private func download() {
-        guard let urlString else { return }
+        guard componentExport != nil || urlString != nil else { return }
+        if let componentExport, !model.componentActionIsCurrent(componentExport) { return }
         cancelDownload()
         phase = .fetching
         let owner = model.downloadOwner
         downloadTask = Task { @MainActor in
             do {
                 let file: URL
-                if let workspaceExport {
+                if let componentExport {
+                    file = try await model.downloadComponentCSV(componentExport)
+                } else if let workspaceExport {
                     file = try await model.downloadWorkspaceCanvas(workspaceExport)
                 } else {
-                    file = try await model.downloadArtifact(from: urlString, suggestedFilename: filename)
+                    file = try await model.downloadArtifact(from: urlString!, suggestedFilename: filename)
                 }
-                guard !Task.isCancelled, model.downloadOwner == owner else {
+                guard !Task.isCancelled, model.downloadOwner == owner,
+                    componentExport.map(model.componentActionIsCurrent) ?? true
+                else {
                     RestClient.removeTemporaryDownload(file)
                     return
                 }
                 temporaryFile = file
                 finish(with: file, owner: owner)
             } catch is CancellationError {} catch {
-                if !Task.isCancelled, model.downloadOwner == owner {
+                if !Task.isCancelled, model.downloadOwner == owner,
+                    componentExport.map(model.componentActionIsCurrent) ?? true
+                {
                     phase = .failed("Download failed — check your connection and try again.")
                 }
             }
@@ -863,7 +874,8 @@ struct DownloadComponent: View {
                 }
                 guard savePanel === holder, temporaryFile == file, !holder.cancelled,
                     model.downloadOwner == owner,
-                    workspaceExport.map(model.workspaceActionIsCurrent) ?? true
+                    workspaceExport.map(model.workspaceActionIsCurrent) ?? true,
+                    componentExport.map(model.componentActionIsCurrent) ?? true
                 else { return }
                 if response == .OK, let destination = panel.url {
                     do {
