@@ -35,7 +35,7 @@ struct ChatShell: View {
         Binding(get: { model.composerDraft }, set: { model.composerDraft = $0 })
     }
     @State private var showTimeline = false
-    @State private var refineTarget: RefineTarget?
+    @State private var componentActionTarget: ComponentActionTarget?
     var body: some View {
         // The outer GeometryReader is itself a layout firewall (063 class): it
         // answers the parent's proposal in O(1) and hands every shell a
@@ -51,9 +51,13 @@ struct ChatShell: View {
                 showTimeline = false
             }
         }
-        .sheet(item: $refineTarget) { target in
-            RefineSheet(target: target)
+        .sheet(item: $componentActionTarget) { target in
+            ComponentActionSheet(target: target)
         }
+        .onChange(of: componentActionTarget.map { model.componentActionIsCurrent($0.context) } ?? false) { _, current in
+            if !current { componentActionTarget = nil }
+        }
+        .onDisappear { componentActionTarget = nil }
         #if os(macOS)
             // T033/FR-017: Finder drag-and-drop stages chips exactly like the
             // file dialog (Windows-client parity).
@@ -76,16 +80,16 @@ struct ChatShell: View {
             case .stacked:
                 StackedShell(
                     draft: draft, showTimeline: $showTimeline,
-                    refineTarget: $refineTarget)
+                    componentActionTarget: $componentActionTarget)
             case .collapsed:
                 CollapsedShell(
                     containerSize: size, draft: draft,
-                    showTimeline: $showTimeline, refineTarget: $refineTarget,
+                    showTimeline: $showTimeline, componentActionTarget: $componentActionTarget,
                     onPinRail: { chatPref = "open" })
             case .split:
                 SplitShell(
                     containerSize: size, draft: draft,
-                    showTimeline: $showTimeline, refineTarget: $refineTarget,
+                    showTimeline: $showTimeline, componentActionTarget: $componentActionTarget,
                     onCollapseRail: { chatPref = "closed" })
             }
         }
@@ -129,10 +133,10 @@ private struct StackedShell: View {
     @Environment(AppModel.self) var model
     @Binding var draft: String
     @Binding var showTimeline: Bool
-    @Binding var refineTarget: RefineTarget?
+    @Binding var componentActionTarget: ComponentActionTarget?
     var body: some View {
         VStack(spacing: 0) {
-            CanvasArea(showTimeline: $showTimeline, refineTarget: $refineTarget)
+            CanvasArea(showTimeline: $showTimeline, componentActionTarget: $componentActionTarget)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             if model.turnActive { StepTrailView(lines: model.stepTrail) }
             MessagesPanel()
@@ -154,7 +158,7 @@ private struct CollapsedShell: View {
     let containerSize: CGSize
     @Binding var draft: String
     @Binding var showTimeline: Bool
-    @Binding var refineTarget: RefineTarget?
+    @Binding var componentActionTarget: ComponentActionTarget?
     let onPinRail: () -> Void
     @State private var drawerOpen = false
     @State private var unread = 0
@@ -170,7 +174,7 @@ private struct CollapsedShell: View {
     }
 
     var body: some View {
-        CanvasArea(showTimeline: $showTimeline, refineTarget: $refineTarget)
+        CanvasArea(showTimeline: $showTimeline, componentActionTarget: $componentActionTarget)
             .safeAreaInset(edge: .bottom) {
                 floatingBar
                     .frame(maxWidth: 760)
@@ -257,7 +261,7 @@ private struct SplitShell: View {
     let containerSize: CGSize
     @Binding var draft: String
     @Binding var showTimeline: Bool
-    @Binding var refineTarget: RefineTarget?
+    @Binding var componentActionTarget: ComponentActionTarget?
     let onCollapseRail: () -> Void
 
     // Web reference: clamp(320px, 28vw, 420px).
@@ -267,7 +271,7 @@ private struct SplitShell: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            CanvasArea(showTimeline: $showTimeline, refineTarget: $refineTarget)
+            CanvasArea(showTimeline: $showTimeline, componentActionTarget: $componentActionTarget)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             Divider().overlay(theme.palette.border)
             VStack(spacing: 0) {
@@ -351,7 +355,7 @@ private struct CanvasArea: View {
     // Owned by ChatShell (the sheets are attached there too) so a layout-mode
     // switch cannot dismiss an open timeline or refine sheet mid-edit.
     @Binding var showTimeline: Bool
-    @Binding var refineTarget: RefineTarget?
+    @Binding var componentActionTarget: ComponentActionTarget?
     private var p: AstralPalette { theme.palette }
 
     private func retainCanvasGeometry(_ size: CGSize, palette: AstralPalette) {
@@ -409,8 +413,7 @@ private struct CanvasArea: View {
                                         // refine/export context menu (top-level only).
                                         ComponentChrome(
                                             component: item.comp,
-                                            interactive: !model.isViewingHistory,
-                                            onRefine: { refineTarget = $0 }
+                                            onAction: { componentActionTarget = $0 }
                                         )
                                         .environment(\.canvasCapturePath, "/components/\(item.index)")
                                     }

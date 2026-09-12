@@ -264,15 +264,29 @@ public struct RestClient: Sendable {
     /// The result stays ephemeral; callers must recheck their initiating owner
     /// before displaying it. An uncertain POST is never retried here.
     public func shareCanvas(chatId: String) async throws -> URL {
+        try await share(chatId: chatId, componentId: nil)
+    }
+
+    /// Mint only the specified owned component through the same PHI-gated route.
+    public func shareComponent(chatId: String, componentId: String) async throws -> URL {
+        guard !componentId.isEmpty, componentId.utf8.count <= 256 else { throw URLError(.badURL) }
+        return try await share(chatId: chatId, componentId: componentId)
+    }
+
+    private func share(chatId: String, componentId: String?) async throws -> URL {
         guard !chatId.isEmpty, chatId.utf8.count <= 256,
             let token = await tokenProvider(), !token.isEmpty
         else { throw URLError(.userAuthenticationRequired) }
         try Task.checkCancellation()
         let endpoint = try DownloadPolicy.resolve("/api/share", relativeTo: serverBase)
         guard DownloadPolicy.sameOrigin(endpoint, serverBase) else { throw URLError(.badURL) }
+        var body: [String: JSONValue] = [
+            "chat_id": .string(chatId), "scope": .string(componentId == nil ? "canvas" : "component"),
+        ]
+        if let componentId { body["component_id"] = .string(componentId) }
         var request = NoStoreHTTP.request(
             url: endpoint, method: "POST",
-            body: try JSONValue.object(["chat_id": .string(chatId), "scope": .string("canvas")]).encoded(),
+            body: try JSONValue.object(body).encoded(),
             contentType: "application/json")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (status, data) = try await workspaceTransport(request)
@@ -286,9 +300,38 @@ public struct RestClient: Sendable {
             }
             throw WorkspaceShareError.refused(status: status)
         }
-        let body = try JSONValue.parse(data)
-        guard let raw = body["share_url"]?.stringValue else { throw URLError(.cannotParseResponse) }
+        let response = try JSONValue.parse(data)
+        guard let raw = response["share_url"]?.stringValue else { throw URLError(.cannotParseResponse) }
         return try WorkspaceRequestPolicy.shareURL(raw, relativeTo: serverBase)
+    }
+
+    /// CSV is an authenticated owned-component operation, not a public artifact
+    /// URL. A missing/stale credential must prevent dispatch altogether.
+    public func downloadComponentCSV(chatId: String, componentId: String) async throws -> URL {
+        let request = try await componentCSVRequest(chatId: chatId, componentId: componentId)
+        return try await streamDownload(
+            request, suggestedFilename: "astraldeep-table.csv", expectedRenderRevision: nil, refusesRedirects: true)
+    }
+
+    func componentCSVRequest(chatId: String, componentId: String) async throws -> URLRequest {
+        guard !chatId.isEmpty, chatId.utf8.count <= 256,
+            !componentId.isEmpty, componentId.utf8.count <= 256,
+            let segment = componentId.addingPercentEncoding(
+                withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))),
+            var parts = URLComponents(url: serverBase, resolvingAgainstBaseURL: false)
+        else { throw URLError(.badURL) }
+        parts.percentEncodedPath = "/api/export/component/\(segment).csv"
+        parts.queryItems = [URLQueryItem(name: "chat_id", value: chatId)]
+        parts.fragment = nil
+        guard let url = parts.url, DownloadPolicy.sameOrigin(url, serverBase),
+            (try? DownloadPolicy.resolve(url.absoluteString, relativeTo: serverBase)) == url
+        else { throw URLError(.badURL) }
+        try Task.checkCancellation()
+        guard let token = await tokenProvider(), !token.isEmpty else { throw URLError(.userAuthenticationRequired) }
+        try Task.checkCancellation()
+        var request = NoStoreHTTP.request(url: url)
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        return request
     }
 
     public func deleteChat(id: String) async throws -> Bool {
@@ -389,6 +432,16 @@ public struct RestClient: Sendable {
         expectedRenderRevision: UInt64? = nil
     ) async throws -> URL {
         let req = try await downloadRequest(from: urlString)
+        return try await streamDownload(
+            req, suggestedFilename: suggestedFilename, expectedRenderRevision: expectedRenderRevision)
+    }
+
+    /// Shared bounded private writer. Component CSV and revision-bound canvas
+    /// exports add stricter request policy without changing public downloads.
+    private func streamDownload(
+        _ req: URLRequest, suggestedFilename: String?, expectedRenderRevision: UInt64?,
+        refusesRedirects: Bool = false
+    ) async throws -> URL {
         if expectedRenderRevision != nil {
             guard let url = req.url, DownloadPolicy.sameOrigin(url, serverBase) else {
                 throw URLError(.badURL)
@@ -398,10 +451,15 @@ public struct RestClient: Sendable {
             }
         }
         try Task.checkCancellation()
-        let bounded = expectedRenderRevision == nil ? nil : CanvasExportPolicy.boundedSession(like: downloadSession)
+        let bounded =
+            expectedRenderRevision != nil || refusesRedirects
+            ? CanvasExportPolicy.boundedSession(like: downloadSession) : nil
         defer { bounded?.invalidateAndCancel() }
+        let delegate: URLSessionTaskDelegate =
+            refusesRedirects
+            ? WorkspaceRedirectRefusal() : DownloadRedirectDelegate(original: req)
         let (bytes, response) = try await (bounded ?? downloadSession ?? NoStoreHTTP.session).bytes(
-            for: req, delegate: DownloadRedirectDelegate(original: req))
+            for: req, delegate: delegate)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }

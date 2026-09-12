@@ -22,6 +22,8 @@
             case workspaceHistory = "workspace-history"
             case workspaceActions = "workspace-actions"
             case workspaceActionsHTTP = "workspace-actions-http"
+            case componentActionsHTTP = "component-actions-http"
+            case componentTimelineHTTP = "component-timeline-http"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -46,7 +48,17 @@
         /// session. No URL or token is accepted from launch configuration.
         @MainActor
         static func workspaceActionsModel() -> AppModel? {
-            guard requestedScenario() == .workspaceActionsHTTP else { return nil }
+            if requestedScenario() == .workspaceRichResult {
+                guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
+                    let defaults = UserDefaults(suiteName: "WorkspaceComponentUITest.\(UUID().uuidString)")
+                else { preconditionFailure("Invalid component UI-test configuration.") }
+                return AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+            }
+            guard let scenario = requestedScenario(),
+                [.workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP].contains(scenario)
+            else { return nil }
             let environment = ProcessInfo.processInfo.environment
             guard environment["ASTRAL_UI_TESTING"] == "1",
                 let rawPort = environment["ASTRAL_UI_WORKSPACE_PORT"],
@@ -69,11 +81,17 @@
 
         @MainActor
         static func install(_ scenario: Scenario, on model: AppModel) {
-            if scenario == .workspaceActionsHTTP {
+            if [.workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP].contains(scenario) {
                 precondition(ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1")
                 Task { @MainActor in
                     await model.bootstrap()
                     installWorkspaceActionsHTTP(on: model)
+                    if scenario != .workspaceActionsHTTP {
+                        installComponentActions(on: model)
+                        if scenario == .componentTimelineHTTP {
+                            model.handleFrame(InboundFrame.parse(#"{"type":"workspace_timeline_mode","active":true}"#)!)
+                        }
+                    }
                 }
                 return
             }
@@ -259,7 +277,8 @@
                 break
             case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceChartScroll, .workspaceStyles,
                 .workspaceHistory,
-                .workspaceActions, .workspaceActionsHTTP, .workspaceRichResult:
+                .workspaceActions, .workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP,
+                .workspaceRichResult:
                 break
             case .voiceComposer:
                 break
@@ -284,6 +303,51 @@
                 InboundFrame.parse(
                     #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"},{"key":"share","kind":"workspace_action","label":"Share page","icon":"share","operation":"share_canvas","context":"live_canvas"}],"signout":{"label":"Sign out"}}}"#
                 )!)
+        }
+
+        private static func componentMetadata(kinds: [ComponentActionKind]) -> JSONValue {
+            let icons: [ComponentActionKind: String] = [.refine: "✎", .history: "⟲", .csv: "⬇", .share: "↗"]
+            return .object([
+                "version": .number(1),
+                "actions": .array(
+                    kinds.map { kind in
+                        .object([
+                            "kind": .string(kind.rawValue), "label": .string(kind.rawValue),
+                            "icon": .string(icons[kind]!),
+                            "title": .string(kind == .history ? "Version history" : "Component \(kind.rawValue)"),
+                            "context": .string(kind.requiresLiveCanvas ? "live_canvas" : "owned_chat"),
+                        ])
+                    }),
+            ])
+        }
+
+        @MainActor
+        private static func installComponentActions(on model: AppModel) {
+            model.canvas = [
+                AstralComponent(
+                    type: "table",
+                    raw: .object([
+                        "type": .string("table"), "component_id": .string("component-table"),
+                        "title": .string("Component action result"), "provenance": .string("estimated"),
+                        "headers": .array([.string("Label"), .string("Value")]),
+                        "rows": .array([.array([.string("Alpha"), .number(2)])]),
+                        "component_chrome": componentMetadata(kinds: ComponentActionKind.allCases),
+                        "versions": .array([
+                            .object([
+                                "version_no": .number(2), "reason": .string("refine"),
+                                "created_at": .string("2026-09-12T00:00:00Z"), "title": .string("Earlier result"),
+                            ])
+                        ]),
+                    ])),
+                AstralComponent(
+                    type: "text",
+                    raw: .object([
+                        "type": .string("text"), "component_id": .string("component-empty"),
+                        "content": .string("Unrefined result"), "provenance": .string("grounded"),
+                        "component_chrome": componentMetadata(kinds: [.history]),
+                    ])),
+            ]
+            model.composerDraft = "Draft survives component actions"
         }
 
         @MainActor
@@ -334,6 +398,8 @@
         @MainActor
         private static func installWorkspaceRichResult(on model: AppModel) {
             installWorkspace(on: model)
+            model.bindConversationAccount(
+                ConversationAccount(issuer: "https://issuer.invalid", subject: "component-ui-fixture")!)
             model.composerDraft = ""
             model.activeChatId = "11111111-1111-4111-8111-111111111111"
             model.turns = [AppModel.ChatTurn(id: "rich-result", role: "assistant", text: "Synthetic review result")]
@@ -361,6 +427,12 @@
                     ]}
                     """#
                 )!.renderComponents
+            model.canvas = model.canvas.map { component in
+                guard component.raw["component_id"]?.stringValue == "review-details" else { return component }
+                var raw = component.raw.objectValue!
+                raw["component_chrome"] = componentMetadata(kinds: [.refine, .history])
+                return AstralComponent(type: component.type, raw: .object(raw))
+            }
         }
 
         @MainActor
