@@ -75,7 +75,7 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
         "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov-branch "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert (
@@ -603,7 +603,7 @@ def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> No
     assert "arch: x86_64" in instrumented
     assert "working-directory: android-client" in instrumented
     assert (
-        "script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace"
+        "./gradlew -PastralCoverage=true :app:prepareCoverageInputs --no-daemon --stacktrace"
         in instrumented
     )
 

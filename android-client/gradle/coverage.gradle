@@ -1,0 +1,102 @@
+import groovy.json.JsonOutput
+import org.gradle.api.tasks.testing.Test
+
+// Opt-in tooling only. Normal debug/release and core coverage remain unchanged.
+def mode = providers.gradleProperty('astralCoverage').orNull
+if (mode != null && mode != 'true' && mode != 'false') {
+    throw new GradleException('astralCoverage must be true or false')
+}
+if (mode == 'true') {
+    def agpVersion = plugins.getPlugin('com.android.application').class.classLoader
+        .loadClass('com.android.builder.model.Version').getField('ANDROID_GRADLE_PLUGIN_VERSION').get(null)
+    if (agpVersion != '9.2.1') {
+        throw new GradleException('Coverage requires the qualified AGP 9.2.1 toolchain')
+    }
+    dependencyLocking.lockFile.set(layout.projectDirectory.file('coverage-gradle.lockfile'))
+    def android = extensions.getByName('android')
+    android.jacoco.version = '0.8.14'
+    android.buildTypes.create('coverage') {
+        initWith(android.buildTypes.getByName('debug'))
+        matchingFallbacks = ['debug']
+        enableAndroidTestCoverage = true
+        enableUnitTestCoverage = false
+    }
+    android.testBuildType = 'coverage'
+    ['Implementation', 'RuntimeOnly', 'CompileOnly'].each { suffix ->
+        configurations.named('coverage' + suffix) {
+            extendsFrom(configurations.getByName('debug' + suffix))
+        }
+    }
+    extensions.getByName('kover').useJacoco('0.8.14')
+    tasks.withType(Test).configureEach { task ->
+        doFirst {
+            if (task.name != 'testCoverageUnitTest') {
+                throw new GradleException('Coverage mode requires testCoverageUnitTest explicitly')
+            }
+            def agents = task.allJvmArgs.findAll { it.startsWith('-javaagent:') }
+            if (agents.size() != 1 || !agents[0].contains('jacoco-coverage-agent-0.8.14.jar=')) {
+                throw new GradleException('Coverage requires exactly one pinned JaCoCo unit agent')
+            }
+            def output = layout.buildDirectory.file('coverage/unit-agent.json').get().asFile
+            output.parentFile.mkdirs()
+            output.text = JsonOutput.toJson([count: agents.size(), engine: 'jacoco', version: '0.8.14', task: task.path, agp_unit_coverage: false])
+        }
+    }
+    tasks.register('resolveCoverageTools') {
+        doLast {
+            configurations.findAll { it.canBeResolved && (it.name.toLowerCase().contains('jacoco') || it.name.toLowerCase().contains('kover')) }.each { it.resolve() }
+        }
+    }
+}
+
+if (mode == 'true') {
+    tasks.register('prepareCoverageInputs') {
+        dependsOn('testCoverageUnitTest', 'assembleCoverage', 'assembleCoverageAndroidTest')
+        doLast {
+            def original = tasks.getByName('createCoverageAndroidTestCoverageReport')
+            def output = layout.buildDirectory.file('coverage/inputs.json').get().asFile
+            output.parentFile.mkdirs()
+            output.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+                version: 'astral.android-coverage-inputs/v1',
+                agp: '9.2.1', jacoco: '0.8.14', variant: 'coverage',
+                classes: original.classFileCollection.files.collect { it.absolutePath }.sort(),
+                sources: original.sources.get().collectMany { it.get().collect { tree -> tree.dir.absolutePath } }.unique().sort(),
+                tools: original.jacocoClasspath.files.collect { it.absolutePath }.sort()
+            ]))
+        }
+    }
+    gradle.projectsEvaluated {
+        def receipt = providers.gradleProperty('astralCoverageReceipt').orNull
+        if (receipt != null) {
+            def output = new File(receipt).canonicalFile
+            def repository = rootProject.projectDir.parentFile.canonicalFile
+            def input = new groovy.json.JsonSlurper().parse(new File(output, 'native-report-inputs.json'))
+            def original = tasks.getByName('createCoverageAndroidTestCoverageReport')
+            if (original.class.superclass.name != 'com.android.build.gradle.internal.coverage.JacocoReportTask') {
+                throw new GradleException('Unsupported pinned AGP coverage task')
+            }
+            // Detached files have no connected-test/build dependencies. Verification
+            // reconstructs this entire input document before the native task runs.
+            tasks.register('coverageReport', original.class.superclass) {
+                projectPath.set(project.path)
+                variantName = 'coverage'
+                analyticsService.set(original.analyticsService)
+                coverageFiles.from(input.execution.collect { new File(it) })
+                classFileCollection.from(input.classes.collect { new File(it) })
+                jacocoClasspath.from(input.tools.collect { new File(it) })
+                reportName.set('Astral Android app JVM and device coverage')
+                tabWidth.set(4)
+                sources.set([project.provider { input.sources.collect { project.fileTree(new File(it)) } }])
+                outputReportDir.set(new File(output, 'report'))
+                doFirst {
+                    def verification = providers.exec {
+                        commandLine('python3', new File(repository, 'scripts/android_coverage.py').absolutePath,
+                            'verify', '--root', repository.absolutePath, '--output', output.absolutePath,
+                            '--lanes', input.lanes.join(','))
+                    }
+                    verification.result.get().assertNormalExitValue()
+                }
+            }
+        }
+    }
+}

@@ -63,8 +63,10 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
         for (ceiling, unit, suffix) in [
             (3600.0, 60.0, "m"), (86400, 3600, "h"), (604800, 86400, "d"),
             (2_629_800, 604800, "w"), (31_557_600, 2_629_800, "mo"),
-        ] where age < ceiling {
-            return "\(Int(age / unit))\(suffix)"
+        ] {
+            if age < ceiling {
+                return "\(Int(age / unit))\(suffix)"
+            }
         }
         let years = age / 31_557_600
         guard years < Double(Int.max) else { return "" }

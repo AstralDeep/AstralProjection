@@ -16,9 +16,9 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "2195f768eb8e79783dc300efababab249f7af25bc71b6c67e0d8e6bfc9d1e7d8",
+      "resultSha256": "5a8c26303546e279b8bc7250fb9bd18c16555d42bbf9a340a84784af7fa0c680",
       "task": "T054/T057/T013/T014/T102/T056/T060",
-      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
+      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs."
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
@@ -35,8 +35,8 @@
       "sourceBlob": "cbe379b313c3e39dc281204f5192b6a96e70c992",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
-      "resultSha256": "db384bf4f21097b1dcf1229009bcc988c2f79f3d36f02f4c6f0206ff23f2373a"
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs.",
+      "resultSha256": "e156396bf974b1bbd2c8bf67a0f212eb26062a9f7924b4d7bd50a4b5797d1548"
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/SurfacesTest.kt",
@@ -399,6 +399,15 @@
       "reason": "Feature 078: raise targetSdk and compileSdk from 35 to 36 to satisfy the Google Play target API level requirement (Play refused the targetSdk-35 bundle on 2026-09-03). Dependency versions are unchanged."
     },
     {
+      "path": "android-client/gradle/verification-metadata.xml",
+      "sourcePath": "android-client/gradle/verification-metadata.xml",
+      "sourceBlob": "6a1f909477f345367fb05f240b58c915ed8aa560",
+      "sourceMode": "100644",
+      "task": "T056/T057/T062",
+      "reason": "Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs.",
+      "resultSha256": "137900c9039aab7c56f6ce34ecc3efa901b180449b18d994245e1d98572739e5"
+    },
+    {
       "path": "android-client/gradlew",
       "sourcePath": "android-client/gradlew",
       "sourceBlob": "adff685a0348c64b2b64f0b302f1f82b28eeaaea",
@@ -647,8 +656,8 @@
       "sourceBlob": "a5b686d4bc48f2484b93eefb20ce47cabd951ca1",
       "sourceMode": "100644",
       "task": "T057/T061/T060",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
-      "resultSha256": "3a4de0679e6b08b6c2722cc09c48787478bb9ae143a65ff7cc86362c659ed5d2"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 native coverage qualification: equivalent ordinary loop and inner condition preserve relative-time behavior while avoiding a reproduced Swift compiler coverage counter underflow; strict counter validation and original failure evidence are retained.",
+      "resultSha256": "d08ae6fc23543c8b95ca6f994a5aaae0854aa205e1eac41138cad5ca94d0b66d"
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Chrome/ChromeMenu.swift",
@@ -1559,11 +1568,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "5202d3778f17d47dafcf83528fbe1ff05a01aa5a429eed1f0aa603e33b0ae6ac"
+          "sha256": "9dbd381e712b866a77cdcfd7de7ae987174e8316ff3a30f257f8a18d3c6d0efa"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

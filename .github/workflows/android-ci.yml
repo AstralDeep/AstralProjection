@@ -10,6 +10,11 @@ on:
       - 'contracts/ui_protocol.json'
       - 'contracts/fixtures/voice_065/client_conformance.json'
       - 'contracts/fixtures/voice_075/client_local_conformance.json'
+      - 'scripts/android_coverage.py'
+      - 'tests/test_android_coverage.py'
+      - 'contracts/assets/**'
+      - 'contracts/fixtures/workspace_088/**'
+      - 'backend/webrender/static/vendor/plotly.min.js'
       - 'scripts/run_android_next_major_canary.py'
       - 'tests/test_android_next_major_canary.py'
       - '.github/workflows/android-ci.yml'
@@ -19,6 +24,11 @@ on:
       - 'contracts/ui_protocol.json'
       - 'contracts/fixtures/voice_065/client_conformance.json'
       - 'contracts/fixtures/voice_075/client_local_conformance.json'
+      - 'scripts/android_coverage.py'
+      - 'tests/test_android_coverage.py'
+      - 'contracts/assets/**'
+      - 'contracts/fixtures/workspace_088/**'
+      - 'backend/webrender/static/vendor/plotly.min.js'
       - 'scripts/run_android_next_major_canary.py'
       - 'tests/test_android_next_major_canary.py'
       - '.github/workflows/android-ci.yml'
@@ -161,13 +171,34 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Instrumented tests (:app:connectedDebugAndroidTest)
+      - name: Build and bind the isolated app coverage variant
+        run: |
+          ./gradlew -PastralCoverage=true :app:prepareCoverageInputs --no-daemon --stacktrace
+          python3 ../scripts/android_coverage.py prepare \
+            --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage"
+
+      - name: Run every synthetic device scenario on the exact coverage APK
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 34
           arch: x86_64
           working-directory: android-client
-          script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace
+          script: |
+            python3 ../scripts/android_coverage.py device \
+              --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" \
+              --serial emulator-5554 --lane fixtures
+            python3 ../scripts/android_coverage.py report \
+              --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" \
+              --lanes fixtures
+
+      - name: Retain raw probes, exact APKs and native combined coverage
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: android-app-device-and-unit-coverage
+          path: build/088/android-coverage/
+          if-no-files-found: error
+          retention-days: 14
 
   android-required:
     name: Required · Android aggregate
