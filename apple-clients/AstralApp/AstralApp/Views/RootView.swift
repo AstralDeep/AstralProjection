@@ -136,7 +136,7 @@ struct AstralTopBar: View {
                     newButton
 
                     Button {
-                        model.goTo(.history)
+                        model.toggleHistory()
                     } label: {
                         Image(systemName: "bubble.left.and.bubble.right")
                             .font(.system(size: 18)).foregroundStyle(p.text)

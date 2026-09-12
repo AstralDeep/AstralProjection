@@ -22,6 +22,8 @@
             case workspaceHistory = "workspace-history"
             case workspaceActions = "workspace-actions"
             case workspaceActionsHTTP = "workspace-actions-http"
+            case workspaceNavigation = "workspace-navigation"
+            case workspaceNavigationMandatory = "workspace-navigation-mandatory"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -46,6 +48,19 @@
         /// session. No URL or token is accepted from launch configuration.
         @MainActor
         static func workspaceActionsModel() -> AppModel? {
+            if let scenario = requestedScenario(),
+                [.workspaceNavigation, .workspaceNavigationMandatory].contains(scenario)
+            {
+                guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
+                    let defaults = UserDefaults(suiteName: "WorkspaceNavigationUITest.\(UUID().uuidString)")
+                else { preconditionFailure("Invalid workspace navigation UI-test configuration.") }
+                // This fixture never bootstraps, opens a socket, or loads a
+                // credential. Its model is selected before the default store.
+                defaults.set("http://127.0.0.1:1", forKey: "serverBase")
+                return AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+            }
             guard requestedScenario() == .workspaceActionsHTTP else { return nil }
             let environment = ProcessInfo.processInfo.environment
             guard environment["ASTRAL_UI_TESTING"] == "1",
@@ -81,6 +96,13 @@
             model.accountName = "Release Verification"
             model.connected = true
             model.everConnected = true
+
+            if [.workspaceNavigation, .workspaceNavigationMandatory].contains(scenario) {
+                precondition(ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1")
+                installWorkspaceNavigation(on: model)
+                if scenario == .workspaceNavigationMandatory { model.handleFrame(firstLoginSurface) }
+                return
+            }
 
             switch scenario {
             case .continuitySeed, .continuityResume:
@@ -259,7 +281,8 @@
                 break
             case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceChartScroll, .workspaceStyles,
                 .workspaceHistory,
-                .workspaceActions, .workspaceActionsHTTP, .workspaceRichResult:
+                .workspaceActions, .workspaceActionsHTTP, .workspaceRichResult,
+                .workspaceNavigation, .workspaceNavigationMandatory:
                 break
             case .voiceComposer:
                 break
@@ -308,6 +331,43 @@
                                 "content": .string("Workspace result"), "component_id": .string("result_088"),
                             ]))
                     ]
+                }
+            }
+        }
+
+        @MainActor
+        private static func installWorkspaceNavigation(on model: AppModel) {
+            installWorkspaceHistory(on: model)
+            model.screen = .chat
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
+            model.workspaceStarted = true
+            model.composerDraft = "Draft kept while navigating"
+            model.canvas = [
+                AstralComponent(
+                    type: "text",
+                    raw: .object([
+                        "type": .string("text"), "component_id": .string("navigation-result"),
+                        "content": .string("Existing navigation result"),
+                    ]))
+            ]
+            model.handleFrame(
+                InboundFrame.parse(
+                    #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"settings","kind":"menu"}],"menu":[{"key":"account","label":"Account","items":[{"key":"theme","label":"Appearance","surface":"theme"},{"key":"audit","label":"Activity log","surface":"audit"}]}],"signout":{"label":"Sign out"}}}"#
+                )!)
+            model.outboundTap = { [weak model] text in
+                guard let model, let event = try? JSONValue.parse(Data(text.utf8)),
+                    event["action"]?.stringValue == "chrome_open",
+                    event["payload"]?["surface"]?.stringValue == "audit"
+                else { return }
+                // Appearance deliberately never replies: each actual Retry
+                // must start its ordinary ten-second timer. Activity log
+                // supplies a canonical reply on the next turn of the run loop.
+                Task { @MainActor [weak model] in
+                    await Task.yield()
+                    model?.handleFrame(
+                        InboundFrame.parse(
+                            #"{"type":"chrome_surface","surface_key":"audit","title":"Activity log","components":[{"type":"text","content":"Synthetic activity details"}]}"#
+                        )!)
                 }
             }
         }

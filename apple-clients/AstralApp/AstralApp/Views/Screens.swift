@@ -182,6 +182,7 @@ struct SurfaceView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     @State private var timedOut = false
+    @State private var retryGeneration = UUID()
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -198,16 +199,7 @@ struct SurfaceView: View {
                             // the top bar. Hidden while the 054 pin is set —
                             // the same refusal web's `data-mandatory` card makes.
                             if !model.mandatorySurface {
-                                Button {
-                                    model.closeSurface()
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(p.muted)
-                                        .padding(6)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Close")
+                                closeButton
                             }
                         }
                         ForEach(Array(surface.components.enumerated()), id: \.offset) { _, comp in
@@ -224,6 +216,7 @@ struct SurfaceView: View {
                         .font(AstralTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
                     Button("Retry") {
                         timedOut = false
+                        retryGeneration = UUID()
                         model.retryPendingSurface()
                     }
                     .buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
@@ -236,18 +229,41 @@ struct SurfaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(p.bg)
+        .overlay(alignment: .topTrailing) {
+            if model.pendingSurface == nil && !model.mandatorySurface {
+                closeButton.padding(16)
+            }
+        }
         // Re-arm the 10 s load timer whenever the awaited surface key changes or
-        // a surface arrives (parity with Android's LaunchedEffect, T039).
+        // a surface arrives, and for every explicit Retry of the same request.
         .task(id: surfaceTaskKey) {
             timedOut = false
             if model.pendingSurface != nil { return }
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            if model.pendingSurface == nil { timedOut = true }
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, model.pendingSurface == nil else { return }
+            timedOut = true
         }
     }
 
+    private var closeButton: some View {
+        Button {
+            model.closeSurface()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(p.muted)
+                .padding(6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
+    }
+
     private var surfaceTaskKey: String {
-        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)"
+        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)"
     }
 }
 

@@ -81,6 +81,87 @@ final class WorkspacePresentationUITests: XCTestCase {
     }
 
     #if os(iOS)
+        func testRecentChatsToggleReturnsToTheSameWorkspaceAndDraft() {
+            let app = launchNavigation()
+            defer { app.terminate() }
+            app.buttons["Recent chats"].tap()
+            XCTAssertTrue(app.staticTexts["First preview"].waitForExistence(timeout: 3))
+            app.buttons["Recent chats"].tap()
+            XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
+            XCTAssertFalse(app.staticTexts["First preview"].exists)
+            XCTAssertEqual(
+                app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch.value as? String,
+                "Draft kept while navigating")
+            capture(app, name: "workspace-navigation-history-dismiss-preserves-work")
+        }
+
+        func testClosingPendingAndLoadedSurfacesPreservesWorkspaceAndDraft() {
+            let app = launchNavigation()
+            defer { app.terminate() }
+            app.buttons["Settings"].tap()
+            app.buttons["Appearance"].tap()
+            let close = app.buttons["Close"]
+            XCTAssertTrue(close.waitForExistence(timeout: 3))
+            guard close.exists else { return }
+            close.tap()
+            XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
+            app.buttons["Settings"].tap()
+            app.buttons["Activity log"].tap()
+            XCTAssertTrue(app.staticTexts["Synthetic activity details"].waitForExistence(timeout: 3))
+            close.tap()
+            XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
+            XCTAssertEqual(
+                app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch.value as? String,
+                "Draft kept while navigating")
+            capture(app, name: "workspace-navigation-surface-close-preserves-work")
+        }
+
+        func testRetryRearmsSurfaceTimeoutAndTimedOutSurfaceCanClose() {
+            let app = launchNavigation()
+            defer { app.terminate() }
+            app.buttons["Settings"].tap()
+            app.buttons["Appearance"].tap()
+            let failure = app.staticTexts["Couldn't load this settings screen"]
+            XCTAssertTrue(failure.waitForExistence(timeout: 14))
+            app.buttons["Retry"].tap()
+            XCTAssertTrue(failure.waitForNonExistence(timeout: 3))
+            XCTAssertTrue(failure.waitForExistence(timeout: 14))
+            let close = app.buttons["Close"]
+            XCTAssertTrue(close.exists)
+            guard close.exists else { return }
+            close.tap()
+            XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
+            XCTAssertEqual(
+                app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch.value as? String,
+                "Draft kept while navigating")
+            capture(app, name: "workspace-navigation-repeated-timeout-can-close")
+        }
+
+        func testMandatorySurfaceHasNoLocalNavigationDismissal() {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-navigation-mandatory"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+            XCTAssertTrue(app.staticTexts["Connect your AI provider"].waitForExistence(timeout: 8))
+            XCTAssertFalse(app.buttons["Close"].exists)
+            XCTAssertFalse(app.buttons["Recent chats"].exists)
+            XCTAssertFalse(app.buttons["new-chat-button"].exists)
+            app.buttons["Settings"].tap()
+            XCTAssertFalse(app.buttons["Appearance"].exists)
+            XCTAssertTrue(app.buttons["Sign out"].exists)
+            capture(app, name: "workspace-navigation-mandatory-pin-keeps-only-signout")
+        }
+
+        private func launchNavigation() -> XCUIApplication {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-navigation"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 8))
+            return app
+        }
+
         func testCancelingComponentRefinementPreservesResultSelectedTabAndComposerDraft() {
             let app = XCUIApplication()
             app.launchArguments = ["--astral-ui-test-first-login", "workspace-rich-result"]

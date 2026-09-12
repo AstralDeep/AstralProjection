@@ -2734,6 +2734,17 @@ final class AppModel: NSObject {
         }
     }
 
+    /// Recent chats is a reversible view over the current workspace. Closing
+    /// it must not hydrate the chat again or discard its transient content.
+    func toggleHistory() {
+        guard !mandatorySurface else { return }
+        if screen == .history {
+            screen = .chat
+        } else {
+            goTo(.history)
+        }
+    }
+
     func openMenuItem(_ item: ChromeMenuItem) { openSurface(item.surface, params: item.params) }
 
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
