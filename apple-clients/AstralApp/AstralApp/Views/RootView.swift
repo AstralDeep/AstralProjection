@@ -36,9 +36,9 @@ struct RootView: View {
                 BannerBar(text: banner, isError: model.bannerIsError) { model.dismissBanner() }
             }
             surface
-                .environment(\.astralViewportWidth, viewportWidth)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .environment(\.astralViewportWidth, viewportWidth)
         .background(p.bg.ignoresSafeArea())
         // T030: rotation / iPad Split View / macOS resize → update_device so
         // ROTE re-derives the layout for this socket.
@@ -75,9 +75,38 @@ struct RootView: View {
 
 // MARK: - Top bar
 
+/// Keep the web's compact outline inside a native 44-point interaction target.
+struct AstralNewChatButton: View {
+    let viewportWidth: CGFloat
+    let palette: AstralPalette
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "plus").font(.system(size: 18, weight: .regular))
+                if viewportWidth >= 640 {
+                    Text("New chat").font(AstralTypography.subheadline)
+                        .accessibilityIdentifier("new-chat-visible-label")
+                }
+            }
+            .foregroundStyle(palette.text)
+            .padding(.horizontal, 11).padding(.vertical, 7)
+            .frame(minHeight: 38)
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(palette.text.opacity(0.13)))
+            .frame(minWidth: 44, minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("New chat")
+        .accessibilityIdentifier("new-chat-button")
+    }
+}
+
 struct AstralTopBar: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
+    @Environment(\.astralViewportWidth) private var viewportWidth
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -126,20 +155,7 @@ struct AstralTopBar: View {
     }
 
     private var newButton: some View {
-        Button {
-            model.newChat()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "plus").font(AstralTypography.caption2.bold())
-                Text("New").font(AstralTypography.caption.bold())
-            }
-            .foregroundStyle(p.text)
-            .padding(.horizontal, 11).padding(.vertical, 7)
-            .background(p.surface2, in: Capsule())
-            .overlay(Capsule().stroke(p.border))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("New chat")
+        AstralNewChatButton(viewportWidth: viewportWidth, palette: p) { model.newChat() }
     }
 
     private var settingsMenu: some View {

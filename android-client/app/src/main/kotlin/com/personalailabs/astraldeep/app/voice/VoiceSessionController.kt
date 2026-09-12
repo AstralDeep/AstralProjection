@@ -1180,7 +1180,7 @@ class VoiceSessionController(
                 composer = composer,
                 phase = composer.state,
                 reason = composer.reason,
-                message = composer.message ?: messageFor(composer.state, composer.reason),
+                message = composerMessage(composer),
                 terminalNotice =
                     previous.terminalNotice.takeUnless {
                         composer.state in setOf("off", "ended")
@@ -2034,7 +2034,7 @@ class VoiceSessionController(
             current.copy(
                 phase = composer?.state ?: "off",
                 reason = composer?.reason ?: "ready",
-                message = composer?.let { it.message ?: messageFor(it.state, it.reason) },
+                message = composer?.let(::composerMessage),
                 takeover = current.takeover?.takeIf { composer?.reason == "takeover_required" },
                 mediaConnected = false,
             )
@@ -2124,6 +2124,11 @@ class VoiceSessionController(
             val parsed = runCatching { UUID.fromString(value) }.getOrNull()
             return parsed?.version() == 4 && parsed.toString() == value
         }
+
+        // Like the web composer, off has no visible feedback unless the server
+        // supplied a message. Local errors and terminal notices retain feedback.
+        private fun composerMessage(composer: VoiceComposerModel): String? =
+            composer.message ?: if (composer.state == "off") null else messageFor(composer.state, composer.reason)
 
         private fun messageFor(
             phase: String,

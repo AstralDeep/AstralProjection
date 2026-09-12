@@ -16,6 +16,7 @@
             case chatComposer = "chat-composer"
             case workspaceStart = "workspace-start"
             case workspaceCanvas = "workspace-canvas"
+            case workspaceStyles = "workspace-styles"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -60,6 +61,10 @@
             }
             if scenario == .workspaceCanvas {
                 installWorkspaceCanvas(on: model)
+                return
+            }
+            if scenario == .workspaceStyles {
+                installWorkspaceStyles(on: model)
                 return
             }
             _ = model.beginConversationConnection(connectionGeneration)
@@ -172,7 +177,7 @@
                         errorMessage: "The provider is temporarily unavailable."))
             case .clientWatchdog:
                 break
-            case .chatComposer, .workspaceStart, .workspaceCanvas:
+            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceStyles:
                 break
             case .voiceComposer:
                 break
@@ -210,6 +215,17 @@
         }
 
         @MainActor
+        private static func installWorkspaceStyles(on model: AppModel) {
+            installWorkspace(on: model)
+            model.composerDraft = ""
+            model.turns = [AppModel.ChatTurn(id: "style-result", role: "assistant", text: "Synthetic style result")]
+            model.canvas =
+                InboundFrame.parse(
+                    #"{"type":"ui_render","target":"canvas","components":[{"type":"card","component_id":"style-card","title":"Roll Summary","content":[{"type":"metric","title":"Total","value":18,"subtitle":"Six dice","progress":0.5},{"type":"metric","title":"Completed","value":"6 / 6","variant":"success","progress":1}]}]}"#
+                )!.renderComponents
+        }
+
+        @MainActor
         private static func installWorkspaceCanvas(on model: AppModel) {
             model.screen = .chat
             model.turns = (1...7).map { index in
@@ -219,7 +235,7 @@
                     text: "Canvas layout check \(index). Six dice produced 6, 1, 2, 1, 3, 5 for a total of 18.")
             }
             let result = InboundFrame.parse(
-                #"{"type":"ui_render","target":"canvas","components":[{"type":"hero","component_id":"layout_hero","title":"Dice layout regression","subtitle":"Six results and a total"},{"type":"grid","component_id":"layout_grid","columns":2,"children":[{"type":"card","title":"Roll Summary","content":[{"type":"metric","label":"Total","value":18},{"type":"text","content":"Six dice produced 6, 1, 2, 1, 3, 5."}]},{"type":"card","title":"Results Table","content":[{"type":"table","headers":["Die","Result"],"rows":[["Die 1",6],["Die 2",1],["Die 3",2],["Die 4",1],["Die 5",3],["Die 6",5],["Total",18]]}]}]},{"type":"text","component_id":"layout_end","content":"Canvas layout end"}]}"#
+                #"{"type":"ui_render","target":"canvas","components":[{"type":"hero","component_id":"layout_hero","title":"Dice layout regression","subtitle":"Six results and a total"},{"type":"grid","component_id":"layout_grid","columns":2,"children":[{"type":"card","title":"Roll Summary","content":[{"type":"metric","title":"Total","value":18},{"type":"text","content":"Six dice produced 6, 1, 2, 1, 3, 5."}]},{"type":"card","title":"Results Table","content":[{"type":"table","headers":["Die","Result"],"rows":[["Die 1",6],["Die 2",1],["Die 3",2],["Die 4",1],["Die 5",3],["Die 6",5],["Total",18]]}]}]},{"type":"text","component_id":"layout_end","content":"Canvas layout end"}]}"#
             )!
             model.canvas = result.renderComponents
         }

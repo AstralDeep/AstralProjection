@@ -52,6 +52,48 @@ enum AstralRadius {
     static let lg: CGFloat = 14
 }
 
+/// Resting primitive styles from the web renderer and its responsive CSS.
+/// Breakpoints use the viewport, even when a card occupies a narrow grid slot.
+enum AstralWebStyle {
+    static func canvasInset(_ width: CGFloat) -> CGFloat { width < 700 ? 12 : 16 }
+    static func chartInset(_ width: CGFloat) -> CGFloat { width < 700 ? 8 : 12 }
+
+    static func metricAccent(_ variant: String?, palette: AstralPalette) -> Color {
+        switch variant {
+        case "success": return palette.success
+        case "warning": return palette.warning
+        case "error": return palette.error
+        default: return palette.primary
+        }
+    }
+}
+
+extension View {
+    func astralWebSurface(_ palette: AstralPalette) -> some View {
+        background(palette.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.07)))
+            .astralWebShadow(radius: 10)
+    }
+
+    /// CSS outer shadows never paint under a translucent surface. Clipping the
+    /// interior avoids SwiftUI's ordinary shadow darkening the card fill.
+    func astralWebShadow(radius: CGFloat) -> some View {
+        background {
+            Canvas { context, size in
+                let outline = Path(
+                    roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 4, dy: 4),
+                    cornerRadius: radius)
+                context.clip(to: outline, options: .inverse)
+                context.addFilter(.shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1))
+                context.fill(outline, with: .color(.black))
+            }
+            .padding(-4)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// Holds the live palette so the server can restyle without a relaunch
 /// (feature 044 US5 parity). Observed by the renderer and chrome.
 @MainActor

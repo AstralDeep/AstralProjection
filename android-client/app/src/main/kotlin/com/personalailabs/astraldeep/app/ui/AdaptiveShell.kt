@@ -10,6 +10,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -31,6 +33,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -44,8 +47,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -58,6 +59,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -65,6 +68,7 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
@@ -79,6 +83,7 @@ import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.transport.RuntimeVoiceCapability
 import com.personalailabs.astraldeep.app.transport.markMicrophonePermissionRequested
 import com.personalailabs.astraldeep.app.transport.runtimeVoiceCapability
+import com.personalailabs.astraldeep.app.ui.theme.AstralSans
 import com.personalailabs.astraldeep.app.voice.VoiceMediaCapability
 import com.personalailabs.astraldeep.app.voice.VoiceTerminalNotice
 import com.personalailabs.astraldeep.app.voice.VoiceUiState
@@ -125,6 +130,7 @@ internal fun AdaptiveShellContent(
             movableContentOf<UiState, VoiceUiState> { current, currentVoice ->
                 InputBar(
                     input = current.composerDraft,
+                    startView = current.showsStart,
                     onInputChange = vm::updateComposerDraft,
                     staged = current.staged,
                     readOnly = current.mutationsLocked,
@@ -684,8 +690,13 @@ internal fun InputBar(
     onOpenAttachments: () -> Unit,
     backgroundNextSend: Boolean = false,
     onToggleBackground: () -> Unit = {},
+    startView: Boolean = false,
 ) {
     var attachMenuOpen by remember { mutableStateOf(false) }
+    val inputInteractions = remember { MutableInteractionSource() }
+    val inputFocused by inputInteractions.collectIsFocusedAsState()
+    val composerPadding = if (startView && LocalConfiguration.current.screenWidthDp >= 700) 16.dp else 12.dp
+    val inputStyle = TextStyle(fontFamily = AstralSans, fontSize = 14.sp, lineHeight = 22.4.sp, color = MaterialTheme.colorScheme.onSurface)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var permissionControl by remember { mutableStateOf<VoiceControl?>(null) }
@@ -728,7 +739,7 @@ internal fun InputBar(
     }
 
     Surface(color = Color.Transparent) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(if (startView) 0.dp else 10.dp)) {
             // Viewing the read-only timeline pauses composing (T041).
             if (readOnly) {
                 Text(
@@ -742,35 +753,54 @@ internal fun InputBar(
                 AttachmentChips(staged, onRemoveAttachment)
                 Spacer(Modifier.height(6.dp))
             }
-            if (voice.phase != "off" || voice.message != null || voice.transcriptPreview != null) {
+            if (voice.terminalNotice != null || voice.phase != "off" || voice.message != null || voice.transcriptPreview != null) {
                 VoiceFeedback(voice)
                 Spacer(Modifier.height(4.dp))
             }
             Surface(
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                shape = RoundedCornerShape(22.dp),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)),
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(if (startView) 22.dp else 18.dp),
+                border =
+                    BorderStroke(
+                        1.dp,
+                        if (inputFocused) {
+                            MaterialTheme.colorScheme.primary.copy(
+                                alpha = 0.75f,
+                            )
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                        },
+                    ),
             ) {
-                Column(Modifier.fillMaxWidth().padding(8.dp)) {
-                    TextField(
+                Column(Modifier.fillMaxWidth().padding(composerPadding).testTag("composer-surface")) {
+                    BasicTextField(
                         value = input,
                         onValueChange = onInputChange,
-                        modifier = Modifier.fillMaxWidth().testTag("chat-input"),
+                        modifier =
+                            Modifier.fillMaxWidth().heightIn(
+                                min = if (startView) 80.dp else 68.dp,
+                                max = 160.dp,
+                            ).testTag("chat-input"),
                         enabled = !readOnly,
-                        placeholder = { Text("Ask anything…") },
-                        minLines = 2,
+                        textStyle = inputStyle,
                         maxLines = 6,
+                        interactionSource = inputInteractions,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                        colors =
-                            TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
-                            ),
+                        decorationBox = { innerTextField ->
+                            Box(Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 12.dp)) {
+                                if (input.isEmpty()) {
+                                    Text(
+                                        "Ask anything…",
+                                        style = inputStyle,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
                     )
+                    Spacer(Modifier.height(6.dp))
                     ComposerControls(
                         readOnly = readOnly,
                         voice = voice,
@@ -975,25 +1005,34 @@ private fun ComposerControls(
     onSend: () -> Unit,
     canSend: Boolean,
 ) {
-    FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        GlyphButton(R.drawable.ic_paperclip, "Attach files", !readOnly, onAttach)
-        Box(
-            Modifier.background(
-                if (backgroundNextSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
-                RoundedCornerShape(10.dp),
-            )
-                .semantics { stateDescription = if (backgroundNextSend) "On" else "Off" },
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+        FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            GlyphButton(R.drawable.ic_paperclip, "Attach files", !readOnly, onAttach)
+            Box(
+                Modifier.background(
+                    if (backgroundNextSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
+                    RoundedCornerShape(10.dp),
+                )
+                    .semantics { stateDescription = if (backgroundNextSend) "On" else "Off" },
+            ) {
+                GlyphButton(R.drawable.ic_history, "Run in background", !readOnly, onToggleBackground)
+            }
+            val controls = voice.composer?.controls.orEmpty().filter { it.visible }
+            if (controls.isEmpty()) {
+                GlyphButton(R.drawable.ic_mic, "Start voice conversation — checking voice availability", false) {}
+            }
+            controls.forEach { control ->
+                VoiceControlButton(control, voice.phase, !readOnly && control.enabled) { onVoiceControl(control) }
+            }
+        }
+        Button(
+            onClick = onSend,
+            enabled = !readOnly && canSend,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("composer-send"),
+            shape = RoundedCornerShape(10.dp),
         ) {
-            GlyphButton(R.drawable.ic_history, "Run in background", !readOnly, onToggleBackground)
+            Text("Send")
         }
-        val controls = voice.composer?.controls.orEmpty().filter { it.visible }
-        if (controls.isEmpty()) {
-            GlyphButton(R.drawable.ic_mic, "Start voice conversation — checking voice availability", false) {}
-        }
-        controls.forEach { control ->
-            VoiceControlButton(control, voice.phase, !readOnly && control.enabled) { onVoiceControl(control) }
-        }
-        Button(onClick = onSend, enabled = !readOnly && canSend, shape = RoundedCornerShape(10.dp)) { Text("Send") }
     }
 }
 

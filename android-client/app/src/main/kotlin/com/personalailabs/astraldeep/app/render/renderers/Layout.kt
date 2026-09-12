@@ -1,6 +1,7 @@
 package com.personalailabs.astraldeep.app.render.renderers
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -29,19 +31,31 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.intl.LocaleList
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.toUpperCase
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.personalailabs.astraldeep.app.render.Renderer
+import com.personalailabs.astraldeep.app.render.inlineMarkdown
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
+import com.personalailabs.astraldeep.app.ui.theme.astralSoftShadow
 import com.personalailabs.astraldeep.app.ui.welcomePlacementRole
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 
 /** Register the layout/content primitives (US2). */
 fun Renderer.registerLayoutRenderers(): Renderer =
@@ -99,13 +113,15 @@ private fun GridPrimitive(
 @Composable
 private fun HeroPrimitive(c: Component) {
     if (welcomePlacementRole(c) == "intro") {
+        val titleSize = (LocalConfiguration.current.screenWidthDp * 0.032f).coerceIn(30f, 40f)
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             c.str("eyebrow")?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             c.str("title")?.let {
                 Text(
                     it,
-                    fontSize = 36.sp,
-                    lineHeight = 43.sp,
+                    fontSize = titleSize.sp,
+                    lineHeight = (titleSize * 1.2f).sp,
+                    letterSpacing = (-titleSize * 0.045f).sp,
                     fontWeight = FontWeight.Medium,
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurface,
@@ -195,12 +211,59 @@ private fun BadgePrimitive(c: Component) {
 
 @Composable
 private fun MetricPrimitive(c: Component) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(c.str("value") ?: "—", style = MaterialTheme.typography.headlineMedium)
-            c.str(
-                "label",
-            )?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    val title = c.str("title").orEmpty()
+    val value = c.str("value").orEmpty()
+    val accent =
+        when (c.str("variant")) {
+            "success" -> AstralWebStyle.Success
+            "warning" -> AstralWebStyle.Warning
+            "error" -> AstralWebStyle.Error
+            else -> MaterialTheme.colorScheme.primary
+        }
+    val progress = (c.attributes["progress"] as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() }
+    val name = c.str("aria-label") ?: if (title.isNotBlank()) "$title: $value" else value
+    Column(
+        Modifier.fillMaxWidth()
+            .astralSoftShadow(12f)
+            .clip(AstralWebStyle.MetricShape)
+            .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.2f), accent.copy(alpha = 0.05f))))
+            .border(1.dp, AstralWebStyle.MetricBorder, AstralWebStyle.MetricShape)
+            .drawBehind { drawRect(accent.copy(alpha = 0.85f), size = Size(3.dp.toPx(), size.height)) }
+            .semantics(mergeDescendants = true) { contentDescription = name }
+            .padding(17.dp),
+    ) {
+        Text(
+            inlineMarkdown(title).toUpperCase(LocaleList("en")),
+            style = AstralWebStyle.MetricTitle,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(value, style = AstralWebStyle.MetricValue, color = MaterialTheme.colorScheme.onSurface)
+        c.str("subtitle")?.takeIf { it.isNotEmpty() }?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(inlineMarkdown(it), style = AstralWebStyle.MetricSubtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (progress != null) {
+            Spacer(Modifier.height(12.dp))
+            val progressColor =
+                when {
+                    progress > 0.9 -> AstralWebStyle.Error
+                    progress > 0.7 -> AstralWebStyle.Warning
+                    else -> MaterialTheme.colorScheme.primary
+                }
+            Box(
+                Modifier.fillMaxWidth().height(
+                    6.dp,
+                ).clip(
+                    RoundedCornerShape(50),
+                ).background(androidx.compose.ui.graphics.Color.White.copy(alpha = 0.1f)).testTag("metric-progress"),
+            ) {
+                Box(
+                    Modifier.fillMaxWidth(
+                        progress.coerceIn(0.0, 1.0).toFloat(),
+                    ).height(6.dp).clip(RoundedCornerShape(50)).background(progressColor),
+                )
+            }
         }
     }
 }

@@ -27,6 +27,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.personalailabs.astraldeep.app.render.Renderer
+import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
+import com.personalailabs.astraldeep.app.ui.theme.astralCardSurface
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -152,8 +154,16 @@ private fun OfflineChart(component: Component) {
         Text("Chart could not be displayed. Reopen this result to try again.", color = MaterialTheme.colorScheme.error)
         return
     }
-    Column(Modifier.fillMaxWidth()) {
-        component.str("title")?.let { Text(it, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(bottom = 12.dp)) }
+    val padding = if (viewport < 700) 8.dp else 12.dp
+    Column(Modifier.fillMaxWidth().astralCardSurface().padding(padding + 1.dp)) {
+        component.str("title")?.let {
+            Text(
+                it,
+                style = AstralWebStyle.ChartTitle,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
         BoxWithConstraints(Modifier.fillMaxWidth().testTag("offline-chart")) {
             val chartHeight = offlineChartHeight(component, maxWidth.value.toInt(), viewport).dp
             AndroidView(

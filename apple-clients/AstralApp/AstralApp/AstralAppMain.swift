@@ -30,6 +30,15 @@ struct AstralApp: App {
                 .font(AstralTypography.body)
                 .environment(model.themeStore)
                 .tint(model.themeStore.palette.primary)
+                .environment(
+                    \.openURL,
+                    OpenURLAction { url in
+                        guard let destination = InlineMarkdown.safeLink(url, relativeTo: model.serverBase) else {
+                            return .discarded
+                        }
+                        return .systemAction(destination)
+                    }
+                )
                 .preferredColorScheme(.dark)
                 .task {
                     #if DEBUG

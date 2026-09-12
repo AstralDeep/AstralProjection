@@ -14,6 +14,7 @@ struct ComponentView: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @Environment(\.astralViewportWidth) private var viewportWidth
     /// Measured width of this component's slot, used to clamp multi-column
     /// layouts on compact screens (0 until the first layout pass).
     @State private var slotWidth: CGFloat = 0
@@ -181,14 +182,20 @@ struct ComponentView: View {
     // MARK: containers
 
     private var cardView: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            titleLine
+        VStack(alignment: .leading, spacing: 12) {
+            if let title = component.title, !title.isEmpty {
+                HStack(spacing: 8) {
+                    Capsule().fill(p.primary).frame(width: 4, height: 16)
+                    markdown(title).font(AstralTypography.headline)
+                        .foregroundStyle(p.text).frame(minHeight: 24)
+                        .accessibilityAddTraits(.isHeader)
+                }
+            }
             childViews
         }
-        .padding(14)
+        .padding(AstralWebStyle.canvasInset(viewportWidth) + 1)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(p.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: AstralRadius.lg))
-        .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(p.border))
+        .astralWebSurface(p)
     }
 
     @ViewBuilder
@@ -241,24 +248,50 @@ struct ComponentView: View {
     // MARK: metric / badge / hero
 
     private var metricView: some View {
-        let color = p.variant(component.variant)
-        return HStack(spacing: 10) {
-            Rectangle().fill(color).frame(width: 3)
-            VStack(alignment: .leading, spacing: 2) {
-                markdown(component.title ?? component.label ?? "")
-                    .font(AstralTypography.caption).foregroundStyle(p.muted)
-                    .textCase(.uppercase)
-                Text(component.value ?? "—").font(AstralTypography.title.bold()).foregroundStyle(p.text)
-                if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
-                    markdown(sub).font(AstralTypography.caption).foregroundStyle(p.muted)
-                }
+        let color = AstralWebStyle.metricAccent(component.variant, palette: p)
+        let title = component.title ?? ""
+        let value = component.value ?? ""
+        return VStack(alignment: .leading, spacing: 0) {
+            markdown(title)
+                .font(AstralTypography.caption.weight(.medium))
+                .tracking(0.6).textCase(.uppercase).foregroundStyle(p.muted)
+                .frame(minHeight: 16).padding(.bottom, 4)
+            Text(value).font(AstralTypography.title.weight(.bold))
+                .tracking(-0.56).foregroundStyle(p.text).frame(minHeight: 33.6)
+            if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
+                markdown(sub).font(AstralTypography.caption).foregroundStyle(p.muted)
+                    .frame(minHeight: 16).padding(.top, 4)
             }
-            Spacer(minLength: 0)
+            if let progress = component.raw["progress"]?.numberValue, progress.isFinite {
+                let fraction = min(1, max(0, progress))
+                let fill = progress > 0.9 ? p.error : progress > 0.7 ? p.warning : p.primary
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(.white.opacity(0.1))
+                        Capsule().fill(fill).frame(width: geometry.size.width * fraction)
+                    }
+                }
+                .frame(height: 6).padding(.top, 12)
+                .accessibilityElement()
+                .accessibilityLabel("Progress")
+                .accessibilityValue(Text(fraction, format: .percent.precision(.fractionLength(0))))
+            }
         }
-        .padding(14)
+        .padding(17)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(p.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: AstralRadius.md))
-        .overlay(RoundedRectangle(cornerRadius: AstralRadius.md).stroke(p.border))
+        .background(
+            LinearGradient(
+                colors: [color.opacity(0.2), color.opacity(0.05)],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
+        )
+        .overlay(alignment: .leading) {
+            Rectangle().fill(color.opacity(0.85)).frame(width: 3).allowsHitTesting(false)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.05)))
+        .astralWebShadow(radius: 12)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(component.raw["aria-label"]?.stringValue ?? (title.isEmpty ? value : "\(title): \(value)"))
     }
 
     private var badgeView: some View {
@@ -1349,21 +1382,23 @@ struct ChartComponent: View {
     @State private var slotWidth: CGFloat = 704
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        let inset = AstralWebStyle.chartInset(viewportWidth) + 1
+        VStack(alignment: .leading, spacing: 12) {
             if let title = component.title, !title.isEmpty {
                 Text(InlineMarkdown.attributed(title))
-                    .font(AstralTypography.headline).foregroundStyle(theme.palette.text)
+                    .font(AstralTypography.subheadline.weight(.medium))
+                    .foregroundStyle(theme.palette.text).frame(minHeight: 20)
             }
             OfflineChartView(component: component, viewportWidth: viewportWidth)
                 .frame(
                     height: OfflineChartDocument.height(
-                        component: component, viewportWidth: viewportWidth, slotWidth: slotWidth - 24)
+                        component: component, viewportWidth: viewportWidth, slotWidth: slotWidth - 2 * inset)
                 )
                 .frame(maxWidth: .infinity)
         }
-        .padding(12)
+        .padding(inset)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.palette.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .astralWebSurface(theme.palette)
         .background {
             GeometryReader { geometry in
                 Color.clear.onAppear { slotWidth = geometry.size.width }

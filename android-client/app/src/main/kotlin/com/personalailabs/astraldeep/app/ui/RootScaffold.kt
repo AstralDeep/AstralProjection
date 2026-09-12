@@ -2,7 +2,7 @@ package com.personalailabs.astraldeep.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -32,16 +34,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personalailabs.astraldeep.app.R
 import com.personalailabs.astraldeep.app.render.Renderer
-import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
 import com.personalailabs.astraldeep.core.chrome.ChromeMenuModel
 import com.personalailabs.astraldeep.core.chrome.MenuItem
 import kotlinx.serialization.json.JsonObject
@@ -305,26 +311,36 @@ private fun SectionHeader(label: String) {
 }
 
 @Composable
-private fun NewChatButton(
+internal fun NewChatButton(
     enabled: Boolean,
     onClick: () -> Unit,
+    showLabel: Boolean = LocalConfiguration.current.screenWidthDp >= 640,
 ) {
-    Row(
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(AstralColors.AccentBrush)
-                .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = 11.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    // Keep the native touch target while the visible control matches the web
+    // topbar's 38px outlined button and compact-width icon-only treatment.
+    Box(
+        Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "New chat" }
+            .testTag("new-chat-button"),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_plus),
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(14.dp),
-        )
-        Text("New", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier.heightIn(min = 38.dp)
+                .alpha(if (enabled) 1f else 0.5f)
+                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.13f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_plus),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp),
+            )
+            if (showLabel) Text("New chat", color = MaterialTheme.colorScheme.onSurface, style = AstralWebStyle.NewChatLabel)
+        }
     }
 }

@@ -347,6 +347,7 @@ private struct ChatDrawerToggle: View {
 private struct CanvasArea: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
+    @Environment(\.astralViewportWidth) private var viewportWidth
     // Owned by ChatShell (the sheets are attached there too) so a layout-mode
     // switch cannot dismiss an open timeline or refine sheet mid-edit.
     @Binding var showTimeline: Bool
@@ -406,7 +407,7 @@ private struct CanvasArea: View {
                                             onRefine: { refineTarget = $0 })
                                     }
                                 }
-                                .padding(16)
+                                .padding(AstralWebStyle.canvasInset(viewportWidth))
                             }
                             .accessibilityIdentifier("workspace-canvas-scroll")
                             .scrollDismissesKeyboard(.immediately)

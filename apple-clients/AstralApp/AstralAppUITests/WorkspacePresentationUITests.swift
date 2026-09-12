@@ -1,6 +1,27 @@
 import XCTest
 
 final class WorkspacePresentationUITests: XCTestCase {
+    func testMetricContentAndNativeNewChatTargetMatchWebWorkspace() throws {
+        let app = XCUIApplication()
+        app.launchArguments = ["--astral-ui-test-first-login", "workspace-styles"]
+        app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        app.launch()
+        defer { app.terminate() }
+
+        let total = app.staticTexts["TOTAL"]
+        XCTAssertTrue(total.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["18"].exists)
+        XCTAssertTrue(app.staticTexts["Six dice"].exists)
+        XCTAssertTrue(app.staticTexts["COMPLETED"].exists)
+        let newChat = app.buttons["new-chat-button"]
+        XCTAssertGreaterThanOrEqual(newChat.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(newChat.frame.height, 44)
+        capture(app, name: "workspace-088-card-metrics-native-target")
+        newChat.tap()
+        XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+        XCTAssertFalse(total.exists)
+    }
+
     func testPhoneCanvasRemainsResponsiveWhileCollapsingAndScrollingMessages() throws {
         #if os(iOS)
             let app = XCUIApplication()

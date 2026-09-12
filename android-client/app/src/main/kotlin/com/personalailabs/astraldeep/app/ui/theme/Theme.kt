@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
 import com.personalailabs.astraldeep.app.R
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -47,7 +49,15 @@ object AstralColors {
         Brush.verticalGradient(listOf(Color(0xFF0F1221), Color(0xFF141A33), Color(0xFF0F1221)))
 }
 
-val AstralSans = FontFamily(Font(R.font.inter_latin))
+// The bundled Inter file is variable; declare each web weight with its actual
+// axis value instead of synthesizing bold from one regular resource face.
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
+val AstralSans =
+    FontFamily(
+        listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { weight ->
+            Font(R.font.inter_latin, weight = weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
+        },
+    )
 val AstralMono = FontFamily(Font(R.font.jetbrains_mono_latin))
 private val baseTypography = Typography()
 private val astralTypography =

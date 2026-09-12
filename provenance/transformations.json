@@ -57,13 +57,22 @@
       "resultSha256": "ab2dea2a59de77d97b4fdfab98cc5abbe9b2752370b32b517e9530428f7dcb15"
     },
     {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt",
+      "sourceBlob": "8a7b911bc80fe36dea393dfae3a92a4162963322",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets.",
+      "resultSha256": "0ae12b8438b57c9e64f5905ca403b33aaa22e8d06a15e3d639c7e0197cc6726c"
+    },
+    {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
       "sourceBlob": "206e2005284e02f41047381e70302c9048b548e2",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "3f9ff873458aac449910206b4e42a21931e59dcebb143cab5dd587de3e3ac16e"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "95041d39632e019bd240e73e8328b6284d6703ae7bd36f45e901d3a91fecb1ae"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
@@ -80,8 +89,8 @@
       "sourceBlob": "21fbe9a7893bbafb1841b4beb8125b35940f30cb",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "09aa9b19bade3fe46204249350aa3d8ce578486df0ab830fc6d44746686db6e3"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "ede6c11371c401e04138dbcadee348f143cb64cdf8e0e5cc45d2131624c484b2"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Charts.kt",
@@ -89,8 +98,8 @@
       "sourceBlob": "42b763cdc9ce4d89f2e5c8410d215c6bd352b224",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "99ed7fd89d1242f8ab15cb247d933bf60003fad2acfa11e959fd7da993dca7e9"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets.",
+      "resultSha256": "060994b679e6a80c178b8d7d2c64d5266d4310c8455f6871843a4e846c6b5024"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Data.kt",
@@ -116,8 +125,8 @@
       "sourceBlob": "b792f1dce68192b7cd64371e768f95ce29ac2c0d",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "2d941296e37b635a1b15d26a30b4b009df7985a0319a57c3516285b1b14dce77"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "0c562a9309362feafd40db70a88926940afa129920375ff91a827cf91498e26f"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
@@ -152,8 +161,8 @@
       "sourceBlob": "e6ff616138233eaf811a567ff5b2bad7f4020d3e",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "c428d5a219bebebc4d23b6b941c2132c0e6c163757667671188a4a0cc36804cd"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "e740d8ad0f191e333420af973b5506999ba01e71630624088f21cd78d6d1dc9f"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
@@ -163,6 +172,15 @@
       "resultSha256": "7171203b1e26ab7a5b3f2d8a8c80156b6bd7e3507b40dd4c239195fe49d73eff",
       "task": "T041/T056/T060",
       "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state."
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
+      "sourceBlob": "ab56b7ccb1e56b47c900995c70768db0c38cb41e",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets.",
+      "resultSha256": "1289bdbccf260e096797bccc4e070d407b3d6764e64b301036016f423260cf3f"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
@@ -179,8 +197,8 @@
       "sourceBlob": "6293e3e06908ee9318913196ef3207fdda544f0b",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "94f61bdfdf9bce604684d9165280151a88eac5b13918a13b75cbdffbce90f645"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets.",
+      "resultSha256": "0551d9768b90212976779e9f60a7574e52a237621189114f82beb4134251812c"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController.kt",
@@ -188,8 +206,8 @@
       "sourceBlob": "1fbdf6029c1ab1aecc655c004a2595679b987e7f",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
-      "resultSha256": "56897f6d0dd7447ebb4da04cffbc6331747cb741687afc4621bfb757ff0891cc"
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "7c4085af9720f1c345dac0b420e9cbf6b94a7fda9342e4fb73040db456fc08e6"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
@@ -199,6 +217,15 @@
       "resultSha256": "5ddf05ba20374910876bdf23fe49ca61797591296096d9b8b8d19b75258abebb",
       "task": "T056/T060",
       "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/MarkdownTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/MarkdownTest.kt",
+      "sourceBlob": "dcb597c5701cdb35122be60be28c73119f02f865",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "b23e8551e7fbb51f0b8d21349669957792f75a5d302ed8d82890fb5a2d72e600"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
@@ -251,8 +278,8 @@
       "sourceBlob": "1f9fd43ef9ea057a6ebce7a3008381d4b21576cf",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
-      "resultSha256": "e08c84b5375a51cfc385261ff494454b3952ded0be0e48435a398d748c99cc40"
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "52bcd215d7d9ffab8e215e79ada022096d8276fb87e0bcc8d0d3f509d7ae48b1"
     },
     {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
@@ -358,27 +385,36 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
       "sourceBlob": "cb822bfcd36782eb2f87a74c6ac8313c9847b94c",
       "sourceMode": "100644",
-      "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "e72aacf9ce88bf6aa157b9f593cb205f01c16acf09e0ffe3c7bd48969218b782"
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "b5b65b42f5a68b2bf45587671c4cf0711e999a2fa79921a14bfdeb6c65febbaf"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
       "sourcePath": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
       "sourceBlob": "390ea1e60d03b65b1db25955560055ef207c39ba",
       "sourceMode": "100644",
-      "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions.",
-      "resultSha256": "c978f00d55e963f9e91cd209f20d2eaa965e0ae2959fda7fbc4ddeff1a6f0a03"
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "53d93a77dfcccab971831a7db4f347462e3d1d3558cd893a6d4368462c7ad0f4"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Theme.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Theme.swift",
+      "sourceBlob": "a0b812c252c910d3535d3092a40c29e20757341b",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "acb60478baf7c09ba2044434bd7247e8f69610591d8f62cd171a813ca79e49c5"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
       "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
       "sourceBlob": "ae7a39f349d86b489910d22985b20a9067f165e2",
       "sourceMode": "100644",
-      "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions.",
-      "resultSha256": "1b70162636f952c1753e9049a4f2591cd845df154a86fae9c62143d7d3a24cb8"
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "eda89521bc035c303073c16571642ef2ca5b51d94b0df793158660e5225cc6fd"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
@@ -394,9 +430,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift",
       "sourceBlob": "698310891434a11385b3e8436981f0bbfc631e59",
       "sourceMode": "100644",
-      "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "82d4bff9373308d68996446876b284c40557545eec75c6ed75991f9bc29647aa"
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "529a9492830849d1c97426fd68a202397eb628a34ba69fc8ae9d8661531c3ee3"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Views/MarkdownBlockView.swift",
@@ -412,9 +448,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/Views/RootView.swift",
       "sourceBlob": "8290b380f4ee3979984255013712a7946a530590",
       "sourceMode": "100644",
-      "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "055d9e136aa50e95e76e3fefc8ef05339565847692494dec243dd28e2fccd849"
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "8ce4027b0719373a1e3016cbb540c5919fab3846681c45785e00bcc153795a57"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Views/Screens.swift",
@@ -460,6 +496,15 @@
       "task": "T057/T061",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
       "resultSha256": "f09cddee6c327de260baeb1eb46a0e68c385e7e0074424989251d84a2c7faa67"
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/InlineMarkdown.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/InlineMarkdown.swift",
+      "sourceBlob": "1f01ee9c6b8952a05846140de1aefb4c7bd97fb9",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "38eb997f323e2304b883b9eb634f0fc748983a3bfcf0478c596305c0a484a8ae"
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
@@ -525,6 +570,15 @@
       "reason": "Retarget the Apple fixture link to the standalone Projection fixture directory."
     },
     {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/InlineMarkdownTests.swift",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/InlineMarkdownTests.swift",
+      "sourceBlob": "ea0ac4745edf70a00f8a7871a7c31b7a8ff0fcc1",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "e1f6eae160fc6798877529bad157cf9233946d75baffefb6e6572b0a1f9a4729"
+    },
+    {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
@@ -547,9 +601,9 @@
       "sourcePath": "apple-clients/AstralWatch/AstralWatchApp.swift",
       "sourceBlob": "25aa48938009986ec4fad7081aa3424b98ee2130",
       "sourceMode": "100644",
-      "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "7f01e2fb2dc95c0ce8cbac39c3e426ec223affc89c5d5107dc3fa8189d3286cf"
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "718a47b73aaa24b75c18dc9b6dfb354b3fe2cc87b2a327d26ebf120d27967af8"
     },
     {
       "path": "apple-clients/AstralWatch/Views/DeviceLoginView.swift",

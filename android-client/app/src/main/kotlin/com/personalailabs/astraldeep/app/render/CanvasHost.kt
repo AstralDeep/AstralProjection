@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.renderers.ArtifactFooter
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -39,7 +40,7 @@ fun CanvasHost(
     chrome: CanvasChrome? = null,
 ) {
     LazyColumn(
-        modifier = modifier.fillMaxSize().padding(16.dp),
+        modifier = modifier.fillMaxSize().padding(if (LocalConfiguration.current.screenWidthDp < 700) 12.dp else 16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(items = components, key = { it.id ?: it.hashCode().toString() }) { component ->

@@ -303,6 +303,18 @@ class Workspace088InstrumentedTest {
     }
 
     @Test
+    fun adapted_phone_welcome_container_keeps_examples_in_centered_wrapping_rows() {
+        val adapted = welcome.first { it.type == "grid" }.copy(type = "container")
+        val renderer = Renderer(Emit { _, _ -> }).registerAllRenderers()
+        rule.setContent { FixtureTheme { renderer.render(adapted) } }
+        val labels = adapted.children.map { it.attributes.getValue("label").toString().trim('"') }
+        val first = rule.onNodeWithText(labels[0]).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val second = rule.onNodeWithText(labels[1]).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertEquals(first.center.y, second.center.y, 1f)
+        assertTrue(second.left > first.right)
+    }
+
+    @Test
     fun native_examples_emit_exact_server_actions_and_permission_content_remains_available() {
         val events = mutableListOf<Pair<String, JsonObject>>()
         val renderer = Renderer(Emit { action, payload -> events.add(action to payload) }).registerAllRenderers()
