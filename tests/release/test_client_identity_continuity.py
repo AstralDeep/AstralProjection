@@ -30,7 +30,7 @@ def test_android_store_and_oidc_identity_remain_registered_values() -> None:
     assert 'val registeredApplicationId = "com.personalailabs.astraldeep"' in gradle
     assert 'val registeredRedirectScheme = "com.personalailabs.astraldeep"' in gradle
     assert "val migrationVersionCodeFloor = 5" in gradle
-    assert "val currentVersionCode = 7" in gradle
+    assert "val currentVersionCode = 8" in gradle
     assert "check(currentVersionCode >= migrationVersionCodeFloor)" in gradle
     assert "applicationId = registeredApplicationId" in gradle
     assert "versionCode = currentVersionCode" in gradle
@@ -105,8 +105,8 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     app = _plist("apple-clients/AstralApp/Info.plist")
     watch = _plist("apple-clients/AstralApp/WatchInfo.plist")
 
-    assert project.count("CURRENT_PROJECT_VERSION = 61;") == 10
-    assert project.count("MARKETING_VERSION = 1.5;") == 10
+    assert project.count("CURRENT_PROJECT_VERSION = 62;") == 10
+    assert project.count("MARKETING_VERSION = 1.6;") == 10
     assert "CURRENT_PROJECT_VERSION = 1;" not in project
     assert "CURRENT_PROJECT_VERSION = 2;" not in project
     assert "MARKETING_VERSION = 1.4;" not in project
