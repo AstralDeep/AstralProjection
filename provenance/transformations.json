@@ -1605,7 +1605,7 @@
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Retain full iOS build-for-testing Products and separate raw test lanes for exact compiler-domain coverage qualification."
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Build fixed iOS build-for-testing Products and retain separate raw test lanes, compiler-domain witnesses and selected binary archives for CI coverage qualification; complete Products retention belongs to the protected producer."
     },
     {
       "path": "workflows-disabled/apple-release.yml",
