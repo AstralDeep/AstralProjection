@@ -1604,11 +1604,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "2757edaafc7176137fb3652e014b9be4785e5e85353975e6e49e2a4b6b8bfbaf"
+          "sha256": "28f2cefcf9e48d4677410d5b1ca35dcc48619995f6ead124faac5e589737650e"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action’s line-oriented script execution, preserving the exact device/report arguments and gates."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

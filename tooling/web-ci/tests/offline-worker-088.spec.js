@@ -1,5 +1,7 @@
 // Real Chromium worker/cache/navigation checks on an isolated synthetic HTTP origin.
 import { createServer } from "node:http";
+import { once } from "node:events";
+import { createConnection } from "node:net";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
@@ -44,11 +46,31 @@ async function serverForTest() {
     }
   });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  return { origin: `http://127.0.0.1:${server.address().port}`, requests,
+  return { origin: `http://127.0.0.1:${server.address().port}`, requests, httpServer: server,
     setRootStatus(value) { rootStatus = value; },
-    close: () => new Promise(resolve => server.close(resolve)),
+    close: () => new Promise(resolve => {
+      server.close(resolve);
+      // Browser preconnects can stay idle until the later page/context teardown.
+      server.closeAllConnections();
+    }),
   };
 }
+
+test("HTTP fixture teardown closes accepted idle preconnects", async () => {
+  const server = await serverForTest();
+  const accepted = once(server.httpServer, "connection");
+  const connection = createConnection({ host: "127.0.0.1", port: Number(new URL(server.origin).port) });
+  try {
+    await Promise.all([accepted, once(connection, "connect")]);
+    const closed = once(connection, "close");
+    await server.close();
+    await closed;
+    expect(connection.destroyed).toBe(true);
+  } finally {
+    connection.destroy();
+    await server.close();
+  }
+});
 
 async function controlledPage(page, origin) {
   await page.goto(origin);

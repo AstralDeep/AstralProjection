@@ -184,12 +184,8 @@ jobs:
           arch: x86_64
           working-directory: android-client
           script: |
-            python3 ../scripts/android_coverage.py device \
-              --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" \
-              --serial emulator-5554 --lane fixtures
-            python3 ../scripts/android_coverage.py report \
-              --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" \
-              --lanes fixtures
+            python3 ../scripts/android_coverage.py device --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" --serial emulator-5554 --lane fixtures
+            python3 ../scripts/android_coverage.py report --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" --lanes fixtures
 
       - name: Retain raw probes, exact APKs and native combined coverage
         if: ${{ always() }}

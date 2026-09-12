@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+import shlex
+import shutil
+import subprocess
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -441,6 +446,62 @@ def test_native_collector_workflow_requires_prepared_exact_apks_all_fixtures_and
         < instrumented.index("--lane fixtures")
         < instrumented.index("--lanes fixtures")
     )
+
+
+def test_emulator_action_physical_lines_preserve_complete_coverage_commands(tmp_path, monkeypatch):
+    """Run each action script line through a shell and the real CLI argument parser."""
+    shell = shutil.which("sh")
+    if shell is None:
+        pytest.skip("Emulator action argument contract requires a POSIX shell")
+    root = Path(__file__).resolve().parents[1]
+    workflow = (root / ".github/workflows/android-ci.yml").read_text()
+    step = workflow.partition(
+        "      - name: Run every synthetic device scenario on the exact coverage APK\n"
+    )[2].partition("\n      - name:")[0]
+    script = step.partition("          script: |\n")[2]
+    assert script
+    workspace = tmp_path.resolve() / "workspace with spaces"
+    workspace.mkdir()
+    record = tmp_path / "argv.jsonl"
+    recorder = tmp_path / "record.py"
+    recorder.write_text(
+        "import json, os, sys\n"
+        "with open(os.environ['ARGUMENT_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+    )
+    prefix = (
+        f"python3() {{ {shlex.quote(sys.executable)} {shlex.quote(str(recorder))} "
+        '"$@"; }\n'
+    )
+    for line in script.splitlines():
+        if not line.strip():
+            continue
+        result = subprocess.run(
+            [shell, "-c", prefix + line.strip()],
+            cwd=workspace,
+            env={
+                **os.environ,
+                "GITHUB_WORKSPACE": str(workspace),
+                "ARGUMENT_RECORD": str(record),
+            },
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert result.returncode == 0, result.stderr
+    invocations = [json.loads(line) for line in record.read_text().splitlines()]
+    assert len(invocations) == 2
+    calls = []
+    monkeypatch.setattr(c, "device", lambda *args: calls.append(("device", args)))
+    monkeypatch.setattr(c, "report", lambda *args: calls.append(("report", args)))
+    for args in invocations:
+        assert args.pop(0) == "../scripts/android_coverage.py"
+        assert c.main(args) == 0
+    output = workspace / "build/088/android-coverage"
+    assert calls == [
+        ("device", (workspace, output, "adb", "emulator-5554", "fixtures", None)),
+        ("report", (workspace, output, ["fixtures"])),
+    ]
 
 
 @pytest.mark.parametrize("failed", [False, True])
