@@ -173,7 +173,7 @@ jobs:
 
       - name: Build and bind the isolated app coverage variant
         run: |
-          ./gradlew -PastralCoverage=true :app:prepareCoverageInputs --no-daemon --stacktrace
+          ./gradlew -PastralCoverage=true :app:prepareCoverageInputs --no-configuration-cache --no-daemon --stacktrace
           python3 ../scripts/android_coverage.py prepare \
             --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage"
 

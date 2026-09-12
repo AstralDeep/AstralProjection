@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT_PATH = resolve(ROOT, "backend/webrender/static/client.js");
+const CANVAS_EXPORT_PATH = resolve(ROOT, "backend/webrender/static/canvas-export.js");
 const MANIFEST_PATH = resolve(ROOT, "contracts/ui_protocol.json");
 const ISSUER = "https://identity.example/realms/astral";
 const SUBJECT = "continuity-user";
@@ -189,6 +190,8 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
       }));
     }
   }, { key: LOCATOR_KEY, chatId: CHAT_ID, shouldPersist: locator });
+  const exportSource = await readFile(CANVAS_EXPORT_PATH, "utf8");
+  await page.addScriptTag({ content: `${exportSource}\n//# sourceURL=https://candidate.example/static/canvas-export.js` });
   const source = await readFile(CLIENT_PATH, "utf8");
   await page.addScriptTag({ content: `${source}\n//# sourceURL=https://candidate.example/static/client.js` });
   await page.waitForFunction(() => window.__socketEvents.some((event) => event.frame.type === "register_ui"));

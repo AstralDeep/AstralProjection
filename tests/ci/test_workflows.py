@@ -625,7 +625,8 @@ def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> No
     assert "arch: x86_64" in instrumented
     assert "working-directory: android-client" in instrumented
     assert (
-        "./gradlew -PastralCoverage=true :app:prepareCoverageInputs --no-daemon --stacktrace"
+        "./gradlew -PastralCoverage=true :app:prepareCoverageInputs "
+        "--no-configuration-cache --no-daemon --stacktrace"
         in instrumented
     )
 

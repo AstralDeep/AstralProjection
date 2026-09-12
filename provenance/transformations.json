@@ -1213,9 +1213,9 @@
       "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
       "sourceMode": "100644",
-      "resultSha256": "6d3965dda79bbe6bf31470d17648ef5b2038869699a3495b844f434a43c8fba5",
+      "resultSha256": "8b924b108119e788b41783c31b3fae6e67df94b33355d824ac174cfffdb481ca",
       "task": "T052/T063/T008/T009",
-      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset. Feature 088 live mobile review: consume actual ROTE/renderer HTML goldens for mobile New chat after a plaintext-only conversation, tablet re-adaptation and repeated New chat without losing welcome groups."
+      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset. Feature 088 live mobile review: consume actual ROTE/renderer HTML goldens for mobile New chat after a plaintext-only conversation, tablet re-adaptation and repeated New chat without losing welcome groups. Load the exact authoritative canvas export module before client.js in the synthetic harness, matching production script order and preserving export/owner-denial assertions."
     },
     {
       "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",
@@ -1604,11 +1604,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "9dbd381e712b866a77cdcfd7de7ae987174e8316ff3a30f257f8a18d3c6d0efa"
+          "sha256": "2757edaafc7176137fb3652e014b9be4785e5e85353975e6e49e2a4b6b8bfbaf"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

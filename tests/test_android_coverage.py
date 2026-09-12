@@ -429,7 +429,7 @@ def test_native_collector_workflow_requires_prepared_exact_apks_all_fixtures_and
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github/workflows/android-ci.yml").read_text()
     instrumented = workflow.partition("  instrumented:\n")[2].partition("  android-required:\n")[0]
-    assert ":app:prepareCoverageInputs" in instrumented
+    assert ":app:prepareCoverageInputs --no-configuration-cache" in instrumented
     assert "--serial emulator-5554 --lane fixtures" in instrumented
     assert "--lanes fixtures" in instrumented
     assert "android-app-device-and-unit-coverage" in instrumented
