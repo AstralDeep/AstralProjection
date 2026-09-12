@@ -2,6 +2,12 @@
   "version": 1,
   "description": "Committed UI-protocol manifest (feature 044). Single source for the server->client WS frame vocabulary, the ui_event action vocabulary, and the component vocabulary. Backend, Windows, and Android test suites all assert against this file; adding a frame type, action, or component type REQUIRES editing it in the same PR (guards fail otherwise). See specs/044-native-client-parity/contracts/ui-protocol.md.",
   "presentation_contracts": {
+    "canvas_export": {
+      "version": "astral.canvas-export/v1",
+      "contract": "canvas_export_v1.json",
+      "effect": "none_display_only",
+      "authorization": "host_owned_separate_from_presentation"
+    },
     "chrome_menu": {
       "version": 2,
       "unknown_kind": "ignore_control",

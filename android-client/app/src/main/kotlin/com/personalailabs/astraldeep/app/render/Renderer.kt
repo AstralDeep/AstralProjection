@@ -4,8 +4,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.personalailabs.astraldeep.app.ui.WorkspaceContext
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
 
@@ -52,6 +55,8 @@ class Renderer(
     val download: Download = Download { _, _ -> },
     val theme: ThemeSink = ThemeSink { },
 ) {
+    internal var capture: CanvasCaptureRegistry? = null
+    internal var captureContext: (() -> WorkspaceContext?)? = null
     private val registry = LinkedHashMap<String, ComponentRenderer>()
 
     fun register(
@@ -65,9 +70,17 @@ class Renderer(
     val supportedTypes: Set<String> get() = registry.keys
 
     @Composable
-    fun render(component: Component) {
-        val renderer = registry[component.type]
-        if (renderer != null) renderer(this, component) else Placeholder(component)
+    fun render(
+        component: Component,
+        path: String? = null,
+    ) {
+        val parent = LocalCanvasCapture.current
+        val resolved = path ?: parent?.childPath(component)
+        val location = if (resolved != null && capture != null) CaptureLocation(capture!!, resolved, component) else null
+        CompositionLocalProvider(LocalCanvasCapture provides location) {
+            val renderer = registry[component.type]
+            if (renderer != null) renderer(this, component) else Placeholder(component)
+        }
     }
 }
 
@@ -81,3 +94,14 @@ fun Placeholder(component: Component) {
         modifier = Modifier.padding(8.dp),
     )
 }
+
+internal data class CaptureLocation(val registry: CanvasCaptureRegistry, val path: String, val component: Component) {
+    fun childPath(child: Component): String? {
+        val index = component.children.indexOfFirst { it === child }
+        if (index < 0) return null
+        val key = if (component.attributes.containsKey("content")) "content" else "children"
+        return "$path/$key/$index"
+    }
+}
+
+internal val LocalCanvasCapture = staticCompositionLocalOf<CaptureLocation?> { null }

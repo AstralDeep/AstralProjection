@@ -82,6 +82,12 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     private var generation = UUID()
     private var hasShownFailure = false
     private var appearance: OfflineChartDocument.Appearance?
+    private weak var captureRegistry: CanvasCaptureRegistry?
+    private var captureNode: CanvasCaptureNode?
+    private var captureLease = UUID()
+    private var currentNavigation: WKNavigation?
+    private var loadedGeneration: UUID?
+    var readyForCapture: Bool { loadedGeneration == generation && !hasShownFailure }
 
     static func webView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -98,7 +104,8 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
 
     func update(
         _ webView: WKWebView, component: AstralComponent, viewportWidth: Double,
-        appearance: OfflineChartDocument.Appearance? = nil
+        appearance: OfflineChartDocument.Appearance? = nil,
+        captureRegistry: CanvasCaptureRegistry? = nil, captureNode: CanvasCaptureNode? = nil
     ) {
         self.appearance = appearance
         #if os(macOS)
@@ -111,11 +118,27 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         } catch {
             next = OfflineChartDocument.failure(appearance: appearance)
         }
+        if document != next || self.captureNode != captureNode || self.captureRegistry !== captureRegistry {
+            self.captureRegistry = captureRegistry
+            self.captureNode = captureNode
+            captureLease = UUID()
+            let lease = captureLease
+            if let captureNode, let captureRegistry {
+                captureRegistry.register(captureNode, lease: lease) { [weak self, weak webView] in
+                    guard let self, let webView, self.captureLease == lease else {
+                        throw CanvasCaptureError.unavailable
+                    }
+                    return try await self.capturePixels(webView)
+                }
+            }
+        }
         guard document != next else { return }
         document = next
         hasShownFailure = false
         let current = UUID()
         generation = current
+        currentNavigation = nil
+        loadedGeneration = nil
         webView.navigationDelegate = self
         webView.uiDelegate = self
         // The CSP already blocks fetch, frames, remote images, fonts, and
@@ -135,12 +158,30 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
             webView.configuration.userContentController.removeAllContentRuleLists()
             webView.configuration.userContentController.add(rules)
             self.mayLoadDocument = true
-            webView.loadHTMLString(next, baseURL: nil)
+            self.currentNavigation = webView.loadHTMLString(next, baseURL: nil)
         }
     }
 
     func dismantle(_ webView: WKWebView) {
+        if let registry = captureRegistry, let node = captureNode, registry.accepts(node) {
+            let lease = captureLease
+            let current = generation
+            Task {
+                let pixels = try? await capturePixels(webView)
+                registry.unmount(node, lease: lease, pixels: pixels)
+                if generation == current { close(webView) }
+            }
+        } else {
+            close(webView)
+        }
+    }
+
+    private func close(_ webView: WKWebView) {
         generation = UUID()
+        currentNavigation = nil
+        loadedGeneration = nil
+        captureRegistry = nil
+        captureNode = nil
         document = nil
         appearance = nil
         webView.stopLoading()
@@ -153,6 +194,7 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     private func showFailure(_ webView: WKWebView) {
         guard !hasShownFailure else { return }
         hasShownFailure = true
+        loadedGeneration = nil
         mayLoadDocument = true
         webView.loadHTMLString(
             OfflineChartDocument.failure(appearance: appearance), baseURL: nil)
@@ -167,6 +209,54 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     }
 
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { showFailure(webView) }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let currentNavigation, currentNavigation === navigation { loadedGeneration = generation }
+    }
+
+    /// Query the existing chart, preserving its current zoom/pan/legend. No
+    /// raw component is replayed and no new media request is made.
+    func capturePixels(_ webView: WKWebView) async throws -> Data {
+        try Task.checkCancellation()
+        let current = generation
+        guard readyForCapture else { throw CanvasCaptureError.unavailable }
+        let request = CanvasChartPixelRequest()
+        let encoded = try await withTaskCancellationHandler(
+            operation: {
+                try await withCheckedThrowingContinuation { continuation in
+                    request.begin(continuation)
+                    webView.callAsyncJavaScript(
+                        """
+                        if(document.documentElement.dataset.chartState!=='ready'||typeof Plotly==='undefined')throw new Error('Unavailable');
+                        const chart=document.getElementById('chart');
+                        if(!chart||!chart._fullLayout)throw new Error('Unavailable');
+                        const r=chart.getBoundingClientRect(), w=Math.round(r.width), h=Math.round(r.height);
+                        if(w<1||h<1||!Number.isFinite(w)||!Number.isFinite(h))throw new Error('Unavailable');
+                        const png=await Plotly.toImage(chart,{format:'png',width:w,height:h,scale:Math.min(2,4096/Math.max(w,h))});
+                        if(typeof png!=='string'||png.length>8*1024*1024||!png.startsWith('data:image/png;base64,'))throw new Error('Unavailable');
+                        return png;
+                        """, arguments: [:], in: nil, in: .page
+                    ) { result in
+                        switch result {
+                        case .success(let value):
+                            if let encoded = value as? String {
+                                request.finish(.success(encoded))
+                            } else {
+                                request.finish(.failure(CanvasCaptureError.unavailable))
+                            }
+                        case .failure: request.finish(.failure(CanvasCaptureError.unavailable))
+                        }
+                    }
+                }
+            }, onCancel: { Task { @MainActor in request.finish(.failure(CancellationError())) } })
+        try Task.checkCancellation()
+        guard generation == current, loadedGeneration == current,
+            encoded.hasPrefix("data:image/png;base64,"), encoded.utf8.count <= 8 * 1024 * 1024,
+            let pixels = Data(base64Encoded: String(encoded.dropFirst(22))),
+            !pixels.isEmpty, pixels.count <= CanvasCaptureRegistry.maximumPixelBytes
+        else { throw CanvasCaptureError.unavailable }
+        return pixels
+    }
 
     func webView(
         _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
@@ -191,13 +281,18 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     struct OfflineChartView: UIViewRepresentable {
         let component: AstralComponent
         let viewportWidth: CGFloat
+        @Environment(AppModel.self) private var model
+        @Environment(\.canvasCapturePath) private var capturePath
         func makeCoordinator() -> OfflineChartCoordinator { OfflineChartCoordinator() }
         func makeUIView(context: Context) -> WKWebView { OfflineChartCoordinator.webView() }
         static func dismantleUIView(_ view: WKWebView, coordinator: OfflineChartCoordinator) {
             coordinator.dismantle(view)
         }
         func updateUIView(_ view: WKWebView, context: Context) {
-            context.coordinator.update(view, component: component, viewportWidth: viewportWidth)
+            context.coordinator.update(
+                view, component: component, viewportWidth: viewportWidth,
+                captureRegistry: model.canvasCapture,
+                captureNode: model.canvasCapture.node(path: capturePath, component: component))
         }
     }
 #else
@@ -205,6 +300,8 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         let component: AstralComponent
         let viewportWidth: CGFloat
         @Environment(ThemeStore.self) private var theme
+        @Environment(AppModel.self) private var model
+        @Environment(\.canvasCapturePath) private var capturePath
         @Environment(\.astralChartBackdrop) private var backdrop
         func makeCoordinator() -> OfflineChartCoordinator { OfflineChartCoordinator() }
         func makeNSView(context: Context) -> WKWebView { OfflineChartCoordinator.webView() }
@@ -217,7 +314,37 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
                 appearance: .init(
                     background: (backdrop ?? AstralChartBackdrop(theme.palette.bg)).hex,
                     text: AstralChartBackdrop(theme.palette.text).hex,
-                    muted: AstralChartBackdrop(theme.palette.muted).hex))
+                    muted: AstralChartBackdrop(theme.palette.muted).hex),
+                captureRegistry: model.canvasCapture,
+                captureNode: model.canvasCapture.node(path: capturePath, component: component))
         }
     }
 #endif
+
+@MainActor
+private final class CanvasChartPixelRequest {
+    private var continuation: CheckedContinuation<String, Error>?
+    private var result: Result<String, Error>?
+    private var timeout: Task<Void, Never>?
+
+    func begin(_ continuation: CheckedContinuation<String, Error>) {
+        if let result {
+            continuation.resume(with: result)
+            return
+        }
+        self.continuation = continuation
+        timeout = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+            self?.finish(.failure(CanvasCaptureError.unavailable))
+        }
+    }
+
+    func finish(_ result: Result<String, Error>) {
+        guard self.result == nil else { return }
+        self.result = result
+        timeout?.cancel()
+        timeout = nil
+        continuation?.resume(with: result)
+        continuation = nil
+    }
+}

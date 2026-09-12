@@ -271,3 +271,18 @@ fun AstralTheme(
     val scheme = palette?.let { paletteToColorScheme(it) } ?: AstralDarkColors
     MaterialTheme(colorScheme = scheme, typography = astralTypography, content = content)
 }
+
+/** Capture the colors actually used by native components, including their fixed status accents. */
+internal fun exportPalette(scheme: ColorScheme): Map<String, String> {
+    fun hex(color: Color): String =
+        "#%02X%02X%02X".format((color.red * 255).toInt(), (color.green * 255).toInt(), (color.blue * 255).toInt())
+    return mapOf(
+        "bg" to hex(scheme.background), "surface" to hex(scheme.surface), "surface2" to hex(scheme.surfaceVariant),
+        "primary" to hex(scheme.primary), "secondary" to hex(scheme.secondary), "accent" to hex(scheme.tertiary),
+        "text" to hex(scheme.onSurface), "muted" to hex(scheme.onSurfaceVariant), "border" to "#FFFFFF12",
+        "success" to hex(AstralWebStyle.Success),
+        "warning" to hex(AstralWebStyle.Warning),
+        "error" to hex(AstralWebStyle.Error),
+        "info" to "#3B82F6",
+    )
+}

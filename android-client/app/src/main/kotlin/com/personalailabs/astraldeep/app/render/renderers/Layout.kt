@@ -45,6 +45,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.toUpperCase
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.personalailabs.astraldeep.app.render.LocalCanvasCapture
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.inlineMarkdown
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
@@ -86,6 +87,7 @@ private fun GridPrimitive(
         ) { c.children.forEach { renderChild(it) } }
         return
     }
+    val capture = LocalCanvasCapture.current
     val cols = (c.int("columns") ?: 2).coerceAtLeast(1)
     // The authored column count is a wide-screen hint: honoring it verbatim on
     // a phone gives each cell width/N and wraps content character-by-character.
@@ -93,6 +95,7 @@ private fun GridPrimitive(
     BoxWithConstraints {
         val fit = (maxWidth / 150.dp).toInt().coerceAtLeast(1)
         val effective = cols.coerceAtMost(fit)
+        capture?.registry?.columns(capture.path, effective)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             c.children.chunked(effective).forEach { rowItems ->
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -328,10 +331,14 @@ private fun CollapsiblePrimitive(
     c: Component,
     renderChild: @Composable (Component) -> Unit,
 ) {
-    var expanded by remember { mutableStateOf(false) }
+    val capture = LocalCanvasCapture.current
+    var expanded by remember(c.attributes) { mutableStateOf(capture?.registry?.node(capture.path)?.expanded ?: false) }
     if (welcomePlacementRole(c) == "more") {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            TextButton(onClick = { expanded = !expanded }, modifier = Modifier.heightIn(min = 48.dp)) {
+            TextButton(onClick = {
+                expanded = !expanded
+                capture?.registry?.expand(capture.path, expanded)
+            }, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text((if (expanded) "⌄ " else "› ") + (c.str("title") ?: "Details"), color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (expanded) {
@@ -351,7 +358,11 @@ private fun CollapsiblePrimitive(
             Text(
                 text = (if (expanded) "▼ " else "▶ ") + (c.str("title") ?: "Details"),
                 style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.fillMaxWidth().clickable { expanded = !expanded },
+                modifier =
+                    Modifier.fillMaxWidth().clickable {
+                        expanded = !expanded
+                        capture?.registry?.expand(capture.path, expanded)
+                    },
             )
             if (expanded) c.children.forEach { renderChild(it) }
         }

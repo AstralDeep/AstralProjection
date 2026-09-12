@@ -53,12 +53,14 @@ struct RootView: View {
                 Color.clear
                     .onAppear {
                         viewportWidth = geo.size.width
+                        model.canvasCapture.setWindow(geo.size)
                         model.viewportChanged(
                             width: Int(geo.size.width),
                             height: Int(geo.size.height))
                     }
                     .onChange(of: geo.size) { _, size in
                         viewportWidth = size.width
+                        model.canvasCapture.setWindow(size)
                         model.viewportChanged(
                             width: Int(size.width),
                             height: Int(size.height))

@@ -72,6 +72,40 @@ final class WorkspacePresentationUITests: XCTestCase {
         XCTAssertFalse(total.exists)
     }
 
+    func testPhoneCanScrollToTheCompleteBelowFoldChartAndBackAfterMessagesCollapse() throws {
+        #if os(iOS)
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-chart-scroll"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+            let toggle = app.buttons["workspace-messages-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+            toggle.tap()
+            let canvas = app.scrollViews["workspace-canvas-scroll"]
+            let chart = app.webViews.firstMatch
+            let footer = app.staticTexts["Complete chart footer"]
+            for _ in 0..<12 {
+                if chart.exists, footer.isHittable, canvas.frame.contains(chart.frame) { break }
+                canvas.swipeUp(velocity: .slow)
+            }
+            XCTAssertTrue(chart.waitForExistence(timeout: 5))
+            XCTAssertTrue(chart.isHittable)
+            XCTAssertTrue(canvas.frame.contains(chart.frame), "The whole chart must fit within the visible canvas")
+            XCTAssertTrue(footer.isHittable)
+            XCTAssertTrue(app.staticTexts["Below-fold Alpha vs Beta"].isHittable)
+            XCTAssertFalse(app.staticTexts["Chart could not be displayed. Reopen this result to try again."].exists)
+            capture(app, name: "workspace-088-complete-below-fold-chart-synthetic-fixture")
+            for _ in 0..<12 {
+                if app.staticTexts["Dice layout regression"].isHittable { break }
+                canvas.swipeDown(velocity: .slow)
+            }
+            XCTAssertTrue(app.staticTexts["Dice layout regression"].isHittable)
+            toggle.tap()
+            XCTAssertTrue(app.scrollViews["conversation-message-scroll"].waitForExistence(timeout: 3))
+        #endif
+    }
+
     func testPhoneCanvasRemainsResponsiveWhileCollapsingAndScrollingMessages() throws {
         #if os(iOS)
             let app = XCUIApplication()

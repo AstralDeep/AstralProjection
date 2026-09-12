@@ -48,6 +48,7 @@ import com.personalailabs.astraldeep.app.auth.OidcAuth
 import com.personalailabs.astraldeep.app.auth.TokenStore
 import com.personalailabs.astraldeep.app.auth.keycloakEndpoints
 import com.personalailabs.astraldeep.app.auth.routeAfterRefresh
+import com.personalailabs.astraldeep.app.render.CanvasCaptureRegistry
 import com.personalailabs.astraldeep.app.render.Download
 import com.personalailabs.astraldeep.app.render.Emit
 import com.personalailabs.astraldeep.app.render.Renderer
@@ -81,7 +82,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
-    private val workspaceActions by lazy { WorkspaceActionController(this) { authToken.value } }
+    private val canvasCapture = CanvasCaptureRegistry()
+    private val workspaceActions by lazy { WorkspaceActionController(this, { authToken.value }, canvasCapture) }
 
     private val client by lazy { OrchestratorClient(AppConfig.WS_URL) }
     private val rest by lazy { AstralRest(AppConfig.API_BASE) }
@@ -225,11 +227,17 @@ class MainActivity : ComponentActivity() {
                             Emit { a, p -> vm.sendEvent(a, p) },
                             Download { url, fn -> downloadFile(url, fn) },
                             ThemeSink { spec -> vm.applyTheme(spec) },
-                        ).registerAllRenderers()
+                        ).registerAllRenderers().also {
+                            it.capture = canvasCapture
+                            it.captureContext = { vm.workspaceContext() }
+                        }
                     }
                 val token by authToken.collectAsStateWithLifecycle()
                 val error by signInError.collectAsStateWithLifecycle()
-                LaunchedEffect(uiState, token) { workspaceActions.invalidateStale() }
+                LaunchedEffect(uiState, token) {
+                    if (vm.workspaceContext() == null) canvasCapture.clear()
+                    workspaceActions.invalidateStale()
+                }
 
                 if (token == null) {
                     SignInScreen(error = error, onSignIn = ::startSignIn)

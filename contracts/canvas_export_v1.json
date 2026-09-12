@@ -1,0 +1,137 @@
+{
+  "version": "astral.canvas-export/v1",
+  "status": "display_only_ephemeral_representation",
+  "request_fields": [
+    "version",
+    "components",
+    "viewport",
+    "theme",
+    "display_state",
+    "images"
+  ],
+  "response_fields": [
+    "version",
+    "html",
+    "viewport",
+    "theme"
+  ],
+  "viewport_fields": [
+    "width",
+    "height",
+    "window_width",
+    "window_height"
+  ],
+  "theme_fields": [
+    "bg",
+    "surface",
+    "surface2",
+    "border",
+    "primary",
+    "secondary",
+    "accent",
+    "text",
+    "muted",
+    "success",
+    "warning",
+    "error",
+    "info"
+  ],
+  "theme_value": "#RRGGBB; border additionally accepts #RRGGBBAA",
+  "limits": {
+    "input_bytes": 8388608,
+    "output_bytes": 33554432,
+    "nodes": 12000,
+    "depth": 32,
+    "viewport_width": [
+      64,
+      4096
+    ],
+    "viewport_height": [
+      32,
+      16384
+    ],
+    "image_dimension": 4096,
+    "window_width": [
+      64,
+      16384
+    ],
+    "window_height": [
+      32,
+      16384
+    ],
+    "effective_grid_columns": [
+      1,
+      64
+    ]
+  },
+  "display_state_fields": [
+    "path",
+    "component_id",
+    "kind",
+    "value"
+  ],
+  "display_state_kinds": {
+    "collapsible_open": "boolean",
+    "tabs_open": "unique_in_range_integer_indices"
+  },
+  "image_fields": [
+    "path",
+    "component_id",
+    "data_url"
+  ],
+  "image_mime_types": [
+    "image/png"
+  ],
+  "path": "Exact JSON tree path, starting /components/<index>, followed by /children/<index>, /content/<index>, or /tabs/<index>/content/<index> or /tabs/<index>/children/<index>. Each record's component_id must equal the node's identity (null only when absent). Every collapsible, tabs, image and chart node requires exactly one matching record. Duplicate, missing and unused records are refused. Content/children aliases must use the exact submitted raw key. Simultaneous child arrays or non-array wrappers are refused; capture only the visible subtree for unmounted panes.",
+  "supported_components": [
+    "container",
+    "text",
+    "card",
+    "table",
+    "list",
+    "alert",
+    "progress",
+    "metric",
+    "code",
+    "image",
+    "grid",
+    "tabs",
+    "divider",
+    "collapsible",
+    "bar_chart",
+    "line_chart",
+    "pie_chart",
+    "plotly_chart",
+    "badge",
+    "hero",
+    "keyvalue",
+    "timeline",
+    "rating"
+  ],
+  "omitted_components": [
+    "button",
+    "input",
+    "param_picker",
+    "color_picker",
+    "theme_apply",
+    "file_upload",
+    "file_download",
+    "skeleton",
+    "chat_history",
+    "download_card"
+  ],
+  "unsupported_components": "All other types, including generative and audio, fail visibly; there is no guessed fallback.",
+  "semantics": "Capture the currently visible already-adapted canvas after the existing authorization GET, including visible transient components. No second ROTE pass. This is client-supplied display data, never proof of a committed result or provenance. Strip action and credential metadata. No dispatch, references, logging, hashing, persistence, sharing, or URL fetching. Every chart requires current loaded PNG pixels, preserving zoom/pan/legend; raw chart data/config is never replayed. Viewport width is the actual canvas width, not screen width; finite fractional logical pixels are accepted. Canvas width must not exceed window_width. The private browser viewport is sized to window_width/window_height, while its canvas uses width and grows naturally to full content height without clipping. Captured grid columns are exact integers 1–64 and rendered without another responsive column adaptation. Canonical SVG icon subtrees are omitted as in the web finalizer, preserving adjacent visible text.",
+  "host_authority": "The future HTTP adapter independently authenticates and checks owner/chat/export flag/current revision before and after rendering. Owner/chat/revision are outside this pure representation. The native host rechecks its captured context before request, after rendering and before file exposure. No retry or duplicate effect.",
+  "assets": "Only bundled contracts/assets/exports/export.html with exact manifest-pinned public assets. Nonpersistent isolated native browser; no credentials, network, navigation or native action bridge. The fixed finalizer returns one bounded script-free HTML document. Chart PNG is captured from the existing ready native chart, not reconstructed.",
+  "legacy_share": "Unchanged: existing server-owned script-free share rendition, owner/PHI gates and snapshot mint remain separate.",
+  "targets": [
+    "web",
+    "android",
+    "ios",
+    "macos"
+  ],
+  "watch": "Existing 055 server-owned export/share omission.",
+  "windows": "Existing compatible export UI; native redesign explicitly excluded.",
+  "image_display": "Optional paired width/height are measured finite logical pixels >0 and <=16384, never authored dimensions. Caption is actual visible text only; alt is accessibility text. Omit dimensions for legacy intrinsic sizing."
+}

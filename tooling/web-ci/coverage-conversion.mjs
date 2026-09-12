@@ -10,6 +10,8 @@ const COVERAGE_PRODUCER_BASE = Object.freeze({
 
 export const NODE_COVERAGE_PRODUCER = Object.freeze({
   ...COVERAGE_PRODUCER_BASE,
+  // v3 resolves each observed execution before combining executable-line hits.
+  producer_version: 3,
   producer: "astralprojection-node-v8-executable-lines",
   coverage_lane: "node-v8",
 });

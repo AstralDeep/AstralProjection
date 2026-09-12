@@ -41,6 +41,7 @@ val prepareWorkspace088Resources =
 val prepareWorkspace088Charts =
     tasks.register<Sync>("prepareWorkspace088Charts") {
         from(rootProject.file("../contracts/assets/charts")) { include("chart.html") }
+        from(rootProject.file("../contracts/assets/exports")) { include("export.html") }
         from(rootProject.file("../backend/webrender/static/vendor")) { include("plotly.min.js") }
         from(rootProject.file("../contracts/assets/fonts")) {
             include("*-OFL.txt")

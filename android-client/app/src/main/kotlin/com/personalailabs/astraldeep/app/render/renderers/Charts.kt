@@ -26,6 +26,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import com.personalailabs.astraldeep.app.render.CurrentChartPixels
+import com.personalailabs.astraldeep.app.render.LocalCanvasCapture
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
 import com.personalailabs.astraldeep.app.ui.theme.astralCardSurface
@@ -37,6 +39,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 import java.io.ByteArrayInputStream
 import java.util.Base64
+import java.util.UUID
 
 fun Renderer.registerChartRenderers(): Renderer =
     apply {
@@ -98,6 +101,7 @@ private object OfflineChartAssets {
 /** The shared Plotly renderer receives data only; the WebView has no app bridge or network. */
 internal class ChartWebView(context: Context) : WebView(context) {
     @Volatile var chartDocument: ByteArray? = null
+    internal var exportPixels: CurrentChartPixels? = null
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -145,6 +149,7 @@ internal fun isolatedChartWebView(context: Context): ChartWebView =
 
 @Composable
 private fun OfflineChart(component: Component) {
+    val capture = LocalCanvasCapture.current
     val context = LocalContext.current
     val viewport = LocalConfiguration.current.screenWidthDp
     val payload = remember(component, viewport) { offlineChartPayload(component, viewport) }
@@ -171,8 +176,14 @@ private fun OfflineChart(component: Component) {
                 modifier = Modifier.fillMaxWidth().height(chartHeight),
                 update = { web ->
                     if (web.tag != payload) {
+                        val generation = UUID.randomUUID().toString()
+                        web.exportPixels = CurrentChartPixels(web, generation)
+                        capture?.registry?.pixels(capture.path, web.exportPixels)
                         web.tag = payload
-                        web.chartDocument = document.getOrThrow().toByteArray(Charsets.UTF_8)
+                        web.chartDocument =
+                            document.getOrThrow().replace(
+                                "<head>", "<head><meta name=\"astral-native-chart-generation\" content=\"$generation\">",
+                            ).toByteArray(Charsets.UTF_8)
                         web.loadUrl(CHART_ORIGIN)
 
                         fun checkState(attempt: Int) {
@@ -196,8 +207,13 @@ private fun OfflineChart(component: Component) {
                 onRelease = { web ->
                     web.tag = null
                     web.chartDocument = null
-                    web.stopLoading()
-                    web.destroy()
+                    val pixels = web.exportPixels
+                    if (pixels != null) {
+                        pixels.release()
+                    } else {
+                        web.stopLoading()
+                        web.destroy()
+                    }
                 },
             )
         }

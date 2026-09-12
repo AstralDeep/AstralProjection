@@ -43,6 +43,7 @@ async function setup(page, width = 1200) {
   await page.addStyleTag({ path: resolve(STATIC, "astral.css") });
   await page.addScriptTag({ path: resolve(STATIC, "vendor/tailwind.js") });
   await page.addScriptTag({ path: resolve(STATIC, "vendor/plotly.min.js") });
+  await page.addScriptTag({ path: resolve(STATIC, "canvas-export.js") });
   await page.addScriptTag({ content: `var canvas=document.getElementById('astral-canvas'); var API_URL=location.origin; var token='fixture-token'; var activeChatId='chat-a'; var accountPrivacyEpoch=1; var revision=8; function lastCommittedRenderRevision(){return revision;} var errors=[]; function showToast(message){errors.push(message);} ${chartCode}\n${exportCode}` });
   await page.evaluate(async () => {
     const charts = document.querySelectorAll(".astral-chart");

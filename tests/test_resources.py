@@ -37,6 +37,10 @@ def test_compatibility_packages_and_public_facade_are_importable() -> None:
         (resources.template_path, "shell.html"),
         (resources.template_path, "kiosk.html"),
         (resources.static_path, "client.js"),
+        (resources.static_path, "canvas-export.js"),
+        (resources.static_path, "canvas-export-host.js"),
+        (resources.export_asset_path, "export.html"),
+        (resources.export_asset_path, "manifest.json"),
         (resources.static_path, "astral.css"),
         (resources.static_path, "offline.html"),
         (resources.static_path, "offline.css"),
@@ -183,6 +187,9 @@ def test_wheel_install_contains_compatibility_packages_and_resources(tmp_path: P
                 "p=astralprojection.protocol_manifest_path(); "
                 "assert json.loads(p.read_text(encoding='utf-8'))['version'] == 1; "
                 "assert astralprojection.static_path('client.js').is_file(); "
+                "assert astralprojection.static_path('canvas-export.js').is_file(); "
+                "assert astralprojection.export_asset_path('export.html').is_file(); "
+                "assert astralprojection.export_asset_path('manifest.json').is_file(); "
                 "assert astralprojection.static_path('offline.html').is_file(); "
                 "assert astralprojection.static_path('offline.css').is_file(); "
                 "assert astralprojection.static_path('service-worker.js').is_file(); "

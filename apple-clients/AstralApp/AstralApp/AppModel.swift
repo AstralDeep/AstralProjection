@@ -124,11 +124,13 @@ final class AppModel: NSObject {
 
     // MARK: configuration
 
+    @ObservationIgnored private let defaults: UserDefaults
+
     // UserDefaults-backed (the former @AppStorage pair — property wrappers
     // aren't allowed on @Observable stored properties). Seeded in init.
     var serverBaseText: String {
         didSet {
-            UserDefaults.standard.set(serverBaseText, forKey: "serverBase")
+            defaults.set(serverBaseText, forKey: "serverBase")
             // Feature 053 — mirror the endpoint to the paired watch. Best-effort:
             // the watch runs independently and falls back to its build-time default.
             #if os(iOS)
@@ -137,7 +139,7 @@ final class AppModel: NSObject {
         }
     }
     var authorityText: String {
-        didSet { UserDefaults.standard.set(authorityText, forKey: "authority") }
+        didSet { defaults.set(authorityText, forKey: "authority") }
     }
 
     #if os(macOS)
@@ -235,6 +237,7 @@ final class AppModel: NSObject {
     var llmFirstLoginOperation: LLMFirstLoginOperation?
 
     let themeStore = ThemeStore()
+    @ObservationIgnored let canvasCapture = CanvasCaptureRegistry()
 
     // Derived
     var visibleCanvas: [AstralComponent] {
@@ -348,11 +351,12 @@ final class AppModel: NSObject {
     /// Production's no-argument initializer retains its existing Keychain.
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
-        tokenStore: TokenStorage
+        tokenStore: TokenStorage,
+        defaults: UserDefaults = .standard
     ) {
         self.store = tokenStore
         self.conversationResumeStore = conversationResumeStore
-        let defaults = UserDefaults.standard
+        self.defaults = defaults
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
         if let stored = defaults.string(forKey: voiceDeviceKey),
             let parsed = UUID(uuidString: stored), parsed.uuidString.lowercased() == stored,
@@ -384,6 +388,14 @@ final class AppModel: NSObject {
         serverBaseText = storedBase.isEmpty ? AstralConfig.serverBaseURL : storedBase
         authorityText = storedAuthority.isEmpty ? AstralConfig.keycloakAuthority : storedAuthority
         super.init()
+        canvasCapture.currentComponents = { [weak self] in self?.workspaceCanvas ?? [] }
+        canvasCapture.currentScope = { [weak self] in
+            guard let self, self.signedIn, self.screen == .chat, !self.isViewingHistory,
+                !self.timelineReadOnly, !self.mandatorySurface, self.workspaceStarted,
+                let chat = self.activeChatId, !chat.isEmpty
+            else { return nil }
+            return CanvasCaptureScope(owner: self.downloadOwner, server: self.serverBase, chat: chat)
+        }
         voice.setFrameSender { [weak self] text in
             self?.sendVoiceWire(text) ?? false
         }
@@ -502,13 +514,64 @@ final class AppModel: NSObject {
         if let operation {
             file = try await operation()
         } else {
-            file = try await workspaceRest(context).downloadFile(
-                from: url.absoluteString, suggestedFilename: "astraldeep-canvas.html",
-                expectedRenderRevision: context.renderRevision)
+            file = try await exportWorkspacePresentation(
+                context,
+                authorize: {
+                    try await self.workspaceRest(context).downloadFile(
+                        from: url.absoluteString, suggestedFilename: "astraldeep-canvas.html",
+                        expectedRenderRevision: context.renderRevision)
+                },
+                capture: {
+                    let visible = self.workspaceCanvas
+                    return try await self.canvasCapture.capture(visible) {
+                        self.workspaceActionIsCurrent(context) && self.workspaceCanvas == visible
+                    }
+                },
+                present: { capture in
+                    try await self.workspaceRest(context).canvasPresentation(
+                        chatId: context.chatId, renderRevision: context.renderRevision, capture: capture)
+                },
+                render: { presentation in
+                    try await OfflineCanvasExport.render(presentation: presentation) {
+                        self.workspaceActionIsCurrent(context)
+                    }
+                })
         }
         guard !Task.isCancelled, workspaceActionIsCurrent(context) else {
             RestClient.removeTemporaryDownload(file)
             throw CancellationError()
+        }
+        return file
+    }
+
+    /// The legacy GET performs its normal authorization/audit first. Its
+    /// canonical HTML is private and immediately removed; only the frozen
+    /// visible capture is finalized. No stage retries an uncertain request.
+    func exportWorkspacePresentation(
+        _ context: WorkspaceActionContext,
+        authorize: () async throws -> URL,
+        capture: () async throws -> Data,
+        present: (Data) async throws -> Data,
+        render: (Data) async throws -> Data
+    ) async throws -> URL {
+        func check() throws {
+            try Task.checkCancellation()
+            guard workspaceActionIsCurrent(context) else { throw CancellationError() }
+        }
+        try check()
+        let authorized = try await authorize()
+        RestClient.removeTemporaryDownload(authorized)
+        try check()
+        let capture = try await capture()
+        try check()
+        let presentation = try await present(capture)
+        try check()
+        let html = try await render(presentation)
+        try check()
+        let file = try CanvasCaptureFile.write(html)
+        do { try check() } catch {
+            RestClient.removeTemporaryDownload(file)
+            throw error
         }
         return file
     }
@@ -2078,6 +2141,7 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        canvasCapture.clear()
         activeChatId = nil
         voice.updateVisibleChatLocally(nil)
         turns = []

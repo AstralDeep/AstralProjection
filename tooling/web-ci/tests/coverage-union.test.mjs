@@ -14,6 +14,8 @@ import {
   BROWSER_COVERAGE_PRODUCER,
   BROWSER_LANE_SOURCE_PATHS,
   NODE_COVERAGE_PRODUCER,
+  OFFLINE_NODE_SOURCE_PATHS,
+  EXPORT_BROWSER_SOURCE_PATHS,
   NODE_LANE_SOURCE_PATHS,
   UNION_COVERAGE_PRODUCER,
   unionCanonicalCoverage,
@@ -30,6 +32,8 @@ const NODE_PATHS = Object.freeze([
   "tooling/web-ci/release-runner.mjs",
 ]);
 const BROWSER_PATHS = Object.freeze(["backend/webrender/static/client.js"]);
+const OFFLINE_PATHS = ["backend/webrender/static/offline-registration.js", "backend/webrender/static/service-worker.js"];
+const EXPORT_PATHS = ["backend/webrender/static/canvas-export-host.js", "backend/webrender/static/canvas-export.js"];
 
 function record(path, hits = { 0: 1, 1: 0 }) {
   return {
@@ -57,13 +61,15 @@ function envelope(identity, paths, hits = { 0: 1, 1: 0 }) {
 
 function fixture() {
   const repoRoot = mkdtempSync(resolve(tmpdir(), "projection-coverage-union-"));
-  for (const path of [...NODE_PATHS, ...BROWSER_PATHS]) {
+  for (const path of [...NODE_PATHS, ...BROWSER_PATHS, ...OFFLINE_PATHS, ...EXPORT_PATHS]) {
     const absolute = resolve(repoRoot, path);
     mkdirSync(resolve(absolute, ".."), { recursive: true });
     writeFileSync(absolute, SOURCE, "utf8");
   }
   return {
     repoRoot,
+    offlineNode: envelope(NODE_COVERAGE_PRODUCER, OFFLINE_PATHS),
+    exportBrowser: envelope(BROWSER_COVERAGE_PRODUCER, EXPORT_PATHS),
     node: envelope(NODE_COVERAGE_PRODUCER, NODE_PATHS),
     browser: envelope(BROWSER_COVERAGE_PRODUCER, BROWSER_PATHS, { 0: 2, 1: 0 }),
   };
@@ -72,6 +78,8 @@ function fixture() {
 test("lane source allowlists are exact and disjoint", () => {
   assert.deepEqual(NODE_LANE_SOURCE_PATHS, NODE_PATHS);
   assert.deepEqual(BROWSER_LANE_SOURCE_PATHS, BROWSER_PATHS);
+  assert.deepEqual(OFFLINE_NODE_SOURCE_PATHS, OFFLINE_PATHS);
+  assert.deepEqual(EXPORT_BROWSER_SOURCE_PATHS, EXPORT_PATHS);
   assert.deepEqual(
     NODE_LANE_SOURCE_PATHS.filter((path) => BROWSER_LANE_SOURCE_PATHS.includes(path)),
     [],
@@ -79,27 +87,27 @@ test("lane source allowlists are exact and disjoint", () => {
 });
 
 test("exact Node tooling and authoritative browser coverage form one envelope", () => {
-  const { repoRoot, node, browser } = fixture();
-  const merged = unionCanonicalCoverage({ node, browser, repoRoot });
+  const { repoRoot, node, browser, offlineNode, exportBrowser } = fixture();
+  const merged = unionCanonicalCoverage({ node, browser, offlineNode, exportBrowser, repoRoot });
 
   assert.deepEqual(
     Object.fromEntries(Object.entries(merged).filter(([key]) => key !== "coverage")),
     UNION_COVERAGE_PRODUCER,
   );
-  assert.deepEqual(Object.keys(merged.coverage), [...BROWSER_PATHS, ...NODE_PATHS]);
+  assert.deepEqual(Object.keys(merged.coverage), [...BROWSER_PATHS, ...NODE_PATHS, ...OFFLINE_PATHS, ...EXPORT_PATHS].sort());
   assert.deepEqual(merged.coverage[BROWSER_PATHS[0]].s, { 0: 2, 1: 0 });
   assert.deepEqual(merged.coverage[NODE_PATHS[0]].s, { 0: 1, 1: 0 });
 });
 
 test("relabeled semantic clones cannot impersonate the other lane", () => {
-  const { repoRoot, node } = fixture();
+  const { repoRoot, node, offlineNode, exportBrowser } = fixture();
   const relabeledClone = {
     ...BROWSER_COVERAGE_PRODUCER,
     coverage: structuredClone(node.coverage),
   };
 
   assert.throws(
-    () => unionCanonicalCoverage({ node, browser: relabeledClone, repoRoot }),
+    () => unionCanonicalCoverage({ node, browser: relabeledClone, offlineNode, exportBrowser, repoRoot }),
     /semantically identical/u,
   );
 });
@@ -125,10 +133,10 @@ test("missing, cross-lane, and unknown source paths fail closed", () => {
       );
     },
   ]) {
-    const { repoRoot, node, browser } = fixture();
+    const { repoRoot, node, browser, offlineNode, exportBrowser } = fixture();
     mutation(node, browser);
     assert.throws(
-      () => unionCanonicalCoverage({ node, browser, repoRoot }),
+      () => unionCanonicalCoverage({ node, browser, offlineNode, exportBrowser, repoRoot }),
       /lane source scope/u,
     );
   }
@@ -151,10 +159,10 @@ test("metadata, record shape, source binding, and counts fail closed", () => {
   ];
 
   for (const mutate of mutations) {
-    const { repoRoot, node, browser } = fixture();
+    const { repoRoot, node, browser, offlineNode, exportBrowser } = fixture();
     mutate(node);
     assert.throws(
-      () => unionCanonicalCoverage({ node, browser, repoRoot }),
+      () => unionCanonicalCoverage({ node, browser, offlineNode, exportBrowser, repoRoot }),
       /invalid canonical JavaScript coverage union/u,
     );
   }
@@ -171,10 +179,10 @@ test("malformed envelopes and lane identities fail closed", () => {
       browser.coverage = original;
     },
   ]) {
-    const { repoRoot, node, browser } = fixture();
+    const { repoRoot, node, browser, offlineNode, exportBrowser } = fixture();
     mutate(node, browser);
     assert.throws(
-      () => unionCanonicalCoverage({ node, browser, repoRoot }),
+      () => unionCanonicalCoverage({ node, browser, offlineNode, exportBrowser, repoRoot }),
       /invalid canonical JavaScript coverage union/u,
     );
   }
@@ -187,10 +195,10 @@ test("candidate sources must remain canonical, current, executable UTF-8", () =>
     ["// comment only\n", /source cannot produce a canonical statement map/u],
     ["", /source size is out of bounds/u],
   ]) {
-    const { repoRoot, node, browser } = fixture();
+    const { repoRoot, node, browser, offlineNode, exportBrowser } = fixture();
     writeFileSync(resolve(repoRoot, NODE_PATHS[0]), bytes);
     assert.throws(
-      () => unionCanonicalCoverage({ node, browser, repoRoot }),
+      () => unionCanonicalCoverage({ node, browser, offlineNode, exportBrowser, repoRoot }),
       expected,
     );
   }
@@ -227,4 +235,50 @@ test("repository root must be an available directory", () => {
     }),
     /repository root is not a directory/u,
   );
+});
+
+
+test("offline and export lanes are mandatory, exact and cannot be relabeled", () => {
+  for (const key of ["offlineNode", "exportBrowser"]) {
+    for (const mutate of [
+      value => { delete value[key]; },
+      value => { value[key].coverage = {}; },
+      value => { delete value[key].coverage[Object.keys(value[key].coverage)[0]]; },
+      value => { value[key].coverage_lane = "node-browser-union"; },
+      value => { value[key].producer_version = key === "offlineNode" ? 2 : 3; },
+      value => { value[key] = structuredClone(value[key === "offlineNode" ? "node" : "browser"]); },
+      value => {
+        const other = key === "offlineNode" ? "exportBrowser" : "offlineNode";
+        value[key].coverage = structuredClone(value[other].coverage);
+      },
+    ]) {
+      const value = fixture();
+      mutate(value);
+      assert.throws(() => unionCanonicalCoverage(value), /invalid canonical JavaScript coverage union/u);
+    }
+  }
+});
+
+test("all four lanes are disjoint and preserve zero-hit observations", () => {
+  const value = fixture();
+  const result = unionCanonicalCoverage(value);
+  assert.equal(result.producer_version, 3);
+  assert.equal(Object.keys(result.coverage).length, 12);
+  for (const path of [...OFFLINE_PATHS, ...EXPORT_PATHS]) {
+    assert.deepEqual(result.coverage[path].s, { 0: 1, 1: 0 });
+    assert.deepEqual(result.coverage[path].statementMap, record(path).statementMap);
+  }
+  for (const [left, right] of [["node", "offlineNode"], ["browser", "exportBrowser"]]) {
+    const swapped = fixture();
+    [swapped[left], swapped[right]] = [swapped[right], swapped[left]];
+    assert.throws(() => unionCanonicalCoverage(swapped), /lane source scope/u);
+  }
+});
+
+test("offline/export observations bind exact candidate executable lines", () => {
+  for (const path of [...OFFLINE_PATHS, ...EXPORT_PATHS]) {
+    const value = fixture();
+    writeFileSync(resolve(value.repoRoot, path), "const alpha = 1;\nalpha;\nalpha += 1;\n");
+    assert.throws(() => unionCanonicalCoverage(value), /statement/u);
+  }
 });

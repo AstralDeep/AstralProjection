@@ -17,6 +17,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasScrollAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -185,7 +188,7 @@ class Workspace088InstrumentedTest {
         // A prefetched AndroidView can remain outside the viewport longer than
         // the host's chart initialization deadline before the user scrolls.
         Thread.sleep(12000)
-        rule.onNodeWithTag("fixture-canvas").performScrollToIndex(1)
+        rule.onNode(hasScrollAction() and hasAnyAncestor(hasTestTag("fixture-canvas"))).performScrollToIndex(1)
         rule.waitUntil(15000) { inspectChart("document.documentElement.dataset.chartState") == "\"ready\"" }
         rule.onNodeWithTag("offline-chart").assertIsDisplayed()
         assertEquals("\"2,5\"", inspectChart("document.getElementById('chart').data[0].y.join(',')"))

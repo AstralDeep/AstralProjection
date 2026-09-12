@@ -74,7 +74,8 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
     assert (
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
-        "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov-branch "
+        "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
+        "--cov=scripts.build_native_export --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert (
@@ -92,7 +93,16 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
     assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in web
     assert 'for name in ("service-worker.js", "offline-registration.js")' in web
     assert "len(counts) >= .90" in web
-    assert "tests/offline-worker-088.spec.js --browser=chromium" in web
+    assert (
+        "tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js "
+        "tests/native-export-088.spec.js --browser=chromium"
+    ) in web
+    assert "ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json" in web
+    export = _step_block(web, "Enforce portable export executable-line coverage")
+    assert 'Path("build/088/export-javascript.json")' in export
+    assert 'for name in ("canvas-export.js", "canvas-export-host.js")' in export
+    assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in export
+    assert "counts and sum(count > 0 for count in counts) / len(counts) >= .90" in export
     package = json.loads((ROOT / "tooling/web-ci/package.json").read_text())
     assert '"backend/webrender/static/**/*.js"' in package["scripts"]["lint"]
 

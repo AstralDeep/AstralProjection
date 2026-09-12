@@ -16,6 +16,7 @@
             case chatComposer = "chat-composer"
             case workspaceStart = "workspace-start"
             case workspaceCanvas = "workspace-canvas"
+            case workspaceChartScroll = "workspace-chart-scroll"
             case workspaceStyles = "workspace-styles"
             case workspaceHistory = "workspace-history"
             case workspaceActions = "workspace-actions"
@@ -59,6 +60,29 @@
 
             if scenario == .workspaceStart {
                 installWorkspace(on: model)
+                return
+            }
+            if scenario == .workspaceChartScroll {
+                installWorkspaceCanvas(on: model)
+                model.canvas += (1...5).map { index in
+                    AstralComponent(
+                        type: "card",
+                        raw: .object([
+                            "title": .string("Before chart \(index)"),
+                            "content": .array([
+                                .object([
+                                    "type": .string("text"),
+                                    "content": .string(
+                                        "Synthetic visible content before the saved chart. Scroll to see both bars and the canvas footer."
+                                    ),
+                                ])
+                            ]),
+                        ]))
+                }
+                model.canvas +=
+                    InboundFrame.parse(
+                        ##"{"type":"ui_render","target":"canvas","components":[{"type":"card","title":"Below-fold Alpha vs Beta","content":[{"type":"plotly_chart","id":"scroll-chart","title":"Alpha vs Beta","data":[{"marker":{"color":"#6366F1"},"type":"bar","x":["Alpha","Beta"],"y":[2,5]}],"layout":{"xaxis":{"categoryorder":"category ascending","tickangle":-45,"type":"category","automargin":true},"autosize":true,"height":260,"margin":{"l":44,"r":12,"t":32,"b":60},"yaxis":{"automargin":true}},"config":{}}]},{"type":"text","content":"Complete chart footer"}]}"##
+                    )!.renderComponents
                 return
             }
             if scenario == .workspaceCanvas {
@@ -193,7 +217,8 @@
                         errorMessage: "The provider is temporarily unavailable."))
             case .clientWatchdog:
                 break
-            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceStyles, .workspaceHistory,
+            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceChartScroll, .workspaceStyles,
+                .workspaceHistory,
                 .workspaceActions:
                 break
             case .voiceComposer:

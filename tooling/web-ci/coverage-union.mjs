@@ -21,7 +21,7 @@ export {
 
 export const UNION_COVERAGE_PRODUCER = Object.freeze({
   schema_version: 1,
-  producer_version: 2,
+  producer_version: 3,
   v8_to_istanbul_version: "9.3.0",
   espree_version: "11.2.0",
   producer: "astralprojection-node-browser-union",
@@ -40,6 +40,16 @@ export const NODE_LANE_SOURCE_PATHS = Object.freeze([
 
 export const BROWSER_LANE_SOURCE_PATHS = Object.freeze([
   "backend/webrender/static/client.js",
+]);
+
+// Separate observed execution domains; neither may impersonate staging coverage.
+export const OFFLINE_NODE_SOURCE_PATHS = Object.freeze([
+  "backend/webrender/static/offline-registration.js",
+  "backend/webrender/static/service-worker.js",
+]);
+export const EXPORT_BROWSER_SOURCE_PATHS = Object.freeze([
+  "backend/webrender/static/canvas-export-host.js",
+  "backend/webrender/static/canvas-export.js",
 ]);
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
@@ -318,8 +328,8 @@ function validateEnvelope(
   return validated;
 }
 
-/** Union one canonical Node and one canonical browser executable-line envelope. */
-export function unionCanonicalCoverage({ node, browser, repoRoot }) {
+/** Union four mandatory, disjoint, source-bound execution lanes. */
+export function unionCanonicalCoverage({ node, browser, offlineNode, exportBrowser, repoRoot }) {
   let canonicalRoot;
   try {
     canonicalRoot = realpathSync(repoRoot);
@@ -329,53 +339,30 @@ export function unionCanonicalCoverage({ node, browser, repoRoot }) {
   if (!lstatSync(canonicalRoot).isDirectory()) {
     fail("repository root is not a directory");
   }
-  const nodePaths = validateEnvelopeIdentity(
-    node,
-    "Node",
-    NODE_COVERAGE_PRODUCER,
-  );
-  const browserPaths = validateEnvelopeIdentity(
-    browser,
-    "browser",
-    BROWSER_COVERAGE_PRODUCER,
-  );
-  if (
-    coveragePayloadFingerprint(node.coverage) ===
-    coveragePayloadFingerprint(browser.coverage)
-  ) {
-    fail("Node and browser coverage payloads are semantically identical");
+  const lanes = [
+    [node, "Node", NODE_COVERAGE_PRODUCER, NODE_LANE_SOURCE_PATHS],
+    [browser, "browser", BROWSER_COVERAGE_PRODUCER, BROWSER_LANE_SOURCE_PATHS],
+    [offlineNode, "offline Node", NODE_COVERAGE_PRODUCER, OFFLINE_NODE_SOURCE_PATHS],
+    [exportBrowser, "export browser", BROWSER_COVERAGE_PRODUCER, EXPORT_BROWSER_SOURCE_PATHS],
+  ];
+  const identities = lanes.map(([document, label, identity]) =>
+    validateEnvelopeIdentity(document, label, identity));
+  const fingerprints = lanes.map(([document]) => coveragePayloadFingerprint(document.coverage));
+  if (new Set(fingerprints).size !== lanes.length) {
+    fail("execution lanes contain semantically identical coverage payloads");
   }
-  const nodeRecords = validateEnvelope(
-    node,
-    canonicalRoot,
-    "Node",
-    NODE_LANE_SOURCE_PATHS,
-    nodePaths,
-  );
-  const browserRecords = validateEnvelope(
-    browser,
-    canonicalRoot,
-    "browser",
-    BROWSER_LANE_SOURCE_PATHS,
-    browserPaths,
-  );
-  const overlap = [...nodeRecords.keys()].filter((path) => browserRecords.has(path));
-  if (overlap.length > 0) {
-    fail(`Node and browser lane source scopes overlap: ${overlap[0]}`);
+  const records = new Map();
+  for (const [index, [document, label, , sourcePaths]] of lanes.entries()) {
+    const lane = validateEnvelope(document, canonicalRoot, label, sourcePaths, identities[index]);
+    for (const [path, record] of lane) {
+      if (records.has(path)) fail(`execution lane source scopes overlap: ${path}`);
+      records.set(path, record);
+    }
   }
-  const paths = [...new Set([...nodeRecords.keys(), ...browserRecords.keys()])].sort();
-  if (paths.length > MAX_SOURCES) {
-    fail("union source count exceeds its bound");
-  }
-
+  if (records.size > MAX_SOURCES) fail("union source count exceeds its bound");
   const coverage = {};
-  for (const path of paths) {
-    const record = nodeRecords.get(path) ?? browserRecords.get(path);
-    coverage[path] = {
-      path,
-      statementMap: record.statementMap,
-      s: record.s,
-    };
+  for (const [path, record] of [...records].sort(([left], [right]) => left.localeCompare(right))) {
+    coverage[path] = { path, statementMap: record.statementMap, s: record.s };
   }
   return { ...UNION_COVERAGE_PRODUCER, coverage };
 }

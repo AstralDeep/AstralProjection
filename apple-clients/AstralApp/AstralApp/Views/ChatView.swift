@@ -354,9 +354,15 @@ private struct CanvasArea: View {
     @Binding var refineTarget: RefineTarget?
     private var p: AstralPalette { theme.palette }
 
-    private var canvasItems: [(key: String, comp: AstralComponent)] {
+    private func retainCanvasGeometry(_ size: CGSize, palette: AstralPalette) {
+        model.canvasCapture.setCanvas(
+            CGSize(width: size.width - 2 * AstralWebStyle.canvasInset(viewportWidth), height: size.height),
+            palette: palette)
+    }
+
+    private var canvasItems: [(key: String, index: Int, comp: AstralComponent)] {
         model.workspaceCanvas.enumerated().map { index, comp in
-            (comp.componentId ?? "anon-\(index)", comp)
+            (comp.componentId ?? "anon-\(index)", index, comp)
         }
     }
 
@@ -404,7 +410,9 @@ private struct CanvasArea: View {
                                         ComponentChrome(
                                             component: item.comp,
                                             interactive: !model.isViewingHistory,
-                                            onRefine: { refineTarget = $0 })
+                                            onRefine: { refineTarget = $0 }
+                                        )
+                                        .environment(\.canvasCapturePath, "/components/\(item.index)")
                                     }
                                     if model.showSkeleton { SkeletonCanvas() }
                                 }
@@ -415,6 +423,10 @@ private struct CanvasArea: View {
                         }
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
+                    .onAppear { retainCanvasGeometry(geo.size, palette: p) }
+                    .onChange(of: geo.size) { _, size in retainCanvasGeometry(size, palette: p) }
+                    .onChange(of: viewportWidth) { _, _ in retainCanvasGeometry(geo.size, palette: p) }
+                    .onChange(of: p) { _, palette in retainCanvasGeometry(geo.size, palette: palette) }
                 }
 
                 if !model.isViewingHistory {

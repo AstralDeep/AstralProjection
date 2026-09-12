@@ -28,6 +28,7 @@ import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Emit
+import com.personalailabs.astraldeep.app.render.LocalCanvasCapture
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.ui.HistoryEmpty
 import com.personalailabs.astraldeep.app.ui.HistoryHeader
@@ -47,7 +48,7 @@ fun Renderer.registerDataRenderers(): Renderer =
     apply {
         register("list") { c -> ListPrimitive(c) { render(it) } }
         register("table") { c -> TablePrimitive(c, emit) }
-        register("tabs") { c -> TabsPrimitive(c) { render(it) } }
+        register("tabs") { c -> TabsPrimitive(c) { child, path -> render(child, path) } }
         register("chat_history") { c -> ChatHistoryPrimitive(c, emit) }
         register("skeleton") { c -> SkeletonPrimitive(c) }
     }
@@ -178,24 +179,31 @@ private fun paginatePayload(
 @Composable
 private fun TabsPrimitive(
     c: Component,
-    renderChild: @Composable (Component) -> Unit,
+    renderChild: @Composable (Component, String?) -> Unit,
 ) {
     val tabs = c.arr("tabs")?.mapNotNull { it as? JsonObject } ?: emptyList()
     if (tabs.isEmpty()) return
-    var selected by remember { mutableIntStateOf(0) }
+    val capture = LocalCanvasCapture.current
+    var selected by remember(c.attributes) { mutableIntStateOf(capture?.registry?.node(capture.path)?.selected ?: 0) }
     Column {
         TabRow(selectedTabIndex = selected.coerceIn(0, tabs.size - 1)) {
             tabs.forEachIndexed { i, tab ->
                 Tab(
                     selected = i == selected,
-                    onClick = { selected = i },
+                    onClick = {
+                        selected = i
+                        capture?.registry?.select(capture.path, i)
+                    },
                     text = { Text((tab["label"] as? JsonPrimitive)?.contentOrNull ?: "Tab ${i + 1}") },
                 )
             }
         }
         val current = tabs.getOrNull(selected) ?: tabs.first()
         Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Component.listFromJson(current["content"] as? JsonArray).forEach { renderChild(it) }
+            val key = if (current.containsKey("content")) "content" else "children"
+            Component.listFromJson(current[key] as? JsonArray).forEachIndexed { index, child ->
+                renderChild(child, capture?.let { "${it.path}/tabs/$selected/$key/$index" })
+            }
         }
     }
 }

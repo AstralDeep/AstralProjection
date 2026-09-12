@@ -15,11 +15,23 @@ struct ComponentView: View {
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @Environment(\.astralViewportWidth) private var viewportWidth
+    @Environment(\.canvasCapturePath) private var capturePath
     /// Measured width of this component's slot, used to clamp multi-column
     /// layouts on compact screens (0 until the first layout pass).
     @State private var slotWidth: CGFloat = 0
 
     private var p: AstralPalette { theme.palette }
+    private var captureNode: CanvasCaptureNode? { model.canvasCapture.node(path: capturePath, component: component) }
+
+    private func captureLayout() {
+        guard slotWidth.isFinite, slotWidth > 0 else { return }
+        if component.type == "grid" {
+            model.canvasCapture.record(
+                captureNode, columns: fittedColumns(authored: max(1, Int(component.raw["columns"]?.numberValue ?? 2))))
+        } else if component.type == "container", component.raw["direction"]?.stringValue == "row" {
+            model.canvasCapture.record(captureNode, columns: fittedColumns(authored: max(1, component.children.count)))
+        }
+    }
 
     /// How many ~150 pt columns actually fit the measured slot, capped at
     /// `authored`. Before the first measurement, fall back to 2 on the
@@ -43,6 +55,14 @@ struct ComponentView: View {
     }
 
     var body: some View {
+        renderedContent
+            .onAppear { captureLayout() }
+            .onChange(of: slotWidth) { _, _ in captureLayout() }
+            .onChange(of: captureNode) { _, _ in captureLayout() }
+    }
+
+    @ViewBuilder
+    private var renderedContent: some View {
         if WorkspaceWelcome.role(of: component) == .examples {
             WelcomeExamplesLayout { childViews }
                 .frame(maxWidth: .infinity)
@@ -228,7 +248,6 @@ struct ComponentView: View {
         // actually fits, so a 4-up grid becomes 2×2 on compact widths.
         let authored = max(1, Int(component.raw["columns"]?.numberValue ?? 2))
         let count = fittedColumns(authored: authored)
-        let kids = component.children
         return VStack(alignment: .leading, spacing: 6) {
             titleLine
             LazyVGrid(
@@ -237,9 +256,7 @@ struct ComponentView: View {
                     count: count),
                 alignment: .leading, spacing: 8
             ) {
-                ForEach(Array(kids.enumerated()), id: \.offset) { _, child in
-                    ComponentView(component: child)
-                }
+                childViews
             }
         }
         .overlay(alignment: .top) { widthProbe }
@@ -481,10 +498,15 @@ struct ComponentView: View {
     private var imageView: some View {
         if let url = (component.url ?? component.raw["src"]?.stringValue).flatMap(URL.init(string:)) {
             VStack(alignment: .leading, spacing: 4) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFit()
-                } placeholder: {
-                    ProgressView().tint(p.primary)
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image {
+                        CanvasLoadedImage(image: image, node: captureNode, registry: model.canvasCapture)
+                    } else {
+                        ProgressView().tint(p.primary)
+                            .onAppear {
+                                if let node = captureNode { model.canvasCapture.retain(nil, for: node) }
+                            }
+                    }
                 }
                 .frame(maxHeight: 360)
                 .clipShape(RoundedRectangle(cornerRadius: AstralRadius.md))
@@ -615,9 +637,7 @@ struct ComponentView: View {
 
     @ViewBuilder
     private var childViews: some View {
-        ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-            ComponentView(component: child)
-        }
+        CanvasComponentChildren(raw: component.raw, path: capturePath)
     }
 
     private func markdown(_ string: String) -> Text {
@@ -1276,10 +1296,16 @@ struct ParamPickerComponent: View {
 struct TabsComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
+    @Environment(AppModel.self) private var model
+    @Environment(\.canvasCapturePath) private var capturePath
     @State private var selection = 0
     private var p: AstralPalette { theme.palette }
 
     private var tabs: [JSONValue] { component.raw["tabs"]?.arrayValue ?? [] }
+    private var captureNode: CanvasCaptureNode? { model.canvasCapture.node(path: capturePath, component: component) }
+    private func retainSelection() {
+        model.canvasCapture.record(captureNode, state: .array([.number(Double(selection))]))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1293,12 +1319,19 @@ struct TabsComponent: View {
                 }
             }
             if tabs.indices.contains(selection) {
-                let content = tabs[selection]["content"] ?? tabs[selection]["children"]
-                ForEach(Array(AstralComponent.list(from: content).enumerated()), id: \.offset) { _, child in
-                    ComponentView(component: child)
-                }
+                CanvasComponentChildren(raw: tabs[selection], path: capturePath.map { $0 + "/tabs/\(selection)" })
             }
         }
+        .onAppear {
+            if let retained = model.canvasCapture.state(for: captureNode)?.arrayValue?.first?.numberValue,
+                retained >= 0, retained < Double(tabs.count)
+            {
+                selection = Int(retained)
+            }
+            retainSelection()
+        }
+        .onChange(of: selection) { _, _ in retainSelection() }
+        .onChange(of: captureNode) { _, _ in retainSelection() }
     }
 }
 
@@ -1306,8 +1339,12 @@ struct TabsComponent: View {
 struct CollapsibleComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
+    @Environment(AppModel.self) private var model
+    @Environment(\.canvasCapturePath) private var capturePath
     @State private var expanded: Bool
     private var p: AstralPalette { theme.palette }
+    private var captureNode: CanvasCaptureNode? { model.canvasCapture.node(path: capturePath, component: component) }
+    private func retainExpansion() { model.canvasCapture.record(captureNode, state: .bool(expanded)) }
 
     init(component: AstralComponent) {
         self.component = component
@@ -1335,14 +1372,10 @@ struct CollapsibleComponent: View {
             if expanded {
                 if welcome {
                     WelcomeExamplesLayout {
-                        ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                            ComponentView(component: child)
-                        }
+                        CanvasComponentChildren(raw: component.raw, path: capturePath)
                     }
                 } else {
-                    ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                        ComponentView(component: child)
-                    }
+                    CanvasComponentChildren(raw: component.raw, path: capturePath)
                 }
             }
         }
@@ -1350,6 +1383,12 @@ struct CollapsibleComponent: View {
         .frame(maxWidth: .infinity, alignment: welcome ? .center : .leading)
         .background(welcome ? Color.clear : p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
         .astralChartBackdrop(p, color: p.surface, opacity: welcome ? 0 : 0.4)
+        .onAppear {
+            if let retained = model.canvasCapture.state(for: captureNode)?.boolValue { expanded = retained }
+            retainExpansion()
+        }
+        .onChange(of: expanded) { _, _ in retainExpansion() }
+        .onChange(of: captureNode) { _, _ in retainExpansion() }
     }
 
 }

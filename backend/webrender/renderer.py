@@ -19,6 +19,7 @@ import logging
 import math
 import os
 import re as _re
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, List
 from urllib.parse import quote
 
@@ -26,6 +27,8 @@ logger = logging.getLogger("webrender")
 
 # type -> render function. Populated at the bottom of this module.
 PRIMITIVE_RENDERERS: Dict[str, Callable[[Dict[str, Any]], str]] = {}
+_strict_rendering = ContextVar("webrender_strict_rendering", default=False)
+_strict_chart_pixels = ContextVar("webrender_strict_chart_pixels", default=None)
 
 
 # Escaping & safe helpers (escape-by-default)
@@ -535,6 +538,27 @@ def render_image(c):
     url = c.get("url")
     if not url:
         return ""
+    if _strict_rendering.get():
+        # Optional dimensions are the native loaded image's measured logical
+        # box. Authored dimensions are removed by native capture projection.
+        width, height = c.get("width"), c.get("height")
+        if (width is None) != (height is None):
+            raise ValueError("invalid captured image size")
+        size = ""
+        if width is not None:
+            if any(type(value) not in (int, float) or not 0 < value <= 16384
+                   for value in (width, height)):
+                raise ValueError("invalid captured image size")
+            size = f' style="width:{width:g}px;height:{height:g}px;object-fit:contain"'
+        caption = c.get("caption", "")
+        if not isinstance(caption, str):
+            raise ValueError("invalid captured caption")
+        image = (f'<img{_base_attrs(c)} src="{_attr(safe_url(url))}" alt="{_attr(c.get("alt", ""))}"'
+                 f'{size} class="block max-w-full rounded-lg">')
+        if not caption:
+            return image
+        return (f'<figure class="m-0 space-y-1">{image}'
+                f'<figcaption class="text-xs text-astral-muted">{esc(caption)}</figcaption></figure>')
     attrs = f'src="{_attr(safe_url(url))}" alt="{_attr(c.get("alt",""))}"'
     if c.get("width"):
         attrs += f' width="{_attr(c.get("width"))}"'
@@ -546,6 +570,14 @@ def render_image(c):
 def render_grid(c):
     cols = c.get("columns", 2)
     gap = c.get("gap", 16)
+    if _strict_rendering.get():
+        # Native capture already measured this layout. Applying responsive
+        # breakpoints again would change its effective column count.
+        if type(cols) is not int or not 1 <= cols <= 64:
+            raise ValueError("invalid captured columns")
+        return (f'<div{_base_attrs(c)} class="grid" '
+                f'style="grid-template-columns:repeat({cols},minmax(0,1fr));gap:{int(gap)}px">'
+                f'{render_children(_children(c))}</div>')
     n = min(int(cols) if isinstance(cols, (int, float)) else 2, 6)
     col_map = {
         1: "grid-cols-1",
@@ -618,9 +650,16 @@ def _chart_summary(chart_type: str, payload: Dict[str, Any]) -> str:
     return summary
 
 
-def _chart_div(c, chart_type, payload):
+def _chart_frame(c, image_html, summary):
     title = c.get("title")
     title_html = f'<p class="text-sm font-medium text-astral-text mb-3">{esc(title)}</p>' if title else ""
+    summary_html = f'<span class="astral-sr-only">{esc(summary)}</span>' if summary else ""
+    return (f'<div{_base_attrs(c)} class="astral-chart-card w-full">{title_html}'
+            f'{image_html}{summary_html}</div>')
+
+
+def _chart_div(c, chart_type, payload):
+    title = c.get("title")
     data = _attr(json.dumps(payload))
     # a11y: the chart node is an empty div until client-side Plotly draws into
     # it — name it like an image (type + title, falling back to the data
@@ -631,10 +670,9 @@ def _chart_div(c, chart_type, payload):
     summary = _chart_summary(chart_type, payload)
     kind = _CHART_KINDS.get(chart_type, "Chart")
     name = f"{kind}: {title}" if title else f"{kind}: {summary}"
-    return (f'<div{_base_attrs(c)} class="astral-chart-card w-full">{title_html}'
-            f'<div class="astral-chart" data-chart-type="{chart_type}" data-chart="{data}" '
-            f'role="img" aria-label="{_attr(name)}" style="min-height:320px"></div>'
-            f'<span class="astral-sr-only">{esc(summary)}</span></div>')
+    return _chart_frame(c,
+        f'<div class="astral-chart" data-chart-type="{chart_type}" data-chart="{data}" '
+        f'role="img" aria-label="{_attr(name)}" style="min-height:320px"></div>', summary)
 
 
 def render_bar_chart(c):
@@ -1177,6 +1215,17 @@ def render_one(component: Dict[str, Any]) -> str:
         return ""
     ctype = component.get("type", "")
     fn = PRIMITIVE_RENDERERS.get(ctype)
+    if _strict_rendering.get():
+        # Ephemeral client presentation must fail without logging submitted
+        # values or silently returning a successful partial document.
+        if fn is None:
+            raise ValueError("Unsupported presentation component")
+        pixels = (_strict_chart_pixels.get() or {}).get(id(component))
+        if pixels is not None:
+            return _chart_frame(component,
+                f'<img src="{_attr(pixels)}" alt="{_attr(component.get("title") or "Chart")}" '
+                'style="display:block;width:100%;height:auto;max-width:100%">', "")
+        return fn(component)
     if fn is None:
         logger.warning("webrender: no renderer for primitive type %r — placeholder emitted", ctype)
         return (f'<div class="astral-unsupported text-xs text-astral-muted italic border border-white/10 '
@@ -1193,6 +1242,22 @@ def render(components: List[Dict[str, Any]], profile: Any = None) -> str:
     """Render a list of ROTE-adapted primitive dicts into a web HTML fragment."""
     inner = "".join(render_one(c) for c in (components or []) if isinstance(c, dict))
     return f'<div class="dynamic-renderer space-y-3">{inner}</div>'
+
+
+def render_strict(components: List[Dict[str, Any]], chart_pixels=None) -> str:
+    """Render bounded ephemeral presentation without provenance or logging.
+
+    The caller validates input and sanitizes the resulting inert markup. Nested
+    renderer errors propagate in this context only; ordinary rendering retains
+    its existing diagnostics and fallback behavior. No process-global mode flips.
+    """
+    token = _strict_rendering.set(True)
+    pixel_token = _strict_chart_pixels.set(chart_pixels)
+    try:
+        return render(components)
+    finally:
+        _strict_chart_pixels.reset(pixel_token)
+        _strict_rendering.reset(token)
 
 
 # Provenance / grounding surfacing

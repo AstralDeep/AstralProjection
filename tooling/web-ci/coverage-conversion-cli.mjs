@@ -14,6 +14,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   convertNodeV8Coverage,
+  NODE_COVERAGE_PRODUCER,
 } from "./coverage-conversion.mjs";
 
 const MAX_REPORTS = 256;
@@ -101,46 +102,29 @@ function readSource(sourcePath) {
   return readFileSync(sourcePath, "utf8");
 }
 
-function mergeEntry(entries, source, repoPath, rawEntry) {
-  if (!Array.isArray(rawEntry.functions)) {
-    fail(`source entry lacks functions: ${repoPath}`);
+async function mergeEntry(entries, source, repoPath, rawEntry) {
+  const prior = entries.get(repoPath);
+  if (prior && prior.source !== source) fail(`source changed between reports: ${repoPath}`);
+  // V8 ranges belong to one execution. Combining ranges first lets a narrow
+  // unexecuted branch from one run erase a broader successful observation.
+  // Apply the pinned token/line converter independently, then union only hits.
+  const document = await convertNodeV8Coverage(
+    [{ source, functions: rawEntry.functions }], () => repoPath,
+  );
+  const observation = document.coverage[repoPath];
+  if (!prior) {
+    entries.set(repoPath, { source, record: observation });
+    return;
   }
-  const record = entries.get(repoPath) ?? { source, ranges: new Map() };
-  if (record.source !== source) {
-    fail(`source changed between reports: ${repoPath}`);
+  if (JSON.stringify(prior.record.statementMap) !== JSON.stringify(observation.statementMap)) {
+    fail(`source statement map changed between reports: ${repoPath}`);
   }
-  for (const functionCoverage of rawEntry.functions) {
-    if (!isObject(functionCoverage) || !Array.isArray(functionCoverage.ranges)) {
-      fail(`invalid function ranges: ${repoPath}`);
-    }
-    for (const range of functionCoverage.ranges) {
-      if (!isObject(range)) {
-        fail(`invalid range: ${repoPath}`);
-      }
-      const { startOffset, endOffset, count } = range;
-      if (
-        !Number.isSafeInteger(startOffset) ||
-        !Number.isSafeInteger(endOffset) ||
-        !Number.isSafeInteger(count) ||
-        startOffset < 0 ||
-        endOffset <= startOffset ||
-        endOffset > source.length ||
-        count < 0
-      ) {
-        fail(`invalid range bounds: ${repoPath}`);
-      }
-      const key = `${startOffset}:${endOffset}`;
-      const merged = (record.ranges.get(key)?.count ?? 0) + count;
-      if (!Number.isSafeInteger(merged)) {
-        fail(`range count overflow: ${repoPath}`);
-      }
-      record.ranges.set(key, { startOffset, endOffset, count: merged });
-    }
+  for (const [id, count] of Object.entries(observation.s)) {
+    prior.record.s[id] = prior.record.s[id] > 0 || count > 0 ? 1 : 0;
   }
-  entries.set(repoPath, record);
 }
 
-function readEntries(directory, repoRoot) {
+async function readEntries(directory, repoRoot) {
   const names = readdirSync(directory)
     .filter((name) => /^coverage-[0-9]+-[0-9]+-[0-9]+\.json$/u.test(name))
     .sort();
@@ -174,27 +158,24 @@ function readEntries(directory, repoRoot) {
         continue;
       }
       const source = readSource(canonical.sourcePath);
-      mergeEntry(entries, source, canonical.repoPath, rawEntry);
+      await mergeEntry(entries, source, canonical.repoPath, rawEntry);
     }
   }
   if (entries.size === 0) {
     fail("reports contain no maintained repository JavaScript");
   }
-  return [...entries.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([repoPath, record]) => ({
-      repoPath,
-      source: record.source,
-      functions: [{ ranges: [...record.ranges.values()] }],
-    }));
+  return {
+    ...NODE_COVERAGE_PRODUCER,
+    coverage: Object.fromEntries([...entries].sort(([left], [right]) => left.localeCompare(right))
+      .map(([path, value]) => [path, value.record])),
+  };
 }
 
 /** Convert a bounded NODE_V8_COVERAGE directory to the canonical envelope. */
 export async function convertNodeV8Directory({ directory, repoRoot }) {
   const canonicalRoot = realpathSync(repoRoot);
   const canonicalDirectory = realpathSync(directory);
-  const entries = readEntries(canonicalDirectory, canonicalRoot);
-  return convertNodeV8Coverage(entries, (entry) => entry.repoPath);
+  return readEntries(canonicalDirectory, canonicalRoot);
 }
 
 function writeAtomically(output, document) {

@@ -168,10 +168,12 @@ public enum OperationSubmissionProjection: Sendable, Equatable {
 
 public struct RestClient: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Int, Data)
+    public typealias PresentationTransport = @Sendable (URLRequest) async throws -> (Int, Data, String?)
 
     public let serverBase: URL
     private let transport: Transport
     private let workspaceTransport: Transport
+    private let presentationTransport: PresentationTransport
     private let downloadSession: URLSession?
     private let tokenProvider: @Sendable () async -> String?
 
@@ -179,7 +181,8 @@ public struct RestClient: Sendable {
         serverBase: URL,
         tokenProvider: @escaping @Sendable () async -> String?,
         transport: Transport? = nil,
-        downloadSession: URLSession? = nil
+        downloadSession: URLSession? = nil,
+        presentationTransport: PresentationTransport? = nil
     ) {
         self.serverBase = serverBase
         self.tokenProvider = tokenProvider
@@ -194,6 +197,37 @@ public struct RestClient: Sendable {
                 try await WorkspaceRequestPolicy.response(
                     request, session: downloadSession ?? NoStoreHTTP.session)
             }
+        self.presentationTransport =
+            presentationTransport ?? { request in
+                try await CanvasExportPolicy.response(request, session: downloadSession ?? NoStoreHTTP.session)
+            }
+    }
+
+    /// Independently authorized display-only rendering after the ordinary
+    /// export GET. Never retries; the caller retains its captured owner fence.
+    public func canvasPresentation(chatId: String, renderRevision: UInt64, capture: Data) async throws -> Data {
+        let source = try CanvasExportPolicy.validateRequest(capture)
+        guard !chatId.isEmpty, chatId.utf8.count <= 256,
+            let segment = chatId.addingPercentEncoding(
+                withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))),
+            var parts = URLComponents(url: serverBase, resolvingAgainstBaseURL: false)
+        else { throw URLError(.badURL) }
+        parts.percentEncodedPath = "/api/export/canvas/\(segment)/presentation"
+        parts.queryItems = [URLQueryItem(name: "render_revision", value: String(renderRevision))]
+        parts.fragment = nil
+        guard let url = parts.url, DownloadPolicy.sameOrigin(url, serverBase),
+            (try? DownloadPolicy.resolve(url.absoluteString, relativeTo: serverBase)) == url
+        else { throw URLError(.badURL) }
+        try Task.checkCancellation()
+        guard let token = await tokenProvider(), !token.isEmpty else { throw URLError(.userAuthenticationRequired) }
+        try Task.checkCancellation()
+        var request = NoStoreHTTP.request(url: url, method: "POST", body: capture, contentType: "application/json")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (status, data, revision) = try await presentationTransport(request)
+        try Task.checkCancellation()
+        guard status == 200, revision == String(renderRevision) else { throw URLError(.badServerResponse) }
+        try CanvasExportPolicy.validateResponse(data, capture: source)
+        return data
     }
 
     /// ws(s):// twin of the server base for the orchestrator socket.
@@ -362,7 +396,9 @@ public struct RestClient: Sendable {
             }
         }
         try Task.checkCancellation()
-        let (bytes, response) = try await (downloadSession ?? NoStoreHTTP.session).bytes(
+        let bounded = expectedRenderRevision == nil ? nil : CanvasExportPolicy.boundedSession(like: downloadSession)
+        defer { bounded?.invalidateAndCancel() }
+        let (bytes, response) = try await (bounded ?? downloadSession ?? NoStoreHTTP.session).bytes(
             for: req, delegate: DownloadRedirectDelegate(original: req))
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw URLError(.badServerResponse)

@@ -550,8 +550,10 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "tooling/python-ci/requirements.lock.txt": (
             "a91870671b818da8bd06565b6b21af406a4c96cbb812f0006db730d36a1e1d59"
         ),
+        # Feature 088 adds exact-byte release-runner tests to the existing
+        # Node-only test command, with no dependency or product-runtime change.
         "tooling/web-ci/package.json": (
-            "9ffab118c921d1ebd6e6b23c7153ae98d23724d7be25e59a06393193b8c72ed0"
+            "1de9c3d86dc0ed416f530d58787ee82a19e2e059180c62599b4459b9ab3367fb"
         ),
         "tooling/web-ci/package-lock.json": (
             "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"
@@ -588,8 +590,10 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"
         ),
+        # Feature 088 packages the shared offline export resources; dependency
+        # coordinates and versions remain unchanged.
         "pyproject.toml": (
-            "274cca390a5b4ad83233dd5ed19e35aadb2a5e1948efe35c278387ffcd5991de"
+            "d961baf3132e9df1a882b44287c18d9afcf40f1a2f6f14b7bfdb5b47c97f0145"
         ),
     }
     assert set(immutable_manifests) == {
@@ -697,7 +701,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 178
+    assert len(paths) == 180
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
 
     moved_workflows = {
@@ -719,7 +723,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 341
+    assert len(extracted) - len(changed_paths) == 339
 
     for entry in record["entries"]:
         path = entry["path"]

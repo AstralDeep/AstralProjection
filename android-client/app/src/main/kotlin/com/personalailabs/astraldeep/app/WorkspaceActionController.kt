@@ -12,6 +12,10 @@ import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore
+import com.personalailabs.astraldeep.app.render.CanvasCapture
+import com.personalailabs.astraldeep.app.render.CanvasCaptureRegistry
+import com.personalailabs.astraldeep.app.render.CanvasCaptureUnavailable
+import com.personalailabs.astraldeep.app.render.renderOfflineCanvasExport
 import com.personalailabs.astraldeep.app.rest.WorkspaceRequestException
 import com.personalailabs.astraldeep.app.rest.WorkspaceRest
 import com.personalailabs.astraldeep.app.ui.AppViewModel
@@ -21,6 +25,7 @@ import com.personalailabs.astraldeep.app.ui.workspaceControls
 import com.personalailabs.astraldeep.core.chrome.TopBarControl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -30,12 +35,14 @@ import java.io.File
 internal class WorkspaceActionController(
     private val activity: ComponentActivity,
     private val currentToken: () -> String?,
+    private val canvasCapture: CanvasCaptureRegistry,
 ) {
     private val leases = WorkspaceActionLeases()
 
     private class Active(val ticket: WorkspaceActionLeases.Ticket, val vm: AppViewModel) {
         var job: Job? = null
         var file: File? = null
+        var capture: CanvasCapture? = null
     }
 
     private val active = mutableMapOf<String, Active>()
@@ -117,9 +124,16 @@ internal class WorkspaceActionController(
                             }
                         }
                     } else {
+                        rest.authorizeCanvas(token, context.chatId, context.revision)
+                        if (!isCurrent(action)) throw CanvasCaptureUnavailable()
+                        val capture = canvasCapture.freeze(context)
+                        action.capture = capture
+                        if (!isCurrent(action)) throw CanvasCaptureUnavailable()
+                        val presentation = rest.canvasPresentation(token, context.chatId, context.revision, capture.presentation)
+                        if (!isCurrent(action)) throw CanvasCaptureUnavailable()
                         val file = File.createTempFile("canvas-", ".html", directory)
                         action.file = file
-                        rest.exportCanvas(token, context.chatId, context.revision, file)
+                        renderOfflineCanvasExport(activity, presentation, file) { isCurrent(action) }
                         ensureActive()
                         if (isCurrent(action)) {
                             pendingSave = action
@@ -128,8 +142,13 @@ internal class WorkspaceActionController(
                             awaitingSave = true
                         }
                     }
+                } catch (_: TimeoutCancellationException) {
+                    ensureActive()
+                    if (isCurrent(action)) notice("Export timed out. Try again.")
                 } catch (cancelled: CancellationException) {
                     throw cancelled
+                } catch (_: CanvasCaptureUnavailable) {
+                    if (isCurrent(action)) notice("Couldn’t capture this canvas for export. Reopen the result or use the web client.")
                 } catch (failure: WorkspaceRequestException) {
                     if (isCurrent(action)) notice(failure.userMessage)
                 } catch (_: Exception) {
@@ -167,6 +186,7 @@ internal class WorkspaceActionController(
     }
 
     fun clear() {
+        canvasCapture.clear()
         active.values.toList().forEach {
             it.job?.cancel()
             finish(it)
@@ -179,7 +199,9 @@ internal class WorkspaceActionController(
         return context.takeIf { it.owner == owner }
     }
 
-    private fun isCurrent(action: Active): Boolean = leases.isCurrent(action.ticket, currentContext(action.vm))
+    private fun isCurrent(action: Active): Boolean =
+        leases.isCurrent(action.ticket, currentContext(action.vm)) &&
+            (action.capture == null || currentContext(action.vm)?.let { action.capture!!.canDeliver(it) } == true)
 
     private fun finish(action: Active) {
         leases.finish(action.ticket)

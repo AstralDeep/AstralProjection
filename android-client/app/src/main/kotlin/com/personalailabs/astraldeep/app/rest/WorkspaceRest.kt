@@ -33,6 +33,7 @@ import java.nio.charset.CodingErrorAction
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.CoroutineContext
 
@@ -50,6 +51,7 @@ internal class WorkspaceRest(
                 interceptors().clear()
                 networkInterceptors().clear()
             }
+            .callTimeout(minOf(30_000, client.callTimeoutMillis.takeIf { it > 0 } ?: 30_000).toLong(), TimeUnit.MILLISECONDS)
             .retryOnConnectionFailure(false)
             .followRedirects(false)
             .followSslRedirects(false)
@@ -126,6 +128,79 @@ internal class WorkspaceRest(
             complete = true
         } finally {
             if (!complete) destination.delete()
+        }
+    }
+
+    /** Existing owner/revision authorization runs before the native visible-state freeze. */
+    suspend fun authorizeCanvas(
+        token: String,
+        chatId: String,
+        revision: ULong,
+    ) = safely(EXPORT_FAILED) {
+        validateChat(chatId)
+        require(revision <= Long.MAX_VALUE.toULong())
+        val url = artifactDownloadUrl(baseUrl, "/api/export/canvas/$chatId.html?render_revision=$revision", allowLocalHttp)
+        execute(authenticated(url, token).get().build()) { response, context ->
+            checkExportRevision(response, revision)
+            copyBounded(
+                response,
+                object : OutputStream() {
+                    override fun write(value: Int) = Unit
+
+                    override fun write(
+                        bytes: ByteArray,
+                        offset: Int,
+                        length: Int,
+                    ) = Unit
+                },
+                maxExportBytes,
+                context,
+            )
+        }
+    }
+
+    /** Client display bytes remain ephemeral and the pure renderer grants no additional authority. */
+    suspend fun canvasPresentation(
+        token: String,
+        chatId: String,
+        revision: ULong,
+        capture: JsonObject,
+    ): JsonObject =
+        safely(EXPORT_FAILED) {
+            validateChat(chatId)
+            require(revision <= Long.MAX_VALUE.toULong())
+            val bytes = capture.toString().toByteArray(Charsets.UTF_8)
+            require(bytes.size <= 8 * 1024 * 1024)
+            val url = artifactDownloadUrl(baseUrl, "/api/export/canvas/$chatId/presentation?render_revision=$revision", allowLocalHttp)
+            execute(
+                authenticated(url, token).post(bytes.toRequestBody("application/json; charset=utf-8".toMediaType())).build(),
+            ) { response, context ->
+                checkExportRevision(response, revision)
+                require(response.body?.contentType()?.let { it.type == "application" && it.subtype == "json" } == true)
+                val data = ByteArrayOutputStream().also { copyBounded(response, it, 32L * 1024 * 1024, context) }.toByteArray()
+                val text =
+                    Charsets.UTF_8.newDecoder().onMalformedInput(
+                        CodingErrorAction.REPORT,
+                    ).onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(data)).toString()
+                requireDistinctKeys(text)
+                val result = JSON.parseToJsonElement(text) as? JsonObject ?: throw WorkspaceRequestException(EXPORT_FAILED)
+                require(result.keys == setOf("version", "html", "viewport", "theme"))
+                require(result.string("version") == "astral.canvas-export/v1" && result.string("html") != null)
+                require(result["viewport"] == capture["viewport"] && result["theme"] == capture["theme"])
+                result
+            }
+        }
+
+    private fun checkExportRevision(
+        response: Response,
+        revision: ULong,
+    ) {
+        if (response.code == 409) throw WorkspaceRequestException(REVISION_CHANGED)
+        if (response.code != 200) throw WorkspaceRequestException(EXPORT_FAILED)
+        if (response.headers.values("X-Astral-Render-Revision") != listOf(revision.toString())) {
+            throw WorkspaceRequestException(
+                REVISION_CHANGED,
+            )
         }
     }
 
