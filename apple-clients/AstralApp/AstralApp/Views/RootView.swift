@@ -6,6 +6,12 @@ import AstralCore
 // navigable surfaces (Chat / Agents / History / Audit / Surface).
 import SwiftUI
 
+#if os(macOS)
+    import AppKit
+#else
+    import UIKit
+#endif
+
 struct RootView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
@@ -107,51 +113,132 @@ struct AstralTopBar: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     @Environment(\.astralViewportWidth) private var viewportWidth
+    @State private var exportContext: AppModel.WorkspaceActionContext?
+    @State private var shareContext: AppModel.WorkspaceActionContext?
+    @State private var shareTask: Task<Void, Never>?
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(alignment: .top, spacing: 6) {
             Image("AstralIcon")
                 .resizable().scaledToFit()
                 .frame(width: 28, height: 28)
                 .clipShape(RoundedRectangle(cornerRadius: AstralRadius.sm))
+                .frame(height: 44)
 
-            Spacer()
+            AstralToolbarLayout(wraps: viewportWidth < 700) {
+                // 054 first-run gate: while the server pins a mandatory surface,
+                // every navigation control is hidden — only the Settings gear
+                // stays, reduced to its sign-out affordance (FR-013).
+                if !model.mandatorySurface {
+                    newButton
 
-            // 054 first-run gate: while the server pins a mandatory surface,
-            // every navigation control is hidden — only the Settings gear
-            // stays, reduced to its sign-out affordance (FR-013).
-            if !model.mandatorySurface {
-                newButton
+                    Button {
+                        model.goTo(.history)
+                    } label: {
+                        Image(systemName: "bubble.left.and.bubble.right")
+                            .font(.system(size: 18)).foregroundStyle(p.text)
+                            .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Recent chats")
 
-                Button {
-                    model.goTo(.history)
-                } label: {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 18)).foregroundStyle(p.text)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Recent chats")
-
-                // Server-owned top-bar actions (pulse / timeline), rendered from the model.
-                ForEach(model.chromeMenu?.topbarActions ?? []) { control in
-                    if let action = control.action, !action.surface.isEmpty {
-                        Button {
-                            model.openSurface(action.surface, params: action.params)
-                        } label: {
-                            Image(systemName: topBarIcon(control.icon))
-                                .font(.system(size: 18)).foregroundStyle(p.text)
+                    // Server-owned top-bar actions (pulse / timeline), rendered from the model.
+                    ForEach(model.chromeMenu?.topbarActions ?? []) { control in
+                        if let workspaceAction = control.workspaceAction {
+                            if model.workspaceActionContext(for: workspaceAction) != nil {
+                                Button {
+                                    startWorkspaceAction(workspaceAction)
+                                } label: {
+                                    Image(systemName: topBarIcon(control.icon))
+                                        .font(.system(size: 18)).foregroundStyle(p.text)
+                                        .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(
+                                    model.workspaceActionInFlight(workspaceAction)
+                                        || (workspaceAction == .exportCanvas && exportContext != nil)
+                                )
+                                .accessibilityLabel(control.label ?? control.key)
+                                .accessibilityIdentifier("workspace-action-\(control.key)")
+                            }
+                        } else if let action = control.action, !action.surface.isEmpty {
+                            Button {
+                                model.openSurface(action.surface, params: action.params)
+                            } label: {
+                                Image(systemName: topBarIcon(control.icon))
+                                    .font(.system(size: 18)).foregroundStyle(p.text)
+                                    .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel(control.label ?? action.surface)
                         }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(control.label ?? action.surface)
                     }
                 }
-            }
 
-            settingsMenu
+                settingsMenu
+            }
+            .frame(maxWidth: .infinity)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(p.surface)
+        .sheet(item: $exportContext) { context in
+            if let url = model.workspaceExportURL(context) {
+                ExportDownloadSheet(url: url, filename: "astraldeep-canvas.html", workspaceExport: context)
+            }
+        }
+        .onChange(of: exportIsCurrent) { _, current in
+            if !current { exportContext = nil }
+        }
+        .onChange(of: shareIsCurrent) { _, current in
+            if !current { shareTask?.cancel() }
+        }
+        .onDisappear {
+            exportContext = nil
+            shareTask?.cancel()
+        }
+    }
+
+    private var exportIsCurrent: Bool { exportContext.map(model.workspaceActionIsCurrent) ?? false }
+    private var shareIsCurrent: Bool { shareContext.map(model.workspaceActionIsCurrent) ?? false }
+
+    private func startWorkspaceAction(_ action: WorkspaceAction) {
+        guard let context = model.workspaceActionContext(for: action),
+            !model.workspaceActionInFlight(action)
+        else { return }
+        if action == .exportCanvas {
+            if exportContext == nil { exportContext = context }
+            return
+        }
+        guard shareContext == nil else { return }
+        shareContext = context
+        shareTask = Task { @MainActor in
+            defer {
+                shareContext = nil
+                shareTask = nil
+            }
+            do {
+                let url = try await model.shareWorkspaceCanvas(context)
+                guard !Task.isCancelled, model.workspaceActionIsCurrent(context) else { return }
+                #if os(macOS)
+                    NSPasteboard.general.clearContents()
+                    let copied = NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                    let message = copied ? "Share link copied to clipboard." : "Share link: \(url.absoluteString)"
+                #else
+                    UIPasteboard.general.string = url.absoluteString
+                    let message = "Share link copied to clipboard."
+                #endif
+                model.bannerIsError = false
+                model.errorBanner = message
+            } catch is CancellationError {} catch {
+                guard !Task.isCancelled, model.workspaceActionIsCurrent(context) else { return }
+                model.bannerIsError = true
+                model.errorBanner =
+                    error as? WorkspaceShareError == .phiBlocked
+                    ? "Sharing refused: the content matched the PHI gate."
+                    : "Couldn't create the share link."
+            }
+        }
     }
 
     private var newButton: some View {
@@ -184,6 +271,7 @@ struct AstralTopBar: View {
             }
         } label: {
             Image(systemName: "gearshape").font(.system(size: 18)).foregroundStyle(p.text)
+                .frame(minWidth: 44, minHeight: 44).contentShape(Rectangle())
         }
         .accessibilityLabel("Settings")
     }
@@ -196,7 +284,56 @@ struct AstralTopBar: View {
         case "sparkle": return "sparkles"
         case "history": return "clock.arrow.circlepath"
         case "gear": return "gearshape"
+        case "download": return "arrow.down.to.line"
+        case "share": return "square.and.arrow.up"
         default: return "ellipsis.circle"
+        }
+    }
+}
+
+/// The server's compact chrome contract preserves order and wraps the action
+/// cluster at its natural touch-target sizes. The brand is laid out separately.
+struct AstralToolbarLayout: Layout {
+    var wraps: Bool
+    var spacing: CGFloat = 6
+
+    static func frames(sizes: [CGSize], width: CGFloat, spacing: CGFloat, wraps: Bool) -> [CGRect] {
+        var rows: [[CGRect]] = [[]]
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        for size in sizes {
+            if wraps, x > 0, x + size.width > width {
+                y += rowHeight + spacing
+                x = 0
+                rowHeight = 0
+                rows.append([])
+            }
+            rows[rows.count - 1].append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing
+            rowHeight = max(rowHeight, size.height)
+        }
+        return rows.flatMap { row in
+            let offset = max(0, width - (row.last?.maxX ?? 0))
+            return row.map { $0.offsetBy(dx: offset, dy: 0) }
+        }
+    }
+
+    private func frames(_ subviews: Subviews, width: CGFloat) -> [CGRect] {
+        Self.frames(sizes: subviews.map { $0.sizeThatFits(.unspecified) }, width: width, spacing: spacing, wraps: wraps)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? subviews.reduce(0) { $0 + $1.sizeThatFits(.unspecified).width + spacing }
+        let positions = frames(subviews, width: width)
+        return CGSize(width: width, height: positions.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (view, frame) in zip(subviews, frames(subviews, width: bounds.width)) {
+            view.place(
+                at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                anchor: .topLeading, proposal: ProposedViewSize(frame.size))
         }
     }
 }

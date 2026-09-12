@@ -418,6 +418,119 @@ final class AppModel: NSObject {
         DownloadOwner(account: conversationAccount, generation: sessionGeneration, signedIn: signedIn)
     }
 
+    struct WorkspaceActionContext: Identifiable, Equatable {
+        let id = UUID()
+        let action: WorkspaceAction
+        let owner: DownloadOwner
+        let server: URL
+        let chatId: String
+        let renderRevision: UInt64
+    }
+
+    enum WorkspaceActionError: Error { case alreadyRunning }
+    private var workspaceActionsInFlight: Set<String> = []
+
+    func workspaceActionInFlight(_ action: WorkspaceAction) -> Bool {
+        workspaceActionsInFlight.contains(action.rawValue)
+    }
+
+    /// A server descriptor controls presence; current workspace identity and
+    /// the ordinary authenticated endpoint independently govern execution.
+    func workspaceActionContext(for action: WorkspaceAction) -> WorkspaceActionContext? {
+        guard signedIn, screen == .chat, !mandatorySurface,
+            !isViewingHistory, !timelineReadOnly, workspaceStarted,
+            !workspaceCanvas.isEmpty,
+            let chatId = activeChatId, !chatId.isEmpty,
+            chromeMenu?.topbarActions.contains(where: { $0.workspaceAction == action }) == true
+        else { return nil }
+        return WorkspaceActionContext(
+            action: action, owner: downloadOwner, server: serverBase, chatId: chatId,
+            renderRevision: lastCommittedRenderRevision)
+    }
+
+    func workspaceActionIsCurrent(_ context: WorkspaceActionContext) -> Bool {
+        guard let current = workspaceActionContext(for: context.action),
+            current.owner == context.owner, current.server == context.server, current.chatId == context.chatId
+        else { return false }
+        // Share retains the existing snapshot-at-mint API semantics. Only an
+        // export has an explicit server revision precondition and response.
+        return context.action == .shareCanvas || current.renderRevision == context.renderRevision
+    }
+
+    /// Recheck after credential refresh, before the transport can issue a
+    /// request. Discarding a late mint response alone would be too late.
+    func workspaceAccessToken(
+        _ context: WorkspaceActionContext,
+        resolve: (() async -> String?)? = nil
+    ) async -> String? {
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else { return nil }
+        let token: String?
+        if let resolve { token = await resolve() } else { token = await freshAccessToken() }
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else { return nil }
+        return token
+    }
+
+    func workspaceExportURL(_ context: WorkspaceActionContext) -> URL? {
+        guard context.action == .exportCanvas, workspaceActionIsCurrent(context),
+            context.chatId.utf8.count <= 256,
+            let segment = context.chatId.addingPercentEncoding(
+                withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))),
+            var components = URLComponents(url: serverBase, resolvingAgainstBaseURL: false)
+        else { return nil }
+        components.percentEncodedPath = "/api/export/canvas/\(segment).html"
+        components.queryItems = [URLQueryItem(name: "render_revision", value: String(context.renderRevision))]
+        components.fragment = nil
+        return components.url
+    }
+
+    private func workspaceRest(_ context: WorkspaceActionContext) -> RestClient {
+        RestClient(serverBase: serverBase) { [weak self] in
+            await self?.workspaceAccessToken(context)
+        }
+    }
+
+    func downloadWorkspaceCanvas(
+        _ context: WorkspaceActionContext,
+        operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .exportCanvas, workspaceActionIsCurrent(context) else { throw CancellationError() }
+        guard !workspaceActionInFlight(context.action) else { throw WorkspaceActionError.alreadyRunning }
+        guard let url = workspaceExportURL(context) else { throw URLError(.badURL) }
+        workspaceActionsInFlight.insert(context.action.rawValue)
+        defer { workspaceActionsInFlight.remove(context.action.rawValue) }
+        let file: URL
+        if let operation {
+            file = try await operation()
+        } else {
+            file = try await workspaceRest(context).downloadFile(
+                from: url.absoluteString, suggestedFilename: "astraldeep-canvas.html",
+                expectedRenderRevision: context.renderRevision)
+        }
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else {
+            RestClient.removeTemporaryDownload(file)
+            throw CancellationError()
+        }
+        return file
+    }
+
+    func shareWorkspaceCanvas(
+        _ context: WorkspaceActionContext,
+        operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .shareCanvas, workspaceActionIsCurrent(context) else { throw CancellationError() }
+        guard !workspaceActionInFlight(context.action) else { throw WorkspaceActionError.alreadyRunning }
+        workspaceActionsInFlight.insert(context.action.rawValue)
+        defer { workspaceActionsInFlight.remove(context.action.rawValue) }
+        let url: URL
+        if let operation {
+            url = try await operation()
+        } else {
+            url = try await workspaceRest(context).shareCanvas(chatId: context.chatId)
+        }
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else { throw CancellationError() }
+        return url
+    }
+
     func downloadArtifact(
         from url: String, suggestedFilename: String?,
         operation: (() async throws -> URL)? = nil

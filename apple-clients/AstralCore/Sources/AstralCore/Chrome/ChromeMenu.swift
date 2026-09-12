@@ -13,13 +13,21 @@ public struct SurfaceRef: Equatable, Sendable {
     }
 }
 
-/// One top-bar control. `kind` is brand|status|action|menu.
+/// Closed workspace verbs from the server's chrome model. These never dispatch
+/// chrome_open, and their presence does not authorize the associated HTTP call.
+public enum WorkspaceAction: String, Equatable, Sendable {
+    case exportCanvas = "export_canvas"
+    case shareCanvas = "share_canvas"
+}
+
+/// One top-bar control. Unknown kinds remain non-interactive.
 public struct TopBarControl: Equatable, Sendable, Identifiable {
     public let key: String
     public let kind: String
     public let label: String?
     public let icon: String?
     public let action: SurfaceRef?
+    public let workspaceAction: WorkspaceAction?
     public var id: String { key }
 }
 
@@ -66,8 +74,10 @@ public struct ChromeMenuModel: Equatable, Sendable {
     public let menu: [ChromeMenuGroup]
     public let signout: SignOutItem
 
-    /// Interactive top-bar controls (pulse/timeline) in order.
-    public var topbarActions: [TopBarControl] { topbar.filter { $0.kind == "action" } }
+    /// Valid interactive controls in the server's canonical order.
+    public var topbarActions: [TopBarControl] {
+        topbar.filter { $0.kind == "action" || $0.workspaceAction != nil }
+    }
     /// The Settings gear control, if present.
     public var settingsControl: TopBarControl? { topbar.first { $0.kind == "menu" } }
     /// Every menu item flattened, in order.
@@ -84,10 +94,27 @@ public struct ChromeMenuModel: Equatable, Sendable {
                     surface: a["surface"]?.stringValue ?? "",
                     params: a["params"] ?? .object([:]))
             }
+            let kind = el["kind"]?.stringValue ?? "action"
+            var workspaceAction: WorkspaceAction?
+            if kind == "workspace_action" {
+                guard let fields = el.objectValue,
+                    Set(fields.keys) == ["key", "kind", "label", "icon", "operation", "context"],
+                    el["context"]?.stringValue == "live_canvas",
+                    let operation = el["operation"]?.stringValue,
+                    let known = WorkspaceAction(rawValue: operation)
+                else { return nil }
+                let expected =
+                    known == .exportCanvas
+                    ? ("export", "Export page", "download") : ("share", "Share page", "share")
+                guard key == expected.0, el["label"]?.stringValue == expected.1,
+                    el["icon"]?.stringValue == expected.2
+                else { return nil }
+                workspaceAction = known
+            }
             return TopBarControl(
-                key: key, kind: el["kind"]?.stringValue ?? "action",
+                key: key, kind: kind,
                 label: el["label"]?.stringValue, icon: el["icon"]?.stringValue,
-                action: action)
+                action: action, workspaceAction: workspaceAction)
         }
         let menu: [ChromeMenuGroup] = (root["menu"]?.arrayValue ?? []).compactMap { g in
             guard let key = g["key"]?.stringValue else { return nil }

@@ -41,6 +41,25 @@ class ChromeMenuTest {
     private fun parse(s: String): JsonObject = Json.parseToJsonElement(s) as JsonObject
 
     @Test
+    fun workspace_controls_require_the_exact_closed_descriptor_and_keep_order() {
+        val valid = """{"key":"export","kind":"workspace_action","label":"Export canvas","icon":"download","operation":"export_canvas","context":"live_canvas"}"""
+        val share = valid.replace("export", "share").replace("Export", "Share")
+        val invalid =
+            listOf(
+                valid.replace("live_canvas", "history"),
+                valid.replace("export_canvas", "delete_canvas"),
+                valid.dropLast(1) + ",\"action\":{\"surface\":\"admin\"}}",
+                valid.replace("\"label\":\"Export canvas\"", "\"label\":7"),
+                valid.replace("\"icon\":\"download\",", ""),
+                valid.replace("workspace_action", "future_kind"),
+            )
+        val model = ChromeMenuModel.fromJson(parse("""{"topbar":[$valid,${invalid.joinToString(",")},$share]}"""))!!
+        assertEquals(listOf("export", "share"), model.topbar.map { it.key })
+        assertEquals(listOf("export_canvas", "share_canvas"), model.topbar.map { it.operation })
+        assertTrue(model.topbar.all { it.action == null && it.context == "live_canvas" })
+    }
+
+    @Test
     fun decodes_topbar_order_and_kinds() {
         val m = ChromeMenuModel.fromJson(parse(adminModel))!!
         assertEquals(listOf("brand", "status", "pulse", "timeline", "settings"), m.topbar.map { it.key })

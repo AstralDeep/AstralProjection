@@ -171,6 +171,7 @@ public struct RestClient: Sendable {
 
     public let serverBase: URL
     private let transport: Transport
+    private let workspaceTransport: Transport
     private let downloadSession: URLSession?
     private let tokenProvider: @Sendable () async -> String?
 
@@ -187,6 +188,11 @@ public struct RestClient: Sendable {
             transport ?? { request in
                 let (data, response) = try await NoStoreHTTP.session.data(for: request)
                 return ((response as? HTTPURLResponse)?.statusCode ?? 0, data)
+            }
+        self.workspaceTransport =
+            transport ?? { request in
+                try await WorkspaceRequestPolicy.response(
+                    request, session: downloadSession ?? NoStoreHTTP.session)
             }
     }
 
@@ -216,6 +222,37 @@ public struct RestClient: Sendable {
         guard status == 200 else { return [] }
         let items = json["chats"]?.arrayValue ?? json.arrayValue ?? []
         return items.compactMap { ChatSummary(json: $0) }
+    }
+
+    /// One explicit mint attempt using the existing owner/PHI-gated route.
+    /// The result stays ephemeral; callers must recheck their initiating owner
+    /// before displaying it. An uncertain POST is never retried here.
+    public func shareCanvas(chatId: String) async throws -> URL {
+        guard !chatId.isEmpty, chatId.utf8.count <= 256,
+            let token = await tokenProvider(), !token.isEmpty
+        else { throw URLError(.userAuthenticationRequired) }
+        try Task.checkCancellation()
+        let endpoint = try DownloadPolicy.resolve("/api/share", relativeTo: serverBase)
+        guard DownloadPolicy.sameOrigin(endpoint, serverBase) else { throw URLError(.badURL) }
+        var request = NoStoreHTTP.request(
+            url: endpoint, method: "POST",
+            body: try JSONValue.object(["chat_id": .string(chatId), "scope": .string("canvas")]).encoded(),
+            contentType: "application/json")
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (status, data) = try await workspaceTransport(request)
+        try Task.checkCancellation()
+        guard data.count <= WorkspaceRequestPolicy.maximumResponseBytes else {
+            throw URLError(.dataLengthExceedsMaximum)
+        }
+        guard status == 201 else {
+            if status == 403, (try? JSONValue.parse(data))?["error"]?.stringValue == "phi_blocked" {
+                throw WorkspaceShareError.phiBlocked
+            }
+            throw WorkspaceShareError.refused(status: status)
+        }
+        let body = try JSONValue.parse(data)
+        guard let raw = body["share_url"]?.stringValue else { throw URLError(.cannotParseResponse) }
+        return try WorkspaceRequestPolicy.shareURL(raw, relativeTo: serverBase)
     }
 
     public func deleteChat(id: String) async throws -> Bool {
@@ -312,12 +349,27 @@ public struct RestClient: Sendable {
     /// last path component is the intended filename (for share/save UIs).
     public func downloadFile(
         from urlString: String,
-        suggestedFilename: String? = nil
+        suggestedFilename: String? = nil,
+        expectedRenderRevision: UInt64? = nil
     ) async throws -> URL {
         let req = try await downloadRequest(from: urlString)
+        if expectedRenderRevision != nil {
+            guard let url = req.url, DownloadPolicy.sameOrigin(url, serverBase) else {
+                throw URLError(.badURL)
+            }
+            guard req.value(forHTTPHeaderField: "Authorization")?.hasPrefix("Bearer ") == true else {
+                throw URLError(.userAuthenticationRequired)
+            }
+        }
+        try Task.checkCancellation()
         let (bytes, response) = try await (downloadSession ?? NoStoreHTTP.session).bytes(
             for: req, delegate: DownloadRedirectDelegate(original: req))
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        if let expectedRenderRevision,
+            http.value(forHTTPHeaderField: "X-Astral-Render-Revision") != String(expectedRenderRevision)
+        {
             throw URLError(.badServerResponse)
         }
         let limit = 64 * 1024 * 1024

@@ -387,7 +387,7 @@ private struct CanvasArea: View {
                 // shimmer trigger fixed earlier; see StepTrailView/MessagesPanel).
                 GeometryReader { geo in
                     Group {
-                        if model.showSkeleton {
+                        if model.showSkeleton && model.workspaceCanvas.isEmpty {
                             SkeletonCanvas()
                         } else if model.workspaceCanvas.isEmpty {
                             EmptyCanvasHint()
@@ -406,6 +406,7 @@ private struct CanvasArea: View {
                                             interactive: !model.isViewingHistory,
                                             onRefine: { refineTarget = $0 })
                                     }
+                                    if model.showSkeleton { SkeletonCanvas() }
                                 }
                                 .padding(AstralWebStyle.canvasInset(viewportWidth))
                             }
@@ -418,13 +419,6 @@ private struct CanvasArea: View {
 
                 if !model.isViewingHistory {
                     HStack(spacing: 8) {
-                        // 055 US5 (T045): canvas HTML export, opened in the
-                        // system browser (session-authed route).
-                        if !model.workspaceCanvas.isEmpty, !model.showSkeleton,
-                            let exportURL = model.exportCanvasURL()
-                        {
-                            CanvasExportPill(url: exportURL)
-                        }
                         if !model.canvasHistory.isEmpty {
                             TimelinePill(count: model.canvasHistory.count) { showTimeline = true }
                         }
@@ -434,32 +428,6 @@ private struct CanvasArea: View {
             }
         }
         .background(p.bg)
-    }
-}
-
-private struct CanvasExportPill: View {
-    @Environment(ThemeStore.self) var theme
-    let url: URL
-    @State private var showingExport = false
-    private var p: AstralPalette { theme.palette }
-    var body: some View {
-        Button {
-            showingExport = true
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "square.and.arrow.up").font(AstralTypography.caption2)
-                Text("Export").font(AstralTypography.caption.weight(.medium))
-            }
-            .foregroundStyle(p.text)
-            .padding(.horizontal, 12).padding(.vertical, 7)
-            .background(p.surface.opacity(0.92), in: Capsule())
-            .overlay(Capsule().stroke(p.border))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Export this canvas as HTML")
-        .sheet(isPresented: $showingExport) {
-            ExportDownloadSheet(url: url, filename: "astraldeep-canvas.html")
-        }
     }
 }
 

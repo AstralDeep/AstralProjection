@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -13,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.renderers.ArtifactFooter
+import com.personalailabs.astraldeep.app.ui.SkeletonCanvas
 import com.personalailabs.astraldeep.core.sdui.Component
 
 /**
@@ -25,6 +27,7 @@ import com.personalailabs.astraldeep.core.sdui.Component
 data class CanvasChrome(
     val chatId: String?,
     val mutationsLocked: Boolean,
+    val serverCanvasExport: Boolean = false,
 )
 
 /**
@@ -38,6 +41,7 @@ fun CanvasHost(
     renderer: Renderer,
     modifier: Modifier = Modifier,
     chrome: CanvasChrome? = null,
+    loading: Boolean = false,
 ) {
     LazyColumn(
         modifier = modifier.fillMaxSize().padding(if (LocalConfiguration.current.screenWidthDp < 700) 12.dp else 16.dp),
@@ -55,9 +59,11 @@ fun CanvasHost(
                         download = renderer.download,
                         chatId = chrome.chatId,
                         mutationsLocked = chrome.mutationsLocked,
+                        serverCanvasExport = chrome.serverCanvasExport,
                     )
                 }
             }
         }
+        if (loading) item { SkeletonCanvas(Modifier.fillMaxWidth().height(180.dp)) }
     }
 }

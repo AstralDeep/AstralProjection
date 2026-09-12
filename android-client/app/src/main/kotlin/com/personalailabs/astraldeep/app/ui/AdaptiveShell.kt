@@ -242,11 +242,12 @@ private fun CanvasArea(
 
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
             when {
-                state.showSkeleton -> SkeletonCanvas(Modifier.fillMaxSize())
+                state.showSkeleton && state.visibleCanvas.isEmpty() -> SkeletonCanvas(Modifier.fillMaxSize())
                 state.visibleCanvas.isEmpty() -> EmptyCanvasHint(Modifier.fillMaxSize())
                 else ->
                     CanvasHost(
                         components = state.visibleCanvas.filter { welcomePlacementRole(it) == null },
+                        loading = state.showSkeleton,
                         renderer = renderer,
                         modifier = Modifier.fillMaxSize(),
                         // Refine pauses on ANY read-only view — the server timeline
@@ -254,6 +255,7 @@ private fun CanvasArea(
                         chrome =
                             CanvasChrome(
                                 chatId = state.activeChatId,
+                                serverCanvasExport = workspaceControls(state).any { it.operation == "export_canvas" },
                                 mutationsLocked = state.mutationsLocked || state.isViewingHistory,
                             ),
                     )

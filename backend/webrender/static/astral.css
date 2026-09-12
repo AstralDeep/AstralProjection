@@ -284,8 +284,19 @@ body {
 @media (max-width: 699px) {
   .astral-chat-form #astral-input { flex-basis: 100%; order: -1; }
   /* Keep the existing compact navigation reachable when text is enlarged. */
-  #astral-topbar > div { padding-inline: 12px; gap: 8px; }
-  #astral-topbar > div > div:last-child { min-width: 0; gap: 8px; }
+  #astral-topbar > div { padding-inline: 12px; gap: 8px; align-items: flex-start; }
+  #astral-topbar > div > div:first-child { flex-shrink: 0; padding-block: 4px; }
+  /* Canonical compact chrome: retain ordered controls, wrapping only when
+     needed. Intrinsic height keeps Settings and its dropdown reachable. */
+  #astral-topbar > div > div:last-child {
+    min-width: 0;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  #astral-topbar > div > div:last-child > * { flex-shrink: 0; }
+  #astral-status { max-width: 100%; overflow-wrap: anywhere; }
+  #astral-settings-menu { max-width: calc(100vw - 24px); }
 }
 
 /* 4. Shared field + button polish (renderer adds .astral-field / .astral-btn

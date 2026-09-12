@@ -115,6 +115,32 @@ final class DownloadPolicyTests: XCTestCase {
         }
         XCTAssertEqual(DownloadPolicy.filename(String(repeating: "x", count: 500)).count, 180)
     }
+
+    func testCanvasExportRequiresTheExactReturnedRenderRevision() async throws {
+        let config = NoStoreHTTP.configuration()
+        config.protocolClasses = [DownloadFixtureProtocol.self]
+        let session = URLSession(configuration: config)
+        defer { session.invalidateAndCancel() }
+        let client = RestClient(serverBase: origin, tokenProvider: { "owner-token" }, downloadSession: session)
+        let file = try await client.downloadFile(from: "/revision", expectedRenderRevision: 7)
+        defer { RestClient.removeTemporaryDownload(file) }
+        XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), "exported fixture")
+        for (url, revision): (String, UInt64) in [("/revision", 8), ("/download", 7)] {
+            do {
+                _ = try await client.downloadFile(from: url, expectedRenderRevision: revision)
+                XCTFail("Missing or stale revision must refuse the exported file")
+            } catch { XCTAssertEqual((error as? URLError)?.code, .badServerResponse) }
+        }
+        do {
+            _ = try await client.downloadFile(from: "https://foreign.example.test/file", expectedRenderRevision: 7)
+            XCTFail("Revision-bound exports must remain same-origin")
+        } catch { XCTAssertEqual((error as? URLError)?.code, .badURL) }
+        let anonymous = RestClient(serverBase: origin, tokenProvider: { nil }, downloadSession: session)
+        do {
+            _ = try await anonymous.downloadFile(from: "/revision", expectedRenderRevision: 7)
+            XCTFail("A revision-bound export needs a current credential before HTTP")
+        } catch { XCTAssertEqual((error as? URLError)?.code, .userAuthenticationRequired) }
+    }
 }
 
 private final class DownloadFixtureProtocol: URLProtocol {
@@ -128,6 +154,7 @@ private final class DownloadFixtureProtocol: URLProtocol {
             headerFields: [
                 "Content-Disposition": "attachment; filename=export.csv",
                 "Content-Length": request.url?.path == "/oversize" ? "67108865" : "16",
+                "X-Astral-Render-Revision": request.url?.path == "/revision" ? "7" : "",
             ])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: Data("exported fixture".utf8))

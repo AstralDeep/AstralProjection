@@ -2,6 +2,35 @@
   "version": 1,
   "description": "Committed UI-protocol manifest (feature 044). Single source for the server->client WS frame vocabulary, the ui_event action vocabulary, and the component vocabulary. Backend, Windows, and Android test suites all assert against this file; adding a frame type, action, or component type REQUIRES editing it in the same PR (guards fail otherwise). See specs/044-native-client-parity/contracts/ui-protocol.md.",
   "presentation_contracts": {
+    "chrome_menu": {
+      "version": 2,
+      "unknown_kind": "ignore_control",
+      "invalid_workspace_action": "ignore_control",
+      "workspace_action": {
+        "exact_fields": ["key", "kind", "label", "icon", "operation", "context"],
+        "operations": ["export_canvas", "share_canvas"],
+        "contexts": ["live_canvas"],
+        "live_canvas": "Outside timeline with a mounted dynamic renderer and the matching server canvas capability; no additional busy or positive-revision visibility predicate.",
+        "execution": "Descriptor presence is not authorization. Capture and recheck the owner, chat and current canvas revision as applicable around the existing authenticated operation. Never execute an arbitrary descriptor URL, surface or payload.",
+        "watch_disposition": {
+          "source_feature": "055-uniform-artifacts",
+          "disposition": "omitted_by_server",
+          "chrome_menu_delivery": false,
+          "workspace_capability_attributes": false,
+          "supports_file_io": false,
+          "reason": "The wrist retains its existing chrome-free, no-file-IO profile; canvas export/share and component artifact verbs are absent.",
+          "continuation": "Use the same owned chat on a supported phone, desktop or web client. Preserve existing server-provided handoff guidance where present; omission creates no button, URL, token or share snapshot."
+        }
+      },
+      "compact_topbar": {
+        "below_logical_width": 700,
+        "action_cluster": "wrap_in_canonical_order_when_needed",
+        "alignment": "trailing",
+        "height": "intrinsic",
+        "brand": "separate_leading_cluster",
+        "overflow": "no_horizontal_scroll_or_hidden_controls"
+      }
+    },
     "workspace_088": {
       "version": 1,
       "targets": [

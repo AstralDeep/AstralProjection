@@ -18,6 +18,7 @@
             case workspaceCanvas = "workspace-canvas"
             case workspaceStyles = "workspace-styles"
             case workspaceHistory = "workspace-history"
+            case workspaceActions = "workspace-actions"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -70,6 +71,16 @@
             }
             if scenario == .workspaceStyles {
                 installWorkspaceStyles(on: model)
+                return
+            }
+            if scenario == .workspaceActions {
+                installWorkspaceStyles(on: model)
+                model.activeChatId = "11111111-1111-4111-8111-111111111111"
+                model.workspaceStarted = true
+                model.handleFrame(
+                    InboundFrame.parse(
+                        #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"},{"key":"share","kind":"workspace_action","label":"Share page","icon":"share","operation":"share_canvas","context":"live_canvas"},{"key":"pulse","kind":"action","label":"Pulse","icon":"sparkle","action":{"surface":"pulse"}},{"key":"timeline","kind":"action","label":"Timeline","icon":"history","action":{"surface":"workspace_timeline"}}],"signout":{"label":"Sign out"}}}"#
+                    )!)
                 return
             }
             _ = model.beginConversationConnection(connectionGeneration)
@@ -182,7 +193,8 @@
                         errorMessage: "The provider is temporarily unavailable."))
             case .clientWatchdog:
                 break
-            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceStyles, .workspaceHistory:
+            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceStyles, .workspaceHistory,
+                .workspaceActions:
                 break
             case .voiceComposer:
                 break

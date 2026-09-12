@@ -109,6 +109,7 @@ internal fun artifactMenu(
     c: Component,
     chatId: String?,
     mutationsLocked: Boolean,
+    serverCanvasExport: Boolean = false,
 ): ArtifactMenu {
     val id = c.id?.takeIf { it.isNotBlank() }
     val chat = chatId?.takeIf { it.isNotBlank() }
@@ -123,7 +124,7 @@ internal fun artifactMenu(
                     ),
                 )
             }
-            if (chat != null) {
+            if (chat != null && !serverCanvasExport) {
                 add(
                     ExportEntry(
                         label = "Export canvas (HTML)",
@@ -175,9 +176,10 @@ fun ArtifactFooter(
     download: Download,
     chatId: String?,
     mutationsLocked: Boolean,
+    serverCanvasExport: Boolean = false,
 ) {
     val provenance = provenanceOf(c)
-    val menu = artifactMenu(c, chatId, mutationsLocked)
+    val menu = artifactMenu(c, chatId, mutationsLocked, serverCanvasExport)
     if (provenance == null && menu.isEmpty) return
     var menuOpen by remember { mutableStateOf(false) }
     var refineOpen by remember { mutableStateOf(false) }

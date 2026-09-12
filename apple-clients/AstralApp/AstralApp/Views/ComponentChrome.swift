@@ -170,6 +170,7 @@ struct RefineSheet: View {
 struct ExportDownloadSheet: View {
     let url: URL
     let filename: String
+    var workspaceExport: AppModel.WorkspaceActionContext? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -180,7 +181,7 @@ struct ExportDownloadSheet: View {
                     raw: .object([
                         "type": .string("file_download"), "download_url": .string(url.absoluteString),
                         "filename": .string(filename), "label": .string("Export"),
-                    ])), automaticallyStart: true
+                    ])), automaticallyStart: true, workspaceExport: workspaceExport
             )
             .padding(24)
             .frame(minWidth: 280, minHeight: 150)

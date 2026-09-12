@@ -1,6 +1,40 @@
 import XCTest
 
 final class WorkspacePresentationUITests: XCTestCase {
+    func testWorkspaceActionsFollowServerOrderKeepNativeTargetsAndLeaveWithCanvas() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--astral-ui-test-first-login", "workspace-actions"]
+        app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        app.launch()
+        defer { app.terminate() }
+        let export = app.buttons["workspace-action-export"]
+        XCTAssertTrue(export.waitForExistence(timeout: 10))
+        let share = app.buttons["workspace-action-share"]
+        XCTAssertTrue(share.exists)
+        XCTAssertFalse(app.buttons["Export this canvas as HTML"].exists)
+        let controls = [
+            app.buttons["new-chat-button"], app.buttons["Recent chats"], export, share,
+            app.buttons["Pulse"], app.buttons["Timeline"],
+        ]
+        let window = app.windows.firstMatch.frame
+        for (index, control) in controls.enumerated() {
+            XCTAssertTrue(control.isHittable)
+            XCTAssertGreaterThanOrEqual(control.frame.width, 44)
+            XCTAssertGreaterThanOrEqual(control.frame.height, 44)
+            XCTAssertGreaterThanOrEqual(control.frame.minX, window.minX)
+            XCTAssertLessThanOrEqual(control.frame.maxX, window.maxX)
+            if index > 0 {
+                let previous = controls[index - 1].frame
+                XCTAssertTrue(control.frame.minY > previous.minY || control.frame.minX >= previous.maxX)
+            }
+        }
+        capture(app, name: "workspace-088-server-actions-native-wrap")
+        app.buttons["new-chat-button"].tap()
+        XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
+        XCTAssertFalse(export.exists)
+        XCTAssertFalse(share.exists)
+    }
+
     func testHistoryPreviewsDistinguishSameTitleConversationsAndOpenExactRow() {
         let app = XCUIApplication()
         app.launchArguments = ["--astral-ui-test-first-login", "workspace-history"]

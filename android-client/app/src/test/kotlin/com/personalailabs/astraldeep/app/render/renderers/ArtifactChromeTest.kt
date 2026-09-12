@@ -21,6 +21,12 @@ class ArtifactChromeTest {
     // --- provenance badge (T036, wire-contract §6) ---------------------------
 
     @Test
+    fun server_canvas_descriptor_removes_only_duplicate_whole_canvas_export() {
+        val menu = artifactMenu(comp(table), "chat-1", false, serverCanvasExport = true)
+        assertEquals(listOf("Export table (CSV)"), menu.exports.map { it.label })
+    }
+
+    @Test
     fun the_three_canonical_stamps_map_to_their_badges() {
         assertEquals(Provenance.Grounded, provenanceOf(comp("""{"type":"card","provenance":"grounded"}""")))
         assertEquals(Provenance.Estimated, provenanceOf(comp("""{"type":"card","provenance":"estimated"}""")))

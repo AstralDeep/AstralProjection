@@ -319,7 +319,13 @@ class AppViewModel(
     private var snapshotTimeout: Job? = null
     private var token: String? = null
     private var device: DeviceCapabilities? = null
-    private var account: AccountIdentity? = null
+
+    @Volatile private var account: AccountIdentity? = null
+
+    @Volatile private var workspaceEpoch: Long = 0
+
+    internal fun workspaceContext(): WorkspaceContext? = workspaceContext(_state.value, account, workspaceEpoch)
+
     private var attachSeq: Long = 0
     private val seqState = mutableMapOf<String, Int>()
     private var pendingVoiceActivation: PendingVoiceActivation? = null
@@ -355,6 +361,7 @@ class AppViewModel(
         this.device = device
         val nextAccount = ConversationResumeStore.accountFromAccessToken(token)
         val previousAccount = account
+        if (previousAccount != nextAccount) workspaceEpoch++
         if (previousAccount != null && nextAccount != null && previousAccount != nextAccount) {
             viewModelScope.coroutineContext.cancelChildren()
             client.clearOwnerSession()
@@ -712,6 +719,7 @@ class AppViewModel(
 
     /** Start a fresh conversation (clears the canvas, timeline, and transcript). */
     fun newChat() {
+        workspaceEpoch++
         if (!clearResumeLocator(ClearReason.EXPLICIT_NEW_CHAT)) {
             _state.value =
                 _state.value.copy(
@@ -905,6 +913,7 @@ class AppViewModel(
     }
 
     fun openChat(chatId: String) {
+        workspaceEpoch++
         if (!persistActiveChat(chatId)) {
             _state.value =
                 _state.value.copy(
@@ -1415,6 +1424,7 @@ class AppViewModel(
 
     /** Synchronous explicit-sign-out hook; no owner data survives same-account login. */
     fun clearConversationForSignOut(): Boolean {
+        workspaceEpoch++
         voiceController?.logout()
         viewModelScope.coroutineContext.cancelChildren()
         session = null

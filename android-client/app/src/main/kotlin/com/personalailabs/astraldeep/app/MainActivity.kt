@@ -81,6 +81,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : ComponentActivity() {
+    private val workspaceActions by lazy { WorkspaceActionController(this) { authToken.value } }
+
     private val client by lazy { OrchestratorClient(AppConfig.WS_URL) }
     private val rest by lazy { AstralRest(AppConfig.API_BASE) }
     private val voiceScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
@@ -177,7 +179,7 @@ class MainActivity : ComponentActivity() {
                     store.save(state) // persist AFTER the first refresh (captures rotation)
                     token
                 }.onSuccess {
-                    authToken.value = it
+                    applyAuthToken(it)
                     signInError.value = null
                 }.onFailure {
                     Log.w("MainActivity", "sign-in exchange failed: ${it.message}")
@@ -188,6 +190,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        workspaceActions.invalidateStale()
         // Resume a cached session. Per the sign-in-once-a-year policy: if credentials
         // are found on the device, go straight to the home screen — show it right away
         // with the cached access token, then refresh silently and PERSIST the (rotated)
@@ -198,7 +201,7 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val st = store.load() ?: return@launch
             val cached = st.accessToken?.takeIf { it.isNotBlank() }
-            cached?.let { authToken.value = it }
+            cached?.let { applyAuthToken(it) }
             val route =
                 routeAfterRefresh(
                     runCatching { oidc.freshToken(st) }
@@ -206,7 +209,7 @@ class MainActivity : ComponentActivity() {
                         .onFailure { Log.w("MainActivity", "silent token refresh failed: ${it.message}") },
                     cachedToken = cached,
                 )
-            authToken.value = route.token
+            applyAuthToken(route.token)
             signInError.value = route.error
         }
         setContent {
@@ -226,6 +229,7 @@ class MainActivity : ComponentActivity() {
                     }
                 val token by authToken.collectAsStateWithLifecycle()
                 val error by signInError.collectAsStateWithLifecycle()
+                LaunchedEffect(uiState, token) { workspaceActions.invalidateStale() }
 
                 if (token == null) {
                     SignInScreen(error = error, onSignIn = ::startSignIn)
@@ -259,15 +263,23 @@ class MainActivity : ComponentActivity() {
                                         },
                                     )
                                 }
-                            authToken.value = route.token
+                            applyAuthToken(route.token)
                             signInError.value = route.error
                         }
                     }
-                    RootScaffold(vm, renderer, onSignOut = { signOut(vm) })
+                    RootScaffold(vm, renderer, onSignOut = { signOut(vm) }, onWorkspaceAction = { workspaceActions.perform(it, vm) })
                 }
             }
         }
     }
+
+    private suspend fun applyAuthToken(next: String?) =
+        withContext(Dispatchers.Main.immediate) {
+            val oldOwner = ConversationResumeStore.accountFromAccessToken(authToken.value.orEmpty())
+            val newOwner = ConversationResumeStore.accountFromAccessToken(next.orEmpty())
+            if (next == null || oldOwner != newOwner) workspaceActions.clear()
+            authToken.value = next
+        }
 
     private fun startSignIn() {
         runCatching { authLauncher.launch(oidc.authorizeIntent()) }
@@ -291,6 +303,7 @@ class MainActivity : ComponentActivity() {
      * the fallback — so the refresh token dies even when the backend is down.
      */
     private fun signOut(vm: AppViewModel) {
+        workspaceActions.clear()
         voiceController.logout()
         // Clear the LOCAL session SYNCHRONOUSLY on the main thread first, so
         // sign-out is durable even if the Activity is destroyed an instant later.
@@ -333,6 +346,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        workspaceActions.clear()
         oidc.dispose()
         super.onDestroy()
     }

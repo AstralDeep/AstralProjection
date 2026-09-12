@@ -674,12 +674,13 @@ struct AstralButtonStyle: ButtonStyle {
 struct DownloadComponent: View {
     let component: AstralComponent
     var automaticallyStart = false
+    var workspaceExport: AppModel.WorkspaceActionContext? = nil
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @State private var phase = Phase.idle
     @State private var downloadTask: Task<Void, Never>?
     @State private var temporaryFile: URL?
-    @State private var savePanel: NSSavePanelHolder?
+    @State private var savePanel: NativeDownloadSaveLease?
     private var p: AstralPalette { theme.palette }
 
     enum Phase: Equatable {
@@ -777,14 +778,21 @@ struct DownloadComponent: View {
         }
         .onDisappear { cancelDownload() }
         .onChange(of: model.downloadOwner) { _, _ in cancelDownload() }
+        .onChange(of: model.activeChatId) { _, _ in
+            if workspaceExport != nil { cancelDownload() }
+        }
+        .onChange(of: model.lastCommittedRenderRevision) { _, _ in
+            if workspaceExport != nil { cancelDownload() }
+        }
 
     }
 
     private func cancelDownload() {
         downloadTask?.cancel()
         downloadTask = nil
-        savePanel?.cancel()
+        let cancelledPanel = savePanel
         savePanel = nil
+        cancelledPanel?.cancel()
         if let file = temporaryFile { RestClient.removeTemporaryDownload(file) }
         temporaryFile = nil
         phase = .idle
@@ -797,7 +805,12 @@ struct DownloadComponent: View {
         let owner = model.downloadOwner
         downloadTask = Task { @MainActor in
             do {
-                let file = try await model.downloadArtifact(from: urlString, suggestedFilename: filename)
+                let file: URL
+                if let workspaceExport {
+                    file = try await model.downloadWorkspaceCanvas(workspaceExport)
+                } else {
+                    file = try await model.downloadArtifact(from: urlString, suggestedFilename: filename)
+                }
                 guard !Task.isCancelled, model.downloadOwner == owner else {
                     RestClient.removeTemporaryDownload(file)
                     return
@@ -815,7 +828,7 @@ struct DownloadComponent: View {
     @MainActor
     private func finish(with file: URL, owner: AppModel.DownloadOwner) {
         #if os(macOS)
-            let holder = NSSavePanelHolder()
+            let holder = NativeDownloadSaveLease(file: file)
             savePanel = holder
             let panel = holder.panel
             panel.nameFieldStringValue = file.lastPathComponent
@@ -823,17 +836,22 @@ struct DownloadComponent: View {
             panel.begin { response in
                 defer {
                     RestClient.removeTemporaryDownload(file)
-                    temporaryFile = nil
-                    savePanel = nil
+                    if savePanel === holder {
+                        if temporaryFile == file { temporaryFile = nil }
+                        savePanel = nil
+                    }
                 }
-                guard model.downloadOwner == owner, !Task.isCancelled else { return }
+                guard savePanel === holder, temporaryFile == file, !holder.cancelled,
+                    model.downloadOwner == owner,
+                    workspaceExport.map(model.workspaceActionIsCurrent) ?? true
+                else { return }
                 if response == .OK, let destination = panel.url {
                     do {
-                        if FileManager.default.fileExists(atPath: destination.path) {
-                            try FileManager.default.removeItem(at: destination)
+                        if try holder.save(
+                            to: destination, isCurrent: { savePanel === holder && temporaryFile == file })
+                        {
+                            phase = .done(destination)
                         }
-                        try FileManager.default.copyItem(at: file, to: destination)
-                        phase = .done(destination)
                     } catch { phase = .failed("The file could not be saved.") }
                 } else {
                     phase = .idle
@@ -846,12 +864,31 @@ struct DownloadComponent: View {
 }
 
 @MainActor
-private final class NSSavePanelHolder {
+final class NativeDownloadSaveLease {
+    let file: URL
+    private(set) var cancelled = false
+
+    init(file: URL) { self.file = file }
+
+    /// An old completion may arrive after a panel was cancelled or replaced.
+    /// Check the actual presentation lifetime before any destination write.
+    func save(to destination: URL, isCurrent: () -> Bool) throws -> Bool {
+        guard !cancelled, isCurrent() else { return false }
+        let data = try Data(contentsOf: file, options: .mappedIfSafe)
+        guard data.count <= 64 * 1024 * 1024 else { throw URLError(.dataLengthExceedsMaximum) }
+        try data.write(to: destination, options: .atomic)
+        return true
+    }
+
+    func cancel() {
+        cancelled = true
+        #if os(macOS)
+            panel.cancel(nil)
+        #endif
+    }
+
     #if os(macOS)
         let panel = NSSavePanel()
-        func cancel() { panel.cancel(nil) }
-    #else
-        func cancel() {}
     #endif
 }
 

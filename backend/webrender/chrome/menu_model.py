@@ -22,7 +22,7 @@ from typing import Dict, List, Optional, Tuple
 
 # Bumped when the wire shape changes; clients ignore unknown fields and degrade
 # gracefully rather than fail (data-model.md forward-compat rule).
-MODEL_VERSION = 1
+MODEL_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -38,11 +38,12 @@ class SurfaceRef:
 
 @dataclass(frozen=True)
 class TopBarControl:
-    """One control in the top bar. ``kind`` is one of brand|status|action|menu.
+    """One control: brand|status|action|menu|workspace_action.
 
     ``brand``/``status`` are non-interactive; ``action`` opens ``action``'s
     surface via ``chrome_open``; ``menu`` (the gear) toggles the client's local
-    settings dropdown (no server round-trip).
+    settings dropdown (no server round-trip). ``workspace_action`` names a
+    closed existing canvas operation; it never grants execution authority.
     """
 
     key: str
@@ -50,6 +51,18 @@ class TopBarControl:
     label: Optional[str] = None
     icon: Optional[str] = None  # semantic id (gear|history|sparkle); clients map to their own asset
     action: Optional[SurfaceRef] = None
+    operation: Optional[str] = None
+    context: Optional[str] = None
+
+    def __post_init__(self):
+        if self.kind == "workspace_action":
+            if (self.operation not in ("export_canvas", "share_canvas")
+                    or self.context != "live_canvas" or self.action is not None
+                    or not all(isinstance(value, str) and value.strip()
+                               for value in (self.key, self.label, self.icon))):
+                raise ValueError("invalid workspace action descriptor")
+        elif self.operation is not None or self.context is not None:
+            raise ValueError("workspace fields require workspace_action kind")
 
     def to_dict(self) -> Dict:
         d: Dict = {"key": self.key, "kind": self.kind}
@@ -59,6 +72,9 @@ class TopBarControl:
             d["icon"] = self.icon
         if self.action is not None:
             d["action"] = self.action.to_dict()
+        if self.operation is not None:
+            d["operation"] = self.operation
+            d["context"] = self.context
         return d
 
 
@@ -188,6 +204,8 @@ def build_menu_model(
     remote_enabled: bool = False,
     computer_enabled: bool = False,
     skills_enabled: bool = False,
+    export_enabled: bool = False,
+    share_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
@@ -204,6 +222,9 @@ def build_menu_model(
         skills_enabled: host-resolved user-skills presence (feature 077). With
             ``byo_enabled`` the item reads "My agents & skills"; alone it reads
             "My skills" — the same ``agent_authoring`` surface either way.
+        export_enabled: host-resolved canvas HTML export availability.
+        share_enabled: host-resolved canvas sharing availability. These controls
+            also require the client's current ``live_canvas`` context.
         include_admin: whether the ADMIN TOOLS group is eligible at all. The web
             passes ``True`` (admins see it). Native clients (Windows/Android)
             pass ``False`` — admin settings are web-only, so the group is omitted
@@ -226,6 +247,14 @@ def build_menu_model(
         TopBarControl("brand", "brand"),
         TopBarControl("status", "status"),
     ]
+    if export_enabled:
+        topbar.append(TopBarControl(
+            "export", "workspace_action", label="Export page", icon="download",
+            operation="export_canvas", context="live_canvas"))
+    if share_enabled:
+        topbar.append(TopBarControl(
+            "share", "workspace_action", label="Share page", icon="share",
+            operation="share_canvas", context="live_canvas"))
     if show_pulse:
         topbar.append(
             TopBarControl(
@@ -274,6 +303,8 @@ def menu_model_dict(
     remote_enabled: bool = False,
     computer_enabled: bool = False,
     skills_enabled: bool = False,
+    export_enabled: bool = False,
+    share_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
@@ -290,6 +321,8 @@ def menu_model_dict(
         remote_enabled=remote_enabled,
         computer_enabled=computer_enabled,
         skills_enabled=skills_enabled,
+        export_enabled=export_enabled,
+        share_enabled=share_enabled,
         include_admin=include_admin,
         include_tour=include_tour,
     ).to_dict()
