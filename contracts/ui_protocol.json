@@ -2,6 +2,72 @@
   "version": 1,
   "description": "Committed UI-protocol manifest (feature 044). Single source for the server->client WS frame vocabulary, the ui_event action vocabulary, and the component vocabulary. Backend, Windows, and Android test suites all assert against this file; adding a frame type, action, or component type REQUIRES editing it in the same PR (guards fail otherwise). See specs/044-native-client-parity/contracts/ui-protocol.md.",
   "presentation_contracts": {
+    "component_chrome": {
+      "version": 1,
+      "fixture": "contracts/fixtures/workspace_088/component_chrome.json",
+      "field": "component_chrome",
+      "scope": "top_level_canvas_component",
+      "exact_fields": [
+        "version",
+        "actions"
+      ],
+      "action_fields": [
+        "kind",
+        "label",
+        "icon",
+        "title",
+        "context"
+      ],
+      "action_order": [
+        "refine",
+        "history",
+        "csv",
+        "share"
+      ],
+      "contexts": {
+        "refine": "live_canvas",
+        "history": "live_canvas",
+        "csv": "owned_chat",
+        "share": "owned_chat"
+      },
+      "limits": {
+        "actions": 16,
+        "label_codepoints": 96,
+        "icon_codepoints": 8,
+        "title_codepoints": 160,
+        "versions": 5,
+        "version_no_max": 9007199254740991,
+        "version_reason_codepoints": 32,
+        "version_created_at_codepoints": 64,
+        "version_title_codepoints": 120
+      },
+      "versions_field": "versions",
+      "versions_policy": "Inspect only the first five rows; discard unknown fields, invalid numbers and non-string text, omit duplicate version numbers, and truncate plain text by Unicode codepoint limits. Exact integral JSON numbers are accepted; booleans and numeric strings are refused.",
+      "version_fields": [
+        "version_no",
+        "reason",
+        "created_at",
+        "title"
+      ],
+      "unknown_or_invalid_metadata": "no_component_actions",
+      "unknown_or_invalid_action": "ignore_entry",
+      "duplicate_kind": "omit_kind",
+      "identity": "original_canonical_component_id; never id-only or dg_/ly_/wel_ or divider/skeleton",
+      "policy": "Projection builds the inventory from original stored type, current host flags and receiver profile; Deep overwrites outbound copies after adaptation without persistence. Metadata never authorizes execution.",
+      "execution": "Capture and recheck current owner/session/chat/component and required action context. Existing refine/restore, authenticated CSV and component share gates remain authoritative; never execute descriptor URLs, events or parameters.",
+      "live_canvas": "Outside timeline/read-only mode; do not add an unrelated busy visibility rule.",
+      "owned_chat": "Existing owned-chat CSV and component Share semantics also apply while viewing timeline history; downloaded/shared content comes from the existing authorized endpoint.",
+      "dispositions": {
+        "web": "same existing DOM and server flags",
+        "android": "native_component_actions",
+        "ios": "native_component_actions",
+        "macos": "native_component_actions",
+        "watch": "omitted_by_server_per_055_artifact_disposition",
+        "windows": "legacy_layout_ignores_additive_field"
+      },
+      "legacy_server": "Updated native clients hide component actions when metadata is absent; no inferred flags or legacy canvas-export fallback.",
+      "legacy_clients": "May ignore additive metadata and retain historical inferred menus; server authorization/flag denials are unchanged."
+    },
     "canvas_export": {
       "version": "astral.canvas-export/v1",
       "contract": "canvas_export_v1.json",

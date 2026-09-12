@@ -1372,12 +1372,6 @@ def _flag_on(env_var: str, default: bool) -> bool:
     return os.getenv(env_var, str(default)).lower() in ("true", "1", "yes")
 
 
-#: Identity prefixes that never take chrome affordances: designer garnish and
-#: layout keys are rebuilt from layout JSON (no restorable ``saved_components``
-#: row), welcome components are ephemeral by contract (data-model.md identity
-#: registry).
-_CHROME_SKIP_ID_PREFIXES = ("dg_", "ly_", "wel_")
-
 _CHROME_BTN_CLS = ("inline-flex items-center gap-1 text-[10px] text-astral-muted/70 "
                    "hover:text-astral-text transition-colors")
 
@@ -1392,29 +1386,14 @@ def _versions_attr(component: Dict[str, Any]) -> str:
     the fragment. Absent/empty history renders no attribute (the client shows
     an honest empty state).
     """
-    raw = component.get("versions")
-    if not isinstance(raw, list):
-        return ""
-    entries = []
-    for v in raw[:5]:
-        if not isinstance(v, dict):
-            continue
-        try:
-            no = int(v.get("version_no"))
-        except (TypeError, ValueError):
-            continue
-        entries.append({
-            "version_no": no,
-            "reason": str(v.get("reason") or "")[:32],
-            "created_at": str(v.get("created_at") or "")[:64],
-            "title": str(v.get("title") or "")[:120],
-        })
+    from webrender.chrome.component_model import component_versions
+    entries = component_versions(component)
     if not entries:
         return ""
     return f' data-versions="{_attr(json.dumps(entries))}"'
 
 
-def _component_chrome(component: Dict[str, Any], profile: Any) -> str:
+def _component_chrome(component: Dict[str, Any], profile: Any, *, canonical=None) -> str:
     """Per-component affordance row (055 US4/US5), appended after the
     provenance footer inside the identity wrapper.
 
@@ -1429,36 +1408,24 @@ def _component_chrome(component: Dict[str, Any], profile: Any) -> str:
     (``.astral-refine-btn`` / ``.astral-vhistory-btn`` / ``.astral-export-csv``
     / ``.astral-share-btn``).
     """
-    if profile is None or not getattr(profile, "supports_interactivity", True):
-        return ""
+    from webrender.chrome.component_model import renderer_component_actions
     cid = component.get("component_id")
-    if not cid or str(cid).startswith(_CHROME_SKIP_ID_PREFIXES):
-        return ""
-    ctype = str(component.get("type", "")).strip().lower()
-    if ctype in _PROV_SKIP_TYPES:
-        return ""
     parts = []
-    if _flag_on("FF_COMPONENT_REFINE", True):
-        parts.append(
-            f'<button type="button" class="astral-refine-btn {_CHROME_BTN_CLS}" '
-            f'title="Refine this component with an instruction">'
-            f'<span aria-hidden="true">✎</span> refine</button>')
-        parts.append(
-            f'<button type="button" class="astral-vhistory-btn {_CHROME_BTN_CLS}"'
-            f'{_versions_attr(component)} title="Version history">'
-            f'<span aria-hidden="true">⟲</span> history</button>')
-    if ctype == "table" and _flag_on("FF_ARTIFACT_EXPORT", True):
-        href = "/api/export/component/" + quote(str(cid), safe="") + ".csv"
-        parts.append(
-            f'<a class="astral-export-csv {_CHROME_BTN_CLS}" href="{_attr(href)}" '
-            f'title="Download the full table as CSV">'
-            f'<span aria-hidden="true">⬇</span> csv</a>')
-    if _flag_on("FF_ARTIFACT_SHARING", False):
-        parts.append(
-            f'<button type="button" class="astral-share-btn {_CHROME_BTN_CLS}" '
-            f'data-share-scope="component" '
-            f'title="Create a revocable read-only share link">'
-            f'<span aria-hidden="true">↗</span> share</button>')
+    for action in renderer_component_actions(component, profile, canonical=canonical):
+        kind = action["kind"]
+        title = _attr(action["title"])
+        content = f'<span aria-hidden="true">{esc(action["icon"])}</span> {esc(action["label"])}'
+        if kind == "csv":
+            href = "/api/export/component/" + quote(str(cid), safe="") + ".csv"
+            parts.append(f'<a class="astral-export-csv {_CHROME_BTN_CLS}" href="{_attr(href)}" '
+                         f'title="{title}">{content}</a>')
+        else:
+            classes = {"refine": "astral-refine-btn", "history": "astral-vhistory-btn",
+                       "share": "astral-share-btn"}
+            extra = (_versions_attr(component) if kind == "history" else
+                     ' data-share-scope="component"' if kind == "share" else "")
+            parts.append(f'<button type="button" class="{classes[kind]} {_CHROME_BTN_CLS}"'
+                         f'{extra} title="{title}">{content}</button>')
     if not parts:
         return ""
     return ('<div class="astral-component-chrome mt-0.5 flex justify-end gap-3">'
@@ -1488,7 +1455,7 @@ def _workspace_flag_attrs(profile: Any) -> str:
     return attrs
 
 
-def render_component_fragment(component: Dict[str, Any], profile: Any = None) -> str:
+def render_component_fragment(component: Dict[str, Any], profile: Any = None, *, canonical=None) -> str:
     """Render one top-level workspace component wrapped in its identity anchor.
 
     The ``data-component-id`` wrapper is the morph target for ``ui_upsert``
@@ -1508,7 +1475,7 @@ def render_component_fragment(component: Dict[str, Any], profile: Any = None) ->
     dtype = getattr(getattr(profile, "device_type", None), "value", "")
     if dtype not in ("watch", "voice"):
         inner += _provenance_footer(component)
-        inner += _component_chrome(component, profile)
+        inner += _component_chrome(component, profile, canonical=canonical)
     if not cid:
         return inner
     # WCAG-by-construction — wrap each top-level component as a labelled ARIA
@@ -1522,7 +1489,7 @@ def render_component_fragment(component: Dict[str, Any], profile: Any = None) ->
     return f'<div class="astral-component"{attrs}>{inner}</div>'
 
 
-def render_workspace(components: List[Dict[str, Any]], profile: Any = None) -> str:
+def render_workspace(components: List[Dict[str, Any]], profile: Any = None, *, canonical_components=None) -> str:
     """Render the full workspace with per-component identity wrappers.
 
     Used for canvas-targeted full renders (re-hydration, timeline views,
@@ -1532,7 +1499,16 @@ def render_workspace(components: List[Dict[str, Any]], profile: Any = None) -> s
     (:func:`_workspace_flag_attrs` — absent for static/non-interactive
     renditions and when the flags are off).
     """
-    inner = "".join(render_component_fragment(c, profile) for c in (components or []) if isinstance(c, dict))
+    from webrender.chrome.component_model import canonical_components_by_id
+    originals = (None if canonical_components is None
+                 else canonical_components_by_id(canonical_components))
+    def original(component):
+        if originals is None:
+            return None
+        cid = component.get("component_id")
+        return (originals.get(cid) or {}) if isinstance(cid, str) else {}
+    inner = "".join(render_component_fragment(c, profile, canonical=original(c))
+                    for c in (components or []) if isinstance(c, dict))
     return f'<div class="dynamic-renderer space-y-3"{_workspace_flag_attrs(profile)}>{inner}</div>'
 
 
