@@ -7,9 +7,9 @@
       "sourcePath": "android-client/README.md",
       "sourceBlob": "a2f81fbfa8b081a3c339e870f5cc8ed05a16f1c9",
       "sourceMode": "100644",
-      "resultSha256": "a72c03ce9b7a511df88f10aa6c6f5645e1fe094724bbaebf224b466f7b939edc",
+      "resultSha256": "a5578d2244a055f1af5b1ee851a5e061c1d0c02c3064b5df4aba62e17f60174e",
       "task": "T188",
-      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references."
+      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows."
     },
     {
       "path": "android-client/app/build.gradle.kts",
@@ -34,9 +34,9 @@
       "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
       "sourceBlob": "83647aa5bf0a7cd3bcb5c6fc297885708f8bdf7b",
       "sourceMode": "100644",
-      "resultSha256": "ebe92210a668b6e84003c9b18f4e7ec94cec81dc79791cd21a040932daebdbae",
+      "resultSha256": "500318160fac865506d08191c6c05844595ed469d2a03b5d5dc96d9cfb906b0f",
       "task": "T056",
-      "reason": "Feature 088 review: Verify ordinary grounded badges stay hidden while the server trust mark, estimated and generated warnings, and component actions remain available in Android instrumentation."
+      "reason": "Feature 088 review: Verify ordinary grounded badges stay hidden while the server trust mark, estimated and generated warnings, and component actions remain available in Android instrumentation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows."
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ReleaseEvidenceInstrumentedTest.kt",
@@ -71,8 +71,8 @@
       "sourceBlob": "4f7e94f65ef6f4dd5c2976029ed38679a58d43ff",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
-      "resultSha256": "72502217622775d77229f24313838185437a1e8cd0e0f1b9e42bbeea97d29104"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "755a2f4f7c7c77253185e40e64d5f078e62f2b5e1a1728ae1b0b79ab7e265c1f"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt",
@@ -80,8 +80,8 @@
       "sourceBlob": "8a7b911bc80fe36dea393dfae3a92a4162963322",
       "sourceMode": "100644",
       "task": "T060/T056",
-      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
-      "resultSha256": "495620ea5d4badc58935a6da1cd896c2226c4235bf35fe092dfcc10d798cfe7f"
+      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "e330ab7b9a6a733c49aa1f52022da27796387abd2ba5fcf972abad7622878c01"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
@@ -98,8 +98,8 @@
       "sourceBlob": "843bcb3a22428797c0ab0f7fb41add252e209f88",
       "sourceMode": "100644",
       "task": "T056/T057/T060/T061/T062",
-      "reason": "Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
-      "resultSha256": "ae3bd922428cbab93a01405f99e9de60023b58aef0576303600414ded0f656cb"
+      "reason": "Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "931601c0e724fa4759554f93992fa8749d43dceed4258f10725fd21040092ccb"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
@@ -107,8 +107,8 @@
       "sourceBlob": "ec76d3c82c5ce03f7ac62989685d572c83815593",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation.",
-      "resultSha256": "ea7d198934b9e442ff25962ad4bd63f9ff0481bc5b235194c49903942b4ff7d8"
+      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "9a69dcf6717f3049f01bd5c97dce7c38a0753267f9e75bd864553ef3f031e831"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Basic.kt",
@@ -179,8 +179,8 @@
       "sourceBlob": "25a71eb2c805119e642c5cc5cc4c456e47776fec",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "7018658cbafed4a91e535976b0bf6816b467433576f5b014c0e7af7e40f41fa1"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "c0323d5baae7a894699097f1e05bae0f7741f38ec55c8c0b63576911897d06a9"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",
@@ -188,17 +188,17 @@
       "sourceBlob": "e6ff616138233eaf811a567ff5b2bad7f4020d3e",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation.",
-      "resultSha256": "891ea29eec6f91de2c72b02f3e69c7dc43d079e6329bdcc23d1919c1e7007d0f"
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "3e3f70f4211dba674620702bc5be72602a56a95befd315389603d23d63eeb9de"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourceBlob": "d241aacb0fb0710105e25b81d30f754bd8419611",
       "sourceMode": "100644",
-      "resultSha256": "17a1907c5c5a8d3f6890431a56a2a0adda6003f21d48141a1ec1c20aef8c55a5",
+      "resultSha256": "c6e5fb8685aeee6c1b2ea52ab31d8742637f32888bbcd873112cdea6ce5e92f0",
       "task": "T041/T056/T060",
-      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation."
+      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows."
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
@@ -269,8 +269,8 @@
       "sourceBlob": "246926750072af1debdcffa55aaf932ac3b0c317",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation.",
-      "resultSha256": "23c55187d962c1bf860323be9508a7d58cc52b29e38048b2dbc1fde2d0cee13a"
+      "reason": "Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "39a16cd262518aff58050a59e3cd869e4c7aff7a445d38d200fcc54a0c3acd43"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCapsTest.kt",

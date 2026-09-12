@@ -86,7 +86,7 @@ class ArtifactChromeUiTest {
         val component = table()
         host(component)
         assertEquals(JsonPrimitive("grounded"), component.attributes["provenance"])
-        rule.onNodeWithText("✓ tool data").assertDoesNotExist()
+        rule.onNodeWithText("tool data").assertDoesNotExist()
         rule.onNodeWithText("refine").assertIsDisplayed()
         rule.onNodeWithText("history").assertIsDisplayed()
         rule.onNodeWithText("csv").assertIsDisplayed()
@@ -95,8 +95,8 @@ class ArtifactChromeUiTest {
     @Test
     fun estimated_provenance_keeps_its_warning_and_actions() {
         host(table("estimated"))
-        rule.onNodeWithText("≈ estimated").assertIsDisplayed()
-        rule.onNodeWithText("✓ tool data").assertDoesNotExist()
+        rule.onNodeWithText("estimated").assertIsDisplayed()
+        rule.onNodeWithText("tool data").assertDoesNotExist()
         rule.onNodeWithText("refine").assertIsDisplayed()
         rule.onNodeWithText("history").assertIsDisplayed()
         rule.onNodeWithText("csv").assertIsDisplayed()
@@ -105,8 +105,8 @@ class ArtifactChromeUiTest {
     @Test
     fun generated_provenance_keeps_its_warning_and_actions() {
         host(table("generated"))
-        rule.onNodeWithText("✦ AI-generated").assertIsDisplayed()
-        rule.onNodeWithText("✓ tool data").assertDoesNotExist()
+        rule.onNodeWithText("AI-generated").assertIsDisplayed()
+        rule.onNodeWithText("tool data").assertDoesNotExist()
         rule.onNodeWithText("refine").assertIsDisplayed()
         rule.onNodeWithText("history").assertIsDisplayed()
         rule.onNodeWithText("csv").assertIsDisplayed()
@@ -115,8 +115,8 @@ class ArtifactChromeUiTest {
     @Test
     fun unstamped_component_shows_no_badge() {
         host(Component.fromJson(attrs("""{"type":"card","component_id":"wc_c","title":"Plain"}""")))
-        rule.onNodeWithText("✓ tool data").assertDoesNotExist()
-        rule.onNodeWithText("✦ AI-generated").assertDoesNotExist()
+        rule.onNodeWithText("tool data").assertDoesNotExist()
+        rule.onNodeWithText("AI-generated").assertDoesNotExist()
     }
 
     @Test

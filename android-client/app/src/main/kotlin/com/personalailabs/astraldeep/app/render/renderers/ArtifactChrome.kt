@@ -11,13 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -33,7 +31,6 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -183,11 +180,7 @@ internal fun ArtifactFooter(
     }
 }
 
-/**
- * Compact trust pill — ✓ tool data (green) / ≈ estimated (amber) / ✦
- * AI-generated (muted) — matching the web footer's icons, labels, and tones so
- * provenance reads the same on every target (SC-006).
- */
+/** Plain trailing warning text uses the web footer's typography and spacing. */
 @Composable
 private fun ProvenanceBadge(p: Provenance) {
     // Keep the trust stamp in the model; ordinary tool results need no badge.
@@ -195,16 +188,19 @@ private fun ProvenanceBadge(p: Provenance) {
     val tone =
         when (p) {
             Provenance.Grounded -> Color(0xFF22C55E)
-            Provenance.Estimated -> Color(0xFFEAB308)
+            Provenance.Estimated -> Color(0xFFFACC15)
             Provenance.Generated -> MaterialTheme.colorScheme.onSurfaceVariant
         }
-    Surface(color = tone.copy(alpha = 0.12f), shape = RoundedCornerShape(9.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "Provenance: ${p.label}" },
+    ) {
+        Text(p.glyph, color = tone.copy(alpha = 0.7f), fontSize = 10.sp, modifier = Modifier.clearAndSetSemantics { })
         Text(
-            text = "${p.glyph} ${p.label}",
-            color = tone,
+            text = p.label,
+            color = tone.copy(alpha = 0.7f),
             fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
         )
     }
 }
