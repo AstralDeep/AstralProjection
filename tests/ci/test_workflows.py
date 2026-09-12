@@ -75,7 +75,7 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
         "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov-branch "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert (
@@ -215,8 +215,8 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert ios_destination in job
         assert macos_destination in job
         assert ios_runtime_check in job
-        assert job.count("CODE_SIGNING_ALLOWED=NO") == 1
-        assert job.count("-enableCodeCoverage YES") == 1
+        assert job.count("CODE_SIGNING_ALLOWED=NO") == 2
+        assert job.count("-enableCodeCoverage YES") == 2
         assert job.count(exporter) == 1
         assert "--platform '${{ matrix.slug }}'" in job
 
@@ -784,3 +784,40 @@ def test_three_owner_workflows_are_active_while_six_release_workflows_remain_ine
         "ci.yml",
     }
     assert len(list(INACTIVE.glob("*.yml"))) == 6
+
+
+def _assert_ios_domain_collection(text):
+    for job, lane, derived in (("core-ios-tests", "core", '"$root/build/060/core-ios-dd"'),
+                               ("app-unit-tests", "unit", '"$derived"'),
+                               ("first-login-ui", "ui", '"$derived"')):
+        block = _job_block(text, job)
+        assert block.count("python3 scripts/collect_xccov_native_domain.py") == 1
+        assert "build-for-testing" in block and "test-without-building" in block
+        assert block.index("build-for-testing") < block.index("test-without-building") < block.index("python3 scripts/collect_xccov_native_domain.py")
+        assert f"--lane {lane}" in block
+        assert f"-derivedDataPath {derived}" in block
+        assert f"native-binaries/apple-ios-{lane}.zip" in block
+        assert "--native-domain" in block
+        assert "-enableCodeCoverage YES" in block
+    unit = _job_block(text, "app-unit-tests")
+    prepare = unit.partition("test_action=test\n")[2].partition("test_action=test-without-building")[0]
+    assert "-only-testing:" not in prepare
+    assert "-only-testing:AstralAppTests" in unit
+    ui = _job_block(text, "first-login-ui")
+    assert ui.index("build-for-testing") < ui.index("run_suite()")
+    assert 'result="${result_base}-attempt-$1.xcresult"' in ui
+    assert "--lane" not in _job_block(text, "watch-continuity")
+
+
+def test_ios_witness_collects_after_one_coverage_build_and_retains_selected_binary():
+    _assert_ios_domain_collection((ACTIVE / "apple-ci.yml").read_text())
+
+
+@pytest.mark.parametrize("old,new", [("test-without-building", "test"),
+                                      ("--lane core", "--lane unit"),
+                                      ("--native-domain", "--discard-domain")])
+def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, new):
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    assert old in text
+    with pytest.raises(AssertionError):
+        _assert_ios_domain_collection(text.replace(old, new, 1))

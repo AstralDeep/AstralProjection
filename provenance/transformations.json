@@ -1083,6 +1083,15 @@
       "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
     {
+      "path": "scripts/export_xccov_line_coverage.py",
+      "sourcePath": "scripts/export_xccov_line_coverage.py",
+      "sourceBlob": "fb8854fb6756f735e3f6b99bc2430b9fde30b196",
+      "sourceMode": "100644",
+      "resultSha256": "347d458583ef50866835386f100a2f68f722002cb31f7657f752891b31260423",
+      "task": "T062",
+      "reason": "Bind original iOS xccov observations to exact source bytes and retained compiler mapping domains without manufacturing coverage rows or counts."
+    },
+    {
       "path": "scripts/windows_release_candidate.py",
       "sourcePath": "scripts/windows_release_candidate.py",
       "sourceBlob": "218aab81e3b3a53baa13834c4d34c04241c860f8",
@@ -1592,11 +1601,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "872c3bdf23d67efebe8ef96ee774f052e7b5d1863b2577f7fd239a092c6081cc"
+          "sha256": "8d259beb74e0e2b7f04f9461a7835ffd00490efedcd8fa33e5376d1fd630af02"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence."
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Retain full iOS build-for-testing Products and separate raw test lanes for exact compiler-domain coverage qualification."
     },
     {
       "path": "workflows-disabled/apple-release.yml",

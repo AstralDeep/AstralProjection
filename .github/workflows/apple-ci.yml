@@ -157,17 +157,22 @@ jobs:
           report="$root/${COVERAGE_ROOT}/apple-ios-core-xccov.json"
           mkdir -p "${COVERAGE_ROOT}"
           test ! -e "$result" && test ! -L "$result"
+          core_args=(-scheme AstralCore -destination "platform=iOS Simulator,id=$udid"
+            -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES
+            -derivedDataPath "$root/build/060/core-ios-dd" -only-testing:AstralCoreTests)
+          (cd apple-clients/AstralCore && xcodebuild "${core_args[@]}" build-for-testing)
           set +e
-          (cd apple-clients/AstralCore && xcodebuild -scheme AstralCore \
-            -destination "platform=iOS Simulator,id=$udid" -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
-            -derivedDataPath "$root/build/060/core-ios-dd" \
-            -resultBundlePath "$result" -only-testing:AstralCoreTests test)
+          (cd apple-clients/AstralCore && xcodebuild "${core_args[@]}" \
+            -resultBundlePath "$result" test-without-building)
           status=$?
           set -e
-          if [[ -d "$result" ]]; then
+          if [[ "$status" -eq 0 && -d "$result" ]]; then
+            domain="$root/${COVERAGE_ROOT}/apple-ios-core-domain.json"
+            python3 scripts/collect_xccov_native_domain.py --repo "$root" \
+              --products "$root/build/060/core-ios-dd/Build/Products" --xcresult "$result" --lane core \
+              --output "$domain" --binary-archive "$root/${COVERAGE_ROOT}/native-binaries/apple-ios-core.zip"
             python3 scripts/export_xccov_line_coverage.py --repo "$root" \
-              --xcresult "$result" --platform ios --output "$report"
+              --xcresult "$result" --platform ios --native-domain "$domain" --output "$report"
           fi
           exit "$status"
       - name: Retain actual iOS Core observations
@@ -178,6 +183,8 @@ jobs:
           path: |
             build/060/coverage/AstralCore-ios.xcresult
             build/060/coverage/apple-ios-core-xccov.json
+            build/060/coverage/apple-ios-core-domain.json
+            build/060/coverage/native-binaries/apple-ios-core.zip
           if-no-files-found: error
           retention-days: 14
       - name: Publish required iOS Core coverage
@@ -238,6 +245,15 @@ jobs:
           report="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-unit-xccov.json"
           rm -rf "$result"
           rm -f "$report"
+          derived="$PWD/build/060/app-${{ matrix.slug }}-unit-dd"
+          test_action=test
+          if [[ '${{ matrix.slug }}' == ios ]]; then
+            xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
+              -destination '${{ matrix.destination }}' -configuration Debug \
+              CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES -derivedDataPath "$derived" \
+              build-for-testing
+            test_action=test-without-building
+          fi
           set +e
           xcodebuild \
             -project "${APP_PROJECT}" \
@@ -246,13 +262,24 @@ jobs:
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             -enableCodeCoverage YES \
+            -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppTests \
-            test
+            "$test_action"
           status=$?
           set -e
           if [[ -d "$result" ]]; then
+            native_args=()
+            if [[ '${{ matrix.slug }}' == ios ]]; then
+              test "$status" -eq 0
+              domain="${COVERAGE_ROOT}/apple-ios-unit-domain.json"
+              python3 scripts/collect_xccov_native_domain.py --repo "$PWD" \
+                --products "$derived/Build/Products" --xcresult "$PWD/$result" --lane unit \
+                --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-ios-unit.zip"
+              native_args=(--native-domain "$domain")
+            fi
             python3 scripts/export_xccov_line_coverage.py \
+              "${native_args[@]}" \
               --repo "$PWD" \
               --xcresult "$result" \
               --platform '${{ matrix.slug }}' \
@@ -267,6 +294,8 @@ jobs:
           path: |
             build/060/coverage/AstralApp-${{ matrix.slug }}-unit.xcresult
             build/060/coverage/apple-${{ matrix.slug }}-unit-xccov.json
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json
+            build/060/coverage/native-binaries/apple-${{ matrix.slug }}-unit.zip
           if-no-files-found: error
           retention-days: 14
       - name: Publish normalized app unit coverage
@@ -367,6 +396,14 @@ jobs:
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
             workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)
           fi
+          derived="$PWD/build/060/app-${{ matrix.slug }}-ui-dd"
+          test_action=test
+          if [[ '${{ matrix.slug }}' == ios ]]; then
+            xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
+              -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
+              -derivedDataPath "$derived" build-for-testing
+            test_action=test-without-building
+          fi
           run_suite() {
             result="${result_base}-attempt-$1.xcresult"
             test ! -e "$result" && test ! -L "$result"
@@ -382,6 +419,7 @@ jobs:
               -maximum-test-execution-time-allowance 300 \
               -retry-tests-on-failure \
               -test-iterations 3 \
+              -derivedDataPath "$derived" \
               -resultBundlePath "$result" \
               -only-testing:AstralAppUITests/LLMFirstLoginUITests \
               -only-testing:AstralAppUITests/VoiceConversationUITests \
@@ -389,7 +427,7 @@ jobs:
               -only-testing:AstralAppUITests/WorkspacePresentationUITests \
               "${workspace_actions[@]}" \
               -only-testing:AstralAppUITests/ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes \
-              test
+              "$test_action"
           }
           set +e
           run_suite 1
@@ -410,7 +448,17 @@ jobs:
           fi
           set -e
           if [[ -d "$result" ]]; then
+            native_args=()
+            if [[ '${{ matrix.slug }}' == ios ]]; then
+              test "$status" -eq 0
+              domain="${COVERAGE_ROOT}/apple-ios-ui-domain.json"
+              python3 scripts/collect_xccov_native_domain.py --repo "$PWD" \
+                --products "$derived/Build/Products" --xcresult "$PWD/$result" --lane ui \
+                --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-ios-ui.zip"
+              native_args=(--native-domain "$domain")
+            fi
             python3 scripts/export_xccov_line_coverage.py \
+              "${native_args[@]}" \
               --repo "$PWD" \
               --xcresult "$result" \
               --platform '${{ matrix.slug }}' \
@@ -425,6 +473,8 @@ jobs:
           path: |
             build/060/coverage/AstralApp-${{ matrix.slug }}-first-login-attempt-*.xcresult
             build/060/coverage/apple-${{ matrix.slug }}-first-login-xccov.json
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json
+            build/060/coverage/native-binaries/apple-${{ matrix.slug }}-ui.zip
           if-no-files-found: error
           retention-days: 14
       - name: Publish normalized first-login coverage
