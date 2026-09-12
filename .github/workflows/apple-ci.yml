@@ -120,6 +120,74 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  core-ios-tests:
+    name: Required · actual iOS AstralCore coverage
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - name: Check out candidate
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Select exact Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          selected=""
+          for candidate in /Applications/Xcode_26.6.app /Applications/Xcode_26.6*.app /Applications/Xcode.app; do
+            [[ -d "$candidate" ]] || continue
+            if [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]] && \
+               [[ "$("$candidate/Contents/Developer/usr/bin/xcodebuild" -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]; then
+              selected="$candidate"
+              break
+            fi
+          done
+          [[ -n "$selected" ]] || { echo "Xcode ${XCODE_VERSION} (${XCODE_BUILD}) is required" >&2; exit 1; }
+          sudo xcode-select --switch "$selected/Contents/Developer"
+          [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
+          [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Run AstralCore on the supported iOS simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime_id="$(xcrun simctl list runtimes available -j | python3 -c "import json,sys,os; print(next(r['identifier'] for r in json.load(sys.stdin)['runtimes'] if r.get('isAvailable') and r.get('version')==os.environ['IOS_RUNTIME'] and 'simruntime.ios' in r.get('identifier','').lower()))")"
+          udid="$(xcrun simctl create "astral-ios-core-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" "iPhone 17 Pro" "$runtime_id")"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          root="$PWD"
+          result="$root/${COVERAGE_ROOT}/AstralCore-ios.xcresult"
+          report="$root/${COVERAGE_ROOT}/apple-ios-core-xccov.json"
+          mkdir -p "${COVERAGE_ROOT}"
+          test ! -e "$result" && test ! -L "$result"
+          set +e
+          (cd apple-clients/AstralCore && xcodebuild -scheme AstralCore \
+            -destination "platform=iOS Simulator,id=$udid" -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
+            -derivedDataPath "$root/build/060/core-ios-dd" \
+            -resultBundlePath "$result" -only-testing:AstralCoreTests test)
+          status=$?
+          set -e
+          if [[ -d "$result" ]]; then
+            python3 scripts/export_xccov_line_coverage.py --repo "$root" \
+              --xcresult "$result" --platform ios --output "$report"
+          fi
+          exit "$status"
+      - name: Retain actual iOS Core observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-ios-core-coverage
+          path: |
+            build/060/coverage/AstralCore-ios.xcresult
+            build/060/coverage/apple-ios-core-xccov.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish required iOS Core coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: apple-required-core-ios-coverage
+          path: build/060/coverage/apple-ios-core-xccov.json
+          if-no-files-found: error
+          retention-days: 1
+
   app-unit-tests:
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
@@ -283,20 +351,25 @@ jobs:
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-      - name: Run deterministic first-login and voice UI tests with coverage
+      - name: Run deterministic first-login, voice and workspace UI tests with coverage
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${COVERAGE_ROOT}"
-          result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"
+          result_base="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login"
           report="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-first-login-xccov.json"
           rm -f "$report"
           dest='${{ matrix.destination }}'
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
             dest="platform=iOS Simulator,id=${{ steps.ios_sim.outputs.udid }}"
           fi
+          workspace_actions=()
+          if [[ "${{ matrix.slug }}" == "ios" ]]; then
+            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)
+          fi
           run_suite() {
-            rm -rf "$result"
+            result="${result_base}-attempt-$1.xcresult"
+            test ! -e "$result" && test ! -L "$result"
             xcodebuild \
               -project "${APP_PROJECT}" \
               -scheme AstralApp \
@@ -312,10 +385,14 @@ jobs:
               -resultBundlePath "$result" \
               -only-testing:AstralAppUITests/LLMFirstLoginUITests \
               -only-testing:AstralAppUITests/VoiceConversationUITests \
+              -only-testing:AstralAppUITests/Accessibility060UITests \
+              -only-testing:AstralAppUITests/WorkspacePresentationUITests \
+              "${workspace_actions[@]}" \
+              -only-testing:AstralAppUITests/ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes \
               test
           }
           set +e
-          run_suite
+          run_suite 1
           status=$?
           # Per-test retries share one simulator session, so a wedged sim
           # fails all of them together (observed). A second FULL invocation
@@ -328,7 +405,7 @@ jobs:
             xcrun simctl erase "$udid" || true
             xcrun simctl boot "$udid" || true
             xcrun simctl bootstatus "$udid" -b || true
-            run_suite
+            run_suite 2
             status=$?
           fi
           set -e
@@ -346,7 +423,7 @@ jobs:
         with:
           name: apple-${{ matrix.slug }}-first-login-coverage
           path: |
-            build/060/coverage/AstralApp-${{ matrix.slug }}-first-login.xcresult
+            build/060/coverage/AstralApp-${{ matrix.slug }}-first-login-attempt-*.xcresult
             build/060/coverage/apple-${{ matrix.slug }}-first-login-xccov.json
           if-no-files-found: error
           retention-days: 14
@@ -465,6 +542,7 @@ jobs:
     needs:
       - swift-lint
       - core-tests
+      - core-ios-tests
       - app-unit-tests
       - first-login-ui
       - watch-continuity
@@ -514,6 +592,11 @@ jobs:
         with:
           name: apple-required-first-login-macos-coverage
           path: ${{ github.workspace }}/build/060/coverage/union-inputs/macos/ui
+      - name: Download actual iOS Core coverage
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: apple-required-core-ios-coverage
+          path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/core
       - name: Union required unit and UI coverage by platform
         shell: bash
         run: |
@@ -521,7 +604,8 @@ jobs:
           mkdir -p "${COVERAGE_ROOT}"
           python3 scripts/merge_xccov_line_coverage.py \
             --repo "${GITHUB_WORKSPACE}" \
-            --platform ios \
+            --platform ios --profile ci \
+            --core-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/core/apple-ios-core-xccov.json" \
             --unit-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/unit/apple-ios-unit-xccov.json" \
             --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/ui/apple-ios-first-login-xccov.json" \
             --output "${COVERAGE_ROOT}/apple-ios-xccov.json"
@@ -545,6 +629,7 @@ jobs:
         run: |
           [[ '${{ needs.swift-lint.result }}' == 'success' ]]
           [[ '${{ needs.core-tests.result }}' == 'success' ]]
+          [[ '${{ needs.core-ios-tests.result }}' == 'success' ]]
           [[ '${{ needs.app-unit-tests.result }}' == 'success' ]]
           [[ '${{ needs.first-login-ui.result }}' == 'success' ]]
           [[ '${{ needs.watch-continuity.result }}' == 'success' ]]

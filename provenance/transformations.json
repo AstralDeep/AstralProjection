@@ -16,9 +16,18 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "5a8c26303546e279b8bc7250fb9bd18c16555d42bbf9a340a84784af7fa0c680",
+      "resultSha256": "59fc7ddb1d386f0b5b02d5538eb84b788cd7af7340f4c72158825d426015d8ee",
       "task": "T054/T057/T013/T014/T102/T056/T060",
-      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs."
+      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs. Feature 088 actual Android workspace action qualification: injectable existing REST and ActivityResultRegistry seams retain production defaults; test-only MockWebServer uses the already pinned coordinate and Java provider lint is strict. Normal debug/release runtime dependency graphs are unchanged; the real controller is exercised through lifecycle, capture, network, private WebView, clipboard and document-provider flows."
+    },
+    {
+      "path": "android-client/app/gradle.lockfile",
+      "sourcePath": "android-client/app/gradle.lockfile",
+      "sourceBlob": "19e2d36a13fcd36355d036c336b9554f3a4ab46a",
+      "sourceMode": "100644",
+      "task": "T060/T061/T062",
+      "reason": "Feature 088 actual Android workspace action qualification: injectable existing REST and ActivityResultRegistry seams retain production defaults; test-only MockWebServer uses the already pinned coordinate and Java provider lint is strict. Normal debug/release runtime dependency graphs are unchanged; the real controller is exercised through lifecycle, capture, network, private WebView, clipboard and document-provider flows.",
+      "resultSha256": "ae8b335179a021b46e0a3326b22d5e6d5e908370a215fa67d764a42bd0497d37"
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
@@ -440,8 +449,8 @@
       "sourceBlob": "cb822bfcd36782eb2f87a74c6ac8313c9847b94c",
       "sourceMode": "100644",
       "task": "T057/T061/T060",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
-      "resultSha256": "b5b65b42f5a68b2bf45587671c4cf0711e999a2fa79921a14bfdeb6c65febbaf"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 actual Apple workspace action qualification: debug-only, dual-gated fixture construction uses an ephemeral loopback peer and memory-only session before the normal model initializes. Production Release construction and current authority paths are unchanged.",
+      "resultSha256": "f8a58f1e8132c0d825245b2f0fae62acc5eb85f5c09252031b814dd04cb7e956"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
@@ -449,8 +458,8 @@
       "sourceBlob": "390ea1e60d03b65b1db25955560055ef207c39ba",
       "sourceMode": "100644",
       "task": "T057/T061/T060",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
-      "resultSha256": "f3a82ea2bcd345df35524181d68b80c8ad5568d7fe65b8334179f6d4a0794432"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 actual Apple workspace action qualification: debug-only, dual-gated fixture construction uses an ephemeral loopback peer and memory-only session before the normal model initializes. Production Release construction and current authority paths are unchanged.",
+      "resultSha256": "5418e49617b8dc22724000d3dd70b48b4a93ea81c71bd02a3bcd8d4ce6cae114"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Theme.swift",
@@ -485,8 +494,8 @@
       "sourceBlob": "eddd7f1759eb83dd8836e4ef58080dd1de0cb070",
       "sourceMode": "100644",
       "task": "T057/T061",
-      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions. Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation.",
-      "resultSha256": "3aaa3367a399746920e25b4516408af7bdf070467f0ba9086f9bb224c126b199"
+      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions. Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 live iOS regression: explicitly retire instruction focus before dismissing the Refine sheet. The actual cancel-with-keyboard journey reproduced a sustained SwiftUI lazy-layout loop before the fix and passes afterward; component target, trimmed instruction validation and dispatcher remain unchanged.",
+      "resultSha256": "0757e5ba102d4e2168f011f646af68ab7850b8490e4ac7d1c3cdb3ce4d9fead5"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift",
@@ -1583,11 +1592,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "71fc3069872a483db09ecf583a2e59260e44dfa9a54b9126f8d1a8fe3d7cf91e"
+          "sha256": "872c3bdf23d67efebe8ef96ee774f052e7b5d1863b2577f7fd239a092c6081cc"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes."
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence."
     },
     {
       "path": "workflows-disabled/apple-release.yml",

@@ -124,6 +124,7 @@ struct RefineSheet: View {
     @Environment(ThemeStore.self) var theme
     @Environment(\.dismiss) private var dismiss
     @State private var instruction = ""
+    @FocusState private var instructionFocused: Bool
     private var p: AstralPalette { theme.palette }
 
     private var trimmed: String {
@@ -140,10 +141,11 @@ struct RefineSheet: View {
             TextField("e.g. sort by total, highest first", text: $instruction, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
+                .focused($instructionFocused)
                 .onSubmit(submit)
             HStack {
                 Spacer()
-                Button("Cancel") { dismiss() }
+                Button("Cancel") { close() }
                     .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
                 Button("Refine") { submit() }
                     .buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
@@ -160,7 +162,15 @@ struct RefineSheet: View {
 
     private func submit() {
         guard !trimmed.isEmpty else { return }
+        instructionFocused = false  // Resign before model-driven canvas updates, like the chat composer.
         model.refineComponent(target.componentId, instruction: trimmed)
+        dismiss()
+    }
+
+    private func close() {
+        // Retire the field's keyboard focus before removing the sheet over the
+        // lazy canvas. Keeping it focused during dismissal can stall layout.
+        instructionFocused = false
         dismiss()
     }
 }

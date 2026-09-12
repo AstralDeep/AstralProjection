@@ -9,6 +9,7 @@ import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.PathSensitive
 import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
+import org.gradle.api.tasks.compile.JavaCompile
 import org.jlleitschuh.gradle.ktlint.tasks.BaseKtLintCheckTask
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
@@ -28,6 +29,11 @@ plugins {
 // every maintained Kotlin source until that adapter supports built-in Kotlin.
 tasks.withType<BaseKtLintCheckTask>().configureEach {
     source(fileTree("src") { include("**/*.kt") })
+}
+
+// Framework-only test providers run in a separate process; keep their Java source linted.
+tasks.withType<JavaCompile>().configureEach {
+    if (name.endsWith("AndroidTestJavaWithJavac")) options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
 
 val prepareWorkspace088Resources =
@@ -308,6 +314,7 @@ dependencies {
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.espresso.core)
+    androidTestImplementation(libs.okhttp.mockwebserver)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     debugImplementation(libs.compose.ui.test.manifest)

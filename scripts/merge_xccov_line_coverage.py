@@ -27,27 +27,45 @@ try:
         _validate_path,
         _write_new_output,
     )
-except ModuleNotFoundError:  # Direct ``python scripts/...`` execution.
-    from export_xccov_line_coverage import (  # type: ignore[no-redef]
-        MAX_EXECUTION_COUNT,
-        MAX_OUTPUT_BYTES,
-        MAX_SOURCE_LINES,
-        MAX_TOTAL_OBSERVATIONS,
-        PLATFORM_ROOTS,
-        ExportError,
-        _read_source_line_count,
-        _safe_repo_path,
-        _tracked_swift_sources,
-        _validate_output,
-        _validate_path,
-        _write_new_output,
+except ModuleNotFoundError:  # Also supports protected ``python -I`` execution.
+    import importlib.util
+
+    # Only this policy file's sibling exporter is executable. Never search the
+    # candidate checkout or accept a caller-selected exporter/module path.
+    spec = importlib.util.spec_from_file_location(
+        "_protected_xccov_exporter",
+        Path(__file__).resolve().with_name("export_xccov_line_coverage.py"),
     )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("xccov policy exporter unavailable")
+    exporter = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(exporter)
+    for name in (
+        "MAX_EXECUTION_COUNT",
+        "MAX_OUTPUT_BYTES",
+        "MAX_SOURCE_LINES",
+        "MAX_TOTAL_OBSERVATIONS",
+        "PLATFORM_ROOTS",
+        "ExportError",
+        "_read_source_line_count",
+        "_safe_repo_path",
+        "_tracked_swift_sources",
+        "_validate_output",
+        "_validate_path",
+        "_write_new_output",
+    ):
+        globals()[name] = getattr(exporter, name)
 
 
 MAX_INPUT_BYTES = 32 * 1024 * 1024
-MAX_TOTAL_INPUT_BYTES = 64 * 1024 * 1024
+MAX_TOTAL_INPUT_BYTES = 128 * 1024 * 1024
 MAX_FILES = 10_000
 REQUIRED_PRODUCERS = ("unit", "ui")
+PROFILES = {
+    ("macos", "ci"): REQUIRED_PRODUCERS,
+    ("ios", "ci"): ("core", "unit", "ui"),
+    ("ios", "release"): ("core", "unit", "ui", "staging"),
+}
 SUPPORTED_PLATFORMS = frozenset({"ios", "macos"})
 
 
@@ -77,7 +95,9 @@ def _read_stable_input(path: Path, *, repo: Path) -> tuple[Path, bytes]:
     except OSError as exc:
         raise MergeError("missing_input", "coverage input is unavailable") from exc
     if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
-        raise MergeError("unsafe_input", "coverage input must be a regular non-symlink file")
+        raise MergeError(
+            "unsafe_input", "coverage input must be a regular non-symlink file"
+        )
     if before.st_size <= 0 or before.st_size > MAX_INPUT_BYTES:
         raise MergeError("input_too_large", "coverage input size is out of bounds")
     flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -94,7 +114,9 @@ def _read_stable_input(path: Path, *, repo: Path) -> tuple[Path, bytes]:
             total += len(chunk)
         after = os.fstat(descriptor)
     except OSError as exc:
-        raise MergeError("input_unavailable", "coverage input could not be read") from exc
+        raise MergeError(
+            "input_unavailable", "coverage input could not be read"
+        ) from exc
     finally:
         if "descriptor" in locals():
             os.close(descriptor)
@@ -119,7 +141,9 @@ def _strict_document(content: bytes) -> Mapping[str, Any]:
         document: dict[str, Any] = {}
         for key, value in pairs:
             if key in document:
-                raise MergeError("duplicate_key", "coverage input contains a duplicate key")
+                raise MergeError(
+                    "duplicate_key", "coverage input contains a duplicate key"
+                )
             document[key] = value
         return document
 
@@ -128,7 +152,9 @@ def _strict_document(content: bytes) -> Mapping[str, Any]:
             text,
             object_pairs_hook=pairs_hook,
             parse_constant=lambda _value: (_ for _ in ()).throw(
-                MergeError("invalid_json", "coverage input contains a non-finite number")
+                MergeError(
+                    "invalid_json", "coverage input contains a non-finite number"
+                )
             ),
         )
     except MergeError:
@@ -136,7 +162,9 @@ def _strict_document(content: bytes) -> Mapping[str, Any]:
     except (json.JSONDecodeError, UnicodeError) as exc:
         raise MergeError("invalid_json", "coverage input is not valid JSON") from exc
     if not isinstance(document, Mapping) or not document or len(document) > MAX_FILES:
-        raise MergeError("invalid_document", "coverage input must be a bounded non-empty mapping")
+        raise MergeError(
+            "invalid_document", "coverage input must be a bounded non-empty mapping"
+        )
     return document
 
 
@@ -150,20 +178,30 @@ def _normalized_observations(
     source_lines: int,
 ) -> list[dict[str, Any]]:
     if not isinstance(value, list) or not value or len(value) > MAX_SOURCE_LINES:
-        raise MergeError("invalid_observations", "coverage observations are empty or too large")
+        raise MergeError(
+            "invalid_observations", "coverage observations are empty or too large"
+        )
     observations: list[dict[str, Any]] = []
     for expected_line, item in enumerate(value, start=1):
         if not isinstance(item, Mapping):
-            raise MergeError("invalid_observation", "coverage observation must be an object")
+            raise MergeError(
+                "invalid_observation", "coverage observation must be an object"
+            )
         line = item.get("line")
         executable = item.get("isExecutable")
         if isinstance(line, bool) or not isinstance(line, int) or line != expected_line:
-            raise MergeError("source_line_mismatch", "coverage lines must be positive and contiguous")
+            raise MergeError(
+                "source_line_mismatch", "coverage lines must be positive and contiguous"
+            )
         if line > source_lines or not isinstance(executable, bool):
-            raise MergeError("source_line_mismatch", "coverage observations do not match source")
+            raise MergeError(
+                "source_line_mismatch", "coverage observations do not match source"
+            )
         if executable:
             if set(item) != {"line", "isExecutable", "executionCount"}:
-                raise MergeError("invalid_observation", "executable coverage has the wrong shape")
+                raise MergeError(
+                    "invalid_observation", "executable coverage has the wrong shape"
+                )
             count = item.get("executionCount")
             if (
                 isinstance(count, bool)
@@ -171,13 +209,17 @@ def _normalized_observations(
                 or count < 0
                 or count > MAX_EXECUTION_COUNT
             ):
-                raise MergeError("invalid_observation", "execution count is out of bounds")
+                raise MergeError(
+                    "invalid_observation", "execution count is out of bounds"
+                )
             observations.append(
                 {"line": line, "isExecutable": True, "executionCount": count}
             )
         else:
             if set(item) != {"line", "isExecutable"}:
-                raise MergeError("invalid_observation", "non-executable coverage has the wrong shape")
+                raise MergeError(
+                    "invalid_observation", "non-executable coverage has the wrong shape"
+                )
             observations.append({"line": line, "isExecutable": False})
     return observations
 
@@ -188,6 +230,7 @@ def merge_xccov_reports(
     inputs: Mapping[str, Path],
     output: Path,
     platform: str,
+    profile: str = "ci",
 ) -> dict[str, list[dict[str, Any]]]:
     """Validate and add normalized unit/UI observations for one Apple platform."""
 
@@ -199,10 +242,13 @@ def merge_xccov_reports(
         raise MergeError("invalid_repo", "repository root is not a directory")
     if platform not in SUPPORTED_PLATFORMS:
         raise MergeError("invalid_platform", "unsupported Apple coverage platform")
-    if not isinstance(inputs, Mapping) or set(inputs) != set(REQUIRED_PRODUCERS):
+    required = PROFILES.get((platform, profile))
+    if required is None:
+        raise MergeError("invalid_profile", "unsupported platform coverage profile")
+    if not isinstance(inputs, Mapping) or set(inputs) != set(required):
         raise MergeError(
             "invalid_producer_set",
-            "coverage inputs require exact unit and ui producer labels",
+            "coverage inputs do not match the mandatory platform/profile producer lanes",
         )
     try:
         tracked = _tracked_swift_sources(repo, platform)
@@ -213,7 +259,7 @@ def merge_xccov_reports(
     documents: list[Mapping[str, Any]] = []
     seen_inputs: set[Path] = set()
     total_input_bytes = 0
-    for producer in REQUIRED_PRODUCERS:
+    for producer in required:
         input_path = inputs[producer]
         if not isinstance(input_path, Path):
             raise MergeError(
@@ -226,8 +272,22 @@ def merge_xccov_reports(
         seen_inputs.add(absolute)
         total_input_bytes += len(content)
         if total_input_bytes > MAX_TOTAL_INPUT_BYTES:
-            raise MergeError("input_budget_exceeded", "coverage inputs exceed their byte bound")
-        documents.append(_strict_document(content))
+            raise MergeError(
+                "input_budget_exceeded", "coverage inputs exceed their byte bound"
+            )
+        document = _strict_document(content)
+        if platform == "ios":
+            expected_root = PLATFORM_ROOTS[platform][1 if producer == "core" else 0]
+            if (
+                not any(path.startswith(expected_root + "/") for path in document)
+                or producer == "core"
+                and any(not path.startswith(expected_root + "/") for path in document)
+            ):
+                raise MergeError(
+                    "producer_scope_mismatch",
+                    "coverage lane lacks its required source domain",
+                )
+        documents.append(document)
 
     merged: dict[str, list[dict[str, Any]]] = {}
     total_observations = 0
@@ -244,7 +304,9 @@ def merge_xccov_reports(
                 or not _under_roots(path, roots)
                 or path not in tracked
             ):
-                raise MergeError("invalid_source_path", "coverage source is not tracked for platform")
+                raise MergeError(
+                    "invalid_source_path", "coverage source is not tracked for platform"
+                )
             try:
                 source_lines = _read_source_line_count(repo, path)
             except ExportError as exc:
@@ -277,7 +339,9 @@ def merge_xccov_reports(
                     continue
                 count = left["executionCount"] + right["executionCount"]
                 if count > MAX_EXECUTION_COUNT:
-                    raise MergeError("execution_count_overflow", "execution count overflow")
+                    raise MergeError(
+                        "execution_count_overflow", "execution count overflow"
+                    )
                 left["executionCount"] = count
 
     if not merged:
@@ -301,30 +365,43 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--unit-input", type=Path, action="append", required=True)
     parser.add_argument("--ui-input", type=Path, action="append", required=True)
+    parser.add_argument("--core-input", type=Path, action="append", default=[])
+    parser.add_argument("--staging-input", type=Path, action="append", default=[])
+    parser.add_argument("--profile", choices=("ci", "release"), default="ci")
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--platform", choices=sorted(SUPPORTED_PLATFORMS), required=True)
+    parser.add_argument(
+        "--platform", choices=sorted(SUPPORTED_PLATFORMS), required=True
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if len(args.unit_input) != 1 or len(args.ui_input) != 1:
+    lanes = {
+        key: getattr(args, key + "_input") for key in ("core", "unit", "ui", "staging")
+    }
+    if any(len(paths) > 1 for paths in lanes.values()):
         print(
             "xccov merge failed [invalid_producer_set]: "
-            "exactly one unit and one ui coverage input are required",
+            "exactly one unit, ui, and each other required lane input is permitted",
             file=sys.stderr,
         )
         return 2
     try:
         merge_xccov_reports(
             repo=args.repo,
-            inputs={"unit": args.unit_input[0], "ui": args.ui_input[0]},
+            inputs={key: paths[0] for key, paths in lanes.items() if paths},
             output=args.output,
             platform=args.platform,
+            profile=args.profile,
         )
     except (MergeError, OSError) as exc:
         code = exc.code if isinstance(exc, MergeError) else "filesystem_error"
-        message = exc.message if isinstance(exc, MergeError) else "filesystem operation failed"
+        message = (
+            exc.message
+            if isinstance(exc, MergeError)
+            else "filesystem operation failed"
+        )
         print(f"xccov merge failed [{code}]: {message}", file=sys.stderr)
         return 2
     return 0

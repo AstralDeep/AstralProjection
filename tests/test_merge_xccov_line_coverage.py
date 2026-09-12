@@ -49,7 +49,7 @@ def test_unit_and_ui_reports_merge_deterministically_for_one_platform(tmp_path: 
         repo=repo,
         inputs={"unit": unit, "ui": ui},
         output=output,
-        platform="ios",
+        platform="macos",
     )
 
     assert merged == {SOURCE: _observations(3, 3)}
@@ -70,7 +70,7 @@ def test_relative_inputs_and_output_are_resolved_under_explicit_repo(tmp_path: P
             "ui": Path("build/ui.json"),
         },
         output=Path("build/ios.json"),
-        platform="ios",
+        platform="macos",
     )
 
     assert merged == {SOURCE: _observations(2, 3)}
@@ -101,7 +101,7 @@ def test_path_source_and_observation_shape_fail_closed(
             repo=repo,
             inputs={"unit": report, "ui": ui},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
 
 
@@ -117,7 +117,7 @@ def test_duplicate_json_keys_and_duplicate_input_files_fail_closed(tmp_path: Pat
             repo=repo,
             inputs={"unit": duplicate_key, "ui": ui},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
 
     report = _report(repo, "input.json", {SOURCE: _observations()})
@@ -126,7 +126,7 @@ def test_duplicate_json_keys_and_duplicate_input_files_fail_closed(tmp_path: Pat
             repo=repo,
             inputs={"unit": report, "ui": report},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
 
 
@@ -150,14 +150,14 @@ def test_incompatible_executable_masks_and_count_overflow_fail_closed(tmp_path: 
             repo=repo,
             inputs={"unit": first, "ui": incompatible},
             output=repo / "build" / "incompatible-output.json",
-            platform="ios",
+            platform="macos",
         )
     with pytest.raises(MergeError, match="overflow"):
         merge_xccov_reports(
             repo=repo,
             inputs={"unit": first, "ui": overflowing},
             output=repo / "build" / "overflow-output.json",
-            platform="ios",
+            platform="macos",
         )
 
 
@@ -186,7 +186,7 @@ def test_exact_unit_and_ui_producer_labels_are_required(
             repo=repo,
             inputs={label: paths[name] for label, name in inputs.items()},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
 
 
@@ -209,7 +209,7 @@ def test_cli_requires_one_explicit_unit_and_ui_input(tmp_path: Path) -> None:
         "--repo",
         str(repo),
         "--platform",
-        "ios",
+        "macos",
         "--unit-input",
         str(unit),
         "--ui-input",
@@ -266,7 +266,7 @@ def test_hosted_workflow_repo_contained_inputs_are_accepted(tmp_path: Path) -> N
             "--repo",
             str(repo),
             "--platform",
-            "ios",
+            "macos",
             "--unit-input",
             str(unit),
             "--ui-input",
@@ -281,9 +281,7 @@ def test_hosted_workflow_repo_contained_inputs_are_accepted(tmp_path: Path) -> N
     )
 
     assert result.returncode == 0, result.stderr
-    assert json.loads(output.read_text(encoding="utf-8")) == {
-        SOURCE: _observations(3, 3)
-    }
+    assert json.loads(output.read_text(encoding="utf-8")) == {SOURCE: _observations(3, 3)}
 
 
 @pytest.mark.parametrize(
@@ -312,7 +310,7 @@ def test_malformed_or_unbounded_input_bytes_fail_closed(
             repo=repo,
             inputs={"unit": unit, "ui": ui},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
     assert raised.value.code == code
 
@@ -345,7 +343,7 @@ def test_additional_observation_shape_failures_are_rejected(
             repo=repo,
             inputs={"unit": unit, "ui": ui},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
 
 
@@ -358,7 +356,7 @@ def test_repository_output_and_input_filesystem_boundaries_fail_closed(
             repo=missing_repo,
             inputs={},
             output=Path("output.json"),
-            platform="ios",
+            platform="macos",
         )
     assert missing.value.code == "missing_repo"
 
@@ -369,7 +367,7 @@ def test_repository_output_and_input_filesystem_boundaries_fail_closed(
             repo=regular_file,
             inputs={},
             output=Path("output.json"),
-            platform="ios",
+            platform="macos",
         )
     assert invalid.value.code == "invalid_repo"
 
@@ -383,7 +381,7 @@ def test_repository_output_and_input_filesystem_boundaries_fail_closed(
             repo=repo,
             inputs={"unit": unit, "ui": ui},
             output=occupied,
-            platform="ios",
+            platform="macos",
         )
     assert existing.value.code == "output_exists"
 
@@ -392,7 +390,7 @@ def test_repository_output_and_input_filesystem_boundaries_fail_closed(
             repo=repo,
             inputs={"unit": unit, "ui": "build/ui.json"},  # type: ignore[dict-item]
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
     assert wrong_type.value.code == "invalid_producer_input"
 
@@ -401,7 +399,7 @@ def test_repository_output_and_input_filesystem_boundaries_fail_closed(
             repo=repo,
             inputs={"unit": repo / "build" / "missing.json", "ui": ui},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
     assert missing_input.value.code == "missing_input"
 
@@ -412,7 +410,7 @@ def test_repository_output_and_input_filesystem_boundaries_fail_closed(
             repo=repo,
             inputs={"unit": directory_input, "ui": ui},
             output=repo / "build" / "output.json",
-            platform="ios",
+            platform="macos",
         )
     assert unsafe_input.value.code == "unsafe_input"
 
@@ -431,7 +429,7 @@ def test_cumulative_bounds_and_output_write_failure_are_enforced(
             repo=repo,
             inputs={"unit": unit, "ui": ui},
             output=repo / "build" / "input-budget.json",
-            platform="ios",
+            platform="macos",
         )
     assert input_budget.value.code == "input_budget_exceeded"
 
@@ -442,7 +440,7 @@ def test_cumulative_bounds_and_output_write_failure_are_enforced(
             repo=repo,
             inputs={"unit": unit, "ui": ui},
             output=repo / "build" / "observation-budget.json",
-            platform="ios",
+            platform="macos",
         )
     assert observation_budget.value.code == "observation_budget_exceeded"
 
@@ -453,7 +451,7 @@ def test_cumulative_bounds_and_output_write_failure_are_enforced(
             repo=repo,
             inputs={"unit": unit, "ui": ui},
             output=repo / "build" / "output-budget.json",
-            platform="ios",
+            platform="macos",
         )
     assert output_budget.value.code == "output_too_large"
 
@@ -468,7 +466,7 @@ def test_cumulative_bounds_and_output_write_failure_are_enforced(
             repo=repo,
             inputs={"unit": unit, "ui": ui},
             output=repo / "build" / "write-failure.json",
-            platform="ios",
+            platform="macos",
         )
     assert write_failure.value.code == "output_write_failed"
 
@@ -486,7 +484,7 @@ def test_non_executable_lines_remain_non_executable_in_the_union(tmp_path: Path)
         repo=repo,
         inputs={"unit": unit, "ui": ui},
         output=repo / "build" / "output.json",
-        platform="ios",
+        platform="macos",
     )
 
     assert merged[SOURCE] == [
@@ -509,7 +507,7 @@ def test_main_reports_success_duplicate_producers_and_merge_failures(
             "--repo",
             str(repo),
             "--platform",
-            "ios",
+            "macos",
             "--unit-input",
             str(unit),
             "--ui-input",
@@ -539,3 +537,151 @@ def test_main_reports_success_duplicate_producers_and_merge_failures(
     )
     assert merger.main(arguments("filesystem-error.json")) == 2
     assert "[filesystem_error]" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "profile,lanes",
+    [("ci", ("core", "unit", "ui")), ("release", ("core", "unit", "ui", "staging"))],
+)
+def test_ios_closed_profiles_keep_actual_counts_and_require_every_lane(tmp_path, profile, lanes):
+    repo = _repo(tmp_path)
+    core = _core_source(repo)
+    inputs = {
+        lane: _report(
+            repo, lane + ".json", {core if lane == "core" else SOURCE: _observations(index + 1, 0)}
+        )
+        for index, lane in enumerate(lanes)
+    }
+    result = merge_xccov_reports(
+        repo=repo,
+        platform="ios",
+        profile=profile,
+        inputs=inputs,
+        output=repo / "build/complete.json",
+    )
+    assert result[SOURCE] == _observations(sum(range(2, len(lanes) + 1)), 0)
+    assert result[core] == _observations(1, 0)
+    for lane in lanes:
+        with pytest.raises(MergeError, match="mandatory"):
+            merge_xccov_reports(
+                repo=repo,
+                platform="ios",
+                profile=profile,
+                inputs={key: value for key, value in inputs.items() if key != lane},
+                output=repo / "build/missing.json",
+            )
+    with pytest.raises(MergeError, match="mandatory"):
+        merge_xccov_reports(
+            repo=repo,
+            platform="ios",
+            profile=profile,
+            inputs={**inputs, "optional": inputs["ui"]},
+            output=repo / "build/extra.json",
+        )
+
+
+def test_ios_cannot_fall_back_to_old_two_lane_inputs_and_macos_cannot_claim_release(tmp_path):
+    repo = _repo(tmp_path)
+    inputs = {
+        lane: _report(repo, lane + ".json", {SOURCE: _observations()}) for lane in ("unit", "ui")
+    }
+    with pytest.raises(MergeError, match="mandatory"):
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/ios.json"
+        )
+    with pytest.raises(MergeError, match="unsupported platform coverage profile"):
+        merge_xccov_reports(
+            repo=repo,
+            platform="macos",
+            profile="release",
+            inputs=inputs,
+            output=repo / "build/macos.json",
+        )
+
+
+def test_release_cli_uses_pinned_sibling_under_isolation_and_refuses_missing_staging(tmp_path):
+    repo = _repo(tmp_path)
+    marker = tmp_path / "candidate-imported"
+    (repo / "scripts").mkdir()
+    (repo / "scripts/__init__.py").write_text(f"raise AssertionError({str(marker)!r})")
+    (repo / "sitecustomize.py").write_text(f"open({str(marker)!r}, 'w').write('unsafe')")
+    core = _core_source(repo)
+    command = [
+        sys.executable,
+        "-I",
+        str(Path(merger.__file__).resolve()),
+        "--repo",
+        str(repo),
+        "--platform",
+        "ios",
+        "--profile",
+        "release",
+        "--output",
+        str(repo / "build/union.json"),
+    ]
+    for lane in ("core", "unit", "ui"):
+        path = _report(
+            repo, lane + ".json", {core if lane == "core" else SOURCE: _observations(1, 0)}
+        )
+        command += [f"--{lane}-input", str(path)]
+    result = subprocess.run(command, cwd=repo, capture_output=True, text=True)
+    assert result.returncode == 2 and "invalid_producer_set" in result.stderr
+    staging = _report(repo, "staging.json", {SOURCE: _observations(0, 1)})
+    result = subprocess.run(
+        command + ["--staging-input", str(staging)], cwd=repo, capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads((repo / "build/union.json").read_text())[SOURCE] == _observations(2, 1)
+    assert not marker.exists()
+
+
+def _core_source(repo):
+    path = "apple-clients/AstralCore/Sources/AstralCore/Core.swift"
+    (repo / path).parent.mkdir(parents=True, exist_ok=True)
+    (repo / path).write_text("let one = 1\nlet two = 2\n")
+    subprocess.run(["git", "-C", str(repo), "add", path], check=True)
+    return path
+
+
+@pytest.mark.parametrize("wrong_lane", ["core", "unit", "ui", "staging"])
+def test_ios_lanes_require_their_real_core_or_app_source_domain(tmp_path, wrong_lane):
+    repo = _repo(tmp_path)
+    core = _core_source(repo)
+    inputs = {}
+    for lane in ("core", "unit", "ui", "staging"):
+        path = core if (lane == "core") != (lane == wrong_lane) else SOURCE
+        inputs[lane] = _report(repo, lane + ".json", {path: _observations()})
+    with pytest.raises(MergeError, match="source domain"):
+        merge_xccov_reports(
+            repo=repo,
+            platform="ios",
+            profile="release",
+            inputs=inputs,
+            output=repo / "build/refused.json",
+        )
+
+
+def test_isolated_import_uses_only_the_policy_sibling_exporter(tmp_path, monkeypatch):
+    """Exercise the production -I fallback while measuring its actual source."""
+    import builtins
+    import runpy
+
+    original_import = builtins.__import__
+
+    def isolated_import(name, *args, **kwargs):
+        if name == "scripts.export_xccov_line_coverage":
+            raise ModuleNotFoundError("package deliberately unavailable in isolated execution")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", isolated_import)
+    policy = runpy.run_path(str(Path(merger.__file__).resolve()), run_name="_isolated_policy")
+    expected = Path(merger.__file__).resolve().with_name("export_xccov_line_coverage.py")
+    assert Path(policy["exporter"].__file__).resolve() == expected
+    repo = _repo(tmp_path)
+    report = policy["merge_xccov_reports"](
+        repo=repo, platform="macos",
+        inputs={"unit": _report(repo, "unit.json", {SOURCE: _observations(1, 0)}),
+                "ui": _report(repo, "ui.json", {SOURCE: _observations(0, 1)})},
+        output=repo / "build/isolated.json",
+    )
+    assert report[SOURCE] == _observations(1, 1)

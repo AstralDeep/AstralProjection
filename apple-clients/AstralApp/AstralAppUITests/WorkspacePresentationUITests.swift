@@ -49,6 +49,14 @@ final class WorkspacePresentationUITests: XCTestCase {
         preview.tap()
         XCTAssertTrue(app.staticTexts["Opened second history row"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Opened first history row"].exists)
+        app.buttons["Recent chats"].tap()
+        XCTAssertTrue(preview.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["First preview"].exists)
+        XCTAssertTrue(app.staticTexts["2h"].exists)
+        XCTAssertTrue(app.staticTexts["3h"].exists)
+        app.staticTexts["First preview"].tap()
+        XCTAssertTrue(app.staticTexts["Opened first history row"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Opened second history row"].exists)
     }
 
     func testMetricContentAndNativeNewChatTargetMatchWebWorkspace() throws {
@@ -71,6 +79,151 @@ final class WorkspacePresentationUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
         XCTAssertFalse(total.exists)
     }
+
+    #if os(iOS)
+        func testCancelingComponentRefinementPreservesResultSelectedTabAndComposerDraft() {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-rich-result"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+            let toggle = app.buttons["workspace-messages-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+            toggle.tap()
+            let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
+            composer.tap()
+            composer.typeText("Draft to keep")
+            let canvas = app.scrollViews["workspace-canvas-scroll"]
+            for _ in 0..<10 {
+                if app.staticTexts["Overview pane is selected"].isHittable { break }
+                canvas.swipeUp(velocity: .slow)
+            }
+            app.buttons["Measurements"].tap()
+            XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
+            app.buttons["Result details"].press(forDuration: 1)
+            let menuRefine = app.buttons["Refine…"]
+            XCTAssertTrue(menuRefine.waitForExistence(timeout: 3))
+            menuRefine.tap()
+            XCTAssertTrue(app.staticTexts["Refine Result details"].waitForExistence(timeout: 3))
+            let submit = app.buttons["Refine"].firstMatch
+            XCTAssertFalse(submit.isEnabled)
+            // The unlabelled native field's placeholder becomes its value
+            // after typing. Identify the sheet field independently of its text.
+            let fields = app.textFields.matching(NSPredicate(format: "identifier != %@", "chat-composer-input"))
+            XCTAssertEqual(fields.count, 1)
+            let instruction = fields.firstMatch
+            instruction.tap()
+            instruction.typeText("   ")
+            XCTAssertFalse(submit.isEnabled)
+            instruction.typeText("Sort by total")
+            XCTAssertTrue(submit.isEnabled)
+            capture(app, name: "workspace-088-refine-edit-before-cancel")
+            // Cancellation is local. This fixture does not pretend to process
+            // a component_refine command or produce a server-side revision.
+            app.buttons["Cancel"].tap()
+            XCTAssertFalse(app.staticTexts["Refine Result details"].exists)
+            XCTAssertEqual(composer.value as? String, "Draft to keep")
+            XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
+            XCTAssertFalse(app.staticTexts["Overview pane is selected"].exists)
+            for _ in 0..<8 {
+                if app.staticTexts["Measurement pane is selected"].isHittable { break }
+                canvas.swipeUp(velocity: .slow)
+            }
+            XCTAssertTrue(app.staticTexts["Measurement pane is selected"].isHittable)
+            capture(app, name: "workspace-088-refine-cancel-preserves-tab-and-draft")
+        }
+
+        func testSlashSuggestionAndOneShotBackgroundSendUseTheExistingComposer() {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-start"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+            XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 8))
+            let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
+            XCTAssertTrue((composer.value as? String ?? "").contains("First line"))
+            app.buttons["new-chat-button"].tap()
+            XCTAssertFalse((composer.value as? String ?? "").contains("First line"))
+            composer.tap()
+            composer.typeText("/r")
+            XCTAssertEqual(composer.value as? String, "/r")
+            let suggestion = app.buttons["/research"]
+            XCTAssertTrue(suggestion.waitForExistence(timeout: 3))
+            XCTAssertFalse(app.buttons["/help"].exists)
+            suggestion.tap()
+            XCTAssertEqual(composer.value as? String, "/research ")
+            composer.typeText("Summarize the synthetic measurements")
+            XCTAssertFalse(suggestion.exists)
+            let background = app.buttons["Run in background"]
+            XCTAssertEqual(background.value as? String, "Off")
+            background.tap()
+            XCTAssertEqual(background.value as? String, "On")
+            app.buttons["Send message"].tap()
+            // This proves the native composer and its one-shot arming. The
+            // existing deterministic reply is not evidence of a real worker.
+            XCTAssertTrue(app.staticTexts["Workspace result"].waitForExistence(timeout: 5))
+            XCTAssertEqual(background.value as? String, "Off")
+            XCTAssertFalse((composer.value as? String ?? "").contains("/research"))
+            XCTAssertTrue(app.staticTexts["/research Summarize the synthetic measurements"].exists)
+            capture(app, name: "workspace-088-slash-background-send-disarms")
+        }
+
+        func testRichResultKeepsVisibleValuesAndSelectedTabAfterDisclosureReopens() {
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-rich-result"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+            let toggle = app.buttons["workspace-messages-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+            toggle.tap()
+            let canvas = app.scrollViews["workspace-canvas-scroll"]
+            XCTAssertTrue(canvas.exists)
+            for label in [
+                "SYNTHETIC REVIEW", "Review report", "One result, with details you can revisit", "Local fixture",
+                "Review required", "Check the original measurements before proceeding.",
+                "Review confidence", "3.5/5", "Based on seven observations", "Checks complete", "50%",
+                "Result source", "Source", "Synthetic measurements", "Review history", "09:30",
+                "Validation complete", "The measurements were normalized.", "total = 18",
+                "Inspect each measurement", "Record the review outcome",
+            ] {
+                let text = app.staticTexts[label]
+                for _ in 0..<8 {
+                    if text.isHittable { break }
+                    canvas.swipeUp(velocity: .slow)
+                }
+                XCTAssertTrue(text.isHittable, "The displayed result must include \(label)")
+                XCTAssertGreaterThanOrEqual(text.frame.minX, canvas.frame.minX)
+                XCTAssertLessThanOrEqual(text.frame.maxX, canvas.frame.maxX)
+            }
+            let details = app.buttons["Result details"]
+            for _ in 0..<8 {
+                if app.staticTexts["Overview pane is selected"].isHittable { break }
+                canvas.swipeUp(velocity: .slow)
+            }
+            XCTAssertEqual(details.value as? String, "Expanded")
+            XCTAssertTrue(app.staticTexts["Overview pane is selected"].isHittable)
+            app.buttons["Measurements"].tap()
+            XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
+            XCTAssertFalse(app.staticTexts["Overview pane is selected"].exists)
+            capture(app, name: "workspace-088-rich-result-selected-tab")
+            details.tap()
+            XCTAssertEqual(details.value as? String, "Collapsed")
+            XCTAssertFalse(app.staticTexts["Measurement pane is selected"].exists)
+            details.tap()
+            XCTAssertEqual(details.value as? String, "Expanded")
+            XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
+            // Collapsing content can clamp the scroll position to the shorter
+            // canvas. Reopening restores the selected pane below that viewport.
+            for _ in 0..<8 {
+                if app.staticTexts["Measurement pane is selected"].isHittable { break }
+                canvas.swipeUp(velocity: .slow)
+            }
+            XCTAssertTrue(app.staticTexts["Measurement pane is selected"].isHittable)
+            XCTAssertFalse(app.staticTexts["Overview pane is selected"].exists)
+            capture(app, name: "workspace-088-rich-result-retained-tab-after-reopen")
+        }
+    #endif
 
     func testPhoneCanScrollToTheCompleteBelowFoldChartAndBackAfterMessagesCollapse() throws {
         #if os(iOS)

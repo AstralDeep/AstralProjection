@@ -18,8 +18,10 @@
             case workspaceCanvas = "workspace-canvas"
             case workspaceChartScroll = "workspace-chart-scroll"
             case workspaceStyles = "workspace-styles"
+            case workspaceRichResult = "workspace-rich-result"
             case workspaceHistory = "workspace-history"
             case workspaceActions = "workspace-actions"
+            case workspaceActionsHTTP = "workspace-actions-http"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -39,8 +41,42 @@
             return Scenario(rawValue: arguments[flagIndex + 1])
         }
 
+        /// A real loopback HTTP peer lives in the UI-test runner. The app uses
+        /// normal bootstrap/Rest/capture/WebKit, with a synthetic memory-only
+        /// session. No URL or token is accepted from launch configuration.
+        @MainActor
+        static func workspaceActionsModel() -> AppModel? {
+            guard requestedScenario() == .workspaceActionsHTTP else { return nil }
+            let environment = ProcessInfo.processInfo.environment
+            guard environment["ASTRAL_UI_TESTING"] == "1",
+                let rawPort = environment["ASTRAL_UI_WORKSPACE_PORT"],
+                let port = UInt16(rawPort), port > 0, String(port) == rawPort,
+                let defaults = UserDefaults(suiteName: "WorkspaceActionsUITest.\(UUID().uuidString)")
+            else { preconditionFailure("Invalid workspace action UI-test loopback configuration.") }
+            defaults.set("http://127.0.0.1:\(port)", forKey: "serverBase")
+            let store = InMemoryTokenStore()
+            let token =
+                "fixture."
+                + Data(
+                    #"{"iss":"https://issuer.invalid","sub":"workspace-ui-fixture","name":"Workspace UI Fixture"}"#.utf8
+                )
+                .base64EncodedString() + ".fixture"
+            store.save(StoredTokens(from: TokenSet(accessToken: token, refreshToken: nil, expiresIn: 3600)))
+            return AppModel(
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                tokenStore: store, defaults: defaults)
+        }
+
         @MainActor
         static func install(_ scenario: Scenario, on model: AppModel) {
+            if scenario == .workspaceActionsHTTP {
+                precondition(ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1")
+                Task { @MainActor in
+                    await model.bootstrap()
+                    installWorkspaceActionsHTTP(on: model)
+                }
+                return
+            }
             model.signedIn = true
             model.accountName = "Release Verification"
             model.connected = true
@@ -95,6 +131,10 @@
             }
             if scenario == .workspaceStyles {
                 installWorkspaceStyles(on: model)
+                return
+            }
+            if scenario == .workspaceRichResult {
+                installWorkspaceRichResult(on: model)
                 return
             }
             if scenario == .workspaceActions {
@@ -219,7 +259,7 @@
                 break
             case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceChartScroll, .workspaceStyles,
                 .workspaceHistory,
-                .workspaceActions:
+                .workspaceActions, .workspaceActionsHTTP, .workspaceRichResult:
                 break
             case .voiceComposer:
                 break
@@ -228,6 +268,22 @@
             case .continuitySeed, .continuityResume:
                 break
             }
+        }
+
+        @MainActor
+        private static func installWorkspaceActionsHTTP(on model: AppModel) {
+            precondition(model.signedIn, "Workspace UI fixture bootstrap failed.")
+            installWorkspace(on: model)
+            model.composerDraft = ""
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
+            model.canvas =
+                InboundFrame.parse(
+                    #"{"type":"ui_render","target":"canvas","components":[{"type":"text","component_id":"workspace-action-result","content":"Visible workspace action result","title":"PRIVATE_UNUSED_TITLE","_source_params":{"credential":"PRIVATE_UNUSED_VALUE"}}]}"#
+                )!.renderComponents
+            model.handleFrame(
+                InboundFrame.parse(
+                    #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"},{"key":"share","kind":"workspace_action","label":"Share page","icon":"share","operation":"share_canvas","context":"live_canvas"}],"signout":{"label":"Sign out"}}}"#
+                )!)
         }
 
         @MainActor
@@ -273,6 +329,38 @@
                     ? "Opened second history row" : "Opened first history row"
                 model.canvas = [AstralComponent(type: "text", raw: .object(["content": .string(message)]))]
             }
+        }
+
+        @MainActor
+        private static func installWorkspaceRichResult(on model: AppModel) {
+            installWorkspace(on: model)
+            model.composerDraft = ""
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
+            model.turns = [AppModel.ChatTurn(id: "rich-result", role: "assistant", text: "Synthetic review result")]
+            // Canonical fields consumed by the shared web renderer. The tabs
+            // remain in the same canvas while their parent disclosure unmounts
+            // and remounts the selected pane, as in an ordinary saved result.
+            model.canvas =
+                InboundFrame.parse(
+                    #"""
+                    {"type":"ui_render","target":"canvas","components":[
+                      {"type":"hero","component_id":"review-heading","title":"Review report","eyebrow":"SYNTHETIC REVIEW","subtitle":"One result, with details you can revisit","badges":["Local fixture"]},
+                      {"type":"alert","variant":"warning","title":"Review required","message":"Check the original measurements before proceeding."},
+                      {"type":"rating","label":"Review confidence","value":3.5,"max_value":5,"show_value":true,"subtitle":"Based on seven observations"},
+                      {"type":"progress","label":"Checks complete","value":0.5,"show_percentage":true},
+                      {"type":"keyvalue","title":"Result source","items":[{"label":"Source","value":"Synthetic measurements"}]},
+                      {"type":"timeline","title":"Review history","items":[{"time":"09:30","title":"Validation complete","description":"The measurements were normalized.","variant":"success"}]},
+                      {"type":"code","code":"total = 18","language":"python"},
+                      {"type":"list","ordered":true,"items":["Inspect each measurement","Record the review outcome"]},
+                      {"type":"collapsible","component_id":"review-details","title":"Result details","default_open":true,"content":[
+                        {"type":"tabs","component_id":"review-tabs","tabs":[
+                          {"label":"Overview","content":[{"type":"text","content":"Overview pane is selected"}]},
+                          {"label":"Measurements","content":[{"type":"text","content":"Measurement pane is selected"}]}
+                        ]}
+                      ]}
+                    ]}
+                    """#
+                )!.renderComponents
         }
 
         @MainActor

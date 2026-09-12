@@ -181,6 +181,7 @@ def _assert_windows_native_contract(text: str) -> None:
 
 def _assert_apple_platform_contract(apple: str) -> None:
     app_unit = _job_block(apple, "app-unit-tests")
+    core_ios = _job_block(apple, "core-ios-tests")
     first_login = _job_block(apple, "first-login-ui")
     watch = _job_block(apple, "watch-continuity")
     apple_required = _job_block(apple, "apple-required")
@@ -195,6 +196,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     for job_id in (
         "swift-lint",
         "core-tests",
+        "core-ios-tests",
         "app-unit-tests",
         "first-login-ui",
         "watch-continuity",
@@ -205,13 +207,9 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert "${XCODE_VERSION}" in job
         assert "${XCODE_BUILD}" in job
 
-    ios_destination = (
-        'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"'
-    )
+    ios_destination = 'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"'
     macos_destination = 'destination: "platform=macOS"'
-    ios_runtime_check = (
-        'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"'
-    )
+    ios_runtime_check = 'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"'
     exporter = "python3 scripts/export_xccov_line_coverage.py"
     for job in (app_unit, first_login):
         assert ios_destination in job
@@ -222,6 +220,35 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert job.count(exporter) == 1
         assert "--platform '${{ matrix.slug }}'" in job
 
+    assert "-scheme AstralCore" in core_ios
+    assert "-only-testing:AstralCoreTests" in core_ios
+    assert '-destination "platform=iOS Simulator,id=$udid"' in core_ios
+    assert "-enableCodeCoverage YES" in core_ios
+    assert "swift test" not in core_ios
+    assert "--platform ios" in core_ios
+    assert "apple-required-core-ios-coverage" in core_ios
+    assert "needs.core-ios-tests.result" in apple_required
+    assert "--platform ios --profile ci" in apple_required
+    assert (
+        '--core-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/core/apple-ios-core-xccov.json"'
+        in apple_required
+    )
+    for selector in (
+        "Accessibility060UITests",
+        "LLMFirstLoginUITests",
+        "VoiceConversationUITests",
+        "WorkspacePresentationUITests",
+        "WorkspaceActionsUITests",
+        "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes",
+    ):
+        assert "-only-testing:AstralAppUITests/" + selector in first_login
+    assert (
+        'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)'
+        in first_login
+    )
+    assert '"${workspace_actions[@]}"' in first_login
+    assert 'result="${result_base}-attempt-$1.xcresult"' in first_login
+    assert 'rm -rf "$result"' not in first_login
     app_unit_marker = _step_block(app_unit, "Publish app unit success marker")
     assert "name: apple-required-app-unit-${{ matrix.slug }}" in app_unit_marker
     assert "app-unit-${{ matrix.slug }}.ok" in app_unit
@@ -230,26 +257,19 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "first-login-${{ matrix.slug }}.ok" in first_login
 
     assert "name: Required · watchOS 26.5 continuity coverage" in watch
-    assert (
-        'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"'
-        in watch
-    )
+    assert 'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"' in watch
     assert "os.environ['WATCHOS_RUNTIME']" in watch
     assert "-scheme AstralWatch" in watch
     assert (
-        '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"'
-        in watch
+        '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"' in watch
     )
     assert watch.count("CODE_SIGNING_ALLOWED=NO") == 1
     assert watch.count("-enableCodeCoverage YES") == 1
     assert watch.count(exporter) == 1
     assert "--platform watchos" in watch
-    assert "--output \"$report\"" in watch
+    assert '--output "$report"' in watch
 
-    download_action = (
-        "uses: actions/download-artifact@"
-        "d3f86a106a0bac45b974a628896c90dbdf5c8093"
-    )
+    download_action = "uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
     marker_steps = {
         "Require iOS app-unit success": "apple-required-app-unit-ios",
         "Require macOS app-unit success": "apple-required-app-unit-macos",
@@ -268,21 +288,19 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert f"name: apple-required-first-login-{platform}-coverage" in apple_required
         assert f"--platform {platform}" in apple_required
         assert (
-            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/"
-            f"{platform}/unit"
+            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/{platform}/unit"
         ) in apple_required
         assert (
-            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/"
-            f"{platform}/ui"
+            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/{platform}/ui"
         ) in apple_required
         assert (
             f'--unit-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
-            f'{platform}/unit/'
+            f"{platform}/unit/"
             f'apple-{platform}-unit-xccov.json"'
         ) in apple_required
         assert (
             f'--ui-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
-            f'{platform}/ui/'
+            f"{platform}/ui/"
             f'apple-{platform}-first-login-xccov.json"'
         ) in apple_required
         assert f'--output "${{COVERAGE_ROOT}}/apple-{platform}-xccov.json"' in apple_required
@@ -477,6 +495,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     assert _job_ids(apple) == {
         "swift-lint",
         "core-tests",
+        "core-ios-tests",
         "app-unit-tests",
         "first-login-ui",
         "watch-continuity",
@@ -484,10 +503,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     }
     assert "components/AstralProjection/" not in android + apple
     assert "if: ${{ false }}" not in android + apple
-    assert (
-        "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
-        in android
-    )
+    assert "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in android
 
 
 def test_apple_ci_runs_when_its_coverage_exporter_changes() -> None:
@@ -753,6 +769,7 @@ def test_native_ci_aggregates_run_fail_closed_after_required_jobs() -> None:
     for job_id in (
         "swift-lint",
         "core-tests",
+        "core-ios-tests",
         "app-unit-tests",
         "first-login-ui",
         "watch-continuity",

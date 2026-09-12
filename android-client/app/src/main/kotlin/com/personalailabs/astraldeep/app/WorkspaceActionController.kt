@@ -9,6 +9,7 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.ActivityResultRegistry
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.lifecycle.lifecycleScope
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore
@@ -36,6 +37,8 @@ internal class WorkspaceActionController(
     private val activity: ComponentActivity,
     private val currentToken: () -> String?,
     private val canvasCapture: CanvasCaptureRegistry,
+    private val rest: WorkspaceRest = WorkspaceRest(AppConfig.API_BASE, allowLocalHttp = BuildConfig.DEBUG),
+    resultRegistry: ActivityResultRegistry = activity.activityResultRegistry,
 ) {
     private val leases = WorkspaceActionLeases()
 
@@ -49,9 +52,8 @@ internal class WorkspaceActionController(
     private var pendingSave: Active? = null
     private var pickerOutstanding = false
     private val directory = File(activity.cacheDir, "workspace-exports")
-    private val rest = WorkspaceRest(AppConfig.API_BASE, allowLocalHttp = BuildConfig.DEBUG)
     private val save =
-        activity.registerForActivityResult(ActivityResultContracts.CreateDocument("text/html")) { uri ->
+        activity.registerForActivityResult(ActivityResultContracts.CreateDocument("text/html"), resultRegistry) { uri ->
             val ownedLaunch = pickerOutstanding
             pickerOutstanding = false
             val action = pendingSave

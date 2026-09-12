@@ -576,8 +576,11 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "android-client/settings-gradle.lockfile": (
             "5e2d075903b5cd264613e7538c7c51b1484fe2ed489d4ead3e6b4ba0cf3911c4"
         ),
+        # Feature 088: already pinned MockWebServer 4.12.0 also supports real
+        # controller instrumentation. Only AndroidTest configurations changed;
+        # normal debug/release runtime graphs and all coordinates are unchanged.
         "android-client/app/gradle.lockfile": (
-            "60ee1455b5bf1fc30c8f58a583a21f570bb61199f6a6ed83246e741c7107e260"
+            "ae8b335179a021b46e0a3326b22d5e6d5e908370a215fa67d764a42bd0497d37"
         ),
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
@@ -701,7 +704,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 181
+    assert len(paths) == 182
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 16
 
     moved_workflows = {
@@ -723,7 +726,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 338
+    assert len(extracted) - len(changed_paths) == 337
 
     for entry in record["entries"]:
         path = entry["path"]
