@@ -326,6 +326,9 @@ class AppViewModel(
 
     internal fun workspaceContext(): WorkspaceContext? = workspaceContext(_state.value, account, workspaceEpoch)
 
+    internal fun componentContext(component: Component): ComponentActionContext? =
+        componentActionContext(_state.value, account, workspaceEpoch, component)
+
     private var attachSeq: Long = 0
     private val seqState = mutableMapOf<String, Int>()
     private var pendingVoiceActivation: PendingVoiceActivation? = null
@@ -591,6 +594,28 @@ class AppViewModel(
                 "voice_session_takeover" -> controller.takeOver(pending.capability)
             }
         }
+    }
+
+    /** Context-bound component decisions use ordinary wire/authority without offline replay. */
+    internal fun sendComponentEvent(
+        context: ComponentActionContext,
+        action: String,
+        payload: JsonObject,
+        onSubmission: (LocalSubmission) -> Unit,
+    ): Boolean {
+        if (componentContext(context.component) != context) return false
+        if (action !in setOf("component_refine", "component_restore")) return false
+        val kind = if (action == "component_refine") "refine" else "history"
+        if (context.actions.none { it.kind == kind }) return false
+        val sent =
+            client.sendCurrentEvent(action, context.chatId, payload, { componentContext(context.component) == context }) { submission ->
+                _state.update { current -> projectLocalSubmission(current, submission) }
+                onSubmission(submission)
+            }
+        if (!sent && componentContext(context.component) == context) {
+            _state.update { it.copy(banner = "Reconnect before changing this component.", bannerKind = "error") }
+        }
+        return sent
     }
 
     fun sendEvent(

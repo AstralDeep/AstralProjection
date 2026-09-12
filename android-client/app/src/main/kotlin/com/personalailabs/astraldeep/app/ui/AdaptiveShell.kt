@@ -255,7 +255,6 @@ private fun CanvasArea(
                         chrome =
                             CanvasChrome(
                                 chatId = state.activeChatId,
-                                serverCanvasExport = workspaceControls(state).any { it.operation == "export_canvas" },
                                 mutationsLocked = state.mutationsLocked || state.isViewingHistory,
                             ),
                     )

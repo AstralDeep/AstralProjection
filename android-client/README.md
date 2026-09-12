@@ -15,6 +15,26 @@ client contract is now defined by this tree, especially
 [`../contracts/ui_protocol.json`](../contracts/ui_protocol.json), the shared
 voice fixtures under `../contracts/fixtures/`, and the tests below.
 
+## Component actions
+
+Top-level canvas footers consume the server's versioned `component_chrome`
+metadata. Missing, unknown, or malformed metadata exposes no inferred actions;
+older servers therefore need the matching server update to offer these controls.
+Refine and version history require the current live component. CSV and component
+sharing remain available for an owned historical component when the server
+supplies those descriptors. History shows only the bounded server version rows.
+Actions appear inline in server order, with wrapping and accessible touch targets.
+
+Refine/restore use the ordinary authenticated UI-event protocol on the current
+registered connection and are never replayed from the offline queue. Repeated
+Refine/Restore decisions stay disabled through their exact submission's accepted
+and running states, until its terminal/refusal or the captured context retires. CSV uses
+the authenticated component export endpoint and a bounded private staging file;
+Share creates one revocable link per explicit attempt and presents it privately
+until Copy is selected. Owner, session, chat, component replacement, and descriptor
+removal invalidate open decisions and late results. The descriptors themselves
+do not grant server authority.
+
 ## Modules
 
 ```

@@ -83,6 +83,7 @@ import java.io.File
 
 class MainActivity : ComponentActivity() {
     private val canvasCapture = CanvasCaptureRegistry()
+    private val componentActions by lazy { ComponentActionController(this, { authToken.value }) }
     private val workspaceActions by lazy { WorkspaceActionController(this, { authToken.value }, canvasCapture) }
 
     private val client by lazy { OrchestratorClient(AppConfig.WS_URL) }
@@ -193,6 +194,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         workspaceActions.invalidateStale()
+        componentActions.invalidateStale()
         // Resume a cached session. Per the sign-in-once-a-year policy: if credentials
         // are found on the device, go straight to the home screen — show it right away
         // with the cached access token, then refresh silently and PERSIST the (rotated)
@@ -228,6 +230,7 @@ class MainActivity : ComponentActivity() {
                             Download { url, fn -> downloadFile(url, fn) },
                             ThemeSink { spec -> vm.applyTheme(spec) },
                         ).registerAllRenderers().also {
+                            it.componentActions = componentActions.handler(vm)
                             it.capture = canvasCapture
                             it.captureContext = { vm.workspaceContext() }
                         }
@@ -237,6 +240,7 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(uiState, token) {
                     if (vm.workspaceContext() == null) canvasCapture.clear()
                     workspaceActions.invalidateStale()
+                    componentActions.invalidateStale()
                 }
 
                 if (token == null) {
@@ -275,6 +279,14 @@ class MainActivity : ComponentActivity() {
                             signInError.value = route.error
                         }
                     }
+                    val componentShare by componentActions.share.collectAsStateWithLifecycle()
+                    componentShare?.let { link ->
+                        ComponentShareDialog(
+                            link.url,
+                            onCopy = { componentActions.copy(link) },
+                            onDismiss = { componentActions.dismiss(link) },
+                        )
+                    }
                     RootScaffold(vm, renderer, onSignOut = { signOut(vm) }, onWorkspaceAction = { workspaceActions.perform(it, vm) })
                 }
             }
@@ -285,7 +297,10 @@ class MainActivity : ComponentActivity() {
         withContext(Dispatchers.Main.immediate) {
             val oldOwner = ConversationResumeStore.accountFromAccessToken(authToken.value.orEmpty())
             val newOwner = ConversationResumeStore.accountFromAccessToken(next.orEmpty())
-            if (next == null || oldOwner != newOwner) workspaceActions.clear()
+            if (next == null || oldOwner != newOwner) {
+                workspaceActions.clear()
+                componentActions.clear()
+            }
             authToken.value = next
         }
 
@@ -312,6 +327,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun signOut(vm: AppViewModel) {
         workspaceActions.clear()
+        componentActions.clear()
         voiceController.logout()
         // Clear the LOCAL session SYNCHRONOUSLY on the main thread first, so
         // sign-out is durable even if the Activity is destroyed an instant later.
@@ -355,6 +371,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         workspaceActions.clear()
+        componentActions.clear()
         oidc.dispose()
         super.onDestroy()
     }
