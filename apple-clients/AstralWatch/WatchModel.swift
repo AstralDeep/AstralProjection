@@ -39,13 +39,24 @@ final class WatchModel {
     var login: DeviceLoginStart?
     var loginExpiresAt: Date = .distantFuture
     var recents: [ChatSummary] = []
-    var entries: [Entry] = []
+    var recentsTitle = "Recent chats"
+    var recentsLoading = false
+    var workspaceStarted = false
+    var entries: [Entry] = [] {
+        didSet { if !entries.isEmpty { workspaceStarted = true } }
+    }
     /// The live canvas — identity-keyed workspace components. `ui_upsert` ops
     /// apply in place (replace/remove by component_id) instead of stacking
     /// duplicate transcript entries (FR-013 as it reaches the watch).
-    var canvas: [AstralComponent] = []
-    var transientEntries: [Entry] = []
-    var transientCanvas: [AstralComponent]?
+    var canvas: [AstralComponent] = [] {
+        didSet { if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true } }
+    }
+    var transientEntries: [Entry] = [] {
+        didSet { if !transientEntries.isEmpty { workspaceStarted = true } }
+    }
+    var transientCanvas: [AstralComponent]? {
+        didSet { if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true } }
+    }
     var statusText: String?
     /// Separates live progress from informational/error notices so the watch
     /// never presents a terminal message with an indeterminate spinner.
@@ -60,6 +71,9 @@ final class WatchModel {
 
     var visibleEntries: [Entry] { entries + transientEntries }
     var visibleCanvas: [AstralComponent] { transientCanvas ?? canvas }
+    var workspaceCanvas: [AstralComponent] {
+        workspaceStarted ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
+    }
     var pendingSurfaceRequestGenerations: Set<String> {
         Set(
             localOperationSubmissions.values.compactMap { submission in
@@ -179,6 +193,8 @@ final class WatchModel {
     @ObservationIgnored private var sessionGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
+    @ObservationIgnored private var hasCanonicalRecents = false
+    @ObservationIgnored private var recentsGeneration = UUID()
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
     @ObservationIgnored private var pendingCommitRequestGeneration: String?
     @ObservationIgnored private var seqState: [String: Int] = [:]
@@ -235,6 +251,7 @@ final class WatchModel {
         if conversationAccount != account {
             continuity.clear()
             resetConversationState()
+            resetRecents()
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
@@ -284,6 +301,9 @@ final class WatchModel {
         transientEntries = []
         transientCanvas = nil
         guard continuity.beginConnection(generation) else { return false }
+        // Recents belong to the account, not a socket generation. Preserve an
+        // in-flight REST fallback and canonical rows through a reconnect; the
+        // established socket requests fresh device-adapted history below.
         reframePendingVoiceSubmissions(for: generation)
         voiceControlBinding = nil
         pendingVoiceActivation = nil
@@ -305,6 +325,7 @@ final class WatchModel {
         requestGeneration: String,
         purpose: ConversationGenerationPurpose
     ) -> Bool {
+        workspaceStarted = true
         let resetRevision =
             continuity.activeChatId != nil
             && continuity.activeChatId != chatId
@@ -515,7 +536,7 @@ final class WatchModel {
         statusLifecycle.clear()
         operationStatuses = [:]
         agentLifecycles = [:]
-        recents = []
+        resetRecents()
         resetVoiceState(reason: "sign_out")
         speaker.stop()
         beginDeviceLogin()
@@ -546,6 +567,7 @@ final class WatchModel {
         conversationAccount = nil
         continuity.clear()
         resetConversationState()
+        resetRecents()
         clearPendingOperationSubmissions()
         statusLifecycle.clear()
         operationStatuses = [:]
@@ -595,6 +617,7 @@ final class WatchModel {
         switch event {
         case .connected:
             connected = true
+            rawSend(Outbound.uiEvent(action: "get_history", sessionId: nil, payload: .object([:])))
         case .disconnected:
             connected = false
             clearPendingOperationSubmissions()
@@ -630,6 +653,38 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        // History is an owner-scoped chrome surface, never a conversation
+        // publication. Intercept before welcome, continuity, and spoken output.
+        if frame.name == "ui_render", frame.renderTarget == "history" {
+            guard let update = WatchHistoryUpdate(frame: frame) else { return }
+            switch update {
+            case .content(let title, let chats):
+                recents = chats
+                recentsTitle = title
+                recentsLoading = false
+                hasCanonicalRecents = true
+                recentsGeneration = UUID()
+            case .loading:
+                recentsLoading = true
+            }
+            return
+        }
+        // Registration establishes a connection before the server's global
+        // welcome arrives. It has no conversation generation; admit only its
+        // validated ephemeral components while no hydration/turn is open.
+        if !workspaceStarted, continuity.requestGeneration == nil,
+            let components = WorkspaceWelcome.unscopedComponents(in: frame)
+        {
+            canvas = components
+            transientCanvas = nil
+            return
+        }
+        if workspaceStarted, ["ui_render", "ui_update"].contains(frame.name),
+            frame.renderTarget != "chat", !frame.renderComponents.isEmpty,
+            !WorkspaceWelcome.containsWork(frame.renderComponents)
+        {
+            return
+        }
         // Dispositions: ClientDispositions.watch — unlisted/ignored frames
         // fall through the default silently (FR-003).
         switch frame.name {
@@ -772,6 +827,12 @@ final class WatchModel {
         else { return }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
+            if status.state != "completed" {
+                _ = continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+                if pendingCommitRequestGeneration == status.requestGeneration {
+                    pendingCommitRequestGeneration = nil
+                }
+            }
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if let message = status.error.objectValue?["message"]?.stringValue {
                 errorBanner = message
@@ -819,8 +880,15 @@ final class WatchModel {
     @discardableResult
     private func reduceAdmissionRefusal(_ frame: InboundFrame) -> Bool {
         guard let refusal = AdmissionRefusal(frame: frame),
-            localOperationSubmissions.removeValue(forKey: refusal.submissionId) != nil
+            let submission = localOperationSubmissions.removeValue(forKey: refusal.submissionId)
         else { return false }
+        if continuity.retireUncommittedCommit(requestGeneration: submission.requestGeneration) {
+            transientEntries = []
+            transientCanvas = nil
+        }
+        if pendingCommitRequestGeneration == submission.requestGeneration {
+            pendingCommitRequestGeneration = nil
+        }
         statusText = latestActiveOperationStatusText()
         statusShowsActivity = statusText != nil
         errorBanner = refusal.message
@@ -960,11 +1028,7 @@ final class WatchModel {
     }
 
     private func clearContinuityChatKeepingConnection() {
-        let connection = continuity.connectionGeneration
-        continuity.clear()
-        if let connection {
-            _ = continuity.beginConnection(connection)
-        }
+        continuity.clearChatKeepingConnection()
     }
 
     /// The server refused our token. A near-expiry token refreshes anyway on
@@ -1029,7 +1093,34 @@ final class WatchModel {
     // MARK: US4 — conversation
 
     func refreshRecents() async {
-        recents = Array((try? await rest.chats())?.prefix(10) ?? [])
+        await refreshRecents { try await self.rest.chats() }
+    }
+
+    /// REST is a bounded fallback until the socket supplies canonical ROTE
+    /// metadata. Its suspended reply cannot replace newer chrome or cross an
+    /// account/session boundary. A same-owner socket reconnect does not cancel
+    /// this HTTP read. The loader also isolates tests from IAM.
+    func refreshRecents(load: () async throws -> [ChatSummary]) async {
+        guard !hasCanonicalRecents else { return }
+        let generation = UUID()
+        recentsGeneration = generation
+        let session = sessionGeneration
+        let account = conversationAccount
+        recentsLoading = true
+        let loaded = try? await load()
+        guard recentsGeneration == generation, sessionGeneration == session,
+            conversationAccount == account, !hasCanonicalRecents
+        else { return }
+        if let loaded { recents = Array(loaded.prefix(10)) }
+        recentsLoading = false
+    }
+
+    private func resetRecents() {
+        recents = []
+        recentsTitle = "Recent chats"
+        recentsLoading = false
+        hasCanonicalRecents = false
+        recentsGeneration = UUID()
     }
 
     private func resetConversationState() {
@@ -1043,6 +1134,8 @@ final class WatchModel {
         errorBanner = nil
         pendingCommitRequestGeneration = nil
         seqState.removeAll()
+        pendingDictation = ""
+        workspaceStarted = false
     }
 
     private func beginLocalOperationSubmission(
@@ -1155,6 +1248,7 @@ final class WatchModel {
     }
 
     func openChat(_ chat: ChatSummary) {
+        workspaceStarted = true
         pendingVoiceActivation = nil
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chat.id, for: account) else { return }
@@ -1185,6 +1279,18 @@ final class WatchModel {
             voiceBridge.setCaptureEnabled(false)
             Task { await self.updateVoiceVisibleChat(chat.id) }
         }
+    }
+
+    /// Welcome examples use the same authenticated chat request as dictation.
+    /// Preserve an unsent draft; never dispatch other native button actions.
+    @discardableResult
+    func sendWelcomeExample(_ component: AstralComponent) -> Bool {
+        guard let message = WorkspaceWelcome.chatMessage(of: component) else { return false }
+        let draft = pendingDictation
+        pendingDictation = message
+        sendPending()
+        pendingDictation = draft
+        return true
     }
 
     /// Dictated text goes through the STANDARD chat path (FR-029) after the

@@ -16,11 +16,11 @@
     "check:product-isolation": "node product-isolation.mjs",
     "coverage:node": "node coverage-conversion-cli.mjs",
     "coverage:union": "node coverage-union-cli.mjs",
-    "lint": "cd ../.. && node tooling/web-ci/node_modules/eslint/bin/eslint.js --config tooling/web-ci/eslint.config.mjs --max-warnings=0 backend/webrender/static/client.js \"tooling/web-ci/**/*.mjs\" \"tooling/web-ci/**/*.js\"",
+    "lint": "cd ../.. && node tooling/web-ci/node_modules/eslint/bin/eslint.js --config tooling/web-ci/eslint.config.mjs --max-warnings=0 \"backend/webrender/static/**/*.js\" \"tooling/web-ci/**/*.mjs\" \"tooling/web-ci/**/*.js\"",
     "test:coverage-conversion": "node --test tests/coverage-conversion.test.mjs",
     "test:coverage-conversion:browser": "node --test tests/coverage-conversion.browser.test.mjs",
     "test:coverage-conversion:node": "node --test tests/node-v8-cli.test.mjs",
-    "test:coverage-union": "node --test tests/coverage-union.test.mjs tests/coverage-union-cli.test.mjs",
+    "test:coverage-union": "node --experimental-vm-modules --test tests/coverage-union.test.mjs tests/coverage-union-cli.test.mjs tests/release-runner.test.mjs",
     "test:product-isolation": "node --test tests/product-isolation.test.mjs"
   },
   "devDependencies": {

@@ -1,24 +1,24 @@
 package com.personalailabs.astraldeep.app.render.renderers
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,24 +26,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.personalailabs.astraldeep.app.R
-import com.personalailabs.astraldeep.app.render.Download
-import com.personalailabs.astraldeep.app.render.Emit
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.personalailabs.astraldeep.app.ui.ComponentActionHandler
+import com.personalailabs.astraldeep.core.chrome.ComponentChrome
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.net.URLEncoder
 
-// Feature 055 — the shared per-component chrome rendered under every
-// top-level canvas component (the Android twin of the web component footer):
-// a compact provenance badge (T036, wire-contract §6) and an overflow menu
-// carrying the Refine affordance (T040, `component_refine`) and the export
-// entries (T045).
+// Server-owned component affordances follow the web footer's inline ordering.
 
 /** The three server-stamped trust marks (wire-contract §6). */
 enum class Provenance(
@@ -81,73 +79,8 @@ internal fun provenanceOf(c: Component): Provenance? {
     }
 }
 
-/** One export entry: an authed backend URL fetched via the existing download path. */
-@Immutable
-data class ExportEntry(
-    val label: String,
-    val url: String,
-    val filename: String,
-)
-
-/** The derived overflow-menu model for one canvas component (pure → JVM-tested). */
-@Immutable
-data class ArtifactMenu(
-    /** Target of the Refine… entry; null hides it (no identity / read-only view). */
-    val refineComponentId: String? = null,
-    val exports: List<ExportEntry> = emptyList(),
-) {
-    val isEmpty: Boolean get() = refineComponentId == null && exports.isEmpty()
-}
-
-/**
- * Menu derivation rules (contracts/rest-endpoints.md): CSV export exists only
- * for a `table` with an identity (the endpoint 422s other types); the canvas
- * HTML export needs only the chat; Refine needs an identity and a live,
- * mutable view (the read-only timeline pauses it, same rule as the composer).
- */
-internal fun artifactMenu(
-    c: Component,
-    chatId: String?,
-    mutationsLocked: Boolean,
-): ArtifactMenu {
-    val id = c.id?.takeIf { it.isNotBlank() }
-    val chat = chatId?.takeIf { it.isNotBlank() }
-    val exports =
-        buildList {
-            if (chat != null && id != null && c.type.equals("table", ignoreCase = true)) {
-                add(
-                    ExportEntry(
-                        label = "Export table (CSV)",
-                        url = "/api/export/component/${encodeUrl(id)}.csv?chat_id=${encodeUrl(chat)}",
-                        filename = exportFilename(c.str("title") ?: id, "csv"),
-                    ),
-                )
-            }
-            if (chat != null) {
-                add(
-                    ExportEntry(
-                        label = "Export canvas (HTML)",
-                        url = "/api/export/canvas/${encodeUrl(chat)}.html",
-                        filename = exportFilename("canvas-$chat", "html"),
-                    ),
-                )
-            }
-        }
-    val refinable = id != null && !mutationsLocked && c.type.trim().lowercase() !in PROVENANCE_SKIP_TYPES
-    return ArtifactMenu(refineComponentId = if (refinable) id else null, exports = exports)
-}
-
-/** `component_refine` payload (wire-contract §3): the identity + the instruction. */
-internal fun refinePayload(
-    componentId: String,
-    instruction: String,
-): JsonObject =
-    buildJsonObject {
-        put("component_id", componentId)
-        put("instruction", instruction.trim())
-    }
-
-private fun encodeUrl(v: String): String = URLEncoder.encode(v, "UTF-8")
+/** A dialog action is revalidated against its exact captured owner/chat/component by its handler. */
+internal fun refinePayload(instruction: String): JsonObject = buildJsonObject { put("instruction", instruction.trim()) }
 
 /** DownloadManager rejects path separators/exotic chars in destination names. */
 internal fun exportFilename(
@@ -163,95 +96,111 @@ internal fun exportFilename(
     return "${safe.take(60)}.$ext"
 }
 
-/**
- * The chrome row under one top-level canvas component. Renders nothing when
- * there is neither a badge nor a menu entry, so pre-055 canvases (no stamped
- * provenance, no chat context) are byte-identical to today.
- */
+/** Missing component_chrome intentionally leaves only the server provenance warning. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ArtifactFooter(
+internal fun ArtifactFooter(
     c: Component,
-    emit: Emit,
-    download: Download,
-    chatId: String?,
-    mutationsLocked: Boolean,
+    handler: ComponentActionHandler?,
 ) {
     val provenance = provenanceOf(c)
-    val menu = artifactMenu(c, chatId, mutationsLocked)
-    if (provenance == null && menu.isEmpty) return
-    var menuOpen by remember { mutableStateOf(false) }
-    var refineOpen by remember { mutableStateOf(false) }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.End),
-    ) {
-        provenance?.let { ProvenanceBadge(it) }
-        if (!menu.isEmpty) {
-            Box {
-                IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(26.dp)) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_more),
-                        contentDescription = "Component actions",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(15.dp),
-                    )
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    menu.refineComponentId?.let {
-                        DropdownMenuItem(
-                            text = { Text("Refine…") },
-                            onClick = {
-                                menuOpen = false
-                                refineOpen = true
-                            },
-                        )
+    val context = handler?.context(c)
+    val actions = context?.actions.orEmpty()
+    val pending = handler?.pending?.collectAsStateWithLifecycle()?.value.orEmpty()
+    if (provenance == null && actions.isEmpty()) return
+    var dialog by remember(context) { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            provenance?.let { ProvenanceBadge(it) }
+            if (context != null && pending.any { it.first == context.componentId }) CircularProgressIndicator(Modifier.size(16.dp))
+        }
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.End),
+        ) {
+            actions.forEach { action ->
+                val busy =
+                    pending.any {
+                        it.second == action.kind && (it.first == context?.componentId || action.kind in setOf("csv", "share"))
                     }
-                    menu.exports.forEach { entry ->
-                        DropdownMenuItem(
-                            text = { Text(entry.label) },
-                            onClick = {
-                                menuOpen = false
-                                download.file(entry.url, entry.filename)
+                Row(
+                    modifier =
+                        Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .clickable(enabled = !busy, role = Role.Button) {
+                                if (action.kind == "refine" || action.kind == "history") {
+                                    dialog = action.kind
+                                } else if (context != null) {
+                                    handler.perform(context, action.kind)
+                                }
+                            }.semantics(mergeDescendants = true) {
+                                contentDescription = action.title
+                                if (busy) stateDescription = "In progress"
                             },
-                        )
-                    }
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    val tone = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = if (busy) 0.38f else 0.7f)
+                    Text(action.icon, fontSize = 10.sp, color = tone, modifier = Modifier.clearAndSetSemantics { })
+                    Text(action.label, fontSize = 10.sp, color = tone)
                 }
             }
         }
     }
-    val refineId = menu.refineComponentId
-    if (refineOpen && refineId != null) {
-        RefineDialog(
-            onDismiss = { refineOpen = false },
-            onSubmit = { instruction ->
-                refineOpen = false
-                emit.event("component_refine", refinePayload(refineId, instruction))
+    if (context != null && dialog == "refine" && actions.any { it.kind == "refine" }) {
+        RefineDialog(onDismiss = { dialog = null }, onSubmit = { instruction ->
+            dialog = null
+            handler.perform(context, "refine", refinePayload(instruction))
+        })
+    }
+    if (context != null && dialog == "history" && actions.any { it.kind == "history" }) {
+        val versions = ComponentChrome.versions(c)
+        AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Version history") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    if (versions.isEmpty()) Text("No earlier versions yet — refine the component to create one.")
+                    versions.forEach { version ->
+                        TextButton(
+                            onClick = {
+                                dialog = null
+                                handler.perform(context, "history", buildJsonObject { put("version_no", version.versionNo) })
+                            },
+                            modifier =
+                                Modifier.fillMaxWidth().semantics {
+                                    contentDescription = "Restore this version" +
+                                        if (version.reason.isEmpty()) "" else " (archived on ${version.reason})"
+                                },
+                        ) { Text(version.label) }
+                    }
+                }
             },
+            confirmButton = { TextButton(onClick = { dialog = null }) { Text("Done") } },
         )
     }
 }
 
-/**
- * Compact trust pill — ✓ tool data (green) / ≈ estimated (amber) / ✦
- * AI-generated (muted) — matching the web footer's icons, labels, and tones so
- * provenance reads the same on every target (SC-006).
- */
+/** Plain trailing warning text uses the web footer's typography and spacing. */
 @Composable
 private fun ProvenanceBadge(p: Provenance) {
+    // Keep the trust stamp in the model; ordinary tool results need no badge.
+    if (p == Provenance.Grounded) return
     val tone =
         when (p) {
             Provenance.Grounded -> Color(0xFF22C55E)
-            Provenance.Estimated -> Color(0xFFEAB308)
+            Provenance.Estimated -> Color(0xFFFACC15)
             Provenance.Generated -> MaterialTheme.colorScheme.onSurfaceVariant
         }
-    Surface(color = tone.copy(alpha = 0.12f), shape = RoundedCornerShape(9.dp)) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.semantics(mergeDescendants = true) { contentDescription = "Provenance: ${p.label}" },
+    ) {
+        Text(p.glyph, color = tone.copy(alpha = 0.7f), fontSize = 10.sp, modifier = Modifier.clearAndSetSemantics { })
         Text(
-            text = "${p.glyph} ${p.label}",
-            color = tone,
+            text = p.label,
+            color = tone.copy(alpha = 0.7f),
             fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
         )
     }
 }

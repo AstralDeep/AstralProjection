@@ -30,6 +30,21 @@ import kotlin.test.assertTrue
 @OptIn(ExperimentalCoroutinesApi::class)
 class VoiceSessionController065Test {
     @Test
+    fun offComposerIsQuietWhileExplicitAndActiveFeedbackRemainVisible() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.controller.consumeComposer(Inbound.ComposerState(0, CONNECTION_ID, composer(state = "off")))
+            assertEquals(null, fixture.controller.state.value.message)
+            val notice = composer(state = "off").copy(message = "Microphone permission is required.")
+            fixture.controller.consumeComposer(Inbound.ComposerState(1, CONNECTION_ID, notice))
+            assertEquals(notice.message, fixture.controller.state.value.message)
+            fixture.controller.consumeComposer(Inbound.ComposerState(2, CONNECTION_ID, composer(state = "listening")))
+            assertEquals("Listening…", fixture.controller.state.value.message)
+            fixture.controller.activationFailed("permission_denied")
+            assertTrue(fixture.controller.state.value.message!!.contains("denied"))
+        }
+
+    @Test
     fun newConnectionGenerationClearsStaleControlsAndAcceptsFreshComposerRevision() =
         runTest {
             val fixture = fixture(this)
@@ -80,7 +95,7 @@ class VoiceSessionController065Test {
 
             assertEquals("off", fixture.controller.state.value.phase)
             assertEquals("ready", fixture.controller.state.value.reason)
-            assertEquals("Voice is available.", fixture.controller.state.value.message)
+            assertEquals(null, fixture.controller.state.value.message)
             assertEquals("voice_session_start", fixture.controller.state.value.composer?.controls?.single()?.action)
 
             fixture.controller.updateVisibleChatLocally(OTHER_CHAT_ID)
@@ -132,7 +147,7 @@ class VoiceSessionController065Test {
 
             assertEquals("off", fixture.controller.state.value.phase)
             assertEquals("ready", fixture.controller.state.value.reason)
-            assertEquals("Voice is available.", fixture.controller.state.value.message)
+            assertEquals(null, fixture.controller.state.value.message)
             assertEquals("voice_session_start", fixture.controller.state.value.composer?.controls?.single()?.action)
         }
 
@@ -348,7 +363,10 @@ class VoiceSessionController065Test {
         runTest {
             val fixture = fixture(this)
             val reports = mutableListOf<com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent>()
-            fixture.controller.setPlayoutReporter { reports += it; true }
+            fixture.controller.setPlayoutReporter {
+                reports += it
+                true
+            }
             fixture.controller.activate(capability())
             fixture.media.emit(
                 VoiceMediaEvent.Data(
@@ -390,7 +408,10 @@ class VoiceSessionController065Test {
         runTest {
             val fixture = fixture(this)
             val reports = mutableListOf<com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent>()
-            fixture.controller.setPlayoutReporter { reports += it; true }
+            fixture.controller.setPlayoutReporter {
+                reports += it
+                true
+            }
             fixture.controller.activate(capability())
             fixture.media.emit(
                 VoiceMediaEvent.Data(
@@ -427,7 +448,10 @@ class VoiceSessionController065Test {
         runTest {
             val fixture = fixture(this)
             val reports = mutableListOf<com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent>()
-            fixture.controller.setPlayoutReporter { reports += it; true }
+            fixture.controller.setPlayoutReporter {
+                reports += it
+                true
+            }
             fixture.controller.activate(capability())
             fixture.media.emit(
                 VoiceMediaEvent.Data(
@@ -640,9 +664,12 @@ class VoiceSessionController065Test {
             assertEquals("foreground", fixture.api.updateCalls.last().fields["foreground_reason"]?.jsonPrimitive?.contentOrNull)
             advanceTimeBy(20_000)
             runCurrent()
-            assertEquals(foregroundUpdates + 2, fixture.api.updateCalls.count {
-                it.fields["foreground_active"]?.jsonPrimitive?.booleanOrNull == true
-            })
+            assertEquals(
+                foregroundUpdates + 2,
+                fixture.api.updateCalls.count {
+                    it.fields["foreground_active"]?.jsonPrimitive?.booleanOrNull == true
+                },
+            )
 
             fixture.controller.end()
             val callsAfterEnd = fixture.api.updateCalls.size

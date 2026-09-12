@@ -1,6 +1,189 @@
 {
   "version": 1,
   "description": "Committed UI-protocol manifest (feature 044). Single source for the server->client WS frame vocabulary, the ui_event action vocabulary, and the component vocabulary. Backend, Windows, and Android test suites all assert against this file; adding a frame type, action, or component type REQUIRES editing it in the same PR (guards fail otherwise). See specs/044-native-client-parity/contracts/ui-protocol.md.",
+  "presentation_contracts": {
+    "component_chrome": {
+      "version": 1,
+      "fixture": "contracts/fixtures/workspace_088/component_chrome.json",
+      "field": "component_chrome",
+      "scope": "top_level_canvas_component",
+      "exact_fields": [
+        "version",
+        "actions"
+      ],
+      "action_fields": [
+        "kind",
+        "label",
+        "icon",
+        "title",
+        "context"
+      ],
+      "action_order": [
+        "refine",
+        "history",
+        "csv",
+        "share"
+      ],
+      "contexts": {
+        "refine": "live_canvas",
+        "history": "live_canvas",
+        "csv": "owned_chat",
+        "share": "owned_chat"
+      },
+      "limits": {
+        "actions": 16,
+        "label_codepoints": 96,
+        "icon_codepoints": 8,
+        "title_codepoints": 160,
+        "versions": 5,
+        "version_no_max": 9007199254740991,
+        "version_reason_codepoints": 32,
+        "version_created_at_codepoints": 64,
+        "version_title_codepoints": 120
+      },
+      "versions_field": "versions",
+      "versions_policy": "Inspect only the first five rows; discard unknown fields, invalid numbers and non-string text, omit duplicate version numbers, and truncate plain text by Unicode codepoint limits. Exact integral JSON numbers are accepted; booleans and numeric strings are refused.",
+      "version_fields": [
+        "version_no",
+        "reason",
+        "created_at",
+        "title"
+      ],
+      "unknown_or_invalid_metadata": "no_component_actions",
+      "unknown_or_invalid_action": "ignore_entry",
+      "duplicate_kind": "omit_kind",
+      "identity": "original_canonical_component_id; never id-only or dg_/ly_/wel_ or divider/skeleton",
+      "policy": "Projection builds the inventory from original stored type, current host flags and receiver profile; Deep overwrites outbound copies after adaptation without persistence. Metadata never authorizes execution.",
+      "execution": "Capture and recheck current owner/session/chat/component and required action context. Existing refine/restore, authenticated CSV and component share gates remain authoritative; never execute descriptor URLs, events or parameters.",
+      "live_canvas": "Outside timeline/read-only mode; do not add an unrelated busy visibility rule.",
+      "owned_chat": "Existing owned-chat CSV and component Share semantics also apply while viewing timeline history; downloaded/shared content comes from the existing authorized endpoint.",
+      "dispositions": {
+        "web": "same existing DOM and server flags",
+        "android": "native_component_actions",
+        "ios": "native_component_actions",
+        "macos": "native_component_actions",
+        "watch": "omitted_by_server_per_055_artifact_disposition",
+        "windows": "legacy_layout_ignores_additive_field"
+      },
+      "legacy_server": "Updated native clients hide component actions when metadata is absent; no inferred flags or legacy canvas-export fallback.",
+      "legacy_clients": "May ignore additive metadata and retain historical inferred menus; server authorization/flag denials are unchanged."
+    },
+    "canvas_export": {
+      "version": "astral.canvas-export/v1",
+      "contract": "canvas_export_v1.json",
+      "effect": "none_display_only",
+      "authorization": "host_owned_separate_from_presentation"
+    },
+    "chrome_menu": {
+      "version": 2,
+      "unknown_kind": "ignore_control",
+      "invalid_workspace_action": "ignore_control",
+      "workspace_action": {
+        "exact_fields": ["key", "kind", "label", "icon", "operation", "context"],
+        "operations": ["export_canvas", "share_canvas"],
+        "contexts": ["live_canvas"],
+        "live_canvas": "Outside timeline with a mounted dynamic renderer and the matching server canvas capability; no additional busy or positive-revision visibility predicate.",
+        "execution": "Descriptor presence is not authorization. Capture and recheck the owner, chat and current canvas revision as applicable around the existing authenticated operation. Never execute an arbitrary descriptor URL, surface or payload.",
+        "watch_disposition": {
+          "source_feature": "055-uniform-artifacts",
+          "disposition": "omitted_by_server",
+          "chrome_menu_delivery": false,
+          "workspace_capability_attributes": false,
+          "supports_file_io": false,
+          "reason": "The wrist retains its existing chrome-free, no-file-IO profile; canvas export/share and component artifact verbs are absent.",
+          "continuation": "Use the same owned chat on a supported phone, desktop or web client. Preserve existing server-provided handoff guidance where present; omission creates no button, URL, token or share snapshot."
+        }
+      },
+      "compact_topbar": {
+        "below_logical_width": 700,
+        "action_cluster": "wrap_in_canonical_order_when_needed",
+        "alignment": "trailing",
+        "height": "intrinsic",
+        "brand": "separate_leading_cluster",
+        "overflow": "no_horizontal_scroll_or_hidden_controls"
+      }
+    },
+    "workspace_088": {
+      "version": 1,
+      "targets": [
+        "web",
+        "android",
+        "ios",
+        "macos",
+        "watch"
+      ],
+      "legacy_layout_targets": [
+        "windows"
+      ],
+      "welcome_attribute": "data-welcome",
+      "welcome_roles": [
+        "intro",
+        "permission",
+        "examples",
+        "more"
+      ],
+      "example_role": "example",
+      "welcome_identity_prefix": "wel_",
+      "allow_idless_welcome": true,
+      "top_level_only": true,
+      "start_order": [
+        "intro",
+        "permission",
+        "composer",
+        "examples",
+        "more"
+      ],
+      "layout": {
+        "unit": "logical_pixels",
+        "stacked_below": 700,
+        "split_from": 1024,
+        "start_max_width": 704,
+        "floating_max_width": 760,
+        "rail_min_width": 320,
+        "rail_max_width": 420,
+        "rail_width_fraction": 0.28,
+        "canvas_position": "leading",
+        "conversation_position": "trailing"
+      },
+      "work_triggers": [
+        "send",
+        "history",
+        "restoration",
+        "result"
+      ],
+      "reset_trigger": "new_chat",
+      "draft_lifetime": {
+        "storage": "ephemeral_owner_memory",
+        "preserve": [
+          "resize",
+          "same_owner_reconnect"
+        ],
+        "clear": [
+          "sign_out",
+          "owner_change",
+          "new_chat"
+        ]
+      },
+      "theme_source": "server_semantic_palette",
+      "font_source": "contracts/assets/fonts",
+      "chart_renderer": {
+        "targets": ["android", "ios", "macos"],
+        "template": "contracts/assets/charts/chart.html",
+        "vendor": "backend/webrender/static/vendor/plotly.min.js",
+        "generator": "scripts/build_native_chart.py",
+        "input": "base64_json_component_and_viewport_width",
+        "network": "denied",
+        "native_action_bridge": false,
+        "external_assets": "explicit_web_handoff"
+      },
+      "content_source": "server_components_and_chrome_menu",
+      "ordinary_submission": "chat_message",
+      "background_field": "async_mode",
+      "effect_authorization": "existing_server_bound_review",
+      "watch_adaptation": "declared_device_capabilities_with_explicit_handoff",
+      "fixture": "contracts/fixtures/workspace_088/welcome.json"
+    }
+  },
   "frame_contracts": {
     "admission_refusal": {
       "type": "error",

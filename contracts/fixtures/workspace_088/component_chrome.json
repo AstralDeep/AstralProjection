@@ -1,0 +1,771 @@
+{
+  "contract": "component_chrome/v1",
+  "actions": [
+    {
+      "name": "absent",
+      "metadata": null,
+      "expected_kinds": []
+    },
+    {
+      "name": "unknown_version",
+      "metadata": {
+        "version": 2,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ]
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "boolean_version",
+      "metadata": {
+        "version": true,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ]
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "string_version",
+      "metadata": {
+        "version": "1",
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ]
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "extra_metadata_field",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ],
+        "url": "https://invalid.example"
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "object_actions",
+      "metadata": {
+        "version": 1,
+        "actions": {}
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "too_many_actions",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "all_actions_shuffled",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "refine",
+        "history",
+        "csv",
+        "share"
+      ]
+    },
+    {
+      "name": "empty",
+      "metadata": {
+        "version": 1,
+        "actions": []
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "integral_number_version",
+      "metadata": {
+        "version": 1.0,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "refine"
+      ]
+    },
+    {
+      "name": "unknown_and_nonobjects",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          null,
+          "refine",
+          {
+            "kind": "future"
+          },
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "refine",
+        "history",
+        "csv",
+        "share"
+      ]
+    },
+    {
+      "name": "malformed_first_duplicate",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine"
+          },
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "history",
+        "csv",
+        "share"
+      ]
+    },
+    {
+      "name": "malformed_last_duplicate",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "csv",
+            "url": "https://invalid.example"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "refine",
+        "history",
+        "share"
+      ]
+    },
+    {
+      "name": "valid_duplicate",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "refine",
+        "csv",
+        "share"
+      ]
+    },
+    {
+      "name": "invalid_context",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "history",
+        "csv",
+        "share"
+      ]
+    },
+    {
+      "name": "label_over_limit",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "history",
+            "label": "history",
+            "icon": "⟲",
+            "title": "Version history",
+            "context": "live_canvas"
+          },
+          {
+            "kind": "csv",
+            "label": "csv",
+            "icon": "⬇",
+            "title": "Download the full table as CSV",
+            "context": "owned_chat"
+          },
+          {
+            "kind": "share",
+            "label": "share",
+            "icon": "↗",
+            "title": "Create a revocable read-only share link",
+            "context": "owned_chat"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "history",
+        "csv",
+        "share"
+      ]
+    },
+    {
+      "name": "unicode_codepoint_boundary",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐",
+            "icon": "🪐🪐🪐🪐🪐🪐🪐🪐",
+            "title": "🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐",
+            "context": "live_canvas"
+          }
+        ]
+      },
+      "expected_kinds": [
+        "refine"
+      ]
+    },
+    {
+      "name": "empty_icon",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          }
+        ]
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "nonstring_title",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": 7,
+            "context": "live_canvas"
+          }
+        ]
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "extra_action_field",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": "refine",
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas",
+            "event": "delete_everything"
+          }
+        ]
+      },
+      "expected_kinds": []
+    },
+    {
+      "name": "nonstring_kind",
+      "metadata": {
+        "version": 1,
+        "actions": [
+          {
+            "kind": [
+              "refine"
+            ],
+            "label": "refine",
+            "icon": "✎",
+            "title": "Refine this component with an instruction",
+            "context": "live_canvas"
+          }
+        ]
+      },
+      "expected_kinds": []
+    }
+  ],
+  "versions": [
+    {
+      "name": "valid_metadata_only",
+      "versions": [
+        {
+          "version_no": 5,
+          "reason": "refine",
+          "created_at": "2026-09-12T00:00:00Z",
+          "title": "Earlier result",
+          "body": "not transport metadata"
+        }
+      ],
+      "expected": [
+        {
+          "version_no": 5,
+          "reason": "refine",
+          "created_at": "2026-09-12T00:00:00Z",
+          "title": "Earlier result"
+        }
+      ]
+    },
+    {
+      "name": "invalid_numbers",
+      "versions": [
+        {
+          "version_no": true
+        },
+        {
+          "version_no": "1"
+        },
+        {
+          "version_no": 1.5
+        },
+        {
+          "version_no": 0
+        },
+        {
+          "version_no": 9007199254740992
+        }
+      ],
+      "expected": []
+    },
+    {
+      "name": "exact_integers",
+      "versions": [
+        {
+          "version_no": 1.0
+        },
+        {
+          "version_no": 9007199254740991
+        }
+      ],
+      "expected": [
+        {
+          "version_no": 1,
+          "reason": "",
+          "created_at": "",
+          "title": ""
+        },
+        {
+          "version_no": 9007199254740991,
+          "reason": "",
+          "created_at": "",
+          "title": ""
+        }
+      ]
+    },
+    {
+      "name": "first_five_rows_only",
+      "versions": [
+        null,
+        {},
+        "invalid",
+        {
+          "version_no": 2
+        },
+        {
+          "version_no": 1
+        },
+        {
+          "version_no": 3
+        }
+      ],
+      "expected": [
+        {
+          "version_no": 2,
+          "reason": "",
+          "created_at": "",
+          "title": ""
+        },
+        {
+          "version_no": 1,
+          "reason": "",
+          "created_at": "",
+          "title": ""
+        }
+      ]
+    },
+    {
+      "name": "bounded_plain_text",
+      "versions": [
+        {
+          "version_no": 1,
+          "reason": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "created_at": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "title": "🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐"
+        }
+      ],
+      "expected": [
+        {
+          "version_no": 1,
+          "reason": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "created_at": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "title": "🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐🪐"
+        }
+      ]
+    },
+    {
+      "name": "duplicate_versions",
+      "versions": [
+        {
+          "version_no": 2,
+          "title": "old"
+        },
+        {
+          "version_no": 2,
+          "title": "different"
+        },
+        {
+          "version_no": 1
+        }
+      ],
+      "expected": [
+        {
+          "version_no": 1,
+          "reason": "",
+          "created_at": "",
+          "title": ""
+        }
+      ]
+    },
+    {
+      "name": "malformed_duplicate_versions",
+      "versions": [
+        {
+          "version_no": 2,
+          "title": {}
+        },
+        {
+          "version_no": 2
+        },
+        {
+          "version_no": 1,
+          "title": false
+        }
+      ],
+      "expected": []
+    }
+  ]
+}

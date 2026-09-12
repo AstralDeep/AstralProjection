@@ -15,14 +15,18 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import com.personalailabs.astraldeep.app.AppConfig
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.theme.AstralMono
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import java.net.URI
+import java.util.Locale
 
 /**
  * A small, dependency-free Markdown renderer for Compose — the Android analogue of
@@ -97,15 +101,41 @@ private fun CodeBlock(code: String) {
     ) {
         Text(
             text = code,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = AstralMono,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(10.dp),
         )
     }
 }
 
-/** Parse inline **bold**, *italic*, _italic_, `code`, and [links](url) into an AnnotatedString. */
-fun inlineMarkdown(text: String): AnnotatedString =
+/** Web Markdown permits HTTP(S), mailto and leading-slash references only.
+ * Resolve the latter against the configured backend before handing a URL to
+ * Android; a device URI handler has no browser document origin. No credentials
+ * or request headers are attached to these browser/email links.
+ */
+internal fun markdownLinkUrl(
+    reference: String,
+    backendBaseUrl: String,
+): String? {
+    if (reference.isEmpty() || reference.any { it.isISOControl() || it.isWhitespace() || it == '\\' }) return null
+    val parsed = runCatching { URI(reference) }.getOrNull() ?: return null
+    if (reference.startsWith('/')) {
+        val base = backendBaseUrl.toHttpUrlOrNull() ?: return null
+        if (base.username.isNotEmpty() || base.password.isNotEmpty() || base.fragment != null) return null
+        return base.resolve(reference)?.toString()
+    }
+    return when (parsed.scheme?.lowercase(Locale.ROOT)) {
+        "http", "https" -> reference.takeIf { it.toHttpUrlOrNull() != null }
+        "mailto" -> reference.takeIf { parsed.isOpaque && parsed.rawSchemeSpecificPart.isNotBlank() }
+        else -> null
+    }
+}
+
+/** Parse inline **bold**, *italic*, _italic_, `code`, and safe [links](url). */
+fun inlineMarkdown(
+    text: String,
+    backendBaseUrl: String = AppConfig.API_BASE,
+): AnnotatedString =
     buildAnnotatedString {
         var i = 0
         while (i < text.length) {
@@ -118,11 +148,15 @@ fun inlineMarkdown(text: String): AnnotatedString =
                     val paren = if (close > i && open < text.length && text[open] == '(') text.indexOf(')', open + 1) else -1
                     if (paren > open) {
                         val label = text.substring(i + 1, close)
-                        val url = text.substring(open + 1, paren)
-                        withLink(LinkAnnotation.Url(url)) {
-                            withStyle(SpanStyle(color = AstralColors.Cyan, textDecoration = TextDecoration.Underline)) {
-                                append(label)
+                        val url = markdownLinkUrl(text.substring(open + 1, paren), backendBaseUrl)
+                        if (url != null) {
+                            withLink(LinkAnnotation.Url(url)) {
+                                withStyle(SpanStyle(color = AstralColors.Cyan, textDecoration = TextDecoration.Underline)) {
+                                    append(label)
+                                }
                             }
+                        } else {
+                            append(label)
                         }
                         i = paren + 1
                     } else {
@@ -143,7 +177,7 @@ fun inlineMarkdown(text: String): AnnotatedString =
                 text[i] == '`' -> {
                     val end = text.indexOf('`', i + 1)
                     if (end >= 0) {
-                        withStyle(SpanStyle(fontFamily = FontFamily.Monospace)) { append(text.substring(i + 1, end)) }
+                        withStyle(SpanStyle(fontFamily = AstralMono)) { append(text.substring(i + 1, end)) }
                         i = end + 1
                     } else {
                         append(text[i])

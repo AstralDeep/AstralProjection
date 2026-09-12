@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT_PATH = resolve(ROOT, "backend/webrender/static/client.js");
+const CANVAS_EXPORT_PATH = resolve(ROOT, "backend/webrender/static/canvas-export.js");
 const MANIFEST_PATH = resolve(ROOT, "contracts/ui_protocol.json");
 const ISSUER = "https://identity.example/realms/astral";
 const SUBJECT = "continuity-user";
@@ -80,14 +81,29 @@ function htmlShell() {
     <header id="astral-topbar"><a id="logout" href="/auth/logout">Sign out</a></header>
     <button id="astral-newchat-btn" type="button">New chat</button>
     <button id="astral-chats-btn" type="button"></button>
+    <button id="astral-collapse-btn" type="button"></button>
+    <button id="astral-chat-toggle" type="button"></button>
+    <button id="astral-restore-chat-btn" type="button" hidden></button>
     <button id="astral-msgs-toggle" type="button"></button>
     <span id="astral-msgs-label"></span>
     <div id="astral-history"></div>
     <main>
-      <section id="astral-canvas"><div id="astral-canvas-empty">Empty</div></section>
+      <div id="astral-start-intro"></div>
+      <div id="astral-start-permission"></div>
       <div id="astral-chat"></div>
       <div id="astral-status"></div>
-      <form id="astral-form"><input id="astral-input"><button type="submit">Send</button></form>
+      <form id="astral-form"><textarea id="astral-input" rows="2"></textarea><button type="submit">Send</button></form>
+      <div id="astral-start-examples"></div>
+      <div id="astral-start-more"></div>
+      <section id="astral-canvas"><div id="astral-canvas-empty">Empty</div></section>
+      <div id="astral-attachments" class="hidden"></div>
+      <button id="astral-attach-btn" type="button"></button>
+      <input id="astral-attach-input" class="astral-file-upload" type="file" hidden>
+      <div id="astral-voice-controls"></div>
+      <div id="astral-voice-transcript"></div>
+      <div id="astral-voice-turn-notice"><span id="astral-voice-turn-notice-title"></span><span id="astral-voice-turn-notice-message"></span></div>
+      <button id="astral-bg-btn" type="button" aria-pressed="false"></button>
+      <div id="astral-slash-menu" class="hidden"></div>
       <div id="astral-modal"></div>
     </main>
   </body></html>`;
@@ -131,6 +147,7 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
         window.__socketEvents.push({
           frame,
           locatorAtSend: localStorage.getItem(window.__locatorKey),
+          viewAtSend: document.body.getAttribute("data-astral-view"),
         });
         // 066: the client gates action() sends behind the post-registration
         // rote_config verdict (socketReady + queue flush). Mirror the real
@@ -173,6 +190,8 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
       }));
     }
   }, { key: LOCATOR_KEY, chatId: CHAT_ID, shouldPersist: locator });
+  const exportSource = await readFile(CANVAS_EXPORT_PATH, "utf8");
+  await page.addScriptTag({ content: `${exportSource}\n//# sourceURL=https://candidate.example/static/canvas-export.js` });
   const source = await readFile(CLIENT_PATH, "utf8");
   await page.addScriptTag({ content: `${source}\n//# sourceURL=https://candidate.example/static/client.js` });
   await page.waitForFunction(() => window.__socketEvents.some((event) => event.frame.type === "register_ui"));
@@ -182,6 +201,73 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
 async function registration(page) {
   return page.evaluate(() => window.__socketEvents.find((event) => event.frame.type === "register_ui"));
 }
+
+test("floating conversation restores to the right without losing its draft", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await installHarness(page);
+  await page.locator("#astral-input").fill("Keep my draft");
+  await page.locator("#astral-collapse-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "collapsed");
+  await expect(page.locator("#astral-restore-chat-btn")).toBeVisible();
+  await page.locator("#astral-chat-toggle").click();
+  await expect(page.locator("body")).toHaveClass(/astral-chat-open/u);
+  await expect(page.locator("#astral-restore-chat-btn")).toBeVisible();
+  await page.locator("#astral-restore-chat-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "split");
+  await expect(page.locator("#astral-input")).toHaveValue("Keep my draft");
+  await expect(page.locator("#astral-input")).toBeFocused();
+  await expect(page.locator("#astral-restore-chat-btn")).toBeHidden();
+  await page.setViewportSize({ width: 768, height: 900 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "collapsed");
+  await expect(page.locator("#astral-restore-chat-btn")).toBeHidden();
+  await page.setViewportSize({ width: 393, height: 852 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "stacked");
+  await expect(page.locator("#astral-restore-chat-btn")).toBeHidden();
+});
+
+
+test("responsive conversation toggles reflect the visible transcript after resize and New chat", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await installHarness(page);
+  await page.addStyleTag({ path: resolve(ROOT, "backend/webrender/static/astral.css") });
+  await page.evaluate(() => {
+    document.querySelector("#astral-chat-toggle").classList.add("astral-chat-toggle");
+    document.querySelector("#astral-msgs-toggle").classList.add("astral-msgs-toggle");
+  });
+  await receive(page, snapshot((await registration(page)).frame));
+  const messages = page.locator("#astral-msgs-toggle");
+  const conversation = page.locator("#astral-chat-toggle");
+  const transcript = page.locator("#astral-chat");
+  await messages.click();
+  await expect(messages).toHaveAttribute("aria-expanded", "true");
+  await expect(transcript).toBeVisible();
+  await page.locator("#astral-input").fill("Preserve this draft\nAcross breakpoints");
+
+  await page.setViewportSize({ width: 900, height: 900 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "collapsed");
+  await expect(transcript).toBeHidden();
+  await expect(messages).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-label", "Show conversation");
+  await conversation.click();
+  await expect(conversation).toHaveAttribute("aria-expanded", "true");
+  await expect(transcript).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 900 });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "stacked");
+  await expect(transcript).toBeHidden();
+  await expect(messages).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-expanded", "false");
+  await expect(conversation).toHaveAttribute("aria-label", "Show conversation");
+  await expect(page.locator("#astral-input")).toHaveValue("Preserve this draft\nAcross breakpoints");
+  await messages.click();
+  await expect(messages).toHaveAttribute("aria-expanded", "true");
+  await expect(transcript).toBeVisible();
+  await page.getByRole("button", { name: "New chat" }).click();
+  await expect(messages).toHaveAttribute("aria-expanded", "false");
+  await expect(messages).toBeHidden();
+  await expect(transcript).toBeHidden();
+});
 
 
 async function receive(page, frame) {
@@ -877,6 +963,175 @@ test("explicit new chat clears the locator while socket loss does not", async ({
 });
 
 
+async function stageExistingFile(page, id = "old-draft-file", name = "old-draft.txt") {
+  await page.evaluate(({ attachmentId, filename }) => {
+    const button = document.createElement("button");
+    button.className = "astral-attach-existing";
+    button.dataset.attachmentId = attachmentId;
+    button.dataset.filename = filename;
+    document.body.append(button);
+    button.click();
+    button.remove();
+  }, { attachmentId: id, filename: name });
+}
+
+
+test("new chat clears its multiline draft and attachments while accepted background work survives", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+  const draft = "Unsent 088 draft\nKeep this second line.";
+  await page.locator("#astral-input").fill(draft);
+  await stageExistingFile(page);
+  await page.locator("#astral-bg-btn").click();
+  await receive(page, { type: "task_started", payload: {
+    task_id: OPERATION_A, chat_id: CHAT_ID, title: "Already accepted work",
+  } });
+  // Authentication recovery for the same owner must preserve the whole draft.
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2);
+  await expect(page.locator("#astral-input")).toHaveValue(draft);
+  await expect(page.locator("#astral-attachments")).toContainText("old-draft.txt");
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "true");
+  await page.locator("#astral-attach-btn").click();
+  await expect(page.locator(".astral-attach-menu")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "New chat" }).click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-input")).toBeFocused();
+  await expect(page.locator("#astral-attachments")).toBeEmpty();
+  await expect(page.locator("#astral-attach-input")).toHaveValue("");
+  await expect(page.locator(".astral-attach-menu")).toHaveCount(0);
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#astral-bgtasks")).toContainText("Already accepted work");
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await page.locator("#astral-input").fill("Fresh request");
+  await page.locator("#astral-input").press("Enter");
+  const sent = await page.evaluate(() => window.__socketEvents.findLast((event) => event.frame.action === "chat_message").frame);
+  expect(sent.session_id).toBe(OTHER_CHAT_ID);
+  expect(sent.payload.message).toBe("Fresh request");
+  expect(sent.payload.attachments).toBeUndefined();
+  expect(sent.payload.async_mode).toBeUndefined();
+  await receive(page, { type: "task_completed", payload: {
+    task_id: OPERATION_A, chat_id: CHAT_ID, status: "completed", summary: "Earlier work completed",
+  } });
+  await expect(page.locator("#astral-bgtasks")).toBeEmpty();
+  await expect(page.locator("#astral-toasts")).toContainText("Earlier work completed");
+});
+
+
+for (const locator of [true, false]) {
+  test(`new chat cancels offline messages without dropping queued settings (locator=${locator})`, async ({ page }) => {
+    await installHarness(page, { locator });
+    await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+    await page.evaluate(() => window.__sockets.at(-1).close());
+    await stageExistingFile(page);
+    await page.locator("#astral-bg-btn").click();
+    await page.locator("#astral-input").fill("Old queued message");
+    await page.locator("#astral-input").press("Enter");
+    await expect(page.locator(".astral-bubble-queued")).toContainText("Old queued message");
+    await page.evaluate(() => {
+      const button = document.createElement("button");
+      button.className = "astral-action";
+      button.dataset.action = "chrome_open";
+      button.dataset.payload = JSON.stringify({ surface: "settings" });
+      document.body.append(button);
+      button.click();
+      button.remove();
+    });
+    await page.getByRole("button", { name: "New chat" }).click();
+    await expect(page.locator("#astral-toasts")).toContainText("Queued messages cleared for the new chat.");
+    await page.clock.runFor(5000);
+    const actions = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "ui_event").map((event) => event.frame));
+    expect(actions.filter((frame) => frame.action === "chat_message")).toEqual([]);
+    expect(actions.filter((frame) => frame.action === "chrome_open")).toHaveLength(1);
+    expect(actions.filter((frame) => frame.action === "new_chat")).toHaveLength(1);
+    await expect(page.locator("#astral-chat")).not.toContainText("Old queued message");
+    await expect(page.locator("#astral-attachments")).toBeEmpty();
+    await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  });
+}
+
+
+test("new chat cancels the offline expiry callback without restoring the discarded draft", async ({ page }) => {
+  await installHarness(page);
+  await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+  await page.evaluate(() => {
+    window.fetch = () => new Promise(() => {}); // Keep reconnect pending beyond the queue deadline.
+    window.__sockets.at(-1).close();
+  });
+  await page.locator("#astral-input").fill("Discarded offline draft");
+  await page.locator("#astral-input").press("Enter");
+  await page.getByRole("button", { name: "New chat" }).click();
+  await page.clock.runFor(46000);
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-chat")).toBeEmpty();
+  await expect(page.locator("#astral-status")).not.toContainText("your message was not sent");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+test("ordinary same-owner reconnect still sends the queued text, attachment and background choice", async ({ page }) => {
+  await installHarness(page);
+  await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
+  await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await stageExistingFile(page);
+  await page.locator("#astral-bg-btn").click();
+  await page.locator("#astral-input").fill("Intended queued message");
+  await page.locator("#astral-input").press("Enter");
+  await page.clock.runFor(5000);
+  const sent = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.action === "chat_message").map((event) => event.frame));
+  expect(sent).toHaveLength(1);
+  expect(sent[0].session_id).toBe(CHAT_ID);
+  expect(sent[0].payload.message).toBe("Intended queued message");
+  expect(sent[0].payload.attachments).toEqual([{ attachment_id: "old-draft-file", filename: "old-draft.txt", category: "file" }]);
+  expect(sent[0].payload.async_mode).toBe(true);
+  await expect(page.locator(".astral-bubble-queued")).toHaveCount(0);
+});
+
+
+for (const outcome of ["success", "denial", "network_failure"]) {
+  test(`late upload ${outcome} cannot change the new chat composer`, async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => {
+      const original = window.fetch;
+      window.fetch = (url, options) => {
+        if (!String(url).endsWith("/api/upload")) return original(url, options);
+        return new Promise((resolve, reject) => {
+          window.__finishUpload = (result) => {
+            if (result === "network_failure") { reject(new Error("test failure")); return; }
+            resolve({ ok: result === "success", status: result === "success" ? 200 : 403,
+              json: async () => result === "success"
+                ? { attachment_id: "discarded-upload", parser_status: "preparing" }
+                : { detail: "Discarded upload denial" } });
+          };
+        });
+      };
+    });
+    await page.locator("#astral-attach-input").setInputFiles({
+      name: "discarded-upload.txt", mimeType: "text/plain", buffer: Buffer.from("synthetic fixture"),
+    });
+    await expect(page.locator("#astral-attachments")).toContainText("discarded-upload.txt");
+    await page.getByRole("button", { name: "New chat" }).click();
+    await page.locator("#astral-input").fill("Fresh draft\nSecond line");
+    await stageExistingFile(page, "fresh-file", "fresh-file.txt");
+    const currentStatus = await page.locator("#astral-status").textContent();
+    await page.evaluate((result) => window.__finishUpload(result), outcome);
+    await expect(page.locator("#astral-input")).toHaveValue("Fresh draft\nSecond line");
+    await expect(page.locator("#astral-attachments .astral-chip")).toHaveCount(1);
+    await expect(page.locator("#astral-attachments")).toContainText("fresh-file.txt");
+    await expect(page.locator("#astral-attachments")).not.toContainText("discarded-upload");
+    await expect(page.locator("#astral-status")).toHaveText(currentStatus);
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  });
+}
+
+
 test("sign-out and confirmed deletion are definitive locator clears", async ({ page }) => {
   await installHarness(page);
   await receive(page, { type: "chat_deleted", chat_id: OTHER_CHAT_ID });
@@ -915,6 +1170,165 @@ test("authenticated account switch clears only the previous account locator", as
 });
 
 
+test("sign-out erases private drafts and staged files even when navigation fails", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, { type: "task_completed", payload: { summary: "Private task result" } });
+  await page.locator("#astral-input").fill("Private draft for the first owner");
+  await page.evaluate(() => {
+    document.querySelector("#astral-history").textContent = "Private history";
+    document.querySelector("#astral-voice-transcript").textContent = "Private spoken request";
+    document.querySelector("#astral-voice-turn-notice-message").textContent = "Private voice error";
+    const tour = document.createElement("div");
+    tour.id = "astral-tour-card";
+    tour.textContent = "Private tour detail";
+    document.body.append(tour);
+    const button = document.createElement("button");
+    button.className = "astral-attach-existing";
+    button.setAttribute("data-attachment-id", "owner-a-file");
+    button.setAttribute("data-filename", "owner-a-private.txt");
+    document.body.append(button);
+    button.click();
+    button.remove();
+  });
+  await page.locator("#astral-bg-btn").click();
+  await expect(page.locator("#astral-attachments")).toContainText("owner-a-private.txt");
+  await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+  await page.locator("#logout").click();
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-attachments")).toBeEmpty();
+  await expect(page.locator("#astral-history")).toBeEmpty();
+  await expect(page.locator("#astral-bg-btn")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.locator("#astral-voice-transcript")).toBeEmpty();
+  await expect(page.locator("#astral-voice-turn-notice-message")).toBeEmpty();
+  await expect(page.locator("#astral-tour-card")).toHaveCount(0);
+  await expect(page.locator("#astral-toasts")).toBeEmpty();
+  await receive(page, { type: "task_completed", payload: { summary: "Late private result" } });
+  await receive(page, { type: "auth_required" });
+  await expect(page.locator("#astral-toasts")).toBeEmpty();
+  expect(await page.evaluate(() => window.__sockets.length)).toBe(1);
+});
+
+
+test("replaced sockets cannot deliver old-owner content or disconnect the current socket", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sockets.at(-1).close();
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await page.waitForFunction(() => window.__sockets.length === 2 && window.__sockets.at(-1).readyState === 1);
+  await page.evaluate(() => {
+    window.__sockets[0].receive({ type: "task_completed", payload: { summary: "Old owner late result" } });
+    window.__sockets[0].onerror();
+  });
+  await expect(page.locator("body")).not.toContainText("Old owner late result");
+  expect(await page.evaluate(() => window.__sockets.at(-1).readyState)).toBe(1);
+});
+
+
+test("owner change erases a draft while same-owner authentication recovery retains it", async ({ page }) => {
+  await installHarness(page);
+  await page.locator("#astral-input").fill("Private draft for owner A");
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2);
+  await expect(page.locator("#astral-input")).toHaveValue("Private draft for owner A");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  // Reconnect obtains the next authenticated owner's identity.
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  await expect(page.locator("#astral-input")).toHaveValue("");
+});
+
+
+test("queued owner-A work is discarded before owner-B registration can flush it", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sockets.at(-1).close();
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await page.locator("#astral-input").fill("Owner A queued private request");
+  await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  const leaked = await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )));
+  expect(leaked).toEqual([]);
+  await expect(page.locator("#astral-chat")).not.toContainText("Owner A queued private request");
+});
+
+
+for (const outcome of ["success", "denial", "network_failure"]) {
+  test(`late owner-A upload ${outcome} cannot restore private UI after sign-out`, async ({ page }) => {
+    await installHarness(page);
+    await page.evaluate(() => {
+      const original = window.fetch;
+      window.fetch = (url, options) => {
+        if (!String(url).endsWith("/api/upload")) return original(url, options);
+        return new Promise((resolve, reject) => {
+          window.__finishUpload = (result) => {
+            if (result === "network_failure") { reject(new Error("test failure")); return; }
+            resolve({ ok: result === "success", status: result === "success" ? 200 : 403,
+              json: async () => result === "success"
+                ? { attachment_id: "owner-a-upload", parser_status: "preparing" }
+                : { detail: "Private upload denial" } });
+          };
+        });
+      };
+    });
+    await page.locator("#astral-attach-input").setInputFiles({
+      name: "owner-a-private.txt", mimeType: "text/plain", buffer: Buffer.from("synthetic fixture"),
+    });
+    await expect(page.locator("#astral-attachments")).toContainText("owner-a-private.txt");
+    await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+    await page.locator("#logout").click();
+    await page.evaluate((result) => window.__finishUpload(result), outcome);
+    await expect(page.locator("#astral-attachments")).toBeEmpty();
+    await expect(page.locator("#astral-status")).toBeEmpty();
+    await expect(page.locator("#astral-attach-input")).toHaveValue("");
+  });
+}
+
+
+test("late old-owner command discovery cannot replace the new owner's commands", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ oldToken, newToken }) => {
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (!String(url).endsWith("/api/chrome/commands")) return original(url, options);
+      if (options.headers.Authorization === `Bearer ${oldToken}`) {
+        return new Promise((resolve) => {
+          window.__finishOldCommands = () => resolve({ ok: true, json: async () => ({
+            commands: [{ name: "/private-a", desc: "Owner A private guidance", mine: true }],
+          }) });
+        });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({
+        commands: [{ name: "/private-b", desc: "Owner B guidance", mine: true }],
+      }) });
+    };
+    window.__astralResetCommands(oldToken);
+    window.__sessionToken = newToken;
+    window.__sessionSubject = "other-user";
+  }, { oldToken: TOKEN, newToken: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  await page.evaluate(() => window.__finishOldCommands());
+  await page.locator("#astral-input").fill("/private");
+  await expect(page.locator("#astral-slash-menu")).toContainText("/private-b");
+  await expect(page.locator("#astral-slash-menu")).not.toContainText("/private-a");
+});
+
+
 test("unknown locator schema is retained but never interpreted", async ({ page }) => {
   await page.addInitScript(({ key, chatId }) => {
     localStorage.setItem(key, JSON.stringify({
@@ -939,3 +1353,470 @@ test("URL-selected chat is persisted before its first registration", async ({ pa
   expect(event.frame.resume.active_chat_id).toBe(OTHER_CHAT_ID);
   expect(JSON.parse(event.locatorAtSend).chat_id).toBe(OTHER_CHAT_ID);
 });
+
+
+test("authentication recovery to a different owner replaces the socket before accepting more content", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.some((event) => (
+    event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
+  )));
+  await page.evaluate(() => {
+    window.__sockets[0].receive({ type: "notification", title: "Owner A private title", body: "Private detail" });
+    window.__sockets[0].receive({ type: "chrome_render", region: "modal", html: "Owner A private modal" });
+  });
+  await expect(page.locator("body")).not.toContainText("Owner A private");
+  expect(await page.evaluate(() => window.__sockets.length)).toBe(2);
+  expect(await page.evaluate(() => window.__sockets[0].readyState)).toBe(3);
+  const registrations = await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui"));
+  expect(registrations).toHaveLength(2);
+  expect(registrations[1].frame.connection_generation).not.toBe(registrations[0].frame.connection_generation);
+});
+
+
+async function installDeferredAccountEffect(page, effect) {
+  const fonts = {};
+  if (effect === "export") {
+    const { frame } = await registration(page);
+    await receive(page, snapshot(frame));
+    for (const name of ["inter-latin.woff2", "jetbrains-mono-latin.woff2"]) {
+      fonts[name] = (await readFile(resolve(ROOT, "backend/webrender/static/fonts", name))).toString("base64");
+    }
+  }
+  await page.evaluate(({ kind, fonts }) => {
+    window.__effectDownloads = [];
+    window.__effectClipboard = [];
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function () {
+      if (this.download) { window.__effectDownloads.push(this.download); return; }
+      click.call(this);
+    };
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+      writeText: async (text) => { window.__effectClipboard.push(text); },
+    } });
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (String(url).includes("/static/fonts/")) {
+        const name = String(url).split("/").at(-1);
+        return Promise.resolve(new Response(Uint8Array.from(atob(fonts[name]), char => char.charCodeAt(0))));
+      }
+      if (!String(url).includes(kind === "export" ? "/api/export/" : "/api/share")) return original(url, options);
+      window.__effectAuthorization = options.headers.Authorization;
+      return new Promise((resolve, reject) => {
+        window.__finishAccountEffect = (result) => {
+          if (result === "network_failure") { reject(new Error("Private effect error")); return; }
+          resolve({ ok: result === "success", status: result === "success" ? 200 : 403,
+            headers: new Headers({ "X-Astral-Render-Revision": new URL(url).searchParams.get("render_revision") || "0" }),
+            blob: async () => new Blob(["Private export content"]),
+            json: async () => result === "success"
+              ? { share_url: "https://candidate.example/s/private-owner-a" }
+              : { detail: "Private share denial" },
+          });
+        };
+      });
+    };
+    const button = document.createElement("button");
+    button.className = kind === "export" ? "astral-export-canvas" : "astral-share-btn";
+    button.setAttribute("data-share-scope", "canvas");
+    document.body.append(button);
+    button.click();
+    button.remove();
+  }, { kind: effect, fonts });
+  expect(await page.evaluate(() => window.__effectAuthorization)).toBe(`Bearer ${TOKEN}`);
+}
+
+
+for (const effect of ["export", "share"]) {
+  for (const outcome of ["success", "denial", "network_failure"]) {
+    test(`late owner-A ${effect} ${outcome} cannot download, copy or report private content after sign-out`, async ({ page }) => {
+      await installHarness(page);
+      await installDeferredAccountEffect(page, effect);
+      await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+      await page.locator("#logout").click();
+      await page.evaluate(async (result) => {
+        window.__finishAccountEffect(result);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }, outcome);
+      expect(await page.evaluate(() => window.__effectDownloads)).toEqual([]);
+      expect(await page.evaluate(() => window.__effectClipboard)).toEqual([]);
+      await expect(page.locator("#astral-toasts .astral-toast")).toHaveCount(0);
+    });
+  }
+
+  test(`same-owner ${effect} completion remains available`, async ({ page }) => {
+    await installHarness(page);
+    await installDeferredAccountEffect(page, effect);
+    await page.evaluate(async () => {
+      window.__finishAccountEffect("success");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await expect.poll(() => page.evaluate((kind) => (
+      kind === "export" ? window.__effectDownloads.length : window.__effectClipboard.length
+    ), effect)).toBe(1);
+  });
+}
+
+
+for (const outcome of ["success", "failure"]) {
+  test(`a share clipboard ${outcome} after sign-out cannot restore a private toast`, async ({ page }) => {
+    await installHarness(page);
+    await installDeferredAccountEffect(page, "share");
+    await page.evaluate(() => {
+      navigator.clipboard.writeText = () => new Promise((resolve, reject) => {
+        window.__finishClipboard = (result) => result === "success" ? resolve() : reject(new Error("Clipboard denied"));
+      });
+      window.__finishAccountEffect("success");
+    });
+    await page.waitForFunction(() => typeof window.__finishClipboard === "function");
+    await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+    await page.locator("#logout").click();
+    await page.evaluate(async (result) => {
+      window.__finishClipboard(result);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }, outcome);
+    await expect(page.locator("#astral-toasts .astral-toast")).toHaveCount(0);
+  });
+}
+
+
+test("a late session refresh cannot restore credentials or reconnect after sign-out", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    const original = window.fetch;
+    window.fetch = (url, options) => {
+      if (!String(url).endsWith("/auth/session")) return original(url, options);
+      return new Promise((resolve) => {
+        window.__finishSession = () => resolve({ json: async () => ({ authenticated: true, access_token: token }) });
+      });
+    };
+  }, { token: TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => typeof window.__finishSession === "function");
+  await page.locator("#logout").evaluate((link) => link.addEventListener("click", (event) => event.preventDefault()));
+  await page.locator("#logout").click();
+  await page.evaluate(async () => {
+    window.__finishSession();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  expect(await page.evaluate(() => window.__ASTRAL_TOKEN__)).toBe("");
+  expect(await page.evaluate(() => window.__sockets.length)).toBe(1);
+  expect(await page.evaluate(() => window.__sockets[0].readyState)).toBe(3);
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length)).toBe(1);
+});
+
+
+test("a fresh empty conversation stays centered through welcome rendering and same-owner recovery", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await receive(page, { type: "ui_render", target: "canvas", html:
+    '<div class="dynamic-renderer"><section data-welcome="intro">How can I help?</section>'
+    + '<div data-welcome="examples"><button>Research brief</button></div>'
+    + '<div data-welcome="permission"><button>Enable recommended agents</button></div></div>' });
+  await page.locator("#astral-input").fill("A draft that has not been sent");
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length === 2);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await expect(page.locator("#astral-input")).toHaveValue("A draft that has not been sent");
+});
+
+
+test("an existing conversation selects work before its first registration", async ({ page }) => {
+  await installHarness(page);
+  expect((await registration(page)).viewAtSend).toBe("work");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+});
+
+
+test("ordinary first Send reveals work immediately and new chat returns to start", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("A normal first request");
+  await page.locator("#astral-input").press("Enter");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  const sent = await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )));
+  expect(sent).toHaveLength(1);
+  expect(sent[0].viewAtSend).toBe("work");
+  expect(sent[0].frame.payload.message).toBe("A normal first request");
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+test("a first offline Send reveals its queued conversation immediately", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.evaluate(() => window.__sockets.at(-1).close());
+  await page.locator("#astral-input").fill("Queued first request");
+  await page.locator("#astral-input").press("Enter");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  await expect(page.locator("#astral-chat")).toContainText("Queued first request");
+});
+
+
+for (const target of ["canvas", "chat"]) {
+  test(`actual ${target} content reveals work without a welcome identifier or local Send`, async ({ page }) => {
+    await installHarness(page, { locator: false });
+    await receive(page, { type: "ui_render", target: "canvas", html: '<div class="dynamic-renderer"></div>', components: [] });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+    await receive(page, { type: "ui_render", target, html: "<p>A real response</p>" });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+    await receive(page, { type: "ui_render", target: "canvas", html: "", components: [] });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  });
+}
+
+
+for (const width of [1280, 850, 390]) {
+  test(`history remains reachable from the centered start view at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await installHarness(page, { locator: false });
+    await receive(page, { type: "ui_render", target: "history", html: "<button>Previous conversation</button>" });
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+    await page.locator("#astral-chats-btn").click();
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+    await expect(page.locator("body")).toHaveClass(/astral-history-open/);
+    if (width === 850) await expect(page.locator("body")).toHaveClass(/astral-chat-open/);
+    await expect(page.locator("#astral-history")).toContainText("Previous conversation");
+  });
+}
+
+
+test("owner change returns to start when the new owner has no saved conversation", async ({ page }) => {
+  await installHarness(page);
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+test("textarea Shift+Enter creates a newline and Enter submits the full prompt", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("First line");
+  await page.locator("#astral-input").press("Shift+Enter");
+  await page.locator("#astral-input").pressSequentially("Second line");
+  await expect(page.locator("#astral-input")).toHaveValue("First line\nSecond line");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await page.locator("#astral-input").press("Enter");
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  const messages = await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )).map((event) => event.frame.payload.message));
+  expect(messages).toEqual(["First line\nSecond line"]);
+});
+
+
+test("IME Enter and Enter in another textarea never send the composer", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("Still composing");
+  await page.locator("#astral-input").dispatchEvent("keydown", { key: "Enter", isComposing: true });
+  await page.locator("#astral-input").dispatchEvent("keydown", { key: "Enter", keyCode: 229 });
+  await page.evaluate(() => {
+    const field = document.createElement("textarea");
+    field.id = "other-field";
+    document.body.append(field);
+  });
+  await page.locator("#other-field").fill("Other form");
+  await page.locator("#other-field").press("Enter");
+  await expect(page.locator("#astral-input")).toHaveValue("Still composing");
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )).length)).toBe(0);
+});
+
+
+test("textarea slash discovery selection, Escape and New chat remain usable", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("/help");
+  await expect(page.locator("#astral-slash-menu")).not.toHaveClass(/hidden/);
+  await page.locator("#astral-slash-menu button").first().dispatchEvent("mousedown");
+  await expect(page.locator("#astral-input")).toHaveValue("/help ");
+  await page.locator("#astral-input").fill("/help");
+  await page.locator("#astral-input").press("Escape");
+  await expect(page.locator("#astral-slash-menu")).toHaveClass(/hidden/);
+  await page.locator("#astral-input").fill("/help");
+  await expect(page.locator("#astral-slash-menu")).not.toHaveClass(/hidden/);
+  // Programmatic activation proves reset, independently of the delayed blur cleanup.
+  await page.locator("#astral-newchat-btn").evaluate((button) => button.click());
+  await expect(page.locator("#astral-input")).toHaveValue("");
+  await expect(page.locator("#astral-slash-menu")).toBeEmpty();
+  await expect(page.locator("#astral-slash-menu")).toHaveClass(/hidden/);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+});
+
+
+function welcomeHtml({ wrapped = true, permission = true, title = "How can I help?" } = {}) {
+  const content = [
+    ["intro", `<h2 data-welcome="intro">${title}</h2>`],
+    ...(permission ? [["permission", '<section data-welcome="permission"><button>Enable recommended agents</button></section>']] : []),
+    ["examples", '<div data-welcome="examples"><button id="welcome-example" class="astral-action" data-action="chat_message" data-payload=\'{"message":"A welcome example"}\'>Research brief</button></div>'],
+    ["more", '<details data-welcome="more"><summary>More examples</summary><button>Another example</button></details>'],
+  ];
+  return wrapped
+    ? '<div class="dynamic-renderer">' + content.map(([role, html]) => (
+      `<section class="astral-component" data-component-id="wel_${role}">${html}</section>`
+    )).join("") + "</div>"
+    : content.map(([, html]) => html).join("");
+}
+
+
+test("welcome slots adopt exact server nodes and preserve the mounted composer and voice controls", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("Unsent draft");
+  await page.evaluate((html) => {
+    window.__composerNode = document.getElementById("astral-form");
+    window.__inputNode = document.getElementById("astral-input");
+    window.__voiceNode = document.getElementById("astral-voice-controls");
+    window.__voiceControlNode = window.__voiceNode.firstElementChild;
+    window.__sockets.at(-1).receive({ type: "ui_render", target: "canvas", html });
+    window.__welcomeIntroNode = document.querySelector('#astral-canvas [data-component-id="wel_intro"]');
+  }, welcomeHtml());
+  await expect(page.locator("#astral-start-intro")).toContainText("How can I help?");
+  expect(await page.evaluate(() => (
+    document.getElementById("astral-start-intro").firstElementChild === window.__welcomeIntroNode
+    && document.getElementById("astral-form") === window.__composerNode
+    && document.getElementById("astral-input") === window.__inputNode
+    && document.getElementById("astral-voice-controls") === window.__voiceNode
+    && window.__voiceNode.firstElementChild === window.__voiceControlNode
+  ))).toBe(true);
+  await expect(page.locator("#astral-input")).toHaveValue("Unsent draft");
+  await expect(page.locator("#astral-canvas [data-welcome]")).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await page.locator("#astral-input").focus();
+  await page.keyboard.press("Tab");
+  await expect(page.locator('#astral-form button[type="submit"]')).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#welcome-example")).toBeFocused();
+});
+
+
+test("a repeated legacy welcome replaces each slot and removes obsolete permission content", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+  await expect(page.locator("#astral-start-permission")).toContainText("Enable recommended agents");
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml({ wrapped: false, permission: false, title: "Welcome again" }) });
+  await expect(page.locator("#astral-start-intro")).toHaveText("Welcome again");
+  await expect(page.locator("#astral-start-permission")).toBeEmpty();
+  await expect(page.locator('[data-welcome="examples"]')).toHaveCount(1);
+  await expect(page.locator('[data-welcome="more"]')).toHaveCount(1);
+  await page.locator("#welcome-example").click();
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => (
+    event.frame.type === "ui_event" && event.frame.action === "chat_message"
+  )).map((event) => event.frame.payload.message))).toEqual(["A welcome example"]);
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+});
+
+
+test("new chat receives a fresh welcome in the same slots and account change clears them", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+  await page.locator("#welcome-example").click();
+  await page.locator("#astral-newchat-btn").click();
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml({ title: "A new start" }) });
+  // Deep sends the fresh welcome before assigning the empty chat's identity.
+  await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+  await expect(page.locator("#astral-start-intro")).toHaveText("A new start");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await page.evaluate(({ token }) => {
+    window.__sessionToken = token;
+    window.__sessionSubject = "other-user";
+  }, { token: OTHER_TOKEN });
+  await receive(page, { type: "auth_required" });
+  await page.waitForFunction(() => window.__sockets.length === 2);
+  await expect(page.locator('[id^="astral-start-"]')).toHaveCount(4);
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+});
+
+
+for (const rendering of ["workspace", "legacy"]) {
+  test(`mobile New chat retains every welcome slot before tablet re-adaptation (${rendering})`, async ({ page }) => {
+    // These exact HTML frames come from the real ROTE/renderer pipeline; the
+    // Python welcome-container test checks them against the shared source fixture.
+    const frames = JSON.parse(await readFile(resolve(ROOT, "tooling/web-ci/fixtures/welcome-rendering-088.json"), "utf8"));
+    await page.setViewportSize({ width: 390, height: 900 });
+    await installHarness(page);
+    await receive(page, snapshot((await registration(page)).frame, {
+      canvas: { target: "canvas", components: [] },
+    }));
+    await page.locator("#astral-msgs-toggle").click();
+    await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+    await page.locator("#astral-newchat-btn").click();
+    await receive(page, { type: "ui_render", target: "canvas", html: frames.mobile[rendering] });
+    await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
+
+    async function expectCompleteWelcome() {
+      await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+      await expect(page.locator("#astral-start-intro")).toContainText("How can I help?");
+      await expect(page.locator("#astral-start-permission")).toContainText("Agents are off for this account");
+      await expect(page.locator('#astral-start-examples [data-action="chat_message"]')).toHaveCount(3);
+      await expect(page.locator("#astral-start-more")).toContainText("More examples");
+      await expect(page.locator('#astral-start-more [data-action="chat_message"]')).toHaveCount(3);
+      await expect(page.locator('#astral-canvas [data-action="chat_message"]')).toHaveCount(0);
+      await expect(page.locator("#astral-input")).toHaveValue("");
+    }
+    await expectCompleteWelcome();
+    // Both widths use the stacked shell, but ROTE changes mobile -> tablet.
+    // The capability update follows the New chat response under the normal lane.
+    await page.setViewportSize({ width: 694, height: 900 });
+    await receive(page, { type: "rote_config", device_profile: { device_type: "tablet" } });
+    await receive(page, { type: "ui_update", html: frames.tablet.legacy });
+    await expectCompleteWelcome();
+    await page.locator("#astral-newchat-btn").click();
+    await receive(page, { type: "ui_render", target: "canvas", html: frames.tablet[rendering] });
+    await receive(page, { type: "chat_created", payload: { chat_id: CHAT_ID } });
+    await expectCompleteWelcome();
+  });
+}
+
+
+test("late welcome cannot replace work content or repopulate the start slots", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: "<p>Current work result</p>" });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+  await expect(page.locator("#astral-canvas")).toHaveText("Current work result");
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+});
+
+
+test("unknown or nested welcome-like markers remain ordinary canvas content", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html:
+    '<div class="dynamic-renderer"><section class="astral-component" data-component-id="saved-widget">'
+    + '<div data-welcome="intro">Saved component content</div></section>'
+    + '<p data-welcome="unrecognized">Ordinary output</p></div>' });
+  await expect(page.locator("#astral-canvas")).toContainText("Saved component content");
+  await expect(page.locator("#astral-canvas")).toContainText("Ordinary output");
+  await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+});
+
+
+for (const update of ["append", "upsert"]) {
+  test(`a partial welcome ${update} preserves the other slots and identity removal works`, async ({ page }) => {
+    await installHarness(page, { locator: false });
+    await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
+    const html = '<section class="astral-component" data-component-id="wel_intro"><h2 data-welcome="intro">Updated heading</h2></section>';
+    await receive(page, update === "append"
+      ? { type: "ui_append", html }
+      : { type: "ui_upsert", ops: [{ op: "replace", component_id: "wel_intro", html }] });
+    await expect(page.locator("#astral-start-intro")).toHaveText("Updated heading");
+    await expect(page.locator("#astral-start-permission")).toContainText("Enable recommended agents");
+    await expect(page.locator("#astral-start-examples")).toContainText("Research brief");
+    await expect(page.locator("#astral-start-more")).toContainText("More examples");
+    await receive(page, { type: "ui_upsert", ops: [{ op: "remove", component_id: "wel_permission" }] });
+    await expect(page.locator("#astral-start-permission")).toBeEmpty();
+    await expect(page.locator("#astral-start-intro")).toHaveText("Updated heading");
+    await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  });
+}

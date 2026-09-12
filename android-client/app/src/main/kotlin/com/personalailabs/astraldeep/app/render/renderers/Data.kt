@@ -1,10 +1,13 @@
 package com.personalailabs.astraldeep.app.render.renderers
 
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Tab
@@ -18,11 +21,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Emit
+import com.personalailabs.astraldeep.app.render.LocalCanvasCapture
 import com.personalailabs.astraldeep.app.render.Renderer
+import com.personalailabs.astraldeep.app.ui.HistoryEmpty
+import com.personalailabs.astraldeep.app.ui.HistoryHeader
+import com.personalailabs.astraldeep.app.ui.HistoryRow
+import com.personalailabs.astraldeep.core.protocol.ChatSummary
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -37,8 +48,8 @@ fun Renderer.registerDataRenderers(): Renderer =
     apply {
         register("list") { c -> ListPrimitive(c) { render(it) } }
         register("table") { c -> TablePrimitive(c, emit) }
-        register("tabs") { c -> TabsPrimitive(c) { render(it) } }
-        register("chat_history") { c -> ChatHistoryPrimitive(c) }
+        register("tabs") { c -> TabsPrimitive(c) { child, path -> render(child, path) } }
+        register("chat_history") { c -> ChatHistoryPrimitive(c, emit) }
         register("skeleton") { c -> SkeletonPrimitive(c) }
     }
 
@@ -71,19 +82,46 @@ private fun TablePrimitive(
     val total = c.int("total_rows")
     val size = c.int("page_size")
     val offset = c.int("page_offset") ?: 0
-    Column(modifier = Modifier.fillMaxWidth()) {
-        if (headers.isNotEmpty()) {
-            Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                headers.forEach { h ->
-                    Text(h, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.labelMedium)
-                }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val bodyStyle = MaterialTheme.typography.bodySmall
+    val headerStyle = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+    val columnCount = maxOf(headers.size, rows.maxOfOrNull { it.size } ?: 0)
+    val widths =
+        remember(headers, rows, density, bodyStyle, headerStyle) {
+            List(columnCount) { index ->
+                val texts = rows.map { it.getOrNull(index).orEmpty() }
+                val bodyWidth = texts.maxOfOrNull { measurer.measure(it, style = bodyStyle).size.width } ?: 0
+                val headerWidth = measurer.measure(headers.getOrNull(index).orEmpty(), style = headerStyle).size.width
+                with(density) { maxOf(bodyWidth, headerWidth).toDp() }.coerceAtLeast(72.dp) + 24.dp
             }
-            HorizontalDivider()
         }
-        rows.forEach { row ->
-            Row(modifier = Modifier.padding(vertical = 4.dp)) {
-                row.forEach { cell ->
-                    Text(cell, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).testTag("table-scroll")) {
+            if (headers.isNotEmpty()) {
+                Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                    headers.forEachIndexed { index, h ->
+                        Text(
+                            h,
+                            modifier = Modifier.width(widths[index]).padding(horizontal = 12.dp),
+                            maxLines = 1,
+                            fontWeight = FontWeight.SemiBold,
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                    }
+                }
+                HorizontalDivider()
+            }
+            rows.forEach { row ->
+                Row(modifier = Modifier.padding(vertical = 4.dp)) {
+                    row.forEachIndexed { index, cell ->
+                        Text(
+                            cell,
+                            modifier = Modifier.width(widths[index]).padding(horizontal = 12.dp),
+                            maxLines = 1,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
                 }
             }
         }
@@ -141,36 +179,50 @@ private fun paginatePayload(
 @Composable
 private fun TabsPrimitive(
     c: Component,
-    renderChild: @Composable (Component) -> Unit,
+    renderChild: @Composable (Component, String?) -> Unit,
 ) {
     val tabs = c.arr("tabs")?.mapNotNull { it as? JsonObject } ?: emptyList()
     if (tabs.isEmpty()) return
-    var selected by remember { mutableIntStateOf(0) }
+    val capture = LocalCanvasCapture.current
+    var selected by remember(c.attributes) { mutableIntStateOf(capture?.registry?.node(capture.path)?.selected ?: 0) }
     Column {
         TabRow(selectedTabIndex = selected.coerceIn(0, tabs.size - 1)) {
             tabs.forEachIndexed { i, tab ->
                 Tab(
                     selected = i == selected,
-                    onClick = { selected = i },
+                    onClick = {
+                        selected = i
+                        capture?.registry?.select(capture.path, i)
+                    },
                     text = { Text((tab["label"] as? JsonPrimitive)?.contentOrNull ?: "Tab ${i + 1}") },
                 )
             }
         }
         val current = tabs.getOrNull(selected) ?: tabs.first()
         Column(modifier = Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Component.listFromJson(current["content"] as? JsonArray).forEach { renderChild(it) }
+            val key = if (current.containsKey("content")) "content" else "children"
+            Component.listFromJson(current[key] as? JsonArray).forEachIndexed { index, child ->
+                renderChild(child, capture?.let { "${it.path}/tabs/$selected/$key/$index" })
+            }
         }
     }
 }
 
 @Composable
-private fun ChatHistoryPrimitive(c: Component) {
-    val items = c.arr("items") ?: c.arr("messages")
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        items?.mapNotNull { it as? JsonObject }?.forEach { o ->
-            val role = (o["role"] as? JsonPrimitive)?.contentOrNull ?: ""
-            val content = (o["content"] as? JsonPrimitive)?.contentOrNull ?: ""
-            Text(text = if (role.isNotEmpty()) "$role: $content" else content, style = MaterialTheme.typography.bodySmall)
+private fun ChatHistoryPrimitive(
+    c: Component,
+    emit: Emit,
+) {
+    val items = c.arr("items").orEmpty().mapNotNull { (it as? JsonObject)?.let(ChatSummary::fromHistoryItem) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (items.isEmpty()) {
+            HistoryEmpty()
+        } else {
+            val title =
+                (c.attributes["title"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    ?.takeIf { it.isNotEmpty() } ?: "Recent chats"
+            HistoryHeader(title, items.size)
+            items.forEach { chat -> HistoryRow(chat) { emit.event("load_chat", buildJsonObject { put("chat_id", it) }) } }
         }
     }
 }

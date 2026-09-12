@@ -1,0 +1,148 @@
+{
+  "surface": "audit",
+  "title": "Audit log",
+  "components": [
+    {
+      "type": "param_picker",
+      "title": "Filter audit entries",
+      "description": "",
+      "fields": [
+        {
+          "name": "event_class",
+          "label": "Event class",
+          "kind": "select",
+          "default": "",
+          "options": [
+            ""
+          ]
+        },
+        {
+          "name": "outcome",
+          "label": "Outcome",
+          "kind": "select",
+          "default": "",
+          "options": [
+            "",
+            "success",
+            "failure",
+            "in_progress",
+            "interrupted"
+          ]
+        },
+        {
+          "name": "q",
+          "label": "Search",
+          "kind": "text",
+          "default": ""
+        },
+        {
+          "name": "from",
+          "label": "From (UTC)",
+          "kind": "text",
+          "default": "",
+          "help": "YYYY-MM-DD"
+        },
+        {
+          "name": "to",
+          "label": "Through (UTC)",
+          "kind": "text",
+          "default": "",
+          "help": "YYYY-MM-DD"
+        }
+      ],
+      "submit_label": "Apply",
+      "submit_action": "chrome_audit_page",
+      "submit_payload": {}
+    },
+    {
+      "type": "container",
+      "children": [
+        {
+          "type": "button",
+          "label": "Reset",
+          "action": "chrome_audit_page",
+          "payload": {
+            "fields": {}
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "All activity",
+          "action": "chrome_audit_page",
+          "payload": {
+            "fields": {}
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Failures",
+          "action": "chrome_audit_page",
+          "payload": {
+            "fields": {
+              "outcome": "failure"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Tool calls",
+          "action": "chrome_audit_page",
+          "payload": {
+            "fields": {
+              "event_class": "agent_tool_call"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Sign ins",
+          "action": "chrome_audit_page",
+          "payload": {
+            "fields": {
+              "event_class": "auth"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "direction": "row"
+    },
+    {
+      "type": "alert",
+      "message": "No audit entries match the current filters.",
+      "variant": "info"
+    }
+  ],
+  "theme": {
+    "name": "midnight",
+    "colors": {},
+    "color_scheme": "dark",
+    "contrast": "normal"
+  },
+  "layout": {
+    "mode": "standard",
+    "columns": 1,
+    "density": "comfortable",
+    "areas": []
+  },
+  "degradation": {
+    "active": false,
+    "reason": "",
+    "unsupported_components": [],
+    "fallback": "alert"
+  }
+}

@@ -1195,6 +1195,18 @@ class ConversationContinuityReducer:
         )
         self.overlay_frames.clear()
 
+    def retire_uncommitted_commit(self, request_generation: str) -> bool:
+        """Close a correlated, authoritatively ended attempt without replay reuse."""
+        request = self._request
+        if (
+            request is None or request.generation != request_generation
+            or request.purpose != "commit" or request.snapshot_applied
+        ):
+            return False
+        self._request = None
+        self.overlay_frames.clear()
+        return True
+
     def reduce_commit_ready(self, frame: dict[str, Any]) -> str:
         try:
             ready = ConversationCommitReady.from_dict(frame)
@@ -1210,6 +1222,12 @@ class ConversationContinuityReducer:
         identity = (ready.connection_generation, ready.request_generation)
         if identity in self._used_requests:
             return "reused_request_generation"
+        if (
+            self._request is not None
+            and self._request.purpose == "commit"
+            and not self._request.snapshot_applied
+        ):
+            return "commit_request_busy"
         try:
             self.open_request(
                 "commit",

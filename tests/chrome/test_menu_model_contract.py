@@ -39,7 +39,7 @@ def test_native_serialization_omits_web_only_tour_and_admin_group() -> None:
         byo_enabled=True,
         remote_enabled=True,
     )
-    assert payload["version"] == MODEL_VERSION == 1
+    assert payload["version"] == MODEL_VERSION == 2
     assert set(payload) == {"version", "topbar", "menu", "signout"}
     assert [group["key"] for group in payload["menu"]] == ["account", "help"]
     assert [item["key"] for item in payload["menu"][1]["items"]] == ["guide"]

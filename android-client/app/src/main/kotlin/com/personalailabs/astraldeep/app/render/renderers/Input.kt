@@ -37,7 +37,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -46,6 +45,7 @@ import com.personalailabs.astraldeep.app.render.Download
 import com.personalailabs.astraldeep.app.render.Emit
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.ThemeSink
+import com.personalailabs.astraldeep.app.ui.theme.AstralMono
 import com.personalailabs.astraldeep.app.ui.theme.channelSwatchOptions
 import com.personalailabs.astraldeep.app.ui.theme.hexToColor
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -553,7 +553,7 @@ private fun CodePrimitive(c: Component) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Text(
             text = c.str("content") ?: c.str("code").orEmpty(),
-            fontFamily = FontFamily.Monospace,
+            fontFamily = AstralMono,
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(12.dp),
         )

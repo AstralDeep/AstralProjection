@@ -29,12 +29,12 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.rest.AuditEvent
 import com.personalailabs.astraldeep.app.transport.ConnectionState
+import com.personalailabs.astraldeep.app.ui.theme.AstralMono
 import com.personalailabs.astraldeep.core.protocol.Agent
 import com.personalailabs.astraldeep.core.protocol.ChatSummary
 import com.personalailabs.astraldeep.core.protocol.Inbound
@@ -164,6 +164,7 @@ fun HistoryScreen(
     chats: List<ChatSummary>,
     loading: Boolean,
     onOpen: (String) -> Unit,
+    title: String = "Recent chats",
 ) {
     if (loading && chats.isEmpty()) {
         SkeletonList()
@@ -171,19 +172,13 @@ fun HistoryScreen(
     }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        items(chats, key = { it.id }) { chat ->
-            Card(modifier = Modifier.fillMaxWidth().clickable { onOpen(chat.id) }) {
-                Text(
-                    text = chat.title.ifBlank { "Untitled conversation" },
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(14.dp),
-                )
-            }
-        }
         if (chats.isEmpty()) {
-            item { Text("No conversations yet.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { HistoryEmpty() }
+        } else {
+            item { HistoryHeader(title, chats.size) }
+            itemsIndexed(chats, key = { index, chat -> "$index:${chat.id}" }) { _, chat -> HistoryRow(chat, onOpen) }
         }
     }
 }
@@ -225,7 +220,7 @@ private fun AuditCard(event: AuditEvent) {
             if (expanded) {
                 event.outcomeDetail?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 event.detail?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    Text(it, style = MaterialTheme.typography.bodySmall, fontFamily = AstralMono)
                 }
                 event.id?.let {
                     Text("id: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

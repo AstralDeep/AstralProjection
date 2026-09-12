@@ -14,6 +14,18 @@
             case providerUnavailable = "provider-unavailable"
             case clientWatchdog = "client-watchdog"
             case chatComposer = "chat-composer"
+            case workspaceStart = "workspace-start"
+            case workspaceCanvas = "workspace-canvas"
+            case workspaceChartScroll = "workspace-chart-scroll"
+            case workspaceStyles = "workspace-styles"
+            case workspaceRichResult = "workspace-rich-result"
+            case workspaceHistory = "workspace-history"
+            case workspaceActions = "workspace-actions"
+            case workspaceActionsHTTP = "workspace-actions-http"
+            case workspaceNavigation = "workspace-navigation"
+            case workspaceNavigationMandatory = "workspace-navigation-mandatory"
+            case componentActionsHTTP = "component-actions-http"
+            case componentTimelineHTTP = "component-timeline-http"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -33,12 +45,82 @@
             return Scenario(rawValue: arguments[flagIndex + 1])
         }
 
+        /// A real loopback HTTP peer lives in the UI-test runner. The app uses
+        /// normal bootstrap/Rest/capture/WebKit, with a synthetic memory-only
+        /// session. No URL or token is accepted from launch configuration.
+        @MainActor
+        static func workspaceActionsModel() -> AppModel? {
+            if let scenario = requestedScenario(),
+                [.workspaceNavigation, .workspaceNavigationMandatory].contains(scenario)
+            {
+                guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
+                    let defaults = UserDefaults(suiteName: "WorkspaceNavigationUITest.\(UUID().uuidString)")
+                else { preconditionFailure("Invalid workspace navigation UI-test configuration.") }
+                // This fixture never bootstraps, opens a socket, or loads a
+                // credential. Its model is selected before the default store.
+                defaults.set("http://127.0.0.1:1", forKey: "serverBase")
+                return AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+            }
+            if requestedScenario() == .workspaceRichResult {
+                guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
+                    let defaults = UserDefaults(suiteName: "WorkspaceComponentUITest.\(UUID().uuidString)")
+                else { preconditionFailure("Invalid component UI-test configuration.") }
+                return AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+            }
+            guard let scenario = requestedScenario(),
+                [.workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP].contains(scenario)
+            else { return nil }
+            let environment = ProcessInfo.processInfo.environment
+            guard environment["ASTRAL_UI_TESTING"] == "1",
+                let rawPort = environment["ASTRAL_UI_WORKSPACE_PORT"],
+                let port = UInt16(rawPort), port > 0, String(port) == rawPort,
+                let defaults = UserDefaults(suiteName: "WorkspaceActionsUITest.\(UUID().uuidString)")
+            else { preconditionFailure("Invalid workspace action UI-test loopback configuration.") }
+            defaults.set("http://127.0.0.1:\(port)", forKey: "serverBase")
+            let store = InMemoryTokenStore()
+            let token =
+                "fixture."
+                + Data(
+                    #"{"iss":"https://issuer.invalid","sub":"workspace-ui-fixture","name":"Workspace UI Fixture"}"#.utf8
+                )
+                .base64EncodedString() + ".fixture"
+            store.save(StoredTokens(from: TokenSet(accessToken: token, refreshToken: nil, expiresIn: 3600)))
+            return AppModel(
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                tokenStore: store, defaults: defaults)
+        }
+
         @MainActor
         static func install(_ scenario: Scenario, on model: AppModel) {
+            if [.workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP].contains(scenario) {
+                precondition(ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1")
+                Task { @MainActor in
+                    await model.bootstrap()
+                    installWorkspaceActionsHTTP(on: model)
+                    if scenario != .workspaceActionsHTTP {
+                        installComponentActions(on: model)
+                        if scenario == .componentTimelineHTTP {
+                            model.handleFrame(InboundFrame.parse(#"{"type":"workspace_timeline_mode","active":true}"#)!)
+                        }
+                    }
+                }
+                return
+            }
             model.signedIn = true
             model.accountName = "Release Verification"
             model.connected = true
             model.everConnected = true
+
+            if [.workspaceNavigation, .workspaceNavigationMandatory].contains(scenario) {
+                precondition(ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1")
+                installWorkspaceNavigation(on: model)
+                if scenario == .workspaceNavigationMandatory { model.handleFrame(firstLoginSurface) }
+                return
+            }
 
             switch scenario {
             case .continuitySeed, .continuityResume:
@@ -52,6 +134,59 @@
                 break
             }
 
+            if scenario == .workspaceStart {
+                installWorkspace(on: model)
+                return
+            }
+            if scenario == .workspaceChartScroll {
+                installWorkspaceCanvas(on: model)
+                model.canvas += (1...5).map { index in
+                    AstralComponent(
+                        type: "card",
+                        raw: .object([
+                            "title": .string("Before chart \(index)"),
+                            "content": .array([
+                                .object([
+                                    "type": .string("text"),
+                                    "content": .string(
+                                        "Synthetic visible content before the saved chart. Scroll to see both bars and the canvas footer."
+                                    ),
+                                ])
+                            ]),
+                        ]))
+                }
+                model.canvas +=
+                    InboundFrame.parse(
+                        ##"{"type":"ui_render","target":"canvas","components":[{"type":"card","title":"Below-fold Alpha vs Beta","content":[{"type":"plotly_chart","id":"scroll-chart","title":"Alpha vs Beta","data":[{"marker":{"color":"#6366F1"},"type":"bar","x":["Alpha","Beta"],"y":[2,5]}],"layout":{"xaxis":{"categoryorder":"category ascending","tickangle":-45,"type":"category","automargin":true},"autosize":true,"height":260,"margin":{"l":44,"r":12,"t":32,"b":60},"yaxis":{"automargin":true}},"config":{}}]},{"type":"text","content":"Complete chart footer"}]}"##
+                    )!.renderComponents
+                return
+            }
+            if scenario == .workspaceCanvas {
+                installWorkspaceCanvas(on: model)
+                return
+            }
+            if scenario == .workspaceHistory {
+                installWorkspaceHistory(on: model)
+                return
+            }
+            if scenario == .workspaceStyles {
+                installWorkspaceStyles(on: model)
+                return
+            }
+            if scenario == .workspaceRichResult {
+                installWorkspaceRichResult(on: model)
+                return
+            }
+            if scenario == .workspaceActions {
+                installWorkspaceStyles(on: model)
+                model.activeChatId = "11111111-1111-4111-8111-111111111111"
+                model.workspaceStarted = true
+                model.handleFrame(
+                    InboundFrame.parse(
+                        #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"},{"key":"share","kind":"workspace_action","label":"Share page","icon":"share","operation":"share_canvas","context":"live_canvas"},{"key":"pulse","kind":"action","label":"Pulse","icon":"sparkle","action":{"surface":"pulse"}},{"key":"timeline","kind":"action","label":"Timeline","icon":"history","action":{"surface":"workspace_timeline"}}],"signout":{"label":"Sign out"}}}"#
+                    )!)
+                return
+            }
             _ = model.beginConversationConnection(connectionGeneration)
 
             if scenario == .chatComposer {
@@ -162,7 +297,10 @@
                         errorMessage: "The provider is temporarily unavailable."))
             case .clientWatchdog:
                 break
-            case .chatComposer:
+            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceChartScroll, .workspaceStyles,
+                .workspaceHistory,
+                .workspaceActions, .workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP,
+                .workspaceRichResult, .workspaceNavigation, .workspaceNavigationMandatory:
                 break
             case .voiceComposer:
                 break
@@ -171,6 +309,215 @@
             case .continuitySeed, .continuityResume:
                 break
             }
+        }
+
+        @MainActor
+        private static func installWorkspaceActionsHTTP(on model: AppModel) {
+            precondition(model.signedIn, "Workspace UI fixture bootstrap failed.")
+            installWorkspace(on: model)
+            model.composerDraft = ""
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
+            model.canvas =
+                InboundFrame.parse(
+                    #"{"type":"ui_render","target":"canvas","components":[{"type":"text","component_id":"workspace-action-result","content":"Visible workspace action result","title":"PRIVATE_UNUSED_TITLE","_source_params":{"credential":"PRIVATE_UNUSED_VALUE"}}]}"#
+                )!.renderComponents
+            model.handleFrame(
+                InboundFrame.parse(
+                    #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"},{"key":"share","kind":"workspace_action","label":"Share page","icon":"share","operation":"share_canvas","context":"live_canvas"}],"signout":{"label":"Sign out"}}}"#
+                )!)
+        }
+
+        private static func componentMetadata(kinds: [ComponentActionKind]) -> JSONValue {
+            let icons: [ComponentActionKind: String] = [.refine: "✎", .history: "⟲", .csv: "⬇", .share: "↗"]
+            return .object([
+                "version": .number(1),
+                "actions": .array(
+                    kinds.map { kind in
+                        .object([
+                            "kind": .string(kind.rawValue), "label": .string(kind.rawValue),
+                            "icon": .string(icons[kind]!),
+                            "title": .string(kind == .history ? "Version history" : "Component \(kind.rawValue)"),
+                            "context": .string(kind.requiresLiveCanvas ? "live_canvas" : "owned_chat"),
+                        ])
+                    }),
+            ])
+        }
+
+        @MainActor
+        private static func installComponentActions(on model: AppModel) {
+            model.canvas = [
+                AstralComponent(
+                    type: "table",
+                    raw: .object([
+                        "type": .string("table"), "component_id": .string("component-table"),
+                        "title": .string("Component action result"), "provenance": .string("estimated"),
+                        "headers": .array([.string("Label"), .string("Value")]),
+                        "rows": .array([.array([.string("Alpha"), .number(2)])]),
+                        "component_chrome": componentMetadata(kinds: ComponentActionKind.allCases),
+                        "versions": .array([
+                            .object([
+                                "version_no": .number(2), "reason": .string("refine"),
+                                "created_at": .string("2026-09-12T00:00:00Z"), "title": .string("Earlier result"),
+                            ])
+                        ]),
+                    ])),
+                AstralComponent(
+                    type: "text",
+                    raw: .object([
+                        "type": .string("text"), "component_id": .string("component-empty"),
+                        "content": .string("Unrefined result"), "provenance": .string("grounded"),
+                        "component_chrome": componentMetadata(kinds: [.history]),
+                    ])),
+            ]
+            model.composerDraft = "Draft survives component actions"
+        }
+
+        @MainActor
+        private static func installWorkspace(on model: AppModel) {
+            let welcome = InboundFrame.parse(
+                #"{"type":"ui_render","target":"canvas","components":[{"type":"hero","title":"How can I help?","variant":"subtle","badges":[],"data-welcome":"intro","id":"wel_hero","component_id":"wel_hero"},{"type":"card","title":"🔌 Agents are off for this account","content":[{"type":"text","content":"Replies will be plain text until agents are enabled. Enabling grants read-only permissions for the built-in public agents — search, data, file and system reads, never write access — and each agent can be adjusted or turned off any time.","variant":"caption"},{"type":"button","label":"Enable recommended agents","action":"enable_recommended_agents","payload":{"source":"welcome"},"variant":"primary"},{"type":"button","label":"Choose agents individually","action":"chrome_open","payload":{"surface":"agents"},"variant":"secondary"}],"variant":"default","data-welcome":"permission","id":"wel_enable","component_id":"wel_enable"},{"type":"grid","columns":3,"children":[{"type":"button","label":"Research brief","action":"chat_message","payload":{"message":"Research the latest developments in small modular reactors and give me a cited brief"},"variant":"secondary","aria-label":"Research brief","data-welcome":"example","id":"wel_ex_research_brief","component_id":"wel_ex_research_brief"},{"type":"button","label":"Summarize a page","action":"chat_message","payload":{"message":"Summarize https://en.wikipedia.org/wiki/Dog_grooming — give me a TL;DR and key points"},"variant":"secondary","aria-label":"Summarize a page","data-welcome":"example","id":"wel_ex_summarize_a_page","component_id":"wel_ex_summarize_a_page"},{"type":"button","label":"Weather outlook","action":"chat_message","payload":{"message":"What's the weather forecast for Lexington, KY this week? Show it with charts"},"variant":"secondary","aria-label":"Weather outlook","data-welcome":"example","id":"wel_ex_weather_outlook","component_id":"wel_ex_weather_outlook"}],"gap":12,"data-welcome":"examples","id":"wel_examples","component_id":"wel_examples"},{"type":"collapsible","title":"More examples","content":[{"type":"button","label":"Business dashboard","action":"chat_message","payload":{"message":"Build a rich dashboard for a dog grooming business — booking requests, monthly revenue line chart, most popular services pie chart, and today's schedule as a table"},"variant":"secondary","aria-label":"Business dashboard","data-welcome":"example","id":"wel_ex_business_dashboard","component_id":"wel_ex_business_dashboard"},{"type":"button","label":"Roll some dice","action":"chat_message","payload":{"message":"Roll exactly six six-sided dice and show the normalized results."},"variant":"secondary","aria-label":"Roll some dice","data-welcome":"example","id":"wel_ex_roll_some_dice","component_id":"wel_ex_roll_some_dice"},{"type":"button","label":"System status","action":"chat_message","payload":{"message":"Show current system status with CPU and memory metrics"},"variant":"secondary","aria-label":"System status","data-welcome":"example","id":"wel_ex_system_status","component_id":"wel_ex_system_status"}],"default_open":false,"data-welcome":"more","id":"wel_more","component_id":"wel_more"}]}"#
+            )!
+            model.screen = .chat
+            model.composerDraft = "First line\n"
+            model.handleFrame(welcome)
+            model.outboundTap = { [weak model] text in
+                guard let model, let event = try? JSONValue.parse(Data(text.utf8)) else { return }
+                if event["action"]?.stringValue == "new_chat" {
+                    model.handleFrame(welcome)
+                } else if event["action"]?.stringValue == "chat_message" {
+                    model.pendingReplace = false
+                    model.turnActive = false
+                    model.canvas = [
+                        AstralComponent(
+                            type: "text",
+                            raw: .object([
+                                "content": .string("Workspace result"), "component_id": .string("result_088"),
+                            ]))
+                    ]
+                }
+            }
+        }
+
+        @MainActor
+        private static func installWorkspaceNavigation(on model: AppModel) {
+            installWorkspaceHistory(on: model)
+            model.screen = .chat
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
+            model.workspaceStarted = true
+            model.composerDraft = "Draft kept while navigating"
+            model.canvas = [
+                AstralComponent(
+                    type: "text",
+                    raw: .object([
+                        "type": .string("text"), "component_id": .string("navigation-result"),
+                        "content": .string("Existing navigation result"),
+                    ]))
+            ]
+            model.handleFrame(
+                InboundFrame.parse(
+                    #"{"type":"chrome_menu","model":{"version":2,"topbar":[{"key":"settings","kind":"menu"}],"menu":[{"key":"account","label":"Account","items":[{"key":"theme","label":"Appearance","surface":"theme"},{"key":"audit","label":"Activity log","surface":"audit"}]}],"signout":{"label":"Sign out"}}}"#
+                )!)
+            model.outboundTap = { [weak model] text in
+                guard let model, let event = try? JSONValue.parse(Data(text.utf8)),
+                    event["action"]?.stringValue == "chrome_open",
+                    event["payload"]?["surface"]?.stringValue == "audit"
+                else { return }
+                // Appearance deliberately never replies: each actual Retry
+                // must start its ordinary ten-second timer. Activity log
+                // supplies a canonical reply on the next turn of the run loop.
+                Task { @MainActor [weak model] in
+                    await Task.yield()
+                    model?.handleFrame(
+                        InboundFrame.parse(
+                            #"{"type":"chrome_surface","surface_key":"audit","title":"Activity log","components":[{"type":"text","content":"Synthetic activity details"}]}"#
+                        )!)
+                }
+            }
+        }
+
+        @MainActor
+        private static func installWorkspaceHistory(on model: AppModel) {
+            model.screen = .history
+            model.handleFrame(
+                InboundFrame.parse(
+                    #"{"type":"ui_render","target":"history","components":[{"type":"chat_history","title":"Recent chats","items":[{"chat_id":"11111111-1111-4111-8111-111111111111","title":"New Chat","preview":"First preview","time":"2h","icon":"💬","saved":false},{"chat_id":"22222222-2222-4222-8222-222222222222","title":"New Chat","preview":"\n\nAlpha = 2\nBeta\t= 5","time":"3h","icon":"🎲","saved":true}]}]}"#
+                )!)
+            model.outboundTap = { [weak model] text in
+                guard let model, let event = try? JSONValue.parse(Data(text.utf8)),
+                    event["action"]?.stringValue == "load_chat",
+                    let id = event["payload"]?["chat_id"]?.stringValue
+                else { return }
+                let message =
+                    id == "22222222-2222-4222-8222-222222222222"
+                    ? "Opened second history row" : "Opened first history row"
+                model.canvas = [AstralComponent(type: "text", raw: .object(["content": .string(message)]))]
+            }
+        }
+
+        @MainActor
+        private static func installWorkspaceRichResult(on model: AppModel) {
+            installWorkspace(on: model)
+            model.bindConversationAccount(
+                ConversationAccount(issuer: "https://issuer.invalid", subject: "component-ui-fixture")!)
+            model.composerDraft = ""
+            model.activeChatId = "11111111-1111-4111-8111-111111111111"
+            model.turns = [AppModel.ChatTurn(id: "rich-result", role: "assistant", text: "Synthetic review result")]
+            // Canonical fields consumed by the shared web renderer. The tabs
+            // remain in the same canvas while their parent disclosure unmounts
+            // and remounts the selected pane, as in an ordinary saved result.
+            model.canvas =
+                InboundFrame.parse(
+                    #"""
+                    {"type":"ui_render","target":"canvas","components":[
+                      {"type":"hero","component_id":"review-heading","title":"Review report","eyebrow":"SYNTHETIC REVIEW","subtitle":"One result, with details you can revisit","badges":["Local fixture"]},
+                      {"type":"alert","variant":"warning","title":"Review required","message":"Check the original measurements before proceeding."},
+                      {"type":"rating","label":"Review confidence","value":3.5,"max_value":5,"show_value":true,"subtitle":"Based on seven observations"},
+                      {"type":"progress","label":"Checks complete","value":0.5,"show_percentage":true},
+                      {"type":"keyvalue","title":"Result source","items":[{"label":"Source","value":"Synthetic measurements"}]},
+                      {"type":"timeline","title":"Review history","items":[{"time":"09:30","title":"Validation complete","description":"The measurements were normalized.","variant":"success"}]},
+                      {"type":"code","code":"total = 18","language":"python"},
+                      {"type":"list","ordered":true,"items":["Inspect each measurement","Record the review outcome"]},
+                      {"type":"collapsible","component_id":"review-details","title":"Result details","default_open":true,"content":[
+                        {"type":"tabs","component_id":"review-tabs","tabs":[
+                          {"label":"Overview","content":[{"type":"text","content":"Overview pane is selected"}]},
+                          {"label":"Measurements","content":[{"type":"text","content":"Measurement pane is selected"}]}
+                        ]}
+                      ]}
+                    ]}
+                    """#
+                )!.renderComponents
+            model.canvas = model.canvas.map { component in
+                guard component.raw["component_id"]?.stringValue == "review-details" else { return component }
+                var raw = component.raw.objectValue!
+                raw["component_chrome"] = componentMetadata(kinds: [.refine, .history])
+                return AstralComponent(type: component.type, raw: .object(raw))
+            }
+        }
+
+        @MainActor
+        private static func installWorkspaceStyles(on model: AppModel) {
+            installWorkspace(on: model)
+            model.composerDraft = ""
+            model.turns = [AppModel.ChatTurn(id: "style-result", role: "assistant", text: "Synthetic style result")]
+            model.canvas =
+                InboundFrame.parse(
+                    #"{"type":"ui_render","target":"canvas","components":[{"type":"card","component_id":"style-card","title":"Roll Summary","content":[{"type":"metric","title":"Total","value":18,"subtitle":"Six dice","progress":0.5},{"type":"metric","title":"Completed","value":"6 / 6","variant":"success","progress":1}]}]}"#
+                )!.renderComponents
+        }
+
+        @MainActor
+        private static func installWorkspaceCanvas(on model: AppModel) {
+            model.screen = .chat
+            model.turns = (1...7).map { index in
+                AppModel.ChatTurn(
+                    id: "workspace-layout-\(index)",
+                    role: index.isMultiple(of: 2) ? "assistant" : "user",
+                    text: "Canvas layout check \(index). Six dice produced 6, 1, 2, 1, 3, 5 for a total of 18.")
+            }
+            let result = InboundFrame.parse(
+                #"{"type":"ui_render","target":"canvas","components":[{"type":"hero","component_id":"layout_hero","title":"Dice layout regression","subtitle":"Six results and a total"},{"type":"grid","component_id":"layout_grid","columns":2,"children":[{"type":"card","title":"Roll Summary","content":[{"type":"metric","title":"Total","value":18},{"type":"text","content":"Six dice produced 6, 1, 2, 1, 3, 5."}]},{"type":"card","title":"Results Table","content":[{"type":"table","headers":["Die","Result"],"rows":[["Die 1",6],["Die 2",1],["Die 3",2],["Die 4",1],["Die 5",3],["Die 6",5],["Total",18]]}]}]},{"type":"text","component_id":"layout_end","content":"Canvas layout end"}]}"#
+            )!
+            model.canvas = result.renderComponents
         }
 
         /// Drives the production strict voice reducer so UI automation can

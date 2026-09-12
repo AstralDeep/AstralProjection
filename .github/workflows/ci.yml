@@ -38,7 +38,7 @@ jobs:
       - run: python -m pip install --no-deps --no-build-isolation .
       - run: ruff check src backend tests scripts windows-client
       - run: mkdir -p build/074/coverage
-      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
+      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
       - run: diff-cover build/074/coverage/projection-python.xml --compare-branch origin/main --fail-under=90
       - run: PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build
       - run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import astralprojection, rote, webrender"
@@ -67,6 +67,24 @@ jobs:
         run: test "$(corepack npm --version)" = "11.16.0" && corepack npm ci --ignore-scripts
       - working-directory: tooling/web-ci
         run: corepack npm run check:package-manager && corepack npm run check:product-isolation && corepack npm run lint && corepack npm run test:coverage-conversion && corepack npm run test:coverage-conversion:node && corepack npm run test:coverage-union
+      - name: Verify public offline worker and changed JavaScript coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/088/offline-v8
+          NODE_V8_COVERAGE="$GITHUB_WORKSPACE/build/088/offline-v8" \
+            node --test tooling/web-ci/tests/offline-worker-088.test.mjs
+          node tooling/web-ci/coverage-conversion-cli.mjs \
+            --node-v8-directory build/088/offline-v8 --repo-root "$GITHUB_WORKSPACE" \
+            --output build/088/offline-javascript.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("build/088/offline-javascript.json").read_text())
+          for name in ("service-worker.js", "offline-registration.js"):
+              counts = list(report["coverage"][f"backend/webrender/static/{name}"]["s"].values())
+              assert counts and sum(count > 0 for count in counts) / len(counts) >= .90, name
+          PY
       - name: Run browser checks in the pinned Playwright image
         shell: bash
         run: |
@@ -77,10 +95,23 @@ jobs:
             --user "$(id -u):$(id -g)" \
             --env HOME=/tmp \
             --env ASTRAL_ASSIGNMENT_FIXTURE_DIR=/workspace/build/079/browser-fixtures \
+            --env ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace/tooling/web-ci \
             "$image" \
-            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && corepack npm exec -- playwright test tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js --browser=chromium --workers=1'
+            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && corepack npm exec -- playwright test tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js tests/native-export-088.spec.js --browser=chromium --workers=1'
+      - name: Enforce portable export executable-line coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("build/088/export-javascript.json").read_text())
+          for name in ("canvas-export.js", "canvas-export-host.js"):
+              counts = list(report["coverage"][f"backend/webrender/static/{name}"]["s"].values())
+              assert counts and sum(count > 0 for count in counts) / len(counts) >= .90, name
+          PY
 
   windows:
     runs-on: windows-latest

@@ -14,20 +14,26 @@ struct WatchHomeView: View {
                         .onAppear { model.newConversation() }
                 } label: {
                     Label("New conversation", systemImage: "plus.bubble.fill")
-                        .font(.headline)
+                        .font(AstralTypography.headline)
                 }
             }
 
-            if !model.recents.isEmpty {
-                Section("Recent") {
+            if model.recentsLoading || !model.recents.isEmpty {
+                Section {
+                    if model.recentsLoading && model.recents.isEmpty {
+                        ProgressView("Loading your chats…")
+                            .font(AstralTypography.footnote)
+                    }
                     ForEach(model.recents) { chat in
                         NavigationLink {
                             WatchChatView()
                                 .onAppear { model.openChat(chat) }
                         } label: {
-                            Text(chat.title).lineLimit(2)
+                            WatchHistoryRow(chat: chat)
                         }
                     }
+                } header: {
+                    Text(verbatim: model.recentsTitle)
                 }
             }
 
@@ -39,7 +45,7 @@ struct WatchHomeView: View {
                     } icon: {
                         Image(systemName: "waveform.path.ecg")
                     }
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .ignore)
                     .accessibilityIdentifier(accessibility.identifier)
@@ -56,7 +62,7 @@ struct WatchHomeView: View {
                     model.accountName.isEmpty ? "Signed in" : model.accountName,
                     systemImage: "person.crop.circle"
                 )
-                .font(.footnote)
+                .font(AstralTypography.footnote)
                 .foregroundStyle(.secondary)
                 Button(role: .destructive) {
                     Task { await model.signOut() }
@@ -70,10 +76,44 @@ struct WatchHomeView: View {
         .overlay(alignment: .bottom) {
             if !model.connected {
                 Text("Reconnecting…")
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                     .padding(4)
                     .background(.ultraThinMaterial, in: Capsule())
             }
         }
+    }
+}
+
+/// ROTE owns the wrist's four-row, preview-free history. Preserve its title,
+/// glyph, relative time, and saved marker using the existing system-styled UI.
+struct WatchHistoryRow: View {
+    let chat: ChatSummary
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            if !chat.icon.isEmpty {
+                Text(verbatim: chat.icon)
+                    .font(AstralTypography.footnote)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: chat.displayTitle)
+                    .font(AstralTypography.footnote)
+                    .lineLimit(2)
+                let time = chat.relativeTime()
+                if !time.isEmpty {
+                    Text(verbatim: time)
+                        .font(AstralTypography.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if chat.hasSavedComponents {
+                Image(systemName: "star.fill")
+                    .font(AstralTypography.caption2)
+                    .foregroundStyle(WatchBrand.warning)
+                    .accessibilityLabel("Has saved components")
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

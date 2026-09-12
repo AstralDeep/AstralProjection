@@ -19,6 +19,7 @@ import logging
 import math
 import os
 import re as _re
+from contextvars import ContextVar
 from typing import Any, Callable, Dict, List
 from urllib.parse import quote
 
@@ -26,6 +27,8 @@ logger = logging.getLogger("webrender")
 
 # type -> render function. Populated at the bottom of this module.
 PRIMITIVE_RENDERERS: Dict[str, Callable[[Dict[str, Any]], str]] = {}
+_strict_rendering = ContextVar("webrender_strict_rendering", default=False)
+_strict_chart_pixels = ContextVar("webrender_strict_chart_pixels", default=None)
 
 
 # Escaping & safe helpers (escape-by-default)
@@ -161,8 +164,17 @@ def _has_explicit_attr(comp: Dict[str, Any], name: str) -> bool:
 # Primitive renderers (parity with DynamicRenderer.tsx)
 
 def render_container(c):
-    # Live container emits no wrapper — just its children.
-    return render_children(_children(c))
+    # Ordinary containers remain transparent. ROTE collapses narrow welcome
+    # grids to containers, whose placement hint must still group their children.
+    content = render_children(_children(c))
+    role = _explicit_attrs(c).get("data-welcome")
+    identities = [c[key] for key in ("component_id", "id") if key in c]
+    if (isinstance(role, str)
+            and role in {"intro", "permission", "examples", "example", "more"}
+            and all(isinstance(identity, str) and identity.startswith("wel_")
+                    for identity in identities)):
+        return f'<div{_base_attrs(c)}>{content}</div>'
+    return content
 
 
 def render_text(c):
@@ -526,6 +538,27 @@ def render_image(c):
     url = c.get("url")
     if not url:
         return ""
+    if _strict_rendering.get():
+        # Optional dimensions are the native loaded image's measured logical
+        # box. Authored dimensions are removed by native capture projection.
+        width, height = c.get("width"), c.get("height")
+        if (width is None) != (height is None):
+            raise ValueError("invalid captured image size")
+        size = ""
+        if width is not None:
+            if any(type(value) not in (int, float) or not 0 < value <= 16384
+                   for value in (width, height)):
+                raise ValueError("invalid captured image size")
+            size = f' style="width:{width:g}px;height:{height:g}px;object-fit:contain"'
+        caption = c.get("caption", "")
+        if not isinstance(caption, str):
+            raise ValueError("invalid captured caption")
+        image = (f'<img{_base_attrs(c)} src="{_attr(safe_url(url))}" alt="{_attr(c.get("alt", ""))}"'
+                 f'{size} class="block max-w-full rounded-lg">')
+        if not caption:
+            return image
+        return (f'<figure class="m-0 space-y-1">{image}'
+                f'<figcaption class="text-xs text-astral-muted">{esc(caption)}</figcaption></figure>')
     attrs = f'src="{_attr(safe_url(url))}" alt="{_attr(c.get("alt",""))}"'
     if c.get("width"):
         attrs += f' width="{_attr(c.get("width"))}"'
@@ -537,6 +570,14 @@ def render_image(c):
 def render_grid(c):
     cols = c.get("columns", 2)
     gap = c.get("gap", 16)
+    if _strict_rendering.get():
+        # Native capture already measured this layout. Applying responsive
+        # breakpoints again would change its effective column count.
+        if type(cols) is not int or not 1 <= cols <= 64:
+            raise ValueError("invalid captured columns")
+        return (f'<div{_base_attrs(c)} class="grid" '
+                f'style="grid-template-columns:repeat({cols},minmax(0,1fr));gap:{int(gap)}px">'
+                f'{render_children(_children(c))}</div>')
     n = min(int(cols) if isinstance(cols, (int, float)) else 2, 6)
     col_map = {
         1: "grid-cols-1",
@@ -609,9 +650,16 @@ def _chart_summary(chart_type: str, payload: Dict[str, Any]) -> str:
     return summary
 
 
-def _chart_div(c, chart_type, payload):
+def _chart_frame(c, image_html, summary):
     title = c.get("title")
     title_html = f'<p class="text-sm font-medium text-astral-text mb-3">{esc(title)}</p>' if title else ""
+    summary_html = f'<span class="astral-sr-only">{esc(summary)}</span>' if summary else ""
+    return (f'<div{_base_attrs(c)} class="astral-chart-card w-full">{title_html}'
+            f'{image_html}{summary_html}</div>')
+
+
+def _chart_div(c, chart_type, payload):
+    title = c.get("title")
     data = _attr(json.dumps(payload))
     # a11y: the chart node is an empty div until client-side Plotly draws into
     # it — name it like an image (type + title, falling back to the data
@@ -622,10 +670,9 @@ def _chart_div(c, chart_type, payload):
     summary = _chart_summary(chart_type, payload)
     kind = _CHART_KINDS.get(chart_type, "Chart")
     name = f"{kind}: {title}" if title else f"{kind}: {summary}"
-    return (f'<div{_base_attrs(c)} class="astral-chart-card w-full">{title_html}'
-            f'<div class="astral-chart" data-chart-type="{chart_type}" data-chart="{data}" '
-            f'role="img" aria-label="{_attr(name)}" style="min-height:320px"></div>'
-            f'<span class="astral-sr-only">{esc(summary)}</span></div>')
+    return _chart_frame(c,
+        f'<div class="astral-chart" data-chart-type="{chart_type}" data-chart="{data}" '
+        f'role="img" aria-label="{_attr(name)}" style="min-height:320px"></div>', summary)
 
 
 def render_bar_chart(c):
@@ -1168,6 +1215,17 @@ def render_one(component: Dict[str, Any]) -> str:
         return ""
     ctype = component.get("type", "")
     fn = PRIMITIVE_RENDERERS.get(ctype)
+    if _strict_rendering.get():
+        # Ephemeral client presentation must fail without logging submitted
+        # values or silently returning a successful partial document.
+        if fn is None:
+            raise ValueError("Unsupported presentation component")
+        pixels = (_strict_chart_pixels.get() or {}).get(id(component))
+        if pixels is not None:
+            return _chart_frame(component,
+                f'<img src="{_attr(pixels)}" alt="{_attr(component.get("title") or "Chart")}" '
+                'style="display:block;width:100%;height:auto;max-width:100%">', "")
+        return fn(component)
     if fn is None:
         logger.warning("webrender: no renderer for primitive type %r — placeholder emitted", ctype)
         return (f'<div class="astral-unsupported text-xs text-astral-muted italic border border-white/10 '
@@ -1184,6 +1242,22 @@ def render(components: List[Dict[str, Any]], profile: Any = None) -> str:
     """Render a list of ROTE-adapted primitive dicts into a web HTML fragment."""
     inner = "".join(render_one(c) for c in (components or []) if isinstance(c, dict))
     return f'<div class="dynamic-renderer space-y-3">{inner}</div>'
+
+
+def render_strict(components: List[Dict[str, Any]], chart_pixels=None) -> str:
+    """Render bounded ephemeral presentation without provenance or logging.
+
+    The caller validates input and sanitizes the resulting inert markup. Nested
+    renderer errors propagate in this context only; ordinary rendering retains
+    its existing diagnostics and fallback behavior. No process-global mode flips.
+    """
+    token = _strict_rendering.set(True)
+    pixel_token = _strict_chart_pixels.set(chart_pixels)
+    try:
+        return render(components)
+    finally:
+        _strict_chart_pixels.reset(pixel_token)
+        _strict_rendering.reset(token)
 
 
 # Provenance / grounding surfacing
@@ -1271,11 +1345,9 @@ def _provenance_footer(component: Dict[str, Any]) -> str:
         return ""
     kind = provenance_of(component)
     if kind == "grounded":
-        tool = _subtree_tool_source(component)
-        agent = component.get("_source_agent")
-        title = ("Data from the %s agent%s" % (agent, f" ({tool})" if tool else "")
-                 if agent else "Sourced from a tool result")
-        icon, label, tone = "✓", "tool data", "text-green-400/70"
+        # Ordinary tool results need no repeated success decoration. The
+        # server-stamped provenance remains available to audit and export.
+        return ""
     elif kind == "estimated":
         title = "Estimated / low-confidence value"
         icon, label, tone = "≈", "estimated", "text-yellow-400/70"
@@ -1300,12 +1372,6 @@ def _flag_on(env_var: str, default: bool) -> bool:
     return os.getenv(env_var, str(default)).lower() in ("true", "1", "yes")
 
 
-#: Identity prefixes that never take chrome affordances: designer garnish and
-#: layout keys are rebuilt from layout JSON (no restorable ``saved_components``
-#: row), welcome components are ephemeral by contract (data-model.md identity
-#: registry).
-_CHROME_SKIP_ID_PREFIXES = ("dg_", "ly_", "wel_")
-
 _CHROME_BTN_CLS = ("inline-flex items-center gap-1 text-[10px] text-astral-muted/70 "
                    "hover:text-astral-text transition-colors")
 
@@ -1320,29 +1386,14 @@ def _versions_attr(component: Dict[str, Any]) -> str:
     the fragment. Absent/empty history renders no attribute (the client shows
     an honest empty state).
     """
-    raw = component.get("versions")
-    if not isinstance(raw, list):
-        return ""
-    entries = []
-    for v in raw[:5]:
-        if not isinstance(v, dict):
-            continue
-        try:
-            no = int(v.get("version_no"))
-        except (TypeError, ValueError):
-            continue
-        entries.append({
-            "version_no": no,
-            "reason": str(v.get("reason") or "")[:32],
-            "created_at": str(v.get("created_at") or "")[:64],
-            "title": str(v.get("title") or "")[:120],
-        })
+    from webrender.chrome.component_model import component_versions
+    entries = component_versions(component)
     if not entries:
         return ""
     return f' data-versions="{_attr(json.dumps(entries))}"'
 
 
-def _component_chrome(component: Dict[str, Any], profile: Any) -> str:
+def _component_chrome(component: Dict[str, Any], profile: Any, *, canonical=None) -> str:
     """Per-component affordance row (055 US4/US5), appended after the
     provenance footer inside the identity wrapper.
 
@@ -1357,36 +1408,24 @@ def _component_chrome(component: Dict[str, Any], profile: Any) -> str:
     (``.astral-refine-btn`` / ``.astral-vhistory-btn`` / ``.astral-export-csv``
     / ``.astral-share-btn``).
     """
-    if profile is None or not getattr(profile, "supports_interactivity", True):
-        return ""
+    from webrender.chrome.component_model import renderer_component_actions
     cid = component.get("component_id")
-    if not cid or str(cid).startswith(_CHROME_SKIP_ID_PREFIXES):
-        return ""
-    ctype = str(component.get("type", "")).strip().lower()
-    if ctype in _PROV_SKIP_TYPES:
-        return ""
     parts = []
-    if _flag_on("FF_COMPONENT_REFINE", True):
-        parts.append(
-            f'<button type="button" class="astral-refine-btn {_CHROME_BTN_CLS}" '
-            f'title="Refine this component with an instruction">'
-            f'<span aria-hidden="true">✎</span> refine</button>')
-        parts.append(
-            f'<button type="button" class="astral-vhistory-btn {_CHROME_BTN_CLS}"'
-            f'{_versions_attr(component)} title="Version history">'
-            f'<span aria-hidden="true">⟲</span> history</button>')
-    if ctype == "table" and _flag_on("FF_ARTIFACT_EXPORT", True):
-        href = "/api/export/component/" + quote(str(cid), safe="") + ".csv"
-        parts.append(
-            f'<a class="astral-export-csv {_CHROME_BTN_CLS}" href="{_attr(href)}" '
-            f'title="Download the full table as CSV">'
-            f'<span aria-hidden="true">⬇</span> csv</a>')
-    if _flag_on("FF_ARTIFACT_SHARING", False):
-        parts.append(
-            f'<button type="button" class="astral-share-btn {_CHROME_BTN_CLS}" '
-            f'data-share-scope="component" '
-            f'title="Create a revocable read-only share link">'
-            f'<span aria-hidden="true">↗</span> share</button>')
+    for action in renderer_component_actions(component, profile, canonical=canonical):
+        kind = action["kind"]
+        title = _attr(action["title"])
+        content = f'<span aria-hidden="true">{esc(action["icon"])}</span> {esc(action["label"])}'
+        if kind == "csv":
+            href = "/api/export/component/" + quote(str(cid), safe="") + ".csv"
+            parts.append(f'<a class="astral-export-csv {_CHROME_BTN_CLS}" href="{_attr(href)}" '
+                         f'title="{title}">{content}</a>')
+        else:
+            classes = {"refine": "astral-refine-btn", "history": "astral-vhistory-btn",
+                       "share": "astral-share-btn"}
+            extra = (_versions_attr(component) if kind == "history" else
+                     ' data-share-scope="component"' if kind == "share" else "")
+            parts.append(f'<button type="button" class="{classes[kind]} {_CHROME_BTN_CLS}"'
+                         f'{extra} title="{title}">{content}</button>')
     if not parts:
         return ""
     return ('<div class="astral-component-chrome mt-0.5 flex justify-end gap-3">'
@@ -1416,7 +1455,7 @@ def _workspace_flag_attrs(profile: Any) -> str:
     return attrs
 
 
-def render_component_fragment(component: Dict[str, Any], profile: Any = None) -> str:
+def render_component_fragment(component: Dict[str, Any], profile: Any = None, *, canonical=None) -> str:
     """Render one top-level workspace component wrapped in its identity anchor.
 
     The ``data-component-id`` wrapper is the morph target for ``ui_upsert``
@@ -1436,7 +1475,7 @@ def render_component_fragment(component: Dict[str, Any], profile: Any = None) ->
     dtype = getattr(getattr(profile, "device_type", None), "value", "")
     if dtype not in ("watch", "voice"):
         inner += _provenance_footer(component)
-        inner += _component_chrome(component, profile)
+        inner += _component_chrome(component, profile, canonical=canonical)
     if not cid:
         return inner
     # WCAG-by-construction — wrap each top-level component as a labelled ARIA
@@ -1450,7 +1489,7 @@ def render_component_fragment(component: Dict[str, Any], profile: Any = None) ->
     return f'<div class="astral-component"{attrs}>{inner}</div>'
 
 
-def render_workspace(components: List[Dict[str, Any]], profile: Any = None) -> str:
+def render_workspace(components: List[Dict[str, Any]], profile: Any = None, *, canonical_components=None) -> str:
     """Render the full workspace with per-component identity wrappers.
 
     Used for canvas-targeted full renders (re-hydration, timeline views,
@@ -1460,7 +1499,16 @@ def render_workspace(components: List[Dict[str, Any]], profile: Any = None) -> s
     (:func:`_workspace_flag_attrs` — absent for static/non-interactive
     renditions and when the flags are off).
     """
-    inner = "".join(render_component_fragment(c, profile) for c in (components or []) if isinstance(c, dict))
+    from webrender.chrome.component_model import canonical_components_by_id
+    originals = (None if canonical_components is None
+                 else canonical_components_by_id(canonical_components))
+    def original(component):
+        if originals is None:
+            return None
+        cid = component.get("component_id")
+        return (originals.get(cid) or {}) if isinstance(cid, str) else {}
+    inner = "".join(render_component_fragment(c, profile, canonical=original(c))
+                    for c in (components or []) if isinstance(c, dict))
     return f'<div class="dynamic-renderer space-y-3"{_workspace_flag_attrs(profile)}>{inner}</div>'
 
 

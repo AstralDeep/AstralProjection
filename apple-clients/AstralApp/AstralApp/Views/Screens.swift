@@ -21,7 +21,7 @@ struct AgentsView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         HStack {
-                            Text("Agents").font(.title2.bold()).foregroundStyle(p.text)
+                            Text("Agents").font(AstralTypography.title2.bold()).foregroundStyle(p.text)
                             Spacer()
                             Button("Enable recommended") { model.enableRecommended() }
                                 .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
@@ -57,15 +57,15 @@ private struct AgentCard: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Text((expanded ? "▼ " : "▶ ") + agent.name)
-                            .font(.headline).foregroundStyle(p.text)
+                            .font(AstralTypography.headline).foregroundStyle(p.text)
                         if !agent.description.isEmpty {
-                            Text(agent.description).font(.caption).foregroundStyle(p.muted)
+                            Text(agent.description).font(AstralTypography.caption).foregroundStyle(p.muted)
                         }
                         Text("\(agent.enabledCount) / \(agent.tools.count) tools enabled")
-                            .font(.caption2).foregroundStyle(p.muted)
+                            .font(AstralTypography.caption2).foregroundStyle(p.muted)
                         if let lifecycle = model.agentLifecycles[agent.id] {
                             Text(lifecycle.label)
-                                .font(.caption2.weight(.semibold))
+                                .font(AstralTypography.caption2.weight(.semibold))
                                 .foregroundStyle(lifecycle.state == "failed" ? p.error : p.muted)
                                 .accessibilityLabel("\(agent.name) status: \(lifecycle.label)")
                                 .accessibilityAddTraits(.updatesFrequently)
@@ -85,14 +85,14 @@ private struct AgentCard: View {
             }
             if expanded {
                 if agent.tools.isEmpty {
-                    Text("This agent exposes no tools.").font(.caption).foregroundStyle(p.muted)
+                    Text("This agent exposes no tools.").font(AstralTypography.caption).foregroundStyle(p.muted)
                 }
                 ForEach(agent.tools, id: \.self) { tool in
                     HStack(alignment: .top, spacing: 8) {
                         VStack(alignment: .leading, spacing: 1) {
-                            Text(tool).font(.subheadline).foregroundStyle(p.text)
+                            Text(tool).font(AstralTypography.subheadline).foregroundStyle(p.text)
                             if let desc = agent.toolDescriptions[tool], !desc.isEmpty {
-                                Text(desc).font(.caption).foregroundStyle(p.muted)
+                                Text(desc).font(AstralTypography.caption).foregroundStyle(p.muted)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -157,14 +157,14 @@ private struct AuditCard: View {
         } label: {
             VStack(alignment: .leading, spacing: 4) {
                 Text([event.eventClass, event.action].compactMap { $0 }.joined(separator: " · "))
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(p.text)
+                    .font(AstralTypography.subheadline.weight(.semibold)).foregroundStyle(p.text)
                 Text([event.outcome, event.recordedAt].compactMap { $0 }.joined(separator: "  "))
-                    .font(.caption).foregroundStyle(p.muted)
+                    .font(AstralTypography.caption).foregroundStyle(p.muted)
                 if expanded {
-                    if let od = event.outcomeDetail { Text(od).font(.caption).foregroundStyle(p.text) }
-                    if let d = event.detail { Text(d).font(.caption.monospaced()).foregroundStyle(p.text) }
+                    if let od = event.outcomeDetail { Text(od).font(AstralTypography.caption).foregroundStyle(p.text) }
+                    if let d = event.detail { Text(d).font(AstralTypography.mono(12)).foregroundStyle(p.text) }
                     if let id = event.id {
-                        Text("id: \(id)").font(.caption2).foregroundStyle(p.muted)
+                        Text("id: \(id)").font(AstralTypography.caption2).foregroundStyle(p.muted)
                     }
                 }
             }
@@ -182,6 +182,7 @@ struct SurfaceView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     @State private var timedOut = false
+    @State private var retryGeneration = UUID()
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -191,23 +192,14 @@ struct SurfaceView: View {
                     LazyVStack(alignment: .leading, spacing: 12) {
                         HStack(alignment: .firstTextBaseline) {
                             Text(surface.title.isEmpty ? "Settings" : surface.title)
-                                .font(.title2.bold()).foregroundStyle(p.text)
+                                .font(AstralTypography.title2.bold()).foregroundStyle(p.text)
                             Spacer()
                             // Web has the modal ✕ and Android the system Back;
                             // without this the surface could only be left via
                             // the top bar. Hidden while the 054 pin is set —
                             // the same refusal web's `data-mandatory` card makes.
                             if !model.mandatorySurface {
-                                Button {
-                                    model.closeSurface()
-                                } label: {
-                                    Image(systemName: "xmark")
-                                        .font(.system(size: 15, weight: .semibold))
-                                        .foregroundStyle(p.muted)
-                                        .padding(6)
-                                }
-                                .buttonStyle(.plain)
-                                .accessibilityLabel("Close")
+                                closeButton
                             }
                         }
                         ForEach(Array(surface.components.enumerated()), id: \.offset) { _, comp in
@@ -219,11 +211,12 @@ struct SurfaceView: View {
             } else if timedOut {
                 VStack(spacing: 12) {
                     Text("Couldn't load this settings screen")
-                        .font(.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
+                        .font(AstralTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
                     Text("The server didn't send it in time. Check your connection and try again.")
-                        .font(.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
+                        .font(AstralTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
                     Button("Retry") {
                         timedOut = false
+                        retryGeneration = UUID()
                         model.retryPendingSurface()
                     }
                     .buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
@@ -236,18 +229,41 @@ struct SurfaceView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(p.bg)
+        .overlay(alignment: .topTrailing) {
+            if model.pendingSurface == nil && !model.mandatorySurface {
+                closeButton.padding(16)
+            }
+        }
         // Re-arm the 10 s load timer whenever the awaited surface key changes or
-        // a surface arrives (parity with Android's LaunchedEffect, T039).
+        // a surface arrives, and for every explicit Retry of the same request.
         .task(id: surfaceTaskKey) {
             timedOut = false
             if model.pendingSurface != nil { return }
-            try? await Task.sleep(nanoseconds: 10_000_000_000)
-            if model.pendingSurface == nil { timedOut = true }
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled, model.pendingSurface == nil else { return }
+            timedOut = true
         }
     }
 
+    private var closeButton: some View {
+        Button {
+            model.closeSurface()
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(p.muted)
+                .padding(6)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
+    }
+
     private var surfaceTaskKey: String {
-        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)"
+        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)"
     }
 }
 

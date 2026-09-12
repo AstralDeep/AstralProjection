@@ -10,9 +10,14 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -28,7 +33,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -36,13 +44,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -50,8 +58,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -59,42 +68,32 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.window.core.layout.WindowWidthSizeClass
 import com.personalailabs.astraldeep.app.R
 import com.personalailabs.astraldeep.app.render.CanvasChrome
 import com.personalailabs.astraldeep.app.render.CanvasHost
 import com.personalailabs.astraldeep.app.render.MarkdownText
 import com.personalailabs.astraldeep.app.render.Renderer
-import com.personalailabs.astraldeep.app.transport.markMicrophonePermissionRequested
 import com.personalailabs.astraldeep.app.transport.RuntimeVoiceCapability
+import com.personalailabs.astraldeep.app.transport.markMicrophonePermissionRequested
 import com.personalailabs.astraldeep.app.transport.runtimeVoiceCapability
-import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.theme.AstralSans
 import com.personalailabs.astraldeep.app.voice.VoiceMediaCapability
 import com.personalailabs.astraldeep.app.voice.VoiceTerminalNotice
 import com.personalailabs.astraldeep.app.voice.VoiceUiState
 import com.personalailabs.astraldeep.core.protocol.VoiceControl
+import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-
-/** How the chat + canvas are arranged for the current window width. */
-enum class LayoutMode { Stacked, Split }
-
-/**
- * The single adaptive rule (pure → unit-tested): a compact width (phone portrait)
- * stacks chat over canvas; medium/expanded (tablet, foldable open, landscape)
- * splits into a chat rail + canvas. One UI, reflowing by width.
- */
-fun layoutModeFor(width: WindowWidthSizeClass): LayoutMode =
-    if (width == WindowWidthSizeClass.COMPACT) LayoutMode.Stacked else LayoutMode.Split
 
 @Composable
 fun AdaptiveShell(
@@ -103,86 +102,113 @@ fun AdaptiveShell(
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     val voice by vm.voiceState.collectAsStateWithLifecycle()
-    val width = currentWindowAdaptiveInfo().windowSizeClass.windowWidthSizeClass
-    when (layoutModeFor(width)) {
-        LayoutMode.Stacked -> StackedShell(state, voice, renderer, vm)
-        LayoutMode.Split -> SplitShell(state, voice, renderer, vm)
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        AdaptiveShellContent(state, voice, renderer, vm, maxWidth.value.toInt(), maxHeight.value.toInt())
     }
 }
 
-/**
- * Phone layout, top→bottom: the SDUI canvas (the dominant ~85% area), a
- * collapsible "Messages" panel stickied above the input, and the input bar
- * (mic + paperclip). The canvas persists across turns and is only replaced when
- * a new final SDUI commits (see [AppViewModel]).
- */
 @Composable
-private fun StackedShell(
+internal fun AdaptiveShellContent(
     state: UiState,
     voice: VoiceUiState,
     renderer: Renderer,
     vm: AppViewModel,
+    widthDp: Int,
+    heightDp: Int = 800,
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        CanvasArea(
-            state = state,
-            renderer = renderer,
-            onSelectSnapshot = vm::viewCanvasSnapshot,
-            onBackToLive = vm::backToLiveCanvas,
-            modifier = Modifier.fillMaxWidth().weight(1f),
-        )
-        if (state.turnActive) StepTrail(state.stepTrail)
-        MessagesPanel(turns = state.visibleTurns, statusText = state.workingStatusText, renderer = renderer)
-        InputBar(
-            staged = state.staged,
-            readOnly = state.mutationsLocked,
-            voice = voice,
-            onVoiceControl = vm::invokeVoiceControl,
-            onSend = vm::sendChat,
-            onStageFile = vm::stageAttachment,
-            onRemoveAttachment = vm::removeAttachment,
-            onOpenAttachments = { vm.openSurface("attachments") },
-        )
+    var collapsed by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    val defaultMode = layoutModeFor(widthDp)
+    val mode =
+        when {
+            defaultMode == LayoutMode.Stacked -> LayoutMode.Stacked
+            collapsed == true -> LayoutMode.Collapsed
+            collapsed == false && widthDp >= 1024 -> LayoutMode.Split
+            else -> defaultMode
+        }
+    val composer =
+        remember(vm) {
+            movableContentOf<UiState, VoiceUiState> { current, currentVoice ->
+                InputBar(
+                    input = current.composerDraft,
+                    startView = current.showsStart,
+                    onInputChange = vm::updateComposerDraft,
+                    staged = current.staged,
+                    readOnly = current.mutationsLocked,
+                    voice = currentVoice,
+                    onVoiceControl = vm::invokeVoiceControl,
+                    onSend = vm::sendChat,
+                    onStageFile = vm::stageAttachment,
+                    onRemoveAttachment = vm::removeAttachment,
+                    onOpenAttachments = { vm.openSurface("attachments") },
+                    backgroundNextSend = current.backgroundNextSend,
+                    onToggleBackground = vm::toggleBackgroundNextSend,
+                )
+            }
+        }
+    if (state.showsStart) {
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 48.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Column(Modifier.widthIn(max = 704.dp).fillMaxWidth().testTag("workspace-start")) {
+                WelcomeSlot(state.visibleCanvas, "intro", renderer)
+                WelcomeSlot(state.visibleCanvas, "permission", renderer)
+                composer(state, voice)
+                Spacer(Modifier.height(24.dp))
+                WelcomeSlot(state.visibleCanvas, "examples", renderer)
+                WelcomeSlot(state.visibleCanvas, "more", renderer)
+            }
+        }
+        return
+    }
+    val canvas: @Composable (Modifier) -> Unit = { modifier ->
+        CanvasArea(state, renderer, vm::viewCanvasSnapshot, vm::backToLiveCanvas, modifier)
+    }
+    when (mode) {
+        LayoutMode.Split ->
+            Row(Modifier.fillMaxSize().testTag("workspace-split")) {
+                canvas(Modifier.weight(1f).fillMaxHeight())
+                VerticalDivider(color = MaterialTheme.colorScheme.outline)
+                Column(Modifier.width((widthDp * 0.28f).coerceIn(320f, 420f).dp).fillMaxHeight()) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Conversation", Modifier.weight(1f).padding(start = 14.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(onClick = { collapsed = true }) { Text("Collapse") }
+                    }
+                    ChatList(state.visibleTurns, Modifier.fillMaxWidth().weight(1f), renderer)
+                    if (state.turnActive) StepTrail(state.stepTrail)
+                    composer(state, voice)
+                }
+            }
+        LayoutMode.Stacked, LayoutMode.Collapsed ->
+            Column(Modifier.fillMaxSize().testTag("workspace-${mode.name.lowercase()}")) {
+                canvas(Modifier.fillMaxWidth().weight(1f))
+                Column(
+                    Modifier.widthIn(
+                        max = if (mode == LayoutMode.Collapsed) 760.dp else 10000.dp,
+                    ).fillMaxWidth().align(Alignment.CenterHorizontally),
+                ) {
+                    if (mode == LayoutMode.Collapsed && widthDp >= 1024) {
+                        TextButton(onClick = { collapsed = false }, modifier = Modifier.align(Alignment.End)) {
+                            Text("Move conversation to the right sidebar")
+                        }
+                    }
+                    if (state.turnActive) StepTrail(state.stepTrail)
+                    MessagesPanel(state.visibleTurns, state.workingStatusText, renderer, (heightDp * 0.28f).coerceAtMost(320f))
+                    composer(state, voice)
+                }
+            }
     }
 }
 
-/**
- * Tablet / foldable / landscape layout: a persistent conversation rail beside the
- * canvas. Same input + timeline affordances, reflowed to the wider window.
- */
 @Composable
-private fun SplitShell(
-    state: UiState,
-    voice: VoiceUiState,
+private fun WelcomeSlot(
+    components: List<Component>,
+    role: String,
     renderer: Renderer,
-    vm: AppViewModel,
 ) {
-    // 066 canvas-first parity: the canvas leads and the conversation rail sits
-    // on the trailing edge — the same arrangement as the web split mode and the
-    // Windows splitter.
-    Row(modifier = Modifier.fillMaxSize()) {
-        CanvasArea(
-            state = state,
-            renderer = renderer,
-            onSelectSnapshot = vm::viewCanvasSnapshot,
-            onBackToLive = vm::backToLiveCanvas,
-            modifier = Modifier.weight(1f).fillMaxHeight(),
-        )
-        VerticalDivider()
-        Column(modifier = Modifier.width(360.dp).fillMaxHeight()) {
-            PanelHeader("Conversation")
-            ChatList(state.visibleTurns, Modifier.fillMaxWidth().weight(1f), renderer)
-            if (state.turnActive) StepTrail(state.stepTrail)
-            InputBar(
-                staged = state.staged,
-                readOnly = state.mutationsLocked,
-                voice = voice,
-                onVoiceControl = vm::invokeVoiceControl,
-                onSend = vm::sendChat,
-                onStageFile = vm::stageAttachment,
-                onRemoveAttachment = vm::removeAttachment,
-                onOpenAttachments = { vm.openSurface("attachments") },
-            )
+    components.lastOrNull { welcomePlacementRole(it) == role }?.let { component ->
+        Box(Modifier.fillMaxWidth().padding(bottom = if (role == "intro") 24.dp else 8.dp)) {
+            renderer.render(component)
         }
     }
 }
@@ -216,11 +242,12 @@ private fun CanvasArea(
 
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
             when {
-                state.showSkeleton -> SkeletonCanvas(Modifier.fillMaxSize())
+                state.showSkeleton && state.visibleCanvas.isEmpty() -> SkeletonCanvas(Modifier.fillMaxSize())
                 state.visibleCanvas.isEmpty() -> EmptyCanvasHint(Modifier.fillMaxSize())
                 else ->
                     CanvasHost(
-                        components = state.visibleCanvas,
+                        components = state.visibleCanvas.filter { welcomePlacementRole(it) == null },
+                        loading = state.showSkeleton,
                         renderer = renderer,
                         modifier = Modifier.fillMaxSize(),
                         // Refine pauses on ANY read-only view — the server timeline
@@ -261,8 +288,8 @@ private fun CanvasArea(
 private fun WorkingBar() {
     LinearProgressIndicator(
         modifier = Modifier.fillMaxWidth(),
-        color = AstralColors.Purple,
-        trackColor = AstralColors.SurfaceVariant,
+        color = MaterialTheme.colorScheme.primary,
+        trackColor = MaterialTheme.colorScheme.surfaceVariant,
     )
 }
 
@@ -271,7 +298,7 @@ private fun ReadOnlyBanner(
     label: String?,
     onBackToLive: () -> Unit,
 ) {
-    Surface(color = AstralColors.Indigo.copy(alpha = 0.16f), modifier = Modifier.fillMaxWidth()) {
+    Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.16f), modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -280,7 +307,7 @@ private fun ReadOnlyBanner(
             Icon(
                 painter = painterResource(R.drawable.ic_history),
                 contentDescription = null,
-                tint = AstralColors.Indigo,
+                tint = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.size(16.dp),
             )
             Column(Modifier.weight(1f)) {
@@ -295,7 +322,7 @@ private fun ReadOnlyBanner(
                 }
             }
             Surface(
-                color = AstralColors.Indigo,
+                color = MaterialTheme.colorScheme.primary,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.clickable(onClick = onBackToLive),
             ) {
@@ -419,10 +446,8 @@ private fun CanvasTimelineOverlay(
 private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
     Box(modifier = modifier.padding(32.dp), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("✨", fontSize = 40.sp)
-            Spacer(Modifier.height(12.dp))
             Text(
-                "Your generated interface appears here",
+                "Your results appear here",
                 color = MaterialTheme.colorScheme.onSurface,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -430,7 +455,7 @@ private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "Ask something below and AstralDeep will build a live interface for it.",
+                "Continue the conversation to build on your work.",
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 13.sp,
                 textAlign = TextAlign.Center,
@@ -453,6 +478,7 @@ private fun MessagesPanel(
     turns: List<ChatTurn>,
     statusText: String?,
     renderer: Renderer,
+    maxHeight: Float,
 ) {
     val visible = turns.filter { it.hasVisibleContent }
     if (visible.isEmpty()) return
@@ -466,7 +492,7 @@ private fun MessagesPanel(
                 turns,
                 Modifier
                     .fillMaxWidth()
-                    .heightIn(max = 320.dp)
+                    .heightIn(max = maxHeight.dp)
                     .background(MaterialTheme.colorScheme.background),
                 renderer,
             )
@@ -653,6 +679,8 @@ private fun ReasoningSnippet(text: String) {
 
 @Composable
 internal fun InputBar(
+    input: String,
+    onInputChange: (String) -> Unit,
     staged: List<StagedAttachment>,
     readOnly: Boolean,
     voice: VoiceUiState,
@@ -661,9 +689,15 @@ internal fun InputBar(
     onStageFile: (String, String?, ByteArray) -> Unit,
     onRemoveAttachment: (Long) -> Unit,
     onOpenAttachments: () -> Unit,
+    backgroundNextSend: Boolean = false,
+    onToggleBackground: () -> Unit = {},
+    startView: Boolean = false,
 ) {
-    var input by rememberSaveable { mutableStateOf("") }
     var attachMenuOpen by remember { mutableStateOf(false) }
+    val inputInteractions = remember { MutableInteractionSource() }
+    val inputFocused by inputInteractions.collectIsFocusedAsState()
+    val composerPadding = if (startView && LocalConfiguration.current.screenWidthDp >= 700) 16.dp else 12.dp
+    val inputStyle = TextStyle(fontFamily = AstralSans, fontSize = 14.sp, lineHeight = 22.4.sp, color = MaterialTheme.colorScheme.onSurface)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var permissionControl by remember { mutableStateOf<VoiceControl?>(null) }
@@ -702,11 +736,11 @@ internal fun InputBar(
     fun doSend() {
         if (input.isBlank() && staged.none { it.state == "ready" }) return
         onSend(input)
-        input = ""
+        onInputChange("")
     }
 
-    Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
+    Surface(color = Color.Transparent) {
+        Column(modifier = Modifier.fillMaxWidth().padding(if (startView) 0.dp else 10.dp)) {
             // Viewing the read-only timeline pauses composing (T041).
             if (readOnly) {
                 Text(
@@ -720,57 +754,75 @@ internal fun InputBar(
                 AttachmentChips(staged, onRemoveAttachment)
                 Spacer(Modifier.height(6.dp))
             }
-            if (voice.phase != "off" || voice.message != null || voice.transcriptPreview != null) {
+            if (voice.terminalNotice != null || voice.phase != "off" || voice.message != null || voice.transcriptPreview != null) {
                 VoiceFeedback(voice)
                 Spacer(Modifier.height(4.dp))
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
+            Surface(
+                color = MaterialTheme.colorScheme.surface,
+                shape = RoundedCornerShape(if (startView) 22.dp else 18.dp),
+                border =
+                    BorderStroke(
+                        1.dp,
+                        if (inputFocused) {
+                            MaterialTheme.colorScheme.primary.copy(
+                                alpha = 0.75f,
+                            )
+                        } else {
+                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                        },
+                    ),
             ) {
-                voice.composer?.controls.orEmpty().filter { it.visible }.forEach { control ->
-                    VoiceControlButton(
-                        control = control,
-                        phase = voice.phase,
-                        enabled = !readOnly && control.enabled,
-                        onClick = { invokeVoice(control) },
+                Column(Modifier.fillMaxWidth().padding(composerPadding).testTag("composer-surface")) {
+                    BasicTextField(
+                        value = input,
+                        onValueChange = onInputChange,
+                        modifier =
+                            Modifier.fillMaxWidth().heightIn(
+                                min = if (startView) 80.dp else 68.dp,
+                                max = 160.dp,
+                            ).testTag("chat-input"),
+                        enabled = !readOnly,
+                        textStyle = inputStyle,
+                        maxLines = 6,
+                        interactionSource = inputInteractions,
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                        decorationBox = { innerTextField ->
+                            Box(Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 12.dp)) {
+                                if (input.isEmpty()) {
+                                    Text(
+                                        "Ask anything…",
+                                        style = inputStyle,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
                     )
-                }
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
-                    modifier = Modifier.weight(1f).testTag("chat-input"),
-                    enabled = !readOnly,
-                    placeholder = { Text("Message AstralDeep…") },
-                    maxLines = 4,
-                    shape = RoundedCornerShape(22.dp),
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                )
-                // Paperclip → a menu mirroring the web: Upload a file, or Choose
-                // from your files (opens the attachments surface, T047).
-                Box {
-                    GlyphButton(iconRes = R.drawable.ic_paperclip, contentDescription = "Attach a file", enabled = !readOnly) {
-                        attachMenuOpen = true
-                    }
+                    Spacer(Modifier.height(6.dp))
+                    ComposerControls(
+                        readOnly = readOnly,
+                        voice = voice,
+                        backgroundNextSend = backgroundNextSend,
+                        onToggleBackground = onToggleBackground,
+                        onVoiceControl = ::invokeVoice,
+                        onAttach = { attachMenuOpen = true },
+                        onSend = ::doSend,
+                        canSend = input.isNotBlank() || staged.any { it.state == "ready" },
+                    )
                     DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { attachMenuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Upload a file") },
-                            onClick = {
-                                attachMenuOpen = false
-                                filePicker.launch("*/*")
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Choose from your files") },
-                            onClick = {
-                                attachMenuOpen = false
-                                onOpenAttachments()
-                            },
-                        )
+                        DropdownMenuItem(text = { Text("Upload a file") }, onClick = {
+                            attachMenuOpen = false
+                            filePicker.launch("*/*")
+                        })
+                        DropdownMenuItem(text = { Text("Choose from your files") }, onClick = {
+                            attachMenuOpen = false
+                            onOpenAttachments()
+                        })
                     }
                 }
-                SendButton(enabled = !readOnly && (input.isNotBlank() || staged.any { it.state == "ready" }), onClick = ::doSend)
             }
         }
     }
@@ -895,8 +947,11 @@ internal fun VoiceControlButton(
     val description =
         buildString {
             append(control.label)
-            if (control.busy) append(", busy")
-            else if (control.pressed) append(", on")
+            if (control.busy) {
+                append(", busy")
+            } else if (control.pressed) {
+                append(", on")
+            }
             append(", $phase")
         }
     IconButton(
@@ -913,7 +968,7 @@ internal fun VoiceControlButton(
             tint =
                 when {
                     !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                    control.pressed -> AstralColors.Indigo
+                    control.pressed -> MaterialTheme.colorScheme.primary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 },
             modifier = Modifier.size(22.dp),
@@ -939,27 +994,46 @@ private fun GlyphButton(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SendButton(
-    enabled: Boolean,
-    onClick: () -> Unit,
+private fun ComposerControls(
+    readOnly: Boolean,
+    voice: VoiceUiState,
+    backgroundNextSend: Boolean,
+    onToggleBackground: () -> Unit,
+    onVoiceControl: (VoiceControl) -> Unit,
+    onAttach: () -> Unit,
+    onSend: () -> Unit,
+    canSend: Boolean,
 ) {
-    val bg = if (enabled) AstralColors.Indigo else AstralColors.SurfaceVariant
-    Box(
-        modifier =
-            Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(bg)
-                .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_send),
-            contentDescription = "Send",
-            tint = if (enabled) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.size(20.dp),
-        )
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.Bottom) {
+        FlowRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            GlyphButton(R.drawable.ic_paperclip, "Attach files", !readOnly, onAttach)
+            Box(
+                Modifier.background(
+                    if (backgroundNextSend) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f) else Color.Transparent,
+                    RoundedCornerShape(10.dp),
+                )
+                    .semantics { stateDescription = if (backgroundNextSend) "On" else "Off" },
+            ) {
+                GlyphButton(R.drawable.ic_history, "Run in background", !readOnly, onToggleBackground)
+            }
+            val controls = voice.composer?.controls.orEmpty().filter { it.visible }
+            if (controls.isEmpty()) {
+                GlyphButton(R.drawable.ic_mic, "Start voice conversation — checking voice availability", false) {}
+            }
+            controls.forEach { control ->
+                VoiceControlButton(control, voice.phase, !readOnly && control.enabled) { onVoiceControl(control) }
+            }
+        }
+        Button(
+            onClick = onSend,
+            enabled = !readOnly && canSend,
+            modifier = Modifier.heightIn(min = 48.dp).testTag("composer-send"),
+            shape = RoundedCornerShape(10.dp),
+        ) {
+            Text("Send")
+        }
     }
 }
 

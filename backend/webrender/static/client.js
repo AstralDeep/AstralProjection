@@ -34,6 +34,8 @@
   // durable; committed transcript/canvas remain server authoritative.
   var activeChatLocatorKey = null;
   var accountIdentityInitialized = false;
+  var accountPrivacyEpoch = 0;
+  var accountSignedOut = false;
   var connectionGeneration = null;
   var requestState = null;
   var committedRevisionByChat = Object.create(null);
@@ -266,7 +268,7 @@
     if (reason === "confirmed_deletion" && chatId !== activeChatId) return false;
     var key = storageKey || activeChatLocatorKey;
     if (key) { try { localStorage.removeItem(key); } catch (e) {} }
-    if (!storageKey || storageKey === activeChatLocatorKey) {
+    if (!storageKey || storageKey === activeChatLocatorKey || reason === "account_switch") {
       var clearedChatId = activeChatId;
       activeChatId = null;
       requestState = null;
@@ -279,8 +281,13 @@
   function clearCommittedConversationView(reason, chatId) {
     if (chat) chat.replaceChildren();
     if (canvas) { canvas.replaceChildren(); showCanvasEmpty(); }
+    setWorkspaceView("start");
+    closeHistoryOverlay();
+    document.body.classList.remove("astral-chat-open", "astral-msgs-open");
+    syncChatVisibilityControls();
     timelineMode = false;
     if (reason === "account_switch" || reason === "definitive_sign_out") {
+      clearPrivateAccountState();
       committedRevisionByChat = Object.create(null);
       lastSnapshotIdByChat = Object.create(null);
       seenSnapshotIdsByChat = Object.create(null);
@@ -295,28 +302,78 @@
     }
   }
 
+  /** Erase private local work without dispatching it under the next owner. */
+  function clearPrivateAccountState() {
+    accountPrivacyEpoch += 1;
+    if (input) input.value = "";
+    (pendingActions || []).forEach(function (entry) { clearTimeout(entry.timer); });
+    pendingActions = [];
+    clearStagedAttachments();
+    if (attachInput) attachInput.value = "";
+    closeAttachMenu();
+    setBgArmed(false);
+    bgTaskChips = {};
+    bgTaskDone = {};
+    if (bgTaskHost) bgTaskHost.replaceChildren();
+    agentNameById = Object.create(null);
+    toolToAgentName = Object.create(null);
+    var history = document.getElementById("astral-history");
+    if (history) history.replaceChildren();
+    if (toastHost) toastHost.replaceChildren();
+    tourState = null;
+    clearTourHighlight();
+    setMenu(false, false);
+    setModal("");
+    setStatus("");
+    voiceRecoverySuppressed = true;
+    clearVoiceBindingRenewal();
+    teardownVoiceMedia(true);
+    clearPendingVoiceSubmissions();
+    voiceBinding = null;
+    voicePendingEndFence = null;
+    voiceLastSession = null;
+    clearClientLocalTranscript();
+    clearVoiceRequestTerminal();
+    setVoiceFeedback("off", "ready", null, false);
+    if (typeof window.__astralResetCommands === "function") window.__astralResetCommands("");
+  }
+
   async function prepareAccountIdentity(rawToken, fallbackSubject) {
+    if (accountSignedOut) return false;
     var identity = decodeTokenIdentity(rawToken, fallbackSubject);
     if (!identity || !crypto.subtle) return false;
     var nextKey = await activeChatStorageKey(identity.issuer, identity.subject);
-    if (!nextKey) return false;
+    if (!nextKey || accountSignedOut) return false;
     var previousKey = activeChatLocatorKey;
     if (!previousKey) {
       try { previousKey = sessionStorage.getItem(ACCOUNT_SESSION_KEY); } catch (e) {}
     }
     if (previousKey && previousKey !== nextKey) {
+      // An authenticated owner change needs a fresh transport. Old server
+      // work can still target this socket with unscoped chrome/notifications.
+      var previousSocket = ws;
+      ws = null;
+      socketReady = false;
+      connectionGeneration = null;
+      if (previousSocket) { try { previousSocket.close(); } catch (e) {} }
       clearActiveChatLocator("account_switch", null, previousKey);
       activeChatId = null;
       requestState = null;
     }
     var changed = activeChatLocatorKey !== nextKey;
     activeChatLocatorKey = nextKey;
+    if (changed && typeof window.__astralResetCommands === "function") {
+      window.__astralResetCommands(rawToken);
+    }
     try { sessionStorage.setItem(ACCOUNT_SESSION_KEY, nextKey); } catch (e) {}
     if (!accountIdentityInitialized || changed) {
       accountIdentityInitialized = true;
       var selected = new URLSearchParams(location.search).get("chat");
       activeChatId = isCanonicalUuid4(selected) ? selected : readActiveChatLocator();
-      if (activeChatId) persistActiveChatLocator(activeChatId);
+      if (activeChatId) {
+        persistActiveChatLocator(activeChatId);
+        setWorkspaceView("work");
+      }
     }
     return true;
   }
@@ -327,6 +384,7 @@
   }
 
   function openRequest(purpose, chatId, suppliedGeneration) {
+    setWorkspaceView("work");
     requestState = {
       chatId: chatId || null,
       generation: isCanonicalUuid4(suppliedGeneration) ? suppliedGeneration : randomUuid4(),
@@ -361,15 +419,17 @@
    * Calls cb(true) when authenticated; redirects to login when the session
    * is truly gone and `redirect` is set. */
   function refreshToken(redirect, cb) {
+    if (accountSignedOut) { if (cb) cb(false); return; }
     fetch(API_URL + "/auth/session", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (j) {
+        if (accountSignedOut) { if (cb) cb(false); return; }
         if (j && j.authenticated && j.access_token) {
           token = j.access_token;
           try { sessionStorage.setItem(TOKEN_KEY, token); } catch (e) {}
-          prepareAccountIdentity(token, j.user_id).then(function () {
-            if (cb) cb(true);
-          }).catch(function () { if (cb) cb(true); });
+          prepareAccountIdentity(token, j.user_id).then(function (ready) {
+            if (cb) cb(ready && !accountSignedOut);
+          }).catch(function () { if (cb) cb(false); });
         } else if (redirect) { gotoLogin(); }
         else if (cb) cb(false);
       })
@@ -386,6 +446,110 @@
   }
   function showCanvasEmpty() {
     if (canvasEmpty && !canvasEmpty.parentNode) canvas.insertBefore(canvasEmpty, canvas.firstChild);
+  }
+
+  // Start and work are local arrangements of the same mounted regions. A
+  // cleared conversation returns to start; ordinary rendering never collapses
+  // an active workspace just because a result or loading node disappears.
+  var welcomeSlotIds = Object.freeze({
+    intro: "astral-start-intro",
+    permission: "astral-start-permission",
+    examples: "astral-start-examples",
+    more: "astral-start-more",
+  });
+  function clearWelcomeSlots() {
+    Object.keys(welcomeSlotIds).forEach(function (role) {
+      var host = document.getElementById(welcomeSlotIds[role]);
+      if (host) host.replaceChildren();
+    });
+  }
+  function setWorkspaceView(view) {
+    clearWelcomeSlots();
+    document.body.setAttribute("data-astral-view", view);
+  }
+  function welcomePlacementRole(node) {
+    if (!node || node.nodeType !== 1) return null;
+    var content = node;
+    // Keep the renderer's identity/ARIA wrapper intact. Do not pull arbitrary
+    // nested model or user content out of a component that contains a marker.
+    if (node.matches(".astral-component")) {
+      var identity = node.getAttribute("data-component-id");
+      if (identity && identity.indexOf("wel_") !== 0) return null;
+      if (node.children.length !== 1) return null;
+      content = node.firstElementChild;
+    }
+    var role = content.getAttribute("data-welcome");
+    return Object.prototype.hasOwnProperty.call(welcomeSlotIds, role) ? role : null;
+  }
+  function welcomeContentCandidates(root) {
+    var candidates = [];
+    function collect(node) {
+      if (node.matches('.dynamic-renderer, [data-astral-render-batch="append"]')) {
+        Array.prototype.forEach.call(node.children, collect);
+        return;
+      }
+      var role = welcomePlacementRole(node);
+      if (role) candidates.push({ node: node, role: role });
+    }
+    Array.prototype.forEach.call(root.children, collect);
+    return candidates;
+  }
+  function placeWelcomeContent() {
+    if (!canvas) return;
+    var candidates = welcomeContentCandidates(canvas);
+    if (!candidates.length) return;
+    if (document.body.getAttribute("data-astral-view") === "work") {
+      candidates.forEach(function (entry) { entry.node.remove(); });
+      return;
+    }
+    // Older shells without these hosts keep their welcome in the canvas.
+    if (candidates.some(function (entry) { return !document.getElementById(welcomeSlotIds[entry.role]); })) return;
+    candidates.forEach(function (entry) {
+      document.getElementById(welcomeSlotIds[entry.role]).replaceChildren(entry.node);
+    });
+  }
+  function findWelcomeComponent(identity) {
+    if (typeof identity !== "string" || identity.indexOf("wel_") !== 0) return null;
+    var roles = Object.keys(welcomeSlotIds);
+    for (var i = 0; i < roles.length; i++) {
+      var host = document.getElementById(welcomeSlotIds[roles[i]]);
+      var node = host && host.querySelector(componentSelector(identity));
+      if (node) return node;
+    }
+    return null;
+  }
+  function isLateWelcomeRender(frame) {
+    if (document.body.getAttribute("data-astral-view") !== "work"
+        || (frame.target && frame.target !== "canvas") || typeof frame.html !== "string"
+        || frame.html.indexOf("data-welcome") === -1) return false;
+    var holder = document.createElement("div");
+    holder.innerHTML = frame.html;
+    return welcomeContentCandidates(holder).length > 0
+      && !Array.prototype.some.call(holder.childNodes, hasWorkspaceContent);
+  }
+  function hasWorkspaceContent(node) {
+    if (node.nodeType === 3) return !!node.textContent.trim();
+    if (node.nodeType !== 1) return false;
+    if (node === canvasEmpty || welcomePlacementRole(node) || node.matches("script, style")) return false;
+    if (node.hasAttribute("data-component-id")
+        || node.matches("img, svg, canvas, video, audio, iframe, input, textarea, button")) return true;
+    return Array.prototype.some.call(node.childNodes, hasWorkspaceContent);
+  }
+  function syncWorkspaceView() {
+    placeWelcomeContent();
+    if (document.body.getAttribute("data-astral-view") === "work") return;
+    if ((requestState && (requestState.purpose === "commit" || requestState.purpose === "hydration"))
+        || (chat && Array.prototype.some.call(chat.childNodes, hasWorkspaceContent))
+        || (canvas && Array.prototype.some.call(canvas.childNodes, hasWorkspaceContent))) {
+      setWorkspaceView("work");
+    }
+  }
+  setWorkspaceView("start");
+  syncWorkspaceView();
+  if (window.MutationObserver) {
+    var workspaceObserver = new MutationObserver(syncWorkspaceView);
+    if (canvas) workspaceObserver.observe(canvas, { childList: true, subtree: true, characterData: true });
+    if (chat) workspaceObserver.observe(chat, { childList: true, subtree: true, characterData: true });
   }
   var statusEl = document.getElementById("astral-status");
   // Identifies the operation/submission that currently owns the shared status
@@ -512,6 +676,21 @@
     } catch (e) {}
     applyLayoutClass();
   }
+  function syncChatVisibilityControls() {
+    var layout = document.body.getAttribute("data-astral-layout");
+    var conversation = document.getElementById("astral-chat-toggle");
+    var messages = document.getElementById("astral-msgs-toggle");
+    // Breakpoint changes clear the corresponding CSS classes. Their controls
+    // must report the resulting visibility, not the last click in another mode.
+    var expanded = layout === "collapsed" && document.body.classList.contains("astral-chat-open");
+    if (conversation) {
+      conversation.setAttribute("aria-expanded", expanded ? "true" : "false");
+      conversation.setAttribute("title", expanded ? "Hide conversation" : "Show conversation");
+      conversation.setAttribute("aria-label", expanded ? "Hide conversation" : "Show conversation");
+    }
+    if (messages) messages.setAttribute("aria-expanded",
+      layout === "stacked" && document.body.classList.contains("astral-msgs-open") ? "true" : "false");
+  }
   function applyLayoutClass() {
     var w = window.innerWidth, mode;
     if (w < 700) mode = "stacked";
@@ -532,6 +711,7 @@
       if (mode !== "collapsed") document.body.classList.remove("astral-chat-open");
       if (mode === "split") clearChatUnread();
     }
+    syncChatVisibilityControls();
     syncTopbarChatToggle();
   }
   applyDeviceProfile(detectDeviceType());
@@ -550,28 +730,16 @@
   var chatToggleBtn = document.getElementById("astral-chat-toggle");
   var chatUnreadEl = document.getElementById("astral-chat-unread");
   var chatUnread = 0;
-  // Collapse-trap fix: an always-discoverable topbar twin of the composer
-  // toggle, visible exactly while the conversation is hidden. The topbar is
-  // injected server-side, so resolve lazily (the first applyLayoutClass runs
-  // before this block).
+  // Keep the restore action in the floating panel, including while its
+  // transcript is open. A sidebar is offered only where it fits.
   function topbarChatBtn() {
-    return document.getElementById("astral-topbar-chat-btn");
+    return document.getElementById("astral-restore-chat-btn");
   }
   function syncTopbarChatToggle() {
     var btn = topbarChatBtn();
     if (!btn) return;
     var layout = document.body.getAttribute("data-astral-layout");
-    var hidden = layout === "collapsed"
-      && !document.body.classList.contains("astral-chat-open");
-    btn.hidden = !hidden;
-    var badge = document.getElementById("astral-topbar-chat-unread");
-    if (badge) {
-      // Hoisting guard: the first applyLayoutClass runs before chatUnread
-      // is initialized.
-      var count = typeof chatUnread === "number" ? chatUnread : 0;
-      badge.hidden = count === 0;
-      badge.textContent = count > 9 ? "9+" : String(count);
-    }
+    btn.hidden = layout !== "collapsed" || window.innerWidth < 1024;
   }
   function clearChatUnread() {
     chatUnread = 0;
@@ -600,22 +768,20 @@
     setChatLayoutPref("closed");
   });
   if (chatToggleBtn) chatToggleBtn.addEventListener("click", function () {
+    setWorkspaceView("work");
     var open = document.body.classList.toggle("astral-chat-open");
     chatToggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
     chatToggleBtn.setAttribute("title", open ? "Hide conversation" : "Show conversation");
+    chatToggleBtn.setAttribute("aria-label", open ? "Hide conversation" : "Show conversation");
     if (open) clearChatUnread();
     syncTopbarChatToggle();
   });
-  // Re-pin the rail from collapsed mode: double-click the transcript toggle.
-  if (chatToggleBtn) chatToggleBtn.addEventListener("dblclick", function () {
-    setChatLayoutPref("open");
-  });
-  // The topbar twin restores the conversation in ONE click: re-pin the rail
-  // where the width allows a usable composer, otherwise open the drawer.
+  // One click restores the sidebar without changing conversation or draft.
   document.addEventListener("click", function (event) {
     var btn = event.target && event.target.closest
-      ? event.target.closest("#astral-topbar-chat-btn") : null;
+      ? event.target.closest("#astral-restore-chat-btn") : null;
     if (!btn) return;
+    setWorkspaceView("work");
     setChatLayoutPref("open");
     if (document.body.getAttribute("data-astral-layout") === "collapsed") {
       document.body.classList.add("astral-chat-open");
@@ -626,6 +792,7 @@
       clearChatUnread();
     }
     syncTopbarChatToggle();
+    if (input) input.focus();
   });
   // Coarse-pointer component chrome: tap a component to reveal its actions.
   document.addEventListener("click", function (e) {
@@ -5063,6 +5230,7 @@
 
   /** Create the client-owned retry/generation identity before any socket I/O. */
   function beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus) {
+    if (name === "chat_message" || name === "load_chat") setWorkspaceView("work");
     var body = Object.assign({}, payload || {});
     var submissionId = isCanonicalUuid4(body.submission_id) ? body.submission_id : randomUuid4();
     var requestGeneration = isCanonicalUuid4(suppliedGeneration)
@@ -5240,6 +5408,18 @@
   }
 
   // ---- Plotly chart init from server-rendered data-chart placeholders ----
+  var chartResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(function (entries) {
+    entries.forEach(function (entry) {
+      var chart = entry.target;
+      if (!chart.isConnected) { chartResizeObserver.unobserve(chart); return; }
+      var width = Math.round(entry.contentRect.width);
+      if (!width || chart.dataset.plotWidth === String(width)) return;
+      chart.dataset.plotWidth = String(width);
+      if (typeof Plotly !== "undefined" && chart.dataset.rendered) {
+        Promise.resolve(Plotly.Plots.resize(chart)).catch(function () {});
+      }
+    });
+  });
   function initCharts(root) {
     if (typeof Plotly === "undefined") {
       if (root.querySelectorAll(".astral-chart").length) {
@@ -5274,7 +5454,24 @@
         layout = Object.assign(layout, spec.layout || {});
         cfg = Object.assign(cfg, spec.config || {});
       } else continue;
-      try { Plotly.newPlot(el, traces, layout, cfg); el.dataset.rendered = "1"; } catch (e) {}
+      // The host owns chart geometry. An author-supplied fixed width must not
+      // escape the canvas when its rail opens or the viewport becomes narrow.
+      delete layout.width;
+      layout.autosize = true;
+      cfg.responsive = true;
+      if (el.getBoundingClientRect().width < 500) {
+        layout.height = 260;
+        layout.margin = { l: 44, r: 12, t: 32, b: 60 };
+      }
+      ["xaxis", "yaxis"].forEach(function (axis) {
+        layout[axis] = Object.assign({}, layout[axis] || {}, { automargin: true });
+      });
+      try {
+        el._astralPlotReady = Promise.resolve(Plotly.newPlot(el, traces, layout, cfg));
+        el.dataset.rendered = "1";
+        if (chartResizeObserver) chartResizeObserver.observe(el);
+        el._astralPlotReady.catch(function () { delete el.dataset.rendered; });
+      } catch (e) {}
     }
   }
 
@@ -5308,6 +5505,7 @@
   function setHTML(region, htmlStr) { region.innerHTML = htmlStr || ""; processSideEffects(region); }
   function appendHTML(region, htmlStr) {
     var d = document.createElement("div"); d.innerHTML = htmlStr || "";
+    if (region === canvas) d.setAttribute("data-astral-render-batch", "append");
     region.appendChild(d); processSideEffects(d);
     region.scrollTop = region.scrollHeight;
   }
@@ -5405,6 +5603,7 @@
   // .astral-skeleton-line shimmer the server-driven skeleton primitive ships.
   function showSkeleton() {
     if (timelineMode || document.getElementById("astral-canvas-skeleton")) return;
+    setWorkspaceView("work");
     hideCanvasEmpty(); // the welcome placeholder never coexists with the loading skeleton
     var d = document.createElement("div");
     d.id = "astral-canvas-skeleton";
@@ -5433,6 +5632,7 @@
   // server flag is off the welcome arrives id-less, nothing matches, and
   // this is a no-op.
   function purgeWelcome() {
+    clearWelcomeSlots();
     var nodes = canvas.querySelectorAll('[data-component-id^="wel_"]');
     for (var i = 0; i < nodes.length; i++) {
       if (nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
@@ -5475,8 +5675,10 @@
       var op = ops[i];
       if (!op || !op.component_id) continue;
       var node = canvas.querySelector(componentSelector(op.component_id));
+      var welcomeNode = !node && findWelcomeComponent(op.component_id);
       if (op.op === "remove") {
         if (node) node.parentNode.removeChild(node);
+        if (welcomeNode) welcomeNode.remove();
         continue;
       }
       if (!op.html) continue;
@@ -5484,6 +5686,9 @@
       holder.innerHTML = op.html;
       var fresh = holder.firstElementChild;
       if (!fresh) continue;
+      // Slot-owned welcome nodes retain normal identity upsert/removal. New
+      // markup goes through canvas classification again before any adoption.
+      if (welcomeNode) welcomeNode.remove();
       if (node) node.replaceWith(fresh);
       else renderer.appendChild(fresh);
       processSideEffects(fresh);
@@ -6310,10 +6515,12 @@
         reduceConversationSnapshot(data);
         break;
       case "ui_render":
+        if (isLateWelcomeRender(data)) break;
         if (data.target === "history") { var hr = document.getElementById("astral-history"); if (hr) setHTML(hr, data.html); }
         else if (activeChatId) reduceTransientFrame(data);
         else if (data.target === "chat") appendChatBubble("assistant", data.html);
         else {
+          clearWelcomeSlots();
           hideSkeleton(); setHTML(canvas, data.html);
           // Emptiness comes from the STRUCTURED payload: render_workspace
           // emits a truthy wrapper div even for zero components (055), so
@@ -6327,8 +6534,10 @@
         else applyUpsert(data);
         break; // in-place workspace updates
       case "ui_update":
+        if (isLateWelcomeRender(data)) break;
         if (activeChatId) reduceTransientFrame(data);
         else {
+          clearWelcomeSlots();
           hideSkeleton(); setHTML(canvas, data.html); if (!data.html) showCanvasEmpty();
           readCanvasFlags(); syncCanvasToolbar();
         }
@@ -6373,7 +6582,7 @@
               // sendRegistration emits {type: "register_ui", token: token}
               // after re-binding the locator and a fresh hydration request.
               sendRegistration(true);
-            } else if (ok) { try { ws.close(); } catch (e) {} }
+            } else if (ok) { connect(); }
           });
         } else { gotoLogin(); }
         break;
@@ -6716,6 +6925,7 @@
   function sendChat(message) {
     var ready = (typeof readyAttachments === "function") ? readyAttachments() : [];
     if (!message && !ready.length) return;
+    setWorkspaceView("work");
     if (!isSocketReady()) {
       // 066: never silently drop a send — queue it visibly and dispatch on
       // registration, or refuse loudly with the text preserved.
@@ -6807,6 +7017,11 @@
     input.value = "";
     sendChat(v);
   });
+  if (input && input.tagName === "TEXTAREA") input.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.keyCode === 229 || e.defaultPrevented) return;
+    e.preventDefault();
+    if (form) form.requestSubmit();
+  });
 
   // ---- new chat (topbar button) — the web twin of the native clients' ＋ New:
   // clear the local conversation state, then ask the server for a fresh chat
@@ -6821,6 +7036,24 @@
       setVoiceFeedback("connecting", "chat_context_unavailable", "Creating the new voice chat context…", true);
     }
     clearActiveChatLocator("explicit_new_chat", activeChatId);
+    // Only unsent chat requests belong to the discarded composer. Keeping
+    // them would replay the old draft in the new chat after reconnect.
+    var cancelledMessages = 0;
+    pendingActions = pendingActions.filter(function (entry) {
+      if (entry.label !== "chat_message") return true;
+      clearTimeout(entry.timer);
+      cancelledMessages += 1;
+      return false;
+    });
+    if (cancelledMessages) showToast("Queued messages cleared for the new chat.", "info");
+    if (input) {
+      input.value = "";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    clearStagedAttachments();
+    if (attachInput) attachInput.value = "";
+    closeAttachMenu();
+    setBgArmed(false);
     activeChatId = null;
     timelineMode = false;
     streamSeq = {};
@@ -6842,6 +7075,7 @@
   document.addEventListener("click", function (event) {
     var link = event.target.closest && event.target.closest('a[href^="/auth/logout"]');
     if (link) {
+      accountSignedOut = true;
       var voiceFence = currentVoiceFence();
       voiceRecoverySuppressed = true;
       clearVoiceBindingRenewal();
@@ -6852,11 +7086,13 @@
       // leaves this tab's sessionStorage alive, so retaining TOKEN_KEY could
       // register the next account's WebSocket as the previous principal.
       token = "";
+      window.__ASTRAL_TOKEN__ = "";
       try {
         sessionStorage.removeItem(TOKEN_KEY);
         sessionStorage.removeItem(ACCOUNT_SESSION_KEY);
       } catch (e) {}
       clearActiveChatLocator("definitive_sign_out", activeChatId);
+      if (ws) { try { ws.close(); } catch (e) {} }
     }
   }, true);
 
@@ -6872,6 +7108,11 @@
   }
   var chatsBtn = document.getElementById("astral-chats-btn");
   if (chatsBtn) chatsBtn.addEventListener("click", function () {
+    setWorkspaceView("work");
+    if (document.body.getAttribute("data-astral-layout") === "collapsed") {
+      document.body.classList.add("astral-chat-open");
+      if (chatToggleBtn) chatToggleBtn.setAttribute("aria-expanded", "true");
+    }
     var topbar = document.getElementById("astral-topbar");
     if (topbar) document.documentElement.style.setProperty("--astral-topbar-h", topbar.offsetHeight + "px");
     var open = document.body.classList.toggle("astral-history-open");
@@ -6880,6 +7121,7 @@
   var msgsToggle = document.getElementById("astral-msgs-toggle");
   var msgsLabel = document.getElementById("astral-msgs-label");
   if (msgsToggle) msgsToggle.addEventListener("click", function () {
+    setWorkspaceView("work");
     var open = document.body.classList.toggle("astral-msgs-open");
     msgsToggle.setAttribute("aria-expanded", open ? "true" : "false");
     if (open && chat) chat.scrollTop = chat.scrollHeight;
@@ -6889,6 +7131,7 @@
     var n = chat.children.length;
     msgsToggle.hidden = n === 0;
     if (n === 0) document.body.classList.remove("astral-msgs-open");
+    syncChatVisibilityControls();
     if (msgsLabel) msgsLabel.textContent = n ? "Messages (" + n + ")" : "Messages";
   }
   if (window.MutationObserver && chat) new MutationObserver(syncMsgsToggle).observe(chat, { childList: true });
@@ -7102,18 +7345,44 @@
 
   // Exports are authenticated downloads: fetch with the bearer token, then
   // hand the blob to a temporary <a download> (a plain href can't carry auth).
-  function exportDownload(path, filename, appendChat) {
+  async function snapshotCanvasDocument() {
+    return window.AstralCanvasExport.snapshot({
+      canvas: canvas,
+      plotly: typeof Plotly === "undefined" ? undefined : Plotly,
+      loadFont: function (name) {
+        return fetch(API_URL + "/static/fonts/" + name, { credentials: "omit" }).then(function (response) {
+          if (!response.ok) throw new Error("Could not include the canvas font in the download.");
+          return response.arrayBuffer();
+        });
+      },
+    });
+  }
+
+  function exportDownload(path, filename, appendChat, visualCanvas) {
+    var ownerEpoch = accountPrivacyEpoch;
+    var exportChatId = activeChatId;
+    var exportRevision = lastCommittedRenderRevision();
     var url = path;
+    if (visualCanvas) url += (url.indexOf("?") === -1 ? "?" : "&") + "render_revision=" + encodeURIComponent(exportRevision);
     if (appendChat) {
       if (!activeChatId) { showToast("Open a chat first — nothing to export yet.", "error"); return; }
       url += (url.indexOf("?") === -1 ? "?" : "&") + "chat_id=" + encodeURIComponent(activeChatId);
     }
-    fetch(API_URL + url, { headers: { Authorization: "Bearer " + token }, credentials: "same-origin" })
+    return fetch(API_URL + url, { headers: { Authorization: "Bearer " + token }, credentials: "same-origin" })
       .then(function (r) {
-        if (!r.ok) throw new Error("Export failed (" + r.status + ")");
+        if (!r.ok) throw new Error(r.status === 409 ? "Canvas changed. Reload the chat before exporting." : "Export failed (" + r.status + ")");
+        if (ownerEpoch !== accountPrivacyEpoch || exportChatId !== activeChatId) return null;
+        // The authenticated endpoint still authorizes and audits the export.
+        // After approval, capture exactly the visible canvas, including charts.
+        if (visualCanvas) {
+          if (lastCommittedRenderRevision() !== exportRevision || r.headers.get("X-Astral-Render-Revision") !== String(exportRevision)) throw new Error("Canvas changed. Reload the chat before exporting.");
+          return snapshotCanvasDocument();
+        }
         return r.blob();
       })
       .then(function (blob) {
+        if (!blob || ownerEpoch !== accountPrivacyEpoch || exportChatId !== activeChatId) return;
+        if (visualCanvas && lastCommittedRenderRevision() !== exportRevision) throw new Error("Canvas changed during export. Try the download again.");
         var a = document.createElement("a");
         a.href = URL.createObjectURL(blob);
         a.download = filename || "export";
@@ -7124,11 +7393,15 @@
           if (a.parentNode) a.parentNode.removeChild(a);
         }, 1000);
       })
-      .catch(function (err) { showToast(String((err && err.message) || err), "error"); });
+      .catch(function (err) {
+        if (ownerEpoch !== accountPrivacyEpoch) return;
+        showToast(String((err && err.message) || err), "error");
+      });
   }
 
   function mintShare(scope, componentId) {
     if (!activeChatId) { showToast("Open a chat first — nothing to share yet.", "error"); return; }
+    var ownerEpoch = accountPrivacyEpoch;
     var body = { chat_id: activeChatId, scope: scope };
     if (componentId) body.component_id = componentId;
     fetch(API_URL + "/api/share", {
@@ -7141,6 +7414,7 @@
         return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
       })
       .then(function (res) {
+        if (ownerEpoch !== accountPrivacyEpoch) return;
         if (!res.ok) {
           var msg = res.body && res.body.error === "phi_blocked"
             ? "Sharing refused: the content matched the PHI gate."
@@ -7153,11 +7427,20 @@
         var abs = shareUrl.indexOf("http") === 0 ? shareUrl : API_URL + shareUrl;
         if (navigator.clipboard && navigator.clipboard.writeText) {
           navigator.clipboard.writeText(abs).then(
-            function () { showToast("Share link copied to clipboard.", "info"); },
-            function () { showToast("Share link: " + abs, "info"); });
+            function () {
+              if (ownerEpoch !== accountPrivacyEpoch) return;
+              showToast("Share link copied to clipboard.", "info");
+            },
+            function () {
+              if (ownerEpoch !== accountPrivacyEpoch) return;
+              showToast("Share link: " + abs, "info");
+            });
         } else { showToast("Share link: " + abs, "info"); }
       })
-      .catch(function () { showToast("Couldn't create the share link.", "error"); });
+      .catch(function () {
+        if (ownerEpoch !== accountPrivacyEpoch) return;
+        showToast("Couldn't create the share link.", "error");
+      });
   }
 
   // Canvas page actions (export page / share page). The server stamps the flag
@@ -7202,7 +7485,7 @@
     if (expCanvas) {
       if (!activeChatId) { showToast("Open a chat first — nothing to export yet.", "error"); return; }
       exportDownload("/api/export/canvas/" + encodeURIComponent(activeChatId) + ".html",
-        "canvas-" + activeChatId + ".html", false);
+        "canvas-" + activeChatId + ".html", false, true);
       return;
     }
     var share = t.closest && t.closest(".astral-share-btn");
@@ -7265,6 +7548,7 @@
   }
 
   function uploadStagedFile(file) {
+    var ownerEpoch = accountPrivacyEpoch;
     var entry = { uid: ++attachSeq, attachment_id: null, filename: file.name,
                   category: "file", state: "uploading", note: "" };
     stagedAttachments.push(entry);
@@ -7275,6 +7559,7 @@
         return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
       })
       .then(function (res) {
+        if (ownerEpoch !== accountPrivacyEpoch || stagedAttachments.indexOf(entry) === -1) return;
         if (!res.ok) {
           entry.state = "failed";
           entry.note = (res.body && (res.body.detail || res.body.message)) || ("error " + res.status);
@@ -7296,6 +7581,7 @@
         renderAttachments();
       })
       .catch(function () {
+        if (ownerEpoch !== accountPrivacyEpoch || stagedAttachments.indexOf(entry) === -1) return;
         entry.state = "failed"; entry.note = "network error";
         setStatus("Couldn't attach " + file.name);
         renderAttachments();
@@ -7812,6 +8098,7 @@
 
   // ---- connection lifecycle ----
   function connect() {
+    if (accountSignedOut) return;
     var preserveVoiceControls = !!voiceRecoverableFence() || !!voicePendingEndFence;
     voiceBinding = null;
     voiceComposer = null;
@@ -7826,7 +8113,9 @@
     }
     connectionGeneration = randomUuid4();
     ws = new WebSocket(WS_URL);
+    var thisSocket = ws;
     ws.onopen = function () {
+      if (accountSignedOut || ws !== thisSocket) return;
       attempts = 0; authRetried = false; setStatus("");
       setConnState("connecting", "Registering…");
       // resumed: firstConnect ? serverResumed : true
@@ -7844,9 +8133,12 @@
       // the task finished while the socket was down.
       for (var tid in bgTaskChips) action("watch_task", { task_id: tid }, false);
     };
-    ws.onmessage = onMessage;
-    ws.onerror = function () { try { ws.close(); } catch (e) {} };
+    ws.onmessage = function (event) {
+      if (!accountSignedOut && ws === thisSocket) onMessage(event);
+    };
+    ws.onerror = function () { try { thisSocket.close(); } catch (e) {} };
     ws.onclose = function () {
+      if (accountSignedOut || ws !== thisSocket) return;
       socketReady = false;
       setConnState("offline", "Reconnecting — messages will queue");
       operationSubmissionByGeneration = Object.create(null);
@@ -7909,6 +8201,7 @@
     { name: "/download", desc: "get the Windows desktop app" }
   ];
   var COMMANDS = CURATED.slice();
+  var ownerEpoch = 0;
   var input = document.getElementById("astral-input");
   var menu = document.getElementById("astral-slash-menu");
   if (!input || !menu) return;
@@ -7924,13 +8217,14 @@
     });
     COMMANDS = merged;
   }
-  function loadMine() {
-    var token = window.__ASTRAL_TOKEN__ || "";
+  function loadMine(token) {
+    var requestEpoch = ownerEpoch;
     if (!token || typeof fetch !== "function") return;
     fetch((window.__ASTRAL_API_URL__ || "") + "/api/chrome/commands",
           { headers: { Authorization: "Bearer " + token }, credentials: "same-origin", cache: "no-store" })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (data) {
+        if (requestEpoch !== ownerEpoch) return;
         if (!data || !Array.isArray(data.commands)) return;
         setMine(data.commands.filter(function (c) { return c && c.mine; }));
       })
@@ -7942,7 +8236,13 @@
     try { setMine(JSON.parse(holder.getAttribute("data-astral-commands") || "[]")); }
     catch (e) { /* malformed attribute: keep the current list */ }
   };
-  loadMine();
+  window.__astralResetCommands = function (token) {
+    ownerEpoch += 1;
+    setMine([]);
+    hide();
+    loadMine(token);
+  };
+  loadMine(window.__ASTRAL_TOKEN__ || "");
 
   function hide() { menu.classList.add("hidden"); menu.innerHTML = ""; }
 

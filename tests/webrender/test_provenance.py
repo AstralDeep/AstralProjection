@@ -90,13 +90,14 @@ def test_non_dict_is_generated():
 
 # ───────────────────────── footer rendering ──────────────────────────────────
 
-def test_grounded_component_gets_tool_footer():
+def test_grounded_component_keeps_identity_without_tool_footer():
     out = render_component_fragment({
         "type": "table", "component_id": "c1", "headers": ["x"], "rows": [["1"]],
         "_source_tool": "list_patients", "_source_agent": "agent-x"})
-    assert "astral-provenance--grounded" in out
-    assert "tool data" in out
-    assert "agent-x" in out  # the tooltip names the source
+    assert 'data-component-id="c1"' in out
+    assert "astral-provenance" not in out
+    assert "tool data" not in out
+    assert "agent-x" not in out
 
 
 def test_generated_garnish_gets_ai_footer():
@@ -130,7 +131,7 @@ def test_flag_off_is_legacy_markup(monkeypatch):
 
 def test_footer_skipped_on_watch_and_voice():
     comp = {"type": "table", "component_id": "c1", "headers": ["x"], "rows": [["1"]],
-            "_source_tool": "t"}
+            "provenance": "estimated"}
     assert "astral-provenance" not in render_component_fragment(comp, _profile("watch"))
     assert "astral-provenance" not in render_component_fragment(comp, _profile("voice"))
     # but present on a full browser surface
@@ -138,13 +139,13 @@ def test_footer_skipped_on_watch_and_voice():
 
 
 def test_footer_present_when_no_profile():
-    comp = {"type": "metric", "component_id": "c1", "_source_tool": "t", "value": "9"}
+    comp = {"type": "metric", "component_id": "c1", "provenance": "estimated", "value": "9"}
     assert "astral-provenance" in render_component_fragment(comp, None)
 
 
 # ───────────────────────── workspace threads profile ─────────────────────────
 
 def test_workspace_threads_profile_to_fragments():
-    comps = [{"type": "metric", "component_id": "c1", "_source_tool": "t", "value": "9"}]
+    comps = [{"type": "metric", "component_id": "c1", "provenance": "estimated", "value": "9"}]
     assert "astral-provenance" in render_workspace(comps, _profile("browser"))
     assert "astral-provenance" not in render_workspace(comps, _profile("watch"))

@@ -197,6 +197,80 @@ final class ConversationSnapshotTests: XCTestCase {
         }
     }
 
+    func testDetachedPreludeCannotStealUnfinishedCommitOrItsTransientSequence() throws {
+        let detached = "99999999-9999-4999-8999-999999999999"
+        func ready(request: String, revision: Int) throws -> ConversationCommitReady {
+            try XCTUnwrap(
+                ConversationCommitReady(
+                    frame: frame(
+                        """
+                        {"type":"conversation_commit_ready","schema_version":1,
+                         "chat_id":"\(chat)","connection_generation":"\(connection)",
+                         "request_generation":"\(request)","render_revision":\(revision)}
+                        """)))
+        }
+        func preview(sequence: Int) throws -> InboundFrame {
+            try frame(
+                """
+                {"type":"ui_upsert","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(commit)",
+                 "base_render_revision":4,"frame_sequence":\(sequence),"ops":[]}
+                """)
+        }
+        for clientOriginated in [true, false] {
+            var reducer = ConversationContinuityReducer(lastCommittedRenderRevision: 4)
+            XCTAssertTrue(reducer.beginConnection(connection))
+            XCTAssertTrue(reducer.openRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+            XCTAssertEqual(reducer.apply(try snapshot(revision: 4)), .applied)
+            if clientOriginated {
+                XCTAssertTrue(reducer.openRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+            } else {
+                XCTAssertTrue(reducer.accept(try ready(request: commit, revision: 5)))
+            }
+            XCTAssertTrue(reducer.acceptTransient(try preview(sequence: 1)))
+            XCTAssertFalse(reducer.accept(try ready(request: detached, revision: 6)))
+            XCTAssertEqual(reducer.requestGeneration, commit)
+            XCTAssertEqual(reducer.requestPurpose, .commit)
+            XCTAssertEqual(reducer.activeChatId, chat)
+            XCTAssertEqual(reducer.lastCommittedRenderRevision, 4)
+            XCTAssertNil(reducer.acceptedSnapshot)
+            XCTAssertFalse(reducer.acceptTransient(try preview(sequence: 1)))
+            XCTAssertTrue(reducer.acceptTransient(try preview(sequence: 2)))
+            XCTAssertEqual(
+                reducer.apply(try snapshot(request: detached, purpose: "commit", revision: 6)),
+                .rejected(.scopeMismatch))
+            // Client-originated commits need no prelude; only detached commits
+            // bind an expected revision. Either open request still completes.
+            XCTAssertEqual(reducer.apply(try snapshot(request: commit, purpose: "commit", revision: 5)), .applied)
+            XCTAssertTrue(reducer.accept(try ready(request: detached, revision: 6)))
+            XCTAssertEqual(reducer.apply(try snapshot(request: detached, purpose: "commit", revision: 6)), .applied)
+            XCTAssertFalse(reducer.accept(try ready(request: detached, revision: 7)))
+        }
+    }
+
+    func testRetiringAttemptAndClearingChatKeepConsumedGenerations() throws {
+        var reducer = ConversationContinuityReducer()
+        XCTAssertTrue(reducer.beginConnection(connection))
+        XCTAssertTrue(reducer.openRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+        XCTAssertFalse(reducer.retireUncommittedCommit(requestGeneration: hydration))
+        XCTAssertEqual(reducer.apply(try snapshot(revision: 4)), .applied)
+        XCTAssertTrue(reducer.openRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        XCTAssertFalse(reducer.retireUncommittedCommit(requestGeneration: hydration))
+        XCTAssertTrue(reducer.retireUncommittedCommit(requestGeneration: commit))
+        XCTAssertNil(reducer.requestGeneration)
+        XCTAssertNil(reducer.requestPurpose)
+        XCTAssertEqual(reducer.activeChatId, chat)
+        XCTAssertEqual(reducer.lastCommittedRenderRevision, 4)
+        XCTAssertFalse(reducer.openRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        reducer.clearChatKeepingConnection()
+        XCTAssertEqual(reducer.connectionGeneration, connection)
+        XCTAssertNil(reducer.activeChatId)
+        XCTAssertEqual(reducer.lastCommittedRenderRevision, 0)
+        XCTAssertFalse(reducer.openRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        XCTAssertTrue(reducer.beginConnection("88888888-8888-4888-8888-888888888888"))
+        XCTAssertTrue(reducer.openRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+    }
+
     func testTransientFramesRequireExactScopeBaseAndIncreasingSequence() throws {
         var reducer = ConversationContinuityReducer(lastCommittedRenderRevision: 7)
         XCTAssertTrue(reducer.beginConnection(connection))

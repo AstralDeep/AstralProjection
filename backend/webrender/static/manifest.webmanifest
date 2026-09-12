@@ -1,0 +1,18 @@
+{
+  "id": "/",
+  "name": "AstralDeep",
+  "short_name": "AstralDeep",
+  "description": "Your AstralDeep workspace",
+  "lang": "en",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0F1221",
+  "theme_color": "#0F1221",
+  "icons": [{
+    "src": "/static/img/astra-fav.png",
+    "sizes": "180x180",
+    "type": "image/png",
+    "purpose": "any"
+  }]
+}

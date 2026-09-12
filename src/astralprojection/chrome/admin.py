@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Mapping
+from itertools import groupby
 
 from astralprojection.models import ChromeViewModel, ComponentView, LayoutView, ThemeView
 
@@ -53,6 +54,7 @@ def build_audit_view(
     next_cursor: str | None = None,
     denied: bool = False,
     error: str | None = None,
+    loaded: bool = True,
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
@@ -62,7 +64,7 @@ def build_audit_view(
     if error:
         return unavailable_view("audit", "Audit log", error)
     if selected is not None:
-        return _build_audit_detail(selected, theme=theme, layout=layout)
+        return _build_audit_detail(selected, filters=filters, theme=theme, layout=layout)
 
     active = dict(filters or {})
     fields = [
@@ -81,6 +83,8 @@ def build_audit_view(
             options=("", *_AUDIT_OUTCOMES),
         ),
         field("q", "Search", default=active.get("q") or ""),
+        field("from", "From (UTC)", default=active.get("from") or "", help_text="YYYY-MM-DD"),
+        field("to", "Through (UTC)", default=active.get("to") or "", help_text="YYYY-MM-DD"),
     ]
     components: list[ComponentView] = [
         form(
@@ -90,45 +94,87 @@ def build_audit_view(
             title="Filter audit entries",
         )
     ]
+    components.append(container([
+        button(label, "chrome_audit_page", {"fields": values})
+        for label, values in (
+            ("Reset", {}), ("All activity", {}), ("Failures", {"outcome": "failure"}),
+            ("Tool calls", {"event_class": "agent_tool_call"}), ("Sign ins", {"event_class": "auth"}),
+        )
+    ], direction="row"))
     rows = _rows(entries)
+    if not loaded:
+        return build_view("audit", "Audit log", components, theme=theme, layout=layout)
     if not rows:
         components.append(alert("No audit entries match the current filters.", "info"))
     else:
         components.append(text(f"Showing {len(rows)} entries", "caption"))
-        for entry in rows:
-            outcome = clean_text(entry.get("outcome") or "unknown")
-            description = " ".join(clean_text(entry.get("description")).split())
-            if len(description) > 120:
-                description = description[:117].rstrip() + "..."
-            components.append(
-                card(
-                    entry.get("action_type") or "Audit event",
-                    [
-                        container(
-                            [
-                                badge(outcome, _outcome_variant(outcome)),
-                                text(entry.get("event_class") or "unknown", "caption"),
-                                text(entry.get("recorded_at") or "-", "caption"),
-                            ],
-                            direction="row",
-                        ),
-                        text(description or "No description supplied."),
-                        button(
-                            "View details",
-                            "chrome_open",
-                            {
-                                "surface": "audit",
-                                "params": {"event_id": clean_text(entry.get("event_id"))},
-                            },
-                        ),
-                    ],
+        components.extend(_audit_pager(active, next_cursor))
+        for day, entries_for_day in groupby(rows, key=lambda row: clean_text(row.get("recorded_at"))[:10]):
+            components.append(text(f"{day} (UTC)", "h3"))
+            for routine, batch in groupby(entries_for_day, key=lambda row: (
+                row.get("outcome") == "success" and row.get("action_type") in (
+                    "ws.chrome_open", "ws.chrome_close", "audit_view.list", "audit_view.detail"
                 )
-            )
-    if next_cursor:
-        payload = {"fields": {**active, "cursor": clean_text(next_cursor)}}
-        components.append(button("Next", "chrome_audit_page", payload))
+            )):
+                cards = [_audit_entry(entry, active) for entry in batch]
+                if routine and len(cards) > 1:
+                    components.append(ComponentView("collapsible", {
+                        "title": f"{len(cards)} navigation and audit views",
+                        "default_open": False, "content": [item.to_dict() for item in cards],
+                    }))
+                else:
+                    components.extend(cards)
+    components.extend(_audit_pager(active, next_cursor))
     return build_view("audit", "Audit log", components, theme=theme, layout=layout)
 
+
+
+def _audit_pager(active: Mapping[str, object], next_cursor: str | None) -> list[ComponentView]:
+    """Preserve bounded cursor history and filters across both native directions."""
+    try:
+        history = json.loads(str(active.get("history") or "[]"))
+    except (ValueError, RecursionError):
+        history = []
+    if (not isinstance(history, list) or len(history) > 100
+            or not all(isinstance(item, str) and len(item) <= 512 for item in history)):
+        history = []
+    buttons = []
+    if active.get("cursor"):
+        buttons.extend([
+            button("Previous", "chrome_audit_page", {"fields": {
+                **active, "cursor": history[-1] if history else "", "history": json.dumps(history[:-1]),
+            }}),
+            button("Newest", "chrome_audit_page", {"fields": {
+                key: value for key, value in active.items() if key not in ("cursor", "history")
+            }}),
+        ])
+    if next_cursor:
+        buttons.append(button("Next", "chrome_audit_page", {"fields": {
+            **active, "cursor": clean_text(next_cursor),
+            "history": json.dumps((history + [active.get("cursor") or ""])[-100:]),
+        }}))
+    return [container(buttons, direction="row")] if buttons else []
+
+
+def _audit_entry(entry: Mapping[str, object], active: Mapping[str, object]) -> ComponentView:
+    """Render one authorized row with an exact filter-preserving detail action."""
+    outcome = clean_text(entry.get("outcome") or "unknown")
+    description = " ".join(clean_text(entry.get("description")).split())
+    if len(description) > 120:
+        description = description[:117].rstrip() + "..."
+    return card(entry.get("action_type") or "Audit event", [
+        container([
+            badge(outcome, _outcome_variant(outcome)),
+            text(entry.get("event_class") or "unknown", "caption"),
+            text(entry.get("recorded_at") or "-", "caption"),
+        ], direction="row"),
+        text(description or "No description supplied."),
+        button("View details", "chrome_open", {
+            "surface": "audit", "params": {
+                "event_id": clean_text(entry.get("event_id")), "return_to": dict(active),
+            },
+        }),
+    ])
 
 def _outcome_variant(outcome: str) -> str:
     return {
@@ -142,12 +188,13 @@ def _outcome_variant(outcome: str) -> str:
 def _build_audit_detail(
     entry: Mapping[str, object],
     *,
+    filters: Mapping[str, object] | None,
     theme: ThemeView | None,
     layout: LayoutView | None,
 ) -> ChromeViewModel:
     if not entry:
         components = [
-            button("Back to audit log", "chrome_open", {"surface": "audit", "params": {}}),
+            button("Back to audit log", "chrome_open", {"surface": "audit", "params": dict(filters or {})}),
             alert("Audit event not found.", "error"),
         ]
         return build_view("audit", "Audit log", components, theme=theme, layout=layout)
@@ -167,7 +214,7 @@ def _build_audit_detail(
     if entry.get("outcome_detail"):
         rows.append(("Outcome detail", entry["outcome_detail"]))
     components: list[ComponentView] = [
-        button("Back to audit log", "chrome_open", {"surface": "audit", "params": {}}),
+        button("Back to audit log", "chrome_open", {"surface": "audit", "params": dict(filters or {})}),
         key_value(rows, title="Event details"),
         card("Inputs metadata", [text(_pretty(entry.get("inputs_meta")))]),
         card("Outputs metadata", [text(_pretty(entry.get("outputs_meta")))]),
@@ -178,10 +225,14 @@ def _build_audit_detail(
         for artifact in artifacts:
             if isinstance(artifact, Mapping):
                 availability = "available" if artifact.get("available") else "no longer available"
+                extension = clean_text(artifact.get("extension") or "unknown type")
+                size = artifact.get("size_bytes")
+                size_label = f"{clean_text(size)} bytes" if size is not None else "size unknown"
                 artifact_components.append(
                     text(
                         f"{clean_text(artifact.get('store'))} / "
-                        f"{clean_text(artifact.get('artifact_id'))} — {availability}",
+                        f"{clean_text(artifact.get('artifact_id'))} "
+                        f"({extension}, {size_label}) — {availability}",
                         "caption",
                     )
                 )

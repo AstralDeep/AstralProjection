@@ -3,9 +3,9 @@
 The native Android client registers ``device_type: "android"`` and renders the
 structured components natively (Compose), so it receives a FULL-capability
 profile (like ``windows``) plus ``supported_types`` capability-negotiation —
-NOT the web-oriented ``mobile``/``tablet`` density constraints (which, e.g.,
-strip code on a phone). The client owns its own responsive layout, so ROTE
-applies primitive substitution, not layout density. Pure Python.
+without web-oriented text/table truncation or code stripping on phones.
+Feature 088 shares web grid density while preserving native capabilities.
+Pure Python.
 """
 from __future__ import annotations
 

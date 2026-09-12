@@ -7,6 +7,7 @@ import android.media.AudioManager
 import androidx.core.content.ContextCompat
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
 import java.util.UUID
+import kotlin.math.roundToInt
 
 data class RuntimeVoiceCapability(
     val hasMicrophone: Boolean,
@@ -28,12 +29,17 @@ fun deviceCapabilities(
     supportedTypes: List<String>,
     deviceId: String? = null,
     voice: RuntimeVoiceCapability = RuntimeVoiceCapability(false, false, "not_determined", false),
-): DeviceCapabilities =
-    DeviceCapabilities(
+): DeviceCapabilities {
+    require(widthPx > 0 && heightPx > 0 && pixelRatio.isFinite() && pixelRatio > 0) {
+        "Screen dimensions and density must be finite positive metrics"
+    }
+    return DeviceCapabilities(
         screenWidth = widthPx,
         screenHeight = heightPx,
-        viewportWidth = widthPx,
-        viewportHeight = heightPx,
+        // ROTE breakpoints use logical viewport pixels, like browser CSS pixels.
+        // Keep physical screen dimensions and density as separate device facts.
+        viewportWidth = (widthPx / pixelRatio).roundToInt().coerceAtLeast(1),
+        viewportHeight = (heightPx / pixelRatio).roundToInt().coerceAtLeast(1),
         pixelRatio = pixelRatio,
         hasTouch = true,
         supportedTypes = supportedTypes,
@@ -45,6 +51,7 @@ fun deviceCapabilities(
         fullDuplex = voice.fullDuplex,
         voiceTransport = "livekit",
     )
+}
 
 /** Stable non-secret installation identity used only with a live server binding. */
 fun voiceDeviceId(context: Context): String {

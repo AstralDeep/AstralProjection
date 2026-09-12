@@ -58,6 +58,9 @@ def build_agents_view(
     tab: str = "mine",
     selected: Mapping[str, object] | None = None,
     can_manage: bool = False,
+    can_configure: bool | None = None,
+    can_set_visibility: bool | None = None,
+    can_set_safe: bool | None = None,
     permissions: Iterable[Mapping[str, object]] = (),
     credentials: Iterable[Mapping[str, object]] = (),
     denied: bool = False,
@@ -75,7 +78,9 @@ def build_agents_view(
         return _build_agent_detail(
             selected,
             tab=active,
-            can_manage=can_manage,
+            can_configure=can_manage if can_configure is None else can_configure,
+            can_set_visibility=can_manage if can_set_visibility is None else can_set_visibility,
+            can_set_safe=can_manage if can_set_safe is None else can_set_safe,
             permissions=permissions,
             credentials=credentials,
             theme=theme,
@@ -84,7 +89,7 @@ def build_agents_view(
     tabs = container(
         [
             button(
-                "My agents",
+                "Owned by me",
                 "chrome_open",
                 {"surface": "agents", "params": {"tab": "mine"}},
                 disabled=active == "mine",
@@ -145,7 +150,9 @@ def _build_agent_detail(
     agent: Mapping[str, object],
     *,
     tab: str,
-    can_manage: bool,
+    can_configure: bool,
+    can_set_visibility: bool,
+    can_set_safe: bool,
     permissions: Iterable[Mapping[str, object]],
     credentials: Iterable[Mapping[str, object]],
     theme: ThemeView | None,
@@ -181,12 +188,13 @@ def _build_agent_detail(
                         "agent_id": agent_id,
                         "enabled": bool(agent.get("disabled")),
                         "tab": tab,
+                        "detail": True,
                     },
                 ),
             ],
         ),
     ]
-    if not can_manage:
+    if not (can_configure or can_set_visibility or can_set_safe):
         components.append(
             alert(
                 "Only the owner or an authorized administrator can change this agent's "
@@ -195,9 +203,10 @@ def _build_agent_detail(
             )
         )
         return build_view("agents", "Agents & permissions", components, theme=theme, layout=layout)
-    components.extend(
-        [
-            _permissions_form(agent_id, permissions, tab),
+    if can_configure:
+        components.append(_permissions_form(agent_id, permissions, tab))
+    if can_set_visibility:
+        components.append(
             card(
                 "Visibility",
                 [
@@ -216,7 +225,10 @@ def _build_agent_detail(
                         },
                     ),
                 ],
-            ),
+            )
+        )
+    if can_set_safe:
+        components.append(
             card(
                 "Trust",
                 [
@@ -235,10 +247,22 @@ def _build_agent_detail(
                         },
                     ),
                 ],
-            ),
-            _credentials_form(agent_id, credentials, tab),
-        ]
-    )
+            )
+        )
+    if can_configure:
+        identity = agent.get("external_identity")
+        if isinstance(identity, Mapping) and identity.get("provider") == "orcid":
+            identity_body = [text("PanAtlas verifies your ORCID login separately from your Astral sign-in.")]
+            if identity.get("subject"):
+                identity_body.append(badge(f"Connected: {clean_text(identity['subject'])}", "success"))
+            elif identity.get("url"):
+                identity_body.append(ComponentView("link", {
+                    "label": "Connect ORCID", "url": clean_text(identity["url"]),
+                }))
+            else:
+                identity_body.append(text("Connect ORCID in the web client using your signed-in browser session."))
+            components.append(card("ORCID identity", identity_body))
+        components.append(_credentials_form(agent_id, credentials, tab))
     return build_view("agents", "Agents & permissions", components, theme=theme, layout=layout)
 
 
@@ -251,30 +275,33 @@ def _permissions_form(
     if not rows:
         return card("Tool permissions", [alert("This agent exposes no tools.", "info")])
     fields = []
+    other_tools = []
     for permission in rows:
         field_name = clean_text(permission.get("field_name"))
         tool_name = clean_text(permission.get("tool_name") or "Tool")
         scope = clean_text(permission.get("scope") or "unknown")
         description = clean_text(permission.get("description"))
-        if not field_name:
-            continue
         destructive = clean_text(permission.get("destructive"))
         suffix = f" — {destructive}" if destructive and destructive != "never" else ""
+        if not field_name:
+            other_tools.append(text(f"{tool_name}{suffix} — Not configurable. {description}"))
+            continue
         fields.append(
             field(
                 field_name,
-                f"{tool_name} ({scope}){suffix}",
+                permission.get("label") or f"{tool_name} ({scope}){suffix}",
                 "boolean",
                 default=bool(permission.get("enabled")),
                 help_text=description or None,
+                visible_when=permission.get("visible_when"),
             )
         )
     if not fields:
         return card(
             "Tool permissions",
-            [alert("The supplied tool permissions are not configurable on this client.", "info")],
+            [alert("The supplied tool permissions are not configurable on this client.", "info"), *other_tools],
         )
-    return form(
+    picker = form(
         fields,
         title="Tool permissions",
         description="Runtime security gates remain authoritative after a permission is enabled.",
@@ -282,6 +309,9 @@ def _permissions_form(
         submit_label="Save permissions",
         submit_payload={"agent_id": agent_id, "tab": tab},
     )
+    if other_tools:
+        return container([picker, card("Other tools", other_tools)])
+    return picker
 
 
 def _credentials_form(

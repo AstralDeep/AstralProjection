@@ -101,6 +101,22 @@ _SHARE_SVG = (
 # icon id (from the model) -> SVG glyph
 _ICON_SVG = {"gear": _GEAR_SVG, "history": _HISTORY_SVG, "sparkle": _PULSE_SVG}
 
+
+def _workspace_action_button(control) -> str:
+    """Render a model-owned canvas operation using its existing web hooks."""
+    hook, title, svg, extra = {
+        "export_canvas": ("astral-export-canvas", "Export page — download this canvas as HTML",
+                          _EXPORT_SVG, ""),
+        "share_canvas": ("astral-share-btn", "Share page — create a link to this canvas",
+                         _SHARE_SVG, ' data-share-scope="canvas"'),
+    }[control.operation]
+    return (
+        f'<button type="button" id="astral-{esc(control.key)}-page-btn" hidden{extra} '
+        f'class="{hook} astral-page-action items-center justify-center '
+        'p-1.5 rounded-lg text-astral-muted hover:text-astral-text hover:bg-white/5" '
+        f'aria-label="{esc(control.label)}" title="{title}">{svg}</button>'
+    )
+
 # Web-specific presentation for the interactive top-bar icon buttons, keyed by
 # the model control key. The MODEL owns presence/order/action; the web renderer
 # owns these DOM ids / tooltips / tour anchors.
@@ -193,6 +209,8 @@ def render_topbar(
     remote_enabled: bool = False,
     computer_enabled: bool = False,
     skills_enabled: bool = False,
+    export_enabled: bool = False,
+    share_enabled: bool = False,
 ) -> str:
     """Inner HTML for ``<header id="astral-topbar">`` — brand, status, Settings.
 
@@ -209,10 +227,12 @@ def render_topbar(
         remote_enabled=remote_enabled,
         computer_enabled=computer_enabled,
         skills_enabled=skills_enabled,
+        export_enabled=export_enabled,
+        share_enabled=share_enabled,
     )
 
     # Left cluster: brand. Right cluster: status + New chat + interactive
-    # controls + gear, in model order (status, [pulse], timeline, settings).
+    # controls + gear, in model order (status, [export], [share], [pulse], timeline, settings).
     # New chat is core client chrome, not a settings surface — every native
     # client hardcodes it in its top bar (Windows TopBar.new_btn, Android
     # RootScaffold onNewChat); this is the web twin of that button.
@@ -234,37 +254,6 @@ def render_topbar(
         'aria-label="Recent chats" title="Recent chats" aria-expanded="false">'
         f"{_CHATS_SVG}</button>"
     )
-    # 066 collapse-trap fix: when the conversation is hidden (collapsed
-    # layout), the only reopen affordance was a subtle composer icon whose
-    # re-pin action was a DOUBLE-click — owner-reported as "nothing to get
-    # it back". This topbar twin restores the conversation in one click.
-    # Rendered `hidden`; client.js unhides it exactly while the conversation
-    # is hidden, and mirrors the unread badge.
-    show_chat_btn = (
-        '<button type="button" id="astral-topbar-chat-btn" hidden '
-        'class="astral-topbar-chat items-center justify-center p-1.5 rounded-lg '
-        'text-astral-muted hover:text-astral-text hover:bg-white/5 relative" '
-        'aria-label="Show conversation" title="Show conversation">'
-        f"{_CHATS_SVG}"
-        '<span id="astral-topbar-chat-unread" class="astral-chat-unread" hidden>0</span>'
-        "</button>"
-    )
-    # The two canvas page actions. Rendered `hidden`; client.js unhides each one
-    # only while the canvas carries its flag. They keep the class names the
-    # delegated click handlers already dispatch on, so moving them out of the
-    # canvas changed their location and nothing about their behavior.
-    page_action_btns = (
-        '<button type="button" id="astral-export-page-btn" hidden '
-        'class="astral-export-canvas astral-page-action items-center justify-center '
-        'p-1.5 rounded-lg text-astral-muted hover:text-astral-text hover:bg-white/5" '
-        'aria-label="Export page" title="Export page — download this canvas as HTML">'
-        f"{_EXPORT_SVG}</button>"
-        '<button type="button" id="astral-share-page-btn" hidden data-share-scope="canvas" '
-        'class="astral-share-btn astral-page-action items-center justify-center '
-        'p-1.5 rounded-lg text-astral-muted hover:text-astral-text hover:bg-white/5" '
-        'aria-label="Share page" title="Share page — create a link to this canvas">'
-        f"{_SHARE_SVG}</button>"
-    )
     right_parts = []
     for control in model.topbar:
         if control.kind == "brand":
@@ -275,8 +264,9 @@ def render_topbar(
             )
             right_parts.append(new_chat_btn)
             right_parts.append(recent_chats_btn)
-            right_parts.append(show_chat_btn)
-            right_parts.append(page_action_btns)
+        elif control.kind == "workspace_action":
+            # client.js retains its existing live-canvas flag/visibility rule.
+            right_parts.append(_workspace_action_button(control))
         elif control.kind == "action":
             right_parts.append(_icon_button(control))
         elif control.kind == "menu":  # the Settings gear + dropdown

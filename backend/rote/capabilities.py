@@ -65,18 +65,18 @@ _BASE_HOST_CONFIG: Dict[str, dict] = {
     # Native Android app (phone/tablet/foldable): a full-capability native surface
     # like `windows`. It renders structured components with native Compose widgets
     # (not HTML) and reports a `supported_types` set so ROTE substitutes only the
-    # primitives it can't draw natively. The client does its OWN responsive layout
-    # (WindowSizeClass), so ROTE applies content substitution here — NOT the
-    # web-oriented mobile/tablet density limits (which would, e.g., strip code on
-    # a phone). Operators can still tune it via the ROTE_HOST_CONFIG env override.
+    # primitives it can't draw natively. Feature 088 shares viewport-based grid
+    # density with web while preserving native content capabilities (e.g., code
+    # and full tables on phones). Operators can further restrict either profile
+    # via ROTE_HOST_CONFIG; the viewport cap never broadens a native restriction.
     "android": dict(max_grid_columns=6, supports_charts=True, supports_tables=True,
                     supports_code=True, supports_file_io=True, supports_tabs=True,
                     max_text_chars=0, max_table_rows=0, max_table_cols=0,
                     max_actions=0, supports_interactivity=True),
     # Native Apple clients (051): full-capability native surfaces exactly like
-    # `windows`/`android` — the client owns its own responsive layout (iPhone/
-    # iPad size classes; AppKit windows), so ROTE applies `supported_types`
-    # substitution, not web density limits. The watch target is NOT here on
+    # `windows`/`android`, with the same viewport grid cap as web for feature 088.
+    # Their native content capabilities and `supported_types` substitution stay
+    # independent of web text/table truncation. The watch target is NOT here on
     # purpose: watchOS registers the existing `watch` profile, which is the
     # degradation authority for the wearable.
     "ios":     dict(max_grid_columns=6, supports_charts=True, supports_tables=True,
@@ -307,7 +307,15 @@ class DeviceProfile:
         # Constraints come from the declarative host-config (base defaults +
         # ROTE_HOST_CONFIG env overrides) instead of being hard-coded here.
         host_config = load_host_config()
-        fields = host_config.get(dt.value, host_config[DeviceType.BROWSER.value])
+        fields = dict(host_config.get(dt.value, host_config[DeviceType.BROWSER.value]))
+        if dt in {DeviceType.ANDROID, DeviceType.IOS, DeviceType.MACOS}:
+            # Same-sized native and web canvases get the same grid density.
+            # Keep native content capabilities and explicit stricter host limits;
+            # Windows retains its existing layout outside the 088 redesign scope.
+            density_type = "mobile" if vw <= 480 else "tablet" if vw <= 1024 else "browser"
+            fields["max_grid_columns"] = min(
+                fields["max_grid_columns"], host_config[density_type]["max_grid_columns"]
+            )
         return DeviceProfile(device_type=dt, capabilities=caps, **fields)
 
     def to_dict(self) -> Dict[str, Any]:

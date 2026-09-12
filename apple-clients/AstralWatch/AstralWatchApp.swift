@@ -11,6 +11,7 @@ struct AstralWatchApp: App {
 
     init() {
         NoStoreHTTP.prepareForLaunch()
+        AstralTypography.registerFonts()
     }
 
     var body: some Scene {
@@ -26,6 +27,16 @@ struct AstralWatchApp: App {
                 }
             }
             .environment(model)
+            .font(AstralTypography.body)
+            .environment(
+                \.openURL,
+                OpenURLAction { url in
+                    guard let destination = InlineMarkdown.safeLink(url, relativeTo: model.serverBase) else {
+                        return .discarded
+                    }
+                    return .systemAction(destination)
+                }
+            )
             .tint(Color(red: 99 / 255, green: 102 / 255, blue: 241 / 255))  // AstralDeep indigo
             .task { await model.bootstrap() }
             .onChange(of: scenePhase) { _, phase in

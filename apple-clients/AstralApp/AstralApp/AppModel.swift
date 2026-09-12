@@ -124,11 +124,13 @@ final class AppModel: NSObject {
 
     // MARK: configuration
 
+    @ObservationIgnored private let defaults: UserDefaults
+
     // UserDefaults-backed (the former @AppStorage pair — property wrappers
     // aren't allowed on @Observable stored properties). Seeded in init.
     var serverBaseText: String {
         didSet {
-            UserDefaults.standard.set(serverBaseText, forKey: "serverBase")
+            defaults.set(serverBaseText, forKey: "serverBase")
             // Feature 053 — mirror the endpoint to the paired watch. Best-effort:
             // the watch runs independently and falls back to its build-time default.
             #if os(iOS)
@@ -137,7 +139,7 @@ final class AppModel: NSObject {
         }
     }
     var authorityText: String {
-        didSet { UserDefaults.standard.set(authorityText, forKey: "authority") }
+        didSet { defaults.set(authorityText, forKey: "authority") }
     }
 
     #if os(macOS)
@@ -158,10 +160,23 @@ final class AppModel: NSObject {
     var screen: Screen = .chat
     var activeChatId: String?
 
-    var turns: [ChatTurn] = []
-    var canvas: [AstralComponent] = []
-    var transientTurns: [ChatTurn] = []
-    var transientCanvas: [AstralComponent]?
+    // Ephemeral, account-owned presentation state. A disconnected transport or
+    // a resized view never clears a draft; account changes and New chat do.
+    var composerDraft = ""
+    var runInBackground = false
+    var workspaceStarted = false
+    var turns: [ChatTurn] = [] {
+        didSet { if !turns.isEmpty { workspaceStarted = true } }
+    }
+    var canvas: [AstralComponent] = [] {
+        didSet { if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true } }
+    }
+    var transientTurns: [ChatTurn] = [] {
+        didSet { if !transientTurns.isEmpty { workspaceStarted = true } }
+    }
+    var transientCanvas: [AstralComponent]? {
+        didSet { if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true } }
+    }
     var pendingCanvas: [AstralComponent] = []
     var turnActive = false
     var pendingReplace = false
@@ -198,6 +213,7 @@ final class AppModel: NSObject {
 
     var agents: [Agent] = []
     var history: [ChatSummary] = []
+    var historyTitle = "Recent chats"
     var audit: [AuditEvent] = []
     var agentsLoading = false
     var historyLoading = false
@@ -221,6 +237,7 @@ final class AppModel: NSObject {
     var llmFirstLoginOperation: LLMFirstLoginOperation?
 
     let themeStore = ThemeStore()
+    @ObservationIgnored let canvasCapture = CanvasCaptureRegistry()
 
     // Derived
     var visibleCanvas: [AstralComponent] {
@@ -228,6 +245,9 @@ final class AppModel: NSObject {
             return canvasHistory[idx].components
         }
         return transientCanvas ?? canvas
+    }
+    var workspaceCanvas: [AstralComponent] {
+        workspaceStarted ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
     }
     var visibleTurns: [ChatTurn] { turns + transientTurns }
     var isViewingHistory: Bool { viewingIndex != nil }
@@ -254,13 +274,7 @@ final class AppModel: NSObject {
 
     // MARK: session plumbing (never read by views — not observation-tracked)
 
-    private let store: TokenStorage = {
-        #if canImport(Security)
-            KeychainTokenStore()
-        #else
-            InMemoryTokenStore()
-        #endif
-    }()
+    private let store: TokenStorage
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var ws: WSClient?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
@@ -325,12 +339,24 @@ final class AppModel: NSObject {
     // MARK: lifecycle
 
     override convenience init() {
-        self.init(conversationResumeStore: ConversationResumeStore())
+        #if canImport(Security)
+            self.init(tokenStore: KeychainTokenStore())
+        #else
+            self.init(tokenStore: InMemoryTokenStore())
+        #endif
     }
 
-    init(conversationResumeStore: ConversationResumeStore) {
+    /// Tests supply an in-memory store explicitly: changing the test host's
+    /// bundle identifier does not change a Keychain service/account query.
+    /// Production's no-argument initializer retains its existing Keychain.
+    init(
+        conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
+        tokenStore: TokenStorage,
+        defaults: UserDefaults = .standard
+    ) {
+        self.store = tokenStore
         self.conversationResumeStore = conversationResumeStore
-        let defaults = UserDefaults.standard
+        self.defaults = defaults
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
         if let stored = defaults.string(forKey: voiceDeviceKey),
             let parsed = UUID(uuidString: stored), parsed.uuidString.lowercased() == stored,
@@ -362,6 +388,14 @@ final class AppModel: NSObject {
         serverBaseText = storedBase.isEmpty ? AstralConfig.serverBaseURL : storedBase
         authorityText = storedAuthority.isEmpty ? AstralConfig.keycloakAuthority : storedAuthority
         super.init()
+        canvasCapture.currentComponents = { [weak self] in self?.workspaceCanvas ?? [] }
+        canvasCapture.currentScope = { [weak self] in
+            guard let self, self.signedIn, self.screen == .chat, !self.isViewingHistory,
+                !self.timelineReadOnly, !self.mandatorySurface, self.workspaceStarted,
+                let chat = self.activeChatId, !chat.isEmpty
+            else { return nil }
+            return CanvasCaptureScope(owner: self.downloadOwner, server: self.serverBase, chat: chat)
+        }
         voice.setFrameSender { [weak self] text in
             self?.sendVoiceWire(text) ?? false
         }
@@ -384,6 +418,370 @@ final class AppModel: NSObject {
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
+    }
+
+    struct DownloadOwner: Equatable {
+        let account: ConversationAccount?
+        let generation: Int
+        let signedIn: Bool
+    }
+
+    var downloadOwner: DownloadOwner {
+        DownloadOwner(account: conversationAccount, generation: sessionGeneration, signedIn: signedIn)
+    }
+
+    struct ComponentActionContext: Identifiable, Equatable {
+        let id = UUID()
+        let action: ComponentActionKind
+        let owner: DownloadOwner
+        let server: URL
+        let chatId: String
+        let componentId: String
+        let component: AstralComponent
+    }
+
+    private var componentActionsInFlight: [ComponentActionContext] = []
+    private var componentPendingOperations: [String: ComponentActionContext] = [:]
+
+    /// Server metadata decides presence, while the current owner and exact
+    /// visible component bind each action to the place where it was opened.
+    func componentActionContext(for action: ComponentActionKind, component: AstralComponent) -> ComponentActionContext?
+    {
+        guard signedIn, downloadOwner.account != nil, screen == .chat, !mandatorySurface, workspaceStarted,
+            let chatId = activeChatId, !chatId.isEmpty,
+            let componentId = ComponentChromeModel.canonicalIdentity(of: component),
+            ComponentChromeModel.actions(from: component.raw["component_chrome"]).contains(where: { $0.kind == action }
+            ),
+            !action.requiresLiveCanvas || (!isViewingHistory && !timelineReadOnly)
+        else { return nil }
+        let matches = workspaceCanvas.filter { $0.raw["component_id"]?.stringValue == componentId }
+        guard matches.count == 1, matches.first == component else { return nil }
+        return ComponentActionContext(
+            action: action, owner: downloadOwner, server: serverBase, chatId: chatId,
+            componentId: componentId, component: component)
+    }
+
+    func componentActionIsCurrent(_ context: ComponentActionContext) -> Bool {
+        guard let current = componentActionContext(for: context.action, component: context.component) else {
+            return false
+        }
+        return current.owner == context.owner && current.server == context.server
+            && current.chatId == context.chatId && current.componentId == context.componentId
+    }
+
+    func componentActionInFlight(_ context: ComponentActionContext) -> Bool {
+        let contexts =
+            componentActionsInFlight
+            + componentPendingOperations.compactMap { submission, context in
+                localOperationSubmissions[submission] == nil ? nil : context
+            }
+        return contexts.contains {
+            $0.action == context.action && $0.owner == context.owner && $0.server == context.server
+                && $0.chatId == context.chatId && $0.componentId == context.componentId
+                && $0.component == context.component
+        }
+    }
+
+    /// A late credential refresh cannot dispatch a stale component request.
+    func componentAccessToken(
+        _ context: ComponentActionContext, resolve: (() async -> String?)? = nil
+    ) async -> String? {
+        guard !Task.isCancelled, componentActionIsCurrent(context) else { return nil }
+        let token: String?
+        if let resolve { token = await resolve() } else { token = await freshAccessToken() }
+        guard !Task.isCancelled, componentActionIsCurrent(context) else { return nil }
+        return token
+    }
+
+    private func componentRest(_ context: ComponentActionContext) -> RestClient {
+        RestClient(serverBase: context.server) { [weak self] in await self?.componentAccessToken(context) }
+    }
+
+    func refineComponent(_ context: ComponentActionContext, instruction: String) {
+        let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard context.action == .refine, componentActionIsCurrent(context), !trimmed.isEmpty else { return }
+        sendComponentEvent(
+            context, action: "component_refine",
+            payload: .object([
+                "component_id": .string(context.componentId), "chat_id": .string(context.chatId),
+                "instruction": .string(trimmed),
+            ]))
+    }
+
+    /// Restoring sends the ordinary server-authorized event; no optimistic
+    /// canvas replacement, archived body, or descriptor-provided event executes.
+    func restoreComponent(_ context: ComponentActionContext, version: UInt64) {
+        guard context.action == .history, componentActionIsCurrent(context),
+            ComponentChromeModel.versions(from: context.component.raw["versions"]).contains(where: {
+                $0.number == version
+            })
+        else { return }
+        sendComponentEvent(
+            context, action: "component_restore",
+            payload: .object([
+                "component_id": .string(context.componentId), "chat_id": .string(context.chatId),
+                "version_no": .number(Double(version)),
+            ]))
+    }
+
+    private func sendComponentEvent(_ context: ComponentActionContext, action: String, payload: JSONValue) {
+        guard componentActionIsCurrent(context), !componentActionInFlight(context) else { return }
+        guard connected, let socket = ws, let connection = continuity.connectionGeneration else {
+            bannerIsError = true
+            errorBanner = "Reconnect before changing this component."
+            return
+        }
+        let identity = ClientOperationIdentity.fresh()
+        let wire = Outbound.uiEvent(
+            action: action, sessionId: context.chatId, payload: payload,
+            submissionId: identity.submissionId, requestGeneration: identity.requestGeneration)
+        beginLocalOperationSubmission(identity: identity, action: action, surface: "chat", chatId: context.chatId)
+        componentPendingOperations[identity.submissionId] = context
+        componentActionsInFlight.append(context)
+        Task { @MainActor in
+            defer { componentActionsInFlight.removeAll { $0.id == context.id } }
+            let sent = await socket.sendCurrentComponentEvent(wire) { [weak self] in
+                await self?.componentSendIsCurrent(context, socket: socket, connection: connection) ?? false
+            }
+            if sent {
+                outboundTap?(wire)
+            } else {
+                localOperationSubmissions.removeValue(forKey: identity.submissionId)
+                componentPendingOperations.removeValue(forKey: identity.submissionId)
+                if componentActionIsCurrent(context) {
+                    statusText = latestActiveOperationStatusText()
+                    bannerIsError = true
+                    errorBanner = "Couldn't send this component change. Reopen the action after reconnecting."
+                }
+            }
+        }
+    }
+
+    private func componentSendIsCurrent(_ context: ComponentActionContext, socket: WSClient, connection: String) -> Bool
+    {
+        connected && ws === socket && continuity.connectionGeneration == connection && componentActionIsCurrent(context)
+    }
+
+    func downloadComponentCSV(
+        _ context: ComponentActionContext, operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .csv, componentActionIsCurrent(context) else { throw CancellationError() }
+        guard !componentActionInFlight(context) else { throw WorkspaceActionError.alreadyRunning }
+        componentActionsInFlight.append(context)
+        defer { componentActionsInFlight.removeAll { $0.id == context.id } }
+        let file: URL
+        if let operation {
+            file = try await operation()
+        } else {
+            file = try await componentRest(context).downloadComponentCSV(
+                chatId: context.chatId, componentId: context.componentId)
+        }
+        guard !Task.isCancelled, componentActionIsCurrent(context) else {
+            RestClient.removeTemporaryDownload(file)
+            throw CancellationError()
+        }
+        return file
+    }
+
+    func shareComponent(
+        _ context: ComponentActionContext, operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .share, componentActionIsCurrent(context) else { throw CancellationError() }
+        guard !componentActionInFlight(context) else { throw WorkspaceActionError.alreadyRunning }
+        componentActionsInFlight.append(context)
+        defer { componentActionsInFlight.removeAll { $0.id == context.id } }
+        let url: URL
+        if let operation {
+            url = try await operation()
+        } else {
+            url = try await componentRest(context).shareComponent(
+                chatId: context.chatId, componentId: context.componentId)
+        }
+        guard !Task.isCancelled, componentActionIsCurrent(context) else { throw CancellationError() }
+        return url
+    }
+
+    struct WorkspaceActionContext: Identifiable, Equatable {
+        let id = UUID()
+        let action: WorkspaceAction
+        let owner: DownloadOwner
+        let server: URL
+        let chatId: String
+        let renderRevision: UInt64
+    }
+
+    enum WorkspaceActionError: Error { case alreadyRunning }
+    private var workspaceActionsInFlight: Set<String> = []
+
+    func workspaceActionInFlight(_ action: WorkspaceAction) -> Bool {
+        workspaceActionsInFlight.contains(action.rawValue)
+    }
+
+    /// A server descriptor controls presence; current workspace identity and
+    /// the ordinary authenticated endpoint independently govern execution.
+    func workspaceActionContext(for action: WorkspaceAction) -> WorkspaceActionContext? {
+        guard signedIn, screen == .chat, !mandatorySurface,
+            !isViewingHistory, !timelineReadOnly, workspaceStarted,
+            !workspaceCanvas.isEmpty,
+            let chatId = activeChatId, !chatId.isEmpty,
+            chromeMenu?.topbarActions.contains(where: { $0.workspaceAction == action }) == true
+        else { return nil }
+        return WorkspaceActionContext(
+            action: action, owner: downloadOwner, server: serverBase, chatId: chatId,
+            renderRevision: lastCommittedRenderRevision)
+    }
+
+    func workspaceActionIsCurrent(_ context: WorkspaceActionContext) -> Bool {
+        guard let current = workspaceActionContext(for: context.action),
+            current.owner == context.owner, current.server == context.server, current.chatId == context.chatId
+        else { return false }
+        // Share retains the existing snapshot-at-mint API semantics. Only an
+        // export has an explicit server revision precondition and response.
+        return context.action == .shareCanvas || current.renderRevision == context.renderRevision
+    }
+
+    /// Recheck after credential refresh, before the transport can issue a
+    /// request. Discarding a late mint response alone would be too late.
+    func workspaceAccessToken(
+        _ context: WorkspaceActionContext,
+        resolve: (() async -> String?)? = nil
+    ) async -> String? {
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else { return nil }
+        let token: String?
+        if let resolve { token = await resolve() } else { token = await freshAccessToken() }
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else { return nil }
+        return token
+    }
+
+    func workspaceExportURL(_ context: WorkspaceActionContext) -> URL? {
+        guard context.action == .exportCanvas, workspaceActionIsCurrent(context),
+            context.chatId.utf8.count <= 256,
+            let segment = context.chatId.addingPercentEncoding(
+                withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/%?#"))),
+            var components = URLComponents(url: serverBase, resolvingAgainstBaseURL: false)
+        else { return nil }
+        components.percentEncodedPath = "/api/export/canvas/\(segment).html"
+        components.queryItems = [URLQueryItem(name: "render_revision", value: String(context.renderRevision))]
+        components.fragment = nil
+        return components.url
+    }
+
+    private func workspaceRest(_ context: WorkspaceActionContext) -> RestClient {
+        RestClient(serverBase: serverBase) { [weak self] in
+            await self?.workspaceAccessToken(context)
+        }
+    }
+
+    func downloadWorkspaceCanvas(
+        _ context: WorkspaceActionContext,
+        operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .exportCanvas, workspaceActionIsCurrent(context) else { throw CancellationError() }
+        guard !workspaceActionInFlight(context.action) else { throw WorkspaceActionError.alreadyRunning }
+        guard let url = workspaceExportURL(context) else { throw URLError(.badURL) }
+        workspaceActionsInFlight.insert(context.action.rawValue)
+        defer { workspaceActionsInFlight.remove(context.action.rawValue) }
+        let file: URL
+        if let operation {
+            file = try await operation()
+        } else {
+            file = try await exportWorkspacePresentation(
+                context,
+                authorize: {
+                    try await self.workspaceRest(context).downloadFile(
+                        from: url.absoluteString, suggestedFilename: "astraldeep-canvas.html",
+                        expectedRenderRevision: context.renderRevision)
+                },
+                capture: {
+                    let visible = self.workspaceCanvas
+                    return try await self.canvasCapture.capture(visible) {
+                        self.workspaceActionIsCurrent(context) && self.workspaceCanvas == visible
+                    }
+                },
+                present: { capture in
+                    try await self.workspaceRest(context).canvasPresentation(
+                        chatId: context.chatId, renderRevision: context.renderRevision, capture: capture)
+                },
+                render: { presentation in
+                    try await OfflineCanvasExport.render(presentation: presentation) {
+                        self.workspaceActionIsCurrent(context)
+                    }
+                })
+        }
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else {
+            RestClient.removeTemporaryDownload(file)
+            throw CancellationError()
+        }
+        return file
+    }
+
+    /// The legacy GET performs its normal authorization/audit first. Its
+    /// canonical HTML is private and immediately removed; only the frozen
+    /// visible capture is finalized. No stage retries an uncertain request.
+    func exportWorkspacePresentation(
+        _ context: WorkspaceActionContext,
+        authorize: () async throws -> URL,
+        capture: () async throws -> Data,
+        present: (Data) async throws -> Data,
+        render: (Data) async throws -> Data
+    ) async throws -> URL {
+        func check() throws {
+            try Task.checkCancellation()
+            guard workspaceActionIsCurrent(context) else { throw CancellationError() }
+        }
+        try check()
+        let authorized = try await authorize()
+        RestClient.removeTemporaryDownload(authorized)
+        try check()
+        let capture = try await capture()
+        try check()
+        let presentation = try await present(capture)
+        try check()
+        let html = try await render(presentation)
+        try check()
+        let file = try CanvasCaptureFile.write(html)
+        do { try check() } catch {
+            RestClient.removeTemporaryDownload(file)
+            throw error
+        }
+        return file
+    }
+
+    func shareWorkspaceCanvas(
+        _ context: WorkspaceActionContext,
+        operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        guard context.action == .shareCanvas, workspaceActionIsCurrent(context) else { throw CancellationError() }
+        guard !workspaceActionInFlight(context.action) else { throw WorkspaceActionError.alreadyRunning }
+        workspaceActionsInFlight.insert(context.action.rawValue)
+        defer { workspaceActionsInFlight.remove(context.action.rawValue) }
+        let url: URL
+        if let operation {
+            url = try await operation()
+        } else {
+            url = try await workspaceRest(context).shareCanvas(chatId: context.chatId)
+        }
+        guard !Task.isCancelled, workspaceActionIsCurrent(context) else { throw CancellationError() }
+        return url
+    }
+
+    func downloadArtifact(
+        from url: String, suggestedFilename: String?,
+        operation: (() async throws -> URL)? = nil
+    ) async throws -> URL {
+        let owner = downloadOwner
+        guard owner.signedIn else { throw CancellationError() }
+        let file: URL
+        if let operation {
+            file = try await operation()
+        } else {
+            file = try await rest.downloadFile(from: url, suggestedFilename: suggestedFilename)
+        }
+        guard !Task.isCancelled, downloadOwner == owner else {
+            RestClient.removeTemporaryDownload(file)
+            throw CancellationError()
+        }
+        return file
     }
 
     /// Build one reconnect registration and open its hydration fence before
@@ -443,6 +841,7 @@ final class AppModel: NSObject {
         requestGeneration: String,
         purpose: ConversationGenerationPurpose
     ) -> Bool {
+        workspaceStarted = true
         let resetRevision =
             continuity.activeChatId != nil
             && continuity.activeChatId != chatId
@@ -657,6 +1056,7 @@ final class AppModel: NSObject {
         clearLLMFirstLoginOperation()
         agents = []
         history = []
+        historyTitle = "Recent chats"
         audit = []
 
         // Everything above is synchronous local teardown. Remote revocation
@@ -831,6 +1231,41 @@ final class AppModel: NSObject {
     /// Internal (not private) so XCTests can drive frames through the reducer.
     func handleFrame(_ frame: InboundFrame) {
         voice.consume(frame)
+        // History is an owner-scoped chrome region, independent of the active
+        // conversation generation. It must never replace its canvas or turns.
+        if frame.name == "ui_render", frame.renderTarget == "history" {
+            let conversationFields = [
+                "chat_id", "chatId", "connection_generation", "request_generation",
+                "base_render_revision", "frame_sequence",
+            ]
+            guard !conversationFields.contains(where: { frame.payload[$0] != nil }) else { return }
+            if let list = frame.renderComponents.first(where: { $0.type == "chat_history" }),
+                let items = list.raw["items"]?.arrayValue
+            {
+                history = items.compactMap { ChatSummary(historyItem: $0) }
+                historyTitle = list.raw["title"]?.stringValue ?? "Recent chats"
+                historyLoading = false
+            } else if frame.renderComponents.contains(where: { $0.type == "skeleton" }) {
+                historyLoading = true
+            }
+            return
+        }
+        // Registration establishes a connection before the server's global
+        // welcome arrives. It has no conversation generation; admit only its
+        // validated ephemeral components while no hydration/turn is open.
+        if !workspaceStarted, continuity.requestGeneration == nil,
+            let components = WorkspaceWelcome.unscopedComponents(in: frame)
+        {
+            canvas = components
+            transientCanvas = nil
+            return
+        }
+        if workspaceStarted, ["ui_render", "ui_update"].contains(frame.name),
+            frame.renderTarget != "chat", !frame.renderComponents.isEmpty,
+            !WorkspaceWelcome.containsWork(frame.renderComponents)
+        {
+            return
+        }
         if continuity.connectionGeneration != nil,
             ["ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"]
                 .contains(frame.name)
@@ -871,6 +1306,7 @@ final class AppModel: NSObject {
             agentsLoading = false
         case "history_list":
             history = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
+            historyTitle = "Recent chats"
             historyLoading = false
         case "ui_stream_data", "stream_data":
             if continuity.connectionGeneration == nil {
@@ -1074,6 +1510,9 @@ final class AppModel: NSObject {
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
+            if status.state != "completed" {
+                _ = continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            }
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if ownsActiveChatTurn {
                 settleActiveChatTurn(
@@ -1127,6 +1566,7 @@ final class AppModel: NSObject {
         guard let refusal = AdmissionRefusal(frame: frame),
             let submission = localOperationSubmissions.removeValue(forKey: refusal.submissionId)
         else { return false }
+        componentPendingOperations.removeValue(forKey: refusal.submissionId)
         if operationOwnsActiveChatTurn(
             action: submission.action,
             requestGeneration: submission.requestGeneration)
@@ -1135,6 +1575,7 @@ final class AppModel: NSObject {
                 requestGeneration: submission.requestGeneration,
                 discardUncommitted: true)
         }
+        _ = continuity.retireUncommittedCommit(requestGeneration: submission.requestGeneration)
         statusText = latestActiveOperationStatusText()
         bannerIsError = true
         errorBanner = refusal.message
@@ -1507,11 +1948,7 @@ final class AppModel: NSObject {
     }
 
     private func clearContinuityChatKeepingConnection() {
-        let connection = continuity.connectionGeneration
-        continuity.clear()
-        if let connection {
-            _ = continuity.beginConnection(connection)
-        }
+        continuity.clearChatKeepingConnection()
     }
 
     private func nestedChatId(_ frame: InboundFrame) -> String? {
@@ -1876,6 +2313,7 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        canvasCapture.clear()
         activeChatId = nil
         voice.updateVisibleChatLocally(nil)
         turns = []
@@ -1895,6 +2333,9 @@ final class AppModel: NSObject {
         stepTrail = []
         asyncDetached = false
         pendingCommitRequestGeneration = nil
+        composerDraft = ""
+        runInBackground = false
+        workspaceStarted = false
     }
 
     private func beginLocalOperationSubmission(
@@ -1953,6 +2394,9 @@ final class AppModel: NSObject {
     }
 
     private func clearLocalOperationSubmission(requestGeneration: String) {
+        for (submission, local) in localOperationSubmissions where local.requestGeneration == requestGeneration {
+            componentPendingOperations.removeValue(forKey: submission)
+        }
         localOperationSubmissions = localOperationSubmissions.filter {
             $0.value.requestGeneration != requestGeneration
         }
@@ -1993,6 +2437,7 @@ final class AppModel: NSObject {
     private func clearPendingOperationSubmissions() {
         let wasSubmitting = statusText == "Submitting…"
         localOperationSubmissions.removeAll()
+        componentPendingOperations.removeAll()
         if wasSubmitting { statusText = nil }
     }
 
@@ -2053,8 +2498,11 @@ final class AppModel: NSObject {
                     role: "user",
                     text: bubble))
         }
+        workspaceStarted = true
+        let background = runInBackground
+        runInBackground = false
         turnActive = true
-        pendingReplace = true
+        pendingReplace = !background
         pendingCanvas = []
         liveOpsThisTurn = false
         // 055 uniform rule: purge the ephemeral welcome (`wel_` identities)
@@ -2081,6 +2529,7 @@ final class AppModel: NSObject {
             chatId: activeChatId)
 
         var payload: [String: JSONValue] = ["message": .string(text)]
+        if background { payload["async_mode"] = .bool(true) }
         if let cid = activeChatId { payload["chat_id"] = .string(cid) }
         if !ready.isEmpty {
             payload["attachments"] = .array(
@@ -2103,6 +2552,7 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        var payload = payload
         if action == "attach_existing" {
             if stageExistingAttachment(payload) {
                 let filename = payload["filename"]?.stringValue ?? "file"
@@ -2114,8 +2564,16 @@ final class AppModel: NSObject {
         }
         if timelineReadOnly && timelineMutations.contains(action) { return }
         if action == "chat_message" {
+            workspaceStarted = true
+            let background = runInBackground
+            runInBackground = false
+            if background {
+                var fields = payload.objectValue ?? [:]
+                fields["async_mode"] = .bool(true)
+                payload = .object(fields)
+            }
             turnActive = true
-            pendingReplace = true
+            pendingReplace = !background
             pendingCanvas = []
             liveOpsThisTurn = false
             if continuity.connectionGeneration == nil {
@@ -2396,6 +2854,7 @@ final class AppModel: NSObject {
     }
 
     func openChat(_ chatId: String) {
+        workspaceStarted = true
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
@@ -2451,13 +2910,22 @@ final class AppModel: NSObject {
         }
     }
 
+    /// Recent chats is a reversible view over the current workspace. Closing
+    /// it must not hydrate the chat again or discard its transient content.
+    func toggleHistory() {
+        guard !mandatorySurface else { return }
+        if screen == .history {
+            screen = .chat
+        } else {
+            goTo(.history)
+        }
+    }
+
     func openMenuItem(_ item: ChromeMenuItem) { openSurface(item.surface, params: item.params) }
 
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
         if mandatorySurface { return }  // 054: the pinned surface can't be replaced client-side
         switch surface {
-        case "agents": goTo(.agents)
-        case "audit": goTo(.audit)
         default:
             sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
             screen = .surface

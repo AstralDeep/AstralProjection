@@ -3,9 +3,10 @@
 The native Apple clients register ``device_type: "ios"`` / ``"macos"`` and
 render structured components natively (SwiftUI), so they receive FULL-capability
 profiles (the 041 ``android`` / ``windows`` pattern) plus ``supported_types``
-capability-negotiation — NOT the web-oriented ``mobile``/``tablet`` density
-constraints. The watch target reuses the existing ``watch`` profile unchanged:
-it is the degradation authority for feature 051. Pure Python.
+capability-negotiation. Feature 088 shares web grid density while preserving
+native content capabilities and full text/table content. The watch target reuses
+the existing ``watch`` profile unchanged: it is the degradation authority for
+feature 051. Pure Python.
 """
 from __future__ import annotations
 
@@ -55,11 +56,13 @@ def test_apple_profiles_derive_full_capability():
 
 def test_named_apple_types_bypass_viewport_downgrade():
     # A named native type must NOT be re-derived to mobile/tablet/watch from a
-    # small viewport (an iPhone reports ios + a ~390pt viewport; the client owns
-    # its own responsive layout).
+    # small viewport: native content capabilities remain even when the server
+    # caps its grid density to match the web at the same width (feature 088).
     prof = DeviceProfile.from_dict({"device_type": "ios", "viewport_width": 390})
     assert prof.device_type is DeviceType.IOS
-    assert prof.max_grid_columns == 6
+    assert prof.max_grid_columns == 1
+    assert prof.supports_code is True
+    assert prof.max_table_cols == 0
     prof = DeviceProfile.from_dict({"device_type": "macos", "viewport_width": 1024})
     assert prof.device_type is DeviceType.MACOS
 

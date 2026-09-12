@@ -1,0 +1,347 @@
+{
+  "source_commit": "6eab76d706aeea5e64577d392a4622c6229605ad",
+  "source_path": "backend/webrender/renderer.py",
+  "source_sha256": "4bcba3913623469e59cb054c5ab39e4fba6cd8f5577b71d7d4a23059b67eef02",
+  "fixed_flags": {
+    "FF_PROVENANCE_SURFACING": false,
+    "FF_A11Y": false
+  },
+  "cases": [
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><a class=\"astral-export-csv inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" href=\"/api/export/component/wc_%2F%22%3Ft.csv\" title=\"Download the full table as CSV\"><span aria-hidden=\"true\">⬇</span> csv</a></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><a class=\"astral-export-csv inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" href=\"/api/export/component/wc_%2F%22%3Ft.csv\" title=\"Download the full table as CSV\"><span aria-hidden=\"true\">⬇</span> csv</a><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": false,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-versions=\"[{&quot;version_no&quot;: 2, &quot;reason&quot;: &quot;refine&quot;, &quot;created_at&quot;: &quot;2026-09-12&quot;, &quot;title&quot;: &quot;&lt;script&gt;old title&lt;/script&gt;&quot;}]\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-versions=\"[{&quot;version_no&quot;: 2, &quot;reason&quot;: &quot;refine&quot;, &quot;created_at&quot;: &quot;2026-09-12&quot;, &quot;title&quot;: &quot;&lt;script&gt;old title&lt;/script&gt;&quot;}]\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": false,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-versions=\"[{&quot;version_no&quot;: 2, &quot;reason&quot;: &quot;refine&quot;, &quot;created_at&quot;: &quot;2026-09-12&quot;, &quot;title&quot;: &quot;&lt;script&gt;old title&lt;/script&gt;&quot;}]\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button><a class=\"astral-export-csv inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" href=\"/api/export/component/wc_%2F%22%3Ft.csv\" title=\"Download the full table as CSV\"><span aria-hidden=\"true\">⬇</span> csv</a></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": false
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "table",
+        "component_id": "wc_/\"?t",
+        "headers": [
+          "a"
+        ],
+        "rows": [
+          [
+            "1"
+          ]
+        ],
+        "versions": [
+          {
+            "version_no": 2,
+            "reason": "refine",
+            "created_at": "2026-09-12",
+            "title": "<script>old title</script>"
+          }
+        ]
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_/&quot;?t\"><div class=\"astral-table-wrap rounded-lg border border-white/10\"><div class=\"p-3 border-b border-white/5 bg-astral-primary/5 flex items-center justify-between\"><div class=\"text-sm font-medium text-astral-text\">Table</div></div><div class=\"overflow-x-auto\"><table class=\"w-full text-sm\"><thead><tr class=\"bg-astral-primary/10 border-b border-white/5\"><th scope=\"col\" class=\"px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-astral-muted whitespace-nowrap\">a</th></tr></thead><tbody><tr class=\"border-b border-white/5 hover:bg-white/5 transition-colors\"><td class=\"px-4 py-3 text-astral-text\">1</td></tr></tbody></table></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-versions=\"[{&quot;version_no&quot;: 2, &quot;reason&quot;: &quot;refine&quot;, &quot;created_at&quot;: &quot;2026-09-12&quot;, &quot;title&quot;: &quot;&lt;script&gt;old title&lt;/script&gt;&quot;}]\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button><a class=\"astral-export-csv inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" href=\"/api/export/component/wc_%2F%22%3Ft.csv\" title=\"Download the full table as CSV\"><span aria-hidden=\"true\">⬇</span> csv</a><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    },
+    {
+      "flags": {
+        "FF_COMPONENT_REFINE": true,
+        "FF_ARTIFACT_EXPORT": true,
+        "FF_ARTIFACT_SHARING": true
+      },
+      "component": {
+        "type": "metric",
+        "component_id": "wc_metric",
+        "title": "Count",
+        "value": "1"
+      },
+      "html": "<div class=\"astral-component\" data-component-id=\"wc_metric\"><div aria-label=\"Count: 1\" class=\"astral-metric astral-metric--default rounded-xl p-4 bg-gradient-to-br from-astral-primary/20 to-astral-primary/5 border border-white/5 relative\"><p class=\"text-xs text-astral-muted font-medium uppercase tracking-wider mb-1\">Count</p><div class=\"flex-1\"><p class=\"text-2xl font-bold text-astral-text\">1</p></div></div><div class=\"astral-component-chrome mt-0.5 flex justify-end gap-3\"><button type=\"button\" class=\"astral-refine-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Refine this component with an instruction\"><span aria-hidden=\"true\">✎</span> refine</button><button type=\"button\" class=\"astral-vhistory-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" title=\"Version history\"><span aria-hidden=\"true\">⟲</span> history</button><button type=\"button\" class=\"astral-share-btn inline-flex items-center gap-1 text-[10px] text-astral-muted/70 hover:text-astral-text transition-colors\" data-share-scope=\"component\" title=\"Create a revocable read-only share link\"><span aria-hidden=\"true\">↗</span> share</button></div></div>"
+    }
+  ]
+}

@@ -1,7 +1,13 @@
 from pathlib import Path
 import json
+import os
 import re
+import shlex
+import shutil
 import stat
+import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -74,13 +80,37 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
     assert (
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
-        "--cov=scripts.merge_xccov_line_coverage --cov-branch "
+        "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert (
         "diff-cover build/074/coverage/projection-python.xml "
         "--compare-branch origin/main --fail-under=90"
     ) in python
+
+
+def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
+    text = (ACTIVE / "ci.yml").read_text()
+    web = _job_block(text, "web")
+    assert "NODE_V8_COVERAGE=" in web
+    assert "node --test tooling/web-ci/tests/offline-worker-088.test.mjs" in web
+    assert "--output build/088/offline-javascript.json" in web
+    assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in web
+    assert 'for name in ("service-worker.js", "offline-registration.js")' in web
+    assert "len(counts) >= .90" in web
+    assert (
+        "tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js "
+        "tests/native-export-088.spec.js --browser=chromium"
+    ) in web
+    assert "ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json" in web
+    export = _step_block(web, "Enforce portable export executable-line coverage")
+    assert 'Path("build/088/export-javascript.json")' in export
+    assert 'for name in ("canvas-export.js", "canvas-export-host.js")' in export
+    assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in export
+    assert "counts and sum(count > 0 for count in counts) / len(counts) >= .90" in export
+    package = json.loads((ROOT / "tooling/web-ci/package.json").read_text())
+    assert '"backend/webrender/static/**/*.js"' in package["scripts"]["lint"]
 
 
 def _assert_windows_native_contract(text: str) -> None:
@@ -157,6 +187,7 @@ def _assert_windows_native_contract(text: str) -> None:
 
 def _assert_apple_platform_contract(apple: str) -> None:
     app_unit = _job_block(apple, "app-unit-tests")
+    core_ios = _job_block(apple, "core-ios-tests")
     first_login = _job_block(apple, "first-login-ui")
     watch = _job_block(apple, "watch-continuity")
     apple_required = _job_block(apple, "apple-required")
@@ -171,6 +202,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     for job_id in (
         "swift-lint",
         "core-tests",
+        "core-ios-tests",
         "app-unit-tests",
         "first-login-ui",
         "watch-continuity",
@@ -181,23 +213,48 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert "${XCODE_VERSION}" in job
         assert "${XCODE_BUILD}" in job
 
-    ios_destination = (
-        'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"'
-    )
+    ios_destination = 'destination: "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.5"'
     macos_destination = 'destination: "platform=macOS"'
-    ios_runtime_check = (
-        'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"'
-    )
+    ios_runtime_check = 'xcrun simctl list runtimes available | grep -F "iOS ${IOS_RUNTIME}"'
     exporter = "python3 scripts/export_xccov_line_coverage.py"
     for job in (app_unit, first_login):
         assert ios_destination in job
         assert macos_destination in job
         assert ios_runtime_check in job
-        assert job.count("CODE_SIGNING_ALLOWED=NO") == 1
-        assert job.count("-enableCodeCoverage YES") == 1
+        assert job.count("CODE_SIGNING_ALLOWED=NO") == 2
+        assert job.count("-enableCodeCoverage YES") == 2
         assert job.count(exporter) == 1
         assert "--platform '${{ matrix.slug }}'" in job
 
+    assert "-scheme AstralCore" in core_ios
+    assert "-only-testing:AstralCoreTests" in core_ios
+    assert '-destination "platform=iOS Simulator,id=$udid"' in core_ios
+    assert "-enableCodeCoverage YES" in core_ios
+    assert "swift test" not in core_ios
+    assert "--platform ios" in core_ios
+    assert "apple-required-core-ios-coverage" in core_ios
+    assert "needs.core-ios-tests.result" in apple_required
+    assert "--platform ios --profile ci" in apple_required
+    assert (
+        '--core-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/ios/core/apple-ios-core-xccov.json"'
+        in apple_required
+    )
+    for selector in (
+        "Accessibility060UITests",
+        "LLMFirstLoginUITests",
+        "VoiceConversationUITests",
+        "WorkspacePresentationUITests",
+        "WorkspaceActionsUITests",
+        "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes",
+    ):
+        assert "-only-testing:AstralAppUITests/" + selector in first_login
+    assert (
+        'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)'
+        in first_login
+    )
+    assert '"${workspace_actions[@]}"' in first_login
+    assert 'result="${result_base}-attempt-$1.xcresult"' in first_login
+    assert 'rm -rf "$result"' not in first_login
     app_unit_marker = _step_block(app_unit, "Publish app unit success marker")
     assert "name: apple-required-app-unit-${{ matrix.slug }}" in app_unit_marker
     assert "app-unit-${{ matrix.slug }}.ok" in app_unit
@@ -206,26 +263,19 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "first-login-${{ matrix.slug }}.ok" in first_login
 
     assert "name: Required · watchOS 26.5 continuity coverage" in watch
-    assert (
-        'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"'
-        in watch
-    )
+    assert 'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"' in watch
     assert "os.environ['WATCHOS_RUNTIME']" in watch
     assert "-scheme AstralWatch" in watch
     assert (
-        '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"'
-        in watch
+        '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"' in watch
     )
     assert watch.count("CODE_SIGNING_ALLOWED=NO") == 1
     assert watch.count("-enableCodeCoverage YES") == 1
     assert watch.count(exporter) == 1
     assert "--platform watchos" in watch
-    assert "--output \"$report\"" in watch
+    assert '--output "$report"' in watch
 
-    download_action = (
-        "uses: actions/download-artifact@"
-        "d3f86a106a0bac45b974a628896c90dbdf5c8093"
-    )
+    download_action = "uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093"
     marker_steps = {
         "Require iOS app-unit success": "apple-required-app-unit-ios",
         "Require macOS app-unit success": "apple-required-app-unit-macos",
@@ -244,21 +294,19 @@ def _assert_apple_platform_contract(apple: str) -> None:
         assert f"name: apple-required-first-login-{platform}-coverage" in apple_required
         assert f"--platform {platform}" in apple_required
         assert (
-            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/"
-            f"{platform}/unit"
+            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/{platform}/unit"
         ) in apple_required
         assert (
-            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/"
-            f"{platform}/ui"
+            f"path: ${{{{ github.workspace }}}}/build/060/coverage/union-inputs/{platform}/ui"
         ) in apple_required
         assert (
             f'--unit-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
-            f'{platform}/unit/'
+            f"{platform}/unit/"
             f'apple-{platform}-unit-xccov.json"'
         ) in apple_required
         assert (
             f'--ui-input "${{GITHUB_WORKSPACE}}/build/060/coverage/union-inputs/'
-            f'{platform}/ui/'
+            f"{platform}/ui/"
             f'apple-{platform}-first-login-xccov.json"'
         ) in apple_required
         assert f'--output "${{COVERAGE_ROOT}}/apple-{platform}-xccov.json"' in apple_required
@@ -453,6 +501,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     assert _job_ids(apple) == {
         "swift-lint",
         "core-tests",
+        "core-ios-tests",
         "app-unit-tests",
         "first-login-ui",
         "watch-continuity",
@@ -460,10 +509,7 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     }
     assert "components/AstralProjection/" not in android + apple
     assert "if: ${{ false }}" not in android + apple
-    assert (
-        "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
-        in android
-    )
+    assert "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in android
 
 
 def test_apple_ci_runs_when_its_coverage_exporter_changes() -> None:
@@ -579,7 +625,8 @@ def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> No
     assert "arch: x86_64" in instrumented
     assert "working-directory: android-client" in instrumented
     assert (
-        "script: ./gradlew :app:connectedDebugAndroidTest --no-daemon --stacktrace"
+        "./gradlew -PastralCoverage=true :app:prepareCoverageInputs "
+        "--no-configuration-cache --no-daemon --stacktrace"
         in instrumented
     )
 
@@ -729,6 +776,7 @@ def test_native_ci_aggregates_run_fail_closed_after_required_jobs() -> None:
     for job_id in (
         "swift-lint",
         "core-tests",
+        "core-ios-tests",
         "app-unit-tests",
         "first-login-ui",
         "watch-continuity",
@@ -743,3 +791,128 @@ def test_three_owner_workflows_are_active_while_six_release_workflows_remain_ine
         "ci.yml",
     }
     assert len(list(INACTIVE.glob("*.yml"))) == 6
+
+
+def _assert_ios_domain_collection(text):
+    for job, lane, derived in (("core-ios-tests", "core", '"$root/build/060/core-ios-dd"'),
+                               ("app-unit-tests", "unit", '"$derived"'),
+                               ("first-login-ui", "ui", '"$derived"')):
+        block = _job_block(text, job)
+        assert block.count("python3 scripts/collect_xccov_native_domain.py") == 1
+        assert "build-for-testing" in block and "test-without-building" in block
+        assert block.index("build-for-testing") < block.index("test-without-building") < block.index("python3 scripts/collect_xccov_native_domain.py")
+        assert f"--lane {lane}" in block
+        assert f"-derivedDataPath {derived}" in block
+        assert f"native-binaries/apple-ios-{lane}.zip" in block
+        assert "--native-domain" in block
+        assert "-enableCodeCoverage YES" in block
+    unit = _job_block(text, "app-unit-tests")
+    _, marker, after_default = unit.partition("test_action='test'\n")
+    assert marker
+    prepare = after_default.partition("test_action=test-without-building")[0]
+    assert "-only-testing:" not in prepare
+    assert "-only-testing:AstralAppTests" in unit
+    ui = _job_block(text, "first-login-ui")
+    assert ui.index("build-for-testing") < ui.index("run_suite()")
+    assert 'result="${result_base}-attempt-$1.xcresult"' in ui
+    assert "--lane" not in _job_block(text, "watch-continuity")
+
+
+def test_ios_witness_collects_after_one_coverage_build_and_retains_selected_binary():
+    _assert_ios_domain_collection((ACTIVE / "apple-ci.yml").read_text())
+
+
+@pytest.mark.parametrize("old,new", [("test-without-building", "test"),
+                                      ("--lane core", "--lane unit"),
+                                      ("--native-domain", "--discard-domain")])
+def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, new):
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    assert old in text
+    with pytest.raises(AssertionError):
+        _assert_ios_domain_collection(text.replace(old, new, 1))
+
+
+@pytest.mark.parametrize("platform", ["macos", "ios"])
+@pytest.mark.parametrize("lane", ["unit", "ui"])
+def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, lane):
+    """Execute the real step using command recorders, never Xcode or a device."""
+    bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
+    if bash is None:
+        pytest.skip("Apple workflow shell contract requires Bash")
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    job, step = (
+        ("app-unit-tests", "Run app unit and continuity tests with coverage")
+        if lane == "unit"
+        else (
+            "first-login-ui",
+            "Run deterministic first-login, voice and workspace UI tests with coverage",
+        )
+    )
+    script = textwrap.dedent(
+        _step_block(_job_block(text, job), step).split("run: |\n", 1)[1]
+    )
+    for name, value in {
+        "matrix.slug": platform,
+        "matrix.destination": (
+            "platform=macOS"
+            if platform == "macos"
+            else "platform=iOS Simulator,name=Owned Fixture"
+        ),
+        "steps.ios_sim.outputs.udid": "owned-fixture-id",
+    }.items():
+        script = script.replace("${{ " + name + " }}", value)
+    assert "${{" not in script
+    recorder = tmp_path / "record_commands.py"
+    recorder.write_text(
+        "import json, os, pathlib, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'xcodebuild' and '-resultBundlePath' in sys.argv:\n"
+        "    pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1]).mkdir(parents=True)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = (
+        f'xcodebuild() {{ {command} xcodebuild "$@"; }}\n'
+        f'python3() {{ {command} python3 "$@"; }}\n'
+    )
+    record = tmp_path / "commands.jsonl"
+    result = subprocess.run(
+        [bash, "-c", prefix + script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "COVERAGE_ROOT": "coverage with spaces",
+            "APP_PROJECT": "Owned Fixture.xcodeproj",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    assert all("" not in call for call in calls)
+    xcode = [call for call in calls if call[0] == "xcodebuild"]
+    assert len(xcode) == (2 if platform == "ios" else 1)
+    assert xcode[-1][-1] == ("test-without-building" if platform == "ios" else "test")
+    assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
+    assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
+    if lane == "ui":
+        selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
+        assert "-only-testing:AstralAppUITests/WorkspacePresentationUITests" in selectors
+        assert (
+            "-only-testing:AstralAppUITests/WorkspaceActionsUITests" in selectors
+        ) == (platform == "ios")
+    else:
+        assert "-only-testing:AstralAppTests" in xcode[-1]
+    exports = [call for call in calls if "scripts/export_xccov_line_coverage.py" in call]
+    assert len(exports) == 1
+    assert exports[0][exports[0].index("--platform") + 1] == platform
+    assert ("--native-domain" in exports[0]) == (platform == "ios")
+    collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
+    assert len(collectors) == (1 if platform == "ios" else 0)
+    if collectors:
+        assert collectors[0][collectors[0].index("--lane") + 1] == lane
+        assert exports[0][exports[0].index("--native-domain") + 1] == (
+            f"coverage with spaces/apple-ios-{lane}-domain.json"
+        )

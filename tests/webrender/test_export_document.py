@@ -84,5 +84,6 @@ def test_wraps_real_workspace_render_without_scripts():
     out = render_export_document(inner, "Canvas", "note", "2026-07-13")
     assert 'data-component-id="wc_a"' in out
     assert ">v<" in out  # table cell survived
-    assert "astral-provenance--grounded" in out  # provenance badge carried
+    assert 'class="astral-provenance astral-provenance--grounded' not in out
+    assert "tool data" not in out
     assert "<script" not in out

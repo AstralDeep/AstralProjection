@@ -39,6 +39,7 @@ webrender = [
 ]
 contracts = [
   "*.json",
+  "assets/exports/*",
   "fixtures/**/*.json",
 ]
 astralprojection = ["NOTICE"]

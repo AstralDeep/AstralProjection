@@ -4,6 +4,7 @@ ROTE — Response Output Translation Engine
 Per-session device registry + component adaptation pipeline.
 Instantiated once inside the Orchestrator and used as internal middleware.
 """
+import copy
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -102,6 +103,15 @@ class ROTE:
     def get_profile(self, websocket: Any) -> DeviceProfile:
         """Return the stored profile, defaulting to full browser if not registered."""
         return self._profiles.get(websocket, DeviceProfile.default())
+
+    def get_cached_components(self, websocket: Any) -> Optional[List[Dict]]:
+        """Copy original component facts for host decoration after re-adaptation.
+
+        Callers may stamp receiver presentation on the copy without changing
+        the raw cache used by later viewport changes. A different or retired
+        socket has no cache and must not infer canonical facts from fallback UI.
+        """
+        return copy.deepcopy(self._last_components.get(websocket))
 
     # ------------------------------------------------------------------
     # Component adaptation

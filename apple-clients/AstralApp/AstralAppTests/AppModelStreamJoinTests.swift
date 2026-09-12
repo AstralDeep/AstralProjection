@@ -29,7 +29,7 @@ final class AppModelStreamJoinTests: XCTestCase {
     }
 
     func testMidStreamJoinKeepsRehydratedComponent() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [liveChartCard]
         reduce(model, subscribedFrame)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc"])
@@ -37,14 +37,14 @@ final class AppModelStreamJoinTests: XCTestCase {
     }
 
     func testSubscribedBuildsPlaceholderOnFreshCanvas() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         reduce(model, subscribedFrame)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc"])
         XCTAssertEqual(model.canvas[0].type, "text")
     }
 
     func testMidTurnGuardReadsTheLiveCanvas() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [liveChartCard]
         model.sendChat("working…")  // arms pendingReplace — the canvas stays live
         reduce(model, subscribedFrame)
@@ -53,7 +53,7 @@ final class AppModelStreamJoinTests: XCTestCase {
     }
 
     func testMidTurnPlaceholderAppliesLiveWhenCanvasLacksIdentity() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("working…")
         reduce(model, subscribedFrame)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc"])

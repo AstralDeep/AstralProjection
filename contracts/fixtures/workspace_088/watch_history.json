@@ -1,0 +1,186 @@
+{
+  "description": "Synthetic actual Deep history builders → Projection ROTE → Watch decoder; never authenticated evidence.",
+  "device": {
+    "device_type": "watch",
+    "screen_width": 200,
+    "screen_height": 240,
+    "viewport_width": 200,
+    "viewport_height": 240,
+    "pixel_ratio": 2,
+    "has_touch": true,
+    "has_microphone": true,
+    "has_audio_output": true,
+    "microphone_permission": "not_determined",
+    "full_duplex": true,
+    "voice_transport": "livekit",
+    "supported_types": [
+      "alert",
+      "badge",
+      "button",
+      "card",
+      "chat_history",
+      "container",
+      "divider",
+      "keyvalue",
+      "list",
+      "metric",
+      "progress",
+      "skeleton",
+      "text"
+    ],
+    "user_agent": "AstralDeep-watchOS/0.1",
+    "reduced_motion": false,
+    "pointer_type": "coarse",
+    "has_camera": false,
+    "has_file_system": false,
+    "connection_type": "wifi"
+  },
+  "source_components": {
+    "loading": [
+      {
+        "type": "text",
+        "content": "Recent chats",
+        "variant": "h3"
+      },
+      {
+        "type": "skeleton",
+        "variant": "chat-history",
+        "count": 6,
+        "label": "Loading your chats…"
+      }
+    ],
+    "populated": [
+      {
+        "type": "chat_history",
+        "title": "Recent chats",
+        "items": [
+          {
+            "chat_id": "watch-fixture-0",
+            "title": "Synthetic conversation 0",
+            "preview": "Preview removed on watch",
+            "time": "just now",
+            "icon": "🌤️",
+            "saved": true
+          },
+          {
+            "chat_id": "watch-fixture-1",
+            "title": "Synthetic conversation 1",
+            "preview": "Preview removed on watch",
+            "time": "2m",
+            "icon": "💬",
+            "saved": false
+          },
+          {
+            "chat_id": "watch-fixture-2",
+            "title": "Synthetic conversation 2",
+            "preview": "Preview removed on watch",
+            "time": "4m",
+            "icon": "💬",
+            "saved": false
+          },
+          {
+            "chat_id": "watch-fixture-3",
+            "title": "Synthetic conversation 3",
+            "preview": "Preview removed on watch",
+            "time": "6m",
+            "icon": "💬",
+            "saved": false
+          },
+          {
+            "chat_id": "watch-fixture-4",
+            "title": "Synthetic conversation 4",
+            "preview": "Preview removed on watch",
+            "time": "8m",
+            "icon": "💬",
+            "saved": false
+          },
+          {
+            "chat_id": "watch-fixture-5",
+            "title": "Synthetic conversation 5",
+            "preview": "Preview removed on watch",
+            "time": "10m",
+            "icon": "💬",
+            "saved": false
+          }
+        ]
+      }
+    ],
+    "empty": [
+      {
+        "type": "chat_history",
+        "title": "Recent chats",
+        "items": []
+      }
+    ]
+  },
+  "frames": {
+    "loading": {
+      "type": "ui_render",
+      "target": "history",
+      "components": [
+        {
+          "type": "text",
+          "content": "Recent chats",
+          "variant": "h3"
+        },
+        {
+          "type": "skeleton",
+          "variant": "chat-history",
+          "count": 3,
+          "label": "Loading your chats…"
+        }
+      ]
+    },
+    "populated": {
+      "type": "ui_render",
+      "target": "history",
+      "components": [
+        {
+          "type": "chat_history",
+          "title": "Recent chats",
+          "items": [
+            {
+              "chat_id": "watch-fixture-0",
+              "title": "Synthetic conversation 0",
+              "time": "just now",
+              "icon": "🌤️",
+              "saved": true
+            },
+            {
+              "chat_id": "watch-fixture-1",
+              "title": "Synthetic conversation 1",
+              "time": "2m",
+              "icon": "💬",
+              "saved": false
+            },
+            {
+              "chat_id": "watch-fixture-2",
+              "title": "Synthetic conversation 2",
+              "time": "4m",
+              "icon": "💬",
+              "saved": false
+            },
+            {
+              "chat_id": "watch-fixture-3",
+              "title": "Synthetic conversation 3",
+              "time": "6m",
+              "icon": "💬",
+              "saved": false
+            }
+          ]
+        }
+      ]
+    },
+    "empty": {
+      "type": "ui_render",
+      "target": "history",
+      "components": [
+        {
+          "type": "chat_history",
+          "title": "Recent chats",
+          "items": []
+        }
+      ]
+    }
+  }
+}

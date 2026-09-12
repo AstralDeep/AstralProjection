@@ -107,12 +107,13 @@ def test_shell_hosts_accessible_voice_controls_without_replacing_typed_chat() ->
     assert terminal_notice["aria-live"] == "assertive"
     assert terminal_notice["aria-atomic"] == "true"
     assert terminal_notice["hidden"] is None
-    assert parser.by_id["astral-input"]["type"] == "text"
+    assert parser.by_id["astral-input"]["rows"] == "2"
+    assert parser.by_id["astral-input"]["aria-label"] == "Message"
     assert parser.by_id["astral-input"].get("disabled") is None
     assert "astral-voice-audio" in parser.by_id
 
     shell = SHELL_PATH.read_text(encoding="utf-8")
-    assert shell.index('id="astral-voice-controls"') < shell.index('id="astral-input"')
+    assert shell.index('id="astral-input"') < shell.index('id="astral-voice-controls"')
 
 
 def test_shell_hands_client_the_hash_pinned_local_livekit_url() -> None:

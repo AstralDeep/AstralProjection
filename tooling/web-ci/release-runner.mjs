@@ -28,6 +28,7 @@ function parseArguments(argv) {
     "candidate-sha",
     "coverage-istanbul-output",
     "coverage-output",
+    "export-coverage-output",
     "image-ref",
     "output",
     "release-id",
@@ -134,6 +135,12 @@ const coverageIstanbulOutput = validateOutputPath(
     ?? join(dirname(coverageOutput), "web-istanbul.json"),
   "coverage-istanbul-output",
 );
+const exportCoverageOutput = validateOutputPath(
+  required(args["export-coverage-output"], "export-coverage-output"),
+  "export-coverage-output",
+);
+if (new Set([output, coverageOutput, coverageIstanbulOutput, exportCoverageOutput].map(resolvePath =>
+  resolve(resolvePath))).size !== 4) reject("release and coverage outputs must be distinct");
 for (const secretName of ["ASTRAL_RELEASE_USERNAME", "ASTRAL_RELEASE_PASSWORD"]) {
   required(process.env[secretName], secretName);
 }
@@ -157,6 +164,7 @@ const environment = {
   ASTRAL_RELEASE_CANDIDATE_SHA: candidateSha,
   ASTRAL_RELEASE_COVERAGE_ISTANBUL_OUTPUT: coverageIstanbulOutput,
   ASTRAL_RELEASE_COVERAGE_OUTPUT: coverageOutput,
+  ASTRAL_EXPORT_COVERAGE_OUTPUT: exportCoverageOutput,
   ASTRAL_RELEASE_ID: releaseId,
   ASTRAL_RELEASE_OUTPUT: output,
   ASTRAL_RELEASE_STAGING_FILE: stagingFile,
@@ -168,6 +176,8 @@ const completed = spawnSync(
     PLAYWRIGHT_CLI,
     "test",
     "tests/release-060.spec.js",
+    "tests/offline-worker-088.spec.js",
+    "tests/native-export-088.spec.js",
     "--browser=chromium",
     "--workers=1",
     "--reporter=line",

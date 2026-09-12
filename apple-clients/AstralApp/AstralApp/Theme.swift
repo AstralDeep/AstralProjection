@@ -52,6 +52,120 @@ enum AstralRadius {
     static let lg: CGFloat = 14
 }
 
+/// Resting primitive styles from the web renderer and its responsive CSS.
+/// Breakpoints use the viewport, even when a card occupies a narrow grid slot.
+enum AstralWebStyle {
+    static func canvasInset(_ width: CGFloat) -> CGFloat { width < 700 ? 12 : 16 }
+    static func chartInset(_ width: CGFloat) -> CGFloat { width < 700 ? 8 : 12 }
+
+    static func metricAccent(_ variant: String?, palette: AstralPalette) -> Color {
+        switch variant {
+        case "success": return palette.success
+        case "warning": return palette.warning
+        case "error": return palette.error
+        default: return palette.primary
+        }
+    }
+}
+
+#if os(macOS)
+    /// WKWebView does not expose transparent page painting on macOS. Track the
+    /// actual opaque backdrop through translucent native containers so its
+    /// isolated document can paint the same color using public APIs only.
+    struct AstralChartBackdrop: Equatable {
+        let red: Double
+        let green: Double
+        let blue: Double
+
+        init(_ color: Color) {
+            let rgb = NSColor(color).usingColorSpace(.sRGB) ?? .black
+            red = rgb.redComponent
+            green = rgb.greenComponent
+            blue = rgb.blueComponent
+        }
+
+        private init(red: Double, green: Double, blue: Double) {
+            self.red = red
+            self.green = green
+            self.blue = blue
+        }
+
+        func overlay(_ color: Color, opacity: Double) -> Self {
+            let rgb = NSColor(color).usingColorSpace(.sRGB) ?? .black
+            let alpha = min(1, max(0, opacity * rgb.alphaComponent))
+            return Self(
+                red: rgb.redComponent * alpha + red * (1 - alpha),
+                green: rgb.greenComponent * alpha + green * (1 - alpha),
+                blue: rgb.blueComponent * alpha + blue * (1 - alpha))
+        }
+
+        var hex: UInt32 {
+            func byte(_ value: Double) -> UInt32 { UInt32((min(1, max(0, value)) * 255).rounded()) }
+            return byte(red) << 16 | byte(green) << 8 | byte(blue)
+        }
+    }
+
+    private struct AstralChartBackdropKey: EnvironmentKey {
+        static let defaultValue: AstralChartBackdrop? = nil
+    }
+
+    extension EnvironmentValues {
+        var astralChartBackdrop: AstralChartBackdrop? {
+            get { self[AstralChartBackdropKey.self] }
+            set { self[AstralChartBackdropKey.self] = newValue }
+        }
+    }
+
+    private struct AstralChartBackdropModifier: ViewModifier {
+        let palette: AstralPalette
+        let color: Color
+        let opacity: Double
+        @Environment(\.astralChartBackdrop) private var inherited
+
+        func body(content: Content) -> some View {
+            content.environment(
+                \.astralChartBackdrop,
+                (inherited ?? AstralChartBackdrop(palette.bg)).overlay(color, opacity: opacity))
+        }
+    }
+#endif
+
+extension View {
+    @ViewBuilder
+    func astralChartBackdrop(_ palette: AstralPalette, color: Color, opacity: Double) -> some View {
+        #if os(macOS)
+            modifier(AstralChartBackdropModifier(palette: palette, color: color, opacity: opacity))
+        #else
+            self
+        #endif
+    }
+
+    func astralWebSurface(_ palette: AstralPalette) -> some View {
+        background(palette.surface.opacity(0.45), in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.07)))
+            .astralWebShadow(radius: 10)
+            .astralChartBackdrop(palette, color: palette.surface, opacity: 0.45)
+    }
+
+    /// CSS outer shadows never paint under a translucent surface. Clipping the
+    /// interior avoids SwiftUI's ordinary shadow darkening the card fill.
+    func astralWebShadow(radius: CGFloat) -> some View {
+        background {
+            Canvas { context, size in
+                let outline = Path(
+                    roundedRect: CGRect(origin: .zero, size: size).insetBy(dx: 4, dy: 4),
+                    cornerRadius: radius)
+                context.clip(to: outline, options: .inverse)
+                context.addFilter(.shadow(color: .black.opacity(0.25), radius: 1, x: 0, y: 1))
+                context.fill(outline, with: .color(.black))
+            }
+            .padding(-4)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
+}
+
 /// Holds the live palette so the server can restyle without a relaunch
 /// (feature 044 US5 parity). Observed by the renderer and chrome.
 @MainActor

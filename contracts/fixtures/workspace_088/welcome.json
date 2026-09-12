@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "source": "AstralDeep 088 welcome_components(tools_available=False)",
+  "components": [
+    {
+      "type": "hero",
+      "title": "How can I help?",
+      "variant": "subtle",
+      "badges": [],
+      "data-welcome": "intro",
+      "id": "wel_hero",
+      "component_id": "wel_hero"
+    },
+    {
+      "type": "card",
+      "title": "🔌 Agents are off for this account",
+      "content": [
+        {
+          "type": "text",
+          "content": "Replies will be plain text until agents are enabled. Enabling grants read-only permissions for the built-in public agents — search, data, file and system reads, never write access — and each agent can be adjusted or turned off any time.",
+          "variant": "caption"
+        },
+        {
+          "type": "button",
+          "label": "Enable recommended agents",
+          "action": "enable_recommended_agents",
+          "payload": {
+            "source": "welcome"
+          },
+          "variant": "primary"
+        },
+        {
+          "type": "button",
+          "label": "Choose agents individually",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "agents"
+          },
+          "variant": "secondary"
+        }
+      ],
+      "variant": "default",
+      "data-welcome": "permission",
+      "id": "wel_enable",
+      "component_id": "wel_enable"
+    },
+    {
+      "type": "grid",
+      "columns": 3,
+      "children": [
+        {
+          "type": "button",
+          "label": "Research brief",
+          "action": "chat_message",
+          "payload": {
+            "message": "Research the latest developments in small modular reactors and give me a cited brief"
+          },
+          "variant": "secondary",
+          "aria-label": "Research brief",
+          "data-welcome": "example",
+          "id": "wel_ex_research_brief",
+          "component_id": "wel_ex_research_brief"
+        },
+        {
+          "type": "button",
+          "label": "Summarize a page",
+          "action": "chat_message",
+          "payload": {
+            "message": "Summarize https://en.wikipedia.org/wiki/Dog_grooming — give me a TL;DR and key points"
+          },
+          "variant": "secondary",
+          "aria-label": "Summarize a page",
+          "data-welcome": "example",
+          "id": "wel_ex_summarize_a_page",
+          "component_id": "wel_ex_summarize_a_page"
+        },
+        {
+          "type": "button",
+          "label": "Weather outlook",
+          "action": "chat_message",
+          "payload": {
+            "message": "What's the weather forecast for Lexington, KY this week? Show it with charts"
+          },
+          "variant": "secondary",
+          "aria-label": "Weather outlook",
+          "data-welcome": "example",
+          "id": "wel_ex_weather_outlook",
+          "component_id": "wel_ex_weather_outlook"
+        }
+      ],
+      "gap": 12,
+      "data-welcome": "examples",
+      "id": "wel_examples",
+      "component_id": "wel_examples"
+    },
+    {
+      "type": "collapsible",
+      "title": "More examples",
+      "content": [
+        {
+          "type": "button",
+          "label": "Business dashboard",
+          "action": "chat_message",
+          "payload": {
+            "message": "Build a rich dashboard for a dog grooming business — booking requests, monthly revenue line chart, most popular services pie chart, and today's schedule as a table"
+          },
+          "variant": "secondary",
+          "aria-label": "Business dashboard",
+          "data-welcome": "example",
+          "id": "wel_ex_business_dashboard",
+          "component_id": "wel_ex_business_dashboard"
+        },
+        {
+          "type": "button",
+          "label": "Roll some dice",
+          "action": "chat_message",
+          "payload": {
+            "message": "Roll exactly six six-sided dice and show the normalized results."
+          },
+          "variant": "secondary",
+          "aria-label": "Roll some dice",
+          "data-welcome": "example",
+          "id": "wel_ex_roll_some_dice",
+          "component_id": "wel_ex_roll_some_dice"
+        },
+        {
+          "type": "button",
+          "label": "System status",
+          "action": "chat_message",
+          "payload": {
+            "message": "Show current system status with CPU and memory metrics"
+          },
+          "variant": "secondary",
+          "aria-label": "System status",
+          "data-welcome": "example",
+          "id": "wel_ex_system_status",
+          "component_id": "wel_ex_system_status"
+        }
+      ],
+      "default_open": false,
+      "data-welcome": "more",
+      "id": "wel_more",
+      "component_id": "wel_more"
+    }
+  ],
+  "expected_roles": [
+    "intro",
+    "permission",
+    "examples",
+    "more"
+  ],
+  "result": {
+    "type": "text",
+    "component_id": "result_088",
+    "content": "A result stays in the workspace",
+    "data-welcome": "intro"
+  },
+  "nested_result": {
+    "type": "container",
+    "component_id": "result_nested",
+    "children": [
+      {
+        "type": "hero",
+        "title": "How can I help?",
+        "variant": "subtle",
+        "badges": [],
+        "data-welcome": "intro",
+        "id": "wel_hero",
+        "component_id": "wel_hero"
+      }
+    ]
+  }
+}

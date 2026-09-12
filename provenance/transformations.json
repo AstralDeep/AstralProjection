@@ -7,36 +7,252 @@
       "sourcePath": "android-client/README.md",
       "sourceBlob": "a2f81fbfa8b081a3c339e870f5cc8ed05a16f1c9",
       "sourceMode": "100644",
-      "resultSha256": "a72c03ce9b7a511df88f10aa6c6f5645e1fe094724bbaebf224b466f7b939edc",
+      "resultSha256": "a5578d2244a055f1af5b1ee851a5e061c1d0c02c3064b5df4aba62e17f60174e",
       "task": "T188",
-      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references."
+      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows."
     },
     {
       "path": "android-client/app/build.gradle.kts",
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "d1ceb9dbd111d3ef8030e74496061115965ed612aa46512045ee7bc9f4f3f705",
-      "task": "T054/T057/T013/T014/T102",
-      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03."
+      "resultSha256": "7880a31ef6b27eaf5dab38b60b82b638e1f546ba097fe49f9beba8c4f440b822",
+      "task": "T054/T057/T013/T014/T102/T056/T060",
+      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs. Feature 088 actual Android workspace action qualification: injectable existing REST and ActivityResultRegistry seams retain production defaults; test-only MockWebServer uses the already pinned coordinate and Java provider lint is strict. Normal debug/release runtime dependency graphs are unchanged; the real controller is exercised through lifecycle, capture, network, private WebView, clipboard and document-provider flows. Advance only the current versionCode from 7 to 8 after Play rejected reuse of code 7; retain versionName 1.4, registered identities, signing setup and runtime behavior."
+    },
+    {
+      "path": "android-client/app/gradle.lockfile",
+      "sourcePath": "android-client/app/gradle.lockfile",
+      "sourceBlob": "19e2d36a13fcd36355d036c336b9554f3a4ab46a",
+      "sourceMode": "100644",
+      "task": "T060/T061/T062",
+      "reason": "Feature 088 actual Android workspace action qualification: injectable existing REST and ActivityResultRegistry seams retain production defaults; test-only MockWebServer uses the already pinned coordinate and Java provider lint is strict. Normal debug/release runtime dependency graphs are unchanged; the real controller is exercised through lifecycle, capture, network, private WebView, clipboard and document-provider flows.",
+      "resultSha256": "ae8b335179a021b46e0a3326b22d5e6d5e908370a215fa67d764a42bd0497d37"
+    },
+    {
+      "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ArtifactChromeUiTest.kt",
+      "sourceBlob": "83647aa5bf0a7cd3bcb5c6fc297885708f8bdf7b",
+      "sourceMode": "100644",
+      "resultSha256": "500318160fac865506d08191c6c05844595ed469d2a03b5d5dc96d9cfb906b0f",
+      "task": "T056",
+      "reason": "Feature 088 review: Verify ordinary grounded badges stay hidden while the server trust mark, estimated and generated warnings, and component actions remain available in Android instrumentation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows."
+    },
+    {
+      "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ReleaseEvidenceInstrumentedTest.kt",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ReleaseEvidenceInstrumentedTest.kt",
+      "sourceBlob": "cbe379b313c3e39dc281204f5192b6a96e70c992",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs.",
+      "resultSha256": "e156396bf974b1bbd2c8bf67a0f212eb26062a9f7924b4d7bd50a4b5797d1548"
+    },
+    {
+      "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/SurfacesTest.kt",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/SurfacesTest.kt",
+      "sourceBlob": "b2d35ddae09fc9eb527e2a6df341643d1ff7f6d4",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection.",
+      "resultSha256": "b1032688b6d3c09a522c12591bb7b9c70400bd6b1aa46e1b92700aae778a42e2"
+    },
+    {
+      "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/VoiceConversation065InstrumentedTest.kt",
+      "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/VoiceConversation065InstrumentedTest.kt",
+      "sourceBlob": "6b58ee3852e30bbc3cb988895e4e8262c0445100",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
+      "resultSha256": "1c2af1cc895e4dbb728cf75c6cc77de7380597721e5ae9f84e83fc5d33e90f46"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/MainActivity.kt",
+      "sourceBlob": "4f7e94f65ef6f4dd5c2976029ed38679a58d43ff",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "755a2f4f7c7c77253185e40e64d5f078e62f2b5e1a1728ae1b0b79ab7e265c1f"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt",
+      "sourceBlob": "8a7b911bc80fe36dea393dfae3a92a4162963322",
+      "sourceMode": "100644",
+      "task": "T060/T056",
+      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "e330ab7b9a6a733c49aa1f52022da27796387abd2ba5fcf972abad7622878c01"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Markdown.kt",
+      "sourceBlob": "206e2005284e02f41047381e70302c9048b548e2",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "95041d39632e019bd240e73e8328b6284d6703ae7bd36f45e901d3a91fecb1ae"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Renderer.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/Renderer.kt",
+      "sourceBlob": "843bcb3a22428797c0ab0f7fb41add252e209f88",
+      "sourceMode": "100644",
+      "task": "T056/T057/T060/T061/T062",
+      "reason": "Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "931601c0e724fa4759554f93992fa8749d43dceed4258f10725fd21040092ccb"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChrome.kt",
+      "sourceBlob": "ec76d3c82c5ce03f7ac62989685d572c83815593",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "9a69dcf6717f3049f01bd5c97dce7c38a0753267f9e75bd864553ef3f031e831"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Basic.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Basic.kt",
+      "sourceBlob": "21fbe9a7893bbafb1841b4beb8125b35940f30cb",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "ede6c11371c401e04138dbcadee348f143cb64cdf8e0e5cc45d2131624c484b2"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Charts.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Charts.kt",
+      "sourceBlob": "42b763cdc9ce4d89f2e5c8410d215c6bd352b224",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
+      "resultSha256": "42351433482062222b05d4ca087455a377ab7ba6d105e28136e7b150654a3619"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Data.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Data.kt",
+      "sourceBlob": "dc5bd0e6294c540ea44a765fc043e8f01e4eb940",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
+      "resultSha256": "3839cf1dfdbdb35a1d05e31ba3c9acf3ae4ffefa83cf28a9646b4312d97e7017"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Input.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Input.kt",
+      "sourceBlob": "0c23123bd7dff8b2c94e18a7bebbbf16638ae4a4",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "d68af6f9c5cbe9a3f2b0ef6f6b5e3783427327b1baaed3d4032b393d4a2f2e20"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Layout.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Layout.kt",
+      "sourceBlob": "b792f1dce68192b7cd64371e768f95ce29ac2c0d",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
+      "resultSha256": "4d2624c3105e5ea7a07be091bd902770553a8f02a70b8007b3739950b1893fbb"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Media.kt",
       "sourceBlob": "cc0db0d610d90f1135f447d016267a28412d9068",
       "sourceMode": "100644",
-      "resultSha256": "eb5ace10608619d370bea87734c552b3ba8ba83a5783ab835bc3a55e960bd4dc",
+      "resultSha256": "24dba7cd87f97963255f3c7da309b4f5aad786819d1ac5ca83fb017068bdb43d",
       "task": "T040",
-      "reason": "Decode base64 data:image URLs locally so the image primitive can show remote-control screenshots (feature 076)."
+      "reason": "Decode base64 data:image URLs locally so the image primitive can show remote-control screenshots (feature 076). Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCaps.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCaps.kt",
+      "sourceBlob": "333b0f201e01777a81c295a8317dfa768a0e7f45",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated Android parity: report logical viewport dimensions separately from physical screen metrics, validate positive finite metrics, and test phone/tablet density boundaries.",
+      "resultSha256": "70337ad0ba3e9ae48ec6a7173b6b94f0e2609e5879bd3cbc2d1f6009588d9846"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
+      "sourceBlob": "25a71eb2c805119e642c5cc5cc4c456e47776fec",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "c0323d5baae7a894699097f1e05bae0f7741f38ec55c8c0b63576911897d06a9"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",
+      "sourceBlob": "e6ff616138233eaf811a567ff5b2bad7f4020d3e",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "3e3f70f4211dba674620702bc5be72602a56a95befd315389603d23d63eeb9de"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourceBlob": "d241aacb0fb0710105e25b81d30f754bd8419611",
       "sourceMode": "100644",
-      "resultSha256": "7d2057c6b30550218dcd3569a3be26d77564d8726b7c7a4754a144828d1b3521",
-      "task": "T041",
-      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076)."
+      "resultSha256": "c6e5fb8685aeee6c1b2ea52ab31d8742637f32888bbcd873112cdea6ce5e92f0",
+      "task": "T041/T056/T060",
+      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows."
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
+      "sourceBlob": "ab56b7ccb1e56b47c900995c70768db0c38cb41e",
+      "sourceMode": "100644",
+      "task": "T060/T056",
+      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation.",
+      "resultSha256": "071733d77bc0a2117444a42e97cc9908ee772c889de1c4541e3ef5a9f89a4239"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
+      "sourceBlob": "6fbaa0b83e865d0055a0ca4fd645e8ca7ccc7e04",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection.",
+      "resultSha256": "fea227e49f134284283d1aa9fe6fb6608da918103d2558bfa936a5e17d0b45a7"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/theme/Theme.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/theme/Theme.kt",
+      "sourceBlob": "6293e3e06908ee9318913196ef3207fdda544f0b",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
+      "resultSha256": "58d0827f388bf1e0c0fa394538665426a809cd9744f19198c34141b90ac8d1e8"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController.kt",
+      "sourceBlob": "1fbdf6029c1ab1aecc655c004a2595679b987e7f",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "7c4085af9720f1c345dac0b420e9cbf6b94a7fda9342e4fb73040db456fc08e6"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
+      "sourceBlob": "8ab7f1bf2bf9720bef9ba5dcf0609470ddc1f5b5",
+      "sourceMode": "100644",
+      "resultSha256": "5ddf05ba20374910876bdf23fe49ca61797591296096d9b8b8d19b75258abebb",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/MarkdownTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/MarkdownTest.kt",
+      "sourceBlob": "dcb597c5701cdb35122be60be28c73119f02f865",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "b23e8551e7fbb51f0b8d21349669957792f75a5d302ed8d82890fb5a2d72e600"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
@@ -48,13 +264,76 @@
       "reason": "Repoint Android renderer vocabulary parity to the standalone Projection contract."
     },
     {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChromeTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/renderers/ArtifactChromeTest.kt",
+      "sourceBlob": "246926750072af1debdcffa55aaf932ac3b0c317",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "39a16cd262518aff58050a59e3cd869e4c7aff7a445d38d200fcc54a0c3acd43"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCapsTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCapsTest.kt",
+      "sourceBlob": "9e71cbae1df99e3c7d6ce1df24377608dd60b13c",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated Android parity: report logical viewport dimensions separately from physical screen metrics, validate positive finite metrics, and test phone/tablet density boundaries.",
+      "resultSha256": "a7f0eff0e827b4175781259ce3ee1c4a7bc9aa76fce3e05612fb92a1f28b4296"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ChromeSurfaceReducerTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ChromeSurfaceReducerTest.kt",
+      "sourceBlob": "f3c28c3b7686a4e8b3cc12b3ecad142445b5f005",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "32473e8356e53a4bbacd19da7b0bee8b095af8035b69a67a55a7bc9d290ae35b"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/LayoutModeTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/LayoutModeTest.kt",
+      "sourceBlob": "46e233fedba752c4fba7ac66f0ce087460720309",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "ebec29bca2d050e05e755101b208459a7cf57bf0eacdcdef68f7f89603ad16d9"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WelcomePurgeTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WelcomePurgeTest.kt",
+      "sourceBlob": "2c12bc13495386760fc9ee319b9f04978eb136ca",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state.",
+      "resultSha256": "b34bee61db861391083a971d629ca2573793ddf99582a9a54be91580bd5776b6"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController065Test.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController065Test.kt",
+      "sourceBlob": "1f9fd43ef9ea057a6ebce7a3008381d4b21576cf",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets.",
+      "resultSha256": "52bcd215d7d9ffab8e215e79ada022096d8276fb87e0bcc8d0d3f509d7ae48b1"
+    },
+    {
+      "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenu.kt",
+      "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenu.kt",
+      "sourceBlob": "d8281a8be6eddf1ee087af1746e1c2c68e05ccd4",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation.",
+      "resultSha256": "3613846624c9c72c606a11c9bd8227b81696ee610636dc8534a389401d3d8617"
+    },
+    {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
       "sourceBlob": "422b37a5f9dfe46919bc52df26b6f19ff7ca3929",
       "sourceMode": "100644",
-      "resultSha256": "48c63630af8314dec110b36666920832da08c34a099aba26f583a4f57d969811",
-      "task": "T052/T071/T040",
-      "reason": "Implement the strict Android client-local voice frame, bound-final models, and canonical content-free playout phases while preserving remote-v1 behavior. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "e3aec5d2cb754abe0dce85c820656c7f9cb38544965db1d16d80278b1261cc2f",
+      "task": "T052/T071/T040/T060",
+      "reason": "Implement the strict Android client-local voice frame, bound-final models, and canonical content-free playout phases while preserving remote-v1 behavior. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection."
     },
     {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
@@ -70,9 +349,18 @@
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
       "sourceBlob": "4801ccf81355ce04ac24930bb37754c86cd2cd87",
       "sourceMode": "100644",
-      "resultSha256": "3ef48b7fae2d8ae59a87b3b628c5672ba09a9bcc389fe1ea158e4a98184c5a5b",
-      "task": "T052/T040",
-      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "c69dbba3b9beab975601debe489a66ed80b9c5fa92ac793b49dd21ad214a242b",
+      "task": "T052/T040/T056/T060",
+      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection."
+    },
+    {
+      "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenuTest.kt",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenuTest.kt",
+      "sourceBlob": "34cb693a107b1253207572b9d28fe0f4de173649",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation.",
+      "resultSha256": "e13deb96e123546381aebaa97ff0f0e483de4e8bcb413457113118e3e560beaf"
     },
     {
       "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
@@ -93,6 +381,15 @@
       "reason": "Bind the Android voice conformance consumer to both standalone remote-v1 and client-local-v1 Projection fixtures, including canonical playout phases."
     },
     {
+      "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/WireTest.kt",
+      "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/WireTest.kt",
+      "sourceBlob": "fbab913a948c72581666156ce21aaf12363be29c",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
+      "resultSha256": "d7d51de06ce576b89ea9aa23855e47b91196541aff71f43ab57b2b1cf6fca6b1"
+    },
+    {
       "path": "android-client/docs/play-store-release.md",
       "sourcePath": "android-client/docs/play-store-release.md",
       "sourceBlob": "41bf17ac006b61b742b8abbe66b40fdddaa57ea2",
@@ -111,6 +408,15 @@
       "reason": "Feature 078: raise targetSdk and compileSdk from 35 to 36 to satisfy the Google Play target API level requirement (Play refused the targetSdk-35 bundle on 2026-09-03). Dependency versions are unchanged."
     },
     {
+      "path": "android-client/gradle/verification-metadata.xml",
+      "sourcePath": "android-client/gradle/verification-metadata.xml",
+      "sourceBlob": "6a1f909477f345367fb05f240b58c915ed8aa560",
+      "sourceMode": "100644",
+      "task": "T056/T057/T062",
+      "reason": "Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs.",
+      "resultSha256": "137900c9039aab7c56f6ce34ecc3efa901b180449b18d994245e1d98572739e5"
+    },
+    {
       "path": "android-client/gradlew",
       "sourcePath": "android-client/gradlew",
       "sourceBlob": "adff685a0348c64b2b64f0b302f1f82b28eeaaea",
@@ -124,9 +430,108 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj",
       "sourceBlob": "9fb8c3b036fc1c2c9dfa6a822163f796aee0af78",
       "sourceMode": "100644",
-      "resultSha256": "9f3c49dc6ad524c046882155112663fc90b2a013fb33e5de7e3100ce4504ea4f",
+      "resultSha256": "9f74055c8098bb4f7502623c6581253c06045e08ec78d8b975d670a72a44efa0",
       "task": "T013/T102",
-      "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override."
+      "reason": "Record the inherited 1.4 transformation and advance all ten Apple configurations to the 1.5 / build-61 source release candidate after App Store Connect confirmed iOS and macOS build 60; protected publication retains the monotonic store build override. Advance all ten Apple configurations to version 1.6 / build 62 for the existing App Store Connect 1.6 entries; rebuild the signed Release archives and keep export version management disabled. No app identities or runtime code change."
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/AppModel.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/AppModel.swift",
+      "sourceBlob": "d41e7b743730ae8bfd49e21068e838c2f07bf799",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "351718ad82953209326a8f5b448b11d0720609b5d638cff9f719af0e21058e19"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
+      "sourceBlob": "cb822bfcd36782eb2f87a74c6ac8313c9847b94c",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 actual Apple workspace action qualification: debug-only, dual-gated fixture construction uses an ephemeral loopback peer and memory-only session before the normal model initializes. Production Release construction and current authority paths are unchanged.",
+      "resultSha256": "f8a58f1e8132c0d825245b2f0fae62acc5eb85f5c09252031b814dd04cb7e956"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/FirstLoginUITestFixture.swift",
+      "sourceBlob": "390ea1e60d03b65b1db25955560055ef207c39ba",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 actual Apple workspace action qualification: debug-only, dual-gated fixture construction uses an ephemeral loopback peer and memory-only session before the normal model initializes. Production Release construction and current authority paths are unchanged. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "cb3f207db2b877ed420b84a34fd2d744787ebcbb997b2706fc74820dc55c4747"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Theme.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Theme.swift",
+      "sourceBlob": "a0b812c252c910d3535d3092a40c29e20757341b",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native chart qualification: composite the macOS WebKit chart against its actual trusted numeric host backdrop, including translucent transcript bubbles, with dark/light pixel regressions.",
+      "resultSha256": "69ccd6aac2c2660dad3abfb1aeea0c5fd7813270a9d22b6aa84beb7b85e4cc14"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/ChatListView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ChatListView.swift",
+      "sourceBlob": "c82493afacf227e0211a4ee31bfb84648e3e11ac",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection.",
+      "resultSha256": "21a51376dc9206a020ed5dd74e48b2863039ce4e74cc8b07bb7b9fc59988b235"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
+      "sourceBlob": "ae7a39f349d86b489910d22985b20a9067f165e2",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native chart qualification: composite the macOS WebKit chart against its actual trusted numeric host backdrop, including translucent transcript bubbles, with dark/light pixel regressions. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "3c165bd1872bfc4c5985e2fc34eff036bf82aca857757a1eecac3ca78bba12a6"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
+      "sourceBlob": "eddd7f1759eb83dd8836e4ef58080dd1de0cb070",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 review: Suppress the ordinary grounded tool-data badge while preserving the server trust mark and all component actions. Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 live iOS regression: explicitly retire instruction focus before dismissing the Refine sheet. The actual cancel-with-keyboard journey reproduced a sustained SwiftUI lazy-layout loop before the fix and passes afterward; component target, trimmed instruction validation and dispatcher remain unchanged. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "2d0fb1e4e6720e27ef038d246b0131f6bcd605710ffb9bc0304238d251df736c"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/ComponentView.swift",
+      "sourceBlob": "698310891434a11385b3e8436981f0bbfc631e59",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "a2ceb93618adb86e9c04b7b1c06553bcf554130057c87d17237b57f8e86fb4d6"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/MarkdownBlockView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/MarkdownBlockView.swift",
+      "sourceBlob": "a3192ca22b6c46c2e737ee057904526aab60740f",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "02ced592243d912bf7d550ce69b0e392f689f374300e9748125cc66c1d24fd61"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/RootView.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/RootView.swift",
+      "sourceBlob": "8290b380f4ee3979984255013712a7946a530590",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state.",
+      "resultSha256": "8f00d5887b1da0bade004043858c57cddb7864306bdade4366e3dd0897a4fe27"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralApp/Views/Screens.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralApp/Views/Screens.swift",
+      "sourceBlob": "4f8bf9a340b0a199e76761175c0f1943f1167ba4",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state.",
+      "resultSha256": "cfb30e5b4e8524e3cbaae4bd584d877cb69dad6d7721e34451072c824ac56020"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
@@ -138,22 +543,148 @@
       "reason": "Fence delayed Apple voice activation across End, close, authentication expiry, and connection replacement, and compensating-end stale successful start or takeover results before media can connect."
     },
     {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelBackgroundContinuityTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelBackgroundContinuityTests.swift",
+      "sourceBlob": "38269e6f30cfb698155fc2f641511c5e1c2c5060",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "2a879a9aa6592677e7e5993585e2ae3b92179c8499fd333261f2621660d60fb4"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelChromeSurfaceTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelChromeSurfaceTests.swift",
+      "sourceBlob": "4a3f1ffcaa8e26cae57a19d0060b7397adf48bfd",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state.",
+      "resultSha256": "60ed5af710fcc6c2b163955c0a348e8773ffa04a0bb986f516dd07fbcefa4ebd"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelFirstTurnContractTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelFirstTurnContractTests.swift",
+      "sourceBlob": "063e44a4fd864584f702857fbd6da49838080915",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "64cc847aa7de97f2fc252be2f85fd3e7224fe8b236af05b8b7cd59586a5911c1"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelLiveCanvasTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelLiveCanvasTests.swift",
+      "sourceBlob": "c871607ad2e0f5aff66abbd60460f3f987e34faa",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "77ffba722977875dd702e919b1c3c05122c20f4c6bf9c8bb4ee724efd71a91d9"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelRefineExportTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelRefineExportTests.swift",
+      "sourceBlob": "f35401eaab555b1dd0a9a0b34b7e31762d35a286",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "1f130d6a783707845ab28f9a3eba94cc29ca0d31e191bc7b60a72c0ecacb227d"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelStreamJoinTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelStreamJoinTests.swift",
+      "sourceBlob": "12ad9752729a6cb4a5e65537ca834e8fa32ff234",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "9fc2391e045b1965cf26906875287e3b37be0a1f220801abe51e2b62f09ce67c"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelTextOnlyCanvasTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelTextOnlyCanvasTests.swift",
+      "sourceBlob": "9ca3466d692155e49c31e4bc5c9454eaf5fb253d",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "78d1ac5be93bf9ba841f35c7e9c4c6ab89722bc18369593f3dd4bf856bc46330"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/AppModelWorkspaceVerbTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/AppModelWorkspaceVerbTests.swift",
+      "sourceBlob": "d7bf354edf293dfbca781b6a971f77d76b8dd677",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "4364bbd381f3fffb1c2041f6a48f53d00e6c248905db0931cf48a5f551bc95ad"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/ConversationContinuityTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/ConversationContinuityTests.swift",
+      "sourceBlob": "9f2387fe8fbf12e09002646daca304e6141d8e0e",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "002b42446ca5ae6079c633798e5e398f2a6a307e26ca1d6a7ecb01912f554370"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/LLMFirstLoginOperationTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/LLMFirstLoginOperationTests.swift",
+      "sourceBlob": "732806a9a9d545466f73d846ac5a5bd5ecc007ba",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "9471a66319b7ac9563735e547feab00b56fdb05a052ca3d1349d12131f96163a"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppTests/StatusLifecycleTests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppTests/StatusLifecycleTests.swift",
+      "sourceBlob": "2d7d262ac1c387117a19d34fadfd2704c3bbe28e",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
+      "resultSha256": "ba935e80a1fc901f695ca0d5458e07ecffa7b45799211b5832ec73b2ee5c347e"
+    },
+    {
       "path": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
       "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
       "sourceBlob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
       "sourceMode": "100644",
-      "resultSha256": "8f89199df7caffcea3255916aaf900c8dbc1d569cf9f32cc8cef9b014198921f",
-      "task": "T065/T066",
-      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection."
+      "resultSha256": "7a333dc76dfa2e5abbfe0b7214dd438e3f5bbdb11a47928b73e2f5b535522411",
+      "task": "T065/T066/T060",
+      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable."
     },
     {
       "path": "apple-clients/AstralCore/Package.swift",
       "sourcePath": "apple-clients/AstralCore/Package.swift",
       "sourceBlob": "3a5523e5a76bdc2d054e054fb16e27b1b603412f",
       "sourceMode": "100644",
-      "resultSha256": "d1a77c01102c6ddc4e9716db3bc51854b7088828ce168faaeed7f390484da538",
-      "task": "T055/T013/T014",
-      "reason": "Bind the shared Apple package to hash-verified standalone remote-v1 and client-local-v1 Projection fixtures without adding a package dependency."
+      "resultSha256": "cfff897a02154bbf0098621024b6c7e9bf71d3db497dcce5343cc6a49a3428a0",
+      "task": "T055/T013/T014/T057/T061",
+      "reason": "Bind the shared Apple package to hash-verified standalone remote-v1 and client-local-v1 Projection fixtures without adding a package dependency. Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries."
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/API/Rest.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/API/Rest.swift",
+      "sourceBlob": "a5b686d4bc48f2484b93eefb20ce47cabd951ca1",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 native coverage qualification: equivalent ordinary loop and inner condition preserve relative-time behavior while avoiding a reproduced Swift compiler coverage counter underflow; strict counter validation and original failure evidence are retained. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
+      "resultSha256": "7f5f336ba082683cc0c3b7f7cb206b0e8f662d180d6a7ba4006bd56ba9201d5c"
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Chrome/ChromeMenu.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Chrome/ChromeMenu.swift",
+      "sourceBlob": "78e4a92ca64a85583415dbf290fb0a05cbf15523",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation.",
+      "resultSha256": "ebab452d6d3c1a660bb54eccd1923283ce75797cef1529cd14da308356ecc034"
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/InlineMarkdown.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Primitives/InlineMarkdown.swift",
+      "sourceBlob": "1f01ee9c6b8952a05846140de1aefb4c7bd97fb9",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "38eb997f323e2304b883b9eb634f0fc748983a3bfcf0478c596305c0a484a8ae"
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Primitives/Primitives.swift",
@@ -165,13 +696,22 @@
       "reason": "Replace the former Astral-Primitives repository URL with the canonical AstralPrimitives identity."
     },
     {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/ConversationContinuity.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/ConversationContinuity.swift",
+      "sourceBlob": "35abc8965053f025f3ad583bfa20524b3dac1f47",
+      "sourceMode": "100644",
+      "resultSha256": "06f3943072c082f6149dbfcb8b3c7fd4167eda3fd9e29ae75de753fa9fc53b0a",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
+    },
+    {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
       "sourceMode": "100644",
-      "resultSha256": "36faf78077070d82f0d6d821c258e669ef8456d9785f3b123300a1c6f9f0e475",
-      "task": "T055/T040",
-      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Wrap the two 122-column computer_host/computer_request disposition entries to satisfy strict recursive swift-format (lineLength 120)."
+      "resultSha256": "372d9d14b80db6b31d13a8410f97112478b9c6313c13a9623df54d87926bada9",
+      "task": "T055/T040/T057/T061",
+      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Wrap the two 122-column computer_host/computer_request disposition entries to satisfy strict recursive swift-format (lineLength 120). Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
@@ -181,6 +721,24 @@
       "resultSha256": "2a7f7417c250f0ffcf8d934bfd9b4cc2b7ad018895b2cc0cf913e94f05d3ea7b",
       "task": "T050/T071",
       "reason": "Implement strict Apple client-local voice capability, frame, disposition, bound-final, and canonical content-free playout protocol models."
+    },
+    {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Transport/WSClient.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Transport/WSClient.swift",
+      "sourceBlob": "ed6be6b1759d8a0e46eef99e32e10bb9df382810",
+      "sourceMode": "100644",
+      "resultSha256": "bb3d496fd6f45d09291e96e9a5c9f5bab98a1191d15a4ae894c3f28ef693e0d3",
+      "task": "T060/T061",
+      "reason": "Feature 088 component decisions: validate the ordinary refine/restore envelope, require the same established WebSocket across the current-view callback, and send once without reconnect queue retention. Preserve existing general transport and voice behavior."
+    },
+    {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/ConversationSnapshotTests.swift",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ConversationSnapshotTests.swift",
+      "sourceBlob": "244a4314b963eca719e1c458545112dd7e0b9e53",
+      "sourceMode": "100644",
+      "resultSha256": "fbaeba2751fb656c655a84fc1a3242ffe0d0295c768769572d65e9c73a1916e2",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
     },
     {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
@@ -201,6 +759,15 @@
       "reason": "Retarget the Apple fixture link to the standalone Projection fixture directory."
     },
     {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/InlineMarkdownTests.swift",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/InlineMarkdownTests.swift",
+      "sourceBlob": "ea0ac4745edf70a00f8a7871a7c31b7a8ff0fcc1",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "e1f6eae160fc6798877529bad157cf9233946d75baffefb6e6572b0a1f9a4729"
+    },
+    {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
@@ -217,6 +784,60 @@
       "resultSha256": "66a41387dcf6f2f47b4b3ddef2bd5165fe4be8e09a7637d8670967b746f895a2",
       "task": "T049/T071",
       "reason": "Exercise Apple client-local fixture parsing, bound-final construction, canonical playout phases, semantic denials, and unchanged remote-v1 proof behavior."
+    },
+    {
+      "path": "apple-clients/AstralWatch/AstralWatchApp.swift",
+      "sourcePath": "apple-clients/AstralWatch/AstralWatchApp.swift",
+      "sourceBlob": "25aa48938009986ec4fad7081aa3424b98ee2130",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility.",
+      "resultSha256": "718a47b73aaa24b75c18dc9b6dfb354b3fe2cc87b2a327d26ebf120d27967af8"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/DeviceLoginView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/DeviceLoginView.swift",
+      "sourceBlob": "5b01c522b59d6bcf0c58ad4ceea18104d79ace74",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "cac31c8ad204b2ef8f71f5e8592611ea2f725f29ec233e968e7a1ed633a34929"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/WatchChatView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchChatView.swift",
+      "sourceBlob": "64a9845bc5d933ab251797320c930160d5056114",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
+      "resultSha256": "c03ffb922ff925eb9861f70bb3b78bd33546ce0fab8b93e38c26459e4c353ab0"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
+      "sourceBlob": "6877aa7a83db820af007e7b93e28c8b98d56c968",
+      "sourceMode": "100644",
+      "task": "T057/T061",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions.",
+      "resultSha256": "f117db47ee0ea372f6ecb3fc39f6e6342a925ebc8f88dba32a1056239118c8be"
+    },
+    {
+      "path": "apple-clients/AstralWatch/Views/WatchHomeView.swift",
+      "sourcePath": "apple-clients/AstralWatch/Views/WatchHomeView.swift",
+      "sourceBlob": "48dbda13367284ef0a85916ef20e27dd141b3601",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results.",
+      "resultSha256": "2573df64e7591a780b00010509ce8bacd512697cd875f2f81bf68d81ffbc7e45"
+    },
+    {
+      "path": "apple-clients/AstralWatch/WatchModel.swift",
+      "sourcePath": "apple-clients/AstralWatch/WatchModel.swift",
+      "sourceBlob": "8164768c856633459b8d169a81fd15055ba889dc",
+      "sourceMode": "100644",
+      "task": "T057/T061/T060",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions.",
+      "resultSha256": "6f9e12c6eba72abdb4d2b5e9e7073d4beb0043ab084138b97ac5f09034d587d3"
     },
     {
       "path": "apple-clients/KNOWN-ISSUES.md",
@@ -250,18 +871,18 @@
       "sourcePath": "backend/rote/adapter.py",
       "sourceBlob": "ada87b7c601058cff8acbf9a62d11367406d0438",
       "sourceMode": "100644",
-      "resultSha256": "ab65b1428e17acf6d7fb39ac36b08bc6403586a06a3bab87b786beb4fd49e602",
-      "task": "T017",
-      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition."
+      "resultSha256": "8b8065a35cad141418c6b627a0c86da66d686cdb8870c90b2ad7fbfce3ec8ea9",
+      "task": "T017/T054",
+      "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition. Feature 088 review: Adapt phone chart geometry by viewport capabilities and preserve every Plotly point in static table fallbacks. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates."
     },
     {
       "path": "backend/rote/capabilities.py",
       "sourcePath": "backend/rote/capabilities.py",
       "sourceBlob": "f99b8e575640d0176bf855fbd6cf01cc5bde4790",
       "sourceMode": "100644",
-      "resultSha256": "c6b49157808e79e020f2b0d3244957ee71d2560727a89185134b3a4ebb7b373c",
+      "resultSha256": "dd39d0e8501001634f3074fa908474cc05f193f7ab4070c4cc0b41c66e73e1ea",
       "task": "T017",
-      "reason": "Normalize the strict client_local/v1 half-duplex capability vocabulary without inferring local readiness from client identity."
+      "reason": "Normalize the strict client_local/v1 half-duplex capability vocabulary without inferring local readiness from client identity. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
     },
     {
       "path": "backend/rote/fallback.py",
@@ -273,13 +894,22 @@
       "reason": "Classify local speech readiness with closed reasons and preserve an explicit typed fallback for every unavailable posture."
     },
     {
+      "path": "backend/rote/rote.py",
+      "sourcePath": "backend/rote/rote.py",
+      "sourceBlob": "5a6b618640b472236ee36a71cf9c60ba91f35bc4",
+      "sourceMode": "100644",
+      "resultSha256": "8d6c9df86afe13466034fa468b6145d076f51a9f61558d40f5f70b621f133ea5",
+      "task": "T060/T061",
+      "reason": "Feature 088 component actions: expose a detached socket-scoped copy of original cached components so legacy viewport fallback rebuilds host-owned metadata after adaptation without mutating the cache."
+    },
+    {
       "path": "backend/webrender/chrome/menu_model.py",
       "sourcePath": "backend/webrender/chrome/menu_model.py",
       "sourceBlob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
       "sourceMode": "100644",
-      "resultSha256": "38cc8577639d08d6541344236ef7d05b1dfefd8c083b4b48acc91a5635e80dfd",
-      "task": "T044/T040",
-      "reason": "Replace lazy Deep feature-flag imports with explicit host-supplied presentation state. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "ee4ef3386ed8c0e007fe0b2dec91cc6e2a16fd446cee7eab51ad7c7416fec7ed",
+      "task": "T044/T040/T054",
+      "reason": "Replace lazy Deep feature-flag imports with explicit host-supplied presentation state. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition."
     },
     {
       "path": "backend/webrender/chrome/surfaces/__init__.py",
@@ -421,36 +1051,63 @@
       "sourcePath": "backend/webrender/chrome/topbar.py",
       "sourceBlob": "60411d8364415d1cd1ef687ce59457673d8c62cb",
       "sourceMode": "100644",
-      "resultSha256": "f9066585ef4fad9fcfc81c4fd362d5e38334a4568788071907dcedb81eea9960",
-      "task": "T044/T040",
-      "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "resultSha256": "75dbe4ff60c8728f86736244b1afad45eb70e3268235a9efbd80f7524353b78c",
+      "task": "T044/T040/T008/T054",
+      "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 review: Move restoration of the desktop conversation rail into the floating composer. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition."
+    },
+    {
+      "path": "backend/webrender/renderer.py",
+      "sourcePath": "backend/webrender/renderer.py",
+      "sourceBlob": "21f98cc84bd4d81670f8c1fece4ab119468206ce",
+      "sourceMode": "100644",
+      "task": "T008",
+      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels. Feature 088 live mobile review: preserve escaped placement metadata on known welcome containers with absent or wel_ identity, so ROTE grid collapse cannot turn three welcome prompts into work content; preserve transparent ordinary containers and reject malformed hints. Reject every conflicting or malformed present identity field instead of allowing one identity to mask another. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences.",
+      "resultSha256": "7c5b63e6fd27baa398f9fca3bd244ee469db5ee992e899e63cd20700ee609c56"
+    },
+    {
+      "path": "backend/webrender/static/astral.css",
+      "sourcePath": "backend/webrender/static/astral.css",
+      "sourceBlob": "a4a7714b1479db47ad1550018b6ad9610cc56d9a",
+      "sourceMode": "100644",
+      "task": "T008/T054",
+      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition.",
+      "resultSha256": "5a8977f8d823ac870a606a4168f600af82f5e0c9a5326a1e4707d542a86c48de"
     },
     {
       "path": "backend/webrender/static/client.js",
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "47b397e585e9ab08702c4183c8dcc946523512042d97bb569173d862faebd71d",
-      "task": "T052/T063/T029",
-      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections."
+      "resultSha256": "81233cf3b57ce42747a4aaf81a49cf9f60a780d9977be52c31cef1c45b6ac0ac",
+      "task": "T052/T063/T029/T008/T009",
+      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior. Feature 088 review: Restore floating chat to the rail, resize charts with their canvas, and create inert visual canvas downloads bound to authorization, owner, chat and committed render revision. Feature 088 live review: clear New chat drafts, staged attachments, autocomplete and one-shot background arming; cancel only unsent chat queues and expiry callbacks; ignore upload completions for removed staging entries while retaining same-owner reconnect and accepted background tasks. Keep conversation toggle expansion and Show/Hide labels synchronized with actual layout classes after breakpoint transitions, transcript clearing and New chat. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
     {
       "path": "backend/webrender/templates/shell.html",
       "sourcePath": "backend/webrender/templates/shell.html",
       "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
       "sourceMode": "100644",
-      "resultSha256": "5a9e750dcbcd3cc7d02ccd5ec4205144253a0f54fc031a8c6765abfe3c687504",
-      "task": "T042",
-      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter."
+      "resultSha256": "4d4cc725fd7cb51cfec142dd79bf970412b1219510d60944e4aeb12c69afc6a6",
+      "task": "T042/T008/T012",
+      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer. Feature 088 T012: register the public-only offline fallback and install manifest without caching authenticated documents or work. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
     {
       "path": "contracts/ui_protocol.json",
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "c00dcdd8c98306780b871a14bb676847569ccb5efbabf0aa32f8e6df96b7438d",
-      "task": "T013/T015/T040/T023",
-      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
+      "resultSha256": "762d5e991d824be207d8cefb94ad19b828ecb4dac65c07b597f6adc2cb880aee",
+      "task": "T013/T015/T040/T023/T054",
+      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences."
+    },
+    {
+      "path": "scripts/export_xccov_line_coverage.py",
+      "sourcePath": "scripts/export_xccov_line_coverage.py",
+      "sourceBlob": "fb8854fb6756f735e3f6b99bc2430b9fde30b196",
+      "sourceMode": "100644",
+      "resultSha256": "347d458583ef50866835386f100a2f68f722002cb31f7657f752891b31260423",
+      "task": "T062",
+      "reason": "Bind original iOS xccov observations to exact source bytes and retained compiler mapping domains without manufacturing coverage rows or counts."
     },
     {
       "path": "scripts/windows_release_candidate.py",
@@ -480,6 +1137,24 @@
       "reason": "Resolve assets through packaged resources and exercise accessibility against the public pure supplied-state builders."
     },
     {
+      "path": "tests/webrender/test_export_document.py",
+      "sourcePath": "backend/tests/webrender/test_export_document.py",
+      "sourceBlob": "370ed14cbd077337f604520437ac34ccb3037803",
+      "sourceMode": "100644",
+      "task": "T008",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "8d1daa5081ac523a7a4d3041789410a5540604ac63c68edc565aac7c6175e729"
+    },
+    {
+      "path": "tests/webrender/test_provenance.py",
+      "sourcePath": "backend/tests/webrender/test_provenance.py",
+      "sourceBlob": "7230719fdad10c38309b94d472c0adc92010d989",
+      "sourceMode": "100644",
+      "task": "T008",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "412cb843482a94235e60aa1d9b9ea5c9a8a6f1fcb113a0b03b0663e495408f6c"
+    },
+    {
       "path": "tests/webrender/test_render_a11y.py",
       "sourcePath": "backend/tests/webrender/test_render_a11y.py",
       "sourceBlob": "984d275ed35426ff8f294bb5263310e968f4afa0",
@@ -493,45 +1168,54 @@
       "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py",
       "sourceBlob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
       "sourceMode": "100644",
-      "resultSha256": "53d4e69e113b6eb34642599500d1cc0a5bb6ed49e23a337e9cb6b35d70849732",
-      "task": "T043/T013/T014",
-      "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant."
+      "resultSha256": "039f70290308f01cc41c2f68d0298c9f737229d18170234f04dbd12adf2bf2c5",
+      "task": "T043/T013/T014/T008",
+      "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant. Feature 088: verify the accessible multiline typed composer remains available beside voice controls."
     },
     {
       "path": "tooling/web-ci/coverage-conversion-cli.mjs",
       "sourcePath": "tooling/web-ci/coverage-conversion-cli.mjs",
       "sourceBlob": "37827c2e87fc4f61782393afc5c05f1d2ac3e04d",
       "sourceMode": "100644",
-      "resultSha256": "ce08a0eb0357439eea7d04704bd54a31eea1ff9c6d58d1258e90df88c3419b6c",
+      "resultSha256": "c8dfb179d724058f772b60f36ef2a4eb32330f9c5c356aabf440cac05396eda0",
       "task": "T236",
-      "reason": "Emit canonical Node V8 coverage with an exact lane-specific producer identity before strict Node-plus-browser union."
+      "reason": "Emit canonical Node V8 coverage with an exact lane-specific producer identity before strict Node-plus-browser union. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
     {
       "path": "tooling/web-ci/coverage-conversion.mjs",
       "sourcePath": "tooling/web-ci/coverage-conversion.mjs",
       "sourceBlob": "1c5a8193efc7c5e01a12d0cfac374b9d404ab857",
       "sourceMode": "100644",
-      "resultSha256": "bf78d34e48c60fec121b2d22c834defc82f3e22416361e2687c021bd1a74c508",
+      "resultSha256": "ccd9fdbe14e9388bee28dc02a0ded051ef5442f764809cd4783ee19cd0e79f21",
       "task": "T236",
-      "reason": "Emit distinct exact browser and Node V8 identity labels for the union's independent structural lane-scope validation."
+      "reason": "Emit distinct exact browser and Node V8 identity labels for the union's independent structural lane-scope validation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
     {
       "path": "tooling/web-ci/package.json",
       "sourcePath": "tooling/web-ci/package.json",
       "sourceBlob": "b56acfe10999e5787d5c4eb506d5c0fea2031bb6",
       "sourceMode": "100644",
-      "resultSha256": "a28102990f9ec4cb8891f7020baa7e91c7994f949eee8c25afe9d9abe4746825",
-      "task": "T063",
-      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command."
+      "resultSha256": "1de9c3d86dc0ed416f530d58787ee82a19e2e059180c62599b4459b9ab3367fb",
+      "task": "T063/T012",
+      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command. Feature 088 T012: include maintained worker browser and unit tests in the existing JavaScript lint scope; dependency and lockfile entries are unchanged. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
+    },
+    {
+      "path": "tooling/web-ci/release-runner.mjs",
+      "sourcePath": "tooling/web-ci/release-runner.mjs",
+      "sourceBlob": "a9da1fb149c0d36caf74efcf7929944dcc6580ce",
+      "sourceMode": "100644",
+      "task": "T056/T057/T060/T061/T062",
+      "reason": "Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
+      "resultSha256": "57d4090807fd91ba195c4ffcaa0dc601b8be5309a2a837c9b49637c323ccb0e3"
     },
     {
       "path": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
       "sourceMode": "100644",
-      "resultSha256": "caf788eb0444eac66325b48757e54090131ad084a4bad5b6caab8ee1542d1cbe",
-      "task": "T052/T063",
-      "reason": "Read the continuity contract from Projection's canonical standalone protocol path."
+      "resultSha256": "8b924b108119e788b41783c31b3fae6e67df94b33355d824ac174cfffdb481ca",
+      "task": "T052/T063/T008/T009",
+      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset. Feature 088 live mobile review: consume actual ROTE/renderer HTML goldens for mobile New chat after a plaintext-only conversation, tablet re-adaptation and repeated New chat without losing welcome groups. Load the exact authoritative canvas export module before client.js in the synthetic harness, matching production script order and preserving export/owner-denial assertions."
     },
     {
       "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",
@@ -547,9 +1231,9 @@
       "sourcePath": "tooling/web-ci/tests/node-v8-cli.test.mjs",
       "sourceBlob": "27e53482de23ba0d1c7f94808940ee0e51a50f48",
       "sourceMode": "100644",
-      "resultSha256": "53b23cf4a98e56c9e81994ff1a672c98048140fd78f46eed64e08cdec8a1449a",
+      "resultSha256": "7e836b58d2f805709ff5dca0df9aa7f8411b04551028f0700d309c15d7af82d6",
       "task": "T236",
-      "reason": "Verify the real two-pass Node V8 producer carries the exact Node lane identity."
+      "reason": "Verify the real two-pass Node V8 producer carries the exact Node lane identity. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
     {
       "path": "tooling/web-ci/tests/voice-conversation-065.spec.js",
@@ -601,9 +1285,9 @@
       "sourcePath": "windows-client/astral_client/app.py",
       "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
       "sourceMode": "100644",
-      "resultSha256": "a801994b9aea1845cc6229a530f8338f3563f945b0d8be46386d8032d344c7c4",
+      "resultSha256": "6945b6cf79d202b398b7735348967d4d46d5b646a7ba2203111b40a2383f97ac",
       "task": "T059/T071/T088/T040",
-      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
     },
     {
       "path": "windows-client/astral_client/deployment.py",
@@ -628,9 +1312,9 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "6b56987d4d5fd22e7f82bf012931249e20838dc3106c2db6e8e9b43a9032a7e9",
+      "resultSha256": "37f4e85687a402e5e4caa991a3796ebfeeb318976d94e2cb0c487ce05a518d2e",
       "task": "T166/T054/T071/T089/T040",
-      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
     },
     {
       "path": "windows-client/astral_client/protocol_manifest.py",
@@ -640,6 +1324,15 @@
       "resultSha256": "e4b0e0776922017c341190010975eb220495100f34ef90cda5fff7f01d6130f2",
       "task": "T053/T040",
       "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+    },
+    {
+      "path": "windows-client/astral_client/renderer.py",
+      "sourcePath": "windows-client/astral_client/renderer.py",
+      "sourceBlob": "0dd02dd95f36f1e97a74566441d59d3a01fde072",
+      "sourceMode": "100644",
+      "task": "T055",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "e7c761955cfeb5e53940bdcab8fea365daba4530f05a3bba1cf0560b911f8238"
     },
     {
       "path": "windows-client/astral_client/voice.py",
@@ -732,6 +1425,15 @@
       "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path."
     },
     {
+      "path": "windows-client/tests/test_conversation_continuity_060.py",
+      "sourcePath": "windows-client/tests/test_conversation_continuity_060.py",
+      "sourceBlob": "f15a48e2734e231db035b78c39bea0f009ade6fc",
+      "sourceMode": "100644",
+      "resultSha256": "0f48ee1b3a14573631a20b5549a5b4c8de11c9f485d73d160a43630704d69a66",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
+    },
+    {
       "path": "windows-client/tests/test_deployment_profile_060.py",
       "sourcePath": "windows-client/tests/test_deployment_profile_060.py",
       "sourceBlob": "1a71b8dd3865abab13a6ac954223e928477c1f8a",
@@ -777,6 +1479,15 @@
       "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract. Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
     {
+      "path": "windows-client/tests/test_provenance_badge.py",
+      "sourcePath": "windows-client/tests/test_provenance_badge.py",
+      "sourceBlob": "dbb1f009bdbc4a779b793c48d4e0fff4c0b63a3d",
+      "sourceMode": "100644",
+      "task": "T055",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
+      "resultSha256": "378771b7afd8651776cb724a2126b54dc5a16d5f314e439ae73e4eb67eec2d23"
+    },
+    {
       "path": "windows-client/tests/test_release_lock_060.py",
       "sourcePath": "windows-client/tests/test_release_lock_060.py",
       "sourceBlob": "d0609608eb814ed3705f4ef19b878b47bcf6fd07",
@@ -802,6 +1513,15 @@
       "resultSha256": "9998a01b91eed26c57e723d7874c685eaef897cb2bc45078d4d8c26c4623840f",
       "task": "T166",
       "reason": "Exercise the runtime-v3 delivery fence and protected-executor reliability contract."
+    },
+    {
+      "path": "windows-client/tests/test_status_lifecycle_060.py",
+      "sourcePath": "windows-client/tests/test_status_lifecycle_060.py",
+      "sourceBlob": "fc9d36e74626b97682368f66052f02e1da1eb6a3",
+      "sourceMode": "100644",
+      "resultSha256": "cfc7b88f7f0a9aaa23f8b32c98084c2bb44fd1d7dcd209d634c3411fcb40730c",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
     },
     {
       "path": "windows-client/tests/test_task_continuity.py",
@@ -884,11 +1604,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "5202d3778f17d47dafcf83528fbe1ff05a01aa5a429eed1f0aa603e33b0ae6ac"
+          "sha256": "28f2cefcf9e48d4677410d5b1ca35dcc48619995f6ead124faac5e589737650e"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action’s line-oriented script execution, preserving the exact device/report arguments and gates."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",
@@ -899,11 +1619,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "71fc3069872a483db09ecf583a2e59260e44dfa9a54b9126f8d1a8fe3d7cf91e"
+          "sha256": "674ee62d885a3a1f2873dfd6552897677b7953a6f67f25766c8afd3cc8b6e297"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes."
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Build fixed iOS build-for-testing Products and retain separate raw test lanes, compiler-domain witnesses and selected binary archives for CI coverage qualification; complete Products retention belongs to the protected producer. Quote the two literal test-action defaults so ShellCheck does not interpret them as command-output assignments; CI behavior and compiled client inputs are unchanged. Expand optional selector/domain arrays with Bash 3 nounset-compatible guards, preserving zero arguments on macOS and exact nonempty iOS arguments; execute the actual workflow steps with command recorders in regression tests."
     },
     {
       "path": "workflows-disabled/apple-release.yml",

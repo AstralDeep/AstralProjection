@@ -1,5 +1,6 @@
 package com.personalailabs.astraldeep.app.render.renderers
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -7,26 +8,38 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Emit
 import com.personalailabs.astraldeep.app.render.MarkdownText
 import com.personalailabs.astraldeep.app.render.Renderer
+import com.personalailabs.astraldeep.app.render.inlineMarkdown
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
+import com.personalailabs.astraldeep.app.ui.theme.astralCardSurface
 import com.personalailabs.astraldeep.app.ui.theme.hexToColor
+import com.personalailabs.astraldeep.app.ui.welcomePlacementRole
 import com.personalailabs.astraldeep.core.sdui.Component
 
 /**
@@ -52,11 +65,26 @@ private fun CardPrimitive(
     c: Component,
     renderChild: @Composable (Component) -> Unit,
 ) {
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            c.str("title")?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
-            c.children.forEach { renderChild(it) }
+    val padding = if (LocalConfiguration.current.screenWidthDp < 700) 12.dp else 16.dp
+    Column(modifier = Modifier.fillMaxWidth().astralCardSurface().padding(padding + 1.dp)) {
+        c.str("title")?.takeIf { it.isNotEmpty() }?.let { title ->
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(Modifier.width(4.dp).height(16.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary))
+                Text(
+                    inlineMarkdown(
+                        title,
+                    ),
+                    style = AstralWebStyle.CardTitle,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier =
+                        Modifier.semantics {
+                            heading()
+                        },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
         }
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) { c.children.forEach { renderChild(it) } }
     }
 }
 
@@ -73,6 +101,16 @@ private fun ContainerPrimitive(
     c: Component,
     renderChild: @Composable (Component) -> Unit,
 ) {
+    // ROTE keeps trusted welcome placement when it adapts a phone grid to a
+    // container. Preserve the same wrapping presentation for both envelopes.
+    if (welcomePlacementRole(c) == "examples") {
+        FlowRow(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) { c.children.forEach { renderChild(it) } }
+        return
+    }
     when (containerMode(c)) {
         ContainerMode.SwatchBox -> SwatchBox(c, Modifier.fillMaxWidth())
         ContainerMode.SwatchRow ->
@@ -148,6 +186,16 @@ private fun ButtonPrimitive(
     val action = c.str("action")
     val label = c.str("label") ?: "Button"
     val onClick = { if (action != null) emit.event(action, c.payload()) }
+    if (c.str("data-welcome") == "example" && c.id?.startsWith("wel_") != false) {
+        OutlinedButton(
+            onClick = onClick,
+            enabled = action != null,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
+            modifier = Modifier.heightIn(min = 48.dp),
+        ) { Text(label) }
+        return
+    }
     when (c.str("variant") ?: "primary") {
         "secondary" ->
             FilledTonalButton(onClick = onClick, enabled = action != null) { Text(label) }

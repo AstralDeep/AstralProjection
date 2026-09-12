@@ -13,21 +13,39 @@ import SwiftUI
 
 @main
 struct AstralApp: App {
-    @State private var model = AppModel()
+    @State private var model: AppModel
     @Environment(\.scenePhase) private var scenePhase
     private let unitTestHost =
         ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
     init() {
+        #if DEBUG
+            // Select the isolated HTTP fixture before constructing a default
+            // model: its token store and preferences must never be the user's.
+            _model = State(initialValue: FirstLoginUITestFixture.workspaceActionsModel() ?? AppModel())
+        #else
+            _model = State(initialValue: AppModel())
+        #endif
         NoStoreHTTP.prepareForLaunch()
+        AstralTypography.registerFonts()
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(model)
+                .font(AstralTypography.body)
                 .environment(model.themeStore)
                 .tint(model.themeStore.palette.primary)
+                .environment(
+                    \.openURL,
+                    OpenURLAction { url in
+                        guard let destination = InlineMarkdown.safeLink(url, relativeTo: model.serverBase) else {
+                            return .discarded
+                        }
+                        return .systemAction(destination)
+                    }
+                )
                 .preferredColorScheme(.dark)
                 .task {
                     #if DEBUG

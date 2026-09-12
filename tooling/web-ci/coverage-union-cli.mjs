@@ -20,7 +20,7 @@ const MAX_INPUT_BYTES = 32 * 1024 * 1024;
 const MAX_TOTAL_INPUT_BYTES = 64 * 1024 * 1024;
 const MAX_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MAX_JSON_AST_NODES = 2_000_000;
-const FLAGS = ["--node", "--browser", "--repo-root", "--output"];
+const FLAGS = ["--node", "--browser", "--offline-node", "--export-browser", "--repo-root", "--output"];
 
 function fail(message) {
   throw new TypeError(`coverage union failed: ${message}`);
@@ -28,14 +28,14 @@ function fail(message) {
 
 function argumentsFrom(argv) {
   if (argv.length !== FLAGS.length * 2) {
-    fail("expected --node, --browser, --repo-root, and --output exactly once");
+    fail("expected --node, --browser, --offline-node, --export-browser, --repo-root, and --output exactly once");
   }
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
     const value = argv[index + 1];
     if (!FLAGS.includes(flag) || typeof value !== "string" || value.length === 0) {
-      fail("expected --node, --browser, --repo-root, and --output exactly once");
+      fail("expected --node, --browser, --offline-node, --export-browser, --repo-root, and --output exactly once");
     }
     if (Object.hasOwn(values, flag)) {
       fail(`duplicate argument ${flag}`);
@@ -43,7 +43,7 @@ function argumentsFrom(argv) {
     values[flag] = value;
   }
   if (Object.keys(values).length !== FLAGS.length) {
-    fail("expected --node, --browser, --repo-root, and --output exactly once");
+    fail("expected --node, --browser, --offline-node, --export-browser, --repo-root, and --output exactly once");
   }
   return values;
 }
@@ -166,15 +166,20 @@ export function main(argv) {
     const values = argumentsFrom(argv);
     const node = readDocument(values["--node"], "Node");
     const browser = readDocument(values["--browser"], "browser");
-    if (node.absolute === browser.absolute) {
-      fail("Node and browser inputs must be distinct files");
+    const offlineNode = readDocument(values["--offline-node"], "offline Node");
+    const exportBrowser = readDocument(values["--export-browser"], "export browser");
+    const inputs = [node, browser, offlineNode, exportBrowser];
+    if (new Set(inputs.map((input) => input.absolute)).size !== inputs.length) {
+      fail("execution lane inputs must be distinct files");
     }
-    if (node.bytes + browser.bytes > MAX_TOTAL_INPUT_BYTES) {
+    if (inputs.reduce((total, input) => total + input.bytes, 0) > MAX_TOTAL_INPUT_BYTES) {
       fail("input size exceeds its cumulative bound");
     }
     const document = unionCanonicalCoverage({
       node: node.document,
       browser: browser.document,
+      offlineNode: offlineNode.document,
+      exportBrowser: exportBrowser.document,
       repoRoot: values["--repo-root"],
     });
     writeNewOutput(values["--output"], document);

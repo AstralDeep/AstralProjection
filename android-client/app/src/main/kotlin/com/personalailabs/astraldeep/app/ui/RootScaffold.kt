@@ -2,18 +2,22 @@ package com.personalailabs.astraldeep.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
@@ -32,18 +36,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personalailabs.astraldeep.app.R
 import com.personalailabs.astraldeep.app.render.Renderer
-import com.personalailabs.astraldeep.app.ui.theme.AstralColors
+import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
 import com.personalailabs.astraldeep.core.chrome.ChromeMenuModel
 import com.personalailabs.astraldeep.core.chrome.MenuItem
+import com.personalailabs.astraldeep.core.chrome.TopBarControl
 import kotlinx.serialization.json.JsonObject
 
 /**
@@ -60,6 +69,7 @@ fun RootScaffold(
     vm: AppViewModel,
     renderer: Renderer,
     onSignOut: () -> Unit,
+    onWorkspaceAction: (TopBarControl) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
     // A mandatory surface (the 054 first-run LLM-setup gate) swallows system Back
@@ -70,6 +80,8 @@ fun RootScaffold(
         topBar = {
             AstralTopBar(
                 model = state.chromeMenu,
+                workspace = workspaceControls(state),
+                onWorkspaceAction = onWorkspaceAction,
                 // Top-bar navigation is suppressed while a mandatory surface is
                 // pinned — everything EXCEPT sign-out (spec FR-013).
                 navigationLocked = state.mandatorySurface,
@@ -104,7 +116,7 @@ fun RootScaffold(
                             vm::setToolEnabled,
                             vm::enableRecommended,
                         )
-                    Screen.History -> HistoryScreen(state.history, state.historyLoading, vm::openChat)
+                    Screen.History -> HistoryScreen(state.history, state.historyLoading, vm::openChat, state.historyTitle)
                     Screen.Audit -> AuditScreen(state.audit, state.auditLoading)
                     Screen.Surface ->
                         SurfaceScreen(
@@ -162,9 +174,12 @@ private fun BannerBar(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun AstralTopBar(
+internal fun AstralTopBar(
     model: ChromeMenuModel?,
+    workspace: List<TopBarControl> = emptyList(),
+    onWorkspaceAction: (TopBarControl) -> Unit = {},
     navigationLocked: Boolean,
     onNewChat: () -> Unit,
     onRecentChats: () -> Unit,
@@ -188,43 +203,58 @@ private fun AstralTopBar(
                 contentDescription = "AstralDeep",
                 modifier = Modifier.size(30.dp).clip(RoundedCornerShape(8.dp)),
             )
-            Box(modifier = Modifier.weight(1f))
-            // Chat navigation first (form-factor affordances — New/Recent are
-            // Android-specific and not part of the server chrome model). Recent
-            // chats uses a speech-bubble glyph, NOT the clock — the clock belongs
-            // to the server "Workspace timeline" control below, and two clocks
-            // side by side read as a duplicate (feature 044 top-bar polish).
-            NewChatButton(enabled = !navigationLocked, onClick = onNewChat)
-            IconButton(enabled = !navigationLocked, onClick = onRecentChats) {
-                Icon(
-                    painter = painterResource(R.drawable.ic_chat),
-                    contentDescription = "Recent chats",
-                    tint = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.size(22.dp),
-                )
-            }
-            // Server-owned chrome cluster on the right (pulse / timeline, feature
-            // 042/044 T037): rendered from the model so they're actually reachable
-            // — no client hard-coding. Each opens its surface via chrome_open.
-            model?.topbarActions?.forEach { control ->
-                topBarActionView(control)?.let { view ->
-                    IconButton(enabled = !navigationLocked, onClick = { onOpenSurface(view.surface, view.params) }) {
-                        Icon(
-                            painter = painterResource(topBarActionIcon(view.icon)),
-                            contentDescription = view.label,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(22.dp),
-                        )
+            FlowRow(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(2.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                NewChatButton(enabled = !navigationLocked, onClick = onNewChat)
+                IconButton(
+                    enabled = !navigationLocked,
+                    onClick = onRecentChats,
+                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                ) {
+                    Icon(painterResource(R.drawable.ic_chat), "Recent chats", modifier = Modifier.size(22.dp))
+                }
+                model?.topbar?.forEach { control ->
+                    when (control.kind) {
+                        "action" ->
+                            topBarActionView(control)?.let { view ->
+                                IconButton(enabled = !navigationLocked, onClick = {
+                                    onOpenSurface(view.surface, view.params)
+                                }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
+                                    Icon(painterResource(topBarActionIcon(view.icon)), view.label, modifier = Modifier.size(22.dp))
+                                }
+                            }
+                        "workspace_action" ->
+                            if (control in workspace) {
+                                IconButton(
+                                    enabled = !navigationLocked,
+                                    onClick = { onWorkspaceAction(control) },
+                                    modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp),
+                                ) {
+                                    Icon(
+                                        painterResource(
+                                            if (control.operation == "export_canvas") {
+                                                R.drawable.ic_workspace_export
+                                            } else {
+                                                R.drawable.ic_workspace_share
+                                            },
+                                        ),
+                                        control.label,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(22.dp),
+                                    )
+                                }
+                            }
+                        "menu" ->
+                            if (control == model.settingsControl) {
+                                SettingsMenu(model, onOpenItem, onSignOut, navigationLocked)
+                            }
                     }
                 }
+                if (model?.settingsControl == null) SettingsMenu(model, onOpenItem, onSignOut, navigationLocked)
             }
-            // Settings gear → dropdown with ALL settings (from the server model).
-            SettingsMenu(
-                model = model,
-                navigationLocked = navigationLocked,
-                onOpenItem = onOpenItem,
-                onSignOut = onSignOut,
-            )
         }
     }
 }
@@ -252,7 +282,7 @@ internal fun SettingsMenu(
 ) {
     var open by remember { mutableStateOf(false) }
     Box {
-        IconButton(onClick = { open = true }) {
+        IconButton(onClick = { open = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
             Icon(
                 painter = painterResource(R.drawable.ic_settings),
                 contentDescription = "Settings",
@@ -305,26 +335,36 @@ private fun SectionHeader(label: String) {
 }
 
 @Composable
-private fun NewChatButton(
+internal fun NewChatButton(
     enabled: Boolean,
     onClick: () -> Unit,
+    showLabel: Boolean = LocalConfiguration.current.screenWidthDp >= 640,
 ) {
-    Row(
-        modifier =
-            Modifier
-                .clip(RoundedCornerShape(14.dp))
-                .background(AstralColors.AccentBrush)
-                .clickable(enabled = enabled, onClick = onClick)
-                .padding(horizontal = 11.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    // Keep the native touch target while the visible control matches the web
+    // topbar's 38px outlined button and compact-width icon-only treatment.
+    Box(
+        Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = "New chat" }
+            .testTag("new-chat-button"),
+        contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            painter = painterResource(R.drawable.ic_plus),
-            contentDescription = null,
-            tint = Color.White,
-            modifier = Modifier.size(14.dp),
-        )
-        Text("New", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Row(
+            Modifier.heightIn(min = 38.dp)
+                .alpha(if (enabled) 1f else 0.5f)
+                .border(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.13f), RoundedCornerShape(8.dp))
+                .padding(horizontal = 11.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_plus),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.size(18.dp),
+            )
+            if (showLabel) Text("New chat", color = MaterialTheme.colorScheme.onSurface, style = AstralWebStyle.NewChatLabel)
+        }
     }
 }

@@ -23,6 +23,20 @@ import kotlin.test.assertTrue
 class ChromeSurfaceReducerTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 
+    @Test
+    fun audit_and_agents_open_shared_server_surface_with_filters_and_preserve_draft() {
+        val params = buildJsonObject { put("q", "deny") }
+        vm.updateComposerDraft("keep drafting")
+        for (surfaceKey in listOf("audit", "agents")) {
+            vm.openSurface(surfaceKey, params)
+            assertEquals(Screen.Surface, vm.state.value.screen)
+            assertEquals(surfaceKey, vm.state.value.pendingSurfaceKey)
+            assertEquals(params, vm.state.value.pendingSurfaceParams)
+            assertEquals("keep drafting", vm.state.value.composerDraft)
+            assertFalse(vm.state.value.auditLoading)
+        }
+    }
+
     private fun alert(message: String): Component =
         Component(
             type = "alert",

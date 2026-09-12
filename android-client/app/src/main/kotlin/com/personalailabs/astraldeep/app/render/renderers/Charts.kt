@@ -1,250 +1,221 @@
 package com.personalailabs.astraldeep.app.render.renderers
 
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import android.annotation.SuppressLint
+import android.content.Context
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.personalailabs.astraldeep.app.render.CurrentChartPixels
+import com.personalailabs.astraldeep.app.render.LocalCanvasCapture
 import com.personalailabs.astraldeep.app.render.Renderer
+import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
+import com.personalailabs.astraldeep.app.ui.theme.astralCardSurface
 import com.personalailabs.astraldeep.core.sdui.Component
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.doubleOrNull
-import kotlin.math.max
-import kotlin.math.min
+import kotlinx.serialization.json.put
+import java.io.ByteArrayInputStream
+import java.util.Base64
+import java.util.UUID
 
-private val pieColors =
-    listOf(
-        Color(0xFF6366F1),
-        Color(0xFF8B5CF6),
-        Color(0xFF06B6D4),
-        Color(0xFF22C55E),
-        Color(0xFFEAB308),
-        Color(0xFFEF4444),
-        Color(0xFFEC4899),
-        Color(0xFF14B8A6),
-    )
-
-private fun Component.values(): List<Double> = numList("values").ifEmpty { numList("data") }
-
-/** Register the chart primitives (US2), drawn with Compose Canvas (no extra dep). */
 fun Renderer.registerChartRenderers(): Renderer =
     apply {
-        register("bar_chart") { c -> BarChart(c) }
-        register("line_chart") { c -> LineChart(c) }
-        register("pie_chart") { c -> PieChart(c) }
-        // Native draw of Plotly figures too: advertising this type keeps ROTE
-        // from degrading server-side charts (many agents emit plotly_chart) into
-        // value cards on this client — we extract the traces and draw them.
-        register("plotly_chart") { c -> PlotlyChart(c) }
-    }
-
-@Composable
-private fun EmptyChart(c: Component) {
-    Text(
-        text = c.str("title") ?: "(chart)",
-        style = MaterialTheme.typography.labelMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-    )
-}
-
-@Composable
-private fun BarChart(c: Component) {
-    val vals = c.values()
-    if (vals.isEmpty()) {
-        EmptyChart(c)
-        return
-    }
-    val color = MaterialTheme.colorScheme.primary
-    Canvas(modifier = Modifier.fillMaxWidth().height(160.dp)) {
-        val maxV = max(vals.max(), 1.0)
-        val n = vals.size
-        val gap = size.width * 0.02f
-        val barW = (size.width - gap * (n + 1)) / n
-        vals.forEachIndexed { i, v ->
-            val h = (v / maxV).toFloat() * size.height
-            drawRect(color = color, topLeft = Offset(gap + i * (barW + gap), size.height - h), size = Size(barW, h))
+        for (type in listOf("bar_chart", "line_chart", "pie_chart", "plotly_chart")) {
+            register(type) { component -> OfflineChart(component) }
         }
     }
-}
 
-@Composable
-private fun LineChart(c: Component) {
-    val vals = c.values()
-    if (vals.size < 2) {
-        EmptyChart(c)
-        return
-    }
-    val color = MaterialTheme.colorScheme.primary
-    Canvas(modifier = Modifier.fillMaxWidth().height(160.dp)) {
-        val maxV = vals.max()
-        val minV = min(vals.min(), 0.0)
-        val range = max(maxV - minV, 1.0)
-        val stepX = size.width / (vals.size - 1)
-        for (i in 0 until vals.size - 1) {
-            val y1 = size.height - ((vals[i] - minV) / range).toFloat() * size.height
-            val y2 = size.height - ((vals[i + 1] - minV) / range).toFloat() * size.height
-            drawLine(color = color, start = Offset(i * stepX, y1), end = Offset((i + 1) * stepX, y2), strokeWidth = 4f)
-        }
-    }
-}
+internal const val CHART_ORIGIN = "https://astral-chart.invalid/"
 
-@Composable
-private fun PieChart(c: Component) {
-    val vals = c.values()
-    if (vals.isEmpty()) {
-        EmptyChart(c)
-        return
-    }
-    val total = max(vals.sum(), 1e-9)
-    Canvas(modifier = Modifier.fillMaxWidth().height(160.dp)) {
-        val d = min(size.width, size.height)
-        val topLeft = Offset((size.width - d) / 2f, (size.height - d) / 2f)
-        var start = -90f
-        vals.forEachIndexed { i, v ->
-            val sweep = (v / total).toFloat() * 360f
-            drawArc(
-                color = pieColors[i % pieColors.size],
-                startAngle = start,
-                sweepAngle = sweep,
-                useCenter = true,
-                topLeft = topLeft,
-                size = Size(d, d),
-            )
-            start += sweep
-        }
-    }
-}
-
-/** One Plotly trace we can draw: its numeric y-series plus type/name. */
-private class Trace(val y: List<Double>, val type: String, val name: String?)
-
-private fun Component.traces(): List<Trace> =
-    (arr("data") ?: JsonArray(emptyList())).mapNotNull { el ->
-        val o = el as? JsonObject ?: return@mapNotNull null
-        val y = (o["y"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.doubleOrNull }.orEmpty()
-        if (y.isEmpty()) {
-            null
+internal fun offlineChartHeight(
+    component: Component,
+    slotWidth: Int,
+    viewportWidth: Int = slotWidth,
+): Int {
+    if (slotWidth < 500) return 260
+    val layout = if (component.type == "plotly_chart") component.attributes["layout"] as? JsonObject else null
+    val requested =
+        if (layout?.containsKey("height") == true) {
+            (layout["height"] as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() && it != 0.0 } ?: 320.0
+        } else if (viewportWidth < 640) {
+            240.0
         } else {
-            Trace(
-                y = y,
-                type = (o["type"] as? JsonPrimitive)?.contentOrNull ?: "scatter",
-                name = (o["name"] as? JsonPrimitive)?.contentOrNull,
-            )
+            320.0
         }
+    return requested.coerceIn(160.0, 1200.0).toInt()
+}
+
+internal fun offlineChartPayload(
+    component: Component,
+    viewportWidth: Int,
+): String =
+    Base64.getEncoder().encodeToString(
+        buildJsonObject {
+            put("component", JsonObject(component.attributes + ("type" to JsonPrimitive(component.type))))
+            put("viewport_width", viewportWidth.coerceAtLeast(1))
+        }.toString().toByteArray(Charsets.UTF_8),
+    )
+
+private object OfflineChartAssets {
+    private var template: String? = null
+
+    @Synchronized
+    fun document(
+        context: Context,
+        payload: String,
+    ): String {
+        val shared =
+            template ?: run {
+                val html = context.assets.open("chart.html").bufferedReader().use { it.readText() }
+                val vendor = context.assets.open("plotly.min.js").bufferedReader().use { it.readText() }
+                require(html.contains("__ASTRAL_PLOTLY_VENDOR__") && html.contains("__ASTRAL_CHART_PAYLOAD_BASE64__"))
+                html.replace("__ASTRAL_PLOTLY_VENDOR__", vendor).also { template = it }
+            }
+        return shared.replace("__ASTRAL_CHART_PAYLOAD_BASE64__", payload)
+    }
+}
+
+/** The shared Plotly renderer receives data only; the WebView has no app bridge or network. */
+internal class ChartWebView(context: Context) : WebView(context) {
+    @Volatile var chartDocument: ByteArray? = null
+    internal var exportPixels: CurrentChartPixels? = null
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+internal fun isolatedChartWebView(context: Context): ChartWebView =
+    ChartWebView(context).apply {
+        isSaveEnabled = false
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        settings.apply {
+            javaScriptEnabled = true
+            javaScriptCanOpenWindowsAutomatically = false
+            setSupportMultipleWindows(false)
+            allowFileAccess = false
+            allowContentAccess = false
+            blockNetworkLoads = true
+            blockNetworkImage = true
+            domStorageEnabled = false
+            databaseEnabled = false
+            setGeolocationEnabled(false)
+            mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+            cacheMode = WebSettings.LOAD_NO_CACHE
+            mediaPlaybackRequiresUserGesture = true
+        }
+        webChromeClient = WebChromeClient()
+        webViewClient =
+            object : WebViewClient() {
+                override fun shouldOverrideUrlLoading(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                ): Boolean = true
+
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?,
+                ): WebResourceResponse {
+                    val document = chartDocument
+                    if (request?.isForMainFrame == true && request.method == "GET" &&
+                        request.url.toString() == CHART_ORIGIN && document != null
+                    ) {
+                        return WebResourceResponse("text/html", "UTF-8", ByteArrayInputStream(document))
+                    }
+                    return WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
+                }
+            }
     }
 
-/**
- * A native draw of a Plotly figure: a single bar trace becomes a bar chart; one
- * or more scatter/line traces become overlaid polylines with a legend. Values are
- * co-normalized across traces so multi-series (e.g. high vs low) share a scale.
- */
 @Composable
-private fun PlotlyChart(c: Component) {
-    val traces = c.traces()
-    if (traces.isEmpty()) {
-        EmptyChart(c)
+private fun OfflineChart(component: Component) {
+    val capture = LocalCanvasCapture.current
+    val context = LocalContext.current
+    val viewport = LocalConfiguration.current.screenWidthDp
+    val payload = remember(component, viewport) { offlineChartPayload(component, viewport) }
+    val document = remember(payload) { runCatching { OfflineChartAssets.document(context, payload) } }
+    var failed by remember(payload) { mutableStateOf(document.isFailure) }
+    if (failed) {
+        Text("Chart could not be displayed. Reopen this result to try again.", color = MaterialTheme.colorScheme.error)
         return
     }
-    val allY = traces.flatMap { it.y }
-    val asBars = traces.size == 1 && traces[0].type.equals("bar", ignoreCase = true)
-    val dataMin = allY.min()
-    val dataMax = allY.max()
-    // Bars baseline at 0; lines use the data's own range (with a little headroom)
-    // so a narrow band — e.g. 67–74°F — actually shows its variation.
-    val pad = (dataMax - dataMin) * 0.12
-    val minV = if (asBars) min(dataMin, 0.0) else dataMin - pad
-    val maxV = if (asBars) dataMax else dataMax + pad
-    val range = max(maxV - minV, 1e-9)
-    Column(modifier = Modifier.fillMaxWidth()) {
-        c.str("title")?.takeIf { it.isNotBlank() }?.let {
+    val padding = if (viewport < 700) 8.dp else 12.dp
+    Column(Modifier.fillMaxWidth().astralCardSurface().padding(padding + 1.dp)) {
+        component.str("title")?.let {
             Text(
-                text = it,
-                style = MaterialTheme.typography.titleSmall,
+                it,
+                style = AstralWebStyle.ChartTitle,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(bottom = 6.dp),
+                modifier = Modifier.padding(bottom = 12.dp),
             )
         }
-        Canvas(modifier = Modifier.fillMaxWidth().height(180.dp)) {
-            fun yPix(v: Double): Float = size.height - ((v - minV) / range).toFloat() * size.height
-            if (asBars) {
-                val vals = traces[0].y
-                val n = vals.size
-                val gap = size.width * 0.02f
-                val barW = (size.width - gap * (n + 1)) / n
-                vals.forEachIndexed { i, v ->
-                    val top = yPix(v)
-                    drawRect(
-                        color = pieColors[0],
-                        topLeft = Offset(gap + i * (barW + gap), top),
-                        size = Size(barW, size.height - top),
-                    )
-                }
-            } else {
-                traces.forEachIndexed { ti, tr ->
-                    val color = pieColors[ti % pieColors.size]
-                    val ys = tr.y
-                    if (ys.size < 2) {
-                        drawCircle(color = color, radius = 6f, center = Offset(size.width / 2f, yPix(ys[0])))
-                    } else {
-                        val stepX = size.width / (ys.size - 1)
-                        for (i in 0 until ys.size - 1) {
-                            drawLine(
-                                color = color,
-                                start = Offset(i * stepX, yPix(ys[i])),
-                                end = Offset((i + 1) * stepX, yPix(ys[i + 1])),
-                                strokeWidth = 4f,
-                            )
+        BoxWithConstraints(Modifier.fillMaxWidth().testTag("offline-chart")) {
+            val chartHeight = offlineChartHeight(component, maxWidth.value.toInt(), viewport).dp
+            AndroidView(
+                factory = ::isolatedChartWebView,
+                modifier = Modifier.fillMaxWidth().height(chartHeight),
+                update = { web ->
+                    if (web.tag != payload) {
+                        val generation = UUID.randomUUID().toString()
+                        web.exportPixels = CurrentChartPixels(web, generation)
+                        capture?.registry?.pixels(capture.path, web.exportPixels)
+                        web.tag = payload
+                        web.chartDocument =
+                            document.getOrThrow().replace(
+                                "<head>", "<head><meta name=\"astral-native-chart-generation\" content=\"$generation\">",
+                            ).toByteArray(Charsets.UTF_8)
+                        web.loadUrl(CHART_ORIGIN)
+
+                        fun checkState(attempt: Int) {
+                            web.postDelayed({
+                                if (web.tag == payload) {
+                                    web.evaluateJavascript(
+                                        "document.documentElement.dataset.chartState",
+                                    ) { result ->
+                                        when {
+                                            result in setOf("\"ready\"", "\"empty\"") -> Unit
+                                            result == "\"error\"" || attempt >= 100 -> failed = true
+                                            else -> checkState(attempt + 1)
+                                        }
+                                    }
+                                }
+                            }, 100)
                         }
+                        checkState(0)
                     }
-                }
-            }
-        }
-        if (traces.any { !it.name.isNullOrBlank() }) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                traces.forEachIndexed { ti, tr ->
-                    val nm = tr.name?.takeIf { it.isNotBlank() } ?: return@forEachIndexed
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Box(
-                            modifier =
-                                Modifier
-                                    .size(10.dp)
-                                    .clip(RoundedCornerShape(2.dp))
-                                    .background(pieColors[ti % pieColors.size]),
-                        )
-                        Text(
-                            text = nm,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                },
+                onRelease = { web ->
+                    web.tag = null
+                    web.chartDocument = null
+                    val pixels = web.exportPixels
+                    if (pixels != null) {
+                        pixels.release()
+                    } else {
+                        web.stopLoading()
+                        web.destroy()
                     }
-                }
-            }
+                },
+            )
         }
     }
 }

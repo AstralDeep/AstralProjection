@@ -8,8 +8,38 @@ import SwiftUI
 
 struct WatchComponentView: View {
     let component: AstralComponent
+    @Environment(WatchModel.self) var model
+    @State private var expanded = false
 
     var body: some View {
+        if WorkspaceWelcome.role(of: component) == .more {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    expanded.toggle()
+                } label: {
+                    Label(component.title ?? "More examples", systemImage: expanded ? "chevron.down" : "chevron.right")
+                }
+                .buttonStyle(.plain)
+                .accessibilityValue(expanded ? "Expanded" : "Collapsed")
+                if expanded {
+                    ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
+                        WatchComponentView(component: child)
+                    }
+                }
+            }
+            .font(AstralTypography.footnote)
+        } else if WorkspaceWelcome.role(of: component) == .intro {
+            markdown(component.fallbackText)
+                .font(AstralTypography.title3.weight(.medium))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+        } else {
+            rendered
+        }
+    }
+
+    @ViewBuilder
+    private var rendered: some View {
         switch component.type {
         case "text":
             // ROTE can degrade an image to an empty text node — never a blank row.
@@ -18,7 +48,7 @@ struct WatchComponentView: View {
                 EmptyView()
             } else if component.variant == "caption" {
                 markdown(content)
-                    .font(.caption2)
+                    .font(AstralTypography.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -31,64 +61,72 @@ struct WatchComponentView: View {
                 Image(systemName: iconForVariant)
                 VStack(alignment: .leading, spacing: 1) {
                     if let title = component.title, !title.isEmpty {
-                        markdown(title).font(.footnote.bold())
+                        markdown(title).font(AstralTypography.footnote.bold())
                     }
                     markdown(component.message ?? component.fallbackText)
-                        .font(.footnote)
+                        .font(AstralTypography.footnote)
                 }
             }
             .foregroundStyle(alertColor)
         case "metric":
             VStack(alignment: .leading, spacing: 0) {
                 markdown(component.title ?? component.label ?? "")
-                    .font(.caption2)
+                    .font(AstralTypography.caption2)
                     .foregroundStyle(.secondary)
                 Text(component.value ?? "—")
-                    .font(.title3.bold())
+                    .font(AstralTypography.title3.bold())
                     .minimumScaleFactor(0.6)
                 // Carries the server's "(chart condensed for watch)" note and
                 // any agent-authored context — dropping it left a bare number.
                 if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
-                    markdown(sub).font(.caption2).foregroundStyle(.secondary)
+                    markdown(sub).font(AstralTypography.caption2).foregroundStyle(.secondary)
                 }
             }
         case "badge":
             Text(component.label ?? component.fallbackText)
-                .font(.caption2.bold())
+                .font(AstralTypography.caption2.bold())
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(.tint.opacity(0.3), in: Capsule())
         case "list":
             VStack(alignment: .leading, spacing: 2) {
                 titleLine
-                ForEach(Array(component.listItems.enumerated()), id: \.offset) { _, item in
+                ForEach(Array(WatchComponentText.listItems(in: component).enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .top, spacing: 4) {
                         Text("•")
                         markdown(item)
                     }
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                 }
             }
         case "keyvalue":
             VStack(alignment: .leading, spacing: 2) {
                 titleLine
-                ForEach(Array(component.keyValuePairs.enumerated()), id: \.offset) { _, pair in
-                    HStack(alignment: .top) {
-                        Text(pair.0).font(.caption2).foregroundStyle(.secondary)
-                        Spacer(minLength: 4)
-                        Text(pair.1).font(.footnote)
+                ForEach(Array(WatchComponentText.keyValueRows(in: component).enumerated()), id: \.offset) { _, pair in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(alignment: .top) {
+                            Text(pair.label).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                            Spacer(minLength: 4)
+                            Text(pair.value).font(AstralTypography.footnote)
+                        }
+                        if !pair.hint.isEmpty {
+                            markdown(pair.hint).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             }
+        case "skeleton":
+            ProgressView(component.label ?? "Loading…")
         case "progress":
             VStack(alignment: .leading, spacing: 2) {
                 // The wire caption field is `label` (progress has no `title`).
                 if let label = component.label ?? component.title, !label.isEmpty {
                     HStack {
-                        markdown(label).font(.caption2).foregroundStyle(.secondary)
+                        markdown(label).font(AstralTypography.caption2).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         if component.raw["show_percentage"]?.boolValue != false {
                             Text("\(Int((progressFraction * 100).rounded()))%")
-                                .font(.caption2).foregroundStyle(.secondary)
+                                .font(AstralTypography.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -111,31 +149,38 @@ struct WatchComponentView: View {
             }
         case "divider":
             Divider()
-        case "button", "input", "file_upload", "color_picker", "param_picker":
-            // Interactivity beyond the wrist: read-only summary + explicit
-            // continue-elsewhere affordance (FR-033) instead of broken controls.
-            VStack(alignment: .leading, spacing: 2) {
-                Text(component.label ?? component.title ?? component.fallbackText)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                Label(
-                    "Continue on your phone or desktop",
-                    systemImage: "iphone.and.arrow.forward"
-                )
-                .font(.caption2)
-                .foregroundStyle(.tint)
+        case "button":
+            if WorkspaceWelcome.chatMessage(of: component) != nil {
+                Button(component.label ?? component.fallbackText) {
+                    model.sendWelcomeExample(component)
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(component.raw["aria-label"]?.stringValue ?? component.label ?? "Run example")
+            } else {
+                handoff
             }
+        case "input", "file_upload", "color_picker", "param_picker":
+            handoff
         default:
             // Deterministic fallback chain terminates in readable text —
             // zero blank canvases (FR-032).
             VStack(alignment: .leading, spacing: 2) {
                 markdown(component.fallbackText)
-                    .font(.footnote)
+                    .font(AstralTypography.footnote)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(component.type)
-                    .font(.caption2)
+                    .font(AstralTypography.caption2)
                     .foregroundStyle(.tertiary)
             }
+        }
+    }
+
+    private var handoff: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(component.label ?? component.title ?? component.fallbackText)
+                .font(AstralTypography.footnote).foregroundStyle(.secondary)
+            Label("Continue on your phone or desktop", systemImage: "iphone.and.arrow.forward")
+                .font(AstralTypography.caption2).foregroundStyle(.tint)
         }
     }
 
@@ -149,15 +194,15 @@ struct WatchComponentView: View {
     @ViewBuilder
     private var titleLine: some View {
         if let title = component.title, !title.isEmpty {
-            markdown(title).font(.caption.bold())
+            markdown(title).font(AstralTypography.caption.bold())
         }
     }
 
     private func fontForTextVariant(_ variant: String?) -> Font {
         switch variant {
-        case "h1", "h2": return .headline
-        case "h3": return .subheadline.weight(.semibold)
-        default: return .footnote
+        case "h1", "h2": return AstralTypography.headline
+        case "h3": return AstralTypography.subheadline.weight(.semibold)
+        default: return AstralTypography.footnote
         }
     }
 

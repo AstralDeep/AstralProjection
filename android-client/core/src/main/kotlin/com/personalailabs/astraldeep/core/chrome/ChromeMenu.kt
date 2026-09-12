@@ -29,6 +29,8 @@ data class TopBarControl(
     val label: String? = null,
     val icon: String? = null,
     val action: SurfaceRef? = null,
+    val operation: String? = null,
+    val context: String? = null,
 )
 
 /** One selectable Settings entry. */
@@ -80,9 +82,23 @@ data class ChromeMenuModel(
                 root.arr("topbar")?.mapNotNull { el ->
                     val o = el as? JsonObject ?: return@mapNotNull null
                     val key = o.str("key") ?: return@mapNotNull null
+                    val kind = o.str("kind") ?: return@mapNotNull null
+                    if (kind !in setOf("brand", "status", "action", "menu", "workspace_action")) return@mapNotNull null
+                    if (kind == "workspace_action") {
+                        val fields = setOf("key", "kind", "label", "icon", "operation", "context")
+                        if (o.keys != fields ||
+                            fields.any { name ->
+                                (o[name] as? JsonPrimitive)?.let { !it.isString || it.content.isBlank() } != false
+                            } || o.str("operation") !in setOf("export_canvas", "share_canvas") || o.str("context") != "live_canvas"
+                        ) {
+                            return@mapNotNull null
+                        }
+                    }
                     TopBarControl(
                         key = key,
-                        kind = o.str("kind") ?: "action",
+                        kind = kind,
+                        operation = o.str("operation"),
+                        context = o.str("context"),
                         label = o.str("label"),
                         icon = o.str("icon"),
                         action =

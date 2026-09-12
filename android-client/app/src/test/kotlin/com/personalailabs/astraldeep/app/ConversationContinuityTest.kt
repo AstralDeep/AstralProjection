@@ -8,6 +8,7 @@ import com.personalailabs.astraldeep.app.transport.ConversationGenerationBinding
 import com.personalailabs.astraldeep.app.transport.ConversationRequestPurpose
 import com.personalailabs.astraldeep.app.transport.LocalSubmission
 import com.personalailabs.astraldeep.app.transport.OrchestratorClient
+import com.personalailabs.astraldeep.app.transport.QueuedSubmissionFailure
 import com.personalailabs.astraldeep.app.ui.AppViewModel
 import com.personalailabs.astraldeep.app.ui.ChatSegmentKind
 import com.personalailabs.astraldeep.app.ui.ChatTurn
@@ -283,23 +284,120 @@ class ConversationContinuityTest {
                 commitBinding(),
             )
 
-        assertEquals(
-            old,
-            vm.reduce(old, snapshot(4UL, "commit", request = commitRequest)),
-            "a commit snapshot cannot self-open its fence",
-        )
-        val opened =
-            vm.reduce(
-                old,
-                Inbound.ConversationCommitReady(1, chatId, connection, commitRequest, 4UL),
-            )
-        val applied = vm.reduce(opened, snapshot(4UL, "commit", request = commitRequest))
+        // Foreground work already has its locally opened request fence. The
+        // server intentionally sends its snapshot without a server-work prelude.
+        val applied = vm.reduce(old, snapshot(4UL, "commit", request = commitRequest))
         assertEquals("The result is 21.", applied.turns.single().text)
         assertEquals("new", applied.canvas.single().id)
         assertNull(applied.transientCanvas)
         assertEquals(4UL, applied.lastCommittedRenderRevision)
         assertNull(applied.requestGeneration)
         assertNull(applied.requestPurpose)
+    }
+
+    @Test
+    fun server_commit_cannot_open_itself_or_replace_an_unfinished_local_turn() {
+        val idle = vm.bindConversationGeneration(UiState(activeChatId = chatId), hydrationBinding())
+        val ready = Inbound.ConversationCommitReady(1, chatId, connection, commitRequest, 1UL)
+        val serverSnapshot = snapshot(1UL, "commit", request = commitRequest)
+        assertEquals(idle, vm.reduce(idle, serverSnapshot))
+
+        val local = vm.bindConversationGeneration(idle, commitBinding())
+        val foreignReady = ready.copy(requestGeneration = secondSnapshotId)
+        assertEquals(local, vm.reduce(local, foreignReady))
+        assertEquals(local, vm.reduce(local, serverSnapshot.copy(requestGeneration = secondSnapshotId)))
+        assertEquals(1UL, vm.reduce(local, serverSnapshot).lastCommittedRenderRevision)
+    }
+
+    @Test
+    fun server_commit_prelude_is_single_use_and_requires_its_exact_promised_revision() {
+        val idle = vm.bindConversationGeneration(UiState(activeChatId = chatId), hydrationBinding())
+        val ready = Inbound.ConversationCommitReady(1, chatId, connection, commitRequest, 2UL)
+        val opened = vm.reduce(idle, ready)
+        assertEquals(opened, vm.reduce(opened, ready.copy(renderRevision = 3UL)))
+        assertEquals(opened, vm.reduce(opened, snapshot(3UL, "commit", request = commitRequest)))
+        val committed = vm.reduce(opened, snapshot(2UL, "commit", request = commitRequest))
+        assertEquals(2UL, committed.lastCommittedRenderRevision)
+        assertEquals(committed, vm.reduce(committed, ready.copy(renderRevision = 3UL)))
+        val next = vm.reduce(committed, ready.copy(requestGeneration = secondSnapshotId, renderRevision = 3UL))
+        assertEquals(secondSnapshotId, next.requestGeneration)
+    }
+
+    @Test
+    fun only_definitively_ended_current_attempt_releases_the_commit_fence() {
+        val local = vm.bindConversationGeneration(UiState(activeChatId = chatId), commitBinding())
+        val ready = Inbound.ConversationCommitReady(1, chatId, connection, secondSnapshotId, 2UL)
+        val status = queuedOperation("chat_message", chatId, connection, commitRequest, "failed", 1UL).copy(terminal = true)
+        for (state in listOf("failed", "cancelled", "retryable")) {
+            val ended = vm.reduce(local, status.copy(state = state, retryable = state == "retryable"))
+            assertNull(ended.requestGeneration)
+            assertEquals(local.canvas, ended.canvas)
+            assertEquals(ended, vm.reduce(ended, snapshot(1UL, "commit", request = commitRequest)))
+            assertEquals(secondSnapshotId, vm.reduce(ended, ready).requestGeneration)
+        }
+        for (unended in listOf(
+            status.copy(state = "active", terminal = false),
+            status.copy(state = "completed"),
+            status.copy(chatId = otherChatId),
+            status.copy(connectionGeneration = otherConnection),
+            status.copy(requestGeneration = hydrationRequest),
+        )) {
+            val retained = vm.reduce(local, unended)
+            assertEquals(commitRequest, retained.requestGeneration)
+            assertEquals(retained, vm.reduce(retained, ready))
+        }
+        val uncertain = vm.reduce(local, Inbound.ErrorFrame(code = "unavailable", message = "Transport unavailable", retryable = true))
+        assertEquals(commitRequest, uncertain.requestGeneration)
+        assertEquals(uncertain, vm.reduce(uncertain, ready))
+    }
+
+    @Test
+    fun exact_admission_refusal_or_unsent_queue_drop_releases_only_its_local_fence() {
+        val submission = LocalSubmission("chat_message", chatId, submissionId, commitRequest)
+        val local = vm.projectLocalSubmission(vm.bindConversationGeneration(UiState(activeChatId = chatId), commitBinding()), submission)
+        val refusal =
+            assertIs<Inbound.AdmissionRefusal>(
+                Wire.decode(
+                    """{"type":"error","submission_id":"$submissionId","accepted":false,"code":"capacity_exceeded","message":"Try later","retryable":true,"retry_after_ms":1000}""",
+                ),
+            )
+        val ready = Inbound.ConversationCommitReady(1, chatId, connection, secondSnapshotId, 1UL)
+        val ended =
+            listOf(
+                vm.reduce(local, refusal),
+                vm.reduceQueuedFailure(local, QueuedSubmissionFailure(submission, "offline queue full")),
+            )
+        ended.forEach {
+            assertNull(it.requestGeneration)
+            assertEquals(secondSnapshotId, vm.reduce(it, ready).requestGeneration)
+        }
+        assertEquals(local, vm.reduce(local, refusal.copy(submissionId = secondSnapshotId)))
+        val unrelatedDrop = vm.reduceQueuedFailure(local, QueuedSubmissionFailure(submission.copy(submissionId = secondSnapshotId), "old drop"))
+        assertEquals(commitRequest, unrelatedDrop.requestGeneration)
+    }
+
+    @Test
+    fun chat_miss_preserves_connection_freshness_but_reconnection_starts_a_new_scope() {
+        val idle = vm.bindConversationGeneration(UiState(activeChatId = chatId), hydrationBinding())
+        val ready = Inbound.ConversationCommitReady(1, chatId, connection, commitRequest, 2UL)
+        val committed = vm.reduce(vm.reduce(idle, ready), snapshot(2UL, "commit", request = commitRequest))
+        val loading = vm.bindConversationGeneration(committed, hydrationBinding())
+        val missing =
+            vm.reduceWithPersistence(
+                loading,
+                Inbound.ErrorFrame(
+                    message = "Chat not found",
+                    code = "chat_not_found",
+                    chatId = chatId,
+                    connectionGeneration = connection,
+                    requestGeneration = hydrationRequest,
+                ),
+            )
+        assertNull(missing.activeChatId)
+        val reopened = vm.bindConversationGeneration(missing, hydrationBinding().copy(requestGeneration = secondSnapshotId))
+        assertEquals(reopened, vm.reduce(reopened, ready))
+        val reconnected = vm.bindConversationGeneration(reopened, hydrationBinding().copy(connectionGeneration = otherConnection))
+        assertEquals(commitRequest, vm.reduce(reconnected, ready.copy(connectionGeneration = otherConnection)).requestGeneration)
     }
 
     @Test

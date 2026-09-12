@@ -126,6 +126,11 @@ def vendor_path(name: str) -> Traversable:
     return _file(_directory("webrender", "static", "vendor"), name)
 
 
+def export_asset_path(name: str) -> Traversable:
+    """Return one immutable packaged native export asset (never user data)."""
+    return _file(_directory("contracts", "assets", "exports"), name)
+
+
 def protocol_manifest_path() -> Traversable:
     """Return the authoritative packaged UI-protocol manifest."""
 
@@ -156,6 +161,7 @@ __all__ = [
     "InvalidResourcePath",
     "ResourceNotFoundError",
     "contract_root",
+    "export_asset_path",
     "fixture_path",
     "font_path",
     "image_path",

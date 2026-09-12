@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from astralprojection.chrome import render_html
 from astralprojection.chrome.admin import (
     build_admin_view,
@@ -31,55 +34,8 @@ def _actions(view) -> set[str]:
 
 def test_audit_empty_state_is_a_stable_accessible_golden() -> None:
     view = build_audit_view()
-    assert view.to_dict() == {
-        "surface": "audit",
-        "title": "Audit log",
-        "components": [
-            {
-                "type": "param_picker",
-                "title": "Filter audit entries",
-                "description": "",
-                "fields": [
-                    {
-                        "name": "event_class",
-                        "label": "Event class",
-                        "kind": "select",
-                        "default": "",
-                        "options": [""],
-                    },
-                    {
-                        "name": "outcome",
-                        "label": "Outcome",
-                        "kind": "select",
-                        "default": "",
-                        "options": ["", "success", "failure", "in_progress", "interrupted"],
-                    },
-                    {"name": "q", "label": "Search", "kind": "text", "default": ""},
-                ],
-                "submit_label": "Apply",
-                "submit_action": "chrome_audit_page",
-                "submit_payload": {},
-            },
-            {
-                "type": "alert",
-                "message": "No audit entries match the current filters.",
-                "variant": "info",
-            },
-        ],
-        "theme": {
-            "name": "midnight",
-            "colors": {},
-            "color_scheme": "dark",
-            "contrast": "normal",
-        },
-        "layout": {"mode": "standard", "columns": 1, "density": "comfortable", "areas": []},
-        "degradation": {
-            "active": False,
-            "reason": "",
-            "unsupported_components": [],
-            "fallback": "alert",
-        },
-    }
+    fixture = Path(__file__).resolve().parents[2] / "contracts/fixtures/workspace_088/audit-empty.json"
+    assert view.to_dict() == json.loads(fixture.read_text())
     html = render_html(view)
     assert 'aria-labelledby="chrome-audit-title"' in html
     assert 'role="status"' in html

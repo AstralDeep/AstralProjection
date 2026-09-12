@@ -9,6 +9,7 @@ import com.personalailabs.astraldeep.core.sdui.CanvasOp
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -525,7 +526,57 @@ data class Agent(
     val toolScopeMap: Map<String, String> = emptyMap(),
 )
 
-data class ChatSummary(val id: String, val title: String)
+data class ChatSummary(
+    val id: String,
+    val title: String,
+    val preview: String = "",
+    val updatedAt: String = "",
+    val hasSavedComponents: Boolean = false,
+    val serverIcon: String? = null,
+    val serverTime: String? = null,
+) {
+    val displayTitle: String get() = displayText(title).ifBlank { "Untitled chat" }
+    val displayPreview: String get() = displayText(preview)
+
+    companion object {
+        private val cssWhitespace = Regex("[\\t\\n\\u000C\\r ]+")
+
+        fun displayText(value: String): String = value.replace(cssWhitespace, " ").trim { it.isWhitespace() || it == '\u0085' }
+
+        fun fromHistoryItem(item: JsonObject): ChatSummary? {
+            fun string(key: String) = (item[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+            val id =
+                string("chat_id")?.takeIf { it.isNotBlank() }
+                    ?: string("id")?.takeIf { it.isNotBlank() } ?: return null
+            return ChatSummary(
+                id = id,
+                title = string("title").orEmpty(),
+                preview = string("preview").orEmpty(),
+                hasSavedComponents = (item["saved"] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull == true,
+                serverIcon = string("icon"),
+                serverTime = string("time").orEmpty(),
+            )
+        }
+    }
+
+    /** Same display thresholds as the server's history_surface._relative_time. */
+    fun relativeTime(now: Instant = Instant.now()): String {
+        serverTime?.let { return displayText(it) }
+        val timestamp = updatedAt.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return ""
+        val seconds = if (timestamp >= 1e11) timestamp / 1000 else timestamp
+        val age = (now.toEpochMilli() / 1000.0 - seconds).coerceAtLeast(0.0)
+        if (!age.isFinite() || age / 31557600 >= Long.MAX_VALUE.toDouble()) return ""
+        return when {
+            age < 45 -> "just now"
+            age < 3600 -> "${(age / 60).toLong()}m"
+            age < 86400 -> "${(age / 3600).toLong()}h"
+            age < 604800 -> "${(age / 86400).toLong()}d"
+            age < 2629800 -> "${(age / 604800).toLong()}w"
+            age < 31557600 -> "${(age / 2629800).toLong()}mo"
+            else -> "${(age / 31557600).toLong()}y"
+        }
+    }
+}
 
 data class ChatTurn(val role: String, val content: String)
 

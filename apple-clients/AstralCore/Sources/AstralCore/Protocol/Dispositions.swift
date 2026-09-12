@@ -189,8 +189,8 @@ public struct ClientDispositions: Sendable {
     /// emit and text-falls-back for anything else (FR-032/033).
     private static func watchComponentSet() -> [String: ComponentDisposition] {
         let native: Set<String> = [
-            "alert", "badge", "card", "container", "divider", "keyvalue",
-            "list", "metric", "progress", "text",
+            "alert", "badge", "button", "card", "chat_history", "container", "divider", "keyvalue",
+            "list", "metric", "progress", "skeleton", "text",
         ]
         var table: [String: ComponentDisposition] = [:]
         for name in allComponentTypes {

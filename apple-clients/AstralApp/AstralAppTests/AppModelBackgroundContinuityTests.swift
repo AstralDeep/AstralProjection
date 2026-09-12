@@ -39,7 +39,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     // MARK: task_completed
 
     func testTaskCompletedForOpenChatReloadsIt() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"task_completed","payload":{"task_id":"t1","chat_id":"c1","status":"completed"}}"#)
@@ -49,7 +49,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskCompletedForOtherChatBannersWithoutReload() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"task_completed","payload":{"task_id":"t1","chat_id":"c2","status":"completed"}}"#)
@@ -61,7 +61,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     func testTaskCompletedWithoutChatIdKeepsIssuingSocketBehavior() {
         // Pre-fan-out servers (watch_task ack) omit chat_id — the frame
         // targets the issuing socket and still refreshes the open chat.
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"task_completed","payload":{"task_id":"t1","status":"completed"}}"#)
@@ -72,7 +72,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     // MARK: task_started
 
     func testTaskStartedForOpenChatSetsStatusLine() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         reduce(model, #"{"type":"task_started","payload":{"task_id":"t1","chat_id":"c1","status":"queued"}}"#)
         XCTAssertEqual(model.statusText, "Working in the background…")
@@ -81,7 +81,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskStartedForOtherChatBannersInstead() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         reduce(model, #"{"type":"task_started","payload":{"task_id":"t1","chat_id":"c2","status":"queued"}}"#)
         XCTAssertNil(model.statusText)
@@ -93,7 +93,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     // MARK: notification
 
     func testNotificationForOpenChatBannersAndReloads() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         // Scheduler shape: chat_id/title/body/level at the top level.
@@ -105,7 +105,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testNotificationForOtherChatBannersWithoutReload() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"notification","level":"error","chat_id":"c2","title":"Job failed","body":"boom"}"#)
@@ -115,7 +115,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testChatAgnosticNotificationNeverReloads() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         reduce(model, #"{"type":"notification","level":"info","title":"Reader live","body":"Ask again"}"#)
@@ -126,7 +126,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     // MARK: reconnect
 
     func testReconnectReissuesLoadChatForActiveChat() async {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
         await model.handle(.connected)
@@ -134,7 +134,7 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testFirstConnectWithoutActiveChatSendsNothing() async {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         let log = record(model)
         await model.handle(.connected)
         XCTAssertTrue(log.frames.isEmpty)

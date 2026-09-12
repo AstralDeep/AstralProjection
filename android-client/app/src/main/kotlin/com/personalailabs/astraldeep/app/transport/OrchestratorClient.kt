@@ -117,6 +117,8 @@ class OrchestratorClient(
         val purpose: ConversationRequestPurpose,
     )
 
+    @Volatile private var ownerEpoch = 0L
+
     @Volatile private var socket: WebSocket? = null
 
     @Volatile private var open = false
@@ -138,6 +140,20 @@ class OrchestratorClient(
 
     /** Identity-bearing failures let the UI settle the exact local projection. */
     val queuedFailures: SharedFlow<QueuedSubmissionFailure> = _queuedFailures.asSharedFlow()
+
+    /** Explicit logout/account replacement discards all unsent owner frames. */
+    fun clearOwnerSession() {
+        synchronized(pending) {
+            ownerEpoch += 1
+            open = false
+            connectionGeneration = null
+            generationObserver = {}
+            pending.clear()
+            socket?.cancel()
+            socket = null
+            _state.value = ConnectionState.Disconnected
+        }
+    }
 
     /**
      * Reconnecting inbound stream. Collect this for the life of the session.
@@ -180,6 +196,7 @@ class OrchestratorClient(
         onOpen: () -> Unit,
     ): Flow<Inbound> =
         callbackFlow {
+            val epoch = ownerEpoch
             _state.value = ConnectionState.Connecting
             val request = Request.Builder().url(url).build()
             val listener =
@@ -188,27 +205,34 @@ class OrchestratorClient(
                         webSocket: WebSocket,
                         response: Response,
                     ) {
-                        // register_ui MUST be the first frame on the socket:
-                        // only after it is enqueued may the offline queue flush
-                        // and Connected-reactive sends (the reconnect load_chat
-                        // refresh) flow, or the server would refuse them as
-                        // unregistered.
-                        val registration = createRegistrationAttempt(token, device, sessionId())
-                        connectionGeneration = registration.binding.connectionGeneration
-                        // Install the equality fence before register_ui can produce
-                        // a hydration response on this socket.
-                        onGeneration(registration.binding)
-                        webSocket.send(registration.frame)
-                        open = true
-                        onOpen()
-                        flushPending(webSocket, onGeneration, onQueuedSubmission)
-                        _state.value = ConnectionState.Connected
+                        synchronized(pending) {
+                            if (epoch != ownerEpoch) {
+                                webSocket.cancel()
+                                return
+                            }
+                            // register_ui MUST be the first frame on the socket:
+                            // only after it is enqueued may the offline queue flush
+                            // and Connected-reactive sends (the reconnect load_chat
+                            // refresh) flow, or the server would refuse them as
+                            // unregistered.
+                            val registration = createRegistrationAttempt(token, device, sessionId())
+                            connectionGeneration = registration.binding.connectionGeneration
+                            // Install the equality fence before register_ui can produce
+                            // a hydration response on this socket.
+                            onGeneration(registration.binding)
+                            webSocket.send(registration.frame)
+                            open = true
+                            onOpen()
+                            flushPending(webSocket, onGeneration, onQueuedSubmission)
+                            _state.value = ConnectionState.Connected
+                        }
                     }
 
                     override fun onMessage(
                         webSocket: WebSocket,
                         text: String,
                     ) {
+                        if (epoch != ownerEpoch) return
                         val msg = Wire.decode(text)
                         if (msg is Inbound.AuthRequired) _state.value = ConnectionState.AuthRequired
                         trySend(msg)
@@ -219,6 +243,7 @@ class OrchestratorClient(
                         code: Int,
                         reason: String,
                     ) {
+                        if (epoch != ownerEpoch) return
                         open = false
                         connectionGeneration = null
                         webSocket.close(NORMAL_CLOSE, null)
@@ -230,6 +255,7 @@ class OrchestratorClient(
                         t: Throwable,
                         response: Response?,
                     ) {
+                        if (epoch != ownerEpoch) return
                         open = false
                         connectionGeneration = null
                         Log.w(TAG, "WebSocket failure: ${t.message}")
@@ -237,10 +263,13 @@ class OrchestratorClient(
                     }
                 }
             socket = client.newWebSocket(request, listener)
+            val connectedSocket = socket
             awaitClose {
-                open = false
-                connectionGeneration = null
-                socket?.cancel()
+                if (epoch == ownerEpoch && socket === connectedSocket) {
+                    open = false
+                    connectionGeneration = null
+                }
+                connectedSocket?.cancel()
             }
         }
 
@@ -315,6 +344,7 @@ class OrchestratorClient(
         message: String,
         chatId: String?,
         attachments: List<ChatAttachment> = emptyList(),
+        asyncMode: Boolean = false,
         onSubmission: (LocalSubmission) -> Unit = {},
     ): LocalSubmission {
         val submission = newSubmission("chat_message", chatId)
@@ -328,6 +358,7 @@ class OrchestratorClient(
                 message = message,
                 chatId = chatId,
                 attachments = attachments,
+                asyncMode = asyncMode,
                 requestGeneration = submission.requestGeneration,
                 submissionId = submission.submissionId,
             ),
@@ -405,6 +436,44 @@ class OrchestratorClient(
     /** Current registered UI generation, exposed only for voice equality fencing. */
     fun currentConnectionGeneration(): String? = connectionGeneration.takeIf { open }
 
+    /** Current component decisions must never enter the generic reconnect queue. */
+    internal fun sendCurrentEvent(
+        action: String,
+        sessionId: String,
+        payload: JsonObject,
+        isCurrent: () -> Boolean,
+        onSubmission: (LocalSubmission) -> Unit = {},
+    ): Boolean =
+        synchronized(pending) {
+            val currentSocket = socket
+            val generation = connectionGeneration
+            val epoch = ownerEpoch
+            if (action !in setOf("component_refine", "component_restore") ||
+                !open || currentSocket == null || generation == null || !isCurrent()
+            ) {
+                return@synchronized false
+            }
+            val submission = newSubmission(action, sessionId)
+            val frame =
+                Wire.encodeUiEvent(
+                    action = action,
+                    sessionId = sessionId,
+                    payload = payload,
+                    requestGeneration = submission.requestGeneration,
+                    submissionId = submission.submissionId,
+                )
+            if (!validQueuedIdentity(frame, submission)) return@synchronized false
+            // Preserve normal local-operation registration before a fast server response.
+            onSubmission(submission)
+            if (!open || socket !== currentSocket || connectionGeneration != generation || ownerEpoch != epoch ||
+                !isCurrent() || !currentSocket.send(frame)
+            ) {
+                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "component action was not sent"))
+                return@synchronized false
+            }
+            true
+        }
+
     fun sendEvent(
         action: String,
         sessionId: String?,
@@ -481,12 +550,11 @@ class OrchestratorClient(
     private fun conversationRequest(
         submission: LocalSubmission,
         purpose: ConversationRequestPurpose,
-    ) =
-        ConversationRequest(
-            chatId = submission.chatId,
-            requestGeneration = submission.requestGeneration,
-            purpose = purpose,
-        )
+    ) = ConversationRequest(
+        chatId = submission.chatId,
+        requestGeneration = submission.requestGeneration,
+        purpose = purpose,
+    )
 
     private fun newSubmission(
         action: String,

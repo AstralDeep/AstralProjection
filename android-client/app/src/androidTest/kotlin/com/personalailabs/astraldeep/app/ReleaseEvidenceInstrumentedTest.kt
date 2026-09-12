@@ -96,6 +96,10 @@ class ReleaseEvidenceInstrumentedTest {
             "astralStagingUrl selects the trusted staging endpoint for this producer",
             !arguments.getString("astralStagingUrl").isNullOrBlank(),
         )
+        assertTrue(
+            "release coverage requires the qualified coverage build type",
+            BuildConfig.BUILD_TYPE == "coverage",
+        )
         val startedAt = Instant.now().toString()
         val stagingUrl = requiredArgument("astralStagingUrl").trimEnd('/')
         assertTrue("staging endpoint must be HTTPS", stagingUrl.startsWith("https://"))
@@ -492,7 +496,7 @@ class ReleaseEvidenceInstrumentedTest {
                 put("platform", "android")
                 put(
                     "target_description",
-                    "Connected debug Android client on an API 34 x86_64 emulator against the trusted staging endpoint",
+                    "Connected coverage Android client on an API 34 x86_64 emulator against the trusted staging endpoint",
                 )
                 put(
                     "artifact",
@@ -711,7 +715,9 @@ class ReleaseEvidenceInstrumentedTest {
         resume: ConversationResume? = null,
     ) : AutoCloseable {
         private val frames = LinkedBlockingDeque<Inbound>()
+
         @Volatile private var failure: String? = null
+
         @Volatile var componentsSeen: Int = 0
             private set
         private val socket: WebSocket
