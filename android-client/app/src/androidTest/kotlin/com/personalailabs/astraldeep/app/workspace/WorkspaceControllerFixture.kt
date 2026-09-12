@@ -117,6 +117,7 @@ internal class WorkspaceControllerFixture(
             }.build()
     val server = MockWebServer()
     val requests = CopyOnWriteArrayList<RecordedRequest>()
+    val outboundFrames = CopyOnWriteArrayList<JsonObject>()
     var response: (RecordedRequest) -> MockResponse = ::normalResponse
     var token: String? = syntheticToken("owner")
     val capture = CanvasCaptureRegistry()
@@ -139,6 +140,13 @@ internal class WorkspaceControllerFixture(
                                     response: Response,
                                 ) {
                                     socket.set(webSocket)
+                                }
+
+                                override fun onMessage(
+                                    webSocket: WebSocket,
+                                    text: String,
+                                ) {
+                                    outboundFrames.add(Json.parseToJsonElement(text).jsonObject)
                                 }
                             },
                         )
@@ -193,6 +201,7 @@ internal class WorkspaceControllerFixture(
     fun hydrate(
         revision: Int = 1,
         purpose: String = "hydration",
+        components: List<JsonObject>? = null,
     ) {
         val state = model.state.value
         val frame =
@@ -214,7 +223,7 @@ internal class WorkspaceControllerFixture(
                         put(
                             "components",
                             JsonArray(
-                                listOf(
+                                components ?: listOf(
                                     buildJsonObject {
                                         put("type", "text")
                                         put("id", "result")
@@ -239,15 +248,18 @@ internal class WorkspaceControllerFixture(
         await { model.state.value.lastCommittedRenderRevision == revision.toULong() }
     }
 
-    fun reconnect() {
+    fun reconnect(revision: Int = model.state.value.lastCommittedRenderRevision.toInt()) {
         val previous = model.state.value.connectionGeneration
         val previousSocket = socket.get()
         main { model.start(checkNotNull(token), DeviceCapabilities(400, 800)) }
         await { socket.get() !== previousSocket && model.state.value.connectionGeneration != previous && model.state.value.requestGeneration != null }
-        hydrate()
+        hydrate(revision)
     }
 
-    fun commitRevision(revision: Int) {
+    fun commitRevision(
+        revision: Int,
+        components: List<JsonObject>? = null,
+    ) {
         val request = UUID.randomUUID().toString()
         send(
             buildJsonObject {
@@ -260,7 +272,7 @@ internal class WorkspaceControllerFixture(
             },
         )
         await { model.state.value.requestGeneration == request }
-        hydrate(revision, "commit")
+        hydrate(revision, "commit", components)
     }
 
     fun menu(enabled: Boolean = true) {

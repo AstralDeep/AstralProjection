@@ -33,7 +33,6 @@ import com.personalailabs.astraldeep.core.sdui.Component
 data class CanvasChrome(
     val chatId: String?,
     val mutationsLocked: Boolean,
-    val serverCanvasExport: Boolean = false,
 )
 
 /**
@@ -79,11 +78,7 @@ fun CanvasHost(
                         renderer.render(component, "/components/$index")
                         ArtifactFooter(
                             c = component,
-                            emit = renderer.emit,
-                            download = renderer.download,
-                            chatId = chrome.chatId,
-                            mutationsLocked = chrome.mutationsLocked,
-                            serverCanvasExport = chrome.serverCanvasExport,
+                            handler = renderer.componentActions,
                         )
                     }
                 }

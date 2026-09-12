@@ -55,6 +55,7 @@ class Renderer(
     val download: Download = Download { _, _ -> },
     val theme: ThemeSink = ThemeSink { },
 ) {
+    internal var componentActions: com.personalailabs.astraldeep.app.ui.ComponentActionHandler? = null
     internal var capture: CanvasCaptureRegistry? = null
     internal var captureContext: (() -> WorkspaceContext?)? = null
     private val registry = LinkedHashMap<String, ComponentRenderer>()

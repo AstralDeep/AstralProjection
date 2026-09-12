@@ -69,14 +69,28 @@ internal class WorkspaceRest(
     suspend fun shareCanvas(
         token: String,
         chatId: String,
+    ): String = share(token, chatId, null)
+
+    suspend fun shareComponent(
+        token: String,
+        chatId: String,
+        componentId: String,
+    ): String = share(token, chatId, componentId)
+
+    private suspend fun share(
+        token: String,
+        chatId: String,
+        componentId: String?,
     ): String =
         safely(SHARE_FAILED) {
             validateChat(chatId)
+            if (componentId != null) require(componentId.isNotBlank() && componentId.length <= 128 && componentId.none(Char::isISOControl))
             val url = serverOrigin().newBuilder().encodedPath("/api/share").build()
             val body =
                 buildJsonObject {
                     put("chat_id", chatId)
-                    put("scope", "canvas")
+                    put("scope", if (componentId == null) "canvas" else "component")
+                    if (componentId != null) put("component_id", componentId)
                 }
             val request =
                 authenticated(url, token)
@@ -93,6 +107,36 @@ internal class WorkspaceRest(
                 shareUrl(reference).toString()
             }
         }
+
+    /** The established CSV endpoint, with the same bounded/cancellable authenticated transport as canvas exports. */
+    suspend fun exportComponent(
+        token: String,
+        chatId: String,
+        componentId: String,
+        destination: File,
+    ) {
+        var complete = false
+        try {
+            safely("Couldn't export this table.") {
+                validateChat(chatId)
+                require(componentId.isNotBlank() && componentId.length <= 128 && componentId.none(Char::isISOControl))
+                val url =
+                    serverOrigin().newBuilder().addPathSegments("api/export/component")
+                        .addPathSegment("$componentId.csv").addQueryParameter("chat_id", chatId).build()
+                artifactDownloadUrl(baseUrl, url.toString(), allowLocalHttp)
+                execute(authenticated(url, token).get().build()) { response, context ->
+                    if (response.code != 200) throw WorkspaceRequestException("Couldn't export this table.")
+                    Files.newOutputStream(destination.toPath(), StandardOpenOption.WRITE, LinkOption.NOFOLLOW_LINKS).use {
+                        copyBounded(response, it, maxExportBytes, context)
+                    }
+                }
+            }
+            currentCoroutineContext().ensureActive()
+            complete = true
+        } finally {
+            if (!complete) destination.delete()
+        }
+    }
 
     /** The caller supplies a fresh path inside its private, owner-scoped staging directory. */
     suspend fun exportCanvas(

@@ -436,6 +436,44 @@ class OrchestratorClient(
     /** Current registered UI generation, exposed only for voice equality fencing. */
     fun currentConnectionGeneration(): String? = connectionGeneration.takeIf { open }
 
+    /** Current component decisions must never enter the generic reconnect queue. */
+    internal fun sendCurrentEvent(
+        action: String,
+        sessionId: String,
+        payload: JsonObject,
+        isCurrent: () -> Boolean,
+        onSubmission: (LocalSubmission) -> Unit = {},
+    ): Boolean =
+        synchronized(pending) {
+            val currentSocket = socket
+            val generation = connectionGeneration
+            val epoch = ownerEpoch
+            if (action !in setOf("component_refine", "component_restore") ||
+                !open || currentSocket == null || generation == null || !isCurrent()
+            ) {
+                return@synchronized false
+            }
+            val submission = newSubmission(action, sessionId)
+            val frame =
+                Wire.encodeUiEvent(
+                    action = action,
+                    sessionId = sessionId,
+                    payload = payload,
+                    requestGeneration = submission.requestGeneration,
+                    submissionId = submission.submissionId,
+                )
+            if (!validQueuedIdentity(frame, submission)) return@synchronized false
+            // Preserve normal local-operation registration before a fast server response.
+            onSubmission(submission)
+            if (!open || socket !== currentSocket || connectionGeneration != generation || ownerEpoch != epoch ||
+                !isCurrent() || !currentSocket.send(frame)
+            ) {
+                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "component action was not sent"))
+                return@synchronized false
+            }
+            true
+        }
+
     fun sendEvent(
         action: String,
         sessionId: String?,
