@@ -279,7 +279,7 @@ jobs:
               native_args=(--native-domain "$domain")
             fi
             python3 scripts/export_xccov_line_coverage.py \
-              "${native_args[@]}" \
+              ${native_args[@]+"${native_args[@]}"} \
               --repo "$PWD" \
               --xcresult "$result" \
               --platform '${{ matrix.slug }}' \
@@ -425,7 +425,7 @@ jobs:
               -only-testing:AstralAppUITests/VoiceConversationUITests \
               -only-testing:AstralAppUITests/Accessibility060UITests \
               -only-testing:AstralAppUITests/WorkspacePresentationUITests \
-              "${workspace_actions[@]}" \
+              ${workspace_actions[@]+"${workspace_actions[@]}"} \
               -only-testing:AstralAppUITests/ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes \
               "$test_action"
           }
@@ -458,7 +458,7 @@ jobs:
               native_args=(--native-domain "$domain")
             fi
             python3 scripts/export_xccov_line_coverage.py \
-              "${native_args[@]}" \
+              ${native_args[@]+"${native_args[@]}"} \
               --repo "$PWD" \
               --xcresult "$result" \
               --platform '${{ matrix.slug }}' \

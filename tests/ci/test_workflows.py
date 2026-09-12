@@ -1,7 +1,13 @@
 from pathlib import Path
 import json
+import os
 import re
+import shlex
+import shutil
 import stat
+import subprocess
+import sys
+import textwrap
 
 import pytest
 
@@ -800,7 +806,9 @@ def _assert_ios_domain_collection(text):
         assert "--native-domain" in block
         assert "-enableCodeCoverage YES" in block
     unit = _job_block(text, "app-unit-tests")
-    prepare = unit.partition("test_action=test\n")[2].partition("test_action=test-without-building")[0]
+    _, marker, after_default = unit.partition("test_action='test'\n")
+    assert marker
+    prepare = after_default.partition("test_action=test-without-building")[0]
     assert "-only-testing:" not in prepare
     assert "-only-testing:AstralAppTests" in unit
     ui = _job_block(text, "first-login-ui")
@@ -821,3 +829,89 @@ def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, n
     assert old in text
     with pytest.raises(AssertionError):
         _assert_ios_domain_collection(text.replace(old, new, 1))
+
+
+@pytest.mark.parametrize("platform", ["macos", "ios"])
+@pytest.mark.parametrize("lane", ["unit", "ui"])
+def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, lane):
+    """Execute the real step using command recorders, never Xcode or a device."""
+    bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
+    if bash is None:
+        pytest.skip("Apple workflow shell contract requires Bash")
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    job, step = (
+        ("app-unit-tests", "Run app unit and continuity tests with coverage")
+        if lane == "unit"
+        else (
+            "first-login-ui",
+            "Run deterministic first-login, voice and workspace UI tests with coverage",
+        )
+    )
+    script = textwrap.dedent(
+        _step_block(_job_block(text, job), step).split("run: |\n", 1)[1]
+    )
+    for name, value in {
+        "matrix.slug": platform,
+        "matrix.destination": (
+            "platform=macOS"
+            if platform == "macos"
+            else "platform=iOS Simulator,name=Owned Fixture"
+        ),
+        "steps.ios_sim.outputs.udid": "owned-fixture-id",
+    }.items():
+        script = script.replace("${{ " + name + " }}", value)
+    assert "${{" not in script
+    recorder = tmp_path / "record_commands.py"
+    recorder.write_text(
+        "import json, os, pathlib, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'xcodebuild' and '-resultBundlePath' in sys.argv:\n"
+        "    pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1]).mkdir(parents=True)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = (
+        f'xcodebuild() {{ {command} xcodebuild "$@"; }}\n'
+        f'python3() {{ {command} python3 "$@"; }}\n'
+    )
+    record = tmp_path / "commands.jsonl"
+    result = subprocess.run(
+        [bash, "-c", prefix + script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "COVERAGE_ROOT": "coverage with spaces",
+            "APP_PROJECT": "Owned Fixture.xcodeproj",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    assert all("" not in call for call in calls)
+    xcode = [call for call in calls if call[0] == "xcodebuild"]
+    assert len(xcode) == (2 if platform == "ios" else 1)
+    assert xcode[-1][-1] == ("test-without-building" if platform == "ios" else "test")
+    assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
+    assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
+    if lane == "ui":
+        selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
+        assert "-only-testing:AstralAppUITests/WorkspacePresentationUITests" in selectors
+        assert (
+            "-only-testing:AstralAppUITests/WorkspaceActionsUITests" in selectors
+        ) == (platform == "ios")
+    else:
+        assert "-only-testing:AstralAppTests" in xcode[-1]
+    exports = [call for call in calls if "scripts/export_xccov_line_coverage.py" in call]
+    assert len(exports) == 1
+    assert exports[0][exports[0].index("--platform") + 1] == platform
+    assert ("--native-domain" in exports[0]) == (platform == "ios")
+    collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
+    assert len(collectors) == (1 if platform == "ios" else 0)
+    if collectors:
+        assert collectors[0][collectors[0].index("--lane") + 1] == lane
+        assert exports[0][exports[0].index("--native-domain") + 1] == (
+            f"coverage with spaces/apple-ios-{lane}-domain.json"
+        )
