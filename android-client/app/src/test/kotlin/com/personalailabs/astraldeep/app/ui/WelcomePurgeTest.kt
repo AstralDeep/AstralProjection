@@ -1,11 +1,15 @@
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
+import com.personalailabs.astraldeep.app.transport.ConversationRequestPurpose
+import com.personalailabs.astraldeep.app.transport.LocalSubmission
 import com.personalailabs.astraldeep.app.transport.OrchestratorClient
 import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.sdui.CanvasOp
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -27,6 +31,47 @@ class WelcomePurgeTest {
     ) = Component(type, id, JsonObject(emptyMap()), emptyList())
 
     private val welcome = listOf(comp("wel_hero", "hero"), comp("wel_examples"), comp("wel_enable"))
+
+    private val placedWelcome =
+        listOf(
+            Component(
+                "text",
+                "wel_intro",
+                buildJsonObject {
+                    put("data-welcome", "intro")
+                    put("text", "Ready to help.")
+                },
+                emptyList(),
+            ),
+            Component("container", "wel_examples", buildJsonObject { put("data-welcome", "examples") }, emptyList()),
+        )
+
+    @Test
+    fun new_chat_pending_ack_does_not_discard_its_unscoped_welcome() {
+        val pending =
+            vm.projectLocalSubmission(
+                UiState(connectionGeneration = "connection"),
+                LocalSubmission("new_chat", null, "submission", "navigation"),
+            )
+        assertTrue(pending.hasActiveWork)
+        val after = vm.reduce(pending, Inbound.UiRender(target = "canvas", components = placedWelcome))
+        assertEquals(placedWelcome, after.canvas)
+        assertEquals(pending.pendingSubmissions, after.pendingSubmissions)
+        assertTrue(!after.workspaceStarted)
+        val settled = after.copy(pendingSubmissions = emptyMap())
+        assertTrue(settled.showsStart)
+    }
+
+    @Test
+    fun actual_work_or_hydration_still_rejects_late_welcome() {
+        for (state in listOf(
+            UiState(workspaceStarted = true, canvas = listOf(comp("work"))),
+            UiState(connectionGeneration = "connection", activeChatId = "chat", requestGeneration = "load", requestPurpose = ConversationRequestPurpose.HYDRATION),
+            UiState(connectionGeneration = "connection", activeChatId = "chat", requestGeneration = "commit", requestPurpose = ConversationRequestPurpose.COMMIT),
+        )) {
+            assertEquals(state, vm.reduce(state, Inbound.UiRender(target = "canvas", components = placedWelcome)))
+        }
+    }
 
     @Test
     fun turn_start_arming_purges_welcome_from_the_canvas() {

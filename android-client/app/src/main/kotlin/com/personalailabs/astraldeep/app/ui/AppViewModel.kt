@@ -1893,7 +1893,7 @@ class AppViewModel(
         s: UiState,
         msg: Inbound.UiRender,
     ): UiState {
-        if (msg.target != "chat" && !s.showsStart && msg.components.isNotEmpty() &&
+        if (msg.target != "chat" && !s.acceptsStartWelcome && msg.components.isNotEmpty() &&
             msg.components.all { welcomePlacementRole(it) != null }
         ) {
             return s
@@ -1919,7 +1919,7 @@ class AppViewModel(
         // mutate committed surfaces. A no-chat welcome remains a valid global UI.
         if (s.connectionGeneration != null && s.activeChatId != null &&
             !(
-                s.showsStart && msg.target != "chat" && msg.components.isNotEmpty() &&
+                s.acceptsStartWelcome && msg.target != "chat" && msg.components.isNotEmpty() &&
                     msg.components.all { welcomePlacementRole(it) != null }
             )
         ) {
@@ -1943,7 +1943,7 @@ class AppViewModel(
             val (reasoning, rest0) = msg.components.partition(::isReasoning)
             val canvasComps =
                 rest0.filterNot {
-                    isDocCard(it.id) || isSkeleton(it) || (!s.showsStart && welcomePlacementRole(it) != null)
+                    isDocCard(it.id) || isSkeleton(it) || (!s.acceptsStartWelcome && welcomePlacementRole(it) != null)
                 }
             val reasoningTurns =
                 reasoning.mapNotNull { component ->

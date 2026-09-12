@@ -26,3 +26,7 @@ internal val UiState.showsStart: Boolean
             !isViewingHistory && !timelineReadOnly && requestPurpose == null &&
             visibleTurns.none { it.hasVisibleContent } && canvasHistory.isEmpty() &&
             visibleCanvas.all { welcomePlacementRole(it) != null }
+
+/** A pending navigation acknowledgment does not retire server-owned welcome. */
+internal val UiState.acceptsStartWelcome: Boolean
+    get() = !workspaceStarted && requestGeneration == null && !turnActive && !pendingReplace

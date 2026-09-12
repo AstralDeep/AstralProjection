@@ -151,9 +151,9 @@
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourceBlob": "d241aacb0fb0710105e25b81d30f754bd8419611",
       "sourceMode": "100644",
-      "resultSha256": "563559b4e474bec0885f3da16d8a1cf7ab04f532b470e3a587f1ffcf612a7713",
+      "resultSha256": "7171203b1e26ab7a5b3f2d8a8c80156b6bd7e3507b40dd4c239195fe49d73eff",
       "task": "T041/T056/T060",
-      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
+      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state."
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
@@ -217,6 +217,15 @@
       "task": "T056/T060",
       "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
       "resultSha256": "ebec29bca2d050e05e755101b208459a7cf57bf0eacdcdef68f7f89603ad16d9"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WelcomePurgeTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/WelcomePurgeTest.kt",
+      "sourceBlob": "2c12bc13495386760fc9ee319b9f04978eb136ca",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state.",
+      "resultSha256": "b34bee61db861391083a971d629ca2573793ddf99582a9a54be91580bd5776b6"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/voice/VoiceSessionController065Test.kt",
