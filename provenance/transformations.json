@@ -709,9 +709,9 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
       "sourceMode": "100644",
-      "resultSha256": "4b29b036f0a7f6bde77c1a92bd1559176b2048c3c604c865cb4ee149a56ae325",
+      "resultSha256": "372d9d14b80db6b31d13a8410f97112478b9c6313c13a9623df54d87926bada9",
       "task": "T055/T040/T057/T061",
-      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Wrap the two 122-column computer_host/computer_request disposition entries to satisfy strict recursive swift-format (lineLength 120). Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries."
+      "reason": "Name the standalone Projection manifest as the current source for Apple frame and component dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Wrap the two 122-column computer_host/computer_request disposition entries to satisfy strict recursive swift-format (lineLength 120). Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
@@ -809,8 +809,8 @@
       "sourceBlob": "6877aa7a83db820af007e7b93e28c8b98d56c968",
       "sourceMode": "100644",
       "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "349024c6d4cc532815cde8bc7794675e02e97bef588d18bff5ef0b6064febf63"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions.",
+      "resultSha256": "f117db47ee0ea372f6ecb3fc39f6e6342a925ebc8f88dba32a1056239118c8be"
     },
     {
       "path": "apple-clients/AstralWatch/Views/WatchHomeView.swift",
@@ -827,8 +827,8 @@
       "sourceBlob": "8164768c856633459b8d169a81fd15055ba889dc",
       "sourceMode": "100644",
       "task": "T057/T061/T060",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results.",
-      "resultSha256": "5517aefea1f4d6446a704fa0f8e456ac449cb345078778436232eb9670211e33"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results. Feature 088 Watch history: advertise the implemented history and loading primitives, retain owner-scoped decoding, and render existing passive detail text without adding artifact actions.",
+      "resultSha256": "6f9e12c6eba72abdb4d2b5e9e7073d4beb0043ab084138b97ac5f09034d587d3"
     },
     {
       "path": "apple-clients/KNOWN-ISSUES.md",

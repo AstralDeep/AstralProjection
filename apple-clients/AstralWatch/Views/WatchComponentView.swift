@@ -90,7 +90,7 @@ struct WatchComponentView: View {
         case "list":
             VStack(alignment: .leading, spacing: 2) {
                 titleLine
-                ForEach(Array(component.listItems.enumerated()), id: \.offset) { _, item in
+                ForEach(Array(WatchComponentText.listItems(in: component).enumerated()), id: \.offset) { _, item in
                     HStack(alignment: .top, spacing: 4) {
                         Text("•")
                         markdown(item)
@@ -101,14 +101,22 @@ struct WatchComponentView: View {
         case "keyvalue":
             VStack(alignment: .leading, spacing: 2) {
                 titleLine
-                ForEach(Array(component.keyValuePairs.enumerated()), id: \.offset) { _, pair in
-                    HStack(alignment: .top) {
-                        Text(pair.0).font(AstralTypography.caption2).foregroundStyle(.secondary)
-                        Spacer(minLength: 4)
-                        Text(pair.1).font(AstralTypography.footnote)
+                ForEach(Array(WatchComponentText.keyValueRows(in: component).enumerated()), id: \.offset) { _, pair in
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(alignment: .top) {
+                            Text(pair.label).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                            Spacer(minLength: 4)
+                            Text(pair.value).font(AstralTypography.footnote)
+                        }
+                        if !pair.hint.isEmpty {
+                            markdown(pair.hint).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             }
+        case "skeleton":
+            ProgressView(component.label ?? "Loading…")
         case "progress":
             VStack(alignment: .leading, spacing: 2) {
                 // The wire caption field is `label` (progress has no `title`).

@@ -656,21 +656,15 @@ final class WatchModel {
         // History is an owner-scoped chrome surface, never a conversation
         // publication. Intercept before welcome, continuity, and spoken output.
         if frame.name == "ui_render", frame.renderTarget == "history" {
-            let scopeKeys = [
-                "chat_id", "chatId", "connection_generation", "request_generation",
-                "base_render_revision", "frame_sequence",
-            ]
-            guard !scopeKeys.contains(where: { frame.payload[$0] != nil }) else { return }
-            if let list = frame.renderComponents.first(where: { $0.type == "chat_history" }),
-                let items = list.raw["items"]?.arrayValue
-            {
-                recents = items.compactMap(ChatSummary.init(historyItem:))
-                let title = list.raw["title"]?.stringValue ?? ""
-                recentsTitle = title.isEmpty ? "Recent chats" : title
+            guard let update = WatchHistoryUpdate(frame: frame) else { return }
+            switch update {
+            case .content(let title, let chats):
+                recents = chats
+                recentsTitle = title
                 recentsLoading = false
                 hasCanonicalRecents = true
                 recentsGeneration = UUID()
-            } else if frame.renderComponents.contains(where: { $0.type == "skeleton" }) {
+            case .loading:
                 recentsLoading = true
             }
             return
