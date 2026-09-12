@@ -267,7 +267,7 @@ final class VoiceSessionController065Tests: XCTestCase {
     }
 
     func testAppModelRoutesEveryVoiceWireOnCurrentConnectionWithoutQueueAlert() throws {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.signedIn = true
         model.connected = true
         XCTAssertTrue(model.beginConversationConnection(connection))

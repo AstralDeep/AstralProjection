@@ -211,6 +211,7 @@ final class AppModel: NSObject {
 
     var agents: [Agent] = []
     var history: [ChatSummary] = []
+    var historyTitle = "Recent chats"
     var audit: [AuditEvent] = []
     var agentsLoading = false
     var historyLoading = false
@@ -270,13 +271,7 @@ final class AppModel: NSObject {
 
     // MARK: session plumbing (never read by views — not observation-tracked)
 
-    private let store: TokenStorage = {
-        #if canImport(Security)
-            KeychainTokenStore()
-        #else
-            InMemoryTokenStore()
-        #endif
-    }()
+    private let store: TokenStorage
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var ws: WSClient?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
@@ -341,10 +336,21 @@ final class AppModel: NSObject {
     // MARK: lifecycle
 
     override convenience init() {
-        self.init(conversationResumeStore: ConversationResumeStore())
+        #if canImport(Security)
+            self.init(tokenStore: KeychainTokenStore())
+        #else
+            self.init(tokenStore: InMemoryTokenStore())
+        #endif
     }
 
-    init(conversationResumeStore: ConversationResumeStore) {
+    /// Tests supply an in-memory store explicitly: changing the test host's
+    /// bundle identifier does not change a Keychain service/account query.
+    /// Production's no-argument initializer retains its existing Keychain.
+    init(
+        conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
+        tokenStore: TokenStorage
+    ) {
+        self.store = tokenStore
         self.conversationResumeStore = conversationResumeStore
         let defaults = UserDefaults.standard
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
@@ -703,6 +709,7 @@ final class AppModel: NSObject {
         clearLLMFirstLoginOperation()
         agents = []
         history = []
+        historyTitle = "Recent chats"
         audit = []
 
         // Everything above is synchronous local teardown. Remote revocation
@@ -877,6 +884,25 @@ final class AppModel: NSObject {
     /// Internal (not private) so XCTests can drive frames through the reducer.
     func handleFrame(_ frame: InboundFrame) {
         voice.consume(frame)
+        // History is an owner-scoped chrome region, independent of the active
+        // conversation generation. It must never replace its canvas or turns.
+        if frame.name == "ui_render", frame.renderTarget == "history" {
+            let conversationFields = [
+                "chat_id", "chatId", "connection_generation", "request_generation",
+                "base_render_revision", "frame_sequence",
+            ]
+            guard !conversationFields.contains(where: { frame.payload[$0] != nil }) else { return }
+            if let list = frame.renderComponents.first(where: { $0.type == "chat_history" }),
+                let items = list.raw["items"]?.arrayValue
+            {
+                history = items.compactMap { ChatSummary(historyItem: $0) }
+                historyTitle = list.raw["title"]?.stringValue ?? "Recent chats"
+                historyLoading = false
+            } else if frame.renderComponents.contains(where: { $0.type == "skeleton" }) {
+                historyLoading = true
+            }
+            return
+        }
         // Registration establishes a connection before the server's global
         // welcome arrives. It has no conversation generation; admit only its
         // validated ephemeral components while no hydration/turn is open.
@@ -933,6 +959,7 @@ final class AppModel: NSObject {
             agentsLoading = false
         case "history_list":
             history = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
+            historyTitle = "Recent chats"
             historyLoading = false
         case "ui_stream_data", "stream_data":
             if continuity.connectionGeneration == nil {

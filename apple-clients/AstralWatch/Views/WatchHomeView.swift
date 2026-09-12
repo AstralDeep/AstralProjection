@@ -18,16 +18,22 @@ struct WatchHomeView: View {
                 }
             }
 
-            if !model.recents.isEmpty {
-                Section("Recent") {
+            if model.recentsLoading || !model.recents.isEmpty {
+                Section {
+                    if model.recentsLoading && model.recents.isEmpty {
+                        ProgressView("Loading your chats…")
+                            .font(AstralTypography.footnote)
+                    }
                     ForEach(model.recents) { chat in
                         NavigationLink {
                             WatchChatView()
                                 .onAppear { model.openChat(chat) }
                         } label: {
-                            Text(chat.title).lineLimit(2)
+                            WatchHistoryRow(chat: chat)
                         }
                     }
+                } header: {
+                    Text(verbatim: model.recentsTitle)
                 }
             }
 
@@ -75,5 +81,39 @@ struct WatchHomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
         }
+    }
+}
+
+/// ROTE owns the wrist's four-row, preview-free history. Preserve its title,
+/// glyph, relative time, and saved marker using the existing system-styled UI.
+struct WatchHistoryRow: View {
+    let chat: ChatSummary
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            if !chat.icon.isEmpty {
+                Text(verbatim: chat.icon)
+                    .font(AstralTypography.footnote)
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(verbatim: chat.displayTitle)
+                    .font(AstralTypography.footnote)
+                    .lineLimit(2)
+                let time = chat.relativeTime()
+                if !time.isEmpty {
+                    Text(verbatim: time)
+                        .font(AstralTypography.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if chat.hasSavedComponents {
+                Image(systemName: "star.fill")
+                    .font(AstralTypography.caption2)
+                    .foregroundStyle(WatchBrand.warning)
+                    .accessibilityLabel("Has saved components")
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }

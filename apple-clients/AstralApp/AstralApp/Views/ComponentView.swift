@@ -542,34 +542,17 @@ struct ComponentView: View {
     }
 
     private var chatHistoryView: some View {
-        let items = component.raw["items"]?.arrayValue ?? component.raw["chats"]?.arrayValue ?? []
-        return VStack(alignment: .leading, spacing: 4) {
-            titleLine
-            ForEach(Array(items.enumerated()), id: \.offset) { _, item in
-                if let chatId = item["chat_id"]?.stringValue ?? item["id"]?.stringValue {
+        let items = (component.raw["items"]?.arrayValue ?? []).compactMap { ChatSummary(historyItem: $0) }
+        return VStack(alignment: .leading, spacing: 2) {
+            if items.isEmpty {
+                Text("No conversations yet.").foregroundStyle(p.muted)
+            } else {
+                HistoryHeader(title: component.raw["title"]?.stringValue ?? "Recent chats", count: items.count)
+                ForEach(Array(items.enumerated()), id: \.offset) { _, chat in
                     Button {
-                        model.emit("load_chat", payload: ["chat_id": .string(chatId)])
+                        model.emit("load_chat", payload: ["chat_id": .string(chat.id)])
                     } label: {
-                        VStack(alignment: .leading, spacing: 1) {
-                            HStack(spacing: 4) {
-                                Text(item["title"]?.stringValue ?? "Chat").foregroundStyle(p.text)
-                                if isTruthy(item["saved"]) {
-                                    Image(systemName: "star.fill")
-                                        .font(AstralTypography.caption2).foregroundStyle(p.accent)
-                                        .accessibilityLabel("Has saved components")
-                                }
-                                Spacer(minLength: 6)
-                                if let time = item["time"]?.stringValue, !time.isEmpty {
-                                    Text(time).font(AstralTypography.caption2).foregroundStyle(p.muted)
-                                }
-                            }
-                            if let preview = item["preview"]?.stringValue, !preview.isEmpty {
-                                Text(preview).font(AstralTypography.caption).foregroundStyle(p.muted).lineLimit(1)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(10)
-                        .background(p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+                        HistoryRow(chat: chat)
                     }
                     .buttonStyle(.plain)
                 }
@@ -1329,6 +1312,7 @@ struct CollapsibleComponent: View {
         .padding(welcome ? 0 : 12)
         .frame(maxWidth: .infinity, alignment: welcome ? .center : .leading)
         .background(welcome ? Color.clear : p.surface.opacity(0.4), in: RoundedRectangle(cornerRadius: AstralRadius.md))
+        .astralChartBackdrop(p, color: p.surface, opacity: welcome ? 0 : 0.4)
     }
 
 }

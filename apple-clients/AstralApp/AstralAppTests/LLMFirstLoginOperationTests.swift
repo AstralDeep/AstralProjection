@@ -13,7 +13,7 @@ final class LLMFirstLoginOperationTests: XCTestCase {
     }
 
     private func modelWithConnection() -> (AppModel, FrameLog) {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
         let log = FrameLog()
         model.outboundTap = { text in

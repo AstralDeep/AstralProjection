@@ -59,7 +59,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     // MARK: arming purge (sendChat / sendEvent chat_message)
 
     func testSendChatPurgesWelcomeWhenArming() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [welcomeHero, welcomeExamples, welcomeHint]
         model.sendChat("what's the weather?")
         XCTAssertTrue(model.pendingReplace)
@@ -67,14 +67,14 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testSendChatKeepsNonWelcomeComponents() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [welcomeHero, workspaceCard]
         model.sendChat("hello")
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc123"])
     }
 
     func testSendEventChatMessagePurgesWelcomeWhenArming() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [welcomeHero, welcomeHint]
         model.sendEvent("chat_message", .object(["message": .string("hi")]))
         XCTAssertTrue(model.pendingReplace)
@@ -84,7 +84,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     // MARK: history-leak regression (commitTurn archive filter)
 
     func testCommitNeverArchivesWelcomeToHistory() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [workspaceCard]
         model.sendChat("first")
         // A welcome resurrecting mid-turn (reconnect re-register) must still
@@ -98,7 +98,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testCommitSkipsHistoryWhenOnlyWelcomeWasShowing() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [welcomeHero, welcomeExamples]
         model.sendChat("first")
         model.canvas = [welcomeHero]  // resurrected mid-turn
@@ -111,7 +111,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     // MARK: text-only resurrection regression
 
     func testTextOnlyTurnDropsWelcomeFromKeptCanvas() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("just a question")
         model.canvas = [welcomeHero, workspaceCard]  // resurrected mid-turn
         reduce(model, doneStatus)  // no components this turn — canvas kept
@@ -121,7 +121,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     }
 
     func testUpsertOnlyTurnDropsWelcomeAtCommit() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("just a question")
         model.canvas = [welcomeHero, workspaceCard]  // resurrected mid-turn
         reduce(model, resultUpsert)  // live op — no buffered render
@@ -133,7 +133,7 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     // MARK: pinned lifecycle unchanged for non-welcome canvases
 
     func testCommitStillArchivesAPlainCanvas() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [workspaceCard]
         model.sendChat("next")
         reduce(model, resultRender)

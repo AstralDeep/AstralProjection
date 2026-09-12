@@ -765,6 +765,7 @@ private struct ChatBubble: View {
                     isUser ? AnyShapeStyle(p.primary.opacity(0.20)) : AnyShapeStyle(p.surface2),
                     in: RoundedRectangle(cornerRadius: AstralRadius.md)
                 )
+                .astralChartBackdrop(p, color: isUser ? p.primary : p.surface2, opacity: isUser ? 0.20 : 1)
                 .overlay(
                     RoundedRectangle(cornerRadius: AstralRadius.md)
                         .stroke(isUser ? p.primary.opacity(0.30) : .clear)

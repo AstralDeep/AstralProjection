@@ -181,6 +181,7 @@ data class UiState(
     /** Highest `(lifecycleGeneration, stateRevision)` retained per agent. */
     val agentLifecycles: Map<String, Inbound.AgentLifecycle> = emptyMap(),
     val history: List<ChatSummary> = emptyList(),
+    val historyTitle: String = "Recent chats",
     val audit: List<AuditEvent> = emptyList(),
     // Per-surface "fetching its data" flags → skeletons on the list screens.
     val agentsLoading: Boolean = false,
@@ -1081,7 +1082,7 @@ class AppViewModel(
             is Inbound.ConversationCommitReady -> reduceConversationCommitReady(s, msg)
             is Inbound.ChatStatus -> reduceStatus(s, msg)
             is Inbound.AgentList -> s.copy(agents = msg.agents, agentsLoading = false)
-            is Inbound.HistoryList -> s.copy(history = msg.chats, historyLoading = false)
+            is Inbound.HistoryList -> s.copy(history = msg.chats, historyTitle = "Recent chats", historyLoading = false)
             is Inbound.UiStreamData -> reduceUiStreamData(s, msg)
             is Inbound.StreamSubscribed ->
                 if (hasGenerationScopedConversation(s)) {
@@ -1893,6 +1894,22 @@ class AppViewModel(
         s: UiState,
         msg: Inbound.UiRender,
     ): UiState {
+        // History is an owner surface, never a conversation preview or canvas.
+        if (msg.target == "history") {
+            if (msg.scope != null) return s
+            val history = msg.components.firstOrNull { it.type == "chat_history" }
+            if (history != null) {
+                val items = history.attributes["items"] as? JsonArray ?: return s
+                val chats = items.mapNotNull { (it as? JsonObject)?.let(ChatSummary::fromHistoryItem) }
+                val title = (history.attributes["title"] as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
+                return s.copy(
+                    history = chats,
+                    historyTitle = ChatSummary.displayText(title).ifEmpty { "Recent chats" },
+                    historyLoading = false,
+                )
+            }
+            return if (msg.components.any(::isSkeleton)) s.copy(historyLoading = true) else s
+        }
         if (msg.target != "chat" && !s.acceptsStartWelcome && msg.components.isNotEmpty() &&
             msg.components.all { welcomePlacementRole(it) != null }
         ) {

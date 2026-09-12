@@ -21,7 +21,7 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         #"{"type":"chrome_surface","surface_key":"theme","title":"Appearance","components":[{"type":"text","content":"Pick a theme"}]}"#
 
     private func signedInModel() -> AppModel {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.signedIn = true
         return model
     }

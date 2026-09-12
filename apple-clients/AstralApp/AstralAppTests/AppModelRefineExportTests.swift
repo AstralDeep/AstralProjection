@@ -36,7 +36,7 @@ final class AppModelRefineExportTests: XCTestCase {
     // MARK: component_refine send path
 
     func testRefineSendsComponentRefineUiEvent() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "chat-1"
         let log = record(model)
         model.refineComponent("wc_budget", instruction: "  make it monthly  ")
@@ -50,21 +50,21 @@ final class AppModelRefineExportTests: XCTestCase {
     }
 
     func testRefineEmptyInstructionNeverSends() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         let log = record(model)
         model.refineComponent("wc_budget", instruction: "   \n ")
         XCTAssertTrue(log.frames.isEmpty)
     }
 
     func testRefineEmptyComponentIdNeverSends() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         let log = record(model)
         model.refineComponent("", instruction: "sort it")
         XCTAssertTrue(log.frames.isEmpty)
     }
 
     func testRefineAndRestoreBlockedWhileTimelineReadOnly() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.handleFrame(InboundFrame.parse(#"{"type":"workspace_timeline_mode","active":true}"#)!)
         let log = record(model)
         model.refineComponent("wc_budget", instruction: "sort it")
@@ -83,7 +83,7 @@ final class AppModelRefineExportTests: XCTestCase {
     // MARK: export URL builders
 
     func testExportComponentURLIsChatScoped() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.serverBaseText = "https://astral.example"
         model.activeChatId = "chat-9"
         XCTAssertEqual(
@@ -92,7 +92,7 @@ final class AppModelRefineExportTests: XCTestCase {
     }
 
     func testExportCanvasURL() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.serverBaseText = "https://astral.example"
         model.activeChatId = "chat-9"
         XCTAssertEqual(
@@ -101,7 +101,7 @@ final class AppModelRefineExportTests: XCTestCase {
     }
 
     func testExportURLsNilWithoutActiveChat() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.serverBaseText = "https://astral.example"
         model.activeChatId = nil
         XCTAssertNil(model.exportComponentURL("wc_tbl"))

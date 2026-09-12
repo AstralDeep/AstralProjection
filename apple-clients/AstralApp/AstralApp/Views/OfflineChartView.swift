@@ -15,6 +15,19 @@ extension EnvironmentValues {
 }
 
 enum OfflineChartDocument {
+    /// Host colors are numeric, never authored CSS or executable chart data.
+    struct Appearance: Equatable {
+        let background: UInt32
+        let text: UInt32
+        let muted: UInt32
+
+        var style: String {
+            func css(_ color: UInt32) -> String { String(format: "#%06X", color & 0xFFFFFF) }
+            return
+                "<style>html,body{background:\(css(background));color:\(css(text))}#status{color:\(css(muted))}</style>"
+        }
+    }
+
     static func height(component: AstralComponent, viewportWidth: Double, slotWidth: Double) -> Double {
         if slotWidth < 500 { return 260 }
         let raw = component.type == "plotly_chart" ? component.raw["layout"]?["height"] : nil
@@ -24,7 +37,9 @@ enum OfflineChartDocument {
         return min(1200, max(160, height))
     }
 
-    static func html(component: AstralComponent, viewportWidth: Double, bundle: Bundle = .main) throws -> String {
+    static func html(
+        component: AstralComponent, viewportWidth: Double, bundle: Bundle = .main, appearance: Appearance? = nil
+    ) throws -> String {
         guard let templateURL = bundle.url(forResource: "chart", withExtension: "html"),
             let vendorURL = bundle.url(forResource: "plotly.min", withExtension: "js")
         else { throw CocoaError(.fileNoSuchFile) }
@@ -39,10 +54,24 @@ enum OfflineChartDocument {
         guard data.count <= 8 * 1024 * 1024,
             template.contains("__ASTRAL_PLOTLY_VENDOR__"),
             template.contains("__ASTRAL_CHART_PAYLOAD_BASE64__"),
+            template.contains("</head>"),
             !vendor.lowercased().contains("</script")
         else { throw CocoaError(.fileReadCorruptFile) }
-        return template.replacingOccurrences(of: "__ASTRAL_PLOTLY_VENDOR__", with: vendor)
+        return template.replacingOccurrences(of: "</head>", with: (appearance?.style ?? "") + "</head>")
+            .replacingOccurrences(of: "__ASTRAL_PLOTLY_VENDOR__", with: vendor)
             .replacingOccurrences(of: "__ASTRAL_CHART_PAYLOAD_BASE64__", with: data.base64EncodedString())
+    }
+
+    static func failure(isolationUnavailable: Bool = false, appearance: Appearance?) -> String {
+        let message =
+            isolationUnavailable
+            ? "Chart isolation is unavailable."
+            : "This chart could not be displayed. Open it in the web client."
+        return """
+            <html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+            <style>p{font:14px system-ui;padding:12px}</style>
+            \(appearance?.style ?? "")</head><body><p role="alert">\(message)</p></body></html>
+            """
     }
 }
 
@@ -52,6 +81,7 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     private var mayLoadDocument = false
     private var generation = UUID()
     private var hasShownFailure = false
+    private var appearance: OfflineChartDocument.Appearance?
 
     static func webView() -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -66,11 +96,20 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         return view
     }
 
-    func update(_ webView: WKWebView, component: AstralComponent, viewportWidth: Double) {
+    func update(
+        _ webView: WKWebView, component: AstralComponent, viewportWidth: Double,
+        appearance: OfflineChartDocument.Appearance? = nil
+    ) {
+        self.appearance = appearance
+        #if os(macOS)
+            webView.underPageBackgroundColor = appearance.map { NSColor(Color(hex: $0.background)) } ?? .clear
+        #endif
         let next: String
-        do { next = try OfflineChartDocument.html(component: component, viewportWidth: viewportWidth) } catch {
-            next =
-                "<html><body><p role='alert'>This chart could not be displayed. Open it in the web client.</p></body></html>"
+        do {
+            next = try OfflineChartDocument.html(
+                component: component, viewportWidth: viewportWidth, appearance: appearance)
+        } catch {
+            next = OfflineChartDocument.failure(appearance: appearance)
         }
         guard document != next else { return }
         document = next
@@ -89,7 +128,8 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
             guard let self, let webView, self.generation == current else { return }
             guard error == nil, let rules else {
                 self.mayLoadDocument = true
-                webView.loadHTMLString("<p role='alert'>Chart isolation is unavailable.</p>", baseURL: nil)
+                webView.loadHTMLString(
+                    OfflineChartDocument.failure(isolationUnavailable: true, appearance: appearance), baseURL: nil)
                 return
             }
             webView.configuration.userContentController.removeAllContentRuleLists()
@@ -102,6 +142,7 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     func dismantle(_ webView: WKWebView) {
         generation = UUID()
         document = nil
+        appearance = nil
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -114,7 +155,7 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         hasShownFailure = true
         mayLoadDocument = true
         webView.loadHTMLString(
-            "<p role='alert'>This chart could not be displayed. Open it in the web client.</p>", baseURL: nil)
+            OfflineChartDocument.failure(appearance: appearance), baseURL: nil)
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
@@ -163,13 +204,20 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     struct OfflineChartView: NSViewRepresentable {
         let component: AstralComponent
         let viewportWidth: CGFloat
+        @Environment(ThemeStore.self) private var theme
+        @Environment(\.astralChartBackdrop) private var backdrop
         func makeCoordinator() -> OfflineChartCoordinator { OfflineChartCoordinator() }
         func makeNSView(context: Context) -> WKWebView { OfflineChartCoordinator.webView() }
         static func dismantleNSView(_ view: WKWebView, coordinator: OfflineChartCoordinator) {
             coordinator.dismantle(view)
         }
         func updateNSView(_ view: WKWebView, context: Context) {
-            context.coordinator.update(view, component: component, viewportWidth: viewportWidth)
+            context.coordinator.update(
+                view, component: component, viewportWidth: viewportWidth,
+                appearance: .init(
+                    background: (backdrop ?? AstralChartBackdrop(theme.palette.bg)).hex,
+                    text: AstralChartBackdrop(theme.palette.text).hex,
+                    muted: AstralChartBackdrop(theme.palette.muted).hex))
         }
     }
 #endif

@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class WebPrimitiveStyleTests: XCTestCase {
     private func render(_ json: String, viewport: CGFloat = 411, preset: String = "midnight") throws -> CGImage {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         let theme = ThemeStore()
         theme.apply(preset: preset)
         let component = try XCTUnwrap(AstralComponent(json: JSONValue.parse(Data(json.utf8))))

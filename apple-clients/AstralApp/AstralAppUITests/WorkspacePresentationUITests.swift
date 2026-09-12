@@ -1,6 +1,22 @@
 import XCTest
 
 final class WorkspacePresentationUITests: XCTestCase {
+    func testHistoryPreviewsDistinguishSameTitleConversationsAndOpenExactRow() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--astral-ui-test-first-login", "workspace-history"]
+        app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        app.launch()
+        defer { app.terminate() }
+        let preview = app.staticTexts["Alpha = 2 Beta = 5"]
+        XCTAssertTrue(preview.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["First preview"].exists)
+        XCTAssertTrue(app.staticTexts["3h"].exists)
+        capture(app, name: "workspace-088-history-server-rows")
+        preview.tap()
+        XCTAssertTrue(app.staticTexts["Opened second history row"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.staticTexts["Opened first history row"].exists)
+    }
+
     func testMetricContentAndNativeNewChatTargetMatchWebWorkspace() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--astral-ui-test-first-login", "workspace-styles"]

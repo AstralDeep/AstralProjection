@@ -110,7 +110,7 @@ fun RootScaffold(
                             vm::setToolEnabled,
                             vm::enableRecommended,
                         )
-                    Screen.History -> HistoryScreen(state.history, state.historyLoading, vm::openChat)
+                    Screen.History -> HistoryScreen(state.history, state.historyLoading, vm::openChat, state.historyTitle)
                     Screen.Audit -> AuditScreen(state.audit, state.auditLoading)
                     Screen.Surface ->
                         SurfaceScreen(

@@ -103,7 +103,7 @@ final class ConversationContinuityTests: XCTestCase {
 
     func testRelaunchRegistersLocatorBeforeWelcomeWithFreshUUID4Generations() throws {
         XCTAssertTrue(store.save(chatId: chat, for: account))
-        let relaunched = AppModel(conversationResumeStore: store)
+        let relaunched = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         relaunched.bindConversationAccount(account)
 
         let registration = try JSONValue.parse(
@@ -130,7 +130,7 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     func testSnapshotReplacesTranscriptAndCanvasTogetherWithSemanticParts() {
-        let model = AppModel(conversationResumeStore: store)
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         model.bindConversationAccount(account)
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(
@@ -157,7 +157,7 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     func testHydrationReplayConflictEqualCommitAndOldGenerationAreNoOps() {
-        let model = AppModel(conversationResumeStore: store)
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(
             model.openConversationRequest(
@@ -197,7 +197,7 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     func testTransientOverlayIsSequencedAndCannotMutateCommittedCanvas() {
-        let model = AppModel(conversationResumeStore: store)
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(
             model.openConversationRequest(
@@ -260,7 +260,7 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     func testCommitReadyPreludeFencesDetachedCommitAndRejectsWrongScope() {
-        let model = AppModel(conversationResumeStore: store)
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(
             model.openConversationRequest(
@@ -305,7 +305,7 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     func testNewTurnUsesCommitGenerationAndOnlyMutatesPendingOverlay() throws {
-        let model = AppModel(conversationResumeStore: store)
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         XCTAssertTrue(model.beginConversationConnection(connection))
         XCTAssertTrue(
             model.openConversationRequest(
@@ -338,7 +338,7 @@ final class ConversationContinuityTests: XCTestCase {
     }
 
     func testLoadPersistsBeforeSendAndDisconnectDoesNotClearLocator() {
-        let model = AppModel(conversationResumeStore: store)
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
         model.bindConversationAccount(account)
         var wasPersistedAtSend = false
         model.outboundTap = { [store, account, chat] _ in

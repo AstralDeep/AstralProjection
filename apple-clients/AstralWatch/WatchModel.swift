@@ -39,6 +39,8 @@ final class WatchModel {
     var login: DeviceLoginStart?
     var loginExpiresAt: Date = .distantFuture
     var recents: [ChatSummary] = []
+    var recentsTitle = "Recent chats"
+    var recentsLoading = false
     var workspaceStarted = false
     var entries: [Entry] = [] {
         didSet { if !entries.isEmpty { workspaceStarted = true } }
@@ -191,6 +193,8 @@ final class WatchModel {
     @ObservationIgnored private var sessionGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
+    @ObservationIgnored private var hasCanonicalRecents = false
+    @ObservationIgnored private var recentsGeneration = UUID()
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
     @ObservationIgnored private var pendingCommitRequestGeneration: String?
     @ObservationIgnored private var seqState: [String: Int] = [:]
@@ -247,6 +251,7 @@ final class WatchModel {
         if conversationAccount != account {
             continuity.clear()
             resetConversationState()
+            resetRecents()
         }
         conversationAccount = account
         activeChatId = conversationResumeStore.load(for: account)?.chatId
@@ -296,6 +301,9 @@ final class WatchModel {
         transientEntries = []
         transientCanvas = nil
         guard continuity.beginConnection(generation) else { return false }
+        // Recents belong to the account, not a socket generation. Preserve an
+        // in-flight REST fallback and canonical rows through a reconnect; the
+        // established socket requests fresh device-adapted history below.
         reframePendingVoiceSubmissions(for: generation)
         voiceControlBinding = nil
         pendingVoiceActivation = nil
@@ -528,7 +536,7 @@ final class WatchModel {
         statusLifecycle.clear()
         operationStatuses = [:]
         agentLifecycles = [:]
-        recents = []
+        resetRecents()
         resetVoiceState(reason: "sign_out")
         speaker.stop()
         beginDeviceLogin()
@@ -559,6 +567,7 @@ final class WatchModel {
         conversationAccount = nil
         continuity.clear()
         resetConversationState()
+        resetRecents()
         clearPendingOperationSubmissions()
         statusLifecycle.clear()
         operationStatuses = [:]
@@ -608,6 +617,7 @@ final class WatchModel {
         switch event {
         case .connected:
             connected = true
+            rawSend(Outbound.uiEvent(action: "get_history", sessionId: nil, payload: .object([:])))
         case .disconnected:
             connected = false
             clearPendingOperationSubmissions()
@@ -643,6 +653,28 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        // History is an owner-scoped chrome surface, never a conversation
+        // publication. Intercept before welcome, continuity, and spoken output.
+        if frame.name == "ui_render", frame.renderTarget == "history" {
+            let scopeKeys = [
+                "chat_id", "chatId", "connection_generation", "request_generation",
+                "base_render_revision", "frame_sequence",
+            ]
+            guard !scopeKeys.contains(where: { frame.payload[$0] != nil }) else { return }
+            if let list = frame.renderComponents.first(where: { $0.type == "chat_history" }),
+                let items = list.raw["items"]?.arrayValue
+            {
+                recents = items.compactMap(ChatSummary.init(historyItem:))
+                let title = list.raw["title"]?.stringValue ?? ""
+                recentsTitle = title.isEmpty ? "Recent chats" : title
+                recentsLoading = false
+                hasCanonicalRecents = true
+                recentsGeneration = UUID()
+            } else if frame.renderComponents.contains(where: { $0.type == "skeleton" }) {
+                recentsLoading = true
+            }
+            return
+        }
         // Registration establishes a connection before the server's global
         // welcome arrives. It has no conversation generation; admit only its
         // validated ephemeral components while no hydration/turn is open.
@@ -1067,7 +1099,34 @@ final class WatchModel {
     // MARK: US4 — conversation
 
     func refreshRecents() async {
-        recents = Array((try? await rest.chats())?.prefix(10) ?? [])
+        await refreshRecents { try await self.rest.chats() }
+    }
+
+    /// REST is a bounded fallback until the socket supplies canonical ROTE
+    /// metadata. Its suspended reply cannot replace newer chrome or cross an
+    /// account/session boundary. A same-owner socket reconnect does not cancel
+    /// this HTTP read. The loader also isolates tests from IAM.
+    func refreshRecents(load: () async throws -> [ChatSummary]) async {
+        guard !hasCanonicalRecents else { return }
+        let generation = UUID()
+        recentsGeneration = generation
+        let session = sessionGeneration
+        let account = conversationAccount
+        recentsLoading = true
+        let loaded = try? await load()
+        guard recentsGeneration == generation, sessionGeneration == session,
+            conversationAccount == account, !hasCanonicalRecents
+        else { return }
+        if let loaded { recents = Array(loaded.prefix(10)) }
+        recentsLoading = false
+    }
+
+    private func resetRecents() {
+        recents = []
+        recentsTitle = "Recent chats"
+        recentsLoading = false
+        hasCanonicalRecents = false
+        recentsGeneration = UUID()
     }
 
     private func resetConversationState() {

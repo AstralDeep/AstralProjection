@@ -6,15 +6,69 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
     public let id: String
     public let title: String
     public let updatedAt: String
+    public let preview: String
+    public let hasSavedComponents: Bool
+    public let icon: String
+    public let timeLabel: String?
 
     public init?(json: JSONValue) {
         guard
             let id = json["id"]?.stringValue
                 ?? json["chat_id"]?.stringValue
         else { return nil }
+        guard !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         self.id = id
         self.title = json["title"]?.stringValue ?? "Untitled chat"
-        self.updatedAt = json["updated_at"]?.stringValue ?? ""
+        self.updatedAt =
+            json["updated_at"]?.stringValue
+            ?? json["updated_at"]?.numberValue.map { String($0) } ?? ""
+        self.preview = json["preview"]?.stringValue ?? ""
+        self.hasSavedComponents = json["has_saved_components"]?.boolValue == true
+        self.icon = json["icon"]?.stringValue ?? ""
+        self.timeLabel = json["time"]?.stringValue
+    }
+
+    /// The server owns history enrichment and ROTE's per-device row count.
+    public init?(historyItem: JSONValue) {
+        guard let id = historyItem["chat_id"]?.stringValue ?? historyItem["id"]?.stringValue else { return nil }
+        self.init(
+            json: .object([
+                "id": .string(id), "title": historyItem["title"] ?? .null,
+                "preview": historyItem["preview"] ?? .null,
+                "has_saved_components": historyItem["saved"] ?? .null,
+                "icon": historyItem["icon"] ?? .null, "time": historyItem["time"] ?? .null,
+            ]))
+    }
+
+    public var displayTitle: String {
+        let value = Self.singleLine(title)
+        return value.isEmpty ? "Untitled chat" : value
+    }
+    public var displayPreview: String { Self.singleLine(preview) }
+
+    /// Match CSS white-space: nowrap without interpreting message markup.
+    private static func singleLine(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "[\\t\\n\\f\\r ]+", with: " ", options: .regularExpression)
+    }
+
+    /// Same display thresholds as the server's history_surface._relative_time.
+    public func relativeTime(now: Date = Date()) -> String {
+        if let timeLabel { return Self.singleLine(timeLabel) }
+        guard let timestamp = Double(updatedAt), timestamp.isFinite else { return "" }
+        let seconds = timestamp >= 1e11 ? timestamp / 1000 : timestamp
+        let age = max(0, now.timeIntervalSince1970 - seconds)
+        guard age.isFinite else { return "" }
+        if age < 45 { return "just now" }
+        for (ceiling, unit, suffix) in [
+            (3600.0, 60.0, "m"), (86400, 3600, "h"), (604800, 86400, "d"),
+            (2_629_800, 604800, "w"), (31_557_600, 2_629_800, "mo"),
+        ] where age < ceiling {
+            return "\(Int(age / unit))\(suffix)"
+        }
+        let years = age / 31_557_600
+        guard years < Double(Int.max) else { return "" }
+        return "\(Int(years))y"
     }
 }
 

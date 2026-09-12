@@ -39,21 +39,21 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
     // MARK: component_deleted — identity-keyed remove
 
     func testComponentDeletedRemovesByIdentity() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard, forecastCard]
         reduce(model, #"{"type":"component_deleted","component_id":"wc_budget"}"#)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_forecast"])
     }
 
     func testComponentDeletedUnknownIdIsNoOp() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard]
         reduce(model, #"{"type":"component_deleted","component_id":"row-uuid-elsewhere"}"#)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_budget"])
     }
 
     func testComponentDeletedMidTurnAppliesLiveAndMirrorsIntoBuffer() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard, forecastCard]
         model.sendChat("working…")  // arms pendingReplace
         model.pendingCanvas = [budgetCard, forecastCard]  // a buffered render holds both
@@ -71,7 +71,7 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
         """#
 
     func testCombinedAppliesResultAndRemovesConsumed() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard, forecastCard]
         model.statusText = "Combining Budget with Forecast..."
         reduce(model, combinedFrame)
@@ -80,7 +80,7 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
     }
 
     func testCondensedFallsBackToRowIdWhenComponentDataLacksIdentity() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard, forecastCard]
         reduce(
             model,
@@ -93,7 +93,7 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
     }
 
     func testCombinedSkipsMalformedRowsButStillRemoves() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard]
         // component_data missing entirely — nothing to upsert, remove still applies.
         reduce(model, #"{"type":"components_combined","removed_ids":["wc_budget"],"new_components":[{"id":"row-1"}]}"#)
@@ -103,27 +103,27 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
     // MARK: save/combine acks — banner + status surfaces
 
     func testComponentSavedShowsInfoBannerWithTitle() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         reduce(model, #"{"type":"component_saved","component":{"id":"row-1","title":"Budget"}}"#)
         XCTAssertEqual(model.errorBanner, "Saved Budget")
         XCTAssertFalse(model.bannerIsError)
     }
 
     func testComponentSaveErrorShowsErrorBanner() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         reduce(model, #"{"type":"component_save_error","error":"Component not found"}"#)
         XCTAssertEqual(model.errorBanner, "Component not found")
         XCTAssertTrue(model.bannerIsError)
     }
 
     func testCombineStatusDrivesStatusLine() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         reduce(model, #"{"type":"combine_status","status":"combining","message":"Combining Budget with Forecast..."}"#)
         XCTAssertEqual(model.statusText, "Combining Budget with Forecast...")
     }
 
     func testCombineErrorClearsStatusAndShowsErrorBanner() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.statusText = "Condensing 3 components..."
         model.canvas = [budgetCard]
         reduce(model, #"{"type":"combine_error","error":"At least 2 components are required to condense"}"#)
@@ -136,7 +136,7 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
     // MARK: saved_components_list — accepted no-op (no native surface)
 
     func testSavedComponentsListIsAcceptedWithoutSideEffects() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard]
         reduce(model, #"{"type":"saved_components_list","components":[{"id":"row-1","title":"Budget"}]}"#)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_budget"])

@@ -17,6 +17,7 @@
             case workspaceStart = "workspace-start"
             case workspaceCanvas = "workspace-canvas"
             case workspaceStyles = "workspace-styles"
+            case workspaceHistory = "workspace-history"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -61,6 +62,10 @@
             }
             if scenario == .workspaceCanvas {
                 installWorkspaceCanvas(on: model)
+                return
+            }
+            if scenario == .workspaceHistory {
+                installWorkspaceHistory(on: model)
                 return
             }
             if scenario == .workspaceStyles {
@@ -177,7 +182,7 @@
                         errorMessage: "The provider is temporarily unavailable."))
             case .clientWatchdog:
                 break
-            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceStyles:
+            case .chatComposer, .workspaceStart, .workspaceCanvas, .workspaceStyles, .workspaceHistory:
                 break
             case .voiceComposer:
                 break
@@ -211,6 +216,25 @@
                             ]))
                     ]
                 }
+            }
+        }
+
+        @MainActor
+        private static func installWorkspaceHistory(on model: AppModel) {
+            model.screen = .history
+            model.handleFrame(
+                InboundFrame.parse(
+                    #"{"type":"ui_render","target":"history","components":[{"type":"chat_history","title":"Recent chats","items":[{"chat_id":"11111111-1111-4111-8111-111111111111","title":"New Chat","preview":"First preview","time":"2h","icon":"💬","saved":false},{"chat_id":"22222222-2222-4222-8222-222222222222","title":"New Chat","preview":"\n\nAlpha = 2\nBeta\t= 5","time":"3h","icon":"🎲","saved":true}]}]}"#
+                )!)
+            model.outboundTap = { [weak model] text in
+                guard let model, let event = try? JSONValue.parse(Data(text.utf8)),
+                    event["action"]?.stringValue == "load_chat",
+                    let id = event["payload"]?["chat_id"]?.stringValue
+                else { return }
+                let message =
+                    id == "22222222-2222-4222-8222-222222222222"
+                    ? "Opened second history row" : "Opened first history row"
+                model.canvas = [AstralComponent(type: "text", raw: .object(["content": .string(message)]))]
             }
         }
 

@@ -29,6 +29,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Emit
 import com.personalailabs.astraldeep.app.render.Renderer
+import com.personalailabs.astraldeep.app.ui.HistoryEmpty
+import com.personalailabs.astraldeep.app.ui.HistoryHeader
+import com.personalailabs.astraldeep.app.ui.HistoryRow
+import com.personalailabs.astraldeep.core.protocol.ChatSummary
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -44,7 +48,7 @@ fun Renderer.registerDataRenderers(): Renderer =
         register("list") { c -> ListPrimitive(c) { render(it) } }
         register("table") { c -> TablePrimitive(c, emit) }
         register("tabs") { c -> TabsPrimitive(c) { render(it) } }
-        register("chat_history") { c -> ChatHistoryPrimitive(c) }
+        register("chat_history") { c -> ChatHistoryPrimitive(c, emit) }
         register("skeleton") { c -> SkeletonPrimitive(c) }
     }
 
@@ -197,13 +201,20 @@ private fun TabsPrimitive(
 }
 
 @Composable
-private fun ChatHistoryPrimitive(c: Component) {
-    val items = c.arr("items") ?: c.arr("messages")
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        items?.mapNotNull { it as? JsonObject }?.forEach { o ->
-            val role = (o["role"] as? JsonPrimitive)?.contentOrNull ?: ""
-            val content = (o["content"] as? JsonPrimitive)?.contentOrNull ?: ""
-            Text(text = if (role.isNotEmpty()) "$role: $content" else content, style = MaterialTheme.typography.bodySmall)
+private fun ChatHistoryPrimitive(
+    c: Component,
+    emit: Emit,
+) {
+    val items = c.arr("items").orEmpty().mapNotNull { (it as? JsonObject)?.let(ChatSummary::fromHistoryItem) }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (items.isEmpty()) {
+            HistoryEmpty()
+        } else {
+            val title =
+                (c.attributes["title"] as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    ?.takeIf { it.isNotEmpty() } ?: "Recent chats"
+            HistoryHeader(title, items.size)
+            items.forEach { chat -> HistoryRow(chat) { emit.event("load_chat", buildJsonObject { put("chat_id", it) }) } }
         }
     }
 }

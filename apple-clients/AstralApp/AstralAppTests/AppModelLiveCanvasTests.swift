@@ -37,7 +37,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     // MARK: upsert ops go live mid-turn
 
     func testUpsertAppliesToVisibleCanvasMidTurn() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [workspaceCard]
         model.sendChat("go")
         reduce(model, resultUpsert)
@@ -47,7 +47,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testUpsertOnlyTurnCommitsTheLiveCanvas() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [workspaceCard]
         model.sendChat("go")
         reduce(model, resultUpsert)
@@ -62,7 +62,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     // MARK: full renders still buffer; the buffered render wins at commit
 
     func testRenderStaysBufferedUntilCommit() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [workspaceCard]
         model.sendChat("go")
         reduce(model, designedRender)
@@ -74,7 +74,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testOpsAfterBufferedRenderMirrorIntoCommit() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("go")
         reduce(model, designedRender)
         reduce(model, resultUpsert)  // live AND mirrored into the buffer
@@ -87,7 +87,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     // MARK: skeleton clears on the first live op, turn stays active
 
     func testFirstLiveOpClearsSkeletonWithoutEndingTurn() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("go")
         XCTAssertTrue(model.showSkeleton)
         reduce(model, resultUpsert)
@@ -96,14 +96,14 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testBufferedRenderKeepsSkeleton() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("go")
         reduce(model, designedRender)  // invisible until commit — keep the shimmer
         XCTAssertTrue(model.showSkeleton)
     }
 
     func testStreamOpsGoLiveMidTurnAndClearSkeleton() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("go")
         reduce(
             model,
@@ -114,7 +114,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testNextTurnReArmsSkeleton() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("one")
         reduce(model, resultUpsert)
         reduce(model, doneStatus)
@@ -176,7 +176,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     }
 
     func testContinuityTerminalFramesClearSkeletonAndCommitCanvas() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         armContinuityTurn(model)
         XCTAssertTrue(model.showSkeleton)
 
@@ -227,7 +227,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
     // release the skeleton in continuity mode — the canvas it uncovers is the
     // prior committed state, which is honest.
     func testContinuityDoneWithoutSnapshotReleasesSkeleton() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         armContinuityTurn(model)
         XCTAssertTrue(model.showSkeleton)
         reduce(model, doneStatus)
@@ -266,7 +266,7 @@ final class AppModelLiveCanvasTests: XCTestCase {
 
     #if os(macOS)
         func testMacTranscriptLayoutSettlesAcrossVoiceCommitChurn() {
-            let model = AppModel()
+            let model = AppModel(tokenStore: InMemoryTokenStore())
             model.turns = (0..<10).map { index in
                 .init(
                     id: "committed-\(index)",

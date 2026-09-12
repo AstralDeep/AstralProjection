@@ -45,7 +45,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
 
     /// A model in continuity mode (the `FF_BG_CONTINUITY` posture).
     private func continuityModel() -> AppModel {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         XCTAssertTrue(
             model.beginConversationConnection(UUID().uuidString.lowercased()))
         return model
@@ -81,7 +81,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     /// Legacy mode still commits through `commitTurn` untouched: a live op
     /// retires the welcome and the committed canvas is the turn's output.
     func testLegacyComponentTurnStillCommitsItsComponents() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [welcomeExamples]
         model.sendChat("chart it")
         reduce(model, resultUpsert)
@@ -94,7 +94,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     // MARK: surface dismissal
 
     func testCloseSurfaceDismissesASettingsSurface() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.screen = .surface
         model.pendingSurfaceKey = "llm"
         model.pendingSurface = AppModel.SurfaceContent(
@@ -108,7 +108,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     }
 
     func testCloseSurfaceRefusesWhileTheMandatoryGateIsPinned() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.screen = .surface
         model.pendingSurfaceKey = "llm"
         model.pendingSurface = AppModel.SurfaceContent(
@@ -125,7 +125,7 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
     /// The server's blank close instruction (a settings-path save now sends it
     /// to natives, and the 054 unlock always did) lands on the chat.
     func testBlankChromeSurfaceClosesTheSurfaceAndLiftsThePin() {
-        let model = AppModel()
+        let model = AppModel(tokenStore: InMemoryTokenStore())
         model.screen = .surface
         model.pendingSurfaceKey = "llm"
         model.mandatorySurface = true

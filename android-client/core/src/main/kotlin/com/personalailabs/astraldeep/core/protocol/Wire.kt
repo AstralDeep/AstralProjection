@@ -588,6 +588,13 @@ object Wire {
         root: JsonObject,
         type: String,
     ): Inbound {
+        if (root.str("target") == "history" &&
+            listOf(
+                "chat_id", "chatId", "connection_generation", "request_generation", "base_render_revision", "frame_sequence",
+            ).any(root::containsKey)
+        ) {
+            return Inbound.Unknown(type)
+        }
         val decodedScope = root.transientScope()
         if (!decodedScope.valid) return Inbound.Unknown(type)
         return Inbound.UiRender(
@@ -1673,7 +1680,13 @@ object Wire {
         arr?.mapNotNull { el ->
             val o = el as? JsonObject ?: return@mapNotNull null
             val id = o.str("id") ?: return@mapNotNull null
-            ChatSummary(id, o.str("title").orEmpty())
+            ChatSummary(
+                id = id,
+                title = o.str("title").orEmpty(),
+                preview = o.strictString("preview").orEmpty(),
+                updatedAt = o.str("updated_at").orEmpty(),
+                hasSavedComponents = o.strictBoolean("has_saved_components") == true,
+            )
         } ?: emptyList()
 
     private fun transcriptFromJson(o: JsonObject?): ChatTranscript {
