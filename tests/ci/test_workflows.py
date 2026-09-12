@@ -74,13 +74,27 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
     assert (
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
-        "--cov=scripts.merge_xccov_line_coverage --cov-branch "
+        "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert (
         "diff-cover build/074/coverage/projection-python.xml "
         "--compare-branch origin/main --fail-under=90"
     ) in python
+
+
+def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
+    text = (ACTIVE / "ci.yml").read_text()
+    web = _job_block(text, "web")
+    assert "NODE_V8_COVERAGE=" in web
+    assert "node --test tooling/web-ci/tests/offline-worker-088.test.mjs" in web
+    assert "--output build/088/offline-javascript.json" in web
+    assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in web
+    assert 'for name in ("service-worker.js", "offline-registration.js")' in web
+    assert "len(counts) >= .90" in web
+    assert "tests/offline-worker-088.spec.js --browser=chromium" in web
+    package = json.loads((ROOT / "tooling/web-ci/package.json").read_text())
+    assert '"backend/webrender/static/**/*.js"' in package["scripts"]["lint"]
 
 
 def _assert_windows_native_contract(text: str) -> None:

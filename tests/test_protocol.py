@@ -551,7 +551,7 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "a91870671b818da8bd06565b6b21af406a4c96cbb812f0006db730d36a1e1d59"
         ),
         "tooling/web-ci/package.json": (
-            "a28102990f9ec4cb8891f7020baa7e91c7994f949eee8c25afe9d9abe4746825"
+            "9ffab118c921d1ebd6e6b23c7153ae98d23724d7be25e59a06393193b8c72ed0"
         ),
         "tooling/web-ci/package-lock.json": (
             "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"

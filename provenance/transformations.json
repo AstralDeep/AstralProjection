@@ -835,9 +835,9 @@
       "sourcePath": "backend/webrender/templates/shell.html",
       "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
       "sourceMode": "100644",
-      "resultSha256": "d4a2ff0b4a69b5e672c80f54856fde2196f09d5ec07b76e287ea967a20ee0e9f",
-      "task": "T042/T008",
-      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer."
+      "resultSha256": "f777cbe85ab4e50703e2371155d4a9270a2b295c78a80214f5b6823ee76ffaad",
+      "task": "T042/T008/T012",
+      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer. Feature 088 T012: register the public-only offline fallback and install manifest without caching authenticated documents or work."
     },
     {
       "path": "contracts/ui_protocol.json",
@@ -934,9 +934,9 @@
       "sourcePath": "tooling/web-ci/package.json",
       "sourceBlob": "b56acfe10999e5787d5c4eb506d5c0fea2031bb6",
       "sourceMode": "100644",
-      "resultSha256": "a28102990f9ec4cb8891f7020baa7e91c7994f949eee8c25afe9d9abe4746825",
-      "task": "T063",
-      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command."
+      "resultSha256": "9ffab118c921d1ebd6e6b23c7153ae98d23724d7be25e59a06393193b8c72ed0",
+      "task": "T063/T012",
+      "reason": "Replace monorepo-only isolation probes with the tested standalone Projection product-closure check and expose the canonical Node-plus-browser coverage union command. Feature 088 T012: include maintained worker browser and unit tests in the existing JavaScript lint scope; dependency and lockfile entries are unchanged."
     },
     {
       "path": "tooling/web-ci/tests/continuity-contract-060.spec.js",

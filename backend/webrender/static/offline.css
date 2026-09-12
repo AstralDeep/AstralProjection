@@ -1,0 +1,30 @@
+/* Public disconnected document: the shared stylesheet supplies theme and type. */
+body {
+  margin: 0;
+  background: rgb(var(--astral-bg));
+  color: rgb(var(--astral-text));
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+.astral-offline {
+  box-sizing: border-box;
+  width: min(100%, 36rem);
+  margin: 10vh auto;
+  padding: 1.5rem;
+  overflow-wrap: anywhere;
+}
+.astral-offline-brand { color: rgb(var(--astral-muted)); }
+.astral-offline h1 { font-size: 2rem; line-height: 1.2; }
+.astral-offline a {
+  display: inline-block;
+  margin-top: 1rem;
+  padding: .75rem 1.25rem;
+  border: 1px solid rgb(var(--astral-muted));
+  border-radius: .5rem;
+  color: rgb(var(--astral-text));
+  text-underline-offset: .2em;
+}
+.astral-offline a:focus-visible {
+  outline: 3px solid rgb(var(--astral-accent));
+  outline-offset: 4px;
+}

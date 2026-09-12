@@ -58,6 +58,33 @@ checks. Nothing in this repository authorizes a release or store upload.
 
 ## Integration boundary
 
+### Public offline document (088)
+
+After an online visit installs the service worker, an unavailable network at `/`
+shows a separate public disconnected page with a keyboard-accessible retry link.
+It does not provide offline conversation, file, draft, or account access. Online
+authentication redirects and server errors retain their normal behavior.
+
+The packaged `static/service-worker.js` only caches the seven exact public
+resources listed in `scripts/build_offline_assets.py`. Anonymous, no-store fetches
+must match the packaged MIME type, size, and SHA-256 before caching; cached reads
+repeat these checks and discard corrupt entries before anonymous refetch. Shell HTML,
+API/auth routes, query-bearing URLs, executable application scripts, user state,
+and third-party responses are excluded. Cache upgrades remove only this worker's
+own old public namespace. Offline HTML has no script or form and a restrictive CSP.
+
+The host must serve that worker with `Service-Worker-Allowed: /`, `Cache-Control:
+no-cache`, and `Content-Security-Policy: default-src 'none'; connect-src 'self'`.
+Deep applies these headers only to this worker. HTTPS or a browser-trusted loopback
+origin is required; worker failure leaves the normal online application usable.
+
+After changing an allowlisted resource, regenerate its content pins with
+`python scripts/build_offline_assets.py`; `--check` verifies without writing.
+Package tests enforce byte freshness, and the worker unit/real Chromium tests
+cover privacy exclusions, failure, update cleanup, narrow layout, and reconnect.
+
+### Authorized state
+
 AstralDeep supplies already-authorized, owner-scoped plain state to the pure
 view builders and consumes their immutable models. AstralProjection does not
 import AstralDeep implementation packages. The authoritative protocol version

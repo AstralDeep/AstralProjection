@@ -6,6 +6,8 @@ import hashlib
 import importlib
 import json
 import os
+import re
+import runpy
 import subprocess
 import sys
 from pathlib import Path
@@ -14,6 +16,7 @@ import pytest
 
 import astralprojection
 from astralprojection import resources
+from scripts import build_offline_assets
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 
@@ -35,6 +38,11 @@ def test_compatibility_packages_and_public_facade_are_importable() -> None:
         (resources.template_path, "kiosk.html"),
         (resources.static_path, "client.js"),
         (resources.static_path, "astral.css"),
+        (resources.static_path, "offline.html"),
+        (resources.static_path, "offline.css"),
+        (resources.static_path, "offline-registration.js"),
+        (resources.static_path, "service-worker.js"),
+        (resources.static_path, "manifest.webmanifest"),
         (resources.font_path, "inter-latin.woff2"),
         (resources.font_path, "jetbrains-mono-latin.woff2"),
         (resources.image_path, "astra-fav.png"),
@@ -175,6 +183,11 @@ def test_wheel_install_contains_compatibility_packages_and_resources(tmp_path: P
                 "p=astralprojection.protocol_manifest_path(); "
                 "assert json.loads(p.read_text(encoding='utf-8'))['version'] == 1; "
                 "assert astralprojection.static_path('client.js').is_file(); "
+                "assert astralprojection.static_path('offline.html').is_file(); "
+                "assert astralprojection.static_path('offline.css').is_file(); "
+                "assert astralprojection.static_path('service-worker.js').is_file(); "
+                "assert astralprojection.static_path('offline-registration.js').is_file(); "
+                "assert astralprojection.static_path('manifest.webmanifest').is_file(); "
                 "assert astralprojection.template_path('shell.html').is_file(); "
                 "assert astralprojection.vendor_path('livekit-client.umd.min.js').is_file(); "
                 "assert astralprojection.fixture_path("
@@ -194,3 +207,75 @@ def test_wheel_install_contains_compatibility_packages_and_resources(tmp_path: P
     )
     assert probe.returncode == 0, probe.stdout + probe.stderr
     assert probe.stdout.strip() == "astralprojection.contract/v1"
+
+
+def test_offline_cache_allowlist_contains_only_exact_public_package_bytes() -> None:
+    worker = resources.static_path("service-worker.js").read_text(encoding="utf-8")
+    match = re.search(r"const PUBLIC_ASSETS = (\[[\s\S]*?\]);", worker)
+    assert match
+    assets = json.loads(match[1])
+    assert {asset["path"] for asset in assets} == {
+        "/static/offline.html", "/static/offline.css", "/static/astral.css",
+        "/static/fonts/inter-latin.woff2", "/static/fonts/jetbrains-mono-latin.woff2",
+        "/static/img/astra-fav.png", "/static/manifest.webmanifest",
+    }
+    for asset in assets:
+        assert set(asset) == {"path", "type", "bytes", "sha256"}
+        data = resources.static_path(asset["path"].removeprefix("/static/")).read_bytes()
+        assert len(data) == asset["bytes"]
+        assert hashlib.sha256(data).hexdigest() == asset["sha256"]
+    version = hashlib.sha256(json.dumps(assets, indent=2).encode()).hexdigest()[:24]
+    assert f'const CACHE_NAME = CACHE_PREFIX + "{version}";' in worker
+    assert sum(asset["bytes"] for asset in assets) < 500_000
+
+
+def test_offline_document_is_public_script_free_and_uses_shared_design_assets() -> None:
+    offline = resources.static_path("offline.html").read_text(encoding="utf-8")
+    manifest = json.loads(resources.static_path("manifest.webmanifest").read_text())
+    assert '<html lang="en">' in offline and '<main class="astral-offline">' in offline
+    assert "<h1>You're offline</h1>" in offline and '<a href="/">Try again</a>' in offline
+    assert "/static/astral.css" in offline and "/static/offline.css" in offline
+    assert "default-src 'none'" in offline and "form-action 'none'" in offline
+    assert 'name="referrer" content="no-referrer"' in offline
+    for private_hook in ("%%", "__ASTRAL", "<script", "<form", "<input", "localStorage",
+                         "sessionStorage", "http://", "https://"):
+        assert private_hook not in offline
+    assert manifest["start_url"] == manifest["scope"] == manifest["id"] == "/"
+    assert manifest["icons"][0]["src"] == "/static/img/astra-fav.png"
+    assert "share_target" not in manifest and "shortcuts" not in manifest
+    shell = resources.template_path("shell.html").read_text()
+    assert 'rel="manifest" href="/static/manifest.webmanifest?v=%%ASTRAL_V:' in shell
+    assert 'defer src="/static/offline-registration.js?v=%%ASTRAL_V:' in shell
+
+
+def test_offline_hash_builder_checks_and_updates_only_its_generated_block(
+    monkeypatch, tmp_path, capsys
+) -> None:
+    script = REPOSITORY_ROOT / "scripts/build_offline_assets.py"
+    module = build_offline_assets
+    static = tmp_path / "static"
+    static.mkdir()
+    for name in [*module.PUBLIC_ASSETS, "service-worker.js"]:
+        target = static / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(resources.static_path(name).read_bytes())
+    monkeypatch.setattr(module, "STATIC", static)
+    worker = static / "service-worker.js"
+    original = worker.read_text()
+    monkeypatch.setattr(sys, "argv", [str(script), "--check"])
+    assert module.main() == 0
+    assert worker.read_text() == original
+    (static / "offline.css").write_text("body { color: white; }\n")
+    with pytest.raises(SystemExit, match="1"):
+        module.main()
+    assert "offline asset hashes are stale" in capsys.readouterr().err
+    assert worker.read_text() == original
+    monkeypatch.setattr(sys, "argv", [str(script)])
+    assert module.main() == 0
+    updated = worker.read_text()
+    assert updated != original
+    assert updated.split(module.END)[1] == original.split(module.END)[1]
+    monkeypatch.setattr(sys, "argv", [str(script), "--check"])
+    # Exercise the real command entry point against the actual packaged inputs.
+    with pytest.raises(SystemExit, match="0"):
+        runpy.run_path(str(script), run_name="__main__")
