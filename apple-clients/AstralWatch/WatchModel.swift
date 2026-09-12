@@ -643,6 +643,16 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        // Registration establishes a connection before the server's global
+        // welcome arrives. It has no conversation generation; admit only its
+        // validated ephemeral components while no hydration/turn is open.
+        if !workspaceStarted, continuity.requestGeneration == nil,
+            let components = WorkspaceWelcome.unscopedComponents(in: frame)
+        {
+            canvas = components
+            transientCanvas = nil
+            return
+        }
         if workspaceStarted, ["ui_render", "ui_update"].contains(frame.name),
             frame.renderTarget != "chat", !frame.renderComponents.isEmpty,
             !WorkspaceWelcome.containsWork(frame.renderComponents)
@@ -791,6 +801,12 @@ final class WatchModel {
         else { return }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
+            if status.state != "completed" {
+                _ = continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+                if pendingCommitRequestGeneration == status.requestGeneration {
+                    pendingCommitRequestGeneration = nil
+                }
+            }
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if let message = status.error.objectValue?["message"]?.stringValue {
                 errorBanner = message
@@ -838,8 +854,15 @@ final class WatchModel {
     @discardableResult
     private func reduceAdmissionRefusal(_ frame: InboundFrame) -> Bool {
         guard let refusal = AdmissionRefusal(frame: frame),
-            localOperationSubmissions.removeValue(forKey: refusal.submissionId) != nil
+            let submission = localOperationSubmissions.removeValue(forKey: refusal.submissionId)
         else { return false }
+        if continuity.retireUncommittedCommit(requestGeneration: submission.requestGeneration) {
+            transientEntries = []
+            transientCanvas = nil
+        }
+        if pendingCommitRequestGeneration == submission.requestGeneration {
+            pendingCommitRequestGeneration = nil
+        }
         statusText = latestActiveOperationStatusText()
         statusShowsActivity = statusText != nil
         errorBanner = refusal.message
@@ -979,11 +1002,7 @@ final class WatchModel {
     }
 
     private func clearContinuityChatKeepingConnection() {
-        let connection = continuity.connectionGeneration
-        continuity.clear()
-        if let connection {
-            _ = continuity.beginConnection(connection)
-        }
+        continuity.clearChatKeepingConnection()
     }
 
     /// The server refused our token. A near-expiry token refreshes anyway on

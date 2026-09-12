@@ -95,6 +95,47 @@ final class WorkspacePresentationTests: XCTestCase {
         XCTAssertTrue(ClientDispositions.watch.nativeComponentTypes.contains("button"))
     }
 
+    func testOnlyCompleteUnscopedWelcomeFramesQualify() throws {
+        let components = try fixture()["components"]!
+        let valid: [String: JSONValue] = [
+            "type": .string("ui_render"), "target": .string("canvas"), "components": components,
+        ]
+        for name in ["ui_render", "ui_update"] {
+            var payload = valid
+            payload["type"] = .string(name)
+            let frame = InboundFrame(name: name, payload: .object(payload))
+            XCTAssertEqual(WorkspaceWelcome.unscopedComponents(in: frame), frame.renderComponents)
+            payload.removeValue(forKey: "target")
+            XCTAssertNotNil(
+                WorkspaceWelcome.unscopedComponents(in: InboundFrame(name: name, payload: .object(payload))))
+        }
+        var invalidPayloads: [[String: JSONValue]] = []
+        for key in [
+            "chat_id", "chatId", "connection_generation", "request_generation", "base_render_revision",
+            "frame_sequence",
+        ] {
+            for value in [JSONValue.null, .string("22222222-2222-4222-8222-222222222222"), .number(0)] {
+                invalidPayloads.append(valid.merging([key: value], uniquingKeysWith: { _, new in new }))
+            }
+        }
+        for target in [JSONValue.null, .string("chat"), .string("history"), .number(1)] {
+            invalidPayloads.append(valid.merging(["target": target], uniquingKeysWith: { _, new in new }))
+        }
+        let real = try fixture()["result"]!
+        for invalidComponents in [
+            JSONValue.array([]), .null, .array(components.arrayValue! + [real]),
+            .array(components.arrayValue! + [.null]),
+        ] {
+            invalidPayloads.append(
+                valid.merging(["components": invalidComponents], uniquingKeysWith: { _, new in new }))
+        }
+        for payload in invalidPayloads {
+            XCTAssertNil(
+                WorkspaceWelcome.unscopedComponents(in: InboundFrame(name: "ui_render", payload: .object(payload))))
+        }
+        XCTAssertNil(WorkspaceWelcome.unscopedComponents(in: InboundFrame(name: "ui_append", payload: .object(valid))))
+    }
+
     func testLayoutMatchesWidthBoundsAndExplicitRailPreference() {
         XCTAssertEqual(WorkspaceLayout.forWidth(699, preference: "open"), .stacked)
         XCTAssertEqual(WorkspaceLayout.forWidth(700, preference: "open"), .collapsed)

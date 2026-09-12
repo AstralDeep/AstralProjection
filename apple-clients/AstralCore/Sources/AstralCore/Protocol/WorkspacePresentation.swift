@@ -44,6 +44,28 @@ public enum WorkspaceWelcome {
         return true
     }
 
+    /// Welcome is ephemeral connection UI, never a conversation preview. A
+    /// scoped or partly malformed frame must still pass through the ordinary
+    /// continuity reducer; a welcome marker cannot bypass its equality fences.
+    public static func unscopedComponents(in frame: InboundFrame) -> [AstralComponent]? {
+        guard ["ui_render", "ui_update"].contains(frame.name),
+            let payload = frame.payload.objectValue,
+            payload["target"] == nil || payload["target"] == .string("canvas"),
+            let rawComponents = payload["components"]?.arrayValue,
+            !rawComponents.isEmpty
+        else { return nil }
+        let scopeKeys = [
+            "chat_id", "chatId", "connection_generation", "request_generation",
+            "base_render_revision", "frame_sequence",
+        ]
+        guard scopeKeys.allSatisfy({ payload[$0] == nil }) else { return nil }
+        let components = frame.renderComponents
+        guard components.count == rawComponents.count,
+            components.allSatisfy({ role(of: $0) != nil })
+        else { return nil }
+        return components
+    }
+
     public static func components(_ components: [AstralComponent], for role: Role) -> [AstralComponent] {
         // Mirrors the web placement host: the newest component owns each slot.
         components.last(where: { Self.role(of: $0) == role }).map { [$0] } ?? []

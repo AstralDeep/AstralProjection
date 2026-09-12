@@ -3882,6 +3882,8 @@ class MainWindow(QMainWindow):
         self._operation_status_by_id[status.operation_id] = status
         visible = (status.error or {}).get("message") or status.label
         if status.terminal:
+            if status.state != "completed":
+                self._continuity.retire_uncommitted_commit(status.request_generation)
             self._finish_local_submission_by_generation(
                 status.request_generation
             )
@@ -3941,6 +3943,7 @@ class MainWindow(QMainWindow):
         submission = self._finish_local_submission_by_id(refusal.submission_id)
         if submission is None:
             return False
+        self._continuity.retire_uncommitted_commit(submission.request_generation)
         visible = normalize_error(msg)
         self._show_banner(visible, "error")
         self.topbar.set_status(visible, T.VARIANT_COLORS["error"][0])

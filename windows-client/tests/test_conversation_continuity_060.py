@@ -277,6 +277,67 @@ def test_commit_ready_opens_server_generation_only_for_exact_newer_active_scope(
     assert reducer.request_generation == DETACHED_COMMIT
 
 
+@pytest.mark.parametrize("client_originated", [True, False])
+def test_commit_ready_cannot_steal_unfinished_commit_or_transient_sequence(client_originated) -> None:
+    reducer = ConversationContinuityReducer()
+    reducer.activate_chat(CHAT)
+    reducer.bind_connection(CONNECTION)
+    reducer.open_request("hydration", HYDRATION)
+    assert reducer.reduce_snapshot(_snapshot(revision=7)) == "snapshot_applied"
+    if client_originated:
+        reducer.open_request("commit", COMMIT)
+    else:
+        assert reducer.reduce_commit_ready(_commit_ready(request_generation=COMMIT)) == "commit_ready"
+    preview = {
+        "type": "ui_render", "target": "canvas", "chat_id": CHAT,
+        "connection_generation": CONNECTION, "request_generation": COMMIT,
+        "base_render_revision": 7, "frame_sequence": 1,
+        "components": [{"type": "text", "content": "Current request preview"}],
+    }
+    assert reducer.reduce_transient(preview) == "transient_overlay_applied"
+    overlay = list(reducer.overlay_frames)
+    assert reducer.reduce_commit_ready(_commit_ready(render_revision=9)) == "commit_request_busy"
+    assert reducer.request_generation == COMMIT
+    assert reducer.request_purpose == "commit"
+    assert reducer.active_chat_id == CHAT
+    assert reducer.last_committed_render_revision == 7
+    assert reducer.overlay_frames == overlay
+    assert reducer.reduce_transient(preview) == "transient_frame_ignored"
+    assert reducer.reduce_transient(dict(preview, frame_sequence=2)) == "transient_overlay_applied"
+    assert reducer.reduce_snapshot(_snapshot(
+        snapshot_id=SNAPSHOT_3, request=DETACHED_COMMIT, purpose="commit", revision=9,
+    )) == "wrong_scope"
+    # Local commits require no server prelude, while detached commits bind the
+    # expected revision. Neither unfinished request may lose its own result.
+    assert reducer.reduce_snapshot(_snapshot(
+        snapshot_id=SNAPSHOT_2, request=COMMIT, purpose="commit", revision=8,
+    )) == "snapshot_applied"
+    assert reducer.reduce_commit_ready(_commit_ready(render_revision=9)) == "commit_ready"
+    assert reducer.reduce_snapshot(_snapshot(
+        snapshot_id=SNAPSHOT_3, request=DETACHED_COMMIT, purpose="commit", revision=9,
+    )) == "snapshot_applied"
+    assert reducer.reduce_commit_ready(_commit_ready(render_revision=10)) == "reused_request_generation"
+
+
+def test_chat_reset_and_retirement_keep_request_replay_fence() -> None:
+    reducer = ConversationContinuityReducer()
+    reducer.activate_chat(CHAT)
+    reducer.bind_connection(CONNECTION)
+    reducer.open_request("hydration", HYDRATION)
+    assert not reducer.retire_uncommitted_commit(HYDRATION)
+    assert reducer.reduce_snapshot(_snapshot()) == "snapshot_applied"
+    reducer.open_request("commit", COMMIT)
+    assert not reducer.retire_uncommitted_commit(HYDRATION)
+    assert reducer.retire_uncommitted_commit(COMMIT)
+    assert reducer.committed_snapshot is not None
+    assert reducer.last_committed_render_revision == 7
+    reducer.clear_chat()
+    reducer.activate_chat(CHAT)
+    reducer.open_request("hydration", NEXT_HYDRATION)
+    assert reducer.reduce_commit_ready(_commit_ready(request_generation=COMMIT)) == "reused_request_generation"
+    assert reducer.request_generation == NEXT_HYDRATION
+
+
 def test_commit_ready_decoder_and_manifest_disposition_are_strict() -> None:
     parsed = parse_runtime_frame(_commit_ready())
     assert isinstance(parsed, ConversationCommitReady)

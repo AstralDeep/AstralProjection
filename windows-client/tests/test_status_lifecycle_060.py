@@ -115,6 +115,36 @@ def refusal(submission_id: str = SUBMISSION, **overrides) -> dict:
     return frame
 
 
+@pytest.mark.parametrize("state,released", [("failed", True), ("cancelled", True), ("retryable", True), ("completed", False)])
+def test_only_definitive_current_terminal_releases_commit_for_detached_update(window, state, released):
+    assert window._reduce_operation_status(operation(1, state))
+    assert (window._continuity.request_generation is None) is released
+    prelude = {
+        "type": "conversation_commit_ready", "schema_version": 1, "chat_id": CHAT,
+        "connection_generation": CONNECTION, "request_generation": OPERATION_2, "render_revision": 1,
+    }
+    expected = "commit_ready" if released else "commit_request_busy"
+    assert window._continuity.reduce_commit_ready(prelude) == expected
+
+
+def test_stale_terminal_and_uncorrelated_refusal_cannot_release_commit(window):
+    assert not window._reduce_operation_status(operation(1, "failed", connection=OPERATION_2))
+    assert not window._reduce_operation_status(operation(1, "failed", request=OPERATION_2))
+    assert not window._reduce_admission_refusal(refusal(OTHER))
+    assert window._continuity.request_generation == REQUEST
+
+
+def test_correlated_admission_refusal_releases_only_its_pending_commit(window):
+    window.client.connection_generation = CONNECTION
+    window.client._send = lambda _frame: None
+    submitted = window.client.send_event("chat_message", {"message": "Current attempt", "chat_id": CHAT})
+    window._continuity.open_request("commit", submitted.request_generation)
+    assert window._reduce_admission_refusal(refusal(submitted.submission_id))
+    assert window._continuity.request_generation is None
+    with pytest.raises(WindowsProtocolError):
+        window._continuity.open_request("commit", submitted.request_generation)
+
+
 def test_operation_keeps_highest_sequence_and_first_terminal_visible(window):
     assert window._reduce_operation_status(operation(0, "accepted"))
     assert window._reduce_operation_status(operation(1, "running"))
@@ -284,8 +314,12 @@ def test_startup_metadata_is_retained_without_activity_banner(window):
 
 
 def test_terminal_failure_is_settled_and_unrelated_success_cannot_erase_it(window):
+    window.client.connection_generation = CONNECTION
+    window.client._send = lambda _frame: None
+    independent = window.client.send_event("discover_agents", {})
     assert window._reduce_operation_status(
-        operation(0, "running", operation_id=OPERATION_2)
+        operation(0, "running", operation_id=OPERATION_2,
+                  request=independent.request_generation, action="discover_agents", chat_id=None)
     )
     assert window._reduce_operation_status(
         operation(0, "failed", operation_id=OPERATION_3)
@@ -295,7 +329,8 @@ def test_terminal_failure_is_settled_and_unrelated_success_cannot_erase_it(windo
     assert window._operation_banner_operation_id is None
 
     assert window._reduce_operation_status(
-        operation(1, "completed", operation_id=OPERATION_2)
+        operation(1, "completed", operation_id=OPERATION_2,
+                  request=independent.request_generation, action="discover_agents", chat_id=None)
     )
     assert window._banner.text() == "Safe failure"
     assert window._banner_kind == "error"

@@ -408,6 +408,7 @@ private struct CanvasArea: View {
                                 }
                                 .padding(16)
                             }
+                            .accessibilityIdentifier("workspace-canvas-scroll")
                             .scrollDismissesKeyboard(.immediately)
                         }
                     }
@@ -631,7 +632,11 @@ private struct MessagesPanel: View {
                     ChatList().frame(height: 320).background(p.bg)
                 }
                 Button {
-                    withAnimation { expanded.toggle() }
+                    // Removing the lazy transcript in an animated layout
+                    // transaction can leave UIKit repeatedly placing its
+                    // departing rows while the canvas grows. Complete this
+                    // structural change before the next scroll interaction.
+                    expanded.toggle()
                 } label: {
                     HStack(spacing: 8) {
                         Text(expanded ? "▼" : "▲").font(AstralTypography.caption2).foregroundStyle(p.muted)
@@ -646,6 +651,7 @@ private struct MessagesPanel: View {
                     .background(p.surface)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("workspace-messages-toggle")
             }
         }
     }

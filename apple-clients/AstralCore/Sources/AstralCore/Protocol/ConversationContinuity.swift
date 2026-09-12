@@ -319,6 +319,10 @@ public struct ConversationContinuityReducer: Sendable {
             !usedRequestGenerations.contains(ready.requestGeneration),
             ready.renderRevision > lastCommittedRenderRevision
         else { return false }
+        if requestPurpose == .commit, acceptedSnapshot == nil {
+            NSLog("conversation_commit_ready: commit_request_busy")
+            return false
+        }
         requestGeneration = ready.requestGeneration
         requestPurpose = .commit
         expectedRenderRevision = ready.renderRevision
@@ -386,6 +390,33 @@ public struct ConversationContinuityReducer: Sendable {
         else { return false }
         lastTransientSequence = sequence
         return true
+    }
+
+    /// Retire only an authoritatively ended local attempt. Callers must first
+    /// validate and correlate its terminal status or admission refusal. Keep
+    /// committed content and used generations so late results cannot replay.
+    @discardableResult
+    public mutating func retireUncommittedCommit(requestGeneration: String) -> Bool {
+        guard self.requestGeneration == requestGeneration, requestPurpose == .commit,
+            acceptedSnapshot == nil
+        else { return false }
+        self.requestGeneration = nil
+        requestPurpose = nil
+        expectedRenderRevision = nil
+        lastTransientSequence = 0
+        return true
+    }
+
+    /// New chat/deletion clears presentation while the current connection's
+    /// consumed request generations remain replay-protected.
+    public mutating func clearChatKeepingConnection() {
+        activeChatId = nil
+        requestGeneration = nil
+        requestPurpose = nil
+        lastCommittedRenderRevision = 0
+        acceptedSnapshot = nil
+        expectedRenderRevision = nil
+        lastTransientSequence = 0
     }
 
     public mutating func clear() {

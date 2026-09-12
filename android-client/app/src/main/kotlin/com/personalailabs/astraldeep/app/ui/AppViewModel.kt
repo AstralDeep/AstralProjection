@@ -123,6 +123,7 @@ data class UiState(
     val requestGeneration: String? = null,
     val requestChatId: String? = null,
     val requestPurpose: ConversationRequestPurpose? = null,
+    val usedConversationRequestGenerations: Set<String> = emptySet(),
     val expectedCommitRenderRevision: ULong? = null,
     val lastCommittedRenderRevision: ULong = 0UL,
     val lastTransientFrameSequence: ULong = 0UL,
@@ -398,7 +399,7 @@ class AppViewModel(
                                     }
                                     requestChatRefresh(retryChat)
                                 }
-                                msg is Inbound.ConversationCommitReady &&
+                                msg is Inbound.ConversationCommitReady && after !== before &&
                                     after.requestGeneration == msg.requestGeneration &&
                                     after.expectedCommitRenderRevision == msg.renderRevision -> {
                                     scheduleSnapshotTimeout(
@@ -641,6 +642,7 @@ class AppViewModel(
         s: UiState,
         failure: QueuedSubmissionFailure,
     ): UiState {
+        if (s.pendingSubmissions[failure.submission.requestGeneration] != failure.submission) return s
         val retained =
             s.pendingSubmissions.filterValues {
                 it.submissionId != failure.submission.submissionId
@@ -654,27 +656,29 @@ class AppViewModel(
                                 s.pendingSubmissions.keys.lastOrNull() == failure.submission.requestGeneration
                         )
                 )
-        return s.copy(
-            pendingSubmissions = retained,
-            statusText =
-                when {
-                    !ownsCurrentChatTurn && s.turnActive -> s.statusText
-                    retained.isNotEmpty() -> "Submitting…"
-                    else -> null
-                },
-            banner = "Not sent while offline: ${failure.submission.action} (${failure.reason})",
-            bannerKind = "error",
-            turnActive = if (ownsCurrentChatTurn) false else s.turnActive,
-            pendingReplace = if (ownsCurrentChatTurn) false else s.pendingReplace,
-            pendingCanvas = if (ownsCurrentChatTurn) emptyList() else s.pendingCanvas,
-            preTurnCanvas = if (ownsCurrentChatTurn) emptyList() else s.preTurnCanvas,
-            turnOpsApplied = if (ownsCurrentChatTurn) false else s.turnOpsApplied,
-            transientCanvas = if (ownsCurrentChatTurn) null else s.transientCanvas,
-            pendingTurns = if (ownsCurrentChatTurn) emptyList() else s.pendingTurns,
-            lastTransientFrameSequence = if (ownsCurrentChatTurn) 0UL else s.lastTransientFrameSequence,
-            stepTrail = if (ownsCurrentChatTurn) emptyList() else s.stepTrail,
-            asyncDetached = if (ownsCurrentChatTurn) false else s.asyncDetached,
-        )
+        val settled =
+            s.copy(
+                pendingSubmissions = retained,
+                statusText =
+                    when {
+                        !ownsCurrentChatTurn && s.turnActive -> s.statusText
+                        retained.isNotEmpty() -> "Submitting…"
+                        else -> null
+                    },
+                banner = "Not sent while offline: ${failure.submission.action} (${failure.reason})",
+                bannerKind = "error",
+                turnActive = if (ownsCurrentChatTurn) false else s.turnActive,
+                pendingReplace = if (ownsCurrentChatTurn) false else s.pendingReplace,
+                pendingCanvas = if (ownsCurrentChatTurn) emptyList() else s.pendingCanvas,
+                preTurnCanvas = if (ownsCurrentChatTurn) emptyList() else s.preTurnCanvas,
+                turnOpsApplied = if (ownsCurrentChatTurn) false else s.turnOpsApplied,
+                transientCanvas = if (ownsCurrentChatTurn) null else s.transientCanvas,
+                pendingTurns = if (ownsCurrentChatTurn) emptyList() else s.pendingTurns,
+                lastTransientFrameSequence = if (ownsCurrentChatTurn) 0UL else s.lastTransientFrameSequence,
+                stepTrail = if (ownsCurrentChatTurn) emptyList() else s.stepTrail,
+                asyncDetached = if (ownsCurrentChatTurn) false else s.asyncDetached,
+            )
+        return if (ownsCurrentChatTurn) retireCurrentCommit(settled, failure.submission.requestGeneration) else settled
     }
 
     /**
@@ -1026,6 +1030,7 @@ class AppViewModel(
                     transientCanvas = null,
                     pendingTurns = emptyList(),
                     connectionGeneration = null,
+                    usedConversationRequestGenerations = emptySet(),
                     requestGeneration = null,
                     requestChatId = null,
                     requestPurpose = null,
@@ -1256,6 +1261,9 @@ class AppViewModel(
             requestGeneration = binding.requestGeneration,
             requestChatId = binding.chatId,
             requestPurpose = binding.purpose,
+            usedConversationRequestGenerations =
+                (if (binding.connectionGeneration == s.connectionGeneration) s.usedConversationRequestGenerations else emptySet()) +
+                    listOfNotNull(binding.requestGeneration),
             expectedCommitRenderRevision = null,
             lastCommittedRenderRevision = if (switchingChats) 0UL else s.lastCommittedRenderRevision,
             lastTransientFrameSequence = 0UL,
@@ -1342,7 +1350,7 @@ class AppViewModel(
      * Persist newly acknowledged chat identity before exposing it and clear a
      * locator only for an owner-scoped, generation-matching definitive miss.
      */
-    private fun reduceWithPersistence(
+    internal fun reduceWithPersistence(
         s: UiState,
         msg: Inbound,
     ): UiState {
@@ -1471,6 +1479,21 @@ class AppViewModel(
         return s.copy(activeChatId = chatId, requestChatId = chatId)
     }
 
+    private fun retireCurrentCommit(
+        s: UiState,
+        requestGeneration: String,
+    ): UiState {
+        if (s.requestPurpose != ConversationRequestPurpose.COMMIT || s.requestGeneration != requestGeneration) return s
+        return s.copy(
+            requestGeneration = null,
+            requestChatId = null,
+            requestPurpose = null,
+            expectedCommitRenderRevision = null,
+            transientCanvas = null,
+            lastTransientFrameSequence = 0UL,
+        )
+    }
+
     /** Open a supplied commit fence only for a future revision on this socket/chat. */
     private fun reduceConversationCommitReady(
         s: UiState,
@@ -1480,15 +1503,21 @@ class AppViewModel(
             ready.schemaVersion != 1 ||
             ready.chatId != s.activeChatId ||
             ready.connectionGeneration != s.connectionGeneration ||
+            ready.requestGeneration in s.usedConversationRequestGenerations ||
             ready.renderRevision <= s.lastCommittedRenderRevision
         ) {
             Log.i(TAG, "conversation_commit_ready ignored: stale or foreign scope")
+            return s
+        }
+        if (s.requestPurpose == ConversationRequestPurpose.COMMIT && s.requestGeneration != null) {
+            Log.i(TAG, "commit_request_busy")
             return s
         }
         return s.copy(
             requestGeneration = ready.requestGeneration,
             requestChatId = ready.chatId,
             requestPurpose = ConversationRequestPurpose.COMMIT,
+            usedConversationRequestGenerations = s.usedConversationRequestGenerations + ready.requestGeneration,
             expectedCommitRenderRevision = ready.renderRevision,
             lastTransientFrameSequence = 0UL,
             transientCanvas = null,
@@ -1520,13 +1549,9 @@ class AppViewModel(
             Log.i(TAG, "conversation snapshot ignored: wrong scope or purpose")
             return s
         }
-        if (
-            s.requestPurpose == ConversationRequestPurpose.COMMIT &&
-            s.expectedCommitRenderRevision == null
-        ) {
-            Log.w(TAG, "conversation snapshot ignored: missing commit-ready prelude")
-            return s
-        }
+        // A foreground request opens its own commit fence before sending. Only
+        // server-originated work needs the prelude's promised revision; neither
+        // kind of snapshot can create a request fence in the scope check above.
         if (
             s.expectedCommitRenderRevision != null &&
             snapshot.renderRevision != s.expectedCommitRenderRevision
@@ -1719,27 +1744,29 @@ class AppViewModel(
                         (s.requestGeneration == null && s.pendingSubmissions.keys.lastOrNull() == pending.key)
                 )
         val retained = s.pendingSubmissions - pending.key
-        return s.copy(
-            banner = "${refusal.message} (${refusal.code})",
-            bannerKind = "error",
-            pendingSubmissions = retained,
-            statusText =
-                when {
-                    !ownsCurrentChatTurn && s.turnActive -> s.statusText
-                    retained.isNotEmpty() -> "Submitting…"
-                    else -> null
-                },
-            turnActive = if (ownsCurrentChatTurn) false else s.turnActive,
-            pendingReplace = if (ownsCurrentChatTurn) false else s.pendingReplace,
-            pendingCanvas = if (ownsCurrentChatTurn) emptyList() else s.pendingCanvas,
-            preTurnCanvas = if (ownsCurrentChatTurn) emptyList() else s.preTurnCanvas,
-            turnOpsApplied = if (ownsCurrentChatTurn) false else s.turnOpsApplied,
-            transientCanvas = if (ownsCurrentChatTurn) null else s.transientCanvas,
-            pendingTurns = if (ownsCurrentChatTurn) emptyList() else s.pendingTurns,
-            lastTransientFrameSequence = if (ownsCurrentChatTurn) 0UL else s.lastTransientFrameSequence,
-            stepTrail = if (ownsCurrentChatTurn) emptyList() else s.stepTrail,
-            asyncDetached = if (ownsCurrentChatTurn) false else s.asyncDetached,
-        )
+        val settled =
+            s.copy(
+                banner = "${refusal.message} (${refusal.code})",
+                bannerKind = "error",
+                pendingSubmissions = retained,
+                statusText =
+                    when {
+                        !ownsCurrentChatTurn && s.turnActive -> s.statusText
+                        retained.isNotEmpty() -> "Submitting…"
+                        else -> null
+                    },
+                turnActive = if (ownsCurrentChatTurn) false else s.turnActive,
+                pendingReplace = if (ownsCurrentChatTurn) false else s.pendingReplace,
+                pendingCanvas = if (ownsCurrentChatTurn) emptyList() else s.pendingCanvas,
+                preTurnCanvas = if (ownsCurrentChatTurn) emptyList() else s.preTurnCanvas,
+                turnOpsApplied = if (ownsCurrentChatTurn) false else s.turnOpsApplied,
+                transientCanvas = if (ownsCurrentChatTurn) null else s.transientCanvas,
+                pendingTurns = if (ownsCurrentChatTurn) emptyList() else s.pendingTurns,
+                lastTransientFrameSequence = if (ownsCurrentChatTurn) 0UL else s.lastTransientFrameSequence,
+                stepTrail = if (ownsCurrentChatTurn) emptyList() else s.stepTrail,
+                asyncDetached = if (ownsCurrentChatTurn) false else s.asyncDetached,
+            )
+        return if (ownsCurrentChatTurn) retireCurrentCommit(settled, pending.key) else settled
     }
 
     private fun reduceOperationStatus(
@@ -1785,35 +1812,37 @@ class AppViewModel(
                 status.error?.let { error ->
                     "${error.message} (${error.code})"
                 }
-            s.copy(
-                operationStatuses = retained,
-                pendingSubmissions = pending,
-                // A successful terminal is retained canonically above, but it
-                // is not ongoing work and must not leave an idle "Completed"
-                // row behind. Non-success terminals use the prominent banner.
-                statusText =
-                    when {
-                        !ownsCurrentChatTurn && s.turnActive -> s.statusText
-                        pending.isNotEmpty() -> "Submitting…"
-                        else -> null
-                    },
-                banner = errorNotice ?: s.banner,
-                bannerKind = if (errorNotice != null) "error" else s.bannerKind,
-                turnActive = if (ownsCurrentChatTurn) false else s.turnActive,
-                // The operation is no longer busy, so retire the loading
-                // skeleton even while its already-rendered overlay awaits the
-                // authoritative snapshot.
-                pendingReplace = if (ownsCurrentChatTurn) false else s.pendingReplace,
-                pendingCanvas = if (discardsCurrentChatPreview) emptyList() else s.pendingCanvas,
-                preTurnCanvas = if (discardsCurrentChatPreview) emptyList() else s.preTurnCanvas,
-                turnOpsApplied = if (discardsCurrentChatPreview) false else s.turnOpsApplied,
-                transientCanvas = if (discardsCurrentChatPreview) null else s.transientCanvas,
-                pendingTurns = if (discardsCurrentChatPreview) emptyList() else s.pendingTurns,
-                lastTransientFrameSequence =
-                    if (discardsCurrentChatPreview) 0UL else s.lastTransientFrameSequence,
-                stepTrail = if (ownsCurrentChatTurn) emptyList() else s.stepTrail,
-                asyncDetached = if (ownsCurrentChatTurn) false else s.asyncDetached,
-            )
+            val settled =
+                s.copy(
+                    operationStatuses = retained,
+                    pendingSubmissions = pending,
+                    // A successful terminal is retained canonically above, but it
+                    // is not ongoing work and must not leave an idle "Completed"
+                    // row behind. Non-success terminals use the prominent banner.
+                    statusText =
+                        when {
+                            !ownsCurrentChatTurn && s.turnActive -> s.statusText
+                            pending.isNotEmpty() -> "Submitting…"
+                            else -> null
+                        },
+                    banner = errorNotice ?: s.banner,
+                    bannerKind = if (errorNotice != null) "error" else s.bannerKind,
+                    turnActive = if (ownsCurrentChatTurn) false else s.turnActive,
+                    // The operation is no longer busy, so retire the loading
+                    // skeleton even while its already-rendered overlay awaits the
+                    // authoritative snapshot.
+                    pendingReplace = if (ownsCurrentChatTurn) false else s.pendingReplace,
+                    pendingCanvas = if (discardsCurrentChatPreview) emptyList() else s.pendingCanvas,
+                    preTurnCanvas = if (discardsCurrentChatPreview) emptyList() else s.preTurnCanvas,
+                    turnOpsApplied = if (discardsCurrentChatPreview) false else s.turnOpsApplied,
+                    transientCanvas = if (discardsCurrentChatPreview) null else s.transientCanvas,
+                    pendingTurns = if (discardsCurrentChatPreview) emptyList() else s.pendingTurns,
+                    lastTransientFrameSequence =
+                        if (discardsCurrentChatPreview) 0UL else s.lastTransientFrameSequence,
+                    stepTrail = if (ownsCurrentChatTurn) emptyList() else s.stepTrail,
+                    asyncDetached = if (ownsCurrentChatTurn) false else s.asyncDetached,
+                )
+            if (discardsCurrentChatPreview) retireCurrentCommit(settled, status.requestGeneration) else settled
         } else {
             s.copy(
                 operationStatuses = retained,

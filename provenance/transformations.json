@@ -151,9 +151,9 @@
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourceBlob": "d241aacb0fb0710105e25b81d30f754bd8419611",
       "sourceMode": "100644",
-      "resultSha256": "5e3f73b7c3bfed1419678b1429dc688ac7f0c0a669aaf0b21d7cfc5614f77867",
+      "resultSha256": "563559b4e474bec0885f3da16d8a1cf7ab04f532b470e3a587f1ffcf612a7713",
       "task": "T041/T056/T060",
-      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries."
+      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
@@ -181,6 +181,15 @@
       "task": "T056/T060",
       "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior.",
       "resultSha256": "56897f6d0dd7447ebb4da04cffbc6331747cb741687afc4621bfb757ff0891cc"
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
+      "sourceBlob": "8ab7f1bf2bf9720bef9ba5dcf0609470ddc1f5b5",
+      "sourceMode": "100644",
+      "resultSha256": "5ddf05ba20374910876bdf23fe49ca61797591296096d9b8b8d19b75258abebb",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/render/VocabularyParityTest.kt",
@@ -314,8 +323,8 @@
       "sourceBlob": "d41e7b743730ae8bfd49e21068e838c2f07bf799",
       "sourceMode": "100644",
       "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "b5d0de6b560775c28fefcbaed4f1d27d30d2ad600577194b6fa7b6900faec89d"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions.",
+      "resultSha256": "da305fb9396a4b6c38f91d7adb782b14689c85ff46921156b4f72333b4f28783"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/AstralAppMain.swift",
@@ -332,8 +341,8 @@
       "sourceBlob": "390ea1e60d03b65b1db25955560055ef207c39ba",
       "sourceMode": "100644",
       "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "eb4def8265e15f7ef1b2fab7d4f76571aeb98b46c0b49492605695b6f9cdb682"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions.",
+      "resultSha256": "c978f00d55e963f9e91cd209f20d2eaa965e0ae2959fda7fbc4ddeff1a6f0a03"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Views/ChatView.swift",
@@ -341,8 +350,8 @@
       "sourceBlob": "ae7a39f349d86b489910d22985b20a9067f165e2",
       "sourceMode": "100644",
       "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "f9d7c3be07e3ee18d37430393c55271165f7b6ec77460aad70a4721d6ad82000"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions.",
+      "resultSha256": "1b70162636f952c1753e9049a4f2591cd845df154a86fae9c62143d7d3a24cb8"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Views/ComponentChrome.swift",
@@ -435,6 +444,15 @@
       "reason": "Replace the former Astral-Primitives repository URL with the canonical AstralPrimitives identity."
     },
     {
+      "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/ConversationContinuity.swift",
+      "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/ConversationContinuity.swift",
+      "sourceBlob": "35abc8965053f025f3ad583bfa20524b3dac1f47",
+      "sourceMode": "100644",
+      "resultSha256": "06f3943072c082f6149dbfcb8b3c7fd4167eda3fd9e29ae75de753fa9fc53b0a",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
+    },
+    {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Dispositions.swift",
       "sourceBlob": "779efa2b0d8e43224539d33918fba80e76d4794d",
@@ -451,6 +469,15 @@
       "resultSha256": "2a7f7417c250f0ffcf8d934bfd9b4cc2b7ad018895b2cc0cf913e94f05d3ea7b",
       "task": "T050/T071",
       "reason": "Implement strict Apple client-local voice capability, frame, disposition, bound-final, and canonical content-free playout protocol models."
+    },
+    {
+      "path": "apple-clients/AstralCore/Tests/AstralCoreTests/ConversationSnapshotTests.swift",
+      "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ConversationSnapshotTests.swift",
+      "sourceBlob": "244a4314b963eca719e1c458545112dd7e0b9e53",
+      "sourceMode": "100644",
+      "resultSha256": "fbaeba2751fb656c655a84fc1a3242ffe0d0295c768769572d65e9c73a1916e2",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
     },
     {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures/generate_fixtures.py",
@@ -539,8 +566,8 @@
       "sourceBlob": "8164768c856633459b8d169a81fd15055ba889dc",
       "sourceMode": "100644",
       "task": "T057/T061",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries.",
-      "resultSha256": "ea9a4590d385d5458c9e4442ac9b3030cfb2fe165c7d5f222867d665b5ad92ef"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions.",
+      "resultSha256": "9b9663c31554e058b73c1ef407ec3c4f0825b2ba8af8b1b7592ee2663a4396cf"
     },
     {
       "path": "apple-clients/KNOWN-ISSUES.md",
@@ -583,9 +610,9 @@
       "sourcePath": "backend/rote/capabilities.py",
       "sourceBlob": "f99b8e575640d0176bf855fbd6cf01cc5bde4790",
       "sourceMode": "100644",
-      "resultSha256": "c6b49157808e79e020f2b0d3244957ee71d2560727a89185134b3a4ebb7b373c",
+      "resultSha256": "dd39d0e8501001634f3074fa908474cc05f193f7ab4070c4cc0b41c66e73e1ea",
       "task": "T017",
-      "reason": "Normalize the strict client_local/v1 half-duplex capability vocabulary without inferring local readiness from client identity."
+      "reason": "Normalize the strict client_local/v1 half-duplex capability vocabulary without inferring local readiness from client identity. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
     },
     {
       "path": "backend/rote/fallback.py",
@@ -961,9 +988,9 @@
       "sourcePath": "windows-client/astral_client/app.py",
       "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
       "sourceMode": "100644",
-      "resultSha256": "a801994b9aea1845cc6229a530f8338f3563f945b0d8be46386d8032d344c7c4",
+      "resultSha256": "6945b6cf79d202b398b7735348967d4d46d5b646a7ba2203111b40a2383f97ac",
       "task": "T059/T071/T088/T040",
-      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
     },
     {
       "path": "windows-client/astral_client/deployment.py",
@@ -988,9 +1015,9 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "6b56987d4d5fd22e7f82bf012931249e20838dc3106c2db6e8e9b43a9032a7e9",
+      "resultSha256": "37f4e85687a402e5e4caa991a3796ebfeeb318976d94e2cb0c487ce05a518d2e",
       "task": "T166/T054/T071/T089/T040",
-      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring)."
+      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions."
     },
     {
       "path": "windows-client/astral_client/protocol_manifest.py",
@@ -1101,6 +1128,15 @@
       "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path."
     },
     {
+      "path": "windows-client/tests/test_conversation_continuity_060.py",
+      "sourcePath": "windows-client/tests/test_conversation_continuity_060.py",
+      "sourceBlob": "f15a48e2734e231db035b78c39bea0f009ade6fc",
+      "sourceMode": "100644",
+      "resultSha256": "0f48ee1b3a14573631a20b5549a5b4c8de11c9f485d73d160a43630704d69a66",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
+    },
+    {
       "path": "windows-client/tests/test_deployment_profile_060.py",
       "sourcePath": "windows-client/tests/test_deployment_profile_060.py",
       "sourceBlob": "1a71b8dd3865abab13a6ac954223e928477c1f8a",
@@ -1180,6 +1216,15 @@
       "resultSha256": "9998a01b91eed26c57e723d7874c685eaef897cb2bc45078d4d8c26c4623840f",
       "task": "T166",
       "reason": "Exercise the runtime-v3 delivery fence and protected-executor reliability contract."
+    },
+    {
+      "path": "windows-client/tests/test_status_lifecycle_060.py",
+      "sourcePath": "windows-client/tests/test_status_lifecycle_060.py",
+      "sourceBlob": "fc9d36e74626b97682368f66052f02e1da1eb6a3",
+      "sourceMode": "100644",
+      "resultSha256": "cfc7b88f7f0a9aaa23f8b32c98084c2bb44fd1d7dcd209d634c3411fcb40730c",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage."
     },
     {
       "path": "windows-client/tests/test_task_continuity.py",

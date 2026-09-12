@@ -877,6 +877,16 @@ final class AppModel: NSObject {
     /// Internal (not private) so XCTests can drive frames through the reducer.
     func handleFrame(_ frame: InboundFrame) {
         voice.consume(frame)
+        // Registration establishes a connection before the server's global
+        // welcome arrives. It has no conversation generation; admit only its
+        // validated ephemeral components while no hydration/turn is open.
+        if !workspaceStarted, continuity.requestGeneration == nil,
+            let components = WorkspaceWelcome.unscopedComponents(in: frame)
+        {
+            canvas = components
+            transientCanvas = nil
+            return
+        }
         if workspaceStarted, ["ui_render", "ui_update"].contains(frame.name),
             frame.renderTarget != "chat", !frame.renderComponents.isEmpty,
             !WorkspaceWelcome.containsWork(frame.renderComponents)
@@ -1126,6 +1136,9 @@ final class AppModel: NSObject {
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
+            if status.state != "completed" {
+                _ = continuity.retireUncommittedCommit(requestGeneration: status.requestGeneration)
+            }
             clearLocalOperationSubmission(requestGeneration: status.requestGeneration)
             if ownsActiveChatTurn {
                 settleActiveChatTurn(
@@ -1187,6 +1200,7 @@ final class AppModel: NSObject {
                 requestGeneration: submission.requestGeneration,
                 discardUncommitted: true)
         }
+        _ = continuity.retireUncommittedCommit(requestGeneration: submission.requestGeneration)
         statusText = latestActiveOperationStatusText()
         bannerIsError = true
         errorBanner = refusal.message
@@ -1559,11 +1573,7 @@ final class AppModel: NSObject {
     }
 
     private func clearContinuityChatKeepingConnection() {
-        let connection = continuity.connectionGeneration
-        continuity.clear()
-        if let connection {
-            _ = continuity.beginConnection(connection)
-        }
+        continuity.clearChatKeepingConnection()
     }
 
     private func nestedChatId(_ frame: InboundFrame) -> String? {

@@ -1,6 +1,38 @@
 import XCTest
 
 final class WorkspacePresentationUITests: XCTestCase {
+    func testPhoneCanvasRemainsResponsiveWhileCollapsingAndScrollingMessages() throws {
+        #if os(iOS)
+            let app = XCUIApplication()
+            app.launchArguments = ["--astral-ui-test-first-login", "workspace-canvas"]
+            app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+            app.launch()
+            defer { app.terminate() }
+
+            guard app.windows.firstMatch.frame.width < 700 else {
+                throw XCTSkip("requires the phone stacked workspace layout")
+            }
+            let toggle = app.buttons["workspace-messages-toggle"]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 5))
+            let canvas = app.scrollViews["workspace-canvas-scroll"]
+            XCTAssertTrue(canvas.exists)
+            for _ in 0..<5 {
+                toggle.tap()
+                XCTAssertFalse(app.scrollViews["conversation-message-scroll"].exists)
+                canvas.swipeUp()
+                XCTAssertTrue(app.staticTexts["Canvas layout end"].waitForExistence(timeout: 3))
+                toggle.tap()
+                XCTAssertTrue(app.scrollViews["conversation-message-scroll"].waitForExistence(timeout: 3))
+                canvas.swipeDown()
+            }
+            let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
+            composer.tap()
+            composer.typeText("Still responsive")
+            XCTAssertTrue((composer.value as? String ?? "").contains("Still responsive"))
+            capture(app, name: "workspace-088-canvas-collapse-scroll-synthetic-fixture")
+        #endif
+    }
+
     func testStartComposerDisclosureAndIrreversibleWorkTransition() throws {
         let app = XCUIApplication()
         app.launchArguments = ["--astral-ui-test-first-login", "workspace-start"]

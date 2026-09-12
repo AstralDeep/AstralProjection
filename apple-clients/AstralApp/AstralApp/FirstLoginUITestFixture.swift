@@ -15,6 +15,7 @@
             case clientWatchdog = "client-watchdog"
             case chatComposer = "chat-composer"
             case workspaceStart = "workspace-start"
+            case workspaceCanvas = "workspace-canvas"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
             case continuitySeed = "continuity-seed"
@@ -55,6 +56,10 @@
 
             if scenario == .workspaceStart {
                 installWorkspace(on: model)
+                return
+            }
+            if scenario == .workspaceCanvas {
+                installWorkspaceCanvas(on: model)
                 return
             }
             _ = model.beginConversationConnection(connectionGeneration)
@@ -167,7 +172,7 @@
                         errorMessage: "The provider is temporarily unavailable."))
             case .clientWatchdog:
                 break
-            case .chatComposer, .workspaceStart:
+            case .chatComposer, .workspaceStart, .workspaceCanvas:
                 break
             case .voiceComposer:
                 break
@@ -202,6 +207,21 @@
                     ]
                 }
             }
+        }
+
+        @MainActor
+        private static func installWorkspaceCanvas(on model: AppModel) {
+            model.screen = .chat
+            model.turns = (1...7).map { index in
+                AppModel.ChatTurn(
+                    id: "workspace-layout-\(index)",
+                    role: index.isMultiple(of: 2) ? "assistant" : "user",
+                    text: "Canvas layout check \(index). Six dice produced 6, 1, 2, 1, 3, 5 for a total of 18.")
+            }
+            let result = InboundFrame.parse(
+                #"{"type":"ui_render","target":"canvas","components":[{"type":"hero","component_id":"layout_hero","title":"Dice layout regression","subtitle":"Six results and a total"},{"type":"grid","component_id":"layout_grid","columns":2,"children":[{"type":"card","title":"Roll Summary","content":[{"type":"metric","label":"Total","value":18},{"type":"text","content":"Six dice produced 6, 1, 2, 1, 3, 5."}]},{"type":"card","title":"Results Table","content":[{"type":"table","headers":["Die","Result"],"rows":[["Die 1",6],["Die 2",1],["Die 3",2],["Die 4",1],["Die 5",3],["Die 6",5],["Total",18]]}]}]},{"type":"text","component_id":"layout_end","content":"Canvas layout end"}]}"#
+            )!
+            model.canvas = result.renderComponents
         }
 
         /// Drives the production strict voice reducer so UI automation can
