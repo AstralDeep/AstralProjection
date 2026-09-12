@@ -885,6 +885,15 @@
       "reason": "Classify local speech readiness with closed reasons and preserve an explicit typed fallback for every unavailable posture."
     },
     {
+      "path": "backend/rote/rote.py",
+      "sourcePath": "backend/rote/rote.py",
+      "sourceBlob": "5a6b618640b472236ee36a71cf9c60ba91f35bc4",
+      "sourceMode": "100644",
+      "resultSha256": "8d6c9df86afe13466034fa468b6145d076f51a9f61558d40f5f70b621f133ea5",
+      "task": "T060/T061",
+      "reason": "Feature 088 component actions: expose a detached socket-scoped copy of original cached components so legacy viewport fallback rebuilds host-owned metadata after adaptation without mutating the cache."
+    },
+    {
       "path": "backend/webrender/chrome/menu_model.py",
       "sourcePath": "backend/webrender/chrome/menu_model.py",
       "sourceBlob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
@@ -1043,8 +1052,8 @@
       "sourceBlob": "21f98cc84bd4d81670f8c1fece4ab119468206ce",
       "sourceMode": "100644",
       "task": "T008",
-      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels. Feature 088 live mobile review: preserve escaped placement metadata on known welcome containers with absent or wel_ identity, so ROTE grid collapse cannot turn three welcome prompts into work content; preserve transparent ordinary containers and reject malformed hints. Reject every conflicting or malformed present identity field instead of allowing one identity to mask another. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities.",
-      "resultSha256": "4bcba3913623469e59cb054c5ab39e4fba6cd8f5577b71d7d4a23059b67eef02"
+      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels. Feature 088 live mobile review: preserve escaped placement metadata on known welcome containers with absent or wel_ identity, so ROTE grid collapse cannot turn three welcome prompts into work content; preserve transparent ordinary containers and reject malformed hints. Reject every conflicting or malformed present identity field instead of allowing one identity to mask another. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences.",
+      "resultSha256": "7c5b63e6fd27baa398f9fca3bd244ee469db5ee992e899e63cd20700ee609c56"
     },
     {
       "path": "backend/webrender/static/astral.css",
@@ -1078,9 +1087,9 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "1365f934449b3285d8b2c019ed90b976d3e22977fdbbaafcc323a8e5ea76db88",
+      "resultSha256": "762d5e991d824be207d8cefb94ad19b828ecb4dac65c07b597f6adc2cb880aee",
       "task": "T013/T015/T040/T023/T054",
-      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
+      "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences."
     },
     {
       "path": "scripts/export_xccov_line_coverage.py",
