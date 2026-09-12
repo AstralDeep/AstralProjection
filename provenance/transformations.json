@@ -129,6 +129,15 @@
       "reason": "Decode base64 data:image URLs locally so the image primitive can show remote-control screenshots (feature 076)."
     },
     {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCaps.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCaps.kt",
+      "sourceBlob": "333b0f201e01777a81c295a8317dfa768a0e7f45",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated Android parity: report logical viewport dimensions separately from physical screen metrics, validate positive finite metrics, and test phone/tablet density boundaries.",
+      "resultSha256": "70337ad0ba3e9ae48ec6a7173b6b94f0e2609e5879bd3cbc2d1f6009588d9846"
+    },
+    {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
       "sourceBlob": "25a71eb2c805119e642c5cc5cc4c456e47776fec",
@@ -199,6 +208,15 @@
       "resultSha256": "3c2e1dd66ebf9defa3443def9ed2888e599d0913bbb50ffc59a2a894e4a0882f",
       "task": "T054",
       "reason": "Repoint Android renderer vocabulary parity to the standalone Projection contract."
+    },
+    {
+      "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCapsTest.kt",
+      "sourcePath": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/transport/DeviceCapsTest.kt",
+      "sourceBlob": "9e71cbae1df99e3c7d6ce1df24377608dd60b13c",
+      "sourceMode": "100644",
+      "task": "T056/T060",
+      "reason": "Feature 088 authenticated Android parity: report logical viewport dimensions separately from physical screen metrics, validate positive finite metrics, and test phone/tablet density boundaries.",
+      "resultSha256": "a7f0eff0e827b4175781259ce3ee1c4a7bc9aa76fce3e05612fb92a1f28b4296"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ui/ChromeSurfaceReducerTest.kt",
