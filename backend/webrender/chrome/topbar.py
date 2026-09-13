@@ -217,6 +217,7 @@ def render_topbar(
     export_enabled: bool = False,
     share_enabled: bool = False,
     work_enabled: bool = False,
+    notes_enabled: bool = False,
 ) -> str:
     """Inner HTML for ``<header id="astral-topbar">`` — brand, status, Settings.
 
@@ -236,6 +237,7 @@ def render_topbar(
         export_enabled=export_enabled,
         share_enabled=share_enabled,
         work_enabled=work_enabled,
+        notes_enabled=notes_enabled,
     )
 
     # Left cluster: brand. Right cluster: status + New chat + interactive

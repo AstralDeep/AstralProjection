@@ -2,6 +2,138 @@
   "version": 1,
   "description": "Committed UI-protocol manifest (feature 044). Single source for the server->client WS frame vocabulary, the ui_event action vocabulary, and the component vocabulary. Backend, Windows, and Android test suites all assert against this file; adding a frame type, action, or component type REQUIRES editing it in the same PR (guards fail otherwise). See specs/044-native-client-parity/contracts/ui-protocol.md.",
   "presentation_contracts": {
+    "guidance_notes_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/guidance_088/notes_surface.json",
+      "surface_key": "guidance",
+      "client_capability": "guidance_notes_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access. Every request uses the original authenticated human, exact issued session when supplied, current owner and policy; commands require the original write authority and exact expected revision.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "list",
+          "new",
+          "edit",
+          "forget"
+        ],
+        "list_params": [
+          "mode",
+          "search?",
+          "after_id?"
+        ],
+        "new_params": [
+          "mode"
+        ],
+        "edit_forget_params": [
+          "mode",
+          "note_id",
+          "expected_revision"
+        ]
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "optional_payload_identity_fields": [
+          "submission_id",
+          "request_generation",
+          "connection_generation"
+        ],
+        "identity_duplicates": "If present, must exactly match the validated original top-level identity. No other payload metadata is accepted.",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current list; it never resubmits the mutation."
+      },
+      "actions": {
+        "chrome_note_search": [
+          "fields.search"
+        ],
+        "chrome_note_save": [
+          "note_id",
+          "expected_revision",
+          "fields.category",
+          "fields.value",
+          "fields.enabled",
+          "fields.expiry",
+          "fields.expiry_date?"
+        ],
+        "chrome_note_toggle": [
+          "note_id",
+          "expected_revision",
+          "enabled"
+        ],
+        "chrome_note_forget": [
+          "note_id",
+          "expected_revision"
+        ]
+      },
+      "fields": {
+        "category": [
+          "Profession",
+          "Goal",
+          "Preference",
+          "Workflow tag",
+          "Context"
+        ],
+        "value": "literal nonempty normalized private text, at most 4096 UTF-8 bytes",
+        "enabled": "boolean",
+        "expiry": [
+          "Keep current expiry (existing notes only)",
+          "No expiry",
+          "Set a date"
+        ],
+        "expiry_date": "UTC YYYY-MM-DDTHH:mm:ss[.SSS]Z when Set a date is selected; otherwise ignored; Keep current expiry preserves the exact stored integer"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "guidance",
+        "request_generation": "the original requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new owner-surface request or note command",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept one complete response matching the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated frames. Server rechecks the exact displayed note revisions and expiry after rendering and before delivery.",
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "button",
+          "param_picker"
+        ],
+        "text": "Complete literal text; no Markdown interpretation, source-link activation, truncation or private-value logging. Native forms use the same field names, choices, defaults, visibility and exact revision commands.",
+        "forget": "Separate review displays the exact note and revision. Explicit confirmation retires the ciphertext; no undo or historical plaintext view."
+      },
+      "legacy": "Hosts expose the entry only to clients advertising guidance_notes_v1. Windows redesign remains deferred; unsupported clients receive no private notes frame."
+    },
     "work_read_088": {
       "version": 1,
       "fixture": "contracts/fixtures/work_088/read_surface.json",
@@ -503,6 +635,7 @@
     "chrome_memory_delete",
     "chrome_memory_update", "chrome_open", "chrome_perms_save", "chrome_profile_save",
     "chrome_safe_set", "chrome_skill_toggle", "chrome_theme_preset", "chrome_tour_event",
+    "chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget",
     "chrome_user_skill_delete", "chrome_user_skill_edit", "chrome_user_skill_save",
     "chrome_user_skill_toggle",
     "chrome_visibility_set", "chrome_workspace_timeline_live", "chrome_workspace_timeline_view",

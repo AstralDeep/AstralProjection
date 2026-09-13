@@ -37,7 +37,7 @@
   var accountPrivacyEpoch = 0;
   var accountSignedOut = false;
   // Work reads belong to one live socket/navigation, never the reconnect queue.
-  var workReadRequest = null;
+  var ownerSurfaceRequest = null;
   var connectionGeneration = null;
   var requestState = null;
   var committedRevisionByChat = Object.create(null);
@@ -281,7 +281,7 @@
   }
 
   function clearCommittedConversationView(reason, chatId) {
-    if (workReadRequest) { retireWorkRead(); setModal(""); }
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     if (chat) chat.replaceChildren();
     if (canvas) { canvas.replaceChildren(); showCanvasEmpty(); }
     setWorkspaceView("start");
@@ -308,7 +308,7 @@
   /** Erase private local work without dispatching it under the next owner. */
   function clearPrivateAccountState() {
     accountPrivacyEpoch += 1;
-    retireWorkRead();
+    retireOwnerSurface();
     if (input) input.value = "";
     (pendingActions || []).forEach(function (entry) { clearTimeout(entry.timer); });
     pendingActions = [];
@@ -388,7 +388,7 @@
   }
 
   function openRequest(purpose, chatId, suppliedGeneration) {
-    if (workReadRequest) { retireWorkRead(); setModal(""); }
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     setWorkspaceView("work");
     requestState = {
       chatId: chatId || null,
@@ -407,7 +407,7 @@
 
   function selectActiveChat(chatId, purpose) {
     if (!isCanonicalUuid4(chatId)) return false;
-    if (workReadRequest) { retireWorkRead(); setModal(""); }
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     persistActiveChatLocator(chatId);
     activeChatId = chatId;
     syncVoiceVisibleChat(chatId);
@@ -5319,13 +5319,21 @@
   }
 
   function action(name, payload, exposeStatus) {
-    var workRead = name === "chrome_open" && payload && payload.surface === "work";
-    if (name === "chrome_open" || name === "chrome_close") retireWorkRead();
-    if ((name === "new_chat" || name === "load_chat") && workReadRequest) {
-      retireWorkRead(); setModal("");
+    var noteAction = ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"].indexOf(name) !== -1;
+    var ownerSurface = noteAction ? "guidance"
+      : name === "chrome_open" && payload && ["work", "guidance"].indexOf(payload.surface) !== -1
+        ? payload.surface : null;
+    if (name === "chrome_open" || name === "chrome_close" || noteAction) retireOwnerSurface();
+    if (noteAction) {
+      // A lost acknowledgement must reconcile current notes, never replay a write.
+      // The retry state contains no form values or obsolete revision command.
+      showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
+    }
+    if ((name === "new_chat" || name === "load_chat") && ownerSurfaceRequest) {
+      retireOwnerSurface(); setModal("");
     }
     if (name === "chat_message") openRequest("commit", activeChatId);
-    var suppliedGeneration = workRead ? randomUuid4()
+    var suppliedGeneration = ownerSurface ? randomUuid4()
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
@@ -5333,22 +5341,22 @@
       type: "ui_event",
       action: name,
       payload: submission.payload,
-      session_id: workRead ? undefined : activeChatId || undefined,
+      session_id: ownerSurface ? undefined : activeChatId || undefined,
       submission_id: submission.submissionId,
       request_generation: submission.requestGeneration,
     };
     if (connectionGeneration) frame.connection_generation = connectionGeneration;
-    if (workRead) {
+    if (ownerSurface) {
       if (!isSocketReady()) {
         finishOperationSubmission(submission.requestGeneration);
         showModalRetry();
         showToast("Not connected. Retry when the connection returns.", "error");
         return submission;
       }
-      workReadRequest = { generation: submission.requestGeneration, socket: ws,
+      ownerSurfaceRequest = { surface: ownerSurface, generation: submission.requestGeneration, socket: ws,
         connection: connectionGeneration, privacyEpoch: accountPrivacyEpoch, received: false };
       if (!send(frame)) {
-        retireWorkRead();
+        retireOwnerSurface();
         showModalRetry();
       }
       return submission;
@@ -5371,16 +5379,17 @@
     return submission;
   }
 
-  function retireWorkRead() {
-    if (workReadRequest) finishOperationSubmission(workReadRequest.generation);
-    workReadRequest = null;
+  function retireOwnerSurface() {
+    if (ownerSurfaceRequest) finishOperationSubmission(ownerSurfaceRequest.generation);
+    ownerSurfaceRequest = null;
   }
 
-  function receiveWorkRead(data) {
-    var pending = workReadRequest;
+  function receiveOwnerSurface(data) {
+    var pending = ownerSurfaceRequest;
     if (!pending || pending.received || !isSocketReady() || accountSignedOut
         || pending.socket !== ws || pending.connection !== connectionGeneration
         || pending.privacyEpoch !== accountPrivacyEpoch
+        || data.surface_key !== pending.surface
         || data.region !== "modal" || data.mode !== "replace"
         || !isCanonicalUuid4(data.request_generation)
         || data.request_generation !== pending.generation || typeof data.html !== "string") return false;
@@ -5392,7 +5401,7 @@
 
   /** Persist and bind resume scope before the registration frame is sent. */
   function sendRegistration(resumed) {
-    if (workReadRequest) { retireWorkRead(); setModal(""); }
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     var resume;
     if (activeChatId) {
       persistActiveChatLocator(activeChatId);
@@ -5407,7 +5416,7 @@
     send({
       type: "register_ui",
       token: token,
-      capabilities: ["render", "stream", "voice"],
+      capabilities: ["render", "stream", "voice", "guidance_notes_v1"],
       session_id: "ui-" + Date.now(),
       device_id: voiceDeviceId,
       device: device,
@@ -5544,6 +5553,7 @@
   }
   function processSideEffects(root) {
     initCharts(root);
+    refreshChromeFormVisibility(root);
     var themes = root.querySelectorAll(".astral-theme-apply");
     for (var i = 0; i < themes.length; i++) { try { applyTheme(JSON.parse(themes[i].dataset.theme || "{}")); } catch (e) {} }
   }
@@ -6398,8 +6408,8 @@
       // this stays byte-identical to the 060 contract.
       restoreActiveStatusOrClear([operationOwner, submissionOwner]);
     } else if (frame.terminal) {
-      if (workReadRequest && workReadRequest.generation === frame.request_generation) {
-        retireWorkRead(); showModalRetry();
+      if (ownerSurfaceRequest && ownerSurfaceRequest.generation === frame.request_generation) {
+        retireOwnerSurface(); showModalRetry();
       }
       // Failure/cancellation/retry guidance persists, but is settled and must
       // never look like work is still in progress.
@@ -6442,8 +6452,8 @@
         || !validRetryAfter) return false;
     var local = operationSubmissionById[frame.submission_id];
     if (!local) return false;
-    if (workReadRequest && workReadRequest.generation === local.request_generation) {
-      retireWorkRead(); showModalRetry();
+    if (ownerSurfaceRequest && ownerSurfaceRequest.generation === local.request_generation) {
+      retireOwnerSurface(); showModalRetry();
     }
     finishOperationSubmission(local.request_generation);
     setStatus(errorMessage(frame), false, "operation-error:" + frame.submission_id);
@@ -6620,7 +6630,7 @@
         }
         break;
       case "auth_required": // recoverable WS auth failure
-        if (workReadRequest) { retireWorkRead(); setModal(""); }
+        if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
         if (currentVoiceFence() || voiceActivation) {
           voiceRecoverySuppressed = true;
           teardownVoiceMedia(true);
@@ -6669,10 +6679,10 @@
         break;
       }
       case "chrome_render": // server-rendered chrome regions
-        if (data.surface_key === "work") { receiveWorkRead(data); break; }
-        // A delayed legacy modal/close cannot replace the current Work read.
+        if (data.surface_key === "work" || data.surface_key === "guidance") { receiveOwnerSurface(data); break; }
+        // A delayed legacy modal/close cannot replace the current owner surface.
         // Explicit navigation retires this guard before sending its new action.
-        if (data.region === "modal" && workReadRequest) break;
+        if (data.region === "modal" && ownerSurfaceRequest) break;
         if (data.region === "modal") setModal(data.html || "");
         else if (data.region === "topbar") {
           var tb = document.getElementById("astral-topbar");
@@ -7827,8 +7837,8 @@
   function showModalRetry() {
     modalSkeletonTimer = null;
     if (!modalRoot || !modalSkeletonRequest) return;
-    if (modalSkeletonRequest.action === "chrome_open" && modalSkeletonRequest.payload.surface === "work") {
-      retireWorkRead();
+    if (modalSkeletonRequest.action === "chrome_open" && ["work", "guidance"].indexOf(modalSkeletonRequest.payload.surface) !== -1) {
+      retireOwnerSurface();
     }
     modalRoot.innerHTML = modalShellHtml(
       '<div class="text-sm text-astral-text" role="status">This is taking longer than expected.</div>'
@@ -7954,6 +7964,36 @@
     }
     return fields;
   }
+
+  function refreshChromeFormVisibility(root) {
+    if (!root || !root.querySelectorAll) return;
+    var groups = root.querySelectorAll("[data-chrome-visible-when]");
+    for (var index = 0; index < groups.length; index++) {
+      var group = groups[index], form = group.closest("[data-ui-form]");
+      var visible = false;
+      try {
+        var condition = JSON.parse(group.getAttribute("data-chrome-visible-when"));
+        var fields = collectChromeFields(form);
+        if (condition && typeof condition === "object" && !Array.isArray(condition)) {
+          if (typeof condition.field === "string" && Object.prototype.hasOwnProperty.call(condition, "equals")) {
+            visible = Object.prototype.hasOwnProperty.call(fields, condition.field)
+              && fields[condition.field] === condition.equals;
+          } else {
+            var names = Object.keys(condition);
+            visible = names.length > 0 && names.every(function (name) {
+              return Object.prototype.hasOwnProperty.call(fields, name) && fields[name] === condition[name];
+            });
+          }
+        }
+      } catch (error) { /* Malformed conditions keep the field hidden. */ }
+      group.hidden = !visible;
+    }
+  }
+
+  document.addEventListener("change", function (event) {
+    var form = event.target.closest && event.target.closest("[data-ui-form]");
+    if (form) refreshChromeFormVisibility(form);
+  });
 
   var AUTHORING_MUTATION_ACTIONS = Object.freeze({
     chrome_author_create: true,
@@ -8203,7 +8243,7 @@
     ws.onclose = function () {
       if (accountSignedOut || ws !== thisSocket) return;
       socketReady = false;
-      if (workReadRequest) { retireWorkRead(); setModal(""); }
+      if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
       setConnState("offline", "Reconnecting — messages will queue");
       operationSubmissionByGeneration = Object.create(null);
       operationSubmissionById = Object.create(null);

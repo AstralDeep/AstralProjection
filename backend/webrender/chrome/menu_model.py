@@ -172,6 +172,7 @@ _BYO_AGENTS_ITEM = MenuItem("my-agents", "My agents & skills", "agent_authoring"
 # Feature 077 — the same surface with only the skills half when personal agents
 # are off (FF_BYO_AGENTS) but user skills are on (FF_USER_SKILLS, default ON).
 _SKILLS_ONLY_ITEM = MenuItem("my-agents", "My skills", "agent_authoring")
+_NOTES_ITEM = MenuItem("guidance", "Private notes", "guidance", {"mode": "list"})
 # Feature 063 — the ONLY affordance that opens the Remote machines inventory.
 # Flag-gated (FF_REMOTE_COMPUTE, default OFF) like "My agents": absent from every
 # client's menu when off. Per-user (not admin), so admin_only stays False.
@@ -207,6 +208,7 @@ def build_menu_model(
     export_enabled: bool = False,
     share_enabled: bool = False,
     work_enabled: bool = False,
+    notes_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
@@ -228,6 +230,8 @@ def build_menu_model(
             also require the client's current ``live_canvas`` context.
         work_enabled: host-resolved owner Work-read availability. Native hosts
             additionally require negotiated work_read_v1 before delivery.
+        notes_enabled: host-resolved private notes presence; native delivery
+            requires negotiated guidance_notes_v1 and current human authority.
         include_admin: whether the ADMIN TOOLS group is eligible at all. The web
             passes ``True`` (admins see it). Native clients (Windows/Android)
             pass ``False`` — admin settings are web-only, so the group is omitted
@@ -288,6 +292,7 @@ def build_menu_model(
     )
     account_items = (
         _ACCOUNT_ITEMS
+        + ((_NOTES_ITEM,) if notes_enabled else ())
         + ((_BYO_AGENTS_ITEM,) if show_byo else ((_SKILLS_ONLY_ITEM,) if show_skills else ()))
         + ((_REMOTE_MACHINES_ITEM,) if show_remote else ())
         + ((_MY_COMPUTERS_ITEM,) if show_computer else ())
@@ -313,6 +318,7 @@ def menu_model_dict(
     export_enabled: bool = False,
     share_enabled: bool = False,
     work_enabled: bool = False,
+    notes_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
@@ -332,16 +338,17 @@ def menu_model_dict(
         export_enabled=export_enabled,
         share_enabled=share_enabled,
         work_enabled=work_enabled,
+        notes_enabled=notes_enabled,
         include_admin=include_admin,
         include_tour=include_tour,
     ).to_dict()
 
 
 def project_watch_menu_model(model: Dict) -> Dict:
-    """Project only the canonical Work read action from the shared inventory.
+    """Project negotiated Work and notes actions from the shared inventory.
 
     This is the explicit wrist disposition, not another menu definition. The
-    host must negotiate work_read_v1 before delivering it. Other chrome and
+    host must negotiate each surface's capability before delivering it. Other chrome and
     artifact operations keep their existing wrist omission.
     """
     from copy import deepcopy
@@ -352,9 +359,19 @@ def project_watch_menu_model(model: Dict) -> Dict:
     if not isinstance(controls, list):
         controls = []
     selected = [control for control in controls if control == canonical]
+    selected = selected if len(selected) == 1 else []
+    groups = model.get("menu", []) if isinstance(model, dict) else []
+    notes = [item for group in groups if isinstance(group, dict) and group.get("key") == "account"
+             for item in (group.get("items") if isinstance(group.get("items"), list) else [])
+             if item == _NOTES_ITEM.to_dict()] if isinstance(groups, list) else []
+    if len(notes) == 1:
+        selected.append(TopBarControl(
+            _NOTES_ITEM.key, "action", label=_NOTES_ITEM.label,
+            action=SurfaceRef(_NOTES_ITEM.surface, dict(_NOTES_ITEM.params)),
+        ).to_dict())
     return {
         "version": MODEL_VERSION,
-        "topbar": deepcopy(selected) if len(selected) == 1 else [],
+        "topbar": deepcopy(selected),
         "menu": [],
         "signout": {},
     }

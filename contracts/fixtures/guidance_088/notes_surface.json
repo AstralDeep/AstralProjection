@@ -1,0 +1,468 @@
+{
+  "version": 1,
+  "description": "Synthetic private note fixture; generated from the exact shared builder. No real user content.",
+  "states": {
+    "list": {
+      "status": "ready",
+      "mode": "list",
+      "notes": [
+        {
+          "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+          "revision": 3,
+          "category": "preference",
+          "value": "Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private",
+          "enabled": true,
+          "expires_at": null
+        }
+      ],
+      "search": "",
+      "next_cursor": null
+    },
+    "new": {
+      "status": "ready",
+      "mode": "new",
+      "note_id": "0fe0d7ba-812a-4881-9f61-77e23327d492"
+    },
+    "edit": {
+      "status": "ready",
+      "mode": "edit",
+      "note": {
+        "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+        "revision": 3,
+        "category": "preference",
+        "value": "Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private",
+        "enabled": true,
+        "expires_at": null
+      }
+    },
+    "forget": {
+      "status": "ready",
+      "mode": "forget",
+      "note": {
+        "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+        "revision": 3,
+        "category": "preference",
+        "value": "Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private",
+        "enabled": true,
+        "expires_at": null
+      }
+    }
+  },
+  "frames": {
+    "list": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "Private notes",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Private notes are guidance you can select for your work.",
+          "variant": "body"
+        },
+        {
+          "type": "button",
+          "label": "Add note",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "mode": "new"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "param_picker",
+          "title": "",
+          "description": "",
+          "fields": [
+            {
+              "name": "search",
+              "label": "Search notes",
+              "kind": "text",
+              "default": ""
+            }
+          ],
+          "submit_label": "Search",
+          "submit_action": "chrome_note_search",
+          "submit_payload": {}
+        },
+        {
+          "type": "card",
+          "title": "Preference",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Enabled",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private",
+              "variant": "body"
+            },
+            {
+              "type": "text",
+              "content": "No expiry",
+              "variant": "caption"
+            },
+            {
+              "type": "button",
+              "label": "Edit",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "guidance",
+                "params": {
+                  "mode": "edit",
+                  "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+                  "expected_revision": 3
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Disable",
+              "action": "chrome_note_toggle",
+              "payload": {
+                "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+                "expected_revision": 3,
+                "enabled": false
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Forget",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "guidance",
+                "params": {
+                  "mode": "forget",
+                  "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+                  "expected_revision": 3
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "mode": "list",
+              "search": ""
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89"
+    },
+    "new": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "Private notes",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "button",
+          "label": "Back to notes",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "param_picker",
+          "title": "Add note",
+          "description": "",
+          "fields": [
+            {
+              "name": "category",
+              "label": "Category",
+              "kind": "select",
+              "default": "Context",
+              "options": [
+                "Profession",
+                "Goal",
+                "Preference",
+                "Workflow tag",
+                "Context"
+              ]
+            },
+            {
+              "name": "value",
+              "label": "Note",
+              "kind": "textarea",
+              "default": "",
+              "help": "Describe your preferences or context. Do not include patient information."
+            },
+            {
+              "name": "enabled",
+              "label": "Enabled",
+              "kind": "boolean",
+              "default": true
+            },
+            {
+              "name": "expiry",
+              "label": "Expiry",
+              "kind": "select",
+              "default": "No expiry",
+              "options": [
+                "No expiry",
+                "Set a date"
+              ]
+            },
+            {
+              "name": "expiry_date",
+              "label": "Expiry date (UTC)",
+              "kind": "text",
+              "default": "",
+              "help": "Use a UTC date and time, for example 2026-12-31T23:59:00Z.",
+              "visible_when": {
+                "expiry": "Set a date"
+              }
+            }
+          ],
+          "submit_label": "Save note",
+          "submit_action": "chrome_note_save",
+          "submit_payload": {
+            "note_id": "0fe0d7ba-812a-4881-9f61-77e23327d492",
+            "expected_revision": 0
+          }
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89"
+    },
+    "edit": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "Private notes",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "button",
+          "label": "Back to notes",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "text",
+          "content": "Current note",
+          "variant": "h3"
+        },
+        {
+          "type": "badge",
+          "label": "Enabled",
+          "variant": "default"
+        },
+        {
+          "type": "text",
+          "content": "Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "No expiry",
+          "variant": "caption"
+        },
+        {
+          "type": "param_picker",
+          "title": "Edit note",
+          "description": "",
+          "fields": [
+            {
+              "name": "category",
+              "label": "Category",
+              "kind": "select",
+              "default": "Preference",
+              "options": [
+                "Profession",
+                "Goal",
+                "Preference",
+                "Workflow tag",
+                "Context"
+              ]
+            },
+            {
+              "name": "value",
+              "label": "Note",
+              "kind": "textarea",
+              "default": "Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private",
+              "help": "Describe your preferences or context. Do not include patient information."
+            },
+            {
+              "name": "enabled",
+              "label": "Enabled",
+              "kind": "boolean",
+              "default": true
+            },
+            {
+              "name": "expiry",
+              "label": "Expiry",
+              "kind": "select",
+              "default": "Keep current expiry",
+              "options": [
+                "Keep current expiry",
+                "No expiry",
+                "Set a date"
+              ]
+            },
+            {
+              "name": "expiry_date",
+              "label": "Expiry date (UTC)",
+              "kind": "text",
+              "default": "",
+              "help": "Use a UTC date and time, for example 2026-12-31T23:59:00Z.",
+              "visible_when": {
+                "expiry": "Set a date"
+              }
+            }
+          ],
+          "submit_label": "Save note",
+          "submit_action": "chrome_note_save",
+          "submit_payload": {
+            "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+            "expected_revision": 3
+          }
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89"
+    },
+    "forget": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "Private notes",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "button",
+          "label": "Keep note",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "card",
+          "title": "Preference",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Enabled",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private",
+              "variant": "body"
+            },
+            {
+              "type": "text",
+              "content": "No expiry",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "alert",
+          "message": "Forget permanently erases this note's current value. This cannot be undone.",
+          "variant": "warning"
+        },
+        {
+          "type": "button",
+          "label": "Forget note",
+          "action": "chrome_note_forget",
+          "payload": {
+            "note_id": "5106d0c8-09a0-47cf-910f-0cc1408b73a4",
+            "expected_revision": 3
+          },
+          "variant": "danger",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89"
+    }
+  },
+  "web_frames": {
+    "list": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Private notes\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Private notes</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">Private notes</h2><p data-text-variant=\"body\">Private notes are guidance you can select for your work.</p><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;new&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Add note</button><div data-ui-form=\"true\" role=\"form\"><label>Search notes<input type=\"text\" name=\"search\" value=\"\" aria-label=\"Search notes\"></label><button type=\"button\" data-ui-action=\"chrome_note_search\" data-ui-payload=\"{}\" data-ui-collect=\"true\">Search</button></div><section aria-label=\"Preference\"><h3>Preference</h3><span role=\"status\" data-badge-variant=\"default\">Enabled</span><p data-text-variant=\"body\">Use complete source text: **literal** &lt;script&gt;alert(1)&lt;/script&gt; https://example.invalid/private</p><small data-text-variant=\"caption\">No expiry</small><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;expected_revision&quot;:3,&quot;mode&quot;:&quot;edit&quot;,&quot;note_id&quot;:&quot;5106d0c8-09a0-47cf-910f-0cc1408b73a4&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Edit</button><button type=\"button\" data-ui-action=\"chrome_note_toggle\" data-ui-payload=\"{&quot;enabled&quot;:false,&quot;expected_revision&quot;:3,&quot;note_id&quot;:&quot;5106d0c8-09a0-47cf-910f-0cc1408b73a4&quot;}\">Disable</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;expected_revision&quot;:3,&quot;mode&quot;:&quot;forget&quot;,&quot;note_id&quot;:&quot;5106d0c8-09a0-47cf-910f-0cc1408b73a4&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Forget</button></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;,&quot;search&quot;:&quot;&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Refresh</button></section></div></div></div>"
+    },
+    "new": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Private notes\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Private notes</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">Private notes</h2><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Back to notes</button><div data-ui-form=\"true\" role=\"form\"><h3>Add note</h3><label>Category<select name=\"category\" aria-label=\"Category\"><option value=\"Profession\">Profession</option><option value=\"Goal\">Goal</option><option value=\"Preference\">Preference</option><option value=\"Workflow tag\">Workflow tag</option><option value=\"Context\" selected>Context</option></select></label><label>Note<textarea name=\"value\" aria-label=\"Note\" aria-describedby=\"field-value-help\"></textarea></label><small id=\"field-value-help\">Describe your preferences or context. Do not include patient information.</small><label>Enabled<input type=\"checkbox\" name=\"enabled\" checked aria-label=\"Enabled\"></label><label>Expiry<select name=\"expiry\" aria-label=\"Expiry\"><option value=\"No expiry\" selected>No expiry</option><option value=\"Set a date\">Set a date</option></select></label><div data-chrome-visible-when=\"{&quot;expiry&quot;: &quot;Set a date&quot;}\" hidden><label>Expiry date (UTC)<input type=\"text\" name=\"expiry_date\" value=\"\" aria-label=\"Expiry date (UTC)\" aria-describedby=\"field-expiry_date-help\"></label><small id=\"field-expiry_date-help\">Use a UTC date and time, for example 2026-12-31T23:59:00Z.</small></div><button type=\"button\" data-ui-action=\"chrome_note_save\" data-ui-payload=\"{&quot;expected_revision&quot;:0,&quot;note_id&quot;:&quot;0fe0d7ba-812a-4881-9f61-77e23327d492&quot;}\" data-ui-collect=\"true\">Save note</button></div></section></div></div></div>"
+    },
+    "edit": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Private notes\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Private notes</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">Private notes</h2><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Back to notes</button><h3 data-text-variant=\"h3\">Current note</h3><span role=\"status\" data-badge-variant=\"default\">Enabled</span><p data-text-variant=\"body\">Use complete source text: **literal** &lt;script&gt;alert(1)&lt;/script&gt; https://example.invalid/private</p><small data-text-variant=\"caption\">No expiry</small><div data-ui-form=\"true\" role=\"form\"><h3>Edit note</h3><label>Category<select name=\"category\" aria-label=\"Category\"><option value=\"Profession\">Profession</option><option value=\"Goal\">Goal</option><option value=\"Preference\" selected>Preference</option><option value=\"Workflow tag\">Workflow tag</option><option value=\"Context\">Context</option></select></label><label>Note<textarea name=\"value\" aria-label=\"Note\" aria-describedby=\"field-value-help\">Use complete source text: **literal** &lt;script&gt;alert(1)&lt;/script&gt; https://example.invalid/private</textarea></label><small id=\"field-value-help\">Describe your preferences or context. Do not include patient information.</small><label>Enabled<input type=\"checkbox\" name=\"enabled\" checked aria-label=\"Enabled\"></label><label>Expiry<select name=\"expiry\" aria-label=\"Expiry\"><option value=\"Keep current expiry\" selected>Keep current expiry</option><option value=\"No expiry\">No expiry</option><option value=\"Set a date\">Set a date</option></select></label><div data-chrome-visible-when=\"{&quot;expiry&quot;: &quot;Set a date&quot;}\" hidden><label>Expiry date (UTC)<input type=\"text\" name=\"expiry_date\" value=\"\" aria-label=\"Expiry date (UTC)\" aria-describedby=\"field-expiry_date-help\"></label><small id=\"field-expiry_date-help\">Use a UTC date and time, for example 2026-12-31T23:59:00Z.</small></div><button type=\"button\" data-ui-action=\"chrome_note_save\" data-ui-payload=\"{&quot;expected_revision&quot;:3,&quot;note_id&quot;:&quot;5106d0c8-09a0-47cf-910f-0cc1408b73a4&quot;}\" data-ui-collect=\"true\">Save note</button></div></section></div></div></div>"
+    },
+    "forget": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "8c7c08ee-0d23-43db-9156-ea3e4e729f89",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Private notes\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Private notes</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">Private notes</h2><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Keep note</button><section aria-label=\"Preference\"><h3>Preference</h3><span role=\"status\" data-badge-variant=\"default\">Enabled</span><p data-text-variant=\"body\">Use complete source text: **literal** &lt;script&gt;alert(1)&lt;/script&gt; https://example.invalid/private</p><small data-text-variant=\"caption\">No expiry</small></section><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">Forget permanently erases this note&#x27;s current value. This cannot be undone.</div><button type=\"button\" data-ui-action=\"chrome_note_forget\" data-ui-payload=\"{&quot;expected_revision&quot;:3,&quot;note_id&quot;:&quot;5106d0c8-09a0-47cf-910f-0cc1408b73a4&quot;}\">Forget note</button></section></div></div></div>"
+    }
+  }
+}
