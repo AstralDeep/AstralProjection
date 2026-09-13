@@ -40,12 +40,17 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
     private var socketConnections: [NWConnection] = []
     private var socketPaused = false
     private let supportsWorkReads: Bool
+    private let supportsGuidanceNotes: Bool
     private var workWire: [Data] = []
 
-    init(replies: [Route: [Reply]], supportsWebSocket: Bool = false, supportsWorkReads: Bool = false) throws {
+    init(
+        replies: [Route: [Reply]], supportsWebSocket: Bool = false, supportsWorkReads: Bool = false,
+        supportsGuidanceNotes: Bool = false
+    ) throws {
         self.replies = replies
         self.supportsWebSocket = supportsWebSocket
         self.supportsWorkReads = supportsWorkReads
+        self.supportsGuidanceNotes = supportsGuidanceNotes
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -386,7 +391,11 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
                     registrationCount += 1
                     sendSocket(Data(#"{"type":"pong"}"#.utf8), on: connection)
                 } else if object["type"] as? String == "ui_event", let action = object["action"] as? String {
-                    if self.supportsWorkReads && ["chrome_open", "chrome_close"].contains(action) {
+                    if (self.supportsWorkReads && ["chrome_open", "chrome_close"].contains(action))
+                        || (self.supportsGuidanceNotes
+                            && ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"]
+                                .contains(action))
+                    {
                         self.workWire.append(payload)
                     } else if ["component_refine", "component_restore"].contains(action) {
                         componentWire.append(payload)

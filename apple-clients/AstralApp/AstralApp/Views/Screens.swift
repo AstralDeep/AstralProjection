@@ -204,12 +204,18 @@ struct SurfaceView: View {
                         }
                         ForEach(Array(surface.components.enumerated()), id: \.offset) { _, comp in
                             ComponentView(component: comp)
-                                .environment(\.astralWorkReadSurface, surface.surfaceKey == "work")
+                                .environment(
+                                    \.astralWorkReadSurface, ["work", "guidance"].contains(surface.surfaceKey)
+                                )
+                                .environment(\.astralGuidanceSurface, surface.surfaceKey == "guidance")
+                                .id(model.guidanceUpdate?.generation ?? "legacy")
                         }
                     }
                     .padding(16)
                 }
-            } else if timedOut || model.workReadFailed {
+            } else if timedOut || model.workReadFailed
+                || (model.pendingSurfaceKey == "guidance" && model.guidanceFailed)
+            {
                 VStack(spacing: 12) {
                     Text("Couldn't load this screen")
                         .font(AstralTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
@@ -240,6 +246,7 @@ struct SurfaceView: View {
         .task(id: surfaceTaskKey) {
             timedOut = false
             let workGeneration = model.workReadState.generation
+            let guidanceGeneration = model.guidanceState.generation
             if model.pendingSurface != nil { return }
             do {
                 try await Task.sleep(nanoseconds: 10_000_000_000)
@@ -248,6 +255,7 @@ struct SurfaceView: View {
             }
             guard !Task.isCancelled, model.pendingSurface == nil else { return }
             if model.pendingSurfaceKey == "work" { model.failWorkRead(generation: workGeneration) }
+            if model.pendingSurfaceKey == "guidance" { model.failGuidanceRequest(generation: guidanceGeneration) }
             timedOut = true
         }
     }
@@ -266,7 +274,7 @@ struct SurfaceView: View {
     }
 
     private var surfaceTaskKey: String {
-        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")"
+        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")"
     }
 }
 

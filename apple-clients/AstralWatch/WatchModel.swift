@@ -41,7 +41,19 @@ final class WatchModel {
     var recents: [ChatSummary] = []
     var recentsTitle = "Recent chats"
     var recentsLoading = false
-    var workControls: [TopBarControl] = []
+    private(set) var ownerSurfaceControls: [TopBarControl] = []
+    var guidanceControls: [TopBarControl] {
+        ownerSurfaceControls.filter { $0.action?.surface == "guidance" }
+    }
+    var guidanceVisible = false
+    var guidanceUpdate: GuidanceSurfaceUpdate?
+    var guidanceState = GuidanceRequestState()
+    var guidanceFailed = false
+    private var guidanceEpoch = UUID().uuidString.lowercased()
+    @ObservationIgnored private var guidanceTask: Task<Void, Never>?
+    var workControls: [TopBarControl] {
+        ownerSurfaceControls.filter { $0.action?.surface == "work" }
+    }
     var workVisible = false
     var workUpdate: WorkSurfaceUpdate?
     var workReadState = WorkReadState()
@@ -258,7 +270,7 @@ final class WatchModel {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
-            workControls = []
+            ownerSurfaceControls = []
             continuity.clear()
             resetConversationState()
             resetRecents()
@@ -302,7 +314,7 @@ final class WatchModel {
             device: device,
             resumed: resumed,
             connectionGeneration: connection,
-            resume: resume, workReadSupported: true)
+            resume: resume, workReadSupported: true, guidanceNotesSupported: true)
     }
 
     @discardableResult
@@ -637,7 +649,7 @@ final class WatchModel {
         case .disconnected:
             invalidateWorkRead()
             if workVisible { workReadFailed = true }
-            workControls = []
+            ownerSurfaceControls = []
             connected = false
             clearPendingOperationSubmissions()
             statusText = nil
@@ -672,15 +684,55 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        if guidanceState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
+            let generation = guidanceState.generation
+        {
+            failGuidanceRequest(generation: generation)
+            return
+        }
         if workReadState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
-            let generation = workReadState.generation {
+            let generation = workReadState.generation
+        {
             failWorkRead(generation: generation)
             return
         }
 
         if frame.name == "chrome_menu" {
-            workControls = WorkReadRequest.watchControls(frame: frame)
-            if workControls.isEmpty { invalidateWorkRead(); workVisible = false }
+            if let raw = frame.payload["model"], raw["version"]?.numberValue == 2,
+                let controls = raw["topbar"]?.arrayValue, controls.count <= 32
+            {
+                let menu = ChromeMenuModel.fromJSON(raw)
+                let guidance = GuidanceRequest.controls(in: menu)
+                let work = WorkReadRequest.watchControls(in: menu)
+                ownerSurfaceControls = (menu?.topbarActions ?? []).filter {
+                    work.contains($0) || guidance.contains($0)
+                }
+            } else {
+                ownerSurfaceControls = []
+            }
+            if guidanceControls.isEmpty {
+                invalidateGuidance()
+                guidanceVisible = false
+            }
+            if workControls.isEmpty {
+                invalidateWorkRead(includeGuidance: false)
+                workVisible = false
+            }
+            return
+        }
+        if frame.name == "chrome_surface", frame.payload["surface_key"]?.stringValue == "guidance" {
+            guard connected, conversationAccount != nil, guidanceVisible,
+                let update = GuidanceSurfaceUpdate(frame: frame), guidanceState.accepts(update)
+            else { return }
+            retireGuidanceTicket()
+            if update.components.isEmpty {
+                invalidateGuidance()
+                guidanceFailed = false
+                guidanceVisible = false
+            } else {
+                guidanceUpdate = update
+                guidanceFailed = false
+            }
             return
         }
         if frame.name == "chrome_surface" {
@@ -1169,6 +1221,7 @@ final class WatchModel {
 
     private func resetConversationState() {
         invalidateWorkRead()
+        guidanceVisible = false
         workReadSelection = nil
         workVisible = false
         entries = []
@@ -1183,6 +1236,98 @@ final class WatchModel {
         seqState.removeAll()
         pendingDictation = ""
         workspaceStarted = false
+    }
+
+    func openGuidance(_ control: TopBarControl) {
+        guard guidanceControls.contains(control) else { return }
+        _ = sendGuidanceRequest(action: "chrome_open", payload: .object(control.chromeOpenPayload))
+    }
+
+    func retryGuidance() {
+        guard guidanceVisible else { return }
+        _ = sendGuidanceRequest(action: "chrome_open", payload: GuidanceRequest.list.payload)
+    }
+
+    private func retireGuidanceTicket() {
+        guidanceTask?.cancel()
+        guidanceTask = nil
+        guidanceState.invalidate()
+        guidanceEpoch = UUID().uuidString.lowercased()
+    }
+
+    private func invalidateGuidance() {
+        retireGuidanceTicket()
+        guidanceUpdate = nil
+        guidanceFailed = guidanceVisible
+    }
+
+    func failGuidanceRequest(generation: String?) {
+        guard let generation, guidanceState.generation == generation else { return }
+        invalidateGuidance()
+        guidanceFailed = true
+    }
+
+    @discardableResult
+    func sendGuidanceRequest(action: String, payload: JSONValue) -> Bool {
+        guard let request = GuidanceRequest(action: action, payload: payload), request.action != "chrome_close",
+            guidanceUpdate?.permits(request) == true || (guidanceVisible && request == .list)
+                || guidanceControls.contains(where: {
+                    GuidanceRequest(action: "chrome_open", payload: .object($0.chromeOpenPayload)) == request
+                })
+        else { return false }
+        invalidateWorkRead()
+        workVisible = false
+        workReadSelection = nil
+        guidanceVisible = true
+        guidanceFailed = false
+        let generation = guidanceEpoch
+        _ = guidanceState.begin(request, generation: generation)
+        guard connected, let account = conversationAccount, let socket = ws else {
+            failGuidanceRequest(generation: generation)
+            return false
+        }
+        let session = sessionGeneration
+        let connection = continuity.connectionGeneration
+        let text = request.frameText(requestGeneration: generation)
+        guard guidanceState.bindSubmission(text) else {
+            failGuidanceRequest(generation: generation)
+            return false
+        }
+        guidanceTask = Task { [weak self] in
+            let sent = await socket.sendCurrentGuidanceEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.guidanceEpoch == generation && self.guidanceVisible && self.connected
+                        && self.ws === socket && self.conversationAccount == account
+                        && self.sessionGeneration == session && self.continuity.connectionGeneration == connection
+                }
+            }
+            guard let self, !Task.isCancelled, self.guidanceEpoch == generation,
+                self.conversationAccount == account, self.sessionGeneration == session, self.ws === socket
+            else { return }
+            if !sent { self.failGuidanceRequest(generation: generation) }
+        }
+        return true
+    }
+
+    func closeGuidance() {
+        guard guidanceVisible else { return }
+        invalidateGuidance()
+        guidanceVisible = false
+        let generation = guidanceEpoch
+        guard connected, let socket = ws, let account = conversationAccount else { return }
+        let session = sessionGeneration
+        let request = GuidanceRequest(action: "chrome_close", payload: .object(["surface": .string("guidance")]))!
+        let text = request.frameText(requestGeneration: generation)
+        guidanceTask = Task { [weak self] in
+            _ = await socket.sendCurrentGuidanceEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.guidanceEpoch == generation && self.conversationAccount == account
+                        && self.sessionGeneration == session && self.ws === socket
+                }
+            }
+        }
     }
 
     func openWork(_ control: TopBarControl) {
@@ -1214,7 +1359,8 @@ final class WatchModel {
         workReadFailed = true
     }
 
-    private func invalidateWorkRead() {
+    private func invalidateWorkRead(includeGuidance: Bool = true) {
+        if includeGuidance { invalidateGuidance() }
         retireWorkTicket()
         workUpdate = nil
         workReadFailed = false
@@ -1227,6 +1373,7 @@ final class WatchModel {
         else { return }
         invalidateWorkRead()
         workReadSelection = request
+        guidanceVisible = false
         let generation = workReadEpoch
         workReadState.begin(request, generation: generation)
         workVisible = true
@@ -1253,7 +1400,8 @@ final class WatchModel {
             }
             guard let self, !Task.isCancelled, self.workReadEpoch == generation,
                 self.conversationAccount == account, self.sessionGeneration == session,
-                self.ws === socket else { return }
+                self.ws === socket
+            else { return }
             if !sent { self.failWorkRead(generation: generation) }
         }
     }
@@ -1266,7 +1414,8 @@ final class WatchModel {
         let generation = workReadEpoch
         guard connected, let socket = ws, let account = conversationAccount else { return }
         let session = sessionGeneration
-        let text = Outbound.uiEvent(action: "chrome_close", sessionId: nil,
+        let text = Outbound.uiEvent(
+            action: "chrome_close", sessionId: nil,
             payload: .object(["surface": .string("work")]), requestGeneration: generation)
         workReadTask = Task { [weak self] in
             _ = await socket.sendCurrentWorkEvent(text) { [weak self] in
@@ -1389,6 +1538,8 @@ final class WatchModel {
     }
 
     func openChat(_ chat: ChatSummary) {
+        invalidateGuidance()
+        guidanceVisible = false
         workspaceStarted = true
         pendingVoiceActivation = nil
         if let account = conversationAccount {

@@ -143,7 +143,9 @@ final class ManifestDriftTests: XCTestCase {
         //        client code.
         // 125 = 117 + the eight feature-079 persistent-assignment actions;
         //       full clients post these through the existing SDUI action path.
-        XCTAssertEqual(manifest.acceptActions.count, 125)
+        // 129 = 125 + the four closed feature-088 private-note actions.
+        XCTAssertEqual(manifest.acceptActions.count, 129)
+        XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_note_") }), GuidanceRequest.noteActions)
     }
 
     func testPersistentAssignmentActionsUseExistingSurfaceFrames() throws {

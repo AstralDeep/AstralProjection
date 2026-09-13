@@ -717,7 +717,8 @@ public enum Outbound {
         device: DeviceDescriptor, resumed: Bool,
         connectionGeneration: String = UUID().uuidString.lowercased(),
         resume: ConversationResumeRegistration? = nil,
-        workReadSupported: Bool = false
+        workReadSupported: Bool = false,
+        guidanceNotesSupported: Bool = false
     ) -> String {
         // Feature 060: every shipping Apple target is explicitly author-only.
         // Do not add `agent_host` or its capability here; feature 059 alone
@@ -728,6 +729,7 @@ public enum Outbound {
             && device.deviceId.flatMap(continuityUUID4) != nil
         var capabilities = ["render", "stream"]
         if workReadSupported { capabilities.append("work_read_v1") }
+        if guidanceNotesSupported { capabilities.append("guidance_notes_v1") }
         if voiceCapable { capabilities.append("voice") }
         var frame: [String: JSONValue] = [
             "type": .string("register_ui"),

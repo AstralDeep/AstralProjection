@@ -101,6 +101,59 @@ final class WorkReadTransport088Tests: XCTestCase {
             }
         }
     }
+    func testGenericGuidanceOpenNeverReachesCurrentSocketOrReplayQueue() async throws {
+        try await connected { client, peer in
+            let note = Outbound.uiEvent(
+                action: "chrome_open", sessionId: nil,
+                payload: .object(["surface": .string("guidance"), "params": .object(["mode": .string("list")])]),
+                requestGeneration: generation)
+            await client.send(note)
+            let barrier = component("component_restore")
+            let sent = await client.sendCurrentComponentEvent(barrier) { true }
+            XCTAssertTrue(sent)
+            let deadline = Date().addingTimeInterval(3)
+            while !peer.reads.contains(barrier) && Date() < deadline {
+                try await Task.sleep(nanoseconds: 10_000_000)
+            }
+            XCTAssertEqual(peer.reads, [barrier])
+        }
+    }
+
+    func testCurrentNotesCommandNeverCrossesCancellationOrChangedSocketAndCannotReplay() async throws {
+        try await connected { client, peer in
+            let request = GuidanceRequest(
+                action: "chrome_note_forget",
+                payload: .object([
+                    "note_id": .string(generation), "expected_revision": .number(3),
+                ]))!
+            let wire = request.frameText(requestGeneration: generation)
+            let entered = expectation(description: "notes current-view check")
+            let gate = WorkReadGate()
+            let pending = Task {
+                await client.sendCurrentGuidanceEvent(wire) {
+                    entered.fulfill()
+                    await gate.wait()
+                    return true
+                }
+            }
+            await fulfillment(of: [entered], timeout: 3)
+            pending.cancel()
+            await gate.release()
+            let sent = await pending.value
+            XCTAssertFalse(sent)
+            let opened = await client.sendCurrentGuidanceEvent(
+                GuidanceRequest.list.frameText(requestGeneration: generation)
+            ) { true }
+            XCTAssertTrue(opened)
+            let forgotten = await client.sendCurrentGuidanceEvent(wire) { true }
+            XCTAssertTrue(forgotten)
+            await fulfillment(of: [peer.twoReads], timeout: 3)
+            XCTAssertEqual(peer.reads.count, 2)
+            XCTAssertEqual(GuidanceRequest(frameText: peer.reads[0]), .list)
+            XCTAssertEqual(peer.reads[1], wire)
+        }
+    }
+
     private func component(_ action: String) -> String {
         let identity = ClientOperationIdentity.fresh()
         return Outbound.uiEvent(
@@ -147,6 +200,16 @@ final class WorkReadTransport088Tests: XCTestCase {
                     payload: .object(["surface": .string("work"), "params": .string("malformed")]),
                     requestGeneration: generation))
         }
+        await client.send(GuidanceRequest.list.frameText(requestGeneration: generation))
+        for action in ["chrome_note_save", "chrome_note_forget", "chrome_note_unknown", "chrome_open", "chrome_close"] {
+            await client.send(
+                Outbound.uiEvent(
+                    action: action, sessionId: nil,
+                    payload: .object([
+                        "surface": .string("guidance"), "fields": .string("synthetic-private-never-queued"),
+                    ]),
+                    requestGeneration: generation))
+        }
         let queued = Outbound.chatMessage("synthetic queued text", sessionId: "11111111-1111-4111-8111-111111111111")
         await client.send(queued)
         let ready = expectation(description: "registered before ordinary queue flush")
@@ -165,6 +228,119 @@ final class WorkReadTransport088Tests: XCTestCase {
         XCTAssertEqual(peer.reads, [queued, restore])
         await client.stop()
         consume.cancel()
+    }
+
+    func testPeerCloseDuringReplayValidationRefusesCurrentSurfacePhysicalSend() async throws {
+        for notes in [false, true] {
+            let peer = try WorkReadLoopback()
+            peer.start()
+            await fulfillment(of: [peer.ready], timeout: 3)
+            let port = try XCTUnwrap(peer.listener.port)
+            let client = WSClient(url: URL(string: "ws://127.0.0.1:\(port.rawValue)/ws")!)
+            let gate = WorkReadGate()
+            let reconnected = expectation(description: "registered replacement socket")
+            let events = await client.events()
+            let consume = Task {
+                var connections = 0
+                for await event in events {
+                    if case .connected = event {
+                        connections += 1
+                        if connections == 2 { reconnected.fulfill() }
+                    }
+                }
+            }
+            let validating = expectation(description: "ordinary replay validation in flight")
+            await client.send(Outbound.chatMessage("synthetic queued text", sessionId: generation))
+            await client.start(
+                onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# },
+                onReplay: { _ in
+                    validating.fulfill()
+                    await gate.wait()
+                    return false
+                })
+            await fulfillment(of: [validating], timeout: 3)
+            await peer.closeTransport()
+            await fulfillment(of: [peer.remoteClosed], timeout: 3)
+            let sent: Bool
+            if notes {
+                sent = await client.sendCurrentGuidanceEvent(
+                    GuidanceRequest.list.frameText(requestGeneration: generation)
+                ) { true }
+            } else {
+                let work = WorkReadRequest(
+                    payload: .object(["surface": .string("work"), "params": .object(["mode": .string("list")])]))!
+                sent = await client.sendCurrentWorkEvent(work.frameText(requestGeneration: generation)) { true }
+            }
+            XCTAssertFalse(sent)
+            XCTAssertTrue(peer.reads.isEmpty)
+            await gate.release()
+            await fulfillment(of: [reconnected], timeout: 5)
+            let barrier = component("component_restore")
+            peer.expectSingleRead()
+            let delivered = await client.sendCurrentComponentEvent(barrier) { true }
+            XCTAssertTrue(delivered)
+            await fulfillment(of: [peer.twoReads], timeout: 3)
+            XCTAssertEqual(peer.reads, [barrier], "Refused private send must never replay on the new connection")
+            await client.stop()
+            consume.cancel()
+            peer.stop()
+        }
+    }
+
+    func testAwaitingOwnerSurfaceReadCannotMoveToARegisteredReplacementSocket() async throws {
+        for notes in [false, true] {
+            let peer = try WorkReadLoopback()
+            peer.start()
+            await fulfillment(of: [peer.ready], timeout: 3)
+            let port = try XCTUnwrap(peer.listener.port)
+            let client = WSClient(url: URL(string: "ws://127.0.0.1:\(port.rawValue)/ws")!)
+            let first = expectation(description: "first registered socket")
+            let replacement = expectation(description: "replacement registered socket")
+            let events = await client.events()
+            let consume = Task {
+                var connections = 0
+                for await event in events {
+                    if case .connected = event {
+                        connections += 1
+                        (connections == 1 ? first : replacement).fulfill()
+                    }
+                }
+            }
+            await client.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
+            await fulfillment(of: [first], timeout: 3)
+            let gate = WorkReadGate()
+            let entered = expectation(description: "original view validation awaits")
+            let pending = Task {
+                let current: @Sendable () async -> Bool = {
+                    entered.fulfill()
+                    await gate.wait()
+                    return true
+                }
+                if notes {
+                    return await client.sendCurrentGuidanceEvent(
+                        GuidanceRequest.list.frameText(requestGeneration: generation), isCurrent: current)
+                }
+                let work = WorkReadRequest(
+                    payload: .object(["surface": .string("work"), "params": .object(["mode": .string("list")])]))!
+                return await client.sendCurrentWorkEvent(
+                    work.frameText(requestGeneration: generation), isCurrent: current)
+            }
+            await fulfillment(of: [entered], timeout: 3)
+            await peer.closeTransport()
+            await fulfillment(of: [replacement], timeout: 5)
+            await gate.release()
+            let sent = await pending.value
+            XCTAssertFalse(sent)
+            peer.expectSingleRead()
+            let barrier = component("component_restore")
+            let delivered = await client.sendCurrentComponentEvent(barrier) { true }
+            XCTAssertTrue(delivered)
+            await fulfillment(of: [peer.twoReads], timeout: 3)
+            XCTAssertEqual(peer.reads, [barrier])
+            await client.stop()
+            consume.cancel()
+            peer.stop()
+        }
     }
 
 }
@@ -186,6 +362,7 @@ private actor WorkReadGate {
 private final class WorkReadLoopback: @unchecked Sendable {
     let ready = XCTestExpectation(description: "loopback listening")
     let twoReads = XCTestExpectation(description: "expected read frames received")
+    let remoteClosed = XCTestExpectation(description: "client acknowledged server WebSocket close")
     let listener: NWListener
     private let queue = DispatchQueue(label: "astral.work-read.test")
     private var connections: [NWConnection] = []
@@ -221,7 +398,13 @@ private final class WorkReadLoopback: @unchecked Sendable {
     }
 
     func receive(_ connection: NWConnection) {
-        connection.receiveMessage { [weak self] data, _, _, error in
+        connection.receiveMessage { [weak self] data, context, _, error in
+            if let metadata = context?.protocolMetadata(definition: NWProtocolWebSocket.definition)
+                as? NWProtocolWebSocket.Metadata, metadata.opcode == .close
+            {
+                self?.remoteClosed.fulfill()
+                return
+            }
             guard let self, error == nil, let data, data.count <= 16384 else {
                 connection.cancel()
                 return
@@ -238,6 +421,22 @@ private final class WorkReadLoopback: @unchecked Sendable {
                 self.twoReads.fulfill()
             }
             self.receive(connection)
+        }
+    }
+
+    func closeTransport() async {
+        await withCheckedContinuation { continuation in
+            queue.async {
+                guard let connection = self.connections.first else {
+                    continuation.resume()
+                    return
+                }
+                let context = NWConnection.ContentContext(
+                    identifier: "server-close", metadata: [NWProtocolWebSocket.Metadata(opcode: .close)])
+                connection.send(
+                    content: Data([0x03, 0xe8]), contentContext: context, isComplete: true,
+                    completion: .contentProcessed { _ in continuation.resume() })
+            }
         }
     }
 

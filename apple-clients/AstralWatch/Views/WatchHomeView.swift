@@ -19,9 +19,13 @@ struct WatchHomeView: View {
                 }
             }
 
-            ForEach(model.workControls) { control in
+            ForEach(model.ownerSurfaceControls) { control in
                 Button {
-                    model.openWork(control)
+                    if control.action?.surface == "work" {
+                        model.openWork(control)
+                    } else {
+                        model.openGuidance(control)
+                    }
                 } label: {
                     Label(control.label ?? control.key, systemImage: control.icon ?? "square.grid.2x2")
                         .font(AstralTypography.headline)
@@ -84,6 +88,13 @@ struct WatchHomeView: View {
         }
         .navigationTitle("AstralDeep")
         .navigationDestination(isPresented: $model.workVisible) { WatchWorkSurfaceView() }
+        .navigationDestination(
+            isPresented: Binding(
+                get: { model.guidanceVisible },
+                set: { presented in
+                    if !presented { model.closeGuidance() }
+                })
+        ) { WatchGuidanceSurfaceView() }
         .task { await model.refreshRecents() }
         .overlay(alignment: .bottom) {
             if !model.connected {

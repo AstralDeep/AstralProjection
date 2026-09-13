@@ -127,7 +127,9 @@ public actor WSClient {
 
     /// Send or queue (bounded) while disconnected.
     public func send(_ text: String) {
-        guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text) else {
+        guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text),
+            !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text)
+        else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
             return
         }
@@ -175,8 +177,29 @@ public actor WSClient {
         _ text: String, isCurrent: @Sendable () async -> Bool
     ) async -> Bool {
         guard WorkReadRequest.isCurrentConnectionEvent(text),
-            established, let current = task, current.state == .running,
-            await isCurrent(), !Task.isCancelled,
+            established, let current = task, current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
+    }
+
+    /// Private notes opens and commands belong to one current view and never enter replay.
+    @discardableResult
+    public func sendCurrentGuidanceEvent(
+        _ text: String, isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard GuidanceRequest(frameText: text) != nil,
+            established, let current = task, current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
+    }
+
+    /// Each typed entry captures the original established task before its first await.
+    /// A view check cannot move a private read or command onto a replacement socket.
+    private func sendCurrentOwnerSurfaceEvent(
+        _ text: String, using current: URLSessionWebSocketTask,
+        isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard await isCurrent(), !Task.isCancelled,
             established, task === current, current.state == .running
         else { return false }
         do {
