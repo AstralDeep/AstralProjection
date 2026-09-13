@@ -3,8 +3,10 @@ package com.personalailabs.astraldeep.app.workspace;
 import android.database.Cursor;
 import android.database.MatrixCursor;
 import android.os.Bundle;
+import android.os.Binder;
 import android.os.CancellationSignal;
 import android.os.ParcelFileDescriptor;
+import android.os.Process;
 import android.provider.DocumentsContract.Document;
 import android.provider.DocumentsProvider;
 import java.io.File;
@@ -114,6 +116,9 @@ public final class WorkspaceTestDocuments extends DocumentsProvider {
     }
 
     @Override public Bundle call(String method, String arg, Bundle extras) {
+        if (method != null && method.startsWith("test-") && Binder.getCallingUid() != Process.myUid()) {
+            throw new SecurityException("Synthetic document controls require the owning test APK");
+        }
         if ("test-status".equals(method)) {
             Bundle value = new Bundle();
             value.putBoolean("exists", file(arg).exists());

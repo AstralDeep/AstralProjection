@@ -189,7 +189,10 @@ def _setup(tmp_path, monkeypatch, lane="ui"):
     summary, tests = _metadata(lane)
     calls = []
     original_run = exporter._bounded_command
-    state = {"hook": lambda: None, "summary": summary, "tests": tests}
+    state = {
+        "hook": lambda: None, "query_hook": lambda path: None,
+        "summary": summary, "tests": tests, "query_paths": [],
+    }
 
     def run(command, **kwargs):
         calls.append(command)
@@ -200,7 +203,12 @@ def _setup(tmp_path, monkeypatch, lane="ui"):
             return b"Xcode 26.6\nBuild version 17F113\n"
         if command[1] == "xcresulttool":
             assert command[2:4] == ["get", "test-results"]
-            assert command[5:] == ["--schema-version", "0.1.0", "--compact", "--path", str(result)]
+            assert command[5:-1] == ["--schema-version", "0.1.0", "--compact", "--path"]
+            copied = Path(command[-1])
+            assert copied != result and copied.name == "Result.xcresult"
+            assert copied.parent.stat().st_mode & 0o777 == 0o700
+            state["query_paths"].append(copied)
+            state["query_hook"](copied)
             return json.dumps(state[command[4]]).encode()
         if command[2:] == ["--version"]:
             return b"Apple LLVM version 21.0.0\n"
@@ -379,8 +387,14 @@ def test_source_and_native_inputs_must_remain_bound_before_and_after_mapping(
         state["hook"] = lambda: (kwargs["xcresult"] / "Data/native-observation").write_bytes(
             b"changed"
         )
-    with pytest.raises((collector.CollectionError, exporter.ExportError)):
+    with pytest.raises((collector.CollectionError, exporter.ExportError)) as refused:
         collector.collect(**kwargs)
+    assert refused.value.collection_stage == {
+        "commit-race": "source_after",
+        "binary-race": "products_after",
+        "metadata-race": "products_after",
+        "result-race": "result_after",
+    }.get(change, "source_before")
     assert not kwargs["output"].exists()
 
 
@@ -516,7 +530,46 @@ def test_cli_fixed_sibling_import_and_stable_data_free_refusal(tmp_path, capsys)
     for name in ("repo", "products", "xcresult", "output", "binary-archive"):
         args += ["--" + name, str(tmp_path.resolve() / "PRIVATE")]
     assert collector.main(args) == 1
-    assert capsys.readouterr().err == "native_xccov_collection_invalid\n"
+    assert capsys.readouterr().err == (
+        "native_xccov_collection_invalid\nnative_xccov_collection_stage=inputs\n"
+    )
+
+
+@pytest.mark.parametrize("stage", sorted(collector.STAGES))
+def test_cli_stage_diagnostic_keeps_exception_details_private(tmp_path, monkeypatch, capsys, stage):
+    private = "PRIVATE path /credential?token=SECRET\nforged_stage=passed"
+    error = RuntimeError(private)
+
+    def refuse(**kwargs):
+        with collector._stage(stage):
+            raise error
+
+    monkeypatch.setattr(collector, "collect", refuse)
+    args = ["--lane", "core"]
+    for name in ("repo", "products", "xcresult", "output", "binary-archive"):
+        args += ["--" + name, str(tmp_path / "PRIVATE")]
+    assert collector.main(args) == 1
+    assert capsys.readouterr().err == (
+        "native_xccov_collection_invalid\nnative_xccov_collection_stage=" + stage + "\n"
+    )
+    assert str(error) == private and type(error) is RuntimeError
+
+
+@pytest.mark.parametrize("stage", ("PRIVATE\nforged", ["mapping"], None))
+def test_cli_does_not_print_untrusted_exception_stage(tmp_path, monkeypatch, capsys, stage):
+    def refuse(**kwargs):
+        error = RuntimeError("SECRET")
+        error.collection_stage = stage
+        raise error
+
+    monkeypatch.setattr(collector, "collect", refuse)
+    args = ["--lane", "core"]
+    for name in ("repo", "products", "xcresult", "output", "binary-archive"):
+        args += ["--" + name, str(tmp_path / "PRIVATE")]
+    assert collector.main(args) == 1
+    assert capsys.readouterr().err == (
+        "native_xccov_collection_invalid\nnative_xccov_collection_stage=inputs\n"
+    )
 
 
 def test_cli_success_uses_identical_explicit_arguments(tmp_path, monkeypatch):
@@ -535,3 +588,65 @@ def test_git_assume_unchanged_cannot_hide_different_head_blob_bytes(tmp_path, mo
     with pytest.raises(collector.CollectionError):
         collector.collect(**kwargs)
     assert not kwargs["output"].exists() and not kwargs["binary_archive"].exists()
+
+
+def test_lazy_native_cache_is_private_and_original_result_remains_exact(tmp_path, monkeypatch):
+    kwargs, state, _, _, _ = _setup(tmp_path, monkeypatch, "core")
+    original = collector._tree(kwargs["xcresult"], time.monotonic() + 10)
+
+    def query(copied):
+        assert (copied / "Data/native-observation").read_bytes() == b"fixture raw result"
+        (copied / "database.sqlite3").write_bytes(b"tool-generated query cache")
+
+    state["query_hook"] = query
+    assert collector.collect(**kwargs)["lane"] == "core"
+    assert collector._tree(kwargs["xcresult"], time.monotonic() + 10) == original
+    assert len(state["query_paths"]) == 2
+    assert not any(path.parent.exists() for path in state["query_paths"])
+
+
+@pytest.mark.parametrize("failure", ("timeout", "cancel", "original-changed"))
+def test_query_copy_is_removed_on_refusal_timeout_and_cancellation(tmp_path, monkeypatch, failure):
+    kwargs, state, _, _, _ = _setup(tmp_path, monkeypatch, "core")
+
+    def query(copied):
+        (copied / "database.sqlite3").write_bytes(b"partial query cache")
+        if failure == "timeout":
+            raise exporter.ExportError("producer_timeout", "PRIVATE")
+        if failure == "cancel":
+            raise KeyboardInterrupt()
+        (kwargs["xcresult"] / "Data/native-observation").write_bytes(b"replaced raw observation")
+
+    state["query_hook"] = query
+    expected = {"timeout": exporter.ExportError, "cancel": KeyboardInterrupt}.get(
+        failure, collector.CollectionError
+    )
+    with pytest.raises(expected):
+        collector.collect(**kwargs)
+    assert state["query_paths"] and not any(path.parent.exists() for path in state["query_paths"])
+    assert not kwargs["output"].exists()
+
+
+@pytest.mark.parametrize("change", ("content", "mode", "symlink", "deadline"))
+def test_query_copy_refuses_changed_inventory_before_native_tool(tmp_path, monkeypatch, change):
+    result = tmp_path.resolve() / "raw.xcresult"
+    source = result / "Data/native-observation"
+    _write(source, b"original")
+    inventory = collector._tree(result, time.monotonic() + 10)
+    if change == "content":
+        source.write_bytes(b"changed")
+    elif change == "mode":
+        source.chmod(0o755)
+    elif change == "symlink":
+        outside = tmp_path.resolve() / "outside"
+        _write(outside, b"original")
+        source.unlink()
+        source.symlink_to(outside)
+    calls = []
+    with pytest.raises(collector.CollectionError) as refused:
+        collector._test_documents(
+            result, inventory, domain, lambda *args: calls.append(args),
+            time.monotonic() + (-1 if change == "deadline" else 10),
+        )
+    assert refused.value.collection_stage == "result_copy"
+    assert calls == []

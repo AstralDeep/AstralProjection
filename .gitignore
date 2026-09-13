@@ -79,6 +79,7 @@ blob-report/
 .coverage.*
 coverage.xml
 coverage/
+!android-client/app/src/coverage/
 htmlcov/
 .nyc_output/
 

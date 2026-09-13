@@ -8,10 +8,41 @@ import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
+import xml.etree.ElementTree as ET
 
 import pytest
 
 from scripts import android_coverage as c
+
+
+def test_coverage_network_overlay_is_loopback_only_and_separate_from_release() -> None:
+    """Only the opt-in fixture APK may use its explicit loopback transport allowance."""
+    app = Path(__file__).resolve().parents[1] / "android-client/app"
+    android = "{http://schemas.android.com/apk/res/android}"
+    manifest = ET.parse(app / "src/coverage/AndroidManifest.xml").getroot()
+    assert manifest.find("application").attrib == {
+        android + "networkSecurityConfig": "@xml/coverage_network_security_config"
+    }
+    policy = ET.parse(
+        app / "src/coverage/res/xml/coverage_network_security_config.xml"
+    ).getroot()
+    assert [node.tag for node in policy] == ["base-config", "domain-config"]
+    assert policy[0].attrib == {"cleartextTrafficPermitted": "false"}
+    assert policy[1].attrib == {"cleartextTrafficPermitted": "true"}
+    assert [(node.tag, node.text, node.attrib) for node in policy[1]] == [
+        ("domain", "localhost", {}),
+        ("domain", "127.0.0.1", {}),
+    ]
+    for folder in ("main", "release"):
+        for path in (app / "src" / folder).rglob("*.xml"):
+            tree = ET.parse(path).getroot()
+            for node in tree.iter():
+                assert node.get(android + "networkSecurityConfig") is None
+                assert node.get(android + "usesCleartextTraffic") != "true"
+    gradle = (app / "build.gradle.kts").read_text()
+    tooling = (app.parent / "gradle/coverage.gradle").read_text()
+    assert "src/coverage" not in gradle
+    assert "initWith(android.buildTypes.getByName('debug'))" in tooling
 
 
 def put(path: Path, content: str | bytes = "fixture") -> Path:

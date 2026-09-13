@@ -9,8 +9,13 @@ final class LLMFirstLoginUITests: XCTestCase {
         super.tearDown()
     }
 
-    func testImmediateFeedbackPhaseResponsivenessAndSuccess() {
-        launch(scenario: "slow-success")
+    func testImmediateFeedbackPhaseResponsivenessAndSuccess() throws {
+        let peer = try WorkspaceActionLoopback(replies: [.firstLoginCompletion: [.init(status: 204, held: true)]])
+        peer.start()
+        defer { peer.stop() }
+        wait(for: [peer.ready], timeout: 2)
+        let port = try XCTUnwrap(peer.port)
+        launch(scenario: "slow-success", completionPort: port)
         let form = element("llm-provider-form-title")
         let apiKey = app.secureTextFields["param-field-api_key"]
         let save = app.buttons["llm-save-button"]
@@ -19,68 +24,37 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(apiKey.waitForExistence(timeout: 2))
         XCTAssertTrue(save.waitForExistence(timeout: 2))
         focusAndType(apiKey, "ui-only-placeholder")
-
-        // A narrow, prewarmed staticText query: matching .any descendants
-        // costs a full AX snapshot, which alone can exceed the 250 ms window
-        // on a hosted CI VM. The window must measure the app, not the query.
         let status = app.staticTexts["llm-save-status"]
         _ = status.exists
         save.tap()
         XCTAssertTrue(
             status.waitForExistence(timeout: 0.25),
             "Save must expose local-only submitting feedback within 250 ms")
-        let acknowledgedAt = Date()
-        // Mid-flight introspection is only observable while the operation is
-        // still active. The fixture durably completes ~1.7 s after Save and
-        // the surface then dismisses — the success condition itself — while a
-        // slow hosted VM can spend longer than that resolving a single AX
-        // query, so each check tolerates the form having already advanced
-        // (every prior CI failure of this test was a post-dismissal query).
-        // The closing navigate-once bound still enforces the real contract,
-        // and the single-flight/editability semantics are pinned by
-        // LLMFirstLoginOperationTests and by the strict local trial matrix.
-        //
-        // These AX round-trips are the HARNESS's cost, not the app's: on a slow
-        // hosted VM they can outlive the ~1.7 s dismissal entirely (the failure
-        // signature is focusAndType probing a torn-down element — an invalid
-        // {{inf, inf}, {0, 0}} hit point), which then charged the app for time
-        // the test spent looking. Their measured duration is deducted below, the
-        // same way the watchdog test deducts its scene round-trip, so the five
-        // second bound keeps measuring the app and every check below still runs.
-        let introspectionStarted = Date()
-        if form.exists {
-            XCTAssertEqual(status.label, "AI provider setup status")
-        }
-        if form.exists && save.exists {
-            XCTAssertFalse(
-                save.isEnabled, "only the duplicate Save control is single-flight disabled")
-            XCTAssertEqual(save.value as? String, "Submitting")
-        }
-        // Editing and focus stay responsive while the operation is active.
-        if form.exists && apiKey.exists {
-            XCTAssertTrue(apiKey.isEnabled)
-            focusAndType(apiKey, "x")
-        }
-        let introspectionOverhead = Date().timeIntervalSince(introspectionStarted)
-
-        let activePhaseObserved = waitForStatus(
-            status,
-            containingAny: [
-                "Waiting to check",
-                "Checking your provider credentials",
-                "Saving credentials",
-            ],
-            timeout: 1.25)
+        XCTAssertEqual(status.label, "AI provider setup status")
+        XCTAssertFalse(save.isEnabled, "only the duplicate Save control is single-flight disabled")
+        XCTAssertEqual(save.value as? String, "Submitting")
+        XCTAssertTrue(apiKey.isEnabled)
+        // Completion is held by the runner while actual field editing and
+        // phase accessibility are observed. No production timer is changed.
+        focusAndType(apiKey, "x")
         XCTAssertTrue(
-            activePhaseObserved || !form.exists,
+            waitForStatus(
+                status,
+                containingAny: ["Waiting to check", "Checking your provider credentials", "Saving credentials"],
+                timeout: 1.25),
             "an operation still active after one second must expose its current phase")
-        let remaining = max(
-            0, 5 + introspectionOverhead - Date().timeIntervalSince(acknowledgedAt))
-        XCTAssertTrue(form.waitForNonExistence(timeout: remaining))
-        let advanceObservedAt = Date()
+        XCTAssertTrue(form.exists)
+        XCTAssertEqual(peer.requests.count, 1)
+        XCTAssertEqual(peer.requests.first?.route, .firstLoginCompletion)
+        XCTAssertEqual(peer.requests.first?.authorization, "")
+        XCTAssertTrue(peer.requests.first?.body.isEmpty == true)
+        XCTAssertTrue(peer.unexpectedRequests.isEmpty)
+
+        let terminalReleasedAt = Date()
+        peer.releaseHeldReplies()
+        XCTAssertTrue(form.waitForNonExistence(timeout: 5))
         XCTAssertLessThan(
-            advanceObservedAt.timeIntervalSince(acknowledgedAt) - introspectionOverhead,
-            5,
+            Date().timeIntervalSince(terminalReleasedAt), 5,
             "durably completed first-login setup must advance exactly once within five seconds")
     }
 
@@ -155,10 +129,13 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertEqual(retainedStatus.value as? String, "Unable to confirm; reconnecting")
     }
 
-    private func launch(scenario: String) {
+    private func launch(scenario: String, completionPort: UInt16? = nil) {
         app = XCUIApplication()
         app.launchArguments = ["--astral-ui-test-first-login", scenario]
         app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        if let completionPort {
+            app.launchEnvironment["ASTRAL_UI_FIRST_LOGIN_GATE_PORT"] = String(completionPort)
+        }
         app.launch()
     }
 
@@ -168,13 +145,15 @@ final class LLMFirstLoginUITests: XCTestCase {
     private func focusAndType(_ field: XCUIElement, _ text: String) {
         for attempt in 0..<5 {
             if attempt > 0 { Thread.sleep(forTimeInterval: 0.4) }
-            // The surface may legitimately advance away mid-loop (a durably
-            // completed save dismisses it); vanishing is not a typing failure.
-            guard field.exists else { return }
+            guard field.exists else {
+                XCTFail("The provider field disappeared before the editing assertion completed")
+                return
+            }
             field.tap()
             if fieldHasFocus(field) { break }
         }
-        if field.exists { field.typeText(text) }
+        XCTAssertTrue(field.exists, "The provider field must remain available for typing")
+        field.typeText(text)
     }
 
     private func fieldHasFocus(_ field: XCUIElement) -> Bool {

@@ -70,6 +70,33 @@ final class LLMFirstLoginOperationTests: XCTestCase {
         return model.llmFirstLoginOperation!
     }
 
+    #if DEBUG
+        func testUICompletionGateRequiresBothOptInsAndAnExactLoopbackPort() throws {
+            let arguments = ["--astral-ui-test-first-login", "slow-success"]
+            let key = "ASTRAL_UI_FIRST_LOGIN_GATE_PORT"
+            XCTAssertNil(try FirstLoginUITestFixture.completionGateURL(arguments: [], environment: [:]))
+            XCTAssertEqual(
+                try FirstLoginUITestFixture.completionGateURL(
+                    arguments: arguments, environment: ["ASTRAL_UI_TESTING": "1", key: "54321"]
+                )?.absoluteString,
+                "http://127.0.0.1:54321/ui-test/first-login/completion")
+            for port in ["", "0", "65536", "01", "+1", " 1", "1\n", "example.com", "https://example.com"] {
+                XCTAssertThrowsError(
+                    try FirstLoginUITestFixture.completionGateURL(
+                        arguments: arguments, environment: ["ASTRAL_UI_TESTING": "1", key: port]))
+            }
+            for wrongArguments in [[], ["slow-success"], ["--astral-ui-test-first-login", "invalid-credentials"]] {
+                XCTAssertThrowsError(
+                    try FirstLoginUITestFixture.completionGateURL(
+                        arguments: wrongArguments, environment: ["ASTRAL_UI_TESTING": "1", key: "54321"]))
+            }
+            for environment in [[key: "54321"], ["ASTRAL_UI_TESTING": "0", key: "54321"]] {
+                XCTAssertThrowsError(
+                    try FirstLoginUITestFixture.completionGateURL(arguments: arguments, environment: environment))
+            }
+        }
+    #endif
+
     func testImmediateSubmittingUsesOneClientIdentityAndDuplicateSaveIsSingleFlight() throws {
         XCTAssertEqual(AppModel.llmFirstLoginPhaseDelayNanoseconds, 1_000_000_000)
         XCTAssertEqual(AppModel.llmFirstLoginWatchdogNanoseconds, 10_000_000_000)

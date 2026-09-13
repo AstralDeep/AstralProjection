@@ -458,8 +458,8 @@
       "sourceBlob": "390ea1e60d03b65b1db25955560055ef207c39ba",
       "sourceMode": "100644",
       "task": "T057/T061/T060",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 actual Apple workspace action qualification: debug-only, dual-gated fixture construction uses an ephemeral loopback peer and memory-only session before the normal model initializes. Production Release construction and current authority paths are unchanged. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
-      "resultSha256": "cb3f207db2b877ed420b84a34fd2d744787ebcbb997b2706fc74820dc55c4747"
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence credential refresh, one-attempt sharing, revision-bound export and native save callbacks to the current presentation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 actual Apple workspace action qualification: debug-only, dual-gated fixture construction uses an ephemeral loopback peer and memory-only session before the normal model initializes. Production Release construction and current authority paths are unchanged. Feature 088 native navigation: close Recent chats without rehydration, expose pending-surface Close, rearm every explicit Retry, and keep mandatory surfaces pinned; isolated fixture and regression coverage preserve current workspace state. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Feature 088 CI fixture repair: opt-in, bounded, credential-free loopback completion gating keeps active-state assertions deterministic; all fixture code remains excluded from Release. Route history verification through the existing private test model before default credential/preferences construction.",
+      "resultSha256": "18522aaf53cb7fba16a59627de8c648a5615b20e8ac1ccf551e915d4f6981f99"
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/Theme.swift",
@@ -629,8 +629,8 @@
       "sourceBlob": "732806a9a9d545466f73d846ac5a5bd5ecc007ba",
       "sourceMode": "100644",
       "task": "T060",
-      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable.",
-      "resultSha256": "9471a66319b7ac9563735e547feab00b56fdb05a052ca3d1349d12131f96163a"
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Feature 088 CI fixture repair: validate both explicit test gates and exact loopback port constraints before enabling the DEBUG-only completion handshake.",
+      "resultSha256": "95427ee464958540881bdec8fab4bb202209c8bf375e2708dada0233ce4bcf9d"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppTests/StatusLifecycleTests.swift",
@@ -649,6 +649,33 @@
       "resultSha256": "7a333dc76dfa2e5abbfe0b7214dd438e3f5bbdb11a47928b73e2f5b535522411",
       "task": "T065/T066/T060",
       "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable."
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppUITests/Accessibility060UITests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/Accessibility060UITests.swift",
+      "sourceBlob": "5dedd6c9e9a32bd754773881f393e4643adc9cf7",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native CI fixture repair: Use the existing unanswered fixture to observe active accessibility state without a timed terminal racing the unchanged role/name/state/focus assertions; keep the real ten-second watchdog.",
+      "resultSha256": "d0c22b387756440624296b59126c5716f2e59c8f69e33eb18d430fcc3b899f71"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppUITests/ConversationContinuityUITests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/ConversationContinuityUITests.swift",
+      "sourceBlob": "7418d32da167fcda8275c48815d2aa76ad01a25a",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native CI fixture repair: Observe every required and forbidden restored text in one public immutable accessibility snapshot, preserving twenty actual relaunches and the unchanged launch-inclusive five-second bound.",
+      "resultSha256": "26b1da9d4895aea3964bccdf1e1fedb35021c52236ca9aa3e0e73587e1dc3052"
+    },
+    {
+      "path": "apple-clients/AstralApp/AstralAppUITests/LLMFirstLoginUITests.swift",
+      "sourcePath": "apple-clients/AstralApp/AstralAppUITests/LLMFirstLoginUITests.swift",
+      "sourceBlob": "ed02627859c931e8c2685ddee43e2307ffd2c7bb",
+      "sourceMode": "100644",
+      "task": "T060",
+      "reason": "Feature 088 native CI fixture repair: Hold the bounded DEBUG-only completion peer until actual active-state editing, duplicate-control, and phase checks finish; keep 250ms feedback and five-second terminal dismissal bounds with no automation-time deduction.",
+      "resultSha256": "2ff36f3c202c1bcbbcae016a37a113bb52a71d18ea017c67bb72237f424b1195"
     },
     {
       "path": "apple-clients/AstralCore/Package.swift",
@@ -1608,7 +1635,7 @@
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action’s line-oriented script execution, preserving the exact device/report arguments and gates."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action\u2019s line-oriented script execution, preserving the exact device/report arguments and gates."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

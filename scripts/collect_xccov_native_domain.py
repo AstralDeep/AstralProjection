@@ -14,6 +14,7 @@ usable. Empty-profile counters are never exported as execution observations.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import importlib.util
 import os
@@ -31,6 +32,13 @@ import zipfile
 MAX_FILE = 256 * 1024 * 1024
 MAX_TREE = 1024 * 1024 * 1024
 MAX_ENTRIES = 10_000
+STAGES = frozenset(
+    {
+        "inputs", "source_before", "products_before", "result_before", "result_copy", "test_metadata",
+        "binary_archive", "mapping", "source_after", "products_after", "result_after",
+        "archive_after", "domain_validation", "output",
+    }
+)
 SOURCE_ROOTS = ("apple-clients/AstralCore", "apple-clients/AstralApp")
 FOLDER = "Debug-iphonesimulator/"
 APP = FOLDER + "AstralDeep.app"
@@ -49,6 +57,17 @@ def require(value: Any) -> None:
     """Refuse a malformed or incomplete diagnostic input without exposing data."""
     if not value:
         raise CollectionError()
+
+
+@contextmanager
+def _stage(name: str):
+    """Attach only a closed local stage; preserve the original refusal and type."""
+    require(name in STAGES)
+    try:
+        yield
+    except Exception as exc:
+        exc.collection_stage = name
+        raise
 
 
 def _module(name: str) -> Any:
@@ -117,6 +136,52 @@ def _tree(root: Path, deadline: float) -> dict[str, Any]:
                 result[child.relative_to(root).as_posix()] = _identity(child, raw)
     require(result)
     return result
+
+
+def _test_documents(
+    xcresult: Path, inventory: dict[str, Any], policy: Any, run: Any, deadline: float
+) -> dict[str, Any]:
+    """Query an exact private copy: Xcode lazily writes its SQLite cache.
+
+    The original result remains fully fenced, including any existing cache.
+    No raw members are excluded or rewritten. The bounded copy is checked
+    before the trusted tool reads it and removed on every exit.
+    """
+    with tempfile.TemporaryDirectory(prefix="astral-result-query-") as directory:
+        copied = Path(directory).resolve() / "Result.xcresult"
+        with _stage("result_copy"):
+            copied.mkdir(mode=0o700)
+            for name, facts in inventory.items():
+                require(time.monotonic() < deadline)
+                raw = _read(xcresult / name)
+                require(_identity(xcresult / name, raw) == facts)
+                destination = copied / name
+                destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                with destination.open("xb") as stream:
+                    stream.write(raw)
+                destination.chmod(facts["mode"])
+            require(_tree(copied, deadline) == inventory)
+        documents = {}
+        with _stage("test_metadata"):
+            for name in ("summary", "tests"):
+                documents[name] = policy.strict_json(
+                    run(
+                        [
+                            "/usr/bin/xcrun",
+                            "xcresulttool",
+                            "get",
+                            "test-results",
+                            name,
+                            "--schema-version",
+                            "0.1.0",
+                            "--compact",
+                            "--path",
+                            str(copied),
+                        ],
+                        16 * 1024 * 1024,
+                    )
+                )
+        return documents
 
 
 def _source_closure(repo: Path, exporter: Any, run: Any, deadline: float) -> tuple:
@@ -303,50 +368,37 @@ def collect(
             command, cwd=repo, max_stdout_bytes=bound, export_deadline=deadline
         )
 
-    source_before = _source_closure(repo, exporter, run, deadline)
-    product_before, binary = _products(products, lane)
-    result_before = _tree(xcresult, deadline)
-    documents = {}
-    for name in ("summary", "tests"):
-        documents[name] = policy.strict_json(
-            run(
-                [
-                    "/usr/bin/xcrun",
-                    "xcresulttool",
-                    "get",
-                    "test-results",
-                    name,
-                    "--schema-version",
-                    "0.1.0",
-                    "--compact",
-                    "--path",
-                    str(xcresult),
-                ],
-                16 * 1024 * 1024,
-            )
-        )
-    policy.test_identity(documents["summary"], documents["tests"], lane)
-    policy.ios_macho(binary, lane)
+    with _stage("source_before"):
+        source_before = _source_closure(repo, exporter, run, deadline)
+    with _stage("products_before"):
+        product_before, binary = _products(products, lane)
+    with _stage("result_before"):
+        result_before = _tree(xcresult, deadline)
+    documents = _test_documents(xcresult, result_before, policy, run, deadline)
+    with _stage("test_metadata"):
+        policy.test_identity(documents["summary"], documents["tests"], lane)
+        policy.ios_macho(binary, lane)
     member = policy.BINARY_MEMBERS["core" if lane == "core" else "app"]
-    binary_archive.parent.mkdir(parents=True, exist_ok=True)
-    _path(binary_archive.parent)
-    with (
-        binary_archive.open("xb") as stream,
-        zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as bundle,
-    ):
-        entry = zipfile.ZipInfo(member)
-        entry.create_system = 3
-        entry.external_attr = (stat.S_IFREG | 0o600) << 16
-        entry.compress_type = zipfile.ZIP_DEFLATED
-        bundle.writestr(entry, binary)
-    archive_bytes = _read(binary_archive)
+    with _stage("binary_archive"):
+        binary_archive.parent.mkdir(parents=True, exist_ok=True)
+        _path(binary_archive.parent)
+        with (
+            binary_archive.open("xb") as stream,
+            zipfile.ZipFile(stream, "w", zipfile.ZIP_DEFLATED) as bundle,
+        ):
+            entry = zipfile.ZipInfo(member)
+            entry.create_system = 3
+            entry.external_attr = (stat.S_IFREG | 0o600) << 16
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            bundle.writestr(entry, binary)
+        archive_bytes = _read(binary_archive)
     identity = {
         "member": member,
         "sha256": policy.sha256(binary),
         "artifact_member": artifact_member,
         "artifact_sha256": policy.sha256(archive_bytes),
     }
-    with tempfile.TemporaryDirectory(prefix="astral-native-domain-") as directory:
+    with _stage("mapping"), tempfile.TemporaryDirectory(prefix="astral-native-domain-") as directory:
         selected = Path(directory).resolve() / "selected-binary"
         with selected.open("xb") as stream:
             stream.write(binary)
@@ -364,15 +416,21 @@ def collect(
             summary=documents["summary"],
             tests=documents["tests"],
         )
-    require(source_before == _source_closure(repo, exporter, run, deadline))
-    require((product_before, binary) == _products(products, lane))
-    require(result_before == _tree(xcresult, deadline))
-    require(_read(binary_archive) == archive_bytes)
-    policy.validate_domain(domain)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    _path(output.parent)
-    with output.open("xb") as stream:
-        stream.write(policy.canonical(domain) + b"\n")
+    with _stage("source_after"):
+        require(source_before == _source_closure(repo, exporter, run, deadline))
+    with _stage("products_after"):
+        require((product_before, binary) == _products(products, lane))
+    with _stage("result_after"):
+        require(result_before == _tree(xcresult, deadline))
+    with _stage("archive_after"):
+        require(_read(binary_archive) == archive_bytes)
+    with _stage("domain_validation"):
+        policy.validate_domain(domain)
+    with _stage("output"):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        _path(output.parent)
+        with output.open("xb") as stream:
+            stream.write(policy.canonical(domain) + b"\n")
     return domain
 
 
@@ -385,9 +443,12 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         collect(**vars(args))
-    except Exception:
+    except Exception as exc:
         # Never include native tool output, raw paths, or data in a refusal.
         print("native_xccov_collection_invalid", file=sys.stderr)
+        stage = getattr(exc, "collection_stage", "inputs")
+        stage = stage if isinstance(stage, str) and stage in STAGES else "inputs"
+        print("native_xccov_collection_stage=" + stage, file=sys.stderr)
         return 1
     return 0
 

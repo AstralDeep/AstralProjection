@@ -45,13 +45,50 @@
             return Scenario(rawValue: arguments[flagIndex + 1])
         }
 
+        /// Optional runner-owned completion gate; no arbitrary URL, credential,
+        /// or provider response can enter this DEBUG-only transport.
+        static func completionGateURL(
+            arguments: [String] = ProcessInfo.processInfo.arguments,
+            environment: [String: String] = ProcessInfo.processInfo.environment
+        ) throws -> URL? {
+            guard let rawPort = environment["ASTRAL_UI_FIRST_LOGIN_GATE_PORT"] else { return nil }
+            guard environment["ASTRAL_UI_TESTING"] == "1",
+                requestedScenario(arguments: arguments) == .slowSuccess,
+                let port = UInt16(rawPort), port > 0, String(port) == rawPort
+            else { throw URLError(.badURL) }
+            return URL(string: "http://127.0.0.1:\(port)/ui-test/first-login/completion")!
+        }
+
+        private static func waitForCompletionGate(_ url: URL) async -> Bool {
+            let configuration = URLSessionConfiguration.ephemeral
+            configuration.urlCache = nil
+            configuration.httpCookieStorage = nil
+            configuration.urlCredentialStorage = nil
+            configuration.httpShouldSetCookies = false
+            configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            configuration.timeoutIntervalForRequest = 8
+            configuration.timeoutIntervalForResource = 8
+            let session = URLSession(configuration: configuration)
+            defer { session.invalidateAndCancel() }
+            do {
+                let (bytes, response) = try await session.bytes(
+                    from: url, delegate: FirstLoginGateRedirectRefusal())
+                guard let http = response as? HTTPURLResponse,
+                    http.statusCode == 204, http.url == url
+                else { return false }
+                for try await _ in bytes { return false }
+                try Task.checkCancellation()
+                return true
+            } catch { return false }
+        }
+
         /// A real loopback HTTP peer lives in the UI-test runner. The app uses
         /// normal bootstrap/Rest/capture/WebKit, with a synthetic memory-only
         /// session. No URL or token is accepted from launch configuration.
         @MainActor
         static func workspaceActionsModel() -> AppModel? {
             if let scenario = requestedScenario(),
-                [.workspaceNavigation, .workspaceNavigationMandatory].contains(scenario)
+                [.workspaceHistory, .workspaceNavigation, .workspaceNavigationMandatory].contains(scenario)
             {
                 guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
                     let defaults = UserDefaults(suiteName: "WorkspaceNavigationUITest.\(UUID().uuidString)")
@@ -96,6 +133,10 @@
 
         @MainActor
         static func install(_ scenario: Scenario, on model: AppModel) {
+            let completionGate: URL?
+            do { completionGate = try completionGateURL() } catch {
+                preconditionFailure("Invalid first-login UI-test completion gate configuration.")
+            }
             if [.workspaceActionsHTTP, .componentActionsHTTP, .componentTimelineHTTP].contains(scenario) {
                 precondition(ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1")
                 Task { @MainActor in
@@ -220,6 +261,7 @@
                         to: scenario,
                         submissionId: submissionId,
                         requestGeneration: requestGeneration,
+                        completionGate: completionGate,
                         model: model)
                 }
             }
@@ -230,6 +272,7 @@
             to scenario: Scenario,
             submissionId: String,
             requestGeneration: String,
+            completionGate: URL?,
             model: AppModel
         ) async {
             try? await Task.sleep(nanoseconds: 20_000_000)
@@ -255,7 +298,13 @@
                         state: "validating",
                         phase: "validating_credentials",
                         label: "Checking your provider credentials…"))
-                try? await Task.sleep(nanoseconds: 800_000_000)
+                if let completionGate {
+                    guard await waitForCompletionGate(completionGate),
+                        model.llmFirstLoginOperation?.submissionId == submissionId
+                    else { return }
+                } else {
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                }
                 model.handleFrame(
                     status(
                         requestGeneration: requestGeneration,
@@ -743,6 +792,17 @@
                         ])
                     ]),
                 ]))
+        }
+    }
+
+    private final class FirstLoginGateRedirectRefusal: NSObject, URLSessionTaskDelegate {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping @Sendable (URLRequest?) -> Void
+        ) {
+            completionHandler(nil)
         }
     }
 #endif

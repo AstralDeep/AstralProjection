@@ -6,7 +6,7 @@ import XCTest
 /// A bounded HTTP peer owned by one UI test, never by the product. The native
 /// app exercises its normal URLSession, authorization, export and share paths.
 final class WorkspaceActionLoopback: @unchecked Sendable {
-    enum Route: Hashable { case authorization, presentation, share, componentCSV }
+    enum Route: Hashable { case authorization, presentation, share, componentCSV, firstLoginCompletion }
     struct Reply {
         var status = 200
         var error: String? = nil
@@ -200,6 +200,7 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
         }
         let route: Route
         switch (method, path) {
+        case ("GET", "/ui-test/first-login/completion"): route = .firstLoginCompletion
         case ("GET", "/api/export/canvas/\(Self.chat).html?render_revision=0"): route = .authorization
         case ("POST", "/api/export/canvas/\(Self.chat)/presentation?render_revision=0"): route = .presentation
         case ("POST", "/api/share"): route = .share
@@ -213,7 +214,11 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
             Request(
                 route: route, method: method, path: path,
                 authorization: headers["authorization"] ?? "", body: body))
-        guard headers["authorization"] == "Bearer \(Self.token)", var choices = replies[route], !choices.isEmpty else {
+        let authorized =
+            route == .firstLoginCompletion
+            ? headers["authorization"] == nil && body.isEmpty
+            : headers["authorization"] == "Bearer \(Self.token)"
+        guard authorized, var choices = replies[route], !choices.isEmpty else {
             unexpected.append("Unexpected authorization or repeated \(route)")
             send(response(status: 403, body: Data()), on: connection)
             return
@@ -221,7 +226,9 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
         let reply = choices.removeFirst()
         replies[route] = choices
         let data: Data
-        if let error = reply.error {
+        if route == .firstLoginCompletion {
+            data = Data()
+        } else if let error = reply.error {
             data =
                 (try? JSONSerialization.data(withJSONObject: ["error": error, "detail": "PRIVATE_SERVER_DETAIL"]))
                 ?? Data()

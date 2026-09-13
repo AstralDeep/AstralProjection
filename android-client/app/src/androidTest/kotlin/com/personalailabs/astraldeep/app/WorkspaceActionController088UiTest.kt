@@ -1,11 +1,9 @@
 package com.personalailabs.astraldeep.app
 
-import android.Manifest
 import android.content.Intent
 import androidx.lifecycle.Lifecycle
-import androidx.test.platform.app.InstrumentationRegistry
 import com.personalailabs.astraldeep.app.ui.Screen
-import com.personalailabs.astraldeep.app.workspace.DOCUMENT_AUTHORITY
+import com.personalailabs.astraldeep.app.workspace.TestDocuments
 import com.personalailabs.astraldeep.app.workspace.WorkspaceControllerFixture
 import com.personalailabs.astraldeep.app.workspace.WorkspaceControllerFixture.Companion.await
 import com.personalailabs.astraldeep.app.workspace.WorkspaceControllerFixture.Companion.main
@@ -25,13 +23,11 @@ import java.util.concurrent.TimeUnit
 /** Synthetic controller integration; actual transport, WebView, ActivityResultRegistry and DocumentsProvider. */
 class WorkspaceActionController088UiTest {
     @Before fun grantTestProviderAccess() {
-        InstrumentationRegistry.getInstrumentation().uiAutomation.adoptShellPermissionIdentity(Manifest.permission.MANAGE_DOCUMENTS)
-        InstrumentationRegistry.getInstrumentation().targetContext.contentResolver.call(DOCUMENT_AUTHORITY, "test-reset", null, null)
+        TestDocuments.reset()
     }
 
     @After fun releaseTestProviderAccess() {
-        InstrumentationRegistry.getInstrumentation().targetContext.contentResolver.call(DOCUMENT_AUTHORITY, "test-reset", null, null)
-        InstrumentationRegistry.getInstrumentation().uiAutomation.dropShellPermissionIdentity()
+        TestDocuments.reset()
     }
 
     @Test fun shareCopiesValidatedLinkAndDuplicateInflightMakesOnePost() =

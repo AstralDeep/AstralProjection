@@ -1,6 +1,5 @@
 package com.personalailabs.astraldeep.app
 
-import android.Manifest
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasSetTextAction
@@ -9,10 +8,9 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import androidx.lifecycle.Lifecycle
-import androidx.test.platform.app.InstrumentationRegistry
 import com.personalailabs.astraldeep.app.ui.Screen
 import com.personalailabs.astraldeep.app.workspace.ComponentControllerFixture
-import com.personalailabs.astraldeep.app.workspace.DOCUMENT_AUTHORITY
+import com.personalailabs.astraldeep.app.workspace.TestDocuments
 import com.personalailabs.astraldeep.app.workspace.WorkspaceControllerFixture
 import com.personalailabs.astraldeep.app.workspace.WorkspaceControllerFixture.Companion.await
 import kotlinx.serialization.json.JsonNull
@@ -39,13 +37,11 @@ class ComponentActions088UiTest {
     @get:Rule val compose = createEmptyComposeRule()
 
     @Before fun provider() {
-        InstrumentationRegistry.getInstrumentation().uiAutomation.adoptShellPermissionIdentity(Manifest.permission.MANAGE_DOCUMENTS)
-        InstrumentationRegistry.getInstrumentation().targetContext.contentResolver.call(DOCUMENT_AUTHORITY, "test-reset", null, null)
+        TestDocuments.reset()
     }
 
     @After fun cleanup() {
-        InstrumentationRegistry.getInstrumentation().targetContext.contentResolver.call(DOCUMENT_AUTHORITY, "test-reset", null, null)
-        InstrumentationRegistry.getInstrumentation().uiAutomation.dropShellPermissionIdentity()
+        TestDocuments.reset()
     }
 
     @Test fun share_is_single_attempt_private_until_explicit_copy() =
