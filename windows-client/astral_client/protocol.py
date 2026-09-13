@@ -2019,9 +2019,12 @@ class OrchestratorClient(QObject):
         *,
         host_id: Optional[str] = None,
         device_id: Optional[str] = None,
+        work_reads: bool = False,
     ):
         super().__init__()
         self.url = url
+        self.work_reads = work_reads
+        self._work_read_generation = None
         self.token = token
         self.device = device or device_caps()
         self.device_id = _uuid4(
@@ -2300,6 +2303,8 @@ class OrchestratorClient(QObject):
             pass
         self.host_session_id = None
         capabilities = ["render", "stream", "agent_host"]
+        if self.work_reads:
+            capabilities.append("work_read_v1")
         if isinstance(self.device.get("voice"), dict):
             capabilities.append("voice")
         if self.computer_host_capable:
@@ -2653,8 +2658,66 @@ class OrchestratorClient(QObject):
         )
         local.validate()
         self.submission.emit(local)
+        if action == "chrome_open" and safe_payload.get("surface") == "work":
+            self._safe_status("work_read_failed:" + request_generation)
+            return local
         self._send(frame)
         return local
+
+    def retire_work_read(self, request_generation: str) -> None:
+        if self._work_read_generation == request_generation:
+            self._work_read_generation = None
+
+    def send_current_work_read(self, params: dict, request_generation: str, *, is_current=lambda: True) -> bool:
+        """Send one Work read on this connection only, without offline retention."""
+        _uuid4(request_generation, "request_generation")
+        if not isinstance(params, dict):
+            raise WindowsProtocolError("Work parameters must be an object")
+        ws, loop, generation = self._ws, self._loop, self.connection_generation
+        if self._stop or not self._connected or ws is None or loop is None or not _is_uuid4(generation):
+            return False
+        local = LocalOperationSubmission(str(uuid.uuid4()), request_generation, "chrome_open", None)
+        local.validate()
+        frame = {
+            "type": "ui_event", "action": "chrome_open", "session_id": None,
+            "submission_id": local.submission_id, "request_generation": request_generation,
+            "connection_generation": generation,
+            "payload": {"surface": "work", "params": copy.deepcopy(params),
+                        "submission_id": local.submission_id, "request_generation": request_generation},
+        }
+        serialized = json.dumps(frame, ensure_ascii=False, separators=(",", ":"))
+        self._work_read_generation = request_generation
+        self.submission.emit(local)
+        if not is_current():
+            self.retire_work_read(request_generation)
+            self._safe_status("work_read_failed:" + request_generation)
+            return False
+
+        async def send_current():
+            if (not is_current() or self._stop or not self._connected or self._ws is not ws
+                    or self._loop is not loop or self.connection_generation != generation
+                    or self._work_read_generation != request_generation):
+                return False
+            await ws.send(serialized)
+            return True
+
+        def finished(future):
+            try:
+                sent = future.result() is True
+            except Exception:
+                sent = False
+            if not sent:
+                self._safe_status("work_read_failed:" + request_generation)
+
+        pending = send_current()
+        try:
+            future = asyncio.run_coroutine_threadsafe(pending, loop)
+        except RuntimeError:
+            pending.close()
+            self._safe_status("work_read_failed:" + request_generation)
+            return False
+        future.add_done_callback(finished)
+        return True
 
     def send_voice_transcript(
         self,

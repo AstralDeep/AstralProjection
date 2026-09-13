@@ -39,10 +39,13 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
     private var registrationCount = 0
     private var socketConnections: [NWConnection] = []
     private var socketPaused = false
+    private let supportsWorkReads: Bool
+    private var workWire: [Data] = []
 
-    init(replies: [Route: [Reply]], supportsWebSocket: Bool = false) throws {
+    init(replies: [Route: [Reply]], supportsWebSocket: Bool = false, supportsWorkReads: Bool = false) throws {
         self.replies = replies
         self.supportsWebSocket = supportsWebSocket
+        self.supportsWorkReads = supportsWorkReads
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -54,6 +57,17 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
     var port: UInt16? { listener.port?.rawValue }
     var componentFrames: [Data] { queue.sync { componentWire } }
     var registrations: Int { queue.sync { registrationCount } }
+    var workFrames: [Data] { queue.sync { workWire } }
+
+    func sendWorkFrame(_ fields: [String: Any]) throws {
+        let data = try JSONSerialization.data(withJSONObject: fields)
+        try queue.sync {
+            guard supportsWorkReads, data.count <= 65535, let connection = socketConnections.last else {
+                throw NSError(domain: "WorkUITest", code: 1)
+            }
+            sendSocket(data, on: connection)
+        }
+    }
 
     func start() {
         listener.stateUpdateHandler = { [weak self] state in
@@ -372,7 +386,9 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
                     registrationCount += 1
                     sendSocket(Data(#"{"type":"pong"}"#.utf8), on: connection)
                 } else if object["type"] as? String == "ui_event", let action = object["action"] as? String {
-                    if ["component_refine", "component_restore"].contains(action) {
+                    if self.supportsWorkReads && ["chrome_open", "chrome_close"].contains(action) {
+                        self.workWire.append(payload)
+                    } else if ["component_refine", "component_restore"].contains(action) {
                         componentWire.append(payload)
                     } else if !["get_history", "discover_agents", "update_device", "new_chat", "load_chat"].contains(
                         action)

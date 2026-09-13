@@ -206,6 +206,7 @@ def build_menu_model(
     skills_enabled: bool = False,
     export_enabled: bool = False,
     share_enabled: bool = False,
+    work_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
@@ -225,6 +226,8 @@ def build_menu_model(
         export_enabled: host-resolved canvas HTML export availability.
         share_enabled: host-resolved canvas sharing availability. These controls
             also require the client's current ``live_canvas`` context.
+        work_enabled: host-resolved owner Work-read availability. Native hosts
+            additionally require negotiated work_read_v1 before delivery.
         include_admin: whether the ADMIN TOOLS group is eligible at all. The web
             passes ``True`` (admins see it). Native clients (Windows/Android)
             pass ``False`` — admin settings are web-only, so the group is omitted
@@ -261,6 +264,10 @@ def build_menu_model(
                 "pulse", "action", label="Pulse digest", icon="sparkle", action=SurfaceRef("pulse")
             )
         )
+    if work_enabled:
+        topbar.append(TopBarControl(
+            "work", "action", label="Recent work", icon="briefcase",
+            action=SurfaceRef("work", {"mode": "list"})))
     topbar.append(
         TopBarControl(
             "timeline",
@@ -305,6 +312,7 @@ def menu_model_dict(
     skills_enabled: bool = False,
     export_enabled: bool = False,
     share_enabled: bool = False,
+    work_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
@@ -323,6 +331,30 @@ def menu_model_dict(
         skills_enabled=skills_enabled,
         export_enabled=export_enabled,
         share_enabled=share_enabled,
+        work_enabled=work_enabled,
         include_admin=include_admin,
         include_tour=include_tour,
     ).to_dict()
+
+
+def project_watch_menu_model(model: Dict) -> Dict:
+    """Project only the canonical Work read action from the shared inventory.
+
+    This is the explicit wrist disposition, not another menu definition. The
+    host must negotiate work_read_v1 before delivering it. Other chrome and
+    artifact operations keep their existing wrist omission.
+    """
+    from copy import deepcopy
+
+    canonical = next(control.to_dict() for control in build_menu_model(
+        work_enabled=True).topbar if control.key == "work")
+    controls = model.get("topbar", []) if isinstance(model, dict) else []
+    if not isinstance(controls, list):
+        controls = []
+    selected = [control for control in controls if control == canonical]
+    return {
+        "version": MODEL_VERSION,
+        "topbar": deepcopy(selected) if len(selected) == 1 else [],
+        "menu": [],
+        "signout": {},
+    }

@@ -99,7 +99,12 @@ _SHARE_SVG = (
 )
 
 # icon id (from the model) -> SVG glyph
-_ICON_SVG = {"gear": _GEAR_SVG, "history": _HISTORY_SVG, "sparkle": _PULSE_SVG}
+_WORK_SVG = (
+    '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    'stroke-width="1.8" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="2"/>'
+    '<path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v3h4v-3"/></svg>'
+)
+_ICON_SVG = {"gear": _GEAR_SVG, "history": _HISTORY_SVG, "sparkle": _PULSE_SVG, "briefcase": _WORK_SVG}
 
 
 def _workspace_action_button(control) -> str:
@@ -211,6 +216,7 @@ def render_topbar(
     skills_enabled: bool = False,
     export_enabled: bool = False,
     share_enabled: bool = False,
+    work_enabled: bool = False,
 ) -> str:
     """Inner HTML for ``<header id="astral-topbar">`` — brand, status, Settings.
 
@@ -229,6 +235,7 @@ def render_topbar(
         skills_enabled=skills_enabled,
         export_enabled=export_enabled,
         share_enabled=share_enabled,
+        work_enabled=work_enabled,
     )
 
     # Left cluster: brand. Right cluster: status + New chat + interactive

@@ -765,6 +765,7 @@ sealed interface Inbound {
         val title: String,
         val components: List<Component>,
         val mode: String = "replace",
+        val requestGeneration: String? = null,
     ) : Inbound
 
     data class AuthRequired(val reason: String?) : Inbound

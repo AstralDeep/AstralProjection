@@ -288,6 +288,7 @@ struct AstralTopBar: View {
         case "gear": return "gearshape"
         case "download": return "arrow.down.to.line"
         case "share": return "square.and.arrow.up"
+        case "briefcase": return "briefcase"
         default: return "ellipsis.circle"
         }
     }

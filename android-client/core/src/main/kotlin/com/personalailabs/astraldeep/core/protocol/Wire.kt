@@ -93,15 +93,25 @@ object Wire {
             "chrome_menu" ->
                 com.personalailabs.astraldeep.core.chrome.ChromeMenuModel.fromJson(root.obj("model"))
                     ?.let { Inbound.ChromeMenu(it) } ?: Inbound.Unknown(type)
-            "chrome_surface" ->
-                Inbound.ChromeSurface(
-                    surfaceKey = root.str("surface_key").orEmpty(),
-                    title = root.str("title").orEmpty(),
-                    components = Component.listFromJson(root.arr("components")),
-                    // Reserved delivery field (054): absent == "replace" (today's
-                    // behavior); "mandatory" == the first-run LLM-setup gate.
-                    mode = root.str("mode") ?: "replace",
-                )
+            "chrome_surface" -> {
+                val key = root.str("surface_key").orEmpty()
+                val request = root.strictString("request_generation")
+                if ((key == "work" && (canonicalUuid4(request) == null || (root.str("mode") ?: "replace") != "replace")) ||
+                    (key != "work" && "request_generation" in root)
+                ) {
+                    Inbound.Unknown(type)
+                } else {
+                    Inbound.ChromeSurface(
+                        surfaceKey = key,
+                        title = root.str("title").orEmpty(),
+                        components = Component.listFromJson(root.arr("components")),
+                        // Reserved delivery field (054): absent == "replace" (today's
+                        // behavior); "mandatory" == the first-run LLM-setup gate.
+                        mode = root.str("mode") ?: "replace",
+                        requestGeneration = request,
+                    )
+                }
+            }
             "auth_required" -> Inbound.AuthRequired(root.str("reason"))
             // Server error replies arrive in three shapes: {code,message},
             // {payload:{message}}, {message} — normalize; never silent (FR-002).
@@ -192,6 +202,7 @@ object Wire {
         device: DeviceCapabilities,
         connectionGeneration: String? = null,
         resume: ConversationResume? = null,
+        workReads: Boolean = false,
     ): String {
         require(connectionGeneration == null || canonicalUuid4(connectionGeneration) != null) {
             "connectionGeneration must be a canonical UUID4"
@@ -210,6 +221,7 @@ object Wire {
             putJsonArray("capabilities") {
                 add("render")
                 add("stream")
+                if (workReads) add("work_read_v1")
                 if (device.hasMicrophone && device.hasAudioOutput) add("voice")
             }
             put("session_id", sessionId)

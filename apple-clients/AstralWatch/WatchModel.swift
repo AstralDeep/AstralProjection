@@ -41,6 +41,14 @@ final class WatchModel {
     var recents: [ChatSummary] = []
     var recentsTitle = "Recent chats"
     var recentsLoading = false
+    var workControls: [TopBarControl] = []
+    var workVisible = false
+    var workUpdate: WorkSurfaceUpdate?
+    var workReadState = WorkReadState()
+    var workReadFailed = false
+    private var workReadEpoch = UUID().uuidString.lowercased()
+    private var workReadSelection: WorkReadRequest?
+    @ObservationIgnored private var workReadTask: Task<Void, Never>?
     var workspaceStarted = false
     var entries: [Entry] = [] {
         didSet { if !entries.isEmpty { workspaceStarted = true } }
@@ -243,12 +251,14 @@ final class WatchModel {
         self.init(conversationResumeStore: ConversationResumeStore())
     }
 
-    init(conversationResumeStore: ConversationResumeStore) {
+    init(conversationResumeStore: ConversationResumeStore, webSocket: WSClient? = nil) {
         self.conversationResumeStore = conversationResumeStore
+        self.ws = webSocket
     }
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            workControls = []
             continuity.clear()
             resetConversationState()
             resetRecents()
@@ -292,11 +302,13 @@ final class WatchModel {
             device: device,
             resumed: resumed,
             connectionGeneration: connection,
-            resume: resume)
+            resume: resume, workReadSupported: true)
     }
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
+        invalidateWorkRead()
+        if workVisible { workReadFailed = true }
         clearPendingOperationSubmissions()
         transientEntries = []
         transientCanvas = nil
@@ -590,7 +602,10 @@ final class WatchModel {
     }
 
     private func connectWS() {
+        invalidateWorkRead()
+        if workVisible { workReadFailed = true }
         wsTask?.cancel()
+        if let previous = ws { Task { await previous.stop() } }
         let client = WSClient(url: rest.webSocketURL)
         ws = client
         let resumeState = WatchRegistrationResumeState()
@@ -608,6 +623,7 @@ final class WatchModel {
                     return await self.replayQueuedOperation(replay)
                 })
             for await event in events {
+                guard !Task.isCancelled, self.ws === client else { break }
                 await self.handle(event)
             }
         }
@@ -619,6 +635,9 @@ final class WatchModel {
             connected = true
             rawSend(Outbound.uiEvent(action: "get_history", sessionId: nil, payload: .object([:])))
         case .disconnected:
+            invalidateWorkRead()
+            if workVisible { workReadFailed = true }
+            workControls = []
             connected = false
             clearPendingOperationSubmissions()
             statusText = nil
@@ -653,6 +672,31 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        if workReadState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
+            let generation = workReadState.generation {
+            failWorkRead(generation: generation)
+            return
+        }
+
+        if frame.name == "chrome_menu" {
+            workControls = WorkReadRequest.watchControls(frame: frame)
+            if workControls.isEmpty { invalidateWorkRead(); workVisible = false }
+            return
+        }
+        if frame.name == "chrome_surface" {
+            guard connected, conversationAccount != nil, workVisible,
+                let update = WorkSurfaceUpdate(frame: frame), workReadState.accepts(update)
+            else { return }
+            retireWorkTicket()
+            if update.components.isEmpty {
+                invalidateWorkRead()
+                workVisible = false
+            } else {
+                workUpdate = update
+                workReadFailed = false
+            }
+            return
+        }
         // History is an owner-scoped chrome surface, never a conversation
         // publication. Intercept before welcome, continuity, and spoken output.
         if frame.name == "ui_render", frame.renderTarget == "history" {
@@ -1124,6 +1168,9 @@ final class WatchModel {
     }
 
     private func resetConversationState() {
+        invalidateWorkRead()
+        workReadSelection = nil
+        workVisible = false
         entries = []
         canvas = []
         transientEntries = []
@@ -1136,6 +1183,100 @@ final class WatchModel {
         seqState.removeAll()
         pendingDictation = ""
         workspaceStarted = false
+    }
+
+    func openWork(_ control: TopBarControl) {
+        guard workControls.contains(control) else { return }
+        beginWorkRead(.object(control.chromeOpenPayload))
+    }
+
+    func sendWorkComponent(_ component: AstralComponent) {
+        guard let request = WorkReadRequest(component: component), workUpdate?.permits(request) == true else { return }
+        beginWorkRead(request.payload)
+    }
+
+    func retryWorkRead() {
+        guard let request = workReadSelection else { return }
+        beginWorkRead(request.payload)
+    }
+
+    private func retireWorkTicket() {
+        workReadTask?.cancel()
+        workReadTask = nil
+        workReadState.invalidate()
+        workReadEpoch = UUID().uuidString.lowercased()
+    }
+
+    /// A timeout/send failure applies only while this exact request is still pending.
+    func failWorkRead(generation: String?) {
+        guard let generation, workReadState.generation == generation else { return }
+        invalidateWorkRead()
+        workReadFailed = true
+    }
+
+    private func invalidateWorkRead() {
+        retireWorkTicket()
+        workUpdate = nil
+        workReadFailed = false
+    }
+
+    private func beginWorkRead(_ payload: JSONValue) {
+        guard let request = WorkReadRequest(payload: payload),
+            request == workReadSelection || workUpdate?.permits(request) == true
+                || workControls.contains(where: { WorkReadRequest(payload: .object($0.chromeOpenPayload)) == request })
+        else { return }
+        invalidateWorkRead()
+        workReadSelection = request
+        let generation = workReadEpoch
+        workReadState.begin(request, generation: generation)
+        workVisible = true
+        guard connected, let account = conversationAccount, let socket = ws else {
+            failWorkRead(generation: generation)
+            return
+        }
+        let session = sessionGeneration
+        let connection = continuity.connectionGeneration
+        let text = request.frameText(requestGeneration: generation)
+        guard workReadState.bindSubmission(frameText: text) else {
+            failWorkRead(generation: generation)
+            return
+        }
+        outboundTap?(text)
+        workReadTask = Task { [weak self] in
+            let sent = await socket.sendCurrentWorkEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.workReadEpoch == generation && self.workVisible && self.connected
+                        && self.ws === socket && self.conversationAccount == account
+                        && self.sessionGeneration == session && self.continuity.connectionGeneration == connection
+                }
+            }
+            guard let self, !Task.isCancelled, self.workReadEpoch == generation,
+                self.conversationAccount == account, self.sessionGeneration == session,
+                self.ws === socket else { return }
+            if !sent { self.failWorkRead(generation: generation) }
+        }
+    }
+
+    func closeWorkRead() {
+        guard workReadSelection != nil || workVisible else { return }
+        invalidateWorkRead()
+        workReadSelection = nil
+        workVisible = false
+        let generation = workReadEpoch
+        guard connected, let socket = ws, let account = conversationAccount else { return }
+        let session = sessionGeneration
+        let text = Outbound.uiEvent(action: "chrome_close", sessionId: nil,
+            payload: .object(["surface": .string("work")]), requestGeneration: generation)
+        workReadTask = Task { [weak self] in
+            _ = await socket.sendCurrentWorkEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.workReadEpoch == generation && self.conversationAccount == account
+                        && self.sessionGeneration == session && self.ws === socket
+                }
+            }
+        }
     }
 
     private func beginLocalOperationSubmission(

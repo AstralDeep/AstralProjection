@@ -2,6 +2,98 @@
   "version": 1,
   "description": "Committed UI-protocol manifest (feature 044). Single source for the server->client WS frame vocabulary, the ui_event action vocabulary, and the component vocabulary. Backend, Windows, and Android test suites all assert against this file; adding a frame type, action, or component type REQUIRES editing it in the same PR (guards fail otherwise). See specs/044-native-client-parity/contracts/ui-protocol.md.",
   "presentation_contracts": {
+    "work_read_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/work_088/read_surface.json",
+      "surface_key": "work",
+      "client_capability": "work_read_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Capability is a presentation hint only; host authenticates the original registered JWT and exact issued cookie session when present. Work reads grant no execution or control authority.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "list",
+          "detail",
+          "result"
+        ],
+        "list_params": [
+          "mode",
+          "after_id?"
+        ],
+        "detail_result_params": [
+          "mode",
+          "operation_id"
+        ],
+        "identity": "canonical lowercase UUID4"
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per read, including retry",
+        "connection": "current registered connection only",
+        "delivery": "never queue, reconnect-replay or substitute a new owner/session"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "work",
+        "request_generation": "the requesting read generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new Work read",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept exactly one complete reply for the current read, connection and owner. Ignore stale, malformed, duplicate and uncorrelated close/error replies. Retry creates a new read identity.",
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "keyvalue",
+          "button"
+        ],
+        "text": "literal complete source text; no Markdown interpretation or device truncation",
+        "navigation": "only validated Work read buttons; source URLs are inert text",
+        "bounds": {
+          "utf8_bytes": 1048576,
+          "nodes": 1024,
+          "depth": 8,
+          "text_utf8_bytes": 8192
+        }
+      },
+      "watch": {
+        "menu": "shared server menu projected to its canonical Work control only",
+        "surface": "same complete evidence and read navigation",
+        "workspace_artifact_actions": false
+      },
+      "legacy": "Absent capability hides native Work entry. Non-Work frame shapes and behavior are unchanged. Windows receives compatibility only, with its existing layout."
+    },
     "component_chrome": {
       "version": 1,
       "fixture": "contracts/fixtures/workspace_088/component_chrome.json",

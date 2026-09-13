@@ -6,6 +6,32 @@ import AstralCore
 // unknown falls back to readable text with a type badge (FR-003).
 import SwiftUI
 
+private struct WorkReadSurfaceKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var astralWorkReadSurface: Bool {
+        get { self[WorkReadSurfaceKey.self] }
+        set { self[WorkReadSurfaceKey.self] = newValue }
+    }
+}
+
+/// Work observations are retained literal evidence, including alert messages.
+/// Ordinary component alerts retain their existing Markdown presentation.
+struct ComponentAlertMessage: View {
+    let text: String
+    let literal: Bool
+
+    var body: some View {
+        if literal {
+            Text(verbatim: text).fixedSize(horizontal: false, vertical: true)
+        } else {
+            MarkdownBlockView(source: text)
+        }
+    }
+}
+
 #if os(macOS)
     import AppKit
 #endif
@@ -14,6 +40,7 @@ struct ComponentView: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @Environment(\.astralWorkReadSurface) private var workReadSurface
     @Environment(\.astralViewportWidth) private var viewportWidth
     @Environment(\.canvasCapturePath) private var capturePath
     /// Measured width of this component's slot, used to clamp multi-column
@@ -143,7 +170,7 @@ struct ComponentView: View {
     @ViewBuilder
     private var textView: some View {
         let text = component.textContent ?? component.fallbackText
-        if component.variant == "markdown" {
+        if component.variant == "markdown" && !workReadSurface {
             // The server explicitly declared block content (web parity:
             // block_md) — headings/fences/lists/tables must not stay literal.
             MarkdownBlockView(source: text)
@@ -180,7 +207,7 @@ struct ComponentView: View {
                 if let title = component.title, !title.isEmpty {
                     markdown(title).font(AstralTypography.subheadline.bold()).foregroundStyle(color)
                 }
-                MarkdownBlockView(source: component.message ?? component.fallbackText)
+                ComponentAlertMessage(text: component.message ?? component.fallbackText, literal: workReadSurface)
                     .foregroundStyle(p.text)
             }
             Spacer(minLength: 0)
@@ -641,7 +668,7 @@ struct ComponentView: View {
     }
 
     private func markdown(_ string: String) -> Text {
-        Text(InlineMarkdown.attributed(string))
+        workReadSurface ? Text(verbatim: string) : Text(InlineMarkdown.attributed(string))
     }
 
     private func isTruthy(_ value: JSONValue?) -> Bool {

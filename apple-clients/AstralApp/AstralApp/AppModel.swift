@@ -223,6 +223,11 @@ final class AppModel: NSObject {
     var pendingSurfaceKey = ""
     var pendingSurfaceParams: JSONValue = .object([:])
     var pendingSurface: SurfaceContent?
+    var workReadState = WorkReadState()
+    var workReadFailed = false
+    private var workReadUpdate: WorkSurfaceUpdate?
+    private var workReadEpoch = UUID().uuidString.lowercased()
+    @ObservationIgnored private var workReadTask: Task<Void, Never>?
     /// 054 first-run gate: the server pinned the current surface
     /// (`chrome_surface` `mode:"mandatory"`) — navigation is suppressed until
     /// the server replaces or closes it. Sign-out stays available (FR-013).
@@ -352,9 +357,11 @@ final class AppModel: NSObject {
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
         tokenStore: TokenStorage,
-        defaults: UserDefaults = .standard
+        defaults: UserDefaults = .standard,
+        webSocket: WSClient? = nil
     ) {
         self.store = tokenStore
+        self.ws = webSocket
         self.conversationResumeStore = conversationResumeStore
         self.defaults = defaults
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
@@ -824,11 +831,12 @@ final class AppModel: NSObject {
             device: device,
             resumed: resumed,
             connectionGeneration: connection,
-            resume: resume)
+            resume: resume, workReadSupported: true)
     }
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
+        invalidateWorkRead()
         clearPendingOperationSubmissions()
         transientTurns = []
         transientCanvas = nil
@@ -1144,6 +1152,7 @@ final class AppModel: NSObject {
     }
 
     private func connectWS(resumed initialResumed: Bool) {
+        invalidateWorkRead()
         wsTask?.cancel()
         if let previous = ws {
             Task { await previous.stop() }  // never leak a live socket loop
@@ -1165,6 +1174,7 @@ final class AppModel: NSObject {
                     return await self.replayQueuedOperation(replay)
                 })
             for await event in events {
+                guard !Task.isCancelled, self.ws === client else { break }
                 await self.handle(event)
             }
         }
@@ -1190,6 +1200,7 @@ final class AppModel: NSObject {
                 Task { await self.reconcileLLMFirstLoginOperation() }
             }
         case .disconnected:
+            invalidateWorkRead()
             connected = false
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
@@ -1230,6 +1241,12 @@ final class AppModel: NSObject {
 
     /// Internal (not private) so XCTests can drive frames through the reducer.
     func handleFrame(_ frame: InboundFrame) {
+        if workReadState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
+            let generation = workReadState.generation {
+            failWorkRead(generation: generation)
+            return
+        }
+
         voice.consume(frame)
         // History is an owner-scoped chrome region, independent of the active
         // conversation generation. It must never replace its canvas or turns.
@@ -1335,6 +1352,10 @@ final class AppModel: NSObject {
             }
         case "chrome_menu":
             chromeMenu = ChromeMenuModel.fromJSON(frame.payload["model"])
+            if pendingSurfaceKey == "work", WorkReadRequest.watchControls(in: chromeMenu).isEmpty {
+                invalidateWorkRead()
+                workReadFailed = true
+            }
         case "chrome_surface":
             reduceChromeSurface(frame)
         case "operation_status":
@@ -2055,6 +2076,23 @@ final class AppModel: NSObject {
 
     private func reduceChromeSurface(_ frame: InboundFrame) {
         let surfaceKey = frame.payload["surface_key"]?.stringValue ?? ""
+        if surfaceKey == "work" {
+            guard signedIn, connected, screen == .surface, pendingSurfaceKey == "work",
+                let update = WorkSurfaceUpdate(frame: frame), workReadState.accepts(update)
+            else { return }
+            retireWorkTicket()
+            if update.components.isEmpty {
+                invalidateWorkRead()
+                screen = .chat
+            } else {
+                workReadUpdate = update
+                workReadFailed = false
+                pendingSurface = SurfaceContent(surfaceKey: "work", title: update.title, components: update.components)
+            }
+            return
+        }
+        // Selected Work accepts only its one correlated response, including after timeout.
+        if screen == .surface && pendingSurfaceKey == "work" { return }
         let title = frame.payload["title"]?.stringValue ?? ""
         let components = AstralComponent.list(from: frame.payload["components"])
         if surfaceKey.isEmpty && components.isEmpty {
@@ -2070,6 +2108,7 @@ final class AppModel: NSObject {
             return
         }
         if frame.surfaceMode == "mandatory" {
+            invalidateWorkRead()
             // 054 first-run gate: accept the surface even though unsolicited
             // and pin it — goTo/newChat/openSurface and the top bar suppress
             // navigation until the server closes it; sign-out stays (FR-013).
@@ -2313,6 +2352,12 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        invalidateWorkRead()
+        if pendingSurfaceKey == "work" {
+            pendingSurfaceKey = ""
+            pendingSurfaceParams = .object([:])
+            screen = .chat
+        }
         canvasCapture.clear()
         activeChatId = nil
         voice.updateVisibleChatLocally(nil)
@@ -2552,6 +2597,11 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action == "chrome_open", payload["surface"]?.stringValue == "work" {
+            beginWorkRead(payload)
+            return
+        }
+        if action == "chrome_open" || action == "chrome_close" { invalidateWorkRead() }
         var payload = payload
         if action == "attach_existing" {
             if stageExistingAttachment(payload) {
@@ -2898,6 +2948,7 @@ final class AppModel: NSObject {
 
     func goTo(_ target: Screen) {
         if mandatorySurface { return }  // 054: navigation pinned (sign-out only)
+        if pendingSurfaceKey == "work" { closeSurface() }
         screen = target
         agentsLoading = target == .agents || agentsLoading
         historyLoading = target == .history || historyLoading
@@ -2925,6 +2976,10 @@ final class AppModel: NSObject {
 
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
         if mandatorySurface { return }  // 054: the pinned surface can't be replaced client-side
+        if surface == "work" {
+            beginWorkRead(.object(["surface": .string(surface), "params": params]))
+            return
+        }
         switch surface {
         default:
             sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
@@ -2949,10 +3004,91 @@ final class AppModel: NSObject {
     func closeSurface() {
         if mandatorySurface { return }
         guard screen == .surface else { return }
+        if pendingSurfaceKey == "work" { closeWorkRead() }
         screen = .chat
         pendingSurface = nil
         pendingSurfaceKey = ""
         pendingSurfaceParams = .object([:])
+    }
+
+    private func retireWorkTicket() {
+        workReadTask?.cancel()
+        workReadTask = nil
+        workReadState.invalidate()
+        workReadEpoch = UUID().uuidString.lowercased()
+    }
+
+    /// A timeout/send failure applies only while this exact request is still pending.
+    func failWorkRead(generation: String?) {
+        guard let generation, workReadState.generation == generation else { return }
+        invalidateWorkRead()
+        workReadFailed = true
+    }
+
+    private func invalidateWorkRead() {
+        retireWorkTicket()
+        workReadUpdate = nil
+        workReadFailed = false
+        if pendingSurfaceKey == "work" { pendingSurface = nil }
+    }
+
+    private func beginWorkRead(_ payload: JSONValue) {
+        guard !mandatorySurface, let request = WorkReadRequest(payload: payload),
+            workReadState.request == request || workReadUpdate?.permits(request) == true
+                || (pendingSurfaceKey == "work" && pendingSurfaceParams == request.params)
+                || chromeMenu?.topbarActions.contains(where: {
+                    WorkReadRequest(payload: .object($0.chromeOpenPayload)) == request
+                }) == true
+        else { return }
+        invalidateWorkRead()
+        let generation = workReadEpoch
+        workReadState.begin(request, generation: generation)
+        screen = .surface
+        pendingSurfaceKey = "work"
+        pendingSurfaceParams = request.params
+        pendingSurface = nil
+        guard signedIn, connected, conversationAccount != nil, let socket = ws else {
+            failWorkRead(generation: generation)
+            return
+        }
+        let owner = downloadOwner
+        let connection = continuity.connectionGeneration
+        let text = request.frameText(requestGeneration: generation)
+        guard workReadState.bindSubmission(frameText: text) else {
+            failWorkRead(generation: generation)
+            return
+        }
+        outboundTap?(text)
+        workReadTask = Task { [weak self] in
+            let sent = await socket.sendCurrentWorkEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.downloadOwner == owner && self.ws === socket && self.connected
+                        && self.workReadEpoch == generation && self.screen == .surface
+                        && self.continuity.connectionGeneration == connection
+                }
+            }
+            guard let self, !Task.isCancelled, self.workReadEpoch == generation,
+                self.downloadOwner == owner, self.ws === socket else { return }
+            if !sent { self.failWorkRead(generation: generation) }
+        }
+    }
+
+    private func closeWorkRead() {
+        invalidateWorkRead()
+        let generation = workReadEpoch
+        guard signedIn, connected, let socket = ws else { return }
+        let owner = downloadOwner
+        let text = Outbound.uiEvent(action: "chrome_close", sessionId: nil,
+            payload: .object(["surface": .string("work")]), requestGeneration: generation)
+        workReadTask = Task { [weak self] in
+            _ = await socket.sendCurrentWorkEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.workReadEpoch == generation && self.downloadOwner == owner && self.ws === socket
+                }
+            }
+        }
     }
 
     func setToolEnabled(_ agent: Agent, tool: String, enabled: Bool) {

@@ -36,6 +36,8 @@
   var accountIdentityInitialized = false;
   var accountPrivacyEpoch = 0;
   var accountSignedOut = false;
+  // Work reads belong to one live socket/navigation, never the reconnect queue.
+  var workReadRequest = null;
   var connectionGeneration = null;
   var requestState = null;
   var committedRevisionByChat = Object.create(null);
@@ -279,6 +281,7 @@
   }
 
   function clearCommittedConversationView(reason, chatId) {
+    if (workReadRequest) { retireWorkRead(); setModal(""); }
     if (chat) chat.replaceChildren();
     if (canvas) { canvas.replaceChildren(); showCanvasEmpty(); }
     setWorkspaceView("start");
@@ -305,6 +308,7 @@
   /** Erase private local work without dispatching it under the next owner. */
   function clearPrivateAccountState() {
     accountPrivacyEpoch += 1;
+    retireWorkRead();
     if (input) input.value = "";
     (pendingActions || []).forEach(function (entry) { clearTimeout(entry.timer); });
     pendingActions = [];
@@ -384,6 +388,7 @@
   }
 
   function openRequest(purpose, chatId, suppliedGeneration) {
+    if (workReadRequest) { retireWorkRead(); setModal(""); }
     setWorkspaceView("work");
     requestState = {
       chatId: chatId || null,
@@ -402,6 +407,7 @@
 
   function selectActiveChat(chatId, purpose) {
     if (!isCanonicalUuid4(chatId)) return false;
+    if (workReadRequest) { retireWorkRead(); setModal(""); }
     persistActiveChatLocator(chatId);
     activeChatId = chatId;
     syncVoiceVisibleChat(chatId);
@@ -5313,19 +5319,40 @@
   }
 
   function action(name, payload, exposeStatus) {
+    var workRead = name === "chrome_open" && payload && payload.surface === "work";
+    if (name === "chrome_open" || name === "chrome_close") retireWorkRead();
+    if ((name === "new_chat" || name === "load_chat") && workReadRequest) {
+      retireWorkRead(); setModal("");
+    }
     if (name === "chat_message") openRequest("commit", activeChatId);
-    var suppliedGeneration = requestState && (name === "chat_message" || name === "load_chat")
-      ? requestState.generation : null;
+    var suppliedGeneration = workRead ? randomUuid4()
+      : requestState && (name === "chat_message" || name === "load_chat")
+        ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
     var frame = {
       type: "ui_event",
       action: name,
       payload: submission.payload,
-      session_id: activeChatId || undefined,
+      session_id: workRead ? undefined : activeChatId || undefined,
       submission_id: submission.submissionId,
       request_generation: submission.requestGeneration,
     };
     if (connectionGeneration) frame.connection_generation = connectionGeneration;
+    if (workRead) {
+      if (!isSocketReady()) {
+        finishOperationSubmission(submission.requestGeneration);
+        showModalRetry();
+        showToast("Not connected. Retry when the connection returns.", "error");
+        return submission;
+      }
+      workReadRequest = { generation: submission.requestGeneration, socket: ws,
+        connection: connectionGeneration, privacyEpoch: accountPrivacyEpoch, received: false };
+      if (!send(frame)) {
+        retireWorkRead();
+        showModalRetry();
+      }
+      return submission;
+    }
     if (!isSocketReady() && name !== "get_history" && name !== "watch_task") {
       // Queue chrome/settings actions too (FR-015): the same no-silent-drop
       // rule chat sends get. Frames are rebuilt at dispatch time so the
@@ -5344,8 +5371,28 @@
     return submission;
   }
 
+  function retireWorkRead() {
+    if (workReadRequest) finishOperationSubmission(workReadRequest.generation);
+    workReadRequest = null;
+  }
+
+  function receiveWorkRead(data) {
+    var pending = workReadRequest;
+    if (!pending || pending.received || !isSocketReady() || accountSignedOut
+        || pending.socket !== ws || pending.connection !== connectionGeneration
+        || pending.privacyEpoch !== accountPrivacyEpoch
+        || data.region !== "modal" || data.mode !== "replace"
+        || !isCanonicalUuid4(data.request_generation)
+        || data.request_generation !== pending.generation || typeof data.html !== "string") return false;
+    pending.received = true;
+    finishOperationSubmission(pending.generation);
+    setModal(data.html);
+    return true;
+  }
+
   /** Persist and bind resume scope before the registration frame is sent. */
   function sendRegistration(resumed) {
+    if (workReadRequest) { retireWorkRead(); setModal(""); }
     var resume;
     if (activeChatId) {
       persistActiveChatLocator(activeChatId);
@@ -6351,6 +6398,9 @@
       // this stays byte-identical to the 060 contract.
       restoreActiveStatusOrClear([operationOwner, submissionOwner]);
     } else if (frame.terminal) {
+      if (workReadRequest && workReadRequest.generation === frame.request_generation) {
+        retireWorkRead(); showModalRetry();
+      }
       // Failure/cancellation/retry guidance persists, but is settled and must
       // never look like work is still in progress.
       setStatus(visible, false, "operation-error:" + frame.operation_id);
@@ -6392,6 +6442,9 @@
         || !validRetryAfter) return false;
     var local = operationSubmissionById[frame.submission_id];
     if (!local) return false;
+    if (workReadRequest && workReadRequest.generation === local.request_generation) {
+      retireWorkRead(); showModalRetry();
+    }
     finishOperationSubmission(local.request_generation);
     setStatus(errorMessage(frame), false, "operation-error:" + frame.submission_id);
     return true;
@@ -6567,6 +6620,7 @@
         }
         break;
       case "auth_required": // recoverable WS auth failure
+        if (workReadRequest) { retireWorkRead(); setModal(""); }
         if (currentVoiceFence() || voiceActivation) {
           voiceRecoverySuppressed = true;
           teardownVoiceMedia(true);
@@ -6615,6 +6669,10 @@
         break;
       }
       case "chrome_render": // server-rendered chrome regions
+        if (data.surface_key === "work") { receiveWorkRead(data); break; }
+        // A delayed legacy modal/close cannot replace the current Work read.
+        // Explicit navigation retires this guard before sending its new action.
+        if (data.region === "modal" && workReadRequest) break;
         if (data.region === "modal") setModal(data.html || "");
         else if (data.region === "topbar") {
           var tb = document.getElementById("astral-topbar");
@@ -7147,7 +7205,9 @@
       // historical views are inert except chrome actions.
       var compHost = btn.closest && btn.closest("[data-component-id]");
       if (compHost && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
-      if (!payload.chat_id && activeChatId) payload.chat_id = activeChatId;
+      if (!payload.chat_id && activeChatId && !(act === "chrome_open" && payload.surface === "work")) {
+        payload.chat_id = activeChatId;
+      }
       if (timelineMode && compHost && act && act.indexOf("chrome_") !== 0) {
         setStatus("Read-only history view — go back to live to interact.");
         return;
@@ -7767,6 +7827,9 @@
   function showModalRetry() {
     modalSkeletonTimer = null;
     if (!modalRoot || !modalSkeletonRequest) return;
+    if (modalSkeletonRequest.action === "chrome_open" && modalSkeletonRequest.payload.surface === "work") {
+      retireWorkRead();
+    }
     modalRoot.innerHTML = modalShellHtml(
       '<div class="text-sm text-astral-text" role="status">This is taking longer than expected.</div>'
       + '<div class="flex gap-2">'
@@ -8140,6 +8203,7 @@
     ws.onclose = function () {
       if (accountSignedOut || ws !== thisSocket) return;
       socketReady = false;
+      if (workReadRequest) { retireWorkRead(); setModal(""); }
       setConnState("offline", "Reconnecting — messages will queue");
       operationSubmissionByGeneration = Object.create(null);
       operationSubmissionById = Object.create(null);

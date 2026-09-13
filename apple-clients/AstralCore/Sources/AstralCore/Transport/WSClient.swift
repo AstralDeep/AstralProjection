@@ -127,6 +127,10 @@ public actor WSClient {
 
     /// Send or queue (bounded) while disconnected.
     public func send(_ text: String) {
+        guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text) else {
+            continuation?.yield(.sendRejected(action: Self.actionHint(text)))
+            return
+        }
         if let voiceFrame = VoiceCurrentConnectionFrame(frameText: text) {
             _ = sendCurrentConnectionVoice(voiceFrame)
             return
@@ -153,6 +157,24 @@ public actor WSClient {
     ) async -> Bool {
         guard let replay = QueuedOperationReplay(frameText: text),
             ["component_refine", "component_restore"].contains(replay.action),
+            established, let current = task, current.state == .running,
+            await isCurrent(), !Task.isCancelled,
+            established, task === current, current.state == .running
+        else { return false }
+        do {
+            try await current.send(.string(text))
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Work navigation reads belong to one current view and never enter replay.
+    @discardableResult
+    public func sendCurrentWorkEvent(
+        _ text: String, isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard WorkReadRequest.isCurrentConnectionEvent(text),
             established, let current = task, current.state == .running,
             await isCurrent(), !Task.isCancelled,
             established, task === current, current.state == .running

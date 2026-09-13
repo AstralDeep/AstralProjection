@@ -7,6 +7,7 @@ struct WatchHomeView: View {
     @Environment(WatchModel.self) var model
 
     var body: some View {
+        @Bindable var model = model
         List {
             Section {
                 NavigationLink {
@@ -16,6 +17,16 @@ struct WatchHomeView: View {
                     Label("New conversation", systemImage: "plus.bubble.fill")
                         .font(AstralTypography.headline)
                 }
+            }
+
+            ForEach(model.workControls) { control in
+                Button {
+                    model.openWork(control)
+                } label: {
+                    Label(control.label ?? control.key, systemImage: control.icon ?? "square.grid.2x2")
+                        .font(AstralTypography.headline)
+                }
+                .disabled(!model.connected)
             }
 
             if model.recentsLoading || !model.recents.isEmpty {
@@ -72,6 +83,7 @@ struct WatchHomeView: View {
             }
         }
         .navigationTitle("AstralDeep")
+        .navigationDestination(isPresented: $model.workVisible) { WatchWorkSurfaceView() }
         .task { await model.refreshRecents() }
         .overlay(alignment: .bottom) {
             if !model.connected {
@@ -81,6 +93,40 @@ struct WatchHomeView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
         }
+    }
+}
+
+/// A generic wrapper over server Work components, separate from chat and speech.
+struct WatchWorkSurfaceView: View {
+    @Environment(WatchModel.self) var model
+    @State private var timedOut = false
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                if let update = model.workUpdate {
+                    Text(verbatim: update.title).font(AstralTypography.headline)
+                    ForEach(Array(update.components.enumerated()), id: \.offset) { _, component in
+                        WatchComponentView(component: component, workRead: true)
+                    }
+                } else if timedOut || model.workReadFailed || !model.connected {
+                    Text("This view is unavailable. Reconnect and retry.")
+                        .font(AstralTypography.footnote)
+                    Button("Retry") { model.retryWorkRead() }.disabled(!model.connected)
+                } else {
+                    ProgressView("Loading…")
+                }
+            }.padding(6)
+        }
+        .task(id: model.workReadState.generation) {
+            timedOut = false
+            guard let generation = model.workReadState.generation else { return }
+            do { try await Task.sleep(nanoseconds: 10_000_000_000) } catch { return }
+            guard !Task.isCancelled, model.workUpdate == nil else { return }
+            model.failWorkRead(generation: generation)
+            timedOut = true
+        }
+        .onDisappear { model.closeWorkRead() }
     }
 }
 

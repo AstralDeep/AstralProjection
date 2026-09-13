@@ -474,6 +474,34 @@ class OrchestratorClient(
             true
         }
 
+    /** Work is an ephemeral owner read; failed sends must never join replay. */
+    internal fun sendCurrentWorkRead(
+        params: JsonObject,
+        isCurrent: () -> Boolean,
+        onSubmission: (LocalSubmission, String) -> Unit,
+    ): Boolean =
+        synchronized(pending) {
+            val currentSocket = socket
+            val generation = connectionGeneration
+            val epoch = ownerEpoch
+            if (!open || currentSocket == null || generation == null || !isCurrent()) return@synchronized false
+            val submission = newSubmission("chrome_open", null)
+            val payload =
+                kotlinx.serialization.json.buildJsonObject {
+                    put("surface", JsonPrimitive("work"))
+                    put("params", params)
+                }
+            val frame = Wire.encodeUiEvent("chrome_open", null, payload, submission.requestGeneration, submission.submissionId)
+            onSubmission(submission, generation)
+            if (!open || socket !== currentSocket || generation != connectionGeneration || epoch != ownerEpoch ||
+                !isCurrent() || !currentSocket.send(frame)
+            ) {
+                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Work read was not sent"))
+                return@synchronized false
+            }
+            true
+        }
+
     fun sendEvent(
         action: String,
         sessionId: String?,
@@ -485,6 +513,10 @@ class OrchestratorClient(
         // See sendChat: local acknowledgement is synchronous and precedes
         // both the offline queue and any live WebSocket send.
         onSubmission(submission)
+        if (action == "chrome_open" && (payload["surface"] as? JsonPrimitive)?.contentOrNull == "work") {
+            _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Work read requires a current connection"))
+            return submission
+        }
         val request =
             when (action) {
                 "load_chat" -> {
@@ -535,6 +567,7 @@ class OrchestratorClient(
                     device = device,
                     connectionGeneration = connection,
                     resume = request?.let { ConversationResume(activeChatId!!, it) },
+                    workReads = true,
                 ),
         )
     }

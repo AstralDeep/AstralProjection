@@ -14,6 +14,19 @@ from rote.capabilities import DeviceProfile, DeviceType
 class ComponentAdapter:
     """Stateless, recursive component transformer."""
 
+    @classmethod
+    def adapt_work_surface(cls, components: List[Dict], profile: DeviceProfile) -> List[Dict]:
+        """Preserve complete bounded Work reads using their explicit disposition.
+
+        Closed passive primitives and read-only navigation require no content
+        degradation on the wrist. Host interactivity/action limits still apply;
+        unsupported primitive capabilities refuse the entire surface.
+        """
+        from rote.work import validate_work_components
+
+        validated = validate_work_components(components, profile.supported_types)
+        return cls._enforce_host_limits(validated, profile)
+
     @staticmethod
     def adapt_voice_capability(profile: DeviceProfile) -> Dict[str, object]:
         """Project normalized client-local facts into a closed ROTE disposition."""
