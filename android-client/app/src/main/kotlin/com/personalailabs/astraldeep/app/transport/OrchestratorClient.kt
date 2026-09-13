@@ -8,6 +8,8 @@ import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent
 import com.personalailabs.astraldeep.core.protocol.VoiceTranscript
 import com.personalailabs.astraldeep.core.protocol.Wire
+import com.personalailabs.astraldeep.core.protocol.isGuidanceNoteAction
+import com.personalailabs.astraldeep.core.protocol.isPrivateChromeSurface
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -474,9 +476,11 @@ class OrchestratorClient(
             true
         }
 
-    /** Work is an ephemeral owner read; failed sends must never join replay. */
-    internal fun sendCurrentWorkRead(
-        params: JsonObject,
+    /** Owner surfaces and note commands are current-only; even failed writes never join replay. */
+    internal fun sendCurrentSurfaceEvent(
+        surface: String,
+        action: String,
+        payload: JsonObject,
         isCurrent: () -> Boolean,
         onSubmission: (LocalSubmission, String) -> Unit,
     ): Boolean =
@@ -485,18 +489,21 @@ class OrchestratorClient(
             val generation = connectionGeneration
             val epoch = ownerEpoch
             if (!open || currentSocket == null || generation == null || !isCurrent()) return@synchronized false
-            val submission = newSubmission("chrome_open", null)
-            val payload =
-                kotlinx.serialization.json.buildJsonObject {
-                    put("surface", JsonPrimitive("work"))
-                    put("params", params)
-                }
-            val frame = Wire.encodeUiEvent("chrome_open", null, payload, submission.requestGeneration, submission.submissionId)
+            if (!isPrivateChromeSurface(surface) ||
+                !(
+                    action == "chrome_open" && (payload["surface"] as? JsonPrimitive)?.contentOrNull == surface ||
+                        surface == "guidance" && isGuidanceNoteAction(action)
+                )
+            ) {
+                return@synchronized false
+            }
+            val submission = newSubmission(action, null)
+            val frame = Wire.encodeUiEvent(action, null, payload, submission.requestGeneration, submission.submissionId)
             onSubmission(submission, generation)
             if (!open || socket !== currentSocket || generation != connectionGeneration || epoch != ownerEpoch ||
                 !isCurrent() || !currentSocket.send(frame)
             ) {
-                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Work read was not sent"))
+                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Private surface request was not sent"))
                 return@synchronized false
             }
             true
@@ -513,8 +520,10 @@ class OrchestratorClient(
         // See sendChat: local acknowledgement is synchronous and precedes
         // both the offline queue and any live WebSocket send.
         onSubmission(submission)
-        if (action == "chrome_open" && (payload["surface"] as? JsonPrimitive)?.contentOrNull == "work") {
-            _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Work read requires a current connection"))
+        if (isGuidanceNoteAction(action) ||
+            action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
+        ) {
+            _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Private surface request requires a current connection"))
             return submission
         }
         val request =
@@ -568,6 +577,7 @@ class OrchestratorClient(
                     connectionGeneration = connection,
                     resume = request?.let { ConversationResume(activeChatId!!, it) },
                     workReads = true,
+                    guidanceNotes = true,
                 ),
         )
     }

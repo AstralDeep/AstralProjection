@@ -24,9 +24,9 @@ class WorkReadTransport088Test {
         val params = buildJsonObject { put("mode", "list") }
         client.sendEvent("get_history", null)
         client.sendEvent("chrome_open", null, buildJsonObject { put("surface", "work") })
-        assertFalse(client.sendCurrentWorkRead(params, { true }, { _, _ -> error("no submission") }))
+        assertFalse(client.sendCurrentSurfaceEvent("work", "chrome_open", workPayload(params), { true }, { _, _ -> error("no submission") }))
         client.installOpenSocketForTest(Socket())
-        assertFalse(client.sendCurrentWorkRead(params, { true }, { _, _ -> error("no submission") }))
+        assertFalse(client.sendCurrentSurfaceEvent("work", "chrome_open", workPayload(params), { true }, { _, _ -> error("no submission") }))
         assertEquals(listOf("get_history"), client.pendingActions())
     }
 
@@ -39,7 +39,7 @@ class WorkReadTransport088Test {
         socket.beforeSend = { assertTrue(issued.isNotEmpty()) }
         val params = buildJsonObject { put("mode", "detail") }
         assertTrue(
-            client.sendCurrentWorkRead(params, { true }) { value, generation ->
+            client.sendCurrentSurfaceEvent("work", "chrome_open", workPayload(params), { true }) { value, generation ->
                 assertEquals(connection, generation)
                 issued.add(value)
             },
@@ -49,7 +49,7 @@ class WorkReadTransport088Test {
         assertTrue(client.validQueuedIdentity(socket.frames.single(), issued.single()))
         assertEquals(params, frame.getValue("payload").jsonObject["params"])
         socket.accept = false
-        assertFalse(client.sendCurrentWorkRead(params, { true }) { value, _ -> issued.add(value) })
+        assertFalse(client.sendCurrentSurfaceEvent("work", "chrome_open", workPayload(params), { true }) { value, _ -> issued.add(value) })
         assertTrue(issued[0].requestGeneration != issued[1].requestGeneration)
         assertTrue(client.pendingActions().isEmpty())
     }
@@ -62,7 +62,7 @@ class WorkReadTransport088Test {
             client.replayPendingForTest(connection, {}, {}, { true })
             var current = true
             assertFalse(
-                client.sendCurrentWorkRead(JsonObject(emptyMap()), { current }) { _, _ ->
+                client.sendCurrentSurfaceEvent("work", "chrome_open", workPayload(JsonObject(emptyMap())), { current }) { _, _ ->
                     when (change) {
                         "owner" -> client.clearOwnerSession()
                         "socket" -> client.installOpenSocketForTest(Socket())
@@ -82,6 +82,44 @@ class WorkReadTransport088Test {
         val frame = Json.parseToJsonElement(attempt.frame).jsonObject
         assertTrue(frame.getValue("capabilities").jsonArray.any { it.jsonPrimitive.content == "work_read_v1" })
     }
+
+    @Test fun guidance_current_send_is_closed_and_rechecks_owner_after_submission() {
+        for (action in listOf("chrome_open", "chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget")) {
+            val client = OrchestratorClient("ws://localhost:9/ws")
+            val socket = Socket()
+            val payload =
+                buildJsonObject {
+                    put("surface", "guidance")
+                    put("expected_revision", 7)
+                }
+            assertFalse(client.sendCurrentSurfaceEvent("guidance", action, payload, { true }) { _, _ -> error("offline") })
+            client.installOpenSocketForTest(socket)
+            assertFalse(client.sendCurrentSurfaceEvent("guidance", action, payload, { true }) { _, _ -> error("unregistered") })
+            client.replayPendingForTest(connection, {}, {}, { true })
+            var current = true
+            assertFalse(client.sendCurrentSurfaceEvent("guidance", action, payload, { current }) { _, _ -> current = false })
+            assertTrue(socket.frames.isEmpty())
+            assertTrue(client.pendingActions().isEmpty())
+            current = true
+            assertTrue(client.sendCurrentSurfaceEvent("guidance", action, payload, { current }) { _, _ -> })
+            assertEquals(action, Json.parseToJsonElement(socket.frames.single()).jsonObject.getValue("action").jsonPrimitive.content)
+        }
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val socket = Socket()
+        client.installOpenSocketForTest(socket)
+        client.replayPendingForTest(connection, {}, {}, { true })
+        for ((surface, action) in listOf("theme" to "chrome_open", "work" to "chrome_note_save", "guidance" to "chrome_save_other")) {
+            assertFalse(client.sendCurrentSurfaceEvent(surface, action, buildJsonObject { put("surface", surface) }, { true }) { _, _ -> error("unsupported") })
+        }
+        assertFalse(client.sendCurrentSurfaceEvent("guidance", "chrome_open", buildJsonObject { put("surface", "work") }, { true }) { _, _ -> error("wrong surface") })
+        assertTrue(socket.frames.isEmpty())
+    }
+
+    private fun workPayload(params: JsonObject) =
+        buildJsonObject {
+            put("surface", "work")
+            put("params", params)
+        }
 
     private class Socket : WebSocket {
         val frames = mutableListOf<String>()

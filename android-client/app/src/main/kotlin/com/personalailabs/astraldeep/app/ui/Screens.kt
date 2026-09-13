@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.personalailabs.astraldeep.app.render.LocalGuidanceNotes
 import com.personalailabs.astraldeep.app.render.LocalWorkReadText
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.rest.AuditEvent
@@ -40,6 +41,7 @@ import com.personalailabs.astraldeep.app.ui.theme.AstralMono
 import com.personalailabs.astraldeep.core.protocol.Agent
 import com.personalailabs.astraldeep.core.protocol.ChatSummary
 import com.personalailabs.astraldeep.core.protocol.Inbound
+import com.personalailabs.astraldeep.core.protocol.isPrivateChromeSurface
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -328,7 +330,10 @@ private fun SurfaceContent(
             )
         }
         itemsIndexed(surface.components, key = { i, _ -> "$revision-$i" }) { _, comp ->
-            CompositionLocalProvider(LocalWorkReadText provides (surface.surfaceKey == "work")) {
+            CompositionLocalProvider(
+                LocalWorkReadText provides isPrivateChromeSurface(surface.surfaceKey),
+                LocalGuidanceNotes provides (surface.surfaceKey == "guidance"),
+            ) {
                 renderer.render(comp)
             }
         }

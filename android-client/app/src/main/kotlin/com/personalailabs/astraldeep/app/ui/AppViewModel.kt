@@ -31,6 +31,8 @@ import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
 import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.ProtocolManifest
 import com.personalailabs.astraldeep.core.protocol.VoiceControl
+import com.personalailabs.astraldeep.core.protocol.isGuidanceNoteAction
+import com.personalailabs.astraldeep.core.protocol.isPrivateChromeSurface
 import com.personalailabs.astraldeep.core.sdui.Canvas
 import com.personalailabs.astraldeep.core.sdui.CanvasOp
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -106,7 +108,7 @@ data class StagedAttachment(
 data class CanvasSnapshot(val label: String, val components: List<Component>)
 
 @Immutable
-data class WorkSurfaceRequest(val requestGeneration: String, val connectionGeneration: String)
+data class PrivateSurfaceRequest(val requestGeneration: String, val connectionGeneration: String, val surfaceKey: String)
 
 data class UiState(
     val connection: ConnectionState = ConnectionState.Disconnected,
@@ -199,8 +201,8 @@ data class UiState(
     val pendingSurfaceParams: JsonObject = JsonObject(emptyMap()),
     /** Feature 043 — the SDUI settings surface currently delivered (native render). */
     val pendingSurface: Inbound.ChromeSurface? = null,
-    val workRequest: WorkSurfaceRequest? = null,
-    val workReadFailed: Boolean = false,
+    val privateSurfaceRequest: PrivateSurfaceRequest? = null,
+    val privateSurfaceFailed: Boolean = false,
     /** Live theme palette (feature 044 US5); null = the default brand dark scheme. */
     val themePalette: ThemePalette? = null,
     /** Feature 028/044 — the read-only workspace timeline is being viewed (mutations paused). */
@@ -364,7 +366,7 @@ class AppViewModel(
         token: String,
         device: DeviceCapabilities,
     ) {
-        _state.update { retireWorkRead(it) }
+        _state.update { retirePrivateSurface(it) }
         this.token = token
         this.device = device
         val nextAccount = ConversationResumeStore.accountFromAccessToken(token)
@@ -627,11 +629,26 @@ class AppViewModel(
         action: String,
         payload: JsonObject = JsonObject(emptyMap()),
     ) {
-        if (action == "chrome_open" && (payload["surface"] as? JsonPrimitive)?.contentOrNull == "work") {
-            openSurface("work", payload["params"] as? JsonObject ?: JsonObject(emptyMap()))
+        val surface = (payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        if (action == "chrome_open" && isPrivateChromeSurface(surface)) {
+            openSurface(surface, payload["params"] as? JsonObject ?: JsonObject(emptyMap()))
             return
         }
-        if (action == "chrome_open" || action == "chrome_close") _state.update { retireWorkRead(it) }
+        if (isGuidanceNoteAction(action)) {
+            val current = _state.value
+            if (current.screen == Screen.Surface && current.pendingSurfaceKey == "guidance") {
+                // A failed/unknown write is recovered by a fresh read, never by replaying its body.
+                requestPrivateSurface("guidance", JsonObject(emptyMap()), action, payload)
+            }
+            return
+        }
+        if (action == "chrome_close" && isPrivateChromeSurface(_state.value.pendingSurfaceKey)) {
+            _state.update {
+                retirePrivateSurface(it).copy(screen = Screen.Chat, pendingSurfaceKey = "", pendingSurfaceParams = JsonObject(emptyMap()))
+            }
+            return
+        }
+        if (action == "chrome_open" || action == "chrome_close") _state.update { retirePrivateSurface(it) }
         // `attach_existing` is a CLIENT-LOCAL action (ui_protocol.json
         // client_local_actions): the attachments library's "Attach" button stages
         // the already-uploaded file as a chip HERE — it is never forwarded to the
@@ -644,7 +661,7 @@ class AppViewModel(
                 // read as dead, and backing out via "+ New" wiped the chip.
                 val filename = (payload["filename"] as? JsonPrimitive)?.contentOrNull ?: "file"
                 _state.value =
-                    retireWorkRead(_state.value).copy(
+                    retirePrivateSurface(_state.value).copy(
                         screen = Screen.Chat,
                         banner = "Attached $filename — it will be sent with your next message",
                         bannerKind = "info",
@@ -754,7 +771,7 @@ class AppViewModel(
 
     /** Start a fresh conversation (clears the canvas, timeline, and transcript). */
     fun newChat() {
-        _state.update { retireWorkRead(it) }
+        _state.update { retirePrivateSurface(it) }
         workspaceEpoch++
         if (!clearResumeLocator(ClearReason.EXPLICIT_NEW_CHAT)) {
             _state.value =
@@ -860,7 +877,7 @@ class AppViewModel(
 
     /** Switch surface and lazily fetch its data (flagging it loading for a skeleton). */
     fun goTo(screen: Screen) {
-        if (screen != Screen.Surface) _state.update { retireWorkRead(it) }
+        if (screen != Screen.Surface) _state.update { retirePrivateSurface(it) }
         _state.value =
             _state.value.copy(
                 screen = screen,
@@ -888,9 +905,9 @@ class AppViewModel(
         surface: String,
         params: JsonObject = JsonObject(emptyMap()),
     ) {
-        _state.update { retireWorkRead(it) }
-        if (surface == "work") {
-            requestWorkSurface(params)
+        _state.update { retirePrivateSurface(it) }
+        if (isPrivateChromeSurface(surface)) {
+            requestPrivateSurface(surface, params)
             return
         }
         sendEvent(
@@ -906,15 +923,15 @@ class AppViewModel(
                 pendingSurfaceKey = surface,
                 pendingSurfaceParams = params,
                 pendingSurface = null,
-                workReadFailed = false,
+                privateSurfaceFailed = false,
             )
     }
 
     /** Re-request the pending SDUI surface after a load timeout (T039 retry). */
     fun retryPendingSurface() {
         val st = _state.value
-        if (st.pendingSurfaceKey == "work") {
-            requestWorkSurface(st.pendingSurfaceParams)
+        if (isPrivateChromeSurface(st.pendingSurfaceKey)) {
+            requestPrivateSurface(st.pendingSurfaceKey, st.pendingSurfaceParams)
             return
         }
         if (st.pendingSurfaceKey.isNotBlank()) {
@@ -928,53 +945,62 @@ class AppViewModel(
         }
     }
 
-    private fun requestWorkSurface(params: JsonObject) {
+    private fun requestPrivateSurface(
+        surface: String,
+        params: JsonObject,
+        action: String = "chrome_open",
+        payload: JsonObject =
+            buildJsonObject {
+                put("surface", surface)
+                put("params", params)
+            },
+    ) {
         val owner = account
         val epoch = workspaceEpoch
         _state.update {
-            it.copy(
+            retirePrivateSurface(it).copy(
                 screen = Screen.Surface,
-                pendingSurfaceKey = "work",
+                pendingSurfaceKey = surface,
                 pendingSurfaceParams = params,
                 pendingSurface = null,
-                workRequest = null,
-                workReadFailed = false,
+                privateSurfaceRequest = null,
+                privateSurfaceFailed = false,
             )
         }
-        var issued: WorkSurfaceRequest? = null
+        var issued: PrivateSurfaceRequest? = null
         val sent =
-            client.sendCurrentWorkRead(params, {
+            client.sendCurrentSurfaceEvent(surface, action, payload, {
                 account == owner && workspaceEpoch == epoch && _state.value.screen == Screen.Surface &&
-                    _state.value.pendingSurfaceKey == "work" && _state.value.workRequest == issued
+                    _state.value.pendingSurfaceKey == surface && _state.value.privateSurfaceRequest == issued
             }) { submission, connection ->
-                issued = WorkSurfaceRequest(submission.requestGeneration, connection)
-                _state.update { projectLocalSubmission(it, submission).copy(workRequest = issued) }
+                issued = PrivateSurfaceRequest(submission.requestGeneration, connection, surface)
+                _state.update { projectLocalSubmission(it, submission).copy(privateSurfaceRequest = issued) }
             }
-        if (!sent && _state.value.workRequest == issued && _state.value.pendingSurfaceKey == "work") {
-            _state.update { finishWorkRead(it).copy(workReadFailed = true) }
+        if (!sent && _state.value.privateSurfaceRequest == issued && _state.value.pendingSurfaceKey == surface) {
+            _state.update { finishPrivateSurface(it).copy(privateSurfaceFailed = true) }
         }
     }
 
-    internal fun timeoutWorkRead(requestGeneration: String?) {
-        if (requestGeneration != null && _state.value.workRequest?.requestGeneration == requestGeneration) {
-            _state.update { finishWorkRead(it).copy(workReadFailed = true) }
+    internal fun timeoutPrivateSurface(requestGeneration: String?) {
+        if (requestGeneration != null && _state.value.privateSurfaceRequest?.requestGeneration == requestGeneration) {
+            _state.update { finishPrivateSurface(it).copy(privateSurfaceFailed = true) }
         }
     }
 
-    private fun finishWorkRead(s: UiState): UiState {
-        val request = s.workRequest?.requestGeneration
+    private fun finishPrivateSurface(s: UiState): UiState {
+        val request = s.privateSurfaceRequest?.requestGeneration
         val remaining = if (request == null) s.pendingSubmissions else s.pendingSubmissions - request
         return s.copy(
-            workRequest = null,
+            privateSurfaceRequest = null,
             pendingSubmissions = remaining,
             statusText = if (request != null && remaining.isEmpty()) null else s.statusText,
         )
     }
 
-    private fun retireWorkRead(s: UiState): UiState =
-        finishWorkRead(s).copy(
-            pendingSurface = if (s.pendingSurfaceKey == "work") null else s.pendingSurface,
-            workReadFailed = s.pendingSurfaceKey == "work",
+    private fun retirePrivateSurface(s: UiState): UiState =
+        finishPrivateSurface(s).copy(
+            pendingSurface = if (isPrivateChromeSurface(s.pendingSurfaceKey)) null else s.pendingSurface,
+            privateSurfaceFailed = isPrivateChromeSurface(s.pendingSurfaceKey),
         )
 
     /**
@@ -1009,7 +1035,7 @@ class AppViewModel(
     }
 
     fun openChat(chatId: String) {
-        _state.update { retireWorkRead(it) }
+        _state.update { retirePrivateSurface(it) }
         workspaceEpoch++
         if (!persistActiveChat(chatId)) {
             _state.value =
@@ -1126,9 +1152,9 @@ class AppViewModel(
         connection: ConnectionState,
     ): UiState =
         when (connection) {
-            ConnectionState.AuthRequired -> retireWorkRead(s).copy(connection = connection)
+            ConnectionState.AuthRequired -> retirePrivateSurface(s).copy(connection = connection)
             ConnectionState.Disconnected ->
-                retireWorkRead(s).copy(
+                retirePrivateSurface(s).copy(
                     connection = connection,
                     turnActive = false, backgroundRequested = false,
                     pendingReplace = false,
@@ -1209,17 +1235,18 @@ class AppViewModel(
             is Inbound.ChromeMenu -> s.copy(chromeMenu = msg.model)
             is Inbound.ChromeSurface ->
                 when {
-                    s.screen == Screen.Surface && s.pendingSurfaceKey == "work" && msg.surfaceKey != "work" -> s
-                    msg.surfaceKey == "work" || msg.requestGeneration != null -> {
-                        val request = s.workRequest
-                        if (msg.surfaceKey != "work" || msg.mode != "replace" || request == null ||
+                    s.screen == Screen.Surface && isPrivateChromeSurface(s.pendingSurfaceKey) && msg.surfaceKey != s.pendingSurfaceKey -> s
+                    isPrivateChromeSurface(msg.surfaceKey) || msg.requestGeneration != null -> {
+                        val request = s.privateSurfaceRequest
+                        if (!isPrivateChromeSurface(msg.surfaceKey) || msg.mode != "replace" || request == null ||
+                            request.surfaceKey != msg.surfaceKey ||
                             msg.requestGeneration != request.requestGeneration ||
                             request.connectionGeneration != s.connectionGeneration ||
-                            s.screen != Screen.Surface || s.pendingSurfaceKey != "work"
+                            s.screen != Screen.Surface || s.pendingSurfaceKey != request.surfaceKey
                         ) {
                             s
                         } else {
-                            finishWorkRead(s).copy(pendingSurface = msg, workReadFailed = false)
+                            finishPrivateSurface(s).copy(pendingSurface = msg, privateSurfaceFailed = false)
                         }
                     }
                     // The documented CLOSE instruction (chrome_close, workspace-
@@ -1229,11 +1256,11 @@ class AppViewModel(
                     // hiding the canvas — and always releases the mandatory pin.
                     msg.surfaceKey.isBlank() && msg.components.isEmpty() ->
                         if (s.screen == Screen.Surface) {
-                            finishWorkRead(s).copy(
+                            finishPrivateSurface(s).copy(
                                 screen = Screen.Chat,
                                 pendingSurface = null,
-                                workRequest = null,
-                                workReadFailed = false,
+                                privateSurfaceRequest = null,
+                                privateSurfaceFailed = false,
                                 pendingSurfaceKey = "",
                                 pendingSurfaceParams = JsonObject(emptyMap()),
                                 mandatorySurface = false,
@@ -1246,7 +1273,7 @@ class AppViewModel(
                     // scaffold suppresses navigation/Back until the server's blank
                     // close frame (above) clears the pin. Sign-out stays enabled.
                     msg.mode == "mandatory" ->
-                        retireWorkRead(s).copy(
+                        retirePrivateSurface(s).copy(
                             screen = Screen.Surface,
                             pendingSurface = msg,
                             pendingSurfaceKey = msg.surfaceKey,
@@ -1378,7 +1405,7 @@ class AppViewModel(
     ): UiState {
         val switchingChats =
             binding.chatId != null && s.activeChatId != null && binding.chatId != s.activeChatId
-        val current = if (s.connectionGeneration != binding.connectionGeneration) retireWorkRead(s) else s
+        val current = if (s.connectionGeneration != binding.connectionGeneration) retirePrivateSurface(s) else s
         return current.copy(
             activeChatId = binding.chatId ?: s.activeChatId,
             connectionGeneration = binding.connectionGeneration,

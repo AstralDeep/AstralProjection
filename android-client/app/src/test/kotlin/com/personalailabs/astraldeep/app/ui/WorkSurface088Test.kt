@@ -53,14 +53,14 @@ class WorkSurface088Test {
                 screen = Screen.Surface,
                 pendingSurfaceKey = "work",
                 connectionGeneration = connection,
-                workRequest = WorkSurfaceRequest(second, connection),
+                privateSurfaceRequest = PrivateSurfaceRequest(second, connection, "work"),
             )
         val stale = Inbound.ChromeSurface("work", "Private stale content", emptyList(), requestGeneration = first)
         assertEquals(state, vm.reduce(state, stale))
         val current = stale.copy(title = "Selected excerpts", requestGeneration = second)
         val accepted = vm.reduce(state, current)
         assertEquals(current, accepted.pendingSurface)
-        assertNull(accepted.workRequest)
+        assertNull(accepted.privateSurfaceRequest)
         assertNull(accepted.banner)
         assertEquals(accepted, vm.reduce(accepted, current.copy(title = "Duplicate")))
         assertEquals(state, vm.reduce(state, current.copy(mode = "mandatory")))
@@ -75,17 +75,17 @@ class WorkSurface088Test {
                 pendingSurfaceKey = "work",
                 connectionGeneration = connection,
                 pendingSurface = message,
-                workRequest = WorkSurfaceRequest(first, connection),
+                privateSurfaceRequest = PrivateSurfaceRequest(first, connection, "work"),
             )
         for (status in listOf(ConnectionState.Disconnected, ConnectionState.AuthRequired)) {
             val retired = vm.reduceConnectionState(state, status)
-            assertNull(retired.workRequest)
+            assertNull(retired.privateSurfaceRequest)
             assertNull(retired.pendingSurface)
-            assertTrue(retired.workReadFailed)
+            assertTrue(retired.privateSurfaceFailed)
             assertEquals(retired, vm.reduce(retired, message))
         }
         val rotated = vm.bindConversationGeneration(state, ConversationGenerationBinding(second, null, null, null))
-        assertNull(rotated.workRequest)
+        assertNull(rotated.privateSurfaceRequest)
         assertNull(rotated.pendingSurface)
         assertEquals(rotated, vm.reduce(rotated, message))
         assertEquals(state.copy(screen = Screen.Chat), vm.reduce(state.copy(screen = Screen.Chat), message))
@@ -98,11 +98,11 @@ class WorkSurface088Test {
                 screen = Screen.Surface,
                 pendingSurfaceKey = "work",
                 connectionGeneration = connection,
-                workRequest = WorkSurfaceRequest(first, connection),
+                privateSurfaceRequest = PrivateSurfaceRequest(first, connection, "work"),
             )
         val displayed = vm.reduce(pending, Inbound.ChromeSurface("work", "Selected excerpts", emptyList(), requestGeneration = first))
-        assertNull(displayed.workRequest)
-        for (selected in listOf(pending, displayed, pending.copy(workRequest = null, workReadFailed = true))) {
+        assertNull(displayed.privateSurfaceRequest)
+        for (selected in listOf(pending, displayed, pending.copy(privateSurfaceRequest = null, privateSurfaceFailed = true))) {
             for (notice in listOf(
                 Inbound.ChromeSurface("", "", emptyList()),
                 Inbound.ChromeSurface("error", "Uncorrelated error", emptyList()),
@@ -142,7 +142,7 @@ class WorkSurface088Test {
                 client.installOpenSocketForTest(socket)
                 client.replayPendingForTest(connection, {}, {}, { true })
                 vm.openSurface("work", buildJsonObject { put("mode", "list") })
-                val firstRequest = vm.state.value.workRequest!!
+                val firstRequest = vm.state.value.privateSurfaceRequest!!
                 vm.sendEvent(
                     "chrome_open",
                     buildJsonObject {
@@ -150,36 +150,36 @@ class WorkSurface088Test {
                         put("params", buildJsonObject { put("mode", "detail") })
                     },
                 )
-                val next = vm.state.value.workRequest!!
+                val next = vm.state.value.privateSurfaceRequest!!
                 assertTrue(firstRequest.requestGeneration != next.requestGeneration)
                 assertEquals("detail", (vm.state.value.pendingSurfaceParams["mode"] as kotlinx.serialization.json.JsonPrimitive).content)
-                vm.timeoutWorkRead(firstRequest.requestGeneration)
-                assertEquals(next, vm.state.value.workRequest)
-                vm.timeoutWorkRead(next.requestGeneration)
-                assertNull(vm.state.value.workRequest)
-                assertTrue(vm.state.value.workReadFailed)
+                vm.timeoutPrivateSurface(firstRequest.requestGeneration)
+                assertEquals(next, vm.state.value.privateSurfaceRequest)
+                vm.timeoutPrivateSurface(next.requestGeneration)
+                assertNull(vm.state.value.privateSurfaceRequest)
+                assertTrue(vm.state.value.privateSurfaceFailed)
                 vm.retryPendingSurface()
-                assertTrue(vm.state.value.workRequest!!.requestGeneration != next.requestGeneration)
+                assertTrue(vm.state.value.privateSurfaceRequest!!.requestGeneration != next.requestGeneration)
                 vm.goTo(Screen.Chat)
-                assertNull(vm.state.value.workRequest)
+                assertNull(vm.state.value.privateSurfaceRequest)
                 assertTrue(vm.state.value.pendingSubmissions.isEmpty())
                 assertNull(vm.state.value.statusText)
                 vm.openSurface("work")
                 vm.sendEvent("attach_existing", buildJsonObject { put("attachment_id", "synthetic-upload") })
-                assertNull(vm.state.value.workRequest)
+                assertNull(vm.state.value.privateSurfaceRequest)
                 vm.openSurface("work")
                 vm.start(token("owner-b"), com.personalailabs.astraldeep.core.protocol.DeviceCapabilities(800, 600))
-                assertNull(vm.state.value.workRequest)
+                assertNull(vm.state.value.privateSurfaceRequest)
                 assertNull(vm.state.value.pendingSurface)
                 assertTrue(client.pendingActions().isEmpty())
                 client.installOpenSocketForTest(socket)
                 client.replayPendingForTest(connection, {}, {}, { true })
                 socket.accept = false
                 vm.openSurface("work")
-                assertTrue(vm.state.value.workReadFailed)
-                assertNull(vm.state.value.workRequest)
+                assertTrue(vm.state.value.privateSurfaceFailed)
+                assertNull(vm.state.value.privateSurfaceRequest)
                 vm.openSurface("theme")
-                assertFalse(vm.state.value.workReadFailed)
+                assertFalse(vm.state.value.privateSurfaceFailed)
             } finally {
                 vm.clearConversationForSignOut()
                 kotlinx.coroutines.Dispatchers.resetMain()

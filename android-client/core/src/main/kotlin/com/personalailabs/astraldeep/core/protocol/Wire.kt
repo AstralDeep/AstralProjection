@@ -96,8 +96,9 @@ object Wire {
             "chrome_surface" -> {
                 val key = root.str("surface_key").orEmpty()
                 val request = root.strictString("request_generation")
-                if ((key == "work" && (canonicalUuid4(request) == null || (root.str("mode") ?: "replace") != "replace")) ||
-                    (key != "work" && "request_generation" in root)
+                if ((key == "guidance" && !GuidanceNotes.validSurface(root)) ||
+                    (isPrivateChromeSurface(key) && (canonicalUuid4(request) == null || (root.str("mode") ?: "replace") != "replace")) ||
+                    (!isPrivateChromeSurface(key) && "request_generation" in root)
                 ) {
                     Inbound.Unknown(type)
                 } else {
@@ -203,6 +204,7 @@ object Wire {
         connectionGeneration: String? = null,
         resume: ConversationResume? = null,
         workReads: Boolean = false,
+        guidanceNotes: Boolean = false,
     ): String {
         require(connectionGeneration == null || canonicalUuid4(connectionGeneration) != null) {
             "connectionGeneration must be a canonical UUID4"
@@ -222,6 +224,7 @@ object Wire {
                 add("render")
                 add("stream")
                 if (workReads) add("work_read_v1")
+                if (guidanceNotes) add("guidance_notes_v1")
                 if (device.hasMicrophone && device.hasAudioOutput) add("voice")
             }
             put("session_id", sessionId)

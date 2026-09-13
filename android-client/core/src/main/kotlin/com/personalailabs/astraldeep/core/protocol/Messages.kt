@@ -875,3 +875,9 @@ sealed interface Inbound {
 
     data class Unknown(val type: String) : Inbound
 }
+
+/** Current-connection owner surfaces share correlation but never response ownership. */
+fun isPrivateChromeSurface(surface: String): Boolean = surface == "work" || surface == "guidance"
+
+fun isGuidanceNoteAction(action: String): Boolean =
+    action in setOf("chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget")

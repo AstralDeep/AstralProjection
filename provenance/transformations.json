@@ -142,9 +142,9 @@
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Input.kt",
       "sourceBlob": "0c23123bd7dff8b2c94e18a7bebbbf16638ae4a4",
       "sourceMode": "100644",
-      "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries.",
-      "resultSha256": "d68af6f9c5cbe9a3f2b0ef6f6b5e3783427327b1baaed3d4032b393d4a2f2e20"
+      "task": "T056/T060/T037",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands.",
+      "resultSha256": "e2783de803b01ede5d643975c5e9416660bd60a7ca985f143149ac28d041d753"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/renderers/Layout.kt",
@@ -178,9 +178,9 @@
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/transport/OrchestratorClient.kt",
       "sourceBlob": "25a71eb2c805119e642c5cc5cc4c456e47776fec",
       "sourceMode": "100644",
-      "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Feature 088 committed continuation: Advertise Work read capability and send correlated Work reads only on the same current socket/owner generation, refusing generic offline replay.",
-      "resultSha256": "0b5de785396bd62f9e2cbded10ec600005b5edcb996a67ab2e25d2e1feee9b6d"
+      "task": "T056/T060/T037",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Feature 088 committed continuation: Advertise Work read capability and send correlated Work reads only on the same current socket/owner generation, refusing generic offline replay. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands.",
+      "resultSha256": "e73bd7ea9c476941ed803159ced71bf062567a13d917ef9a742c4365dfb3d01e"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",
@@ -196,27 +196,27 @@
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AppViewModel.kt",
       "sourceBlob": "d241aacb0fb0710105e25b81d30f754bd8419611",
       "sourceMode": "100644",
-      "resultSha256": "64b139801d635f15c3ef83e810cb0d46aa848469772c5254d030a8ae0c09ba21",
-      "task": "T041/T056/T060",
-      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Feature 088 committed continuation: Track Work read request, owner and connection lifetimes; accept one validated current response and retire reads on failure, timeout or navigation."
+      "resultSha256": "d98556664f1749cd0a674d7b60e8d5aefec07494a30e465755eebcf70939ab5b",
+      "task": "T041/T056/T060/T037",
+      "reason": "Re-request an open My computers surface when a computer_host or computer_session frame arrives (feature 076). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 authenticated New chat: admit server-owned welcome while navigation acknowledgment is pending, retain active-work and hydration rejection, and preserve local submission state. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Feature 088 committed continuation: Track Work read request, owner and connection lifetimes; accept one validated current response and retire reads on failure, timeout or navigation. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands."
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/RootScaffold.kt",
       "sourceBlob": "ab56b7ccb1e56b47c900995c70768db0c38cb41e",
       "sourceMode": "100644",
-      "task": "T060/T056",
-      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 committed continuation: Pass Work generation, failure and timeout callbacks into the existing surface screen.",
-      "resultSha256": "e7bd77e0c5da48ec2dce56da8d40275a7bb3774f7baa7e63fa0e140e2074ad23"
+      "task": "T060/T056/T037",
+      "reason": "Feature 088 Android style verification: render canonical metric labels, progress and variants; match measured web card, chart, typography, compact New chat and canvas tokens while retaining native touch targets. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 committed continuation: Pass Work generation, failure and timeout callbacks into the existing surface screen. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands.",
+      "resultSha256": "d95451b9faf671b4fae9b32cf6c869939e35f3592ac085d1021bff16f40ff61b"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
       "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/Screens.kt",
       "sourceBlob": "6fbaa0b83e865d0055a0ca4fd645e8ca7ccc7e04",
       "sourceMode": "100644",
-      "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 committed continuation: Key Work loading/timeout/retry state by request generation and enable literal text only within Work surfaces.",
-      "resultSha256": "1529ce574da6e7c86452782d9d24373f16c472ee325bfc8c165db9373f5ecd4e"
+      "task": "T056/T060/T037",
+      "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 committed continuation: Key Work loading/timeout/retry state by request generation and enable literal text only within Work surfaces. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands.",
+      "resultSha256": "b47364495c73305aa69eea5c392bc77b39597946353d3b347a4fafc801ffaf14"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/theme/Theme.kt",
@@ -331,9 +331,9 @@
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Messages.kt",
       "sourceBlob": "422b37a5f9dfe46919bc52df26b6f19ff7ca3929",
       "sourceMode": "100644",
-      "resultSha256": "eeba127d50c663ab33869f2cf817197c1dcb9511a012075a4f2c0ca856a91c38",
-      "task": "T052/T071/T040/T060",
-      "reason": "Implement the strict Android client-local voice frame, bound-final models, and canonical content-free playout phases while preserving remote-v1 behavior. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 committed continuation: Retain the optional Work response request generation in the typed ChromeSurface frame."
+      "resultSha256": "feb2594673a4cfa403fe7037b666b401c4f8ad133ff2502523cc3402870963d2",
+      "task": "T052/T071/T040/T060/T037",
+      "reason": "Implement the strict Android client-local voice frame, bound-final models, and canonical content-free playout phases while preserving remote-v1 behavior. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 committed continuation: Retain the optional Work response request generation in the typed ChromeSurface frame. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands."
     },
     {
       "path": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifest.kt",
@@ -349,9 +349,9 @@
       "sourcePath": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
       "sourceBlob": "4801ccf81355ce04ac24930bb37754c86cd2cd87",
       "sourceMode": "100644",
-      "resultSha256": "03a0b61f31473cd8b4908866ce395f11efb506371f092fb3dd667d3bef603bfc",
-      "task": "T052/T040/T056/T060",
-      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 committed continuation: Require canonical Work request correlation and opt-in work_read_v1 registration while preserving ordinary frame shapes."
+      "resultSha256": "de0d1dd4f722474e46af031073a0ef488361ab3490cd072c709802a538fd1c6c",
+      "task": "T052/T040/T056/T060/T037",
+      "reason": "Parse and classify the frozen client-local Android wire contract with closed semantic validation. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 native history: preserve canonical previews, glyphs, saved markers and time labels in shared native rows; isolate history frames from active conversation state and verify exact-row selection. Feature 088 committed continuation: Require canonical Work request correlation and opt-in work_read_v1 registration while preserving ordinary frame shapes. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands."
     },
     {
       "path": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/chrome/ChromeMenuTest.kt",
