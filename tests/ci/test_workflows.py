@@ -99,10 +99,19 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
     assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in web
     assert 'for name in ("service-worker.js", "offline-registration.js")' in web
     assert "len(counts) >= .90" in web
+    # Every tracked 088 browser spec runs in hosted CI: an 088 spec that only
+    # ever ran locally left the shipped client.js changes unexercised here.
     assert (
         "tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js "
-        "tests/native-export-088.spec.js --browser=chromium"
+        "tests/native-export-088.spec.js tests/work-reads-088.spec.js "
+        "tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js "
+        "tests/native-chart-088.spec.js tests/first-task-088.spec.js "
+        "--browser=chromium"
     ) in web
+    tracked = {path.name for path in (ROOT / "tooling/web-ci/tests").glob("*-088.spec.js")}
+    assert tracked, "no tracked 088 browser specs"
+    for name in sorted(tracked):
+        assert f"tests/{name} " in web or f"tests/{name} --browser=chromium" in web, name
     assert "ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json" in web
     export = _step_block(web, "Enforce portable export executable-line coverage")
     assert 'Path("build/088/export-javascript.json")' in export

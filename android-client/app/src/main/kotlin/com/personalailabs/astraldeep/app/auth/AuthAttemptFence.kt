@@ -9,6 +9,7 @@ internal class AuthAttemptFence {
 
     class Ticket internal constructor(internal val epoch: Long, internal var mode: Mode) {
         internal var consumed = false
+
         override fun toString(): String = "AuthAttemptTicket"
     }
 
@@ -19,7 +20,10 @@ internal class AuthAttemptFence {
         return Ticket(epoch, mode)
     }
 
-    @Synchronized fun select(ticket: Ticket, selected: Mode) {
+    @Synchronized fun select(
+        ticket: Ticket,
+        selected: Mode,
+    ) {
         current(ticket)
         if (ticket.consumed) unavailable()
         ticket.mode = selected
@@ -32,12 +36,18 @@ internal class AuthAttemptFence {
         ticket.consumed = true
     }
 
-    @Synchronized fun <T> guarded(ticket: Ticket, block: () -> T): T {
+    @Synchronized fun <T> guarded(
+        ticket: Ticket,
+        block: () -> T,
+    ): T {
         current(ticket)
         return block()
     }
 
-    @Synchronized fun <T> publish(ticket: Ticket, block: () -> T): T {
+    @Synchronized fun <T> publish(
+        ticket: Ticket,
+        block: () -> T,
+    ): T {
         current(ticket)
         mode = ticket.mode
         return block()
@@ -45,7 +55,9 @@ internal class AuthAttemptFence {
 
     @Synchronized fun currentMode(): Mode = mode
 
-    @Synchronized fun retire() { epoch++ }
+    @Synchronized fun retire() {
+        epoch++
+    }
 
     private fun current(ticket: Ticket) {
         if (ticket.epoch != epoch) unavailable()

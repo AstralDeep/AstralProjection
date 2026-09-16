@@ -72,7 +72,25 @@
       "sourceMode": "100644",
       "task": "T056/T060",
       "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 workspace controls: consume exact server Export/Share descriptors, preserve visible canvas during work, wrap canonical native toolbar actions, and fence one-attempt requests and private save lifetimes to the current owner and conversation. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows.",
-      "resultSha256": "755a2f4f7c7c77253185e40e64d5f078e62f2b5e1a1728ae1b0b79ab7e265c1f"
+      "resultSha256": "0d3a9f3169008aad1834c99debf4878245b37313a77fe2b0646bb089c7a824d9"
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcAuth.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/OidcAuth.kt",
+      "sourceBlob": "c1cf11677debfdff7266368e7476c21fddb5f8fc",
+      "sourceMode": "100644",
+      "resultSha256": "e716562e7bed13383edfe4ebc7e61606585ef4df1e9ad0a87c5d0b4d8831b271",
+      "task": "T056",
+      "reason": "Feature 088 native session custody: hold the exact original AppAuth authorization request so the browser response is consumed once, under the same scope, with S256 PKCE and a matching state, before any backend exchange."
+    },
+    {
+      "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/TokenStore.kt",
+      "sourcePath": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/auth/TokenStore.kt",
+      "sourceBlob": "25587e20f3f34928927cba6058f84698f6239f84",
+      "sourceMode": "100644",
+      "resultSha256": "e4bc02d5a9dfc2f6471f0fc397d922553b20d2d79cb8c95482d3bfb932f3769d",
+      "task": "T056",
+      "reason": "Feature 088 native session custody: persist the server-held session under a scope- and user-bound encrypted key that supersedes the single local refresh-token owner, and clear it on scope change or sign-out."
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/render/CanvasHost.kt",
@@ -180,7 +198,7 @@
       "sourceMode": "100644",
       "task": "T056/T060/T037",
       "reason": "Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Feature 088 committed continuation: Advertise Work read capability and send correlated Work reads only on the same current socket/owner generation, refusing generic offline replay. Feature 088 private notes: render the complete server guidance grammar with literal text and native controls; bind each request and reply to the current owner, connection and surface generation, and never queue or replay private commands.",
-      "resultSha256": "e73bd7ea9c476941ed803159ced71bf062567a13d917ef9a742c4365dfb3d01e"
+      "resultSha256": "89ee67b536e2b94a119dd768b60b2c17098aa18b29a34a2e28ffceb4c31653c6"
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/ui/AdaptiveShell.kt",

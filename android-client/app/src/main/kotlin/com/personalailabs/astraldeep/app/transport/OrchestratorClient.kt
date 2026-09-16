@@ -202,7 +202,12 @@ class OrchestratorClient(
                     ) { attempt = 0 },
                 )
                 if (_state.value == ConnectionState.AuthRequired && serverSession != null) {
-                    val custodyRequired = try { serverSession.invoke(token) != null } catch (_: ServerSessionException) { true }
+                    val custodyRequired =
+                        try {
+                            serverSession.invoke(token) != null
+                        } catch (_: ServerSessionException) {
+                            true
+                        }
                     if (custodyRequired) return@flow
                 }
                 _state.value = ConnectionState.Disconnected

@@ -1,5 +1,6 @@
 package com.personalailabs.astraldeep.app.auth
 
+import com.personalailabs.astraldeep.app.transport.ConnectionState
 import com.personalailabs.astraldeep.app.transport.OrchestratorClient
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
 import com.personalailabs.astraldeep.core.protocol.Inbound
@@ -14,23 +15,33 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.Cookie
 import okhttp3.CookieJar
-import okhttp3.Call
-import okhttp3.Connection
-import okhttp3.EventListener
+import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.Test
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.math.BigInteger
+import java.net.InetAddress
+import java.security.KeyPair
+import java.security.KeyPairGenerator
 import java.security.KeyStore
+import java.security.Signature
+import java.security.cert.CertificateFactory
+import java.security.cert.X509Certificate
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.Base64
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
-import kotlinx.coroutines.delay
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
@@ -43,7 +54,7 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** All credentials and the bundled TLS identity are synthetic, loopback-only test data. */
+/** All credentials and the per-run TLS identity are synthetic, loopback-only test data. */
 class ServerSession088Test {
     private val now = Instant.parse("2026-09-13T00:00:00Z")
     private val issuer = "https://iam.example/realms/Astral"
@@ -94,30 +105,38 @@ class ServerSession088Test {
 
     private fun json(body: String): MockResponse = MockResponse().setHeader("Content-Type", "application/json").setBody(body)
 
-    @Test fun probe_requires_valid_anonymous_response_and_never_falls_back_on_failure() = runBlocking<Unit> {
-        Fixture().use { f ->
-            val transport = ServerSessionTransport(scope(f.server.url("/").toString()), f.client) { now }
-            val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
-            f.server.enqueue(json(anonymous).setHeader("X-Astral-Session-Custody", "server_v1"))
-            assertTrue(transport.probe())
-            f.server.enqueue(json(anonymous))
-            assertFalse(transport.probe())
-            f.server.enqueue(json(anonymous).setHeader("X-Astral-Session-Custody", "future_v2"))
-            assertFalse(transport.probe())
-            for (response in listOf(json(anonymous).addHeader("X-Astral-Session-Custody", "server_v1").addHeader("X-Astral-Session-Custody", "server_v1"),
-                json(anonymous).setHeader("Set-Cookie", cookieHeader), json(refreshed()), json("{}"), MockResponse().setResponseCode(503),
-                MockResponse().setResponseCode(302).setHeader("Location", f.server.url("/other")))) {
-                f.server.enqueue(response)
-                assertFailsWith<ServerSessionException> { transport.probe() }
-            }
-            assertEquals(9, f.server.requestCount)
-            repeat(9) {
-                val request = f.server.takeRequest()
-                assertEquals("/auth/session", request.path)
-                assertNull(request.getHeader("Cookie")); assertNull(request.getHeader("Authorization")); assertNull(request.getHeader("Origin"))
+    @Test fun probe_requires_valid_anonymous_response_and_never_falls_back_on_failure() =
+        runBlocking<Unit> {
+            Fixture().use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
+                f.server.enqueue(json(anonymous).setHeader("X-Astral-Session-Custody", "server_v1"))
+                assertTrue(transport.probe())
+                f.server.enqueue(json(anonymous))
+                assertFalse(transport.probe())
+                f.server.enqueue(json(anonymous).setHeader("X-Astral-Session-Custody", "future_v2"))
+                assertFalse(transport.probe())
+                for (response in listOf(
+                    json(anonymous).addHeader("X-Astral-Session-Custody", "server_v1").addHeader("X-Astral-Session-Custody", "server_v1"),
+                    json(anonymous).setHeader("Set-Cookie", cookieHeader),
+                    json(refreshed()),
+                    json("{}"),
+                    MockResponse().setResponseCode(503),
+                    MockResponse().setResponseCode(302).setHeader("Location", f.server.url("/other")),
+                )) {
+                    f.server.enqueue(response)
+                    assertFailsWith<ServerSessionException> { transport.probe() }
+                }
+                assertEquals(9, f.server.requestCount)
+                repeat(9) {
+                    val request = f.server.takeRequest()
+                    assertEquals("/auth/session", request.path)
+                    assertNull(request.getHeader("Cookie"))
+                    assertNull(request.getHeader("Authorization"))
+                    assertNull(request.getHeader("Origin"))
+                }
             }
         }
-    }
 
     @Test fun publication_fence_refuses_old_probe_exchange_restore_and_consumed_callbacks() {
         val fence = AuthAttemptFence()
@@ -137,29 +156,35 @@ class ServerSession088Test {
         assertFailsWith<ServerSessionException> { fence.publish(next) { error("late logout") } }
     }
 
-    @Test fun lost_exchange_acknowledgement_has_one_send_and_storage_failure_never_publishes() = runBlocking<Unit> {
-        Fixture().use { f ->
-            val transport = ServerSessionTransport(scope(f.server.url("/").toString()), f.client) { now }
-            val memory = Memory(); val controller = ServerSessionCoordinator(transport, memory) { now }
-            val attempt = controller.begin()
-            f.server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
-            assertFailsWith<ServerSessionException> {
-                controller.exchange(attempt, ServerAuthorizationCode(transport.scope, "once", "v".repeat(43)))
+    @Test fun lost_exchange_acknowledgement_has_one_send_and_storage_failure_never_publishes() =
+        runBlocking<Unit> {
+            Fixture().use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val memory = Memory()
+                val controller = ServerSessionCoordinator(transport, memory) { now }
+                val attempt = controller.begin()
+                f.server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
+                assertFailsWith<ServerSessionException> {
+                    controller.exchange(attempt, ServerAuthorizationCode(transport.scope, "once", "v".repeat(43)))
+                }
+                assertFailsWith<ServerSessionException> {
+                    controller.exchange(attempt, ServerAuthorizationCode(transport.scope, "once", "v".repeat(43)))
+                }
+                assertEquals(1, f.server.requestCount)
+                assertNull(memory.value)
+                val next = controller.begin()
+                memory.fail = true
+                f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader))
+                assertEquals(
+                    ServerSessionException.Reason.STORAGE,
+                    assertFailsWith<ServerSessionException> {
+                        controller.exchange(next, ServerAuthorizationCode(transport.scope, "new-code", "v".repeat(43)))
+                    }.reason,
+                )
+                assertFailsWith<ServerSessionException> { controller.withToken(token) { error("not durable") } }
+                assertNull(memory.value)
             }
-            assertFailsWith<ServerSessionException> {
-                controller.exchange(attempt, ServerAuthorizationCode(transport.scope, "once", "v".repeat(43)))
-            }
-            assertEquals(1, f.server.requestCount); assertNull(memory.value)
-            val next = controller.begin()
-            memory.fail = true
-            f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader))
-            assertEquals(ServerSessionException.Reason.STORAGE, assertFailsWith<ServerSessionException> {
-                controller.exchange(next, ServerAuthorizationCode(transport.scope, "new-code", "v".repeat(43)))
-            }.reason)
-            assertFailsWith<ServerSessionException> { controller.withToken(token) { error("not durable") } }
-            assertNull(memory.value)
         }
-    }
 
     private class Memory : ServerSessionPersistence {
         var value: ServerSession? = null
@@ -184,14 +209,30 @@ class ServerSession088Test {
         }
     }
 
+    /**
+     * Loopback TLS identity minted at test time with JDK-only APIs (no binary
+     * keystore in git — `*.p12` is gitignored — and no extra test dependency:
+     * the app lockfile and version catalog are pinned as immutable manifests).
+     * The self-signed certificate carries SAN `localhost`/`127.0.0.1`/`::1`, so
+     * OkHttp's hostname verifier accepts it only for the loopback origin the
+     * fixture publishes; the key never leaves this JVM.
+     */
     private class Fixture : AutoCloseable {
         val server = MockWebServer()
         val client: OkHttpClient
 
+        /** Explicit loopback origin: MockWebServer's own `url()` uses the reverse-DNS host name, which differs per machine. */
+        val origin: String get() = "https://localhost:${server.port}/"
+
+        val socketOrigin: String get() = "wss://localhost:${server.port}/"
+
         init {
-            val store = KeyStore.getInstance("PKCS12")
-            checkNotNull(javaClass.getResourceAsStream("/custody-localhost.p12")).use { store.load(it, "test-only".toCharArray()) }
-            val keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(store, "test-only".toCharArray()) }
+            val password = "test-only".toCharArray()
+            val pair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
+            val certificate = LoopbackCertificate.selfSigned(pair)
+            val store = KeyStore.getInstance("PKCS12").apply { load(null, null) }
+            store.setKeyEntry("custody-localhost", pair.private, password, arrayOf(certificate))
+            val keys = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm()).apply { init(store, password) }
             val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(store) }
             val ssl = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, trust.trustManagers, null) }
             server.useHttps(ssl.socketFactory, false)
@@ -206,38 +247,163 @@ class ServerSession088Test {
         }
     }
 
-    @Test fun retirement_during_actual_tls_connection_prevents_cookie_upgrade_send() = runBlocking<Unit> {
-        Fixture().use { f ->
-            val entered = CountDownLatch(1)
-            val proceed = CountDownLatch(1)
-            val held = f.client.newBuilder().eventListener(object : EventListener() {
-                override fun connectionAcquired(call: Call, connection: Connection) {
-                    entered.countDown()
-                    check(proceed.await(5, TimeUnit.SECONDS))
+    /** Minimal DER writer for one X.509 v3 self-signed leaf; the JDK offers no public certificate builder. */
+    private object LoopbackCertificate {
+        private const val SHA256_WITH_RSA = "1.2.840.113549.1.1.11"
+        private const val COMMON_NAME = "2.5.4.3"
+        private const val SUBJECT_ALT_NAME = "2.5.29.17"
+
+        fun selfSigned(pair: KeyPair): X509Certificate {
+            val algorithm = sequence(oid(SHA256_WITH_RSA), byteArrayOf(0x05, 0x00))
+            val name = sequence(tlv(0x31, sequence(oid(COMMON_NAME), tlv(0x0c, "localhost".encodeToByteArray()))))
+            val notBefore = Instant.now().minusSeconds(3600)
+            val altNames =
+                sequence(
+                    tlv(0x82, "localhost".encodeToByteArray()),
+                    tlv(0x87, byteArrayOf(127, 0, 0, 1)),
+                    tlv(0x87, ByteArray(16).also { it[15] = 1 }),
+                )
+            val extensions = sequence(sequence(oid(SUBJECT_ALT_NAME), tlv(0x04, altNames)))
+            val tbs =
+                sequence(
+                    tlv(0xa0, integer(BigInteger.TWO)),
+                    integer(BigInteger.ONE),
+                    algorithm,
+                    name,
+                    sequence(utcTime(notBefore), utcTime(notBefore.plusSeconds(2 * 24 * 3600))),
+                    name,
+                    pair.public.encoded,
+                    tlv(0xa3, extensions),
+                )
+            val signature =
+                Signature.getInstance("SHA256withRSA").apply {
+                    initSign(pair.private)
+                    update(tbs)
+                }.sign()
+            val der = sequence(tbs, algorithm, tlv(0x03, byteArrayOf(0) + signature))
+            return CertificateFactory.getInstance("X.509").generateCertificate(ByteArrayInputStream(der)) as X509Certificate
+        }
+
+        private fun sequence(vararg items: ByteArray): ByteArray = tlv(0x30, items.fold(ByteArray(0)) { acc, item -> acc + item })
+
+        private fun integer(value: BigInteger): ByteArray = tlv(0x02, value.toByteArray())
+
+        private fun utcTime(instant: Instant): ByteArray =
+            tlv(0x17, DateTimeFormatter.ofPattern("yyMMddHHmmss'Z'").withZone(ZoneOffset.UTC).format(instant).encodeToByteArray())
+
+        private fun oid(dotted: String): ByteArray {
+            val arcs = dotted.split('.').map { it.toInt() }
+            val out = ByteArrayOutputStream()
+
+            fun base128(value: Int) {
+                val bytes = ArrayDeque<Int>()
+                var rest = value
+                bytes.addFirst(rest and 0x7f)
+                rest = rest shr 7
+                while (rest > 0) {
+                    bytes.addFirst((rest and 0x7f) or 0x80)
+                    rest = rest shr 7
                 }
-            }).build()
-            val transport = ServerSessionTransport(scope(f.server.url("/").toString()), held) { now }
-            val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
-            val controller = ServerSessionCoordinator(transport, memory) { now }
-            controller.restore()
-            f.server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {}))
-            val url = f.server.url("/ws").toString().replaceFirst("https://", "wss://")
-            val client = OrchestratorClient(url, held, serverSession = { controller })
-            val collecting = launch(Dispatchers.Default) {
-                client.stream(token, DeviceCapabilities(screenWidth = 400, screenHeight = 800)).collect { }
+                bytes.forEach(out::write)
             }
-            try {
-                assertTrue(entered.await(5, TimeUnit.SECONDS))
-                controller.retire()
-                proceed.countDown()
-                delay(250)
-            } finally {
-                proceed.countDown()
-                collecting.cancelAndJoin()
-            }
-            assertEquals(0, f.server.requestCount, "Retired cookie must not reach the upgrade request")
+            base128(arcs[0] * 40 + arcs[1])
+            arcs.drop(2).forEach(::base128)
+            return tlv(0x06, out.toByteArray())
+        }
+
+        private fun tlv(
+            tag: Int,
+            body: ByteArray,
+        ): ByteArray {
+            val length =
+                when {
+                    body.size < 0x80 -> byteArrayOf(body.size.toByte())
+                    body.size < 0x100 -> byteArrayOf(0x81.toByte(), body.size.toByte())
+                    else -> byteArrayOf(0x82.toByte(), (body.size shr 8).toByte(), body.size.toByte())
+                }
+            return byteArrayOf(tag.toByte()) + length + body
         }
     }
+
+    /**
+     * The custody fence is `withCurrent`: socket creation runs under the coordinator gate, and a
+     * ticket retired between creation and `onOpen` makes the client cancel the socket before
+     * `register_ui` (the bearer token) is written. Once the upgrade request is enqueued OkHttp owns
+     * its bytes — no client code can recall the cookie it already carries — so the pinned guarantee
+     * is "no registration on a retired socket", not "no upgrade request". The connection is held at
+     * the `Dns` hook because `RealWebSocket.connect` replaces the client's `EventListener`, so a
+     * `connectionAcquired` hook would never run for a WebSocket call.
+     */
+    @Test fun retirement_during_actual_tls_connection_prevents_registration_on_the_opened_socket() =
+        runBlocking<Unit> {
+            Fixture().use { f ->
+                val entered = CountDownLatch(1)
+                val proceed = CountDownLatch(1)
+                val held =
+                    f.client.newBuilder().dns(
+                        object : Dns {
+                            override fun lookup(hostname: String): List<InetAddress> {
+                                entered.countDown()
+                                check(proceed.await(5, TimeUnit.SECONDS))
+                                return Dns.SYSTEM.lookup(hostname)
+                            }
+                        },
+                    ).build()
+                val transport = ServerSessionTransport(scope(f.origin), held) { now }
+                val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
+                val controller = ServerSessionCoordinator(transport, memory) { now }
+                controller.restore()
+                val frames = CopyOnWriteArrayList<String>()
+                val serverSide = CountDownLatch(1)
+                f.server.enqueue(
+                    MockResponse().withWebSocketUpgrade(
+                        object : WebSocketListener() {
+                            override fun onMessage(
+                                webSocket: WebSocket,
+                                text: String,
+                            ) {
+                                frames.add(text)
+                            }
+
+                            override fun onClosing(
+                                webSocket: WebSocket,
+                                code: Int,
+                                reason: String,
+                            ) {
+                                serverSide.countDown()
+                            }
+
+                            override fun onFailure(
+                                webSocket: WebSocket,
+                                t: Throwable,
+                                response: Response?,
+                            ) {
+                                serverSide.countDown()
+                            }
+                        },
+                    ),
+                )
+                val client = OrchestratorClient(f.socketOrigin + "ws", held, serverSession = { controller })
+                val collecting =
+                    launch(Dispatchers.Default) {
+                        client.stream(token, DeviceCapabilities(screenWidth = 400, screenHeight = 800)).collect { }
+                    }
+                try {
+                    assertTrue(entered.await(5, TimeUnit.SECONDS), "socket creation passed the fence and OkHttp began connecting")
+                    controller.retire()
+                } finally {
+                    proceed.countDown()
+                }
+                withTimeout(5000) { collecting.join() }
+                val upgrade = assertNotNull(f.server.takeRequest(5, TimeUnit.SECONDS))
+                assertEquals("/ws", upgrade.path)
+                assertEquals(cookie, upgrade.getHeader("Cookie"), "the ticket was current when the socket was created")
+                assertEquals(1, f.server.requestCount)
+                assertTrue(serverSide.await(5, TimeUnit.SECONDS), "the client must cancel a socket whose ticket was retired before open")
+                assertEquals(emptyList(), frames, "register_ui must never ride a socket whose ticket was retired")
+                assertFalse(client.state.value == ConnectionState.Connected)
+            }
+        }
 
     @Test fun scopes_and_secret_representations_are_closed() {
         for (backend in listOf("http://localhost", "https://localhost/base", "https://u:p@localhost", "https://localhost/?x=1", "https://localhost/#x")) {
@@ -284,7 +450,7 @@ class ServerSession088Test {
     @Test fun actual_tls_exchange_refresh_logout_use_fixed_wire_and_no_legacy_refresh_owner() =
         runBlocking<Unit> {
             Fixture().use { f ->
-                val transport = ServerSessionTransport(scope(f.server.url("/").toString()), f.client) { now }
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
                 f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader))
                 val code = ServerAuthorizationCode(transport.scope, "original-code", "v".repeat(43))
                 val session = transport.exchange(code)
@@ -323,7 +489,7 @@ class ServerSession088Test {
     @Test fun malformed_issuance_never_persists_and_redirects_are_not_followed() =
         runBlocking<Unit> {
             Fixture().use { f ->
-                val transport = ServerSessionTransport(scope(f.server.url("/").toString()), f.client) { now }
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
                 val memory = Memory()
                 val controller = ServerSessionCoordinator(transport, memory) { now }
                 val replies =
@@ -350,7 +516,7 @@ class ServerSession088Test {
     @Test fun refresh_refuses_replacement_cookie_owner_and_definitive_retirement() =
         runBlocking<Unit> {
             Fixture().use { f ->
-                val transport = ServerSessionTransport(scope(f.server.url("/").toString()), f.client) { now }
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
                 val session = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600))
                 for (reply in listOf(
                     json(refreshed()).setHeader("Set-Cookie", cookieHeader),
@@ -366,7 +532,7 @@ class ServerSession088Test {
     @Test fun concurrent_refresh_coalesces_and_signout_or_cancel_cannot_restore_credentials() =
         runBlocking<Unit> {
             Fixture().use { f ->
-                val transport = ServerSessionTransport(scope(f.server.url("/").toString()), f.client) { now }
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
                 val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
                 val controller = ServerSessionCoordinator(transport, memory) { now }
                 assertTrue(controller.restore())
@@ -378,7 +544,7 @@ class ServerSession088Test {
                 assertEquals(a.await(), b.await())
                 assertEquals(1, f.server.requestCount)
                 assertEquals(1, memory.saves)
-                val ticket = controller.socketTicket(f.server.url("/ws").toString().replaceFirst("https://", "wss://"), jwt(owner, "newsignature"))
+                val ticket = controller.socketTicket(f.socketOrigin + "ws", jwt(owner, "newsignature"))
                 assertTrue(controller.isCurrent(ticket))
                 f.server.enqueue(json(refreshed()).setBodyDelay(250, TimeUnit.MILLISECONDS))
                 val late = async(Dispatchers.Default) { runCatching { controller.refresh() } }
@@ -416,7 +582,7 @@ class ServerSession088Test {
                             }
                         },
                     ).build()
-                val transport = ServerSessionTransport(scope(f.server.url("/").toString()), supplied) { now }
+                val transport = ServerSessionTransport(scope(f.origin), supplied) { now }
                 val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
                 val controller = ServerSessionCoordinator(transport, memory) { now }
                 controller.restore()
@@ -435,7 +601,7 @@ class ServerSession088Test {
                         },
                     ),
                 )
-                val url = f.server.url("/ws").toString().replaceFirst("https://", "wss://")
+                val url = f.socketOrigin + "ws"
                 val client = OrchestratorClient(url, supplied, serverSession = { controller })
                 withTimeout(5000) { client.stream(token, DeviceCapabilities(screenWidth = 400, screenHeight = 800)).first { it is Inbound.AuthRequired } }
                 assertEquals(cookie, f.server.takeRequest().getHeader("Cookie"))

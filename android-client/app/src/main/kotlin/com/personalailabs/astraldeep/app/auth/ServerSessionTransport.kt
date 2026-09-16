@@ -39,7 +39,9 @@ class ServerSessionTransport(
             body.boolean("authenticated") || body.string("access_token").isNotEmpty() || body.boolean("resumed") ||
             body.string("reason").length > 128 || result.capability.size > 1 ||
             result.capability.any { it.length > 128 }
-        ) sessionInvalid()
+        ) {
+            sessionInvalid()
+        }
         return result.capability.singleOrNull() == "server_v1"
     }
 

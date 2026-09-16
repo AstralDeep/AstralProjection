@@ -1,7 +1,7 @@
 package com.personalailabs.astraldeep.app.auth
 
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -116,11 +116,15 @@ class ServerSessionCoordinator internal constructor(
     suspend fun logout(retired: ServerSession): Boolean = transport.logout(retired)
 
     /** Keep token publication under the same session fence as persistence and socket creation. */
-    internal fun <T> withToken(token: String, block: () -> T): T = synchronized(gate) {
-        val current = session ?: retired()
-        if (current.accessToken != token || !current.cookieExpiresAt.isAfter(clock())) retired()
-        block()
-    }
+    internal fun <T> withToken(
+        token: String,
+        block: () -> T,
+    ): T =
+        synchronized(gate) {
+            val current = session ?: retired()
+            if (current.accessToken != token || !current.cookieExpiresAt.isAfter(clock())) retired()
+            block()
+        }
 
     /** Private equality snapshot for the exact token already selected by the UI session. */
     class SocketTicket internal constructor(internal val session: ServerSession, internal val epoch: Long) {
@@ -162,7 +166,10 @@ class ServerSessionCoordinator internal constructor(
             block()
         }
 
-    private fun persist(value: ServerSession, job: Job?) {
+    private fun persist(
+        value: ServerSession,
+        job: Job?,
+    ) {
         job?.ensureActive()
         if (!persistence.saveSession(value)) throw ServerSessionException(ServerSessionException.Reason.STORAGE)
         if (job?.isActive == false) {

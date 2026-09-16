@@ -133,7 +133,8 @@ internal fun validateSessionToken(
     }
     val claims =
         try {
-            Json.parseToJsonElement(Base64.getUrlDecoder().decode(token.split('.')[1]).decodeToString(throwOnInvalidSequence = true)) as? JsonObject
+            val payload = Base64.getUrlDecoder().decode(token.split('.')[1]).decodeToString(throwOnInvalidSequence = true)
+            Json.parseToJsonElement(payload) as? JsonObject
         } catch (_: Exception) {
             null
         } ?: sessionInvalid()

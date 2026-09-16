@@ -68,8 +68,10 @@ class TokenStore(context: Context) : ServerSessionPersistence {
         }.commit()
     }
 
-    private fun custodyKey(scope: ServerSessionScope): String =
-        "server_session_v1." + digest(listOf(scope.origin.toString(), scope.issuer, scope.clientId, scope.redirectUri).joinToString("\u0000"))
+    private fun custodyKey(scope: ServerSessionScope): String {
+        val identity = listOf(scope.origin.toString(), scope.issuer, scope.clientId, scope.redirectUri).joinToString("\u0000")
+        return "server_session_v1." + digest(identity)
+    }
 
     private fun digest(value: String): String =
         MessageDigest.getInstance("SHA-256")

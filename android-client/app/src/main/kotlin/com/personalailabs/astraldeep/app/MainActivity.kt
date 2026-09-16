@@ -42,14 +42,14 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.personalailabs.astraldeep.app.auth.AuthAttemptFence
-import com.personalailabs.astraldeep.app.auth.ServerSessionCoordinator
-import com.personalailabs.astraldeep.app.auth.ServerSessionException
-import com.personalailabs.astraldeep.app.auth.ServerSessionScope
-import com.personalailabs.astraldeep.app.auth.ServerSessionTransport
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.ClearReason
 import com.personalailabs.astraldeep.app.auth.KeycloakLogout
 import com.personalailabs.astraldeep.app.auth.OidcAuth
+import com.personalailabs.astraldeep.app.auth.ServerSessionCoordinator
+import com.personalailabs.astraldeep.app.auth.ServerSessionException
+import com.personalailabs.astraldeep.app.auth.ServerSessionScope
+import com.personalailabs.astraldeep.app.auth.ServerSessionTransport
 import com.personalailabs.astraldeep.app.auth.TokenStore
 import com.personalailabs.astraldeep.app.auth.keycloakEndpoints
 import com.personalailabs.astraldeep.app.auth.routeAfterRefresh
@@ -95,7 +95,9 @@ class MainActivity : ComponentActivity() {
     private val serverScope by lazy {
         if (AppConfig.API_BASE.startsWith("https://")) {
             ServerSessionScope(AppConfig.API_BASE, AppConfig.KEYCLOAK_AUTHORITY, AppConfig.OIDC_CLIENT_ID, AppConfig.OIDC_REDIRECT_URI)
-        } else null
+        } else {
+            null
+        }
     }
     private val serverTransport by lazy { serverScope?.let { ServerSessionTransport(it) } }
     private val serverSession by lazy { serverTransport?.let { ServerSessionCoordinator(it, store) } }
@@ -103,7 +105,9 @@ class MainActivity : ComponentActivity() {
         OrchestratorClient(AppConfig.WS_URL, serverSession = {
             if (authFence.currentMode() == AuthAttemptFence.Mode.SERVER) {
                 serverSession ?: throw ServerSessionException(ServerSessionException.Reason.RETIRED)
-            } else null
+            } else {
+                null
+            }
         })
     }
     private val rest by lazy { AstralRest(AppConfig.API_BASE) }
@@ -195,6 +199,7 @@ class MainActivity : ComponentActivity() {
         val ticket: AuthAttemptFence.Ticket,
         val custody: ServerSessionCoordinator.Attempt?,
     )
+
     private var pendingSignIn: PendingSignIn? = null
 
     private val authLauncher =
@@ -205,17 +210,18 @@ class MainActivity : ComponentActivity() {
             lifecycleScope.launch(Dispatchers.IO) {
                 try {
                     authFence.consume(pending.ticket)
-                    val token = if (pending.ticket.mode == AuthAttemptFence.Mode.SERVER) {
-                        val scope = serverScope ?: throw ServerSessionException(ServerSessionException.Reason.INVALID)
-                        val code = oidc.serverCode(data, scope)
-                        checkNotNull(serverSession).exchange(checkNotNull(pending.custody), code)
-                    } else {
-                        val state = oidc.exchange(data)
-                        val value = oidc.freshToken(state)
-                        ensureActive()
-                        authFence.guarded(pending.ticket) { store.save(state) }
-                        value
-                    }
+                    val token =
+                        if (pending.ticket.mode == AuthAttemptFence.Mode.SERVER) {
+                            val scope = serverScope ?: throw ServerSessionException(ServerSessionException.Reason.INVALID)
+                            val code = oidc.serverCode(data, scope)
+                            checkNotNull(serverSession).exchange(checkNotNull(pending.custody), code)
+                        } else {
+                            val state = oidc.exchange(data)
+                            val value = oidc.freshToken(state)
+                            ensureActive()
+                            authFence.guarded(pending.ticket) { store.save(state) }
+                            value
+                        }
                     applyAuthToken(token, pending.ticket)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
@@ -247,13 +253,14 @@ class MainActivity : ComponentActivity() {
                     val st = authFence.guarded(initial) { store.load() } ?: return@launch
                     val cached = st.accessToken?.takeIf { it.isNotBlank() }
                     cached?.let { applyAuthToken(it, initial) }
-                    val route = routeAfterRefresh(
-                        runCatching { oidc.freshToken(st) }.onSuccess {
-                            ensureActive()
-                            authFence.guarded(initial) { store.save(st) }
-                        },
-                        cachedToken = cached,
-                    )
+                    val route =
+                        routeAfterRefresh(
+                            runCatching { oidc.freshToken(st) }.onSuccess {
+                                ensureActive()
+                                authFence.guarded(initial) { store.save(st) }
+                            },
+                            cachedToken = cached,
+                        )
                     applyAuthToken(route.token, initial, route.error)
                 }
             } catch (cancelled: CancellationException) {
@@ -314,19 +321,22 @@ class MainActivity : ComponentActivity() {
                         if (uiState.connection == ConnectionState.AuthRequired) {
                             val ticket = authFence.capture()
                             try {
-                                val route = withContext(Dispatchers.IO) {
-                                    if (ticket.mode == AuthAttemptFence.Mode.SERVER) {
-                                        com.personalailabs.astraldeep.app.auth.AuthRoute(checkNotNull(serverSession).refresh(), null)
-                                    } else {
-                                        routeAfterRefresh(runCatching {
-                                            val st = authFence.guarded(ticket) { checkNotNull(store.load()) }
-                                            oidc.freshToken(st).also {
-                                                ensureActive()
-                                                authFence.guarded(ticket) { store.save(st) }
-                                            }
-                                        })
+                                val route =
+                                    withContext(Dispatchers.IO) {
+                                        if (ticket.mode == AuthAttemptFence.Mode.SERVER) {
+                                            com.personalailabs.astraldeep.app.auth.AuthRoute(checkNotNull(serverSession).refresh(), null)
+                                        } else {
+                                            routeAfterRefresh(
+                                                runCatching {
+                                                    val st = authFence.guarded(ticket) { checkNotNull(store.load()) }
+                                                    oidc.freshToken(st).also {
+                                                        ensureActive()
+                                                        authFence.guarded(ticket) { store.save(st) }
+                                                    }
+                                                },
+                                            )
+                                        }
                                     }
-                                }
                                 applyAuthToken(route.token, ticket, route.error)
                             } catch (cancelled: CancellationException) {
                                 throw cancelled
@@ -368,11 +378,16 @@ class MainActivity : ComponentActivity() {
             }
             if (next != null && ticket.mode == AuthAttemptFence.Mode.SERVER) {
                 checkNotNull(serverSession).withToken(next, publish)
-            } else publish()
+            } else {
+                publish()
+            }
         }
     }
 
-    private suspend fun authFailure(ticket: AuthAttemptFence.Ticket, message: String) {
+    private suspend fun authFailure(
+        ticket: AuthAttemptFence.Ticket,
+        message: String,
+    ) {
         withContext(Dispatchers.Main.immediate) {
             try {
                 authFence.guarded(ticket) {
@@ -384,7 +399,9 @@ class MainActivity : ComponentActivity() {
                     }
                     signInError.value = message
                 }
-            } catch (_: ServerSessionException) { /* A newer attempt owns the UI. */ }
+            } catch (_: ServerSessionException) {
+                // A newer attempt owns the UI.
+            }
         }
     }
 
@@ -461,10 +478,16 @@ class MainActivity : ComponentActivity() {
             authToken.value = null
         }
         if (custodyMode) {
-            if (retired != null) lifecycleScope.launch(Dispatchers.IO) {
-                try { serverSession?.logout(retired) } catch (cancelled: CancellationException) {
-                    throw cancelled
-                } catch (_: Exception) { Log.w("MainActivity", "Server session logout unconfirmed") }
+            if (retired != null) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        serverSession?.logout(retired)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        Log.w("MainActivity", "Server session logout unconfirmed")
+                    }
+                }
             }
             return
         }
