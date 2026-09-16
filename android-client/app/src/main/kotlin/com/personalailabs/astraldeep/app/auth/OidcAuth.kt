@@ -23,6 +23,7 @@ import net.openid.appauth.TokenResponse
  */
 class OidcAuth(context: Context) {
     val service = AuthorizationService(context)
+    private var pendingServerRequest: AuthorizationRequest? = null
 
     private val config: AuthorizationServiceConfiguration by lazy {
         val e = keycloakEndpoints(AppConfig.KEYCLOAK_AUTHORITY)
@@ -36,20 +37,58 @@ class OidcAuth(context: Context) {
 
     /** The intent that opens the system browser for sign-in (PKCE added by AppAuth). */
     fun authorizeIntent(): Intent {
-        val request =
-            AuthorizationRequest.Builder(
-                config,
-                AppConfig.OIDC_CLIENT_ID,
-                ResponseTypeValues.CODE,
-                Uri.parse(AppConfig.OIDC_REDIRECT_URI),
-            )
-                // `offline_access` yields a DURABLE (offline) refresh token whose
-                // lifetime is the realm's offline-session setting rather than the
-                // short interactive SSO session — the basis for the "sign in once a
-                // year" policy. Its rotation is persisted after every refresh.
-                .setScope("openid profile email offline_access")
-                .build()
-        return service.getAuthorizationRequestIntent(request)
+        return service.getAuthorizationRequestIntent(newRequest())
+    }
+
+    private fun newRequest(): AuthorizationRequest =
+        AuthorizationRequest.Builder(
+            config,
+            AppConfig.OIDC_CLIENT_ID,
+            ResponseTypeValues.CODE,
+            Uri.parse(AppConfig.OIDC_REDIRECT_URI),
+        )
+            // `offline_access` yields a DURABLE (offline) refresh token whose
+            // lifetime is the realm's offline-session setting rather than the
+            // short interactive SSO session — the basis for the "sign in once a
+            // year" policy. Its rotation is persisted after every refresh.
+            .setScope("openid profile email offline_access")
+            .build()
+
+    /** Dormant custody mode still lets AppAuth generate and validate state and S256 PKCE. */
+    @Synchronized
+    fun authorizeServerIntent(scope: ServerSessionScope): Intent {
+        checkScope(scope)
+        return newRequest().let { request ->
+            pendingServerRequest = request
+            service.getAuthorizationRequestIntent(request)
+        }
+    }
+
+    /** Consume the exact original request once, before any backend I/O. */
+    @Synchronized
+    fun serverCode(
+        intent: Intent,
+        scope: ServerSessionScope,
+    ): ServerAuthorizationCode {
+        val original = pendingServerRequest
+        pendingServerRequest = null
+        checkScope(scope)
+        val response = AuthorizationResponse.fromIntent(intent)
+        if (original == null || response == null || AuthorizationException.fromIntent(intent) != null ||
+            response.request.jsonSerializeString() != original.jsonSerializeString() || original.state.isNullOrBlank() ||
+            response.state != original.state || original.codeVerifierChallengeMethod != "S256"
+        ) {
+            sessionInvalid()
+        }
+        return ServerAuthorizationCode(scope, response.authorizationCode ?: sessionInvalid(), original.codeVerifier ?: sessionInvalid())
+    }
+
+    private fun checkScope(scope: ServerSessionScope) {
+        if (scope.issuer != AppConfig.KEYCLOAK_AUTHORITY || scope.clientId != AppConfig.OIDC_CLIENT_ID ||
+            scope.redirectUri != AppConfig.OIDC_REDIRECT_URI
+        ) {
+            sessionInvalid()
+        }
     }
 
     /** Exchange the redirect's authorization code for tokens; returns a populated AuthState. */
@@ -84,5 +123,8 @@ class OidcAuth(context: Context) {
             }
         }
 
-    fun dispose() = service.dispose()
+    fun dispose() {
+        pendingServerRequest = null
+        service.dispose()
+    }
 }
