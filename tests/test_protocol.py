@@ -593,10 +593,12 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"
         ),
-        # Feature 088 packages the shared offline export resources; dependency
-        # coordinates and versions remain unchanged.
+        # Feature 088 packages the shared offline export resources; feature 089
+        # moves the ONE runtime dependency to astralprims 0.4.0 for the six
+        # additive component types. No dependency was added or unpinned — that
+        # is what this table exists to prove, and it is still true.
         "pyproject.toml": (
-            "d961baf3132e9df1a882b44287c18d9afcf40f1a2f6f14b7bfdb5b47c97f0145"
+            "e4384cda1aec04d50a46d2134a6d9524b3a3ec3d1000e4d052a437cf44741e3b"
         ),
     }
     assert set(immutable_manifests) == {
