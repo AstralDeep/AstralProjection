@@ -1,0 +1,817 @@
+{
+  "version": 1,
+  "description": "Feature 088 T044: recurring work unifying scheduled jobs (cron/interval/one_shot, allowance, terminal Stop) with the bound ongoing agent's latest typed monitoring observation. Synthetic identities; generated from build_recurring_work_view.",
+  "states": {
+    "list": {
+      "mode": "list",
+      "enabled": true,
+      "execution_enabled": true,
+      "jobs": [
+        {
+          "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d",
+          "name": "Release notes watch",
+          "kind": "cron",
+          "expression": "0 7 * * *",
+          "timezone": "UTC",
+          "status": "active",
+          "terminal_stop": false,
+          "next_run_at": "2026-09-13T07:00:00+00:00",
+          "last_run_at": "2026-09-12T07:00:00+00:00",
+          "policy_version": 2,
+          "allowance": {
+            "admitted": 3,
+            "max": 10
+          },
+          "assignment": {
+            "assignment_id": "4d9a3f6e-1c5b-4dae-9e3f-7a8b9c0d1e2f",
+            "name": "Release notes watch",
+            "lifecycle": "active",
+            "phase": "waiting"
+          },
+          "observation": {
+            "kind": "unchanged",
+            "finding": "",
+            "observed_at": "2026-09-12T07:00:05+00:00",
+            "sequence": 4,
+            "reason": null,
+            "complete_source_set": true
+          },
+          "runs": [
+            {
+              "started_at": "2026-09-12T07:00:00+00:00",
+              "outcome": "completed",
+              "summary": "Unchanged; no run allowance spent."
+            }
+          ],
+          "available_actions": [
+            "chrome_job_pause",
+            "chrome_job_resume",
+            "chrome_job_stop"
+          ],
+          "submission_ids": {
+            "chrome_job_pause": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+            "chrome_job_resume": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+            "chrome_job_stop": "48873d61-2e9b-4f38-bc36-bbfa81d78580"
+          }
+        },
+        {
+          "job_id": "3c8f2e5d-0b4a-4c9f-8d2e-6f7a8b9c0d1e",
+          "name": "Grant deadline reminder",
+          "kind": "one_shot",
+          "expression": "2026-10-01T09:00:00+00:00",
+          "timezone": "UTC",
+          "status": "paused",
+          "terminal_stop": false,
+          "next_run_at": "2026-09-13T07:00:00+00:00",
+          "last_run_at": "2026-09-12T07:00:00+00:00",
+          "policy_version": null,
+          "allowance": null,
+          "assignment": null,
+          "observation": {
+            "kind": "initial",
+            "finding": "Initial passages recorded.",
+            "observed_at": "2026-09-10T09:00:00+00:00",
+            "sequence": 1,
+            "reason": null,
+            "complete_source_set": true
+          },
+          "runs": [],
+          "available_actions": [
+            "chrome_job_resume"
+          ],
+          "submission_ids": {
+            "chrome_job_resume": "48873d61-2e9b-4f38-bc36-bbfa81d78580"
+          }
+        }
+      ]
+    },
+    "detail": {
+      "mode": "detail",
+      "enabled": true,
+      "execution_enabled": true,
+      "job": {
+        "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d",
+        "name": "Release notes watch",
+        "kind": "cron",
+        "expression": "0 7 * * *",
+        "timezone": "UTC",
+        "status": "active",
+        "terminal_stop": false,
+        "next_run_at": "2026-09-13T07:00:00+00:00",
+        "last_run_at": "2026-09-12T07:00:00+00:00",
+        "policy_version": 2,
+        "allowance": {
+          "admitted": 3,
+          "max": 10
+        },
+        "assignment": {
+          "assignment_id": "4d9a3f6e-1c5b-4dae-9e3f-7a8b9c0d1e2f",
+          "name": "Release notes watch",
+          "lifecycle": "active",
+          "phase": "waiting"
+        },
+        "observation": {
+          "kind": "unchanged",
+          "finding": "",
+          "observed_at": "2026-09-12T07:00:05+00:00",
+          "sequence": 4,
+          "reason": null,
+          "complete_source_set": true
+        },
+        "runs": [
+          {
+            "started_at": "2026-09-12T07:00:00+00:00",
+            "outcome": "completed",
+            "summary": "Unchanged; no run allowance spent."
+          }
+        ],
+        "available_actions": [
+          "chrome_job_pause",
+          "chrome_job_resume",
+          "chrome_job_stop"
+        ],
+        "submission_ids": {
+          "chrome_job_pause": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+          "chrome_job_resume": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+          "chrome_job_stop": "48873d61-2e9b-4f38-bc36-bbfa81d78580"
+        }
+      }
+    },
+    "stopped": {
+      "mode": "detail",
+      "enabled": true,
+      "execution_enabled": true,
+      "job": {
+        "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d",
+        "name": "Release notes watch",
+        "kind": "cron",
+        "expression": "0 7 * * *",
+        "timezone": "UTC",
+        "status": "disabled",
+        "terminal_stop": true,
+        "next_run_at": null,
+        "last_run_at": "2026-09-12T07:00:00+00:00",
+        "policy_version": 2,
+        "allowance": {
+          "admitted": 3,
+          "max": 10
+        },
+        "assignment": {
+          "assignment_id": "4d9a3f6e-1c5b-4dae-9e3f-7a8b9c0d1e2f",
+          "name": "Release notes watch",
+          "lifecycle": "active",
+          "phase": "waiting"
+        },
+        "observation": {
+          "kind": "insufficient_evidence",
+          "finding": "",
+          "observed_at": "2026-09-12T07:00:05+00:00",
+          "sequence": 5,
+          "reason": "extraction_incomplete",
+          "complete_source_set": false
+        },
+        "runs": [
+          {
+            "started_at": "2026-09-12T07:00:00+00:00",
+            "outcome": "completed",
+            "summary": "Unchanged; no run allowance spent."
+          }
+        ],
+        "available_actions": [],
+        "submission_ids": {}
+      }
+    },
+    "empty": {
+      "mode": "list",
+      "enabled": true,
+      "execution_enabled": true,
+      "jobs": []
+    }
+  },
+  "frames": {
+    "list": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "personalization",
+      "title": "Recurring work",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Recurring work runs on its schedule and checks its source. Unchanged observations stay quiet and spend no run allowance.",
+          "variant": "caption"
+        },
+        {
+          "type": "card",
+          "title": "Release notes watch",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Active",
+              "variant": "default"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Schedule",
+                  "value": "Repeats on a cron schedule"
+                },
+                {
+                  "label": "Expression",
+                  "value": "0 7 * * *"
+                },
+                {
+                  "label": "Time zone",
+                  "value": "UTC"
+                },
+                {
+                  "label": "Next run",
+                  "value": "2026-09-13T07:00:00+00:00"
+                },
+                {
+                  "label": "Last run",
+                  "value": "2026-09-12T07:00:00+00:00"
+                },
+                {
+                  "label": "Run allowance",
+                  "value": "3 of 10 runs admitted; 7 remaining"
+                }
+              ]
+            },
+            {
+              "type": "badge",
+              "label": "Unchanged",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Unchanged since the prior complete observation. No new finding.",
+              "variant": "body"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Observed at",
+                  "value": "2026-09-12T07:00:05+00:00"
+                },
+                {
+                  "label": "Observation number",
+                  "value": "4"
+                },
+                {
+                  "label": "Source set",
+                  "value": "Complete"
+                }
+              ],
+              "title": "Latest observation"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Ongoing agent",
+                  "value": "Release notes watch"
+                },
+                {
+                  "label": "Agent status",
+                  "value": "Waiting"
+                }
+              ]
+            },
+            {
+              "type": "button",
+              "label": "View recurring work",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "personalization",
+                "params": {
+                  "tab": "schedule",
+                  "view": "recurring",
+                  "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d"
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Pause",
+              "action": "chrome_job_pause",
+              "payload": {
+                "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d",
+                "submission_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+                "expected_policy_version": 2
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Stop permanently",
+              "action": "chrome_job_stop",
+              "payload": {
+                "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d",
+                "submission_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+                "expected_policy_version": 2
+              },
+              "variant": "danger",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "card",
+          "title": "Grant deadline reminder",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Paused",
+              "variant": "default"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Schedule",
+                  "value": "Runs once"
+                },
+                {
+                  "label": "Expression",
+                  "value": "2026-10-01T09:00:00+00:00"
+                },
+                {
+                  "label": "Time zone",
+                  "value": "UTC"
+                },
+                {
+                  "label": "Next run",
+                  "value": "2026-09-13T07:00:00+00:00"
+                },
+                {
+                  "label": "Last run",
+                  "value": "2026-09-12T07:00:00+00:00"
+                },
+                {
+                  "label": "Run allowance",
+                  "value": "No run limit"
+                }
+              ]
+            },
+            {
+              "type": "badge",
+              "label": "Initial observation",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Initial passages recorded.",
+              "variant": "body"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Observed at",
+                  "value": "2026-09-10T09:00:00+00:00"
+                },
+                {
+                  "label": "Observation number",
+                  "value": "1"
+                },
+                {
+                  "label": "Source set",
+                  "value": "Complete"
+                }
+              ],
+              "title": "Latest observation"
+            },
+            {
+              "type": "button",
+              "label": "View recurring work",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "personalization",
+                "params": {
+                  "tab": "schedule",
+                  "view": "recurring",
+                  "job_id": "3c8f2e5d-0b4a-4c9f-8d2e-6f7a8b9c0d1e"
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Resume",
+              "action": "chrome_job_resume",
+              "payload": {
+                "job_id": "3c8f2e5d-0b4a-4c9f-8d2e-6f7a8b9c0d1e",
+                "submission_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+                "expected_policy_version": null
+              },
+              "variant": "primary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "44444444-4444-4444-8444-444444444444"
+    },
+    "detail": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "personalization",
+      "title": "Recurring work",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "card",
+          "title": "Release notes watch",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Active",
+              "variant": "default"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Schedule",
+                  "value": "Repeats on a cron schedule"
+                },
+                {
+                  "label": "Expression",
+                  "value": "0 7 * * *"
+                },
+                {
+                  "label": "Time zone",
+                  "value": "UTC"
+                },
+                {
+                  "label": "Next run",
+                  "value": "2026-09-13T07:00:00+00:00"
+                },
+                {
+                  "label": "Last run",
+                  "value": "2026-09-12T07:00:00+00:00"
+                },
+                {
+                  "label": "Run allowance",
+                  "value": "3 of 10 runs admitted; 7 remaining"
+                }
+              ]
+            },
+            {
+              "type": "badge",
+              "label": "Unchanged",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Unchanged since the prior complete observation. No new finding.",
+              "variant": "body"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Observed at",
+                  "value": "2026-09-12T07:00:05+00:00"
+                },
+                {
+                  "label": "Observation number",
+                  "value": "4"
+                },
+                {
+                  "label": "Source set",
+                  "value": "Complete"
+                }
+              ],
+              "title": "Latest observation"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Ongoing agent",
+                  "value": "Release notes watch"
+                },
+                {
+                  "label": "Agent status",
+                  "value": "Waiting"
+                }
+              ]
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "container",
+          "children": [
+            {
+              "type": "button",
+              "label": "Pause",
+              "action": "chrome_job_pause",
+              "payload": {
+                "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d",
+                "submission_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+                "expected_policy_version": 2
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Stop permanently",
+              "action": "chrome_job_stop",
+              "payload": {
+                "job_id": "2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d",
+                "submission_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+                "expected_policy_version": 2
+              },
+              "variant": "danger",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "direction": "row"
+        },
+        {
+          "type": "button",
+          "label": "View ongoing agent",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "personalization",
+            "params": {
+              "tab": "schedule",
+              "assignment_id": "4d9a3f6e-1c5b-4dae-9e3f-7a8b9c0d1e2f"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "text",
+          "content": "Recent runs",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "2026-09-12T07:00:00+00:00",
+          "content": [
+            {
+              "type": "badge",
+              "label": "completed",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Unchanged; no run allowance spent.",
+              "variant": "body"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Back to recurring work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "personalization",
+            "params": {
+              "tab": "schedule",
+              "view": "recurring"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "stopped": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "personalization",
+      "title": "Recurring work",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "card",
+          "title": "Release notes watch",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Stopped permanently",
+              "variant": "default"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Schedule",
+                  "value": "Repeats on a cron schedule"
+                },
+                {
+                  "label": "Expression",
+                  "value": "0 7 * * *"
+                },
+                {
+                  "label": "Time zone",
+                  "value": "UTC"
+                },
+                {
+                  "label": "Next run",
+                  "value": "No run scheduled"
+                },
+                {
+                  "label": "Last run",
+                  "value": "2026-09-12T07:00:00+00:00"
+                },
+                {
+                  "label": "Run allowance",
+                  "value": "3 of 10 runs admitted; 7 remaining"
+                }
+              ]
+            },
+            {
+              "type": "badge",
+              "label": "Insufficient evidence",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Insufficient evidence to compare with the prior observation.",
+              "variant": "body"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Observed at",
+                  "value": "2026-09-12T07:00:05+00:00"
+                },
+                {
+                  "label": "Observation number",
+                  "value": "5"
+                },
+                {
+                  "label": "Source set",
+                  "value": "Incomplete"
+                },
+                {
+                  "label": "Reason",
+                  "value": "extraction_incomplete"
+                }
+              ],
+              "title": "Latest observation"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Ongoing agent",
+                  "value": "Release notes watch"
+                },
+                {
+                  "label": "Agent status",
+                  "value": "Waiting"
+                }
+              ]
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "container",
+          "children": [],
+          "direction": "row"
+        },
+        {
+          "type": "button",
+          "label": "View ongoing agent",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "personalization",
+            "params": {
+              "tab": "schedule",
+              "assignment_id": "4d9a3f6e-1c5b-4dae-9e3f-7a8b9c0d1e2f"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "text",
+          "content": "Recent runs",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "2026-09-12T07:00:00+00:00",
+          "content": [
+            {
+              "type": "badge",
+              "label": "completed",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Unchanged; no run allowance spent.",
+              "variant": "body"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Back to recurring work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "personalization",
+            "params": {
+              "tab": "schedule",
+              "view": "recurring"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "66666666-6666-4666-8666-666666666666"
+    },
+    "empty": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "personalization",
+      "title": "Recurring work",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Recurring work runs on its schedule and checks its source. Unchanged observations stay quiet and spend no run allowance.",
+          "variant": "caption"
+        },
+        {
+          "type": "alert",
+          "message": "No recurring work yet.",
+          "variant": "info"
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "77777777-7777-4777-8777-777777777777"
+    }
+  },
+  "web_frames": {
+    "list": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "personalization",
+      "mode": "replace",
+      "request_generation": "44444444-4444-4444-8444-444444444444",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"personalization\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Recurring work\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Recurring work</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"personalization\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-personalization-title\"><h2 id=\"chrome-personalization-title\">Recurring work</h2><small data-text-variant=\"caption\">Recurring work runs on its schedule and checks its source. Unchanged observations stay quiet and spend no run allowance.</small><section aria-label=\"Release notes watch\"><h3>Release notes watch</h3><span role=\"status\" data-badge-variant=\"default\">Active</span><section><dl><div><dt>Schedule</dt><dd>Repeats on a cron schedule</dd></div><div><dt>Expression</dt><dd>0 7 * * *</dd></div><div><dt>Time zone</dt><dd>UTC</dd></div><div><dt>Next run</dt><dd>2026-09-13T07:00:00+00:00</dd></div><div><dt>Last run</dt><dd>2026-09-12T07:00:00+00:00</dd></div><div><dt>Run allowance</dt><dd>3 of 10 runs admitted; 7 remaining</dd></div></dl></section><span role=\"status\" data-badge-variant=\"default\">Unchanged</span><p data-text-variant=\"body\">Unchanged since the prior complete observation. No new finding.</p><section><h3>Latest observation</h3><dl><div><dt>Observed at</dt><dd>2026-09-12T07:00:05+00:00</dd></div><div><dt>Observation number</dt><dd>4</dd></div><div><dt>Source set</dt><dd>Complete</dd></div></dl></section><section><dl><div><dt>Ongoing agent</dt><dd>Release notes watch</dd></div><div><dt>Agent status</dt><dd>Waiting</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;job_id&quot;:&quot;2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d&quot;,&quot;tab&quot;:&quot;schedule&quot;,&quot;view&quot;:&quot;recurring&quot;},&quot;surface&quot;:&quot;personalization&quot;}\">View recurring work</button><button type=\"button\" data-ui-action=\"chrome_job_pause\" data-ui-payload=\"{&quot;expected_policy_version&quot;:2,&quot;job_id&quot;:&quot;2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d&quot;,&quot;submission_id&quot;:&quot;48873d61-2e9b-4f38-bc36-bbfa81d78580&quot;}\">Pause</button><button type=\"button\" data-ui-action=\"chrome_job_stop\" data-ui-payload=\"{&quot;expected_policy_version&quot;:2,&quot;job_id&quot;:&quot;2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d&quot;,&quot;submission_id&quot;:&quot;48873d61-2e9b-4f38-bc36-bbfa81d78580&quot;}\">Stop permanently</button></section><section aria-label=\"Grant deadline reminder\"><h3>Grant deadline reminder</h3><span role=\"status\" data-badge-variant=\"default\">Paused</span><section><dl><div><dt>Schedule</dt><dd>Runs once</dd></div><div><dt>Expression</dt><dd>2026-10-01T09:00:00+00:00</dd></div><div><dt>Time zone</dt><dd>UTC</dd></div><div><dt>Next run</dt><dd>2026-09-13T07:00:00+00:00</dd></div><div><dt>Last run</dt><dd>2026-09-12T07:00:00+00:00</dd></div><div><dt>Run allowance</dt><dd>No run limit</dd></div></dl></section><span role=\"status\" data-badge-variant=\"default\">Initial observation</span><p data-text-variant=\"body\">Initial passages recorded.</p><section><h3>Latest observation</h3><dl><div><dt>Observed at</dt><dd>2026-09-10T09:00:00+00:00</dd></div><div><dt>Observation number</dt><dd>1</dd></div><div><dt>Source set</dt><dd>Complete</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;job_id&quot;:&quot;3c8f2e5d-0b4a-4c9f-8d2e-6f7a8b9c0d1e&quot;,&quot;tab&quot;:&quot;schedule&quot;,&quot;view&quot;:&quot;recurring&quot;},&quot;surface&quot;:&quot;personalization&quot;}\">View recurring work</button><button type=\"button\" data-ui-action=\"chrome_job_resume\" data-ui-payload=\"{&quot;expected_policy_version&quot;:null,&quot;job_id&quot;:&quot;3c8f2e5d-0b4a-4c9f-8d2e-6f7a8b9c0d1e&quot;,&quot;submission_id&quot;:&quot;48873d61-2e9b-4f38-bc36-bbfa81d78580&quot;}\">Resume</button></section></section></div></div></div>"
+    },
+    "detail": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "personalization",
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"personalization\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Recurring work\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Recurring work</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"personalization\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-personalization-title\"><h2 id=\"chrome-personalization-title\">Recurring work</h2><section aria-label=\"Release notes watch\"><h3>Release notes watch</h3><span role=\"status\" data-badge-variant=\"default\">Active</span><section><dl><div><dt>Schedule</dt><dd>Repeats on a cron schedule</dd></div><div><dt>Expression</dt><dd>0 7 * * *</dd></div><div><dt>Time zone</dt><dd>UTC</dd></div><div><dt>Next run</dt><dd>2026-09-13T07:00:00+00:00</dd></div><div><dt>Last run</dt><dd>2026-09-12T07:00:00+00:00</dd></div><div><dt>Run allowance</dt><dd>3 of 10 runs admitted; 7 remaining</dd></div></dl></section><span role=\"status\" data-badge-variant=\"default\">Unchanged</span><p data-text-variant=\"body\">Unchanged since the prior complete observation. No new finding.</p><section><h3>Latest observation</h3><dl><div><dt>Observed at</dt><dd>2026-09-12T07:00:05+00:00</dd></div><div><dt>Observation number</dt><dd>4</dd></div><div><dt>Source set</dt><dd>Complete</dd></div></dl></section><section><dl><div><dt>Ongoing agent</dt><dd>Release notes watch</dd></div><div><dt>Agent status</dt><dd>Waiting</dd></div></dl></section></section><div role=\"group\" data-direction=\"row\"><button type=\"button\" data-ui-action=\"chrome_job_pause\" data-ui-payload=\"{&quot;expected_policy_version&quot;:2,&quot;job_id&quot;:&quot;2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d&quot;,&quot;submission_id&quot;:&quot;48873d61-2e9b-4f38-bc36-bbfa81d78580&quot;}\">Pause</button><button type=\"button\" data-ui-action=\"chrome_job_stop\" data-ui-payload=\"{&quot;expected_policy_version&quot;:2,&quot;job_id&quot;:&quot;2b7e1d4c-9a3f-4b8e-9c1d-5e6f7a8b9c0d&quot;,&quot;submission_id&quot;:&quot;48873d61-2e9b-4f38-bc36-bbfa81d78580&quot;}\">Stop permanently</button></div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;assignment_id&quot;:&quot;4d9a3f6e-1c5b-4dae-9e3f-7a8b9c0d1e2f&quot;,&quot;tab&quot;:&quot;schedule&quot;},&quot;surface&quot;:&quot;personalization&quot;}\">View ongoing agent</button><h3 data-text-variant=\"h3\">Recent runs</h3><section aria-label=\"2026-09-12T07:00:00+00:00\"><h3>2026-09-12T07:00:00+00:00</h3><span role=\"status\" data-badge-variant=\"default\">completed</span><p data-text-variant=\"body\">Unchanged; no run allowance spent.</p></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;tab&quot;:&quot;schedule&quot;,&quot;view&quot;:&quot;recurring&quot;},&quot;surface&quot;:&quot;personalization&quot;}\">Back to recurring work</button></section></div></div></div>"
+    },
+    "stopped": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "personalization",
+      "mode": "replace",
+      "request_generation": "66666666-6666-4666-8666-666666666666",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"personalization\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Recurring work\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Recurring work</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"personalization\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-personalization-title\"><h2 id=\"chrome-personalization-title\">Recurring work</h2><section aria-label=\"Release notes watch\"><h3>Release notes watch</h3><span role=\"status\" data-badge-variant=\"default\">Stopped permanently</span><section><dl><div><dt>Schedule</dt><dd>Repeats on a cron schedule</dd></div><div><dt>Expression</dt><dd>0 7 * * *</dd></div><div><dt>Time zone</dt><dd>UTC</dd></div><div><dt>Next run</dt><dd>No run scheduled</dd></div><div><dt>Last run</dt><dd>2026-09-12T07:00:00+00:00</dd></div><div><dt>Run allowance</dt><dd>3 of 10 runs admitted; 7 remaining</dd></div></dl></section><span role=\"status\" data-badge-variant=\"default\">Insufficient evidence</span><p data-text-variant=\"body\">Insufficient evidence to compare with the prior observation.</p><section><h3>Latest observation</h3><dl><div><dt>Observed at</dt><dd>2026-09-12T07:00:05+00:00</dd></div><div><dt>Observation number</dt><dd>5</dd></div><div><dt>Source set</dt><dd>Incomplete</dd></div><div><dt>Reason</dt><dd>extraction_incomplete</dd></div></dl></section><section><dl><div><dt>Ongoing agent</dt><dd>Release notes watch</dd></div><div><dt>Agent status</dt><dd>Waiting</dd></div></dl></section></section><div role=\"group\" data-direction=\"row\"></div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;assignment_id&quot;:&quot;4d9a3f6e-1c5b-4dae-9e3f-7a8b9c0d1e2f&quot;,&quot;tab&quot;:&quot;schedule&quot;},&quot;surface&quot;:&quot;personalization&quot;}\">View ongoing agent</button><h3 data-text-variant=\"h3\">Recent runs</h3><section aria-label=\"2026-09-12T07:00:00+00:00\"><h3>2026-09-12T07:00:00+00:00</h3><span role=\"status\" data-badge-variant=\"default\">completed</span><p data-text-variant=\"body\">Unchanged; no run allowance spent.</p></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;tab&quot;:&quot;schedule&quot;,&quot;view&quot;:&quot;recurring&quot;},&quot;surface&quot;:&quot;personalization&quot;}\">Back to recurring work</button></section></div></div></div>"
+    },
+    "empty": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "personalization",
+      "mode": "replace",
+      "request_generation": "77777777-7777-4777-8777-777777777777",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"personalization\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Recurring work\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Recurring work</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"personalization\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-personalization-title\"><h2 id=\"chrome-personalization-title\">Recurring work</h2><small data-text-variant=\"caption\">Recurring work runs on its schedule and checks its source. Unchanged observations stay quiet and spend no run allowance.</small><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">No recurring work yet.</div></section></div></div></div>"
+    }
+  }
+}

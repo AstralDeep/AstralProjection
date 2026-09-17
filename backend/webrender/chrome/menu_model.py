@@ -173,6 +173,13 @@ _BYO_AGENTS_ITEM = MenuItem("my-agents", "My agents & skills", "agent_authoring"
 # are off (FF_BYO_AGENTS) but user skills are on (FF_USER_SKILLS, default ON).
 _SKILLS_ONLY_ITEM = MenuItem("my-agents", "My skills", "agent_authoring")
 _NOTES_ITEM = MenuItem("guidance", "Private notes", "guidance", {"mode": "list"})
+# Feature 088 T048 -- the ONLY affordance that opens Connections (the owner's own
+# framework keys). Host-resolved exactly like the notes item above: with the
+# capability off the item is absent from every client's menu, and the surface and
+# its handlers refuse anyway. It is per-user, so admin_only stays False, and it is
+# deliberately NOT projected to the watch: issuing or revoking a key is not a
+# wrist action.
+_CONNECTIONS_ITEM = MenuItem("connections", "Connections", "connections")
 # Feature 063 — the ONLY affordance that opens the Remote machines inventory.
 # Flag-gated (FF_REMOTE_COMPUTE, default OFF) like "My agents": absent from every
 # client's menu when off. Per-user (not admin), so admin_only stays False.
@@ -209,6 +216,7 @@ def build_menu_model(
     share_enabled: bool = False,
     work_enabled: bool = False,
     notes_enabled: bool = False,
+    connections_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
@@ -232,6 +240,9 @@ def build_menu_model(
             additionally require negotiated work_read_v1 before delivery.
         notes_enabled: host-resolved private notes presence; native delivery
             requires negotiated guidance_notes_v1 and current human authority.
+        connections_enabled: host-resolved framework-credential (Connections)
+            presence. The item is absent for every client when off; the surface
+            and its handlers remain authoritative when on.
         include_admin: whether the ADMIN TOOLS group is eligible at all. The web
             passes ``True`` (admins see it). Native clients (Windows/Android)
             pass ``False`` — admin settings are web-only, so the group is omitted
@@ -296,6 +307,7 @@ def build_menu_model(
         + ((_BYO_AGENTS_ITEM,) if show_byo else ((_SKILLS_ONLY_ITEM,) if show_skills else ()))
         + ((_REMOTE_MACHINES_ITEM,) if show_remote else ())
         + ((_MY_COMPUTERS_ITEM,) if show_computer else ())
+        + ((_CONNECTIONS_ITEM,) if connections_enabled else ())
     )
     groups: List[MenuGroup] = [
         MenuGroup("account", "Account", account_items),
@@ -319,6 +331,7 @@ def menu_model_dict(
     share_enabled: bool = False,
     work_enabled: bool = False,
     notes_enabled: bool = False,
+    connections_enabled: bool = False,
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
@@ -339,6 +352,7 @@ def menu_model_dict(
         share_enabled=share_enabled,
         work_enabled=work_enabled,
         notes_enabled=notes_enabled,
+        connections_enabled=connections_enabled,
         include_admin=include_admin,
         include_tour=include_tour,
     ).to_dict()

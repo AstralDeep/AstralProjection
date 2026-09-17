@@ -9,7 +9,10 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import java.io.File
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 /** Real shared form envelopes must be refused in full before any private field is rendered. */
 class GuidanceFormWire088Test {
@@ -31,6 +34,35 @@ class GuidanceFormWire088Test {
 
     @Test fun every_actual_shared_frame_preserves_its_complete_form() {
         for (value in fixtures().values) assertIs<Inbound.ChromeSurface>(Wire.decode(value.jsonObject))
+    }
+
+    private fun unadmittedFixtures(): Map<String, JsonObject> =
+        listOf("skills", "agents", "selection").associateWith { name ->
+            val file =
+                generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
+                    .map { File(it, "contracts/fixtures/guidance_088/${name}_surface.json") }.first { it.isFile }
+            Json.parseToJsonElement(file.readText()).jsonObject.getValue("frames").jsonObject
+        }
+
+    /**
+     * Feature 088 T037: the shared skills, declarative-agent and selection forms exist in the
+     * contract but Android admits only the closed notes geometry. Until GuidanceNotes admits
+     * them, every such guidance frame is refused in full — never rendered partially — and the
+     * client never advertises the capability that would make a host send one.
+     */
+    @Test fun unadmitted_088_guidance_forms_are_refused_in_full_until_deliberately_admitted() {
+        val frames = unadmittedFixtures()
+        assertEquals(mapOf("skills" to 4, "agents" to 8, "selection" to 2), frames.mapValues { it.value.size })
+        for ((name, modes) in frames) {
+            for ((mode, frame) in modes) {
+                assertIs<Inbound.Unknown>(Wire.decode(frame.jsonObject), "$name/$mode must be refused whole")
+            }
+        }
+        val registration = Wire.encodeRegisterUi("synthetic", null, DeviceCapabilities(800, 600), guidanceNotes = true)
+        assertTrue(registration.contains("guidance_notes_v1"))
+        for (capability in listOf("guidance_skills_v1", "guidance_agents_v1", "guidance_selection_v1")) {
+            assertFalse(registration.contains(capability), "$capability is not admitted on Android")
+        }
     }
 
     @Test fun malformed_form_shape_or_missing_save_fields_refuses_whole_frame() {

@@ -39,8 +39,8 @@ class WorkspaceRestTest {
         runBlocking {
             MockWebServer().use { server ->
                 server.enqueue(shareResponse("/share/$opaque"))
-                val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
-                assertEquals(server.url("/share/$opaque").toString(), api.shareCanvas("private-token", chat))
+                val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
+                assertEquals(server.localUrl("/share/$opaque").toString(), api.shareCanvas("private-token", chat))
                 val request = server.takeRequest()
                 assertEquals("POST", request.method)
                 assertEquals("/api/share", request.path)
@@ -58,7 +58,7 @@ class WorkspaceRestTest {
     fun malformed_or_foreign_share_references_are_refused_without_retrieval() =
         runBlocking {
             MockWebServer().use { server ->
-                val base = server.url("/").toString().trimEnd('/')
+                val base = server.localUrl("/").toString().trimEnd('/')
                 val api = WorkspaceRest(base, allowLocalHttp = true)
                 val invalid =
                     listOf(
@@ -84,7 +84,7 @@ class WorkspaceRestTest {
     fun share_json_is_bounded_strict_utf8_and_has_one_string_url() =
         runBlocking {
             MockWebServer().use { server ->
-                val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 val invalid =
                     listOf(
                         "{}", "[]", "null", "{\"share_url\":4}", "{\"share_url\":null}",
@@ -112,7 +112,7 @@ class WorkspaceRestTest {
     fun phi_refusal_is_explicit_and_other_server_text_is_never_exposed() =
         runBlocking {
             MockWebServer().use { server ->
-                val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 server.enqueue(MockResponse().setResponseCode(403).setBody("{\"error\":\"phi_blocked\"}"))
                 assertEquals(
                     "Sharing refused: the content matched the PHI gate.",
@@ -163,7 +163,7 @@ class WorkspaceRestTest {
                             sideEffects.incrementAndGet()
                             chain.proceed(chain.request())
                         }.build()
-                val api = WorkspaceRest(server.url("/").toString(), client, allowLocalHttp = true)
+                val api = WorkspaceRest(server.localUrl("/").toString(), client, allowLocalHttp = true)
                 server.enqueue(shareResponse("/share/$opaque").setHeader("Set-Cookie", "secret=value"))
                 api.shareCanvas("token", chat)
                 assertNull(server.takeRequest().getHeader("Cookie"))
@@ -179,9 +179,9 @@ class WorkspaceRestTest {
         runBlocking {
             MockWebServer().use { server ->
                 MockWebServer().use { other ->
-                    val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                    val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                     for (code in listOf(301, 302, 303, 307, 308)) {
-                        server.enqueue(MockResponse().setResponseCode(code).setHeader("Location", other.url("/capture")))
+                        server.enqueue(MockResponse().setResponseCode(code).setHeader("Location", other.localUrl("/capture")))
                         assertFailsWith<WorkspaceRequestException> { api.shareCanvas("token", chat) }
                     }
                     server.enqueue(MockResponse().setResponseCode(503).setHeader("Retry-After", "0"))
@@ -198,7 +198,7 @@ class WorkspaceRestTest {
     fun invalid_configuration_credentials_and_chat_do_not_send_requests() =
         runBlocking {
             MockWebServer().use { server ->
-                val base = server.url("/").toString()
+                val base = server.localUrl("/").toString()
                 for (invalidBase in listOf("garbage", "http://astral.example", "https://user:secret@astral.example", "https://astral.example/#frag")) {
                     assertFailsWith<WorkspaceRequestException> { WorkspaceRest(invalidBase).shareCanvas("token", chat) }
                 }
@@ -220,7 +220,7 @@ class WorkspaceRestTest {
             withDestination { destination ->
                 MockWebServer().use { server ->
                     server.enqueue(MockResponse().setHeader("X-Astral-Render-Revision", "0").setBody("canvas bytes"))
-                    WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                    WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                         .exportCanvas("private-token", chat, 0UL, destination)
                     assertEquals("canvas bytes", destination.readText())
                     val request = server.takeRequest()
@@ -237,7 +237,7 @@ class WorkspaceRestTest {
         runBlocking {
             withDestination { destination ->
                 MockWebServer().use { server ->
-                    val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                    val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                     val responses =
                         listOf(
                             MockResponse(),
@@ -261,12 +261,12 @@ class WorkspaceRestTest {
         runBlocking {
             withDestination { destination ->
                 MockWebServer().use { server ->
-                    val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true, maxExportBytes = 4)
+                    val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true, maxExportBytes = 4)
                     for (response in listOf(
                         MockResponse().setBody("large body"),
                         MockResponse().setChunkedBody("large body", 2),
                         MockResponse().setBody("ok").setHeader("Content-Length", "4").setSocketPolicy(SocketPolicy.DISCONNECT_AT_END),
-                        MockResponse().setResponseCode(302).setHeader("Location", server.url("/other")),
+                        MockResponse().setResponseCode(302).setHeader("Location", server.localUrl("/other")),
                     )) {
                         server.enqueue(response.setHeader("X-Astral-Render-Revision", "8"))
                         assertFailsWith<WorkspaceRequestException> { api.exportCanvas("token", chat, 8UL, destination) }
@@ -286,7 +286,7 @@ class WorkspaceRestTest {
                         MockResponse().setHeader("X-Astral-Render-Revision", "8")
                             .setBody("x".repeat(100)).throttleBody(1, 1, TimeUnit.SECONDS),
                     )
-                    val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                    val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                     val download = async(start = CoroutineStart.UNDISPATCHED) { api.exportCanvas("token", chat, 8UL, destination) }
                     assertNotNull(server.takeRequest(3, TimeUnit.SECONDS))
                     withTimeout(3000) { while (destination.length() == 0L) delay(10) }
@@ -302,7 +302,7 @@ class WorkspaceRestTest {
         runBlocking {
             MockWebServer().use { server ->
                 server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
-                val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 val share = async(start = CoroutineStart.UNDISPATCHED) { api.shareCanvas("token", chat) }
                 assertNotNull(server.takeRequest(3, TimeUnit.SECONDS))
                 withTimeout(3000) { share.cancelAndJoin() }
@@ -326,3 +326,10 @@ class WorkspaceRestTest {
         }
     }
 }
+
+/**
+ * MockWebServer's own `url()` builds on the machine's reverse-DNS host name, which is not
+ * always a loopback literal, so the product's local-HTTP allowance would reject it. Pin the
+ * explicit loopback host the way ServerSession088Test does.
+ */
+private fun MockWebServer.localUrl(path: String): HttpUrl = url(path).newBuilder().host("localhost").build()

@@ -6,7 +6,7 @@ import json
 import pytest
 
 from astralprojection.chrome import render_html
-from astralprojection.chrome.guidance import build_notes_view
+from astralprojection.chrome.guidance import build_guidance_view, build_notes_view
 from astralprojection.models import LayoutView
 
 ID = "180cd30b-cc38-432d-8349-1851b0d3ad7e"
@@ -158,3 +158,14 @@ def test_notices_are_closed_server_owned_text(notice):
 def test_invalid_new_identity_refuses_form_and_untyped_state_is_safe():
     assert not forms(build_notes_view(state("new", note_id="bad")))
     assert "unavailable" in render_html(build_notes_view(None))
+
+
+@pytest.mark.parametrize("mode", ["list", "new", "edit", "forget"])
+def test_notes_contract_is_byte_identical_under_the_guidance_dispatcher(mode):
+    """Feature 088 T037 added sibling views; a notes state without ``view`` renders exactly as before,
+    and the notes builder itself still refuses a ``view`` discriminator as an unknown key."""
+    original = state(mode)
+    assert build_guidance_view(original).to_dict() == build_notes_view(original).to_dict()
+    tagged = build_notes_view({"view": "skills", **original})
+    assert "unavailable" in render_html(tagged) and not forms(tagged)
+    assert "Use short paragraphs" not in encoded(tagged)

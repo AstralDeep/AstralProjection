@@ -479,3 +479,545 @@ def test_actual_producer_maximum_size_golden_is_fully_renderable(layout):
 )
 def test_available_result_cannot_override_incompatible_public_metadata(change):
     unavailable(state(operation=operation(**change)))
+
+
+# ── Feature 088 T043: exact Save bindings and the review layout ────────────────
+
+SUBMISSION = "48873d61-2e9b-4f38-bc36-bbfa81d78580"
+PUBLICATION = "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f"
+APPROVAL = "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b"
+SAVE_ACTION = "chrome_work_result_save"
+EXPIRES = "2026-09-12T12:15:00+00:00"
+
+
+def save(**values):
+    return {
+        "submission_id": SUBMISSION,
+        "publication_id": PUBLICATION,
+        "expected_revision": 3,
+        "conversation_id": "chat-1",
+        "conversation_title": "Reviewed result destination",
+        "expected_workspace_revision": 0,
+        "expected_workspace_publication_id": None,
+        **values,
+    }
+
+
+def payload():
+    return {
+        "type": "card",
+        "title": "Public page research",
+        "variant": "default",
+        "content": [
+            {"type": "text", "content": "Exact retained evidence.\nSecond line.", "variant": "body"},
+            {
+                "type": "text",
+                "content": "Selected source text, not a summary of the full visual page.",
+                "variant": "caption",
+            },
+            {
+                "type": "keyvalue",
+                "title": "Original source",
+                "columns": 2,
+                "items": [
+                    {"label": "Requested URL", "value": "https://example.org/start"},
+                    {"label": "Retrieved URL", "value": "https://example.org/page"},
+                    {"label": "Retrieved at", "value": TIME},
+                ],
+            },
+        ],
+    }
+
+
+def review():
+    return {
+        "version": 1,
+        "status": "review_required",
+        "created": True,
+        "revision": 4,
+        "proposal": {
+            "action_id": SUBMISSION,
+            "proposal_digest": "c" * 64,
+            "publication_id": PUBLICATION,
+            "conversation_id": "chat-1",
+            "component_id": "au_work_result_" + ID,
+            "base_render_revision": 0,
+            "base_publication_id": None,
+            "content_digest": "d" * 64,
+            "stage_digest": "e" * 64,
+            "expires_at": EXPIRES,
+        },
+        "component": {
+            "component_id": "au_work_result_" + ID,
+            "component_type": "card",
+            "title": "Public page research",
+            "position": 0,
+            "payload": payload(),
+        },
+    }
+
+
+def review_state(**values):
+    defaults = {
+        "operation": operation(revision=4),
+        "review": review(),
+        "approve": {"submission_id": APPROVAL, "expired": False},
+        "conversation_title": "Reviewed result destination",
+    }
+    return state("review", **{**defaults, **values})
+
+
+def save_buttons(view):
+    return [b for b in buttons(view) if b["action"] == SAVE_ACTION]
+
+
+def test_result_without_host_bindings_never_offers_save():
+    for value in (state(), state(save=None)):
+        view = build_work_view(value)
+        assert not save_buttons(view) and "Save" not in render_html(view)
+
+
+def test_save_button_carries_exactly_the_server_issued_propose_bindings():
+    value = state(save=save())
+    before = deepcopy(value)
+    view = build_work_view(value)
+    html = render_html(view)
+    assert value == before
+    [button] = save_buttons(view)
+    assert button["payload"] == {
+        "version": 1,
+        "command": "propose",
+        "operation_id": ID,
+        "submission_id": SUBMISSION,
+        "publication_id": PUBLICATION,
+        "expected_revision": 3,
+        "conversation_id": "chat-1",
+        "expected_workspace_revision": 0,
+        "expected_workspace_publication_id": None,
+    }
+    assert button["label"] == "Save result" and button["variant"] == "primary"
+    assert "conversation_title" not in button["payload"]
+    assert "Viewing this result does not save it" in html
+    assert "Reviewed result destination" in html
+    assert html.index("Exact retained evidence") < html.index("Save result")
+    assert {b["action"] for b in buttons(view)} == {"chrome_open", SAVE_ACTION}
+    assert "Approve" not in html and "proposal_digest" not in encoded(view)
+
+
+def test_save_binding_keeps_a_positive_destination_head_exactly():
+    value = state(save=save(expected_workspace_revision=7, expected_workspace_publication_id=OTHER,
+                            conversation_title=""))
+    [button] = save_buttons(build_work_view(value))
+    assert button["payload"]["expected_workspace_revision"] == 7
+    assert button["payload"]["expected_workspace_publication_id"] == OTHER
+    assert "<dd>chat-1</dd>" in render_html(build_work_view(value))
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"expected_revision": 4},
+        {"expected_revision": True},
+        {"submission_id": PUBLICATION},
+        {"publication_id": "bad"},
+        {"submission_id": SUBMISSION.upper()},
+        {"conversation_id": " padded "},
+        {"conversation_id": ""},
+        {"conversation_id": "x" * 513},
+        {"conversation_id": "tab\there"},
+        {"conversation_title": {"secret": "SECRET"}},
+        {"expected_workspace_revision": 1},
+        {"expected_workspace_revision": -1},
+        {"expected_workspace_publication_id": PUBLICATION},
+        {"expected_workspace_revision": 2, "expected_workspace_publication_id": "bad"},
+        {"extra": "SECRET"},
+    ],
+)
+def test_malformed_save_bindings_make_the_whole_result_unavailable(change):
+    value = state(save=save(**change))
+    view = unavailable(value)
+    assert not save_buttons(view) and "SECRET" not in encoded(view)
+
+
+def test_save_binding_without_a_field_or_on_an_unavailable_result_is_refused():
+    value = state(save=save())
+    del value["save"]["conversation_title"]
+    unavailable(value)
+    value = state(save=save())
+    value["result"]["result"].update(available=False, reason="not_completed", content=None)
+    unavailable(value)
+    unavailable(state(save="not-a-binding"))
+
+
+def test_review_shows_complete_exact_content_destination_expiry_and_bound_approval():
+    value = review_state()
+    before = deepcopy(value)
+    view = build_work_view(value)
+    html = render_html(view)
+    assert value == before
+    assert view.title == "Public page research"
+    assert "Nothing is saved until you approve it here" in html
+    assert "Exact retained evidence.\nSecond line." in html
+    assert "Selected source text, not a summary of the full visual page." in html
+    assert "Original source" in html and "https://example.org/page" in html
+    assert "https://example.org/start" in html and TIME in html
+    assert "Reviewed result destination" in html and EXPIRES in html
+    [button] = save_buttons(view)
+    assert button["payload"] == {
+        "version": 1,
+        "command": "save",
+        "operation_id": ID,
+        "action_id": SUBMISSION,
+        "submission_id": APPROVAL,
+        "expected_revision": 4,
+        "proposal_digest": "c" * 64,
+    }
+    assert button["label"] == "Save exactly this content"
+    navigation = [b["payload"]["params"] for b in buttons(view) if b["action"] == "chrome_open"]
+    assert navigation == [{"mode": "result", "operation_id": ID}, {"mode": "list"}]
+    assert "Refresh" not in html
+    # Digests bind the command only; they are never explanatory copy or forwarded.
+    texts = [
+        node.get("content") or node.get("value")
+        for node in nodes(view.to_dict())
+        if "content" in node or "value" in node
+    ]
+    assert not any(isinstance(item, str) and "c" * 64 in item for item in texts)
+    assert "d" * 64 not in encoded(view) and "e" * 64 not in encoded(view)
+    assert "columns" not in json.dumps(view.to_dict()["components"])
+
+
+def test_review_destination_falls_back_to_the_conversation_identity():
+    value = review_state()
+    del value["conversation_title"]
+    assert "<dd>chat-1</dd>" in render_html(build_work_view(value))
+
+
+@pytest.mark.parametrize(
+    "approve,label",
+    [
+        ({"submission_id": APPROVAL, "expired": True}, "expired before a decision"),
+        (None, "not available for a decision"),
+    ],
+)
+def test_expired_or_undecidable_review_keeps_content_but_offers_no_save(approve, label):
+    value = review_state(approve=approve)
+    if approve is None:
+        del value["approve"]
+    view = build_work_view(value)
+    html = render_html(view)
+    assert label in html and "Exact retained evidence" in html and EXPIRES in html
+    assert not save_buttons(view)
+    assert {b["action"] for b in buttons(view)} == {"chrome_open"}
+
+
+@pytest.mark.parametrize("mode", ["compact", "standard", "wide", "watch"])
+def test_review_and_saveable_result_keep_the_same_components_across_form_factors(mode):
+    for value in (review_state(), state(save=save())):
+        ordinary = build_work_view(value)
+        view = build_work_view(value, layout=LayoutView(mode=mode))
+        assert view.to_dict()["components"] == ordinary.to_dict()["components"]
+
+
+def _review_change(path, change):
+    value = review_state()
+    target = value
+    for key in path:
+        target = target[key]
+    if callable(change):
+        change(target)
+    else:
+        target.update(change)
+    return value
+
+
+def _text(content, variant="body", **extra):
+    return {"type": "text", "content": content, "variant": variant, **extra}
+
+
+def _kv(items, **extra):
+    return {"type": "keyvalue", "title": "S", "items": items, **extra}
+
+
+@pytest.mark.parametrize(
+    "path,change",
+    [
+        ((), {"review": None}),
+        ((), {"conversation_title": {"secret": "SECRET"}}),
+        (("review",), {"revision": 3}),
+        (("review",), {"revision": True}),
+        (("review",), {"status": "saved"}),
+        (("review",), {"version": 2}),
+        (("review",), {"created": 1}),
+        (("review",), {"extra": "SECRET"}),
+        (("review",), lambda r: r.pop("component")),
+        (("review", "proposal"), {"action_id": PUBLICATION}),
+        (("review", "proposal"), {"action_id": "bad"}),
+        (("review", "proposal"), {"proposal_digest": "C" * 64}),
+        (("review", "proposal"), {"content_digest": "short"}),
+        (("review", "proposal"), {"stage_digest": None}),
+        (("review", "proposal"), {"conversation_id": " padded "}),
+        (("review", "proposal"), {"component_id": "au_work_result_" + OTHER}),
+        (("review", "proposal"), {"base_render_revision": 1}),
+        (("review", "proposal"), {"base_render_revision": 0, "base_publication_id": PUBLICATION}),
+        (("review", "proposal"), {"expires_at": "2026-09-12T12:15:00+01:00"}),
+        (("review", "proposal"), {"expires_at": None}),
+        (("review", "proposal"), {"extra": "SECRET"}),
+        (("review", "component"), {"component_id": "au_work_result_" + OTHER}),
+        (("review", "component"), {"component_type": "text"}),
+        (("review", "component"), {"title": " "}),
+        (("review", "component"), {"title": "Other title"}),
+        (("review", "component"), {"position": -1}),
+        (("review", "component"), {"extra": "SECRET"}),
+        (("review", "component", "payload"), {"variant": "changed"}),
+        (("review", "component", "payload"), {"type": "container"}),
+        (("review", "component", "payload"), {"content": []}),
+        (("review", "component", "payload"), {"content": [{"type": "image", "src": "x"}]}),
+        (("review", "component", "payload"), {"content": [_text("x", "h1")]}),
+        (("review", "component", "payload"), {"content": [_text("x" * 2049)]}),
+        (("review", "component", "payload"), {"content": [_text("\x00")]}),
+        (("review", "component", "payload"), {"content": [_text("x", css="SECRET")]}),
+        (("review", "component", "payload"), {"content": [_kv([{"label": "a", "value": "b"}], css="SECRET")]}),
+        (("review", "component", "payload"), {"content": [_kv([{"label": "a", "value": "b", "extra": 1}])]}),
+        (("review", "component", "payload"), {"content": [_kv([])]}),
+        (("review", "component", "payload"), {"content": [_kv([{"label": "a", "value": "b"}] * 9)]}),
+        (("review", "component", "payload"), {"content": [_kv([{"label": "a", "value": "b"}], columns=0)]}),
+        (("review", "component", "payload"), {"content": [_text("x")] * 17}),
+        (("review", "component", "payload"), {"content": [_text("x" * 2048)] * 9}),
+        (("review", "component", "payload"), {"extra": "SECRET"}),
+        (("approve",), {"extra": "SECRET"}),
+        (("approve",), {"submission_id": SUBMISSION}),
+        (("approve",), {"submission_id": "bad"}),
+        (("approve",), {"expired": "yes"}),
+    ],
+)
+def test_malformed_review_never_becomes_a_partial_or_approvable_review(path, change):
+    view = unavailable(_review_change(path, change))
+    assert not save_buttons(view) and "SECRET" not in encoded(view)
+
+
+def test_review_private_and_unknown_host_fields_never_escape():
+    value = review_state()
+    value["private"] = {"token": "SECRET"}
+    value["operation"]["private"] = "SECRET"
+    value["review"]["component"]["payload"]["content"][0]["content"] = "<script>x()</script>"
+    view = build_work_view(value)
+    html = render_html(view)
+    assert "SECRET" not in encoded(view)
+    assert "<script>" not in html and "&lt;script&gt;" in html
+
+
+def test_review_honours_the_maximum_reviewable_payload_exactly():
+    value = review_state()
+    content = value["review"]["component"]["payload"]["content"]
+    content[0]["content"] = "x" * 2048
+    del content[1:]
+    content.extend([_text("x" * 2048)] * 6)
+    size = len(json.dumps(value["review"]["component"]["payload"], ensure_ascii=False,
+                          sort_keys=True, separators=(",", ":")).encode())
+    assert size <= 16384
+    assert save_buttons(build_work_view(value))
+    content.append(_text("x" * 2048))
+    unavailable(value)
+
+
+# ---------------------------------------------------------------------------
+# Feature 088 T052 -- charge basis, quoted currency and the measurements view.
+# ---------------------------------------------------------------------------
+
+
+def measurements(**values):
+    return {
+        "version": 1,
+        "logical_attempts": 1,
+        "physical_claims": 3,
+        "observed_interval_ms": 4200,
+        "elapsed_ms": 90000,
+        "incomplete": False,
+        "cutoff": False,
+        **values,
+    }
+
+
+def test_charge_basis_is_disclosed_per_dimension_and_never_implies_a_measured_charge():
+    row = operation(
+        usage={
+            "spent": {"tokens": 120, "spend_micro_units": 30},
+            "basis": {"tokens": "observed", "spend_micro_units": "estimated"},
+        }
+    )
+    view = build_work_view(state("detail", operation=row))
+    html = render_html(view)
+    assert "Charge basis" in html
+    assert "Tokens: Observed" in html and "Monetary cost: Estimated" in html
+    assert "not measured charges" in html
+    assert {b["action"] for b in buttons(view)} == {"chrome_open"}
+
+
+@pytest.mark.parametrize(
+    "token,label,variant",
+    [
+        ("observed", "Observed", "success"),
+        ("estimated", "Estimated", "info"),
+        ("uncertain", "Uncertain", "warning"),
+        ("none", "Not charged", "default"),
+    ],
+)
+def test_every_basis_token_has_its_own_badge(token, label, variant):
+    row = operation(usage={"spent": {"tokens": 5}, "basis": {"tokens": token}})
+    view = build_work_view(state("detail", operation=row))
+    badges = [
+        node
+        for node in nodes(view.to_dict())
+        if node.get("type") == "badge" and node["label"].startswith("Tokens")
+    ]
+    assert [(node["label"], node["variant"]) for node in badges] == [
+        (f"Tokens: {label}", variant)
+    ]
+
+
+def test_a_not_charged_dimension_is_not_rendered_as_a_zero_amount():
+    row = operation(usage={"basis": {"spend_micro_units": "none"}})
+    html = render_html(build_work_view(state("detail", operation=row)))
+    assert "Monetary cost: Not charged" in html and "not a zero charge" in html
+    assert "Usage not recorded" in html and "<dd>0</dd>" not in html
+
+
+def test_absent_basis_adds_nothing_at_all():
+    html = render_html(build_work_view(state("detail", operation=operation())))
+    assert "Charge basis" not in html
+
+
+def test_an_unknown_basis_token_or_shape_makes_the_view_unavailable():
+    for basis in ("guessed", "", None, 1, ["observed"]):
+        unavailable(state("detail", operation=operation(usage={"basis": {"tokens": basis}})))
+    unavailable(state("detail", operation=operation(usage={"basis": ["observed"]})))
+
+
+def test_a_basis_for_an_unknown_dimension_is_dropped_not_displayed():
+    row = operation(usage={"basis": {"future_dimension": "SECRET", "tokens": "observed"}})
+    view = build_work_view(state("detail", operation=row))
+    assert "SECRET" not in encoded(view) and "Tokens: Observed" in render_html(view)
+
+
+@pytest.mark.parametrize("bucket", ["spent", "daily", "outstanding"])
+def test_a_reported_currency_is_quoted_instead_of_claiming_it_is_unavailable(bucket):
+    row = operation(usage={bucket: {"spend_micro_units": 30}, "currency": "USD"})
+    html = render_html(build_work_view(state("detail", operation=row)))
+    assert "30 micro-units (USD)" in html and "currency unavailable" not in html
+
+
+def test_an_unknown_amount_stays_unknown_even_when_a_currency_is_reported():
+    row = operation(usage={"spent": {"spend_micro_units": None}, "currency": "GBP"})
+    html = render_html(build_work_view(state("detail", operation=row)))
+    assert "Unknown" in html and "GBP" not in html
+
+
+@pytest.mark.parametrize("currency", ["usd", "U", "US DOLLAR", "USDOLLARS9", 1, ""])
+def test_a_malformed_currency_is_refused_rather_than_quoted(currency):
+    unavailable(
+        state(
+            "detail",
+            operation=operation(usage={"spent": {"spend_micro_units": 30}, "currency": currency}),
+        )
+    )
+
+
+def test_measurements_distinguish_the_task_from_its_recorded_runs():
+    html = render_html(build_work_view(state("detail", measurements=measurements())))
+    assert "Attempts (this task)" in html and "<dd>1</dd>" in html
+    assert "Runs recorded (claims)" in html and "<dd>3</dd>" in html
+    assert "not two different tasks" in html
+    assert "<dd>4200</dd>" in html and "<dd>90000</dd>" in html
+    assert "also\nincludes waiting" in html or "includes waiting" in html
+
+
+def test_one_claim_for_one_task_does_not_get_the_multiple_run_explanation():
+    html = render_html(
+        build_work_view(state("detail", measurements=measurements(physical_claims=1)))
+    )
+    assert "not two different tasks" not in html
+
+
+def test_absent_measurements_synthesize_no_attempt_or_timing_at_all():
+    html = render_html(build_work_view(state("detail")))
+    assert "Timing" not in html and "Attempts" not in html and "Runs recorded" not in html
+
+
+@pytest.mark.parametrize("field", ["observed_interval_ms", "elapsed_ms"])
+def test_an_unrecorded_interval_is_unknown_and_never_zero(field):
+    view = build_work_view(state("detail", measurements=measurements(**{field: None})))
+    html = render_html(view)
+    assert "Unknown" in html and "<dd>0</dd>" not in html
+    assert "includes waiting" not in html
+
+
+def test_zero_recorded_activity_is_shown_as_zero_not_as_unknown():
+    view = build_work_view(
+        state("detail", measurements=measurements(observed_interval_ms=0, elapsed_ms=0))
+    )
+    html = render_html(view)
+    assert "<dd>0</dd>" in html and "Unknown" not in html
+
+
+@pytest.mark.parametrize(
+    "change,phrase",
+    [
+        ({"incomplete": True}, "lower bound"),
+        ({"cutoff": True}, "Later activity is not included"),
+    ],
+)
+def test_incomplete_and_cutoff_measurements_say_so(change, phrase):
+    html = render_html(build_work_view(state("detail", measurements=measurements(**change))))
+    assert phrase in html
+
+
+def test_a_never_claimed_task_reports_zero_runs_without_inventing_one():
+    html = render_html(
+        build_work_view(
+            state(
+                "detail",
+                measurements=measurements(
+                    logical_attempts=0,
+                    physical_claims=0,
+                    observed_interval_ms=None,
+                    elapsed_ms=None,
+                ),
+            )
+        )
+    )
+    assert "<dd>0</dd>" in html and "Unknown" in html
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"version": 2},
+        {"logical_attempts": -1},
+        {"logical_attempts": True},
+        {"physical_claims": None},
+        {"observed_interval_ms": -1},
+        {"elapsed_ms": "90000"},
+        {"incomplete": "no"},
+        {"cutoff": 1},
+    ],
+)
+def test_malformed_measurements_make_the_whole_view_unavailable(change):
+    unavailable(state("detail", measurements=measurements(**change)))
+
+
+def test_extra_or_missing_measurement_keys_are_refused():
+    extra = measurements()
+    extra["owner_id"] = "SECRET"
+    view = build_work_view(state("detail", measurements=extra))
+    assert "SECRET" not in encoded(view)
+    assert "unavailable" in render_html(view).lower()
+    missing = measurements()
+    del missing["cutoff"]
+    unavailable(state("detail", measurements=missing))
+
+
+def test_measurements_are_a_detail_disclosure_only():
+    for mode in ("list", "result"):
+        html = render_html(build_work_view(state(mode, measurements=measurements())))
+        assert "Runs recorded (claims)" not in html

@@ -106,9 +106,15 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
         "tests/native-export-088.spec.js tests/work-reads-088.spec.js "
         "tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js "
         "tests/native-chart-088.spec.js tests/first-task-088.spec.js "
+        "tests/selection-088.spec.js "
         "--browser=chromium"
     ) in web
-    tracked = {path.name for path in (ROOT / "tooling/web-ci/tests").glob("*-088.spec.js")}
+    # Tracked files only: an untracked local scratch spec must never fail this guard.
+    listed = subprocess.run(
+        ["git", "ls-files", "tooling/web-ci/tests/*-088.spec.js"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout.split()
+    tracked = {Path(path).name for path in listed}
     assert tracked, "no tracked 088 browser specs"
     for name in sorted(tracked):
         assert f"tests/{name} " in web or f"tests/{name} --browser=chromium" in web, name

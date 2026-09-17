@@ -1,8 +1,28 @@
-"""Closed, bounded Work read-surface disposition; never an action authority."""
+"""Closed, bounded Work read-surface disposition; never an action authority.
+
+The only non-navigation action admitted is the feature-088 T043 exact Save
+command (``chrome_work_result_save``): two closed steps whose every field is a
+server-issued binding that Deep re-verifies. Nothing here authorizes a save.
+"""
 
 from copy import deepcopy
 import json
+import re
 from uuid import UUID
+
+SAVE_ACTION = "chrome_work_result_save"
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+_PROPOSE_FIELDS = frozenset(
+    {
+        "version", "command", "operation_id", "submission_id", "publication_id",
+        "expected_revision", "conversation_id", "expected_workspace_revision",
+        "expected_workspace_publication_id",
+    }
+)
+_SAVE_FIELDS = frozenset(
+    {"version", "command", "operation_id", "action_id", "submission_id", "expected_revision",
+     "proposal_digest"}
+)
 
 
 def _require(value):
@@ -17,6 +37,44 @@ def _identity(value):
     except ValueError:
         raise ValueError("work_surface_unavailable") from None
     _require(parsed.version == 4 and str(parsed) == value)
+
+
+def _revision(value, minimum=1):
+    _require(type(value) is int and minimum <= value <= 2**53 - 1)
+
+
+def validate_work_save_command(payload):
+    """Accept only the two exact server-bound Save steps Deep's routes take.
+
+    ``propose`` mirrors ``WorkResultProposalRequest`` (review only) and ``save``
+    mirrors ``WorkResultSaveRequest`` plus the path identities. Every field is a
+    server-issued binding; the client neither invents nor widens authority.
+    """
+    _require(type(payload) is dict and type(payload.get("version")) is int and payload["version"] == 1)
+    command = payload.get("command")
+    if command == "propose":
+        _require(set(payload) == _PROPOSE_FIELDS)
+        for name in ("operation_id", "submission_id", "publication_id"):
+            _identity(payload[name])
+        _require(payload["submission_id"] != payload["publication_id"])
+        _revision(payload["expected_revision"])
+        destination = payload["conversation_id"]
+        _require(type(destination) is str and 1 <= len(destination) <= 512)
+        _require(destination == destination.strip() and destination.isprintable())
+        _revision(payload["expected_workspace_revision"], 0)
+        head = payload["expected_workspace_publication_id"]
+        if payload["expected_workspace_revision"] == 0:
+            _require(head is None)
+        else:
+            _identity(head)
+    else:
+        _require(command == "save" and set(payload) == _SAVE_FIELDS)
+        for name in ("operation_id", "action_id", "submission_id"):
+            _identity(payload[name])
+        _require(payload["action_id"] != payload["submission_id"])
+        _revision(payload["expected_revision"])
+        digest = payload["proposal_digest"]
+        _require(type(digest) is str and _DIGEST.fullmatch(digest) is not None)
 
 
 def validate_work_navigation(payload):
@@ -86,9 +144,12 @@ def validate_work_components(components, supported_types=None):
                     text(item["label"])
                     text(item["value"])
             elif kind == "button":
-                _require(value["action"] == "chrome_open" and value["local"] is False)
-                _require(type(value["disabled"]) is bool)
-                validate_work_navigation(value["payload"])
+                _require(value["local"] is False and type(value["disabled"]) is bool)
+                if value["action"] == SAVE_ACTION:
+                    validate_work_save_command(value["payload"])
+                else:
+                    _require(value["action"] == "chrome_open")
+                    validate_work_navigation(value["payload"])
 
         for component in components:
             node(component)

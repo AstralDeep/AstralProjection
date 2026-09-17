@@ -371,6 +371,16 @@ def _render_component(component: Mapping[str, object]) -> str:
         return f"<{tag}>{items}</{tag}>"
     if component_type == "param_picker":
         return _render_form(component)
+    if component_type == "file_download":
+        url = clean_text(component.get("url"))
+        label = clean_text(component.get("label")) or "Download"
+        raw_name = component.get("filename")
+        name = clean_text(raw_name) if isinstance(raw_name, str) and raw_name else ""
+        download = f' download="{escape(name, quote=True)}"' if name else " download"
+        return (
+            f'<a class="astral-file-download" href="{escape(url, quote=True)}"{download}'
+            f' data-component="file_download">{escape(label)}</a>'
+        )
     return _render_alert(
         {
             "variant": "info",

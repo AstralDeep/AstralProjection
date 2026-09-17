@@ -144,7 +144,22 @@ final class ManifestDriftTests: XCTestCase {
         // 125 = 117 + the eight feature-079 persistent-assignment actions;
         //       full clients post these through the existing SDUI action path.
         // 129 = 125 + the four closed feature-088 private-note actions.
-        XCTAssertEqual(manifest.acceptActions.count, 129)
+        // 132 = 129 + the three closed feature-088 T037 actions
+        //        (chrome_declarative_view / chrome_declarative_command /
+        //        chrome_turn_selection_set) behind guidance_agents_v1 and
+        //        guidance_selection_v1, which no Apple client advertises yet;
+        //        they ride the existing chrome_surface frame, no new push type.
+        // 134 = 132 + the two closed feature-088 T043/T044 actions
+        //        (chrome_work_result_save: the exact two-step Save command behind
+        //        work_save_v1; chrome_job_stop: the terminal recurring-work Stop
+        //        behind recurring_work_v1). No Apple client advertises either
+        //        capability yet; both ride chrome_surface, no new push type.
+        // 136 = 134 + the two closed feature-088 T048 Connections actions
+        //        (chrome_connection_issue / chrome_connection_revoke) behind
+        //        connections_v1, which no Apple client advertises yet; both ride
+        //        the existing chrome_surface frame, no new push type.
+        XCTAssertEqual(manifest.acceptActions.count, 136)
+        XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_note_") }), GuidanceRequest.noteActions)
     }
 

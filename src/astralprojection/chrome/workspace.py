@@ -1,8 +1,22 @@
-"""Pure remote-machine, feature-flag, workspace, history, and timeline builders."""
+"""Pure remote-machine, feature-flag, workspace, history, timeline and saved-results builders.
+
+``build_saved_results_view`` (feature 088 T044) lists and details result-publication
+receipts the owner already approved. State: ``mode`` (list/detail), ``receipts`` or one
+``receipt``, ``next_cursor``. A receipt carries publication_id, action_id, operation_id
+(UUID4), operation_title, conversation_id, conversation_title, component_id,
+committed_render_revision, committed_at and ``provenance`` (source_title, requested_url,
+final_url, retrieved_at, result_digest, content_digest, stage_digest). Actions bind only
+to existing surfaces: ``load_chat`` opens the destination conversation, ``chrome_open``
+reaches the workspace timeline, and an optional host-issued ``export`` ({url, filename})
+renders the existing authenticated ``file_download`` for that committed revision. Viewing
+a saved result never proposes or saves anything; no save action exists on this surface.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+import re
+from uuid import UUID
 
 from astralprojection.models import ChromeViewModel, ComponentView, LayoutView, ThemeView
 
@@ -22,6 +36,11 @@ from ._components import (
     unavailable_view,
 )
 
+_SAVED_SURFACE = "saved_results"
+_SAVED_TITLE = "Saved results"
+_EXPORT_PATH = "/api/export/"
+_DIGEST = re.compile(r"^[a-f0-9]{64}$")
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _CAUSE_LABELS = {
     "turn": "Assistant turn",
     "component_action": "Component action",
@@ -429,10 +448,132 @@ def _build_snapshot_view(
     )
 
 
+def _uuid4(value: object) -> str:
+    try:
+        candidate = UUID(str(value))
+        return str(candidate) if candidate.version == 4 and str(candidate) == value else ""
+    except (ValueError, TypeError, AttributeError):
+        return ""
+
+
+def _scalar(value: object, default: str = "") -> str:
+    # Only a deliberate scalar projection is displayable, never repr(raw records).
+    if isinstance(value, bool) or not isinstance(value, (str, int, float)):
+        return default
+    return clean_text(value) or default
+
+
+def _digest_text(value: object) -> str:
+    return value if isinstance(value, str) and _DIGEST.fullmatch(value) else "Unavailable"
+
+
+def _export(value: object) -> ComponentView | None:
+    """Only a host-issued root-relative export path becomes the existing download."""
+    if not isinstance(value, Mapping):
+        return None
+    url = value.get("url")
+    if (not isinstance(url, str) or not url.startswith(_EXPORT_PATH) or url.startswith("//")
+            or len(url) > 2048 or _CONTROL.search(url) or any(c.isspace() for c in url)):
+        return None
+    filename = value.get("filename")
+    props: dict[str, object] = {"label": "Export saved page (HTML)", "url": url}
+    if isinstance(filename, str) and 0 < len(filename) <= 255 and not _CONTROL.search(filename):
+        props["filename"] = filename
+    return ComponentView("file_download", props)
+
+
+def _open_saved(label: str, **params: object) -> ComponentView:
+    return button(label, "chrome_open", {"surface": _SAVED_SURFACE, "params": {"mode": "list", **params}})
+
+
+def _receipt_summary(receipt: Mapping[str, object], *, detail: bool) -> list[ComponentView]:
+    conversation = _scalar(receipt.get("conversation_id"))
+    result: list[ComponentView] = [key_value([
+        ("Saved to", _scalar(receipt.get("conversation_title")) or conversation or "Unknown conversation"),
+        ("Saved at", _scalar(receipt.get("committed_at"), "Unknown")),
+        ("Saved revision", _scalar(receipt.get("committed_render_revision"), "Unknown")),
+        ("From task", _scalar(receipt.get("operation_title")) or _uuid4(receipt.get("operation_id")) or "Unknown"),
+    ])]
+    if detail:
+        provenance = receipt.get("provenance")
+        provenance = provenance if isinstance(provenance, Mapping) else {}
+        result.append(key_value([
+            ("Task", _uuid4(receipt.get("operation_id")) or "Unavailable"),
+            ("Source", _scalar(provenance.get("source_title"), "Unavailable")),
+            ("Requested URL", _scalar(provenance.get("requested_url"), "Unavailable")),
+            ("Retrieved URL", _scalar(provenance.get("final_url"), "Unavailable")),
+            ("Retrieved at", _scalar(provenance.get("retrieved_at"), "Unavailable")),
+            ("Result digest", _digest_text(provenance.get("result_digest"))),
+            ("Content digest", _digest_text(provenance.get("content_digest"))),
+            ("Stage digest", _digest_text(provenance.get("stage_digest"))),
+            ("Saved component", _scalar(receipt.get("component_id"), "Unavailable")),
+            ("Publication", _uuid4(receipt.get("publication_id")) or "Unavailable"),
+        ], title="Provenance"))
+    actions: list[ComponentView] = []
+    if conversation:
+        actions.append(button("Open chat", "load_chat", {"chat_id": conversation}, variant="primary"))
+        if detail:
+            actions.append(button("Workspace history", "chrome_open", {
+                "surface": "workspace_timeline", "params": {"chat_id": conversation, "page": 0}}))
+    if actions:
+        result.append(container(actions, direction="row"))
+    if detail:
+        export = _export(receipt.get("export"))
+        result.append(export if export is not None else text("Export is not available for this saved result.", "caption"))
+    return result
+
+
+def build_saved_results_view(
+    state: Mapping[str, object],
+    *,
+    denied: bool = False,
+    error: str | None = None,
+    theme: ThemeView | None = None,
+    layout: LayoutView | None = None,
+) -> ChromeViewModel:
+    """Build the owner's saved results; viewing is never saving."""
+    if denied:
+        return denied_view(_SAVED_SURFACE, _SAVED_TITLE, "Saved-results access denied.")
+    if error:
+        return unavailable_view(_SAVED_SURFACE, _SAVED_TITLE, error)
+    state = state if isinstance(state, Mapping) else {}
+    mode = state.get("mode") or "list"
+    if mode not in ("list", "detail"):
+        return unavailable_view(_SAVED_SURFACE, _SAVED_TITLE, "This saved-results view is unavailable.")
+    components: list[ComponentView] = [
+        text("Saved results are exact copies you approved. Viewing a result never saves it.", "caption")
+    ]
+    if mode == "detail":
+        receipt = state.get("receipt")
+        receipt = receipt if isinstance(receipt, Mapping) else {}
+        if not _uuid4(receipt.get("publication_id")):
+            components.append(alert("This saved result is not available.", "warning"))
+        else:
+            components.append(card(_scalar(receipt.get("operation_title"), "Saved result"),
+                                   _receipt_summary(receipt, detail=True)))
+        components.append(_open_saved("Back to saved results"))
+        return build_view(_SAVED_SURFACE, _SAVED_TITLE, components, theme=theme, layout=layout)
+    rows = _rows(state.get("receipts") or ())[:50]
+    for receipt in rows:
+        publication_id = _uuid4(receipt.get("publication_id"))
+        body = _receipt_summary(receipt, detail=False)
+        if publication_id:
+            body.append(button("View saved result", "chrome_open", {
+                "surface": _SAVED_SURFACE, "params": {"mode": "detail", "publication_id": publication_id}}))
+        components.append(card(_scalar(receipt.get("operation_title"), "Saved result"), body))
+    if not rows:
+        components.append(alert("No saved results yet. Save a result from its task's result view.", "info"))
+    cursor = _scalar(state.get("next_cursor"))
+    if cursor:
+        components.append(_open_saved("More saved results", after=cursor))
+    return build_view(_SAVED_SURFACE, _SAVED_TITLE, components, theme=theme, layout=layout)
+
+
 __all__ = [
     "build_feature_flags_view",
     "build_history_view",
     "build_remote_machines_view",
+    "build_saved_results_view",
     "build_timeline_view",
     "build_workspace_view",
 ]

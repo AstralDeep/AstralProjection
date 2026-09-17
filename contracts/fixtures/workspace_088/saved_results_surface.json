@@ -1,0 +1,501 @@
+{
+  "version": 1,
+  "description": "Feature 088 T044: saved results (result-publication receipts) list/detail with provenance, Open chat, workspace history and the existing authenticated export download. Viewing never saves. Synthetic identities; generated from build_saved_results_view.",
+  "states": {
+    "list": {
+      "mode": "list",
+      "receipts": [
+        {
+          "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+          "action_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+          "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "operation_title": "Public page research",
+          "conversation_id": "chat-1",
+          "conversation_title": "Reviewed result destination",
+          "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "committed_render_revision": 1,
+          "committed_at": "2026-09-12T12:05:00+00:00",
+          "provenance": {
+            "source_title": "Original source",
+            "requested_url": "https://example.org/start",
+            "final_url": "https://example.org/page",
+            "retrieved_at": "2026-09-12T12:00:00+00:00",
+            "result_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "content_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+            "stage_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+          }
+        }
+      ]
+    },
+    "detail": {
+      "mode": "detail",
+      "receipt": {
+        "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+        "action_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+        "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "operation_title": "Public page research",
+        "conversation_id": "chat-1",
+        "conversation_title": "Reviewed result destination",
+        "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "committed_render_revision": 1,
+        "committed_at": "2026-09-12T12:05:00+00:00",
+        "provenance": {
+          "source_title": "Original source",
+          "requested_url": "https://example.org/start",
+          "final_url": "https://example.org/page",
+          "retrieved_at": "2026-09-12T12:00:00+00:00",
+          "result_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "content_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "stage_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "export": {
+          "url": "/api/export/canvas/chat-1.html?render_revision=1",
+          "filename": "public-page-research.html"
+        }
+      }
+    },
+    "detail_no_export": {
+      "mode": "detail",
+      "receipt": {
+        "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+        "action_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+        "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "operation_title": "Public page research",
+        "conversation_id": "chat-1",
+        "conversation_title": "Reviewed result destination",
+        "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "committed_render_revision": 1,
+        "committed_at": "2026-09-12T12:05:00+00:00",
+        "provenance": {
+          "source_title": "Original source",
+          "requested_url": "https://example.org/start",
+          "final_url": "https://example.org/page",
+          "retrieved_at": "2026-09-12T12:00:00+00:00",
+          "result_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "content_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "stage_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      }
+    },
+    "empty": {
+      "mode": "list",
+      "receipts": []
+    }
+  },
+  "frames": {
+    "list": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "title": "Saved results",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Saved results are exact copies you approved. Viewing a result never saves it.",
+          "variant": "caption"
+        },
+        {
+          "type": "card",
+          "title": "Public page research",
+          "content": [
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Saved to",
+                  "value": "Reviewed result destination"
+                },
+                {
+                  "label": "Saved at",
+                  "value": "2026-09-12T12:05:00+00:00"
+                },
+                {
+                  "label": "Saved revision",
+                  "value": "1"
+                },
+                {
+                  "label": "From task",
+                  "value": "Public page research"
+                }
+              ]
+            },
+            {
+              "type": "container",
+              "children": [
+                {
+                  "type": "button",
+                  "label": "Open chat",
+                  "action": "load_chat",
+                  "payload": {
+                    "chat_id": "chat-1"
+                  },
+                  "variant": "primary",
+                  "disabled": false,
+                  "local": false
+                }
+              ],
+              "direction": "row"
+            },
+            {
+              "type": "button",
+              "label": "View saved result",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "saved_results",
+                "params": {
+                  "mode": "detail",
+                  "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f"
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "44444444-4444-4444-8444-444444444444"
+    },
+    "detail": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "title": "Saved results",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Saved results are exact copies you approved. Viewing a result never saves it.",
+          "variant": "caption"
+        },
+        {
+          "type": "card",
+          "title": "Public page research",
+          "content": [
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Saved to",
+                  "value": "Reviewed result destination"
+                },
+                {
+                  "label": "Saved at",
+                  "value": "2026-09-12T12:05:00+00:00"
+                },
+                {
+                  "label": "Saved revision",
+                  "value": "1"
+                },
+                {
+                  "label": "From task",
+                  "value": "Public page research"
+                }
+              ]
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Task",
+                  "value": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+                },
+                {
+                  "label": "Source",
+                  "value": "Original source"
+                },
+                {
+                  "label": "Requested URL",
+                  "value": "https://example.org/start"
+                },
+                {
+                  "label": "Retrieved URL",
+                  "value": "https://example.org/page"
+                },
+                {
+                  "label": "Retrieved at",
+                  "value": "2026-09-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Result digest",
+                  "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                  "label": "Content digest",
+                  "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                },
+                {
+                  "label": "Stage digest",
+                  "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                },
+                {
+                  "label": "Saved component",
+                  "value": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e"
+                },
+                {
+                  "label": "Publication",
+                  "value": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f"
+                }
+              ],
+              "title": "Provenance"
+            },
+            {
+              "type": "container",
+              "children": [
+                {
+                  "type": "button",
+                  "label": "Open chat",
+                  "action": "load_chat",
+                  "payload": {
+                    "chat_id": "chat-1"
+                  },
+                  "variant": "primary",
+                  "disabled": false,
+                  "local": false
+                },
+                {
+                  "type": "button",
+                  "label": "Workspace history",
+                  "action": "chrome_open",
+                  "payload": {
+                    "surface": "workspace_timeline",
+                    "params": {
+                      "chat_id": "chat-1",
+                      "page": 0
+                    }
+                  },
+                  "variant": "secondary",
+                  "disabled": false,
+                  "local": false
+                }
+              ],
+              "direction": "row"
+            },
+            {
+              "type": "file_download",
+              "label": "Export saved page (HTML)",
+              "url": "/api/export/canvas/chat-1.html?render_revision=1",
+              "filename": "public-page-research.html"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Back to saved results",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "saved_results",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "detail_no_export": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "title": "Saved results",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Saved results are exact copies you approved. Viewing a result never saves it.",
+          "variant": "caption"
+        },
+        {
+          "type": "card",
+          "title": "Public page research",
+          "content": [
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Saved to",
+                  "value": "Reviewed result destination"
+                },
+                {
+                  "label": "Saved at",
+                  "value": "2026-09-12T12:05:00+00:00"
+                },
+                {
+                  "label": "Saved revision",
+                  "value": "1"
+                },
+                {
+                  "label": "From task",
+                  "value": "Public page research"
+                }
+              ]
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Task",
+                  "value": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+                },
+                {
+                  "label": "Source",
+                  "value": "Original source"
+                },
+                {
+                  "label": "Requested URL",
+                  "value": "https://example.org/start"
+                },
+                {
+                  "label": "Retrieved URL",
+                  "value": "https://example.org/page"
+                },
+                {
+                  "label": "Retrieved at",
+                  "value": "2026-09-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Result digest",
+                  "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                  "label": "Content digest",
+                  "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+                },
+                {
+                  "label": "Stage digest",
+                  "value": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                },
+                {
+                  "label": "Saved component",
+                  "value": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e"
+                },
+                {
+                  "label": "Publication",
+                  "value": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f"
+                }
+              ],
+              "title": "Provenance"
+            },
+            {
+              "type": "container",
+              "children": [
+                {
+                  "type": "button",
+                  "label": "Open chat",
+                  "action": "load_chat",
+                  "payload": {
+                    "chat_id": "chat-1"
+                  },
+                  "variant": "primary",
+                  "disabled": false,
+                  "local": false
+                },
+                {
+                  "type": "button",
+                  "label": "Workspace history",
+                  "action": "chrome_open",
+                  "payload": {
+                    "surface": "workspace_timeline",
+                    "params": {
+                      "chat_id": "chat-1",
+                      "page": 0
+                    }
+                  },
+                  "variant": "secondary",
+                  "disabled": false,
+                  "local": false
+                }
+              ],
+              "direction": "row"
+            },
+            {
+              "type": "text",
+              "content": "Export is not available for this saved result.",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Back to saved results",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "saved_results",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "66666666-6666-4666-8666-666666666666"
+    },
+    "empty": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "title": "Saved results",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Saved results are exact copies you approved. Viewing a result never saves it.",
+          "variant": "caption"
+        },
+        {
+          "type": "alert",
+          "message": "No saved results yet. Save a result from its task's result view.",
+          "variant": "info"
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "77777777-7777-4777-8777-777777777777"
+    }
+  },
+  "web_frames": {
+    "list": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "mode": "replace",
+      "request_generation": "44444444-4444-4444-8444-444444444444",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"saved_results\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Saved results\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Saved results</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"saved_results\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-saved_results-title\"><h2 id=\"chrome-saved_results-title\">Saved results</h2><small data-text-variant=\"caption\">Saved results are exact copies you approved. Viewing a result never saves it.</small><section aria-label=\"Public page research\"><h3>Public page research</h3><section><dl><div><dt>Saved to</dt><dd>Reviewed result destination</dd></div><div><dt>Saved at</dt><dd>2026-09-12T12:05:00+00:00</dd></div><div><dt>Saved revision</dt><dd>1</dd></div><div><dt>From task</dt><dd>Public page research</dd></div></dl></section><div role=\"group\" data-direction=\"row\"><button type=\"button\" data-ui-action=\"load_chat\" data-ui-payload=\"{&quot;chat_id&quot;:&quot;chat-1&quot;}\">Open chat</button></div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;detail&quot;,&quot;publication_id&quot;:&quot;7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f&quot;},&quot;surface&quot;:&quot;saved_results&quot;}\">View saved result</button></section></section></div></div></div>"
+    },
+    "detail": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"saved_results\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Saved results\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Saved results</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"saved_results\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-saved_results-title\"><h2 id=\"chrome-saved_results-title\">Saved results</h2><small data-text-variant=\"caption\">Saved results are exact copies you approved. Viewing a result never saves it.</small><section aria-label=\"Public page research\"><h3>Public page research</h3><section><dl><div><dt>Saved to</dt><dd>Reviewed result destination</dd></div><div><dt>Saved at</dt><dd>2026-09-12T12:05:00+00:00</dd></div><div><dt>Saved revision</dt><dd>1</dd></div><div><dt>From task</dt><dd>Public page research</dd></div></dl></section><section><h3>Provenance</h3><dl><div><dt>Task</dt><dd>180cd30b-cc38-432d-8349-1851b0d3ad7e</dd></div><div><dt>Source</dt><dd>Original source</dd></div><div><dt>Requested URL</dt><dd>https://example.org/start</dd></div><div><dt>Retrieved URL</dt><dd>https://example.org/page</dd></div><div><dt>Retrieved at</dt><dd>2026-09-12T12:00:00+00:00</dd></div><div><dt>Result digest</dt><dd>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</dd></div><div><dt>Content digest</dt><dd>dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd</dd></div><div><dt>Stage digest</dt><dd>eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee</dd></div><div><dt>Saved component</dt><dd>au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e</dd></div><div><dt>Publication</dt><dd>7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f</dd></div></dl></section><div role=\"group\" data-direction=\"row\"><button type=\"button\" data-ui-action=\"load_chat\" data-ui-payload=\"{&quot;chat_id&quot;:&quot;chat-1&quot;}\">Open chat</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;chat_id&quot;:&quot;chat-1&quot;,&quot;page&quot;:0},&quot;surface&quot;:&quot;workspace_timeline&quot;}\">Workspace history</button></div><a class=\"astral-file-download\" href=\"/api/export/canvas/chat-1.html?render_revision=1\" download=\"public-page-research.html\" data-component=\"file_download\">Export saved page (HTML)</a></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;saved_results&quot;}\">Back to saved results</button></section></div></div></div>"
+    },
+    "detail_no_export": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "mode": "replace",
+      "request_generation": "66666666-6666-4666-8666-666666666666",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"saved_results\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Saved results\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Saved results</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"saved_results\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-saved_results-title\"><h2 id=\"chrome-saved_results-title\">Saved results</h2><small data-text-variant=\"caption\">Saved results are exact copies you approved. Viewing a result never saves it.</small><section aria-label=\"Public page research\"><h3>Public page research</h3><section><dl><div><dt>Saved to</dt><dd>Reviewed result destination</dd></div><div><dt>Saved at</dt><dd>2026-09-12T12:05:00+00:00</dd></div><div><dt>Saved revision</dt><dd>1</dd></div><div><dt>From task</dt><dd>Public page research</dd></div></dl></section><section><h3>Provenance</h3><dl><div><dt>Task</dt><dd>180cd30b-cc38-432d-8349-1851b0d3ad7e</dd></div><div><dt>Source</dt><dd>Original source</dd></div><div><dt>Requested URL</dt><dd>https://example.org/start</dd></div><div><dt>Retrieved URL</dt><dd>https://example.org/page</dd></div><div><dt>Retrieved at</dt><dd>2026-09-12T12:00:00+00:00</dd></div><div><dt>Result digest</dt><dd>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</dd></div><div><dt>Content digest</dt><dd>dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd</dd></div><div><dt>Stage digest</dt><dd>eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee</dd></div><div><dt>Saved component</dt><dd>au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e</dd></div><div><dt>Publication</dt><dd>7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f</dd></div></dl></section><div role=\"group\" data-direction=\"row\"><button type=\"button\" data-ui-action=\"load_chat\" data-ui-payload=\"{&quot;chat_id&quot;:&quot;chat-1&quot;}\">Open chat</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;chat_id&quot;:&quot;chat-1&quot;,&quot;page&quot;:0},&quot;surface&quot;:&quot;workspace_timeline&quot;}\">Workspace history</button></div><small data-text-variant=\"caption\">Export is not available for this saved result.</small></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;saved_results&quot;}\">Back to saved results</button></section></div></div></div>"
+    },
+    "empty": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "saved_results",
+      "mode": "replace",
+      "request_generation": "77777777-7777-4777-8777-777777777777",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"saved_results\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Saved results\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Saved results</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"saved_results\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-saved_results-title\"><h2 id=\"chrome-saved_results-title\">Saved results</h2><small data-text-variant=\"caption\">Saved results are exact copies you approved. Viewing a result never saves it.</small><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">No saved results yet. Save a result from its task&#x27;s result view.</div></section></div></div></div>"
+    }
+  }
+}

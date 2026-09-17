@@ -26,6 +26,22 @@ are never forwarded. The host validates every command; this module only renders.
 LayoutView(mode="watch") selects bounded status/chat guidance and a full-client
 handoff without forms or buttons. Optional next_cursor/activity_cursor are opaque
 host pagination tokens. No IDs, permissions, quotes or clocks are generated here.
+
+``build_recurring_work_view`` (feature 088 T044) unifies the owner's scheduled
+jobs with their bound ongoing agent's latest typed monitoring observation. State:
+``mode`` (list/detail), ``enabled``, ``execution_enabled``, safe ``error``/
+``notice``, ``jobs`` or one ``job``, ``next_cursor``. A job row carries job_id
+(UUID4), name, kind (cron/interval/one_shot), expression, timezone, status
+(active/paused/expired/completed/disabled), terminal_stop, next_run_at,
+last_run_at, policy_version (int, or None for a legacy job without a policy),
+allowance ({admitted, max}; None means unknown, never zero; a missing allowance
+means no run limit), assignment ({assignment_id, name, lifecycle, phase}),
+observation ({kind, finding, observed_at, sequence, reason, complete_source_set})
+with kind one of initial/unchanged/changed/insufficient_evidence, safe runs
+[{started_at, outcome, summary}], available_actions and submission_ids keyed by
+chrome_job_pause/chrome_job_resume/chrome_job_stop. Stop is terminal: it is
+offered only for a policy job and labelled as permanent. Controls carry job_id,
+submission_id and expected_policy_version; the host validates every command.
 """
 
 from __future__ import annotations
@@ -53,6 +69,29 @@ _CONTROLS = (
     ("stop", "Stop", "danger"),
 )
 _LIMIT_NAME = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)?$")
+_RECURRING_TITLE = "Recurring work"
+_KINDS = {
+    "cron": "Repeats on a cron schedule", "interval": "Repeats on an interval",
+    "one_shot": "Runs once",
+}
+_JOB_STATUSES = {
+    "active": "Active", "paused": "Paused", "expired": "Expired",
+    "completed": "Completed", "disabled": "Disabled",
+}
+_OUTCOMES = {
+    "initial": "Initial observation", "unchanged": "Unchanged", "changed": "Changed",
+    "insufficient_evidence": "Insufficient evidence",
+}
+_FINDINGS = {
+    "initial": "Initial observation recorded.",
+    "unchanged": "Unchanged since the prior complete observation. No new finding.",
+    "changed": "The source changed since the prior observation.",
+    "insufficient_evidence": "Insufficient evidence to compare with the prior observation.",
+}
+_JOB_CONTROLS = (
+    ("pause", "Pause", "secondary"), ("resume", "Resume", "primary"),
+    ("stop", "Stop permanently", "danger"),
+)
 _DIGEST = re.compile(r"^[a-f0-9]{64}$")
 
 
@@ -356,4 +395,188 @@ def build_assignments_view(
     return build_view(_SURFACE, _TITLE, components, theme=theme, layout=layout)
 
 
-__all__ = ["build_assignments_view"]
+def _open_recurring(label: str, **params: object) -> ComponentView:
+    return button(label, "chrome_open", {"surface": _SURFACE,
+                                         "params": {"tab": "schedule", "view": "recurring", **params}})
+
+
+def _job_status(row: Mapping) -> str:
+    if row.get("terminal_stop") is True:
+        return "Stopped permanently"
+    return _JOB_STATUSES.get(_display(row.get("status")), "Unknown state")
+
+
+def _count(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
+
+
+def _allowance(row: Mapping) -> str:
+    # A missing allowance is the legacy job semantics (no policy, no run limit); a present
+    # allowance with an unknown member is "Unknown", never rendered as zero or exhausted.
+    allowance = row.get("allowance")
+    if allowance is None:
+        return "No run limit"
+    allowance = _mapping(allowance)
+    admitted, maximum = _count(allowance.get("admitted")), _count(allowance.get("max"))
+    if admitted is None or maximum is None:
+        return "Unknown"
+    return f"{admitted} of {maximum} runs admitted; {max(maximum - admitted, 0)} remaining"
+
+
+def _job_payload(row: Mapping, action: str) -> dict | None:
+    submission = _uuid(_mapping(row.get("submission_ids")).get(action))
+    identity = _uuid(row.get("job_id"))
+    if not submission or not identity or not _allowed(row, action):
+        return None
+    version = row.get("policy_version")
+    if version is not None and _version(version) is None:
+        return None
+    return {"job_id": identity, "submission_id": submission, "expected_policy_version": version}
+
+
+def _job_controls(row: Mapping, execution_enabled: bool) -> list[ComponentView]:
+    status = row.get("status")
+    if row.get("terminal_stop") is True or status not in {"active", "paused"}:
+        return []
+    result = []
+    for suffix, label, variant in _JOB_CONTROLS:
+        if suffix == "pause" and status != "active":
+            continue
+        if suffix == "resume" and (status != "paused" or not execution_enabled):
+            continue
+        if suffix == "stop" and _version(row.get("policy_version")) is None:
+            continue
+        action = f"chrome_job_{suffix}"
+        payload = _job_payload(row, action)
+        if payload:
+            result.append(button(label, action, payload, variant=variant))
+    return result
+
+
+def _observation(row: Mapping, *, wrist: bool = False) -> list[ComponentView]:
+    observation = row.get("observation")
+    if observation is None:
+        return [text("No observation yet.", "caption")]
+    observation = _mapping(observation)
+    kind = _display(observation.get("kind"))
+    finding = _display(observation.get("finding")) or _FINDINGS.get(kind, "No finding recorded.")
+    if wrist and len(finding) > 600:
+        finding = finding[:600] + "…"
+    result = [badge(_OUTCOMES.get(kind, "Unknown outcome")), text(finding)]
+    if wrist:
+        return result
+    complete = observation.get("complete_source_set")
+    pairs = [
+        ("Observed at", _display(observation.get("observed_at"), "Unknown")),
+        ("Observation number", _display(observation.get("sequence"), "Unknown")),
+        ("Source set", "Complete" if complete is True else "Incomplete" if complete is False else "Unknown"),
+    ]
+    reason = _display(observation.get("reason"))
+    if reason:
+        pairs.append(("Reason", reason))
+    result.append(key_value(pairs, title="Latest observation"))
+    return result
+
+
+def _job_summary(row: Mapping) -> list[ComponentView]:
+    result = [badge(_job_status(row)), key_value([
+        ("Schedule", _KINDS.get(_display(row.get("kind")), "Unknown schedule")),
+        ("Expression", _display(row.get("expression"), "Unavailable")),
+        ("Time zone", _display(row.get("timezone"), "Unknown")),
+        ("Next run", _display(row.get("next_run_at"), "No run scheduled")),
+        ("Last run", _display(row.get("last_run_at"), "Never run")),
+        ("Run allowance", _allowance(row)),
+    ])]
+    result.extend(_observation(row))
+    bound = _mapping(row.get("assignment"))
+    if bound:
+        result.append(key_value([
+            ("Ongoing agent", _display(bound.get("name"), "Ongoing agent")),
+            ("Agent status", _status(bound)),
+        ]))
+    for key, variant in (("safe_error", "warning"), ("in_flight_summary", "info")):
+        if _display(row.get(key)):
+            result.append(alert(_display(row[key]), variant))
+    return result
+
+
+def _job_detail(row: Mapping, execution_enabled: bool) -> list[ComponentView]:
+    result = [card(_display(row.get("name"), "Recurring work"), _job_summary(row)),
+              container(_job_controls(row, execution_enabled), direction="row")]
+    bound = _mapping(row.get("assignment"))
+    if _uuid(bound.get("assignment_id")):
+        result.append(_open("View ongoing agent", assignment_id=bound["assignment_id"]))
+    runs = _rows(row.get("runs"), 20)
+    result.append(text("Recent runs", "h3"))
+    for run in runs:
+        result.append(card(_display(run.get("started_at"), "Run"), [
+            badge(_display(run.get("outcome"), "unknown")),
+            text(_display(run.get("summary"), "No summary recorded.")),
+        ]))
+    if not runs:
+        result.append(text("No runs yet. Unchanged observations do not spend the run allowance.", "caption"))
+    result.append(_open_recurring("Back to recurring work"))
+    return result
+
+
+def build_recurring_work_view(
+    state: Mapping[str, object], *, theme: ThemeView | None = None, layout: LayoutView | None = None,
+) -> ChromeViewModel:
+    """Render scheduled jobs with their bound agent's latest monitoring outcome.
+
+    Controls are presentation eligibility only: they need the host's action allowlist
+    and UUID4 submission identities and carry the owner's policy version. Stop is
+    terminal and offered only for a policy job. Unknown allowance is never zero.
+    """
+    state = _mapping(state)
+    layout = layout or LayoutView()
+    mode = _display(state.get("mode"), "list")
+    row = _mapping(state.get("job"))
+    error = _display(state.get("error"))
+    execution_enabled = state.get("execution_enabled") is True
+    if state.get("enabled") is not True:
+        components = [alert("Recurring work is currently turned off.", "info")]
+    elif error:
+        components = [alert(error, "error")]
+    elif mode not in {"list", "detail"}:
+        components = [alert("This recurring work view is unavailable.", "warning")]
+    elif mode == "detail" and not _uuid(row.get("job_id")):
+        components = [alert("This recurring work item is not available.", "warning")]
+    elif layout.mode == "watch":
+        rows = _rows(state.get("jobs"), 3) if mode == "list" else [row]
+        components = []
+        for item in rows:
+            name = _display(item.get("name"), "Recurring work")[:120]
+            components.append(card(name, [
+                badge(_job_status(item)),
+                key_value([("Next run", _display(item.get("next_run_at"), "No run scheduled")),
+                           ("Run allowance", _allowance(item))]),
+                *_observation(item, wrist=True),
+            ]))
+        if not rows:
+            components.append(alert("No recurring work yet.", "info"))
+        components.append(alert("To pause, resume or stop recurring work, continue in AstralDeep on your phone or computer.", "info"))
+    elif mode == "detail":
+        components = _job_detail(row, execution_enabled)
+    else:
+        components = [text("Recurring work runs on its schedule and checks its source. Unchanged observations stay quiet and spend no run allowance.", "caption")]
+        rows = _rows(state.get("jobs"), 50)
+        for item in rows:
+            body = _job_summary(item)
+            if _uuid(item.get("job_id")):
+                body.append(_open_recurring("View recurring work", job_id=item["job_id"]))
+            body.extend(_job_controls(item, execution_enabled))
+            components.append(card(_display(item.get("name"), "Recurring work"), body))
+        if not rows:
+            components.append(alert("No recurring work yet.", "info"))
+        cursor = _display(state.get("next_cursor"))
+        if cursor:
+            components.append(_open_recurring("More recurring work", job_cursor=cursor))
+    if state.get("enabled") is True and not execution_enabled:
+        components.insert(0, alert("Unattended execution is unavailable. Scheduled runs will not start until its prerequisites are restored.", "warning"))
+    if _display(state.get("notice")):
+        components.insert(0, alert(_display(state["notice"]), "info"))
+    return build_view(_SURFACE, _RECURRING_TITLE, components, theme=theme, layout=layout)
+
+
+__all__ = ["build_assignments_view", "build_recurring_work_view"]

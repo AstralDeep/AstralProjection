@@ -134,6 +134,409 @@
       },
       "legacy": "Hosts expose the entry only to clients advertising guidance_notes_v1. Windows redesign remains deferred; unsupported clients receive no private notes frame."
     },
+    "guidance_skills_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/guidance_088/skills_surface.json",
+      "surface_key": "guidance",
+      "client_capability": "guidance_skills_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access. Every request uses the original authenticated human, exact issued session when supplied, current owner and policy; commands require the original write authority, the exact expected revision and a fresh server-rendered command id.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "view": "skills",
+        "modes": [
+          "list",
+          "new",
+          "edit",
+          "delete"
+        ],
+        "list_new_params": [
+          "view",
+          "mode"
+        ],
+        "edit_delete_params": [
+          "view",
+          "mode",
+          "skill_id",
+          "expected_revision"
+        ]
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "optional_payload_identity_fields": [
+          "submission_id",
+          "request_generation",
+          "connection_generation"
+        ],
+        "identity_duplicates": "If present, must exactly match the validated original top-level identity. No other payload metadata is accepted.",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current list; it never resubmits the mutation."
+      },
+      "actions": {
+        "chrome_user_skill_save": [
+          "skill_id",
+          "command_id",
+          "expected_revision",
+          "skill_slug",
+          "skill_enabled",
+          "fields.skill_name",
+          "fields.skill_command",
+          "fields.skill_applies",
+          "fields.skill_instructions"
+        ],
+        "chrome_user_skill_toggle": [
+          "skill_id",
+          "command_id",
+          "expected_revision",
+          "enabled"
+        ],
+        "chrome_user_skill_delete": [
+          "skill_id",
+          "command_id",
+          "expected_revision"
+        ]
+      },
+      "fields": {
+        "skill_name": "literal name, 2 to 60 characters",
+        "skill_command": "empty or ^[a-z][a-z0-9_-]{0,23}$; curated slash-command names stay reserved server-side",
+        "skill_applies": "empty for every chat, or up to 8 comma-separated agent ids",
+        "skill_instructions": "literal standing guidance, at most 4000 characters; present only in the editor form, never in a command payload",
+        "skill_enabled": "\"true\" or \"false\" carried in the save payload exactly as rendered; enabling is a separate exact-revision toggle command"
+      },
+      "bounds": {
+        "skills_per_owner": 20,
+        "applies_to": 8
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "guidance",
+        "request_generation": "the original requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new owner-surface request or guidance command",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept one complete response matching the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated frames. Server rechecks the exact displayed skill revisions after rendering and before delivery.",
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "button",
+          "param_picker"
+        ],
+        "text": "Complete literal text; no Markdown interpretation or truncation. Native forms use the same field names, defaults and exact revision commands.",
+        "delete": "Separate review displays the exact skill and revision. Explicit confirmation deletes; no undo."
+      },
+      "legacy": "Hosts expose the shared skill views only to clients advertising guidance_skills_v1. Clients that do not advertise it keep the existing Deep-rendered My agents & skills surface; Android refuses any guidance frame it has not admitted in full."
+    },
+    "guidance_agents_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/guidance_088/agents_surface.json",
+      "surface_key": "guidance",
+      "client_capability": "guidance_agents_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access. Every request uses the original authenticated human, exact issued session when supplied, current owner and policy; commands require the original write authority, the exact expected revision and a fresh server-rendered command id. Activation selects an immutable definition revision; it grants no scope, registers no transport and starts no task.",
+      "navigation": {
+        "action": "chrome_declarative_view",
+        "modes": [
+          "list",
+          "history",
+          "new",
+          "revise",
+          "clone",
+          "activate",
+          "archive",
+          "delete"
+        ],
+        "list_new_params": [
+          "mode"
+        ],
+        "history_params": [
+          "mode",
+          "agent_id",
+          "before_revision_number?"
+        ],
+        "revise_archive_delete_params": [
+          "mode",
+          "agent_id",
+          "expected_revision"
+        ],
+        "clone_params": [
+          "mode",
+          "agent_id",
+          "revision_id?"
+        ],
+        "activate_params": [
+          "mode",
+          "agent_id",
+          "revision_id",
+          "expected_revision"
+        ]
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "optional_payload_identity_fields": [
+          "submission_id",
+          "request_generation",
+          "connection_generation"
+        ],
+        "identity_duplicates": "If present, must exactly match the validated original top-level identity. No other payload metadata is accepted.",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current list; it never resubmits the mutation."
+      },
+      "actions": {
+        "chrome_declarative_command": [
+          "version",
+          "command",
+          "command_id",
+          "agent_id",
+          "expected_revision?",
+          "revision_id?",
+          "parent_revision_id?",
+          "source_agent_id?",
+          "source_revision_id?",
+          "fields.display_name?",
+          "fields.definition?"
+        ]
+      },
+      "commands": {
+        "create": [
+          "version",
+          "command",
+          "command_id",
+          "agent_id",
+          "revision_id",
+          "fields.display_name",
+          "fields.definition"
+        ],
+        "revise": [
+          "version",
+          "command",
+          "command_id",
+          "agent_id",
+          "expected_revision",
+          "revision_id",
+          "parent_revision_id",
+          "fields.display_name",
+          "fields.definition"
+        ],
+        "clone": [
+          "version",
+          "command",
+          "command_id",
+          "agent_id",
+          "revision_id",
+          "source_agent_id",
+          "source_revision_id",
+          "fields.display_name"
+        ],
+        "activate": [
+          "version",
+          "command",
+          "command_id",
+          "agent_id",
+          "expected_revision",
+          "revision_id"
+        ],
+        "archive": [
+          "version",
+          "command",
+          "command_id",
+          "agent_id",
+          "expected_revision"
+        ],
+        "delete": [
+          "version",
+          "command",
+          "command_id",
+          "agent_id",
+          "expected_revision"
+        ]
+      },
+      "fields": {
+        "display_name": "literal name, 1 to 120 characters",
+        "definition": "JSON text of a versioned declarative definition, at most 65536 UTF-8 bytes canonical; the server validates before storing an immutable revision"
+      },
+      "bounds": {
+        "agents_per_page": 50,
+        "revisions_per_page": 100,
+        "definition_bytes": 65536
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "guidance",
+        "request_generation": "the original requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new owner-surface request or guidance command",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept one complete response matching the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated frames. Server rechecks the exact displayed head state revision and revision ids after rendering and before delivery.",
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "button",
+          "param_picker"
+        ],
+        "text": "Complete literal text; definitions render as literal JSON. Every command carries the exact head state revision and revision ids it was rendered from.",
+        "review": "Activate, archive and delete are separate reviews naming the exact agent and revision; each carries one fresh command id so a retry replays the receipt instead of repeating the mutation."
+      },
+      "legacy": "Hosts expose the shared declarative views only to clients advertising guidance_agents_v1. Executable personal agents (057/058) keep their existing authoring surface; Android refuses any guidance frame it has not admitted in full."
+    },
+    "guidance_selection_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/guidance_088/selection_surface.json",
+      "surface_key": "guidance",
+      "client_capability": "guidance_selection_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access. The selection names exact revisions only; Work acceptance rechecks every head under the original human authority and refuses anything changed, disabled or forgotten since.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "view": "selection",
+        "params": [
+          "view"
+        ]
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "optional_payload_identity_fields": [
+          "submission_id",
+          "request_generation",
+          "connection_generation"
+        ],
+        "identity_duplicates": "If present, must exactly match the validated original top-level identity. No other payload metadata is accepted.",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current list; it never resubmits the mutation."
+      },
+      "actions": {
+        "chrome_turn_selection_set": [
+          "version",
+          "agent",
+          "skills",
+          "notes"
+        ]
+      },
+      "payload": {
+        "version": 1,
+        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
+        "skills": "list of {skill_id, revision}, at most 20, unique",
+        "notes": "list of {note_id, revision}, at most 8, unique",
+        "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
+        "scope": "Applies to the current chat only; the disclosure text is part of the rendered form."
+      },
+      "bounds": {
+        "agents_offered": 20,
+        "skills_offered": 20,
+        "notes_offered": 8
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "guidance",
+        "request_generation": "the original requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new owner-surface request or guidance command",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept one complete response matching the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated frames. Server rechecks the offered heads after rendering and before delivery; a selection naming a revision that is not offered renders no picker.",
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "button",
+          "param_picker"
+        ],
+        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
+      },
+      "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
+    },
     "work_read_088": {
       "version": 1,
       "fixture": "contracts/fixtures/work_088/read_surface.json",
@@ -225,6 +628,442 @@
         "workspace_artifact_actions": false
       },
       "legacy": "Absent capability hides native Work entry. Non-Work frame shapes and behavior are unchanged. Windows receives compatibility only, with its existing layout."
+    },
+    "work_save_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/work_088/save_review.json",
+      "surface_key": "work",
+      "client_capability": "work_save_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access and viewing a result never saves it. The Save result button and the review's approval carry only server-issued bindings; Deep rebuilds the exact public result and destination from its own ledger, re-verifies every digest, revision and destination head under the operation's original session plus the current human caller, and refuses a changed, expired or already-consumed review. A normal submission never implies this approval (FR-005).",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "result",
+          "review"
+        ],
+        "result_review_params": [
+          "mode",
+          "operation_id"
+        ],
+        "review_reachability": "review is rendered only as the host's response to the propose command; it is never a chrome_open destination and its Back button returns to result"
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "optional_payload_identity_fields": [
+          "submission_id",
+          "request_generation",
+          "connection_generation"
+        ],
+        "identity_duplicates": "If present, must exactly match the validated original top-level identity. No other payload metadata is accepted.",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current view; it never resubmits the mutation."
+      },
+      "actions": {
+        "chrome_work_result_save": [
+          "version",
+          "command",
+          "operation_id",
+          "submission_id",
+          "expected_revision",
+          "publication_id?",
+          "conversation_id?",
+          "expected_workspace_revision?",
+          "expected_workspace_publication_id?",
+          "action_id?",
+          "proposal_digest?"
+        ]
+      },
+      "commands": {
+        "propose": [
+          "version",
+          "command",
+          "operation_id",
+          "submission_id",
+          "publication_id",
+          "expected_revision",
+          "conversation_id",
+          "expected_workspace_revision",
+          "expected_workspace_publication_id"
+        ],
+        "save": [
+          "version",
+          "command",
+          "operation_id",
+          "action_id",
+          "submission_id",
+          "expected_revision",
+          "proposal_digest"
+        ]
+      },
+      "state": {
+        "save": "server-issued propose bindings on a result view: submission_id (becomes the proposal's stable action id), publication_id, expected_revision (must equal the displayed operation revision), conversation_id, conversation_title, expected_workspace_revision and expected_workspace_publication_id (null exactly when that revision is 0)",
+        "review": "Deep's review body verbatim: version 1, status review_required, created, revision, proposal {action_id, proposal_digest, publication_id, conversation_id, component_id, base_render_revision, base_publication_id, content_digest, stage_digest, expires_at} and component {component_id, component_type card, title, position, payload}",
+        "approve": "server-issued approval binding {submission_id, expired}; absent when the proposal is not decidable, in which case no Save button renders"
+      },
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "keyvalue",
+          "button"
+        ],
+        "review": "The complete exact component payload is re-rendered verbatim (every passage, caption and source fact); an unknown payload shape makes the whole view unavailable rather than a partial review. Destination and expiry are shown; digests, revisions and heads bind the command and are not explanatory copy.",
+        "bounds": {
+          "payload_utf8_bytes": 16384,
+          "content_items": 16,
+          "keyvalue_items": 8
+        }
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "work",
+        "request_generation": "the original requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new owner-surface request or command",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept one complete response matching the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated frames. Retry after uncertain command delivery opens the current result view; it never resubmits propose or save.",
+      "legacy": "Hosts render the Save result button and the review only for clients advertising work_save_v1; every other client keeps the read-only Work views byte-identical (work_read_088). The wrist never advertises it (workspace_artifact_actions false)."
+    },
+    "connections_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/connections_088/connections_surface.json",
+      "surface_key": "connections",
+      "client_capability": "connections_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access. The host authenticates the owner's current human session and authorizes every listing, issue and revoke; a framework credential is never accepted as the authority that manages framework credentials.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "list",
+          "issued"
+        ],
+        "list_params": [],
+        "issued_reachability": "issued is rendered only as the host's response to a successful issue command; it is never a chrome_open destination, is never re-delivered, and its Back button returns to list"
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current list; it never resubmits issue or revoke."
+      },
+      "actions": {
+        "chrome_connection_issue": [
+          "version"
+        ],
+        "chrome_connection_revoke": [
+          "version",
+          "credential_id",
+          "expected_revision"
+        ]
+      },
+      "secret_disclosure": {
+        "plaintext_field": "never listed, never persisted in navigation or pending state, never carried on any action payload",
+        "views": "exactly one dedicated issued view renders the plaintext exactly once, bound to the record it belongs to",
+        "redelivery": "a re-render, reconnect, replay or navigation return renders the list, which cannot contain the plaintext"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "connections",
+        "request_generation": "the requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "keyvalue",
+          "button",
+          "param_picker"
+        ],
+        "navigation": "only the validated Connections navigation button; key material is inert text"
+      },
+      "watch": {
+        "menu": "not projected; issuing or revoking a key is not a wrist action",
+        "surface": "not delivered",
+        "workspace_artifact_actions": false
+      },
+      "legacy": "Absent capability hides the native Connections entry and the shared menu item; every other surface is byte-identical."
+    },
+    "recurring_work_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/workspace_088/recurring_work_surface.json",
+      "surface_key": "personalization",
+      "client_capability": "recurring_work_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access. Controls require the host's per-row action allowlist, a fresh server-issued submission id and the owner's current policy version; the host validates every command. Stop is terminal: it sets terminal stop, invalidates future claims and stops outstanding episode families without erasing history or charges (FR-014).",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "tab": "schedule",
+        "view": "recurring",
+        "modes": [
+          "list",
+          "detail"
+        ],
+        "list_params": [
+          "tab",
+          "view",
+          "job_cursor?"
+        ],
+        "detail_params": [
+          "tab",
+          "view",
+          "job_id"
+        ],
+        "bound_agent_params": [
+          "tab",
+          "assignment_id"
+        ]
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "optional_payload_identity_fields": [
+          "submission_id",
+          "request_generation",
+          "connection_generation"
+        ],
+        "identity_duplicates": "If present, must exactly match the validated original top-level identity. No other payload metadata is accepted.",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current view; it never resubmits the mutation."
+      },
+      "actions": {
+        "chrome_job_pause": [
+          "job_id",
+          "submission_id",
+          "expected_policy_version"
+        ],
+        "chrome_job_resume": [
+          "job_id",
+          "submission_id",
+          "expected_policy_version"
+        ],
+        "chrome_job_stop": [
+          "job_id",
+          "submission_id",
+          "expected_policy_version"
+        ]
+      },
+      "fields": {
+        "job_id": "canonical lowercase UUID4",
+        "expected_policy_version": "positive integer of the owner's job policy record, or null for a legacy job that has no policy; Stop is offered only when a policy version exists"
+      },
+      "outcomes": [
+        "initial",
+        "unchanged",
+        "changed",
+        "insufficient_evidence"
+      ],
+      "allowance": "{admitted, max}; a null member renders Unknown, never zero or exhausted; a missing allowance is the legacy no-run-limit semantics",
+      "bounds": {
+        "jobs_per_page": 50,
+        "runs": 20,
+        "watch_jobs": 3
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "personalization",
+        "request_generation": "the original requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new owner-surface request or command",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept one complete response matching the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated frames. Server rechecks the displayed policy versions after rendering and before delivery.",
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "keyvalue",
+          "button",
+          "container"
+        ],
+        "text": "Safe host projections only: names, schedule facts, outcome labels and findings; never instruction text, grant ids, consented scopes or tokens. The wrist renders status, next run, allowance and outcome with a handoff and no controls."
+      },
+      "legacy": "Hosts expose the unified recurring-work view only to clients advertising recurring_work_v1; other clients keep the existing Schedule tab and ongoing-agent views. chrome_job_pause/chrome_job_resume payloads here are a superset of the existing {job_id} shape."
+    },
+    "saved_results_088": {
+      "version": 1,
+      "fixture": "contracts/fixtures/workspace_088/saved_results_surface.json",
+      "surface_key": "saved_results",
+      "client_capability": "saved_results_v1",
+      "capability_location": "register_ui.capabilities",
+      "authority": "Presentation capability grants no access. Saved results are receipts of publications the owner already approved exactly; viewing one never proposes, saves or re-publishes anything, and no save action exists on this surface.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "list",
+          "detail"
+        ],
+        "list_params": [
+          "mode",
+          "after?"
+        ],
+        "detail_params": [
+          "mode",
+          "publication_id"
+        ],
+        "existing_destinations": [
+          "load_chat {chat_id}",
+          "chrome_open workspace_timeline {chat_id, page}"
+        ]
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per request, including commands and retries",
+        "connection": "current registered connection only",
+        "optional_payload_identity_fields": [
+          "submission_id",
+          "request_generation",
+          "connection_generation"
+        ],
+        "identity_duplicates": "If present, must exactly match the validated original top-level identity. No other payload metadata is accepted.",
+        "delivery": "Never queue, reconnect-replay, retain form values for retry, or substitute a newer owner/session. Retry after uncertain command delivery opens the current view; it never resubmits the mutation."
+      },
+      "actions": {
+        "load_chat": [
+          "chat_id"
+        ]
+      },
+      "export": "optional host-issued {url, filename}; url must be a root-relative /api/export/ path for the committed render revision and renders the existing authenticated file_download; the builder invents no URL and a client without file IO receives none",
+      "bounds": {
+        "receipts_per_page": 50
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "region": "modal",
+        "mode": "replace",
+        "surface_key": "saved_results",
+        "request_generation": "the original requesting generation",
+        "html": "shared Projection escaped and sanitized rendering"
+      },
+      "retirement": [
+        "new owner-surface request or command",
+        "surface navigation or close",
+        "conversation navigation",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept one complete response matching the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated frames.",
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "card",
+          "keyvalue",
+          "button",
+          "container",
+          "file_download"
+        ],
+        "text": "Receipts only: identities, destination, committed revision, provenance digests and source attribution; never result text, instructions or secrets."
+      },
+      "legacy": "Hosts expose the saved-results surface only to clients advertising saved_results_v1; existing workspace export/share/download paths are unchanged."
     },
     "component_chrome": {
       "version": 1,
@@ -406,6 +1245,1504 @@
       "effect_authorization": "existing_server_bound_review",
       "watch_adaptation": "declared_device_capabilities_with_explicit_handoff",
       "fixture": "contracts/fixtures/workspace_088/welcome.json"
+    },
+    "disposition_matrix_088": {
+      "version": 1,
+      "purpose": "One server-owned table naming, for every feature-088 destination, what each client actually receives (FR-023/FR-024). A destination a client cannot complete is declared here with an explicit disposition; a client never hides a control to simulate parity, and no row adds a primitive type, push type or action to the manifest.",
+      "clients": [
+        "web",
+        "windows",
+        "android",
+        "ios",
+        "macos",
+        "watch",
+        "voice"
+      ],
+      "dispositions": {
+        "supported": "The client receives the complete server-built view with every declared control intact; adaptation drops nothing.",
+        "read_only_handoff": "The client receives the readable content without its controls plus a server-declared continuation; it never renders a partial command form or a partial effect review.",
+        "omitted_by_server": "The host never delivers this destination to this client. No control, URL, token or snapshot is created, and the omission is declared here rather than inferred.",
+        "version_required": "The destination exists but the host withholds it until the client advertises the row contract's client_capability in register_ui.capabilities."
+      },
+      "bases": {
+        "web_render_channel": "Web is the authoritative chrome_render channel; every 088 destination is built and rendered there first (server-owned web-first disposition).",
+        "advertised_capability": "The client's register_ui frame advertises the row contract's client_capability.",
+        "missing_capability": "The client's register_ui frame does not advertise the row contract's client_capability, so the host withholds the destination.",
+        "contract_declared": "A sentence or list in this manifest, named by contract_path, states the disposition.",
+        "shared_chrome_menu": "The control rides the shared chrome_menu model with no capability gate; every client that renders chrome_menu receives it.",
+        "watch_menu_projection": "webrender.chrome.menu_model.project_watch_menu_model does not project this control to the wrist.",
+        "owner_exclusion_T059": "Windows keeps its existing compatible layout; the feature-088 redesign is excluded by the owner's 2026-09-11 decision (T059).",
+        "rote_voice_profile": "backend/rote/capabilities.py gives the voice profile supports_interactivity False, so ComponentAdapter drops every action; a command surface cannot be completed by voice."
+      },
+      "client_profiles": {
+        "web": {
+          "device_type": "browser",
+          "registration_source": "backend/webrender/static/client.js",
+          "advertised_088_capabilities": [
+            "guidance_notes_v1",
+            "guidance_selection_v1"
+          ],
+          "negotiation": "web_render_channel"
+        },
+        "windows": {
+          "device_type": "windows",
+          "registration_source": "windows-client/astral_client/protocol.py",
+          "advertised_088_capabilities": [
+            "work_read_v1"
+          ],
+          "redesign": "excluded_by_owner_T059"
+        },
+        "android": {
+          "device_type": "android",
+          "registration_source": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
+          "advertised_088_capabilities": [
+            "guidance_notes_v1",
+            "work_read_v1"
+          ]
+        },
+        "ios": {
+          "device_type": "ios",
+          "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
+          "advertised_088_capabilities": [
+            "guidance_notes_v1",
+            "work_read_v1"
+          ]
+        },
+        "macos": {
+          "device_type": "macos",
+          "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
+          "advertised_088_capabilities": [
+            "guidance_notes_v1",
+            "work_read_v1"
+          ]
+        },
+        "watch": {
+          "device_type": "watch",
+          "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
+          "advertised_088_capabilities": [
+            "guidance_notes_v1",
+            "work_read_v1"
+          ],
+          "menu_projection": "webrender.chrome.menu_model.project_watch_menu_model"
+        },
+        "voice": {
+          "device_type": "voice",
+          "registration_source": "backend/rote/capabilities.py",
+          "advertised_088_capabilities": [],
+          "note": "a ROTE rendering profile of an already registered client, not a separate registration"
+        }
+      },
+      "capability_family": [
+        "connections_v1",
+        "guidance_agents_v1",
+        "guidance_notes_v1",
+        "guidance_selection_v1",
+        "guidance_skills_v1",
+        "recurring_work_v1",
+        "saved_results_v1",
+        "work_read_v1",
+        "work_save_v1"
+      ],
+      "effect_review_policy": "A row marked effect_review is an authorization step. It is delivered complete or not at all: read_only_handoff is never a valid disposition for one, so no client can execute a review it only partly rendered (FR-023).",
+      "vocabulary": "no new push type, component type, accept_action or client_local_action",
+      "rows": [
+        {
+          "destination": "work_list",
+          "contract": "work_read_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "read_only_handoff",
+              "basis": "owner_exclusion_T059",
+              "handoff": "The existing Recent work dialog renders the same complete read; its 088 layout is unchanged. Windows keeps its existing compatible layout; the feature-088 redesign is excluded by the owner's 2026-09-11 decision (T059)."
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.work_read_088.watch"
+            },
+            "voice": {
+              "disposition": "read_only_handoff",
+              "basis": "rote_voice_profile",
+              "handoff": "Spoken evidence only - the read's navigation buttons are dropped by the voice profile. Open the same Work item on web, phone or desktop to navigate."
+            }
+          },
+          "action": "chrome_open",
+          "params": {
+            "surface": "work",
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "work_detail",
+          "contract": "work_read_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "read_only_handoff",
+              "basis": "owner_exclusion_T059",
+              "handoff": "The existing Recent work dialog renders the same complete read; its 088 layout is unchanged. Windows keeps its existing compatible layout; the feature-088 redesign is excluded by the owner's 2026-09-11 decision (T059)."
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.work_read_088.watch"
+            },
+            "voice": {
+              "disposition": "read_only_handoff",
+              "basis": "rote_voice_profile",
+              "handoff": "Spoken evidence only - the read's navigation buttons are dropped by the voice profile. Open the same Work item on web, phone or desktop to navigate."
+            }
+          },
+          "action": "chrome_open",
+          "params": {
+            "surface": "work",
+            "mode": "detail"
+          },
+          "fixture_state": "detail"
+        },
+        {
+          "destination": "work_result",
+          "contract": "work_read_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "read_only_handoff",
+              "basis": "owner_exclusion_T059",
+              "handoff": "The existing Recent work dialog renders the same complete read; its 088 layout is unchanged. Windows keeps its existing compatible layout; the feature-088 redesign is excluded by the owner's 2026-09-11 decision (T059)."
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.work_read_088.watch"
+            },
+            "voice": {
+              "disposition": "read_only_handoff",
+              "basis": "rote_voice_profile",
+              "handoff": "Spoken evidence only - the read's navigation buttons are dropped by the voice profile. Open the same Work item on web, phone or desktop to navigate."
+            }
+          },
+          "action": "chrome_open",
+          "params": {
+            "surface": "work",
+            "mode": "result"
+          },
+          "fixture_state": "result"
+        },
+        {
+          "destination": "work_result_save",
+          "contract": "work_save_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.work_save_088.legacy"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_work_result_save",
+          "params": {
+            "surface": "work",
+            "mode": "result"
+          },
+          "fixture_state": "result_saveable"
+        },
+        {
+          "destination": "work_save_review",
+          "contract": "work_save_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.work_save_088.legacy"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_work_result_save",
+          "params": {
+            "surface": "work",
+            "mode": "review"
+          },
+          "fixture_state": "review"
+        },
+        {
+          "destination": "guidance_notes_list",
+          "contract": "guidance_notes_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_note_search",
+            "chrome_note_toggle"
+          ],
+          "params": {
+            "surface": "guidance",
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "guidance_notes_new",
+          "contract": "guidance_notes_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_note_save"
+          ],
+          "params": {
+            "surface": "guidance",
+            "mode": "new"
+          },
+          "fixture_state": "new"
+        },
+        {
+          "destination": "guidance_notes_edit",
+          "contract": "guidance_notes_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_note_save",
+            "chrome_note_toggle"
+          ],
+          "params": {
+            "surface": "guidance",
+            "mode": "edit"
+          },
+          "fixture_state": "edit"
+        },
+        {
+          "destination": "guidance_notes_forget",
+          "contract": "guidance_notes_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "advertised_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_note_forget"
+          ],
+          "params": {
+            "surface": "guidance",
+            "mode": "forget"
+          },
+          "fixture_state": "forget"
+        },
+        {
+          "destination": "guidance_skills_list",
+          "contract": "guidance_skills_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_user_skill_toggle"
+          ],
+          "params": {
+            "surface": "guidance",
+            "view": "skills",
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "guidance_skills_new",
+          "contract": "guidance_skills_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_user_skill_save"
+          ],
+          "params": {
+            "surface": "guidance",
+            "view": "skills",
+            "mode": "new"
+          },
+          "fixture_state": "new"
+        },
+        {
+          "destination": "guidance_skills_edit",
+          "contract": "guidance_skills_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_user_skill_save"
+          ],
+          "params": {
+            "surface": "guidance",
+            "view": "skills",
+            "mode": "edit"
+          },
+          "fixture_state": "edit"
+        },
+        {
+          "destination": "guidance_skills_delete",
+          "contract": "guidance_skills_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_user_skill_delete"
+          ],
+          "params": {
+            "surface": "guidance",
+            "view": "skills",
+            "mode": "delete"
+          },
+          "fixture_state": "delete"
+        },
+        {
+          "destination": "guidance_agents_list",
+          "contract": "guidance_agents_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "guidance_agents_history",
+          "contract": "guidance_agents_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "history"
+          },
+          "fixture_state": "history"
+        },
+        {
+          "destination": "guidance_agents_new",
+          "contract": "guidance_agents_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "new"
+          },
+          "fixture_state": "new"
+        },
+        {
+          "destination": "guidance_agents_revise",
+          "contract": "guidance_agents_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "revise"
+          },
+          "fixture_state": "revise"
+        },
+        {
+          "destination": "guidance_agents_clone",
+          "contract": "guidance_agents_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "clone"
+          },
+          "fixture_state": "clone"
+        },
+        {
+          "destination": "guidance_agents_activate",
+          "contract": "guidance_agents_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "activate"
+          },
+          "fixture_state": "activate"
+        },
+        {
+          "destination": "guidance_agents_archive",
+          "contract": "guidance_agents_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "archive"
+          },
+          "fixture_state": "archive"
+        },
+        {
+          "destination": "guidance_agents_delete",
+          "contract": "guidance_agents_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_declarative_view",
+          "commands": [
+            "chrome_declarative_command"
+          ],
+          "params": {
+            "mode": "delete"
+          },
+          "fixture_state": "delete"
+        },
+        {
+          "destination": "guidance_selection_form",
+          "contract": "guidance_selection_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_turn_selection_set"
+          ],
+          "params": {
+            "surface": "guidance",
+            "view": "selection"
+          },
+          "fixture_state": "picker"
+        },
+        {
+          "destination": "recurring_work_list",
+          "contract": "recurring_work_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_job_pause",
+            "chrome_job_resume",
+            "chrome_job_stop"
+          ],
+          "params": {
+            "surface": "personalization",
+            "tab": "schedule",
+            "view": "recurring",
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "recurring_work_detail",
+          "contract": "recurring_work_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "chrome_job_pause",
+            "chrome_job_resume",
+            "chrome_job_stop"
+          ],
+          "params": {
+            "surface": "personalization",
+            "tab": "schedule",
+            "view": "recurring",
+            "mode": "detail"
+          },
+          "fixture_state": "detail"
+        },
+        {
+          "destination": "saved_results_list",
+          "contract": "saved_results_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "params": {
+            "surface": "saved_results",
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "saved_results_detail",
+          "contract": "saved_results_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "commands": [
+            "load_chat"
+          ],
+          "params": {
+            "surface": "saved_results",
+            "mode": "detail"
+          },
+          "fixture_state": "detail"
+        },
+        {
+          "destination": "connections_list",
+          "contract": "connections_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.connections_088.watch.surface"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_open",
+          "params": {
+            "surface": "connections",
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "connections_issue",
+          "contract": "connections_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.connections_088.watch.surface"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_connection_issue",
+          "params": {
+            "surface": "connections",
+            "mode": "issued"
+          },
+          "fixture_state": "issued"
+        },
+        {
+          "destination": "connections_revoke",
+          "contract": "connections_088",
+          "effect_review": true,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "owner_exclusion_T059"
+            },
+            "android": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "ios": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "macos": {
+              "disposition": "version_required",
+              "basis": "missing_capability"
+            },
+            "watch": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.connections_088.watch.surface"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chrome_connection_revoke",
+          "params": {
+            "surface": "connections",
+            "mode": "list"
+          },
+          "fixture_state": "list"
+        },
+        {
+          "destination": "canvas_export",
+          "contract": "chrome_menu",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.component_chrome.dispositions.windows"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "shared_chrome_menu",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.operations"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "shared_chrome_menu",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.operations"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "shared_chrome_menu",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.operations"
+            },
+            "watch": {
+              "disposition": "omitted_by_server",
+              "basis": "watch_menu_projection",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.watch_disposition.disposition"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "operation": "export_canvas"
+        },
+        {
+          "destination": "canvas_share",
+          "contract": "chrome_menu",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.component_chrome.dispositions.windows"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "shared_chrome_menu",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.operations"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "shared_chrome_menu",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.operations"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "shared_chrome_menu",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.operations"
+            },
+            "watch": {
+              "disposition": "omitted_by_server",
+              "basis": "watch_menu_projection",
+              "contract_path": "presentation_contracts.chrome_menu.workspace_action.watch_disposition.disposition"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "operation": "share_canvas"
+        },
+        {
+          "destination": "workspace_start_welcome",
+          "contract": "workspace_088",
+          "effect_review": false,
+          "clients": {
+            "web": {
+              "disposition": "supported",
+              "basis": "web_render_channel"
+            },
+            "windows": {
+              "disposition": "omitted_by_server",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.workspace_088.legacy_layout_targets"
+            },
+            "android": {
+              "disposition": "supported",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.workspace_088.targets"
+            },
+            "ios": {
+              "disposition": "supported",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.workspace_088.targets"
+            },
+            "macos": {
+              "disposition": "supported",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.workspace_088.targets"
+            },
+            "watch": {
+              "disposition": "supported",
+              "basis": "contract_declared",
+              "contract_path": "presentation_contracts.workspace_088.targets"
+            },
+            "voice": {
+              "disposition": "omitted_by_server",
+              "basis": "rote_voice_profile"
+            }
+          },
+          "action": "chat_message"
+        }
+      ]
     }
   },
   "frame_contracts": {
@@ -625,6 +2962,7 @@
     "chrome_author_tasks", "chrome_close",
     "chrome_computer_forget", "chrome_computer_session_pause", "chrome_computer_session_resume",
     "chrome_computer_session_start", "chrome_computer_session_stop",
+    "chrome_connection_issue", "chrome_connection_revoke",
     "chrome_credential_delete", "chrome_credentials_save", "chrome_draft_create",
     "chrome_dreaming_toggle", "chrome_dreaming_trigger", "chrome_job_delete",
     "chrome_job_pause", "chrome_job_resume", "chrome_job_run_now", "chrome_llm_clear",
@@ -638,6 +2976,8 @@
     "chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget",
     "chrome_user_skill_delete", "chrome_user_skill_edit", "chrome_user_skill_save",
     "chrome_user_skill_toggle",
+    "chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set",
+    "chrome_work_result_save", "chrome_job_stop",
     "chrome_visibility_set", "chrome_workspace_timeline_live", "chrome_workspace_timeline_view",
     "combine_components", "component_action", "component_feedback", "component_refine",
     "component_restore", "computer_event", "computer_response", "condense_components",
@@ -654,6 +2994,46 @@
   ],
   "client_local_actions": ["attach_existing", "computer_host_consent"],
   "additive_fields": [
+    {
+      "field": "usage.basis",
+      "shape": {
+        "model_calls": "observed|estimated|uncertain|none",
+        "tool_calls": "observed|estimated|uncertain|none",
+        "tokens": "observed|estimated|uncertain|none",
+        "elapsed_ms": "observed|estimated|uncertain|none",
+        "spend_micro_units": "observed|estimated|uncertain|none"
+      },
+      "carried_on": ["chrome_surface.work.detail.operation.usage"],
+      "scope": "Optional per-dimension charge basis. A dimension may be absent; absent is not \"none\", and \"none\" is not a zero amount. An unrecognized token makes the Work view unavailable rather than rendering an unknown basis as a known one.",
+      "introduced_by": "feature 088 T052",
+      "contract": "work_read_088"
+    },
+    {
+      "field": "usage.currency",
+      "shape": {
+        "currency": "uppercase ISO-like quote code, 3-8 characters"
+      },
+      "carried_on": ["chrome_surface.work.detail.operation.usage"],
+      "scope": "Optional quoted currency for monetary amounts. When absent the owner view continues to say the currency is unavailable; the client never invents or converts one.",
+      "introduced_by": "feature 088 T052",
+      "contract": "work_read_088"
+    },
+    {
+      "field": "measurements",
+      "shape": {
+        "version": 1,
+        "logical_attempts": "non-negative integer (the task)",
+        "physical_claims": "non-negative integer (its recorded runs)",
+        "observed_interval_ms": "non-negative integer or null when unknown",
+        "elapsed_ms": "non-negative integer or null when unknown",
+        "incomplete": "boolean",
+        "cutoff": "boolean"
+      },
+      "carried_on": ["chrome_surface.work.detail"],
+      "scope": "Optional timing read model for one operation. Absent means no measurement is disclosed; no attempt count, interval sum or elapsed union is ever synthesized for an operation whose host supplies none, and null is unknown, never zero.",
+      "introduced_by": "feature 088 T052",
+      "contract": "work_read_088"
+    },
     {
       "field": "voice_origin",
       "shape": {

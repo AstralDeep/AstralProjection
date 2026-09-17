@@ -183,3 +183,90 @@ def test_shared_swift_golden_is_the_actual_builder_and_rote_output():
             view["components"], profile
         )
     assert fixture["menu"] == project_watch_menu_model(menu_model_dict(work_enabled=True))
+
+
+# ── Feature 088 T043: the one closed non-navigation action in the Work vocabulary ──
+
+from rote.work import SAVE_ACTION, validate_work_save_command  # noqa: E402
+
+PROPOSE = {
+    "version": 1, "command": "propose", "operation_id": fixtures.ID,
+    "submission_id": fixtures.SUBMISSION, "publication_id": fixtures.PUBLICATION,
+    "expected_revision": 3, "conversation_id": "chat-1", "expected_workspace_revision": 0,
+    "expected_workspace_publication_id": None,
+}
+SAVE = {
+    "version": 1, "command": "save", "operation_id": fixtures.ID, "action_id": fixtures.SUBMISSION,
+    "submission_id": fixtures.APPROVAL, "expected_revision": 4, "proposal_digest": "c" * 64,
+}
+
+
+def test_save_command_vocabulary_accepts_exactly_the_two_server_bound_steps():
+    validate_work_save_command(PROPOSE)
+    validate_work_save_command({**PROPOSE, "expected_workspace_revision": 2,
+                                "expected_workspace_publication_id": fixtures.OTHER})
+    validate_work_save_command(SAVE)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None, {}, [],
+        {**PROPOSE, "version": 2}, {**PROPOSE, "version": True}, {**PROPOSE, "command": "publish"},
+        {**PROPOSE, "extra": 1}, {k: v for k, v in PROPOSE.items() if k != "publication_id"},
+        {**PROPOSE, "submission_id": fixtures.PUBLICATION}, {**PROPOSE, "expected_revision": 0},
+        {**PROPOSE, "expected_revision": True}, {**PROPOSE, "conversation_id": " padded "},
+        {**PROPOSE, "conversation_id": ""}, {**PROPOSE, "conversation_id": "x" * 513},
+        {**PROPOSE, "expected_workspace_revision": 1},
+        {**PROPOSE, "expected_workspace_publication_id": fixtures.OTHER},
+        {**PROPOSE, "expected_workspace_revision": -1},
+        {**PROPOSE, "operation_id": "00000000-0000-1000-8000-000000000000"},
+        {**SAVE, "proposal_digest": "C" * 64}, {**SAVE, "proposal_digest": "c" * 63},
+        {**SAVE, "action_id": fixtures.APPROVAL}, {**SAVE, "expected_revision": 0},
+        {**SAVE, "publication_id": fixtures.PUBLICATION},
+        {k: v for k, v in SAVE.items() if k != "action_id"},
+        {**SAVE, "command": "approve"},
+    ],
+)
+def test_save_command_vocabulary_refuses_every_other_shape(payload):
+    with pytest.raises(ValueError, match="^work_surface_unavailable$"):
+        validate_work_save_command(payload)
+
+
+def _button(action, payload):
+    return {"type": "button", "label": "x", "action": action, "payload": payload,
+            "variant": "primary", "disabled": False, "local": False}
+
+
+def test_only_the_exact_save_action_joins_the_passive_surface():
+    assert validate_work_components([_button(SAVE_ACTION, PROPOSE)]) == [_button(SAVE_ACTION, PROPOSE)]
+    assert validate_work_components([_button(SAVE_ACTION, SAVE)])
+    for action, payload in [
+        (SAVE_ACTION, {"surface": "work", "params": {"mode": "list"}}),
+        ("chrome_open", PROPOSE),
+        ("chrome_work_result_publish", SAVE),
+        ("chrome_job_stop", {"job_id": fixtures.ID}),
+    ]:
+        with pytest.raises(ValueError, match="^work_surface_unavailable$"):
+            validate_work_components([_button(action, payload)])
+    hidden = _button(SAVE_ACTION, SAVE)
+    hidden["local"] = True
+    with pytest.raises(ValueError):
+        validate_work_components([hidden])
+
+
+@pytest.mark.parametrize("name", ["result_saveable", "review", "review_expired", "review_undecidable"])
+@pytest.mark.parametrize("device", ["watch", "ios", "macos", "android", "browser"])
+def test_save_and_review_frames_are_complete_closed_surfaces(name, device):
+    root = Path(__file__).parents[2]
+    fixture = json.loads(
+        (root / "contracts/fixtures/work_088/save_review.json").read_text(encoding="utf-8"))
+    raw = components(fixture["states"][name])
+    assert raw == fixture["frames"][name]["components"]
+    before = deepcopy(raw)
+    profile = DeviceProfile.from_dict({"device_type": device})
+    assert ComponentAdapter.adapt_work_surface(raw, profile) == raw == before
+    profile.supports_interactivity = False
+    passive = ComponentAdapter.adapt_work_surface(raw, profile)
+    assert all(n.get("type") != "button" for n in fixtures.nodes({"components": passive}))
+    assert "Exact retained evidence" in json.dumps(passive, ensure_ascii=False)

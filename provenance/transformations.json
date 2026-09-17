@@ -385,7 +385,7 @@
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/ProtocolManifestTest.kt",
       "sourceBlob": "12a4d46a3be93ea8784ff65518c69f6ec2b28d17",
       "sourceMode": "100644",
-      "resultSha256": "63e73061275abf5916d122cf8536b56ed5bc78f3435ee03f2c6670c31f66f9d6",
+      "resultSha256": "2517f2a82f3eced5764206f7548a311dd9747a24a389cc3bebd0a2cc412cbc6c",
       "task": "T054/T023",
       "reason": "Repoint the Android protocol drift guard to the standalone Projection contract. Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
@@ -826,7 +826,7 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ManifestDriftTests.swift",
       "sourceBlob": "6e4b7ca9e4d137a231ce706a1dd8237a8b3d04c3",
       "sourceMode": "100644",
-      "resultSha256": "afaddf4c1121fbff91feb42103620e048c2d5386f29ecb9ca200c018cfdbdaa7",
+      "resultSha256": "82c9c68907f5baa1faf64166209982f7d37ece06054cd44df4c772d6bff41002",
       "task": "T055/T040/T023/T037",
       "reason": "Repoint Apple protocol drift checks to Projection and fail closed when the contract is absent. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion."
     },
@@ -961,7 +961,7 @@
       "sourcePath": "backend/webrender/chrome/menu_model.py",
       "sourceBlob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
       "sourceMode": "100644",
-      "resultSha256": "168d2a8c6381ab40917647ee54e806a23c54b41cb0468daed5410605ef4e1904",
+      "resultSha256": "9c554d968510e3bf314ab20cd0f169efd48d32fd3927a06d2e79e9dd33dcf137",
       "task": "T044/T040/T054",
       "reason": "Replace lazy Deep feature-flag imports with explicit host-supplied presentation state. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 committed continuation: Add the host-controlled Work entry and derive the wrist-only Work menu from the same canonical server inventory. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
     },
@@ -1125,14 +1125,14 @@
       "sourceMode": "100644",
       "task": "T008/T054",
       "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition.",
-      "resultSha256": "5a8977f8d823ac870a606a4168f600af82f5e0c9a5326a1e4707d542a86c48de"
+      "resultSha256": "eabe923408ff2d227e904609f209894be34f19ecb626c7842a9f382dd9ae963f"
     },
     {
       "path": "backend/webrender/static/client.js",
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "4a8abfef69263f8d3fe4aef5fa7630fc4d951b8afc9e353afc8fed905b3bd271",
+      "resultSha256": "3e5926e3a39e24ee63a604e38e1e9d19dad0764c9f07eeebbc22a1631ca8280c",
       "task": "T052/T063/T029/T008/T009",
       "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior. Feature 088 review: Restore floating chat to the rail, resize charts with their canvas, and create inert visual canvas downloads bound to authorization, owner, chat and committed render revision. Feature 088 live review: clear New chat drafts, staged attachments, autocomplete and one-shot background arming; cancel only unsent chat queues and expiry callbacks; ignore upload completions for removed staging entries while retaining same-owner reconnect and accepted background tasks. Keep conversation toggle expansion and Show/Hide labels synchronized with actual layout classes after breakpoint transitions, transcript clearing and New chat. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 committed continuation: Correlate Work reads and rendered replies, isolate them from conversation mutation fields, and retire stale output on navigation, timeout or authentication changes. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
     },
@@ -1141,7 +1141,7 @@
       "sourcePath": "backend/webrender/templates/shell.html",
       "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
       "sourceMode": "100644",
-      "resultSha256": "4d4cc725fd7cb51cfec142dd79bf970412b1219510d60944e4aeb12c69afc6a6",
+      "resultSha256": "91892536e31656595332bf8d1bcb5d100054f2d18e977303d0b3b0c0e581c69f",
       "task": "T042/T008/T012",
       "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer. Feature 088 T012: register the public-only offline fallback and install manifest without caching authenticated documents or work. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
@@ -1150,7 +1150,7 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "62d152214ae00cc631d6de5b71be7a46ad1c8cfcd20302de8cb75db1878158c0",
+      "resultSha256": "c6e8b934057ea5dd3626d31f681a67af9fd873d083d02a7be075baa222e76592",
       "task": "T013/T015/T040/T023/T054",
       "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences. Feature 088 committed continuation: Bind the shared Work fixture, capability, closed read navigation, exact response correlation and lifecycle retirement contract across clients. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
     },
@@ -1528,7 +1528,7 @@
       "sourcePath": "windows-client/tests/test_protocol_manifest.py",
       "sourceBlob": "00114c40d6e0840afb3dc4d2996496b1b45fdd7f",
       "sourceMode": "100644",
-      "resultSha256": "1dc1c22d83a4725f0a5e9c7f9904ba0cf091231e26b93d569afd893e9d885eea",
+      "resultSha256": "c2b543cd77e08b1d657bdc49bae2f726996672bb0a053b45c90880242e0ab3ff",
       "task": "T053/T023",
       "reason": "Repoint the Windows protocol drift guard to the standalone Projection contract. Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions."
     },
@@ -1662,7 +1662,7 @@
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action\u2019s line-oriented script execution, preserving the exact device/report arguments and gates."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action’s line-oriented script execution, preserving the exact device/report arguments and gates."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

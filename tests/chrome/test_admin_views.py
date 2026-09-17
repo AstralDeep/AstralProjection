@@ -4,9 +4,12 @@ import json
 from pathlib import Path
 
 from astralprojection.chrome import render_html
+import pytest
+
 from astralprojection.chrome.admin import (
     build_admin_view,
     build_audit_view,
+    build_diagnostics_view,
     build_feedback_view,
     build_onboarding_view,
 )
@@ -180,3 +183,80 @@ def test_admin_shell_is_role_gated_and_selects_only_one_tab() -> None:
     html = render_html(tutorial)
     assert "Tutorial admin" in html
     assert "No tutorial steps" in html
+
+
+def test_diagnostics_renders_only_bounded_samples_and_offers_no_action() -> None:
+    view = build_diagnostics_view(
+        {
+            "metrics": [
+                {"name": "work_admission_active", "value": 3, "labels": {"phase": "running"}},
+                {"name": "work_admission_active", "value": 0, "labels": {"phase": "queued"}},
+                {"name": "voice_sessions", "value": 1.5, "labels": {}},
+            ]
+        }
+    )
+    html = render_html(view)
+    assert view.surface == "admin_tools" and view.title == "Runtime diagnostics"
+    assert "work_admission_active" in html and "phase=running" in html
+    assert "no labels" in html and "<dd>0</dd>" in html and "1.5" in html
+    assert _actions(view) == set()
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        {"name": "Work_Admission", "value": 1, "labels": {}},
+        {"name": "work admission", "value": 1, "labels": {}},
+        {"name": "work_admission", "value": True, "labels": {}},
+        {"name": "work_admission", "value": "3", "labels": {}},
+        {"name": "work_admission", "value": float("inf"), "labels": {}},
+        {"name": "work_admission", "value": float("nan"), "labels": {}},
+        {"name": "work_admission", "value": 1, "labels": {"phase": "https://leak.invalid/x"}},
+        {"name": "work_admission", "value": 1, "labels": {"Phase": "running"}},
+        {"name": "work_admission", "value": 1, "labels": {"phase": 3}},
+        {"name": "work_admission", "value": 1, "labels": "running"},
+        {"name": "work_admission", "value": 1, "labels": {}, "owner_id": "leak"},
+        {"name": "work_admission", "labels": {}},
+        "work_admission",
+    ],
+)
+def test_diagnostics_drops_every_sample_outside_the_collectors_own_bounds(sample) -> None:
+    view = build_diagnostics_view({"metrics": [sample]})
+    assert "No runtime samples" in render_html(view)
+    assert "leak" not in json.dumps(view.to_dict())
+
+
+def test_diagnostics_accepts_a_bare_sequence_and_refuses_an_unknown_snapshot_shape() -> None:
+    samples = [{"name": "work_admission", "value": 2, "labels": {}}]
+    assert "work_admission" in render_html(build_diagnostics_view(samples))
+    for snapshot in ({}, {"samples": samples}, "work_admission", None, {"metrics": {"a": 1}}):
+        assert "No runtime samples" in render_html(build_diagnostics_view(snapshot))
+
+
+def test_diagnostics_empty_denied_and_error_states_are_distinct() -> None:
+    assert "No runtime samples" in render_html(build_diagnostics_view(()))
+    denied = build_diagnostics_view({"metrics": [{"name": "m_a", "value": 1, "labels": {}}]},
+                                    denied=True)
+    assert "Admin role required" in render_html(denied) and "m_a" not in json.dumps(denied.to_dict())
+    failed = build_diagnostics_view((), error="Diagnostics are unavailable.")
+    assert "Diagnostics are unavailable." in render_html(failed)
+    assert _actions(denied) == _actions(failed) == set()
+
+
+def test_diagnostics_groups_and_orders_samples_deterministically() -> None:
+    samples = [
+        {"name": "b_metric", "value": 1, "labels": {"phase": "b"}},
+        {"name": "a_metric", "value": 2, "labels": {"phase": "b"}},
+        {"name": "a_metric", "value": 3, "labels": {"phase": "a"}},
+    ]
+    view = build_diagnostics_view({"metrics": samples})
+    cards = [item.to_dict() for item in view.components if item.to_dict()["type"] == "card"]
+    assert [card["title"] for card in cards] == ["a_metric", "b_metric"]
+    assert [row["label"] for row in cards[0]["content"][0]["items"]] == ["phase=a", "phase=b"]
+
+
+def test_diagnostics_carries_theme_and_layout() -> None:
+    view = build_diagnostics_view(
+        (), theme=ThemeView("midnight"), layout=LayoutView("compact")
+    )
+    assert view.theme.name == "midnight" and view.layout.mode == "compact"

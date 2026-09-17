@@ -1,0 +1,459 @@
+{
+  "version": 1,
+  "description": "Synthetic framework-credential fixture; generated from the exact shared builders. The key material is invented and belongs to no deployment.",
+  "states": {
+    "list": {
+      "rows": [
+        {
+          "credential_id": "6a0f2c5d-4a1e-4c6b-9d3f-1b2c3d4e5f60",
+          "revision": 2,
+          "name": "Laptop scripts",
+          "prefix": "afk_9f3c",
+          "scopes": [
+            "operations.read",
+            "operations.submit"
+          ],
+          "created_at": "2026-09-12T12:00:00+00:00",
+          "expires_at": "2026-12-12T12:00:00+00:00",
+          "consumed_admissions": 7,
+          "max_admissions": 100,
+          "revoked": false,
+          "expired": false
+        },
+        {
+          "credential_id": "7b1f3d6e-5b2f-4d7c-8e4a-2c3d4e5f6071",
+          "revision": 5,
+          "name": "Retired runner",
+          "prefix": "afk_1a2b",
+          "scopes": [
+            "operations.read"
+          ],
+          "created_at": "2026-09-12T12:00:00+00:00",
+          "expires_at": null,
+          "consumed_admissions": 100,
+          "max_admissions": 100,
+          "revoked": true,
+          "expired": false
+        },
+        {
+          "credential_id": "8c2f4e7f-6c3f-4e8d-9f5b-3d4e5f607182",
+          "revision": 1,
+          "name": "Old notebook",
+          "prefix": "afk_c3d4",
+          "scopes": [
+            "operations.read"
+          ],
+          "created_at": "2026-09-12T12:00:00+00:00",
+          "expires_at": "2026-12-12T12:00:00+00:00",
+          "consumed_admissions": 0,
+          "max_admissions": 100,
+          "revoked": false,
+          "expired": true
+        }
+      ],
+      "form_state": {
+        "scope_options": [
+          "operations.control",
+          "operations.read",
+          "operations.submit"
+        ],
+        "defaults": {
+          "name": "",
+          "scopes": [
+            "operations.read"
+          ],
+          "expires_in_seconds": 2592000,
+          "max_admissions": 100
+        },
+        "error": null
+      }
+    },
+    "empty": {
+      "rows": [],
+      "form_state": {
+        "scope_options": [
+          "operations.control",
+          "operations.read",
+          "operations.submit"
+        ],
+        "defaults": {
+          "name": "",
+          "scopes": [
+            "operations.read"
+          ],
+          "expires_in_seconds": 2592000,
+          "max_admissions": 100
+        },
+        "error": null
+      }
+    },
+    "issued": {
+      "secret": "afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",
+      "view": {
+        "credential_id": "9d3f5f80-7d4f-4f9e-8a6c-4e5f60718293",
+        "revision": 1,
+        "name": "New key",
+        "prefix": "afk_5e6f",
+        "scopes": [
+          "operations.read",
+          "operations.submit"
+        ],
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "expires_at": "2026-12-12T12:00:00+00:00",
+        "consumed_admissions": 0,
+        "max_admissions": 100,
+        "revoked": false,
+        "expired": false
+      }
+    }
+  },
+  "frames": {
+    "list": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "connections",
+      "title": "Connections",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Keys let your own tools reach your work. Each key carries only the permissions you grant it and can be revoked at any time.",
+          "variant": "body"
+        },
+        {
+          "type": "param_picker",
+          "title": "Issue a new key",
+          "description": "The key is shown once, immediately after it is issued. Keep it somewhere safe; it cannot be shown again.",
+          "fields": [
+            {
+              "name": "name",
+              "label": "Name this key",
+              "kind": "text",
+              "default": ""
+            },
+            {
+              "name": "scopes",
+              "label": "What it may do",
+              "kind": "checklist",
+              "default": [
+                "operations.read"
+              ],
+              "options": [
+                "operations.control",
+                "operations.read",
+                "operations.submit"
+              ]
+            },
+            {
+              "name": "expires_in_seconds",
+              "label": "Expires in (seconds)",
+              "kind": "number",
+              "default": 2592000
+            },
+            {
+              "name": "max_admissions",
+              "label": "Maximum admissions",
+              "kind": "number",
+              "default": 100
+            }
+          ],
+          "submit_label": "Issue key",
+          "submit_action": "chrome_connection_issue",
+          "submit_payload": {
+            "version": 1
+          }
+        },
+        {
+          "type": "card",
+          "title": "Laptop scripts",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Active",
+              "variant": "success"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Key prefix",
+                  "value": "afk_9f3c"
+                },
+                {
+                  "label": "Scopes",
+                  "value": "operations.read, operations.submit"
+                },
+                {
+                  "label": "Created",
+                  "value": "2026-09-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Expires",
+                  "value": "2026-12-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Admissions used",
+                  "value": "7 of 100"
+                }
+              ]
+            },
+            {
+              "type": "button",
+              "label": "Revoke this key",
+              "action": "chrome_connection_revoke",
+              "payload": {
+                "version": 1,
+                "credential_id": "6a0f2c5d-4a1e-4c6b-9d3f-1b2c3d4e5f60",
+                "expected_revision": 2
+              },
+              "variant": "danger",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "card",
+          "title": "Retired runner",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Revoked",
+              "variant": "error"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Key prefix",
+                  "value": "afk_1a2b"
+                },
+                {
+                  "label": "Scopes",
+                  "value": "operations.read"
+                },
+                {
+                  "label": "Created",
+                  "value": "2026-09-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Expires",
+                  "value": "No expiry recorded"
+                },
+                {
+                  "label": "Admissions used",
+                  "value": "100 of 100"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "content": "This key can no longer be used.",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "card",
+          "title": "Old notebook",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Expired",
+              "variant": "warning"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Key prefix",
+                  "value": "afk_c3d4"
+                },
+                {
+                  "label": "Scopes",
+                  "value": "operations.read"
+                },
+                {
+                  "label": "Created",
+                  "value": "2026-09-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Expires",
+                  "value": "2026-12-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Admissions used",
+                  "value": "0 of 100"
+                }
+              ]
+            },
+            {
+              "type": "text",
+              "content": "This key can no longer be used.",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "0f5a0a4e-3b3b-4a2f-9d8e-2a6a2c9a7b41"
+    },
+    "empty": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "connections",
+      "title": "Connections",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Keys let your own tools reach your work. Each key carries only the permissions you grant it and can be revoked at any time.",
+          "variant": "body"
+        },
+        {
+          "type": "param_picker",
+          "title": "Issue a new key",
+          "description": "The key is shown once, immediately after it is issued. Keep it somewhere safe; it cannot be shown again.",
+          "fields": [
+            {
+              "name": "name",
+              "label": "Name this key",
+              "kind": "text",
+              "default": ""
+            },
+            {
+              "name": "scopes",
+              "label": "What it may do",
+              "kind": "checklist",
+              "default": [
+                "operations.read"
+              ],
+              "options": [
+                "operations.control",
+                "operations.read",
+                "operations.submit"
+              ]
+            },
+            {
+              "name": "expires_in_seconds",
+              "label": "Expires in (seconds)",
+              "kind": "number",
+              "default": 2592000
+            },
+            {
+              "name": "max_admissions",
+              "label": "Maximum admissions",
+              "kind": "number",
+              "default": 100
+            }
+          ],
+          "submit_label": "Issue key",
+          "submit_action": "chrome_connection_issue",
+          "submit_payload": {
+            "version": 1
+          }
+        },
+        {
+          "type": "alert",
+          "message": "You have not issued any keys yet.",
+          "variant": "info"
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "0f5a0a4e-3b3b-4a2f-9d8e-2a6a2c9a7b41"
+    },
+    "issued": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "connections",
+      "title": "Connections",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "This key is shown once, right now. Copy it before you leave this view -- it cannot be shown again, and a lost key must be revoked and reissued.",
+          "variant": "warning"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Key",
+              "value": "afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c"
+            }
+          ],
+          "title": "Your new key"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Name",
+              "value": "New key"
+            },
+            {
+              "label": "Key prefix",
+              "value": "afk_5e6f"
+            },
+            {
+              "label": "Scopes",
+              "value": "operations.read, operations.submit"
+            },
+            {
+              "label": "Expires",
+              "value": "2026-12-12T12:00:00+00:00"
+            },
+            {
+              "label": "Maximum admissions",
+              "value": "100"
+            }
+          ],
+          "title": "What this key can do"
+        },
+        {
+          "type": "button",
+          "label": "Back to Connections",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "connections",
+            "params": {}
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "0f5a0a4e-3b3b-4a2f-9d8e-2a6a2c9a7b41"
+    }
+  },
+  "web_frames": {
+    "list": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "connections",
+      "mode": "replace",
+      "request_generation": "0f5a0a4e-3b3b-4a2f-9d8e-2a6a2c9a7b41",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"connections\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Connections\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Connections</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"connections\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-connections-title\"><h2 id=\"chrome-connections-title\">Connections</h2><p data-text-variant=\"body\">Keys let your own tools reach your work. Each key carries only the permissions you grant it and can be revoked at any time.</p><div data-ui-form=\"true\" role=\"form\"><h3>Issue a new key</h3><p>The key is shown once, immediately after it is issued. Keep it somewhere safe; it cannot be shown again.</p><label>Name this key<input type=\"text\" name=\"name\" value=\"\" aria-label=\"Name this key\"></label><label>What it may do<select name=\"scopes\" multiple aria-label=\"What it may do\"><option value=\"operations.control\">operations.control</option><option value=\"operations.read\" selected>operations.read</option><option value=\"operations.submit\">operations.submit</option></select></label><label>Expires in (seconds)<input type=\"number\" name=\"expires_in_seconds\" value=\"2592000\" aria-label=\"Expires in (seconds)\"></label><label>Maximum admissions<input type=\"number\" name=\"max_admissions\" value=\"100\" aria-label=\"Maximum admissions\"></label><button type=\"button\" data-ui-action=\"chrome_connection_issue\" data-ui-payload=\"{&quot;version&quot;:1}\" data-ui-collect=\"true\">Issue key</button></div><section aria-label=\"Laptop scripts\"><h3>Laptop scripts</h3><span role=\"status\" data-badge-variant=\"success\">Active</span><section><dl><div><dt>Key prefix</dt><dd>afk_9f3c</dd></div><div><dt>Scopes</dt><dd>operations.read, operations.submit</dd></div><div><dt>Created</dt><dd>2026-09-12T12:00:00+00:00</dd></div><div><dt>Expires</dt><dd>2026-12-12T12:00:00+00:00</dd></div><div><dt>Admissions used</dt><dd>7 of 100</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_connection_revoke\" data-ui-payload=\"{&quot;credential_id&quot;:&quot;6a0f2c5d-4a1e-4c6b-9d3f-1b2c3d4e5f60&quot;,&quot;expected_revision&quot;:2,&quot;version&quot;:1}\">Revoke this key</button></section><section aria-label=\"Retired runner\"><h3>Retired runner</h3><span role=\"status\" data-badge-variant=\"error\">Revoked</span><section><dl><div><dt>Key prefix</dt><dd>afk_1a2b</dd></div><div><dt>Scopes</dt><dd>operations.read</dd></div><div><dt>Created</dt><dd>2026-09-12T12:00:00+00:00</dd></div><div><dt>Expires</dt><dd>No expiry recorded</dd></div><div><dt>Admissions used</dt><dd>100 of 100</dd></div></dl></section><small data-text-variant=\"caption\">This key can no longer be used.</small></section><section aria-label=\"Old notebook\"><h3>Old notebook</h3><span role=\"status\" data-badge-variant=\"warning\">Expired</span><section><dl><div><dt>Key prefix</dt><dd>afk_c3d4</dd></div><div><dt>Scopes</dt><dd>operations.read</dd></div><div><dt>Created</dt><dd>2026-09-12T12:00:00+00:00</dd></div><div><dt>Expires</dt><dd>2026-12-12T12:00:00+00:00</dd></div><div><dt>Admissions used</dt><dd>0 of 100</dd></div></dl></section><small data-text-variant=\"caption\">This key can no longer be used.</small></section></section></div></div></div>"
+    },
+    "empty": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "connections",
+      "mode": "replace",
+      "request_generation": "0f5a0a4e-3b3b-4a2f-9d8e-2a6a2c9a7b41",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"connections\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Connections\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Connections</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"connections\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-connections-title\"><h2 id=\"chrome-connections-title\">Connections</h2><p data-text-variant=\"body\">Keys let your own tools reach your work. Each key carries only the permissions you grant it and can be revoked at any time.</p><div data-ui-form=\"true\" role=\"form\"><h3>Issue a new key</h3><p>The key is shown once, immediately after it is issued. Keep it somewhere safe; it cannot be shown again.</p><label>Name this key<input type=\"text\" name=\"name\" value=\"\" aria-label=\"Name this key\"></label><label>What it may do<select name=\"scopes\" multiple aria-label=\"What it may do\"><option value=\"operations.control\">operations.control</option><option value=\"operations.read\" selected>operations.read</option><option value=\"operations.submit\">operations.submit</option></select></label><label>Expires in (seconds)<input type=\"number\" name=\"expires_in_seconds\" value=\"2592000\" aria-label=\"Expires in (seconds)\"></label><label>Maximum admissions<input type=\"number\" name=\"max_admissions\" value=\"100\" aria-label=\"Maximum admissions\"></label><button type=\"button\" data-ui-action=\"chrome_connection_issue\" data-ui-payload=\"{&quot;version&quot;:1}\" data-ui-collect=\"true\">Issue key</button></div><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">You have not issued any keys yet.</div></section></div></div></div>"
+    },
+    "issued": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "connections",
+      "mode": "replace",
+      "request_generation": "0f5a0a4e-3b3b-4a2f-9d8e-2a6a2c9a7b41",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"connections\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Connections\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Connections</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"connections\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-connections-title\"><h2 id=\"chrome-connections-title\">Connections</h2><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">This key is shown once, right now. Copy it before you leave this view -- it cannot be shown again, and a lost key must be revoked and reissued.</div><section><h3>Your new key</h3><dl><div><dt>Key</dt><dd>afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c</dd></div></dl></section><section><h3>What this key can do</h3><dl><div><dt>Name</dt><dd>New key</dd></div><div><dt>Key prefix</dt><dd>afk_5e6f</dd></div><div><dt>Scopes</dt><dd>operations.read, operations.submit</dd></div><div><dt>Expires</dt><dd>2026-12-12T12:00:00+00:00</dd></div><div><dt>Maximum admissions</dt><dd>100</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{},&quot;surface&quot;:&quot;connections&quot;}\">Back to Connections</button></section></div></div></div>"
+    }
+  }
+}
