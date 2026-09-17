@@ -1,0 +1,26 @@
+# Gitleaks configuration — feature 088 (connections surface test fixtures).
+#
+# Extends the FULL default ruleset (nothing disabled). The allowlist below
+# excuses ONLY synthetic test fixtures — the deterministic "afk_" framework
+# credential secret round-tripped through the connections chrome surface tests
+# and its committed contract fixture. These are not real credentials; the
+# server never issues this value and no live system accepts it.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Verified synthetic test fixtures — not credentials"
+paths = [
+  # Chrome/surface test suites (fake issued-secret fixtures)
+  '''tests/.*''',
+  # Committed contract fixtures consumed by those tests
+  '''contracts/fixtures/.*''',
+]
+regexes = [
+  # The exact synthetic framework-credential secret used by the feature 088
+  # connections surface tests (contracts/fixtures/connections_088 +
+  # tests/chrome/test_connections.py). Anchored so nearby credential-like
+  # values stay subject to the default rule set.
+  '''^afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c$''',
+]
