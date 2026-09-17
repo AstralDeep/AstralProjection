@@ -619,7 +619,10 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         assert hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected, relative
 
     project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    assert 'dependencies = ["astralprims==0.3.0"]' in project
+    # Feature 089 added six primitive types; the exact-pin rule this test
+    # protects is that there is exactly ONE runtime dependency and it is
+    # pinned to an exact version, not that the version never moves.
+    assert 'dependencies = ["astralprims==0.4.0"]' in project
     apple = (ROOT / "apple-clients" / "AstralCore" / "Package.swift").read_text(
         encoding="utf-8"
     )
