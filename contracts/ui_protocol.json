@@ -480,7 +480,7 @@
       },
       "payload": {
         "version": 1,
-        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
+        "agent": "null or {agent_id, revision_id} \u2014 one active declarative agent revision",
         "skills": "list of {skill_id, revision}, at most 20, unique",
         "notes": "list of {note_id, revision}, at most 8, unique",
         "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
@@ -533,7 +533,7 @@
           "button",
           "param_picker"
         ],
-        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
+        "text": "Notes appear only as category, revision and enabled state \u2014 never their value. Skills appear only as name, /command, revision and enabled state \u2014 never their instructions."
       },
       "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
     },
@@ -1142,9 +1142,21 @@
       "unknown_kind": "ignore_control",
       "invalid_workspace_action": "ignore_control",
       "workspace_action": {
-        "exact_fields": ["key", "kind", "label", "icon", "operation", "context"],
-        "operations": ["export_canvas", "share_canvas"],
-        "contexts": ["live_canvas"],
+        "exact_fields": [
+          "key",
+          "kind",
+          "label",
+          "icon",
+          "operation",
+          "context"
+        ],
+        "operations": [
+          "export_canvas",
+          "share_canvas"
+        ],
+        "contexts": [
+          "live_canvas"
+        ],
         "live_canvas": "Outside timeline with a mounted dynamic renderer and the matching server canvas capability; no additional busy or positive-revision visibility predicate.",
         "execution": "Descriptor presence is not authorization. Capture and recheck the owner, chat and current canvas revision as applicable around the existing authenticated operation. Never execute an arbitrary descriptor URL, surface or payload.",
         "watch_disposition": {
@@ -1230,7 +1242,11 @@
       "theme_source": "server_semantic_palette",
       "font_source": "contracts/assets/fonts",
       "chart_renderer": {
-        "targets": ["android", "ios", "macos"],
+        "targets": [
+          "android",
+          "ios",
+          "macos"
+        ],
         "template": "contracts/assets/charts/chart.html",
         "vendor": "backend/webrender/static/vendor/plotly.min.js",
         "generator": "scripts/build_native_chart.py",
@@ -2775,43 +2791,249 @@
     "voice_065": {
       "schema_version": "1",
       "required_server_pushes": {
-        "composer_state": ["type", "schema_version", "revision", "connection_generation", "voice"],
-        "voice_control_binding": ["type", "schema_version", "device_id", "connection_generation", "binding_id", "binding", "expires_at"],
-        "voice_session_state": ["type", "schema_version", "connection_generation", "session_id", "generation", "media_grant_revision", "state", "reason", "visible_chat_id", "chat_context_revision", "applied_chat_context_revision", "chat_context_synced", "speech_muted", "microphone_enabled", "foreground_active", "occurred_at"],
-        "voice_turn_state": ["type", "schema_version", "connection_generation", "session_id", "generation", "media_grant_revision", "turn_id", "client_turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "sequence", "state", "foreground", "detected_language", "spoken_output_policy", "output_reason", "sensitive_result_pending", "occurred_at"],
-        "voice_transcript": ["type", "schema_version", "session_id", "generation", "media_grant_revision", "turn_id", "client_turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "source_participant_identity", "sequence", "final", "detected_language", "text"],
-        "user_message_acked.voice": ["type", "schema_version", "connection_generation", "voice_turn_id", "submission_id", "request_generation", "chat_id", "message_id"],
-        "voice_submission_rejected": ["type", "schema_version", "connection_generation", "session_id", "generation", "media_grant_revision", "turn_id", "client_turn_id", "submission_id", "request_generation", "chat_id", "reason", "retry_policy", "occurred_at"],
-        "voice_announcement_media.livekit": ["type", "schema_version", "session_id", "generation", "media_grant_revision", "worker_identity", "announcement_id", "announcement_sequence", "turn_id", "kind", "quantum_role", "quantum_index", "duration_samples", "sample_rate_hz", "transport", "track_sid", "track_name"],
-        "voice_announcement_media.watch": ["type", "schema_version", "session_id", "generation", "media_grant_revision", "worker_identity", "announcement_id", "announcement_sequence", "turn_id", "kind", "quantum_role", "quantum_index", "duration_samples", "sample_rate_hz", "transport", "first_media_sequence", "last_media_sequence"]
+        "composer_state": [
+          "type",
+          "schema_version",
+          "revision",
+          "connection_generation",
+          "voice"
+        ],
+        "voice_control_binding": [
+          "type",
+          "schema_version",
+          "device_id",
+          "connection_generation",
+          "binding_id",
+          "binding",
+          "expires_at"
+        ],
+        "voice_session_state": [
+          "type",
+          "schema_version",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "media_grant_revision",
+          "state",
+          "reason",
+          "visible_chat_id",
+          "chat_context_revision",
+          "applied_chat_context_revision",
+          "chat_context_synced",
+          "speech_muted",
+          "microphone_enabled",
+          "foreground_active",
+          "occurred_at"
+        ],
+        "voice_turn_state": [
+          "type",
+          "schema_version",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "media_grant_revision",
+          "turn_id",
+          "client_turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "chat_context_revision",
+          "sequence",
+          "state",
+          "foreground",
+          "detected_language",
+          "spoken_output_policy",
+          "output_reason",
+          "sensitive_result_pending",
+          "occurred_at"
+        ],
+        "voice_transcript": [
+          "type",
+          "schema_version",
+          "session_id",
+          "generation",
+          "media_grant_revision",
+          "turn_id",
+          "client_turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "chat_context_revision",
+          "source_participant_identity",
+          "sequence",
+          "final",
+          "detected_language",
+          "text"
+        ],
+        "user_message_acked.voice": [
+          "type",
+          "schema_version",
+          "connection_generation",
+          "voice_turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "message_id"
+        ],
+        "voice_submission_rejected": [
+          "type",
+          "schema_version",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "media_grant_revision",
+          "turn_id",
+          "client_turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "reason",
+          "retry_policy",
+          "occurred_at"
+        ],
+        "voice_announcement_media.livekit": [
+          "type",
+          "schema_version",
+          "session_id",
+          "generation",
+          "media_grant_revision",
+          "worker_identity",
+          "announcement_id",
+          "announcement_sequence",
+          "turn_id",
+          "kind",
+          "quantum_role",
+          "quantum_index",
+          "duration_samples",
+          "sample_rate_hz",
+          "transport",
+          "track_sid",
+          "track_name"
+        ],
+        "voice_announcement_media.watch": [
+          "type",
+          "schema_version",
+          "session_id",
+          "generation",
+          "media_grant_revision",
+          "worker_identity",
+          "announcement_id",
+          "announcement_sequence",
+          "turn_id",
+          "kind",
+          "quantum_role",
+          "quantum_index",
+          "duration_samples",
+          "sample_rate_hz",
+          "transport",
+          "first_media_sequence",
+          "last_media_sequence"
+        ]
       },
-      "conditional_final_transcript_fields": ["text_digest_sha256", "transcript_proof", "proof_expires_at"],
-      "conditional_result_fields": ["result_reserved_samples_after"],
+      "conditional_final_transcript_fields": [
+        "text_digest_sha256",
+        "transcript_proof",
+        "proof_expires_at"
+      ],
+      "conditional_result_fields": [
+        "result_reserved_samples_after"
+      ],
       "optional_server_push_fields": {
         "voice_turn_state": {
-          "speech_outcome": ["source_finished", "failed", "suppressed"]
+          "speech_outcome": [
+            "source_finished",
+            "failed",
+            "suppressed"
+          ]
         }
       },
       "client_frames": {
-        "voice_playout_event": ["type", "schema_version", "device_id", "connection_generation", "session_id", "generation", "media_grant_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "quantum_role", "quantum_index", "phase", "client_sequence", "observed_at"]
+        "voice_playout_event": [
+          "type",
+          "schema_version",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "media_grant_revision",
+          "announcement_id",
+          "announcement_sequence",
+          "turn_id",
+          "kind",
+          "quantum_role",
+          "quantum_index",
+          "phase",
+          "client_sequence",
+          "observed_at"
+        ]
       },
       "correlated_chat_creation": {
         "client_new_chat": {
           "type": "ui_event",
           "action": "new_chat",
-          "exact_fields": ["type", "action", "schema_version", "connection_generation", "submission_id", "request_generation", "payload"],
-          "payload_fields": ["schema_version", "connection_generation", "submission_id", "request_generation"],
-          "correlated_fields": ["schema_version", "connection_generation", "submission_id", "request_generation"]
+          "exact_fields": [
+            "type",
+            "action",
+            "schema_version",
+            "connection_generation",
+            "submission_id",
+            "request_generation",
+            "payload"
+          ],
+          "payload_fields": [
+            "schema_version",
+            "connection_generation",
+            "submission_id",
+            "request_generation"
+          ],
+          "correlated_fields": [
+            "schema_version",
+            "connection_generation",
+            "submission_id",
+            "request_generation"
+          ]
         },
         "server_chat_created": {
           "type": "chat_created",
-          "exact_fields": ["type", "schema_version", "connection_generation", "submission_id", "request_generation", "payload"],
-          "payload_fields": ["schema_version", "chat_id", "from_message", "connection_generation", "submission_id", "request_generation"],
-          "correlated_fields": ["schema_version", "connection_generation", "submission_id", "request_generation"],
+          "exact_fields": [
+            "type",
+            "schema_version",
+            "connection_generation",
+            "submission_id",
+            "request_generation",
+            "payload"
+          ],
+          "payload_fields": [
+            "schema_version",
+            "chat_id",
+            "from_message",
+            "connection_generation",
+            "submission_id",
+            "request_generation"
+          ],
+          "correlated_fields": [
+            "schema_version",
+            "connection_generation",
+            "submission_id",
+            "request_generation"
+          ],
           "from_message": false
         }
       },
-      "voice_origin_fields": ["schema_version", "session_id", "generation", "media_grant_revision", "turn_id", "client_turn_id", "chat_context_revision", "source_participant_identity", "detected_language", "text_digest_sha256", "transcript_proof", "proof_expires_at"],
+      "voice_origin_fields": [
+        "schema_version",
+        "session_id",
+        "generation",
+        "media_grant_revision",
+        "turn_id",
+        "client_turn_id",
+        "chat_context_revision",
+        "source_participant_identity",
+        "detected_language",
+        "text_digest_sha256",
+        "transcript_proof",
+        "proof_expires_at"
+      ],
       "composer_actions": {
         "voice_microphone_set": "updateVoiceSession",
         "voice_sensitive_recap_request": "consentToSensitiveRecap",
@@ -2822,7 +3044,20 @@
         "voice_speech_stop": "stopVoiceSpeech",
         "voice_visible_chat_update": "updateVoiceSession"
       },
-      "required_dispositions": ["accepted", "rejected", "partial", "final", "listening", "speaking", "interrupted", "failed", "ended", "takeover_required", "permission_denied", "typed_fallback"]
+      "required_dispositions": [
+        "accepted",
+        "rejected",
+        "partial",
+        "final",
+        "listening",
+        "speaking",
+        "interrupted",
+        "failed",
+        "ended",
+        "takeover_required",
+        "permission_denied",
+        "typed_fallback"
+      ]
     },
     "voice_075": {
       "schema_version": "2",
@@ -2847,152 +3082,724 @@
         "echo_suppression_milliseconds": 500
       },
       "exact_rest_fields": {
-        "voice_capability_v2": ["schema_version", "speech_backend", "status", "reason", "checked_at", "expires_at", "supported_transports", "requirements"],
-        "client_local_capability": ["contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale"]
+        "voice_capability_v2": [
+          "schema_version",
+          "speech_backend",
+          "status",
+          "reason",
+          "checked_at",
+          "expires_at",
+          "supported_transports",
+          "requirements"
+        ],
+        "client_local_capability": [
+          "contract",
+          "transport",
+          "configured_locale",
+          "full_duplex",
+          "has_microphone",
+          "has_audio_output",
+          "microphone_permission",
+          "recognition_permission",
+          "recognition_processing",
+          "recognition_locale",
+          "recognition_installation",
+          "synthesis_processing",
+          "synthesis_locale"
+        ]
       },
       "optional_rest_fields": {
-        "voice_capability_v2": ["retry_after_seconds"]
+        "voice_capability_v2": [
+          "retry_after_seconds"
+        ]
       },
       "exact_frame_fields": {
-        "voice_local_ready": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "contract", "transport", "configured_locale", "full_duplex", "has_microphone", "has_audio_output", "microphone_permission", "recognition_permission", "recognition_processing", "recognition_locale", "recognition_installation", "synthesis_processing", "synthesis_locale", "client_sequence"],
-        "voice_local_session_ready": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "contract", "transport", "configured_locale", "chat_id", "chat_context_revision", "applied_chat_context_revision", "foreground_active", "microphone_enabled", "speech_muted", "lease_expires_at"],
-        "voice_local_recognition_started": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "chat_id", "chat_context_revision", "recognition_sequence"],
-        "voice_local_turn_bound": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "binding_expires_at"],
-        "voice_local_final": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "final", "recognized_locale", "text", "text_digest_sha256"],
-        "voice_local_recognition_failed": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason"],
-        "voice_local_final_rejected": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "client_turn_id", "turn_id", "submission_id", "request_generation", "chat_id", "chat_context_revision", "recognition_sequence", "reason", "retry_policy", "occurred_at"],
-        "voice_local_announcement": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "output_policy", "locale", "text", "text_digest_sha256", "expires_at", "foreground_required", "mute_revision", "consent_revision"],
-        "voice_local_playout_event": ["type", "schema_version", "speech_backend", "device_id", "connection_generation", "session_id", "generation", "speech_revision", "announcement_id", "announcement_sequence", "turn_id", "kind", "phase", "client_sequence", "observed_at"]
+        "voice_local_ready": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "contract",
+          "transport",
+          "configured_locale",
+          "full_duplex",
+          "has_microphone",
+          "has_audio_output",
+          "microphone_permission",
+          "recognition_permission",
+          "recognition_processing",
+          "recognition_locale",
+          "recognition_installation",
+          "synthesis_processing",
+          "synthesis_locale",
+          "client_sequence"
+        ],
+        "voice_local_session_ready": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "contract",
+          "transport",
+          "configured_locale",
+          "chat_id",
+          "chat_context_revision",
+          "applied_chat_context_revision",
+          "foreground_active",
+          "microphone_enabled",
+          "speech_muted",
+          "lease_expires_at"
+        ],
+        "voice_local_recognition_started": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "client_turn_id",
+          "chat_id",
+          "chat_context_revision",
+          "recognition_sequence"
+        ],
+        "voice_local_turn_bound": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "client_turn_id",
+          "turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "chat_context_revision",
+          "recognition_sequence",
+          "binding_expires_at"
+        ],
+        "voice_local_final": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "client_turn_id",
+          "turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "chat_context_revision",
+          "recognition_sequence",
+          "final",
+          "recognized_locale",
+          "text",
+          "text_digest_sha256"
+        ],
+        "voice_local_recognition_failed": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "client_turn_id",
+          "turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "chat_context_revision",
+          "recognition_sequence",
+          "reason"
+        ],
+        "voice_local_final_rejected": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "client_turn_id",
+          "turn_id",
+          "submission_id",
+          "request_generation",
+          "chat_id",
+          "chat_context_revision",
+          "recognition_sequence",
+          "reason",
+          "retry_policy",
+          "occurred_at"
+        ],
+        "voice_local_announcement": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "announcement_id",
+          "announcement_sequence",
+          "turn_id",
+          "kind",
+          "output_policy",
+          "locale",
+          "text",
+          "text_digest_sha256",
+          "expires_at",
+          "foreground_required",
+          "mute_revision",
+          "consent_revision"
+        ],
+        "voice_local_playout_event": [
+          "type",
+          "schema_version",
+          "speech_backend",
+          "device_id",
+          "connection_generation",
+          "session_id",
+          "generation",
+          "speech_revision",
+          "announcement_id",
+          "announcement_sequence",
+          "turn_id",
+          "kind",
+          "phase",
+          "client_sequence",
+          "observed_at"
+        ]
       },
       "optional_frame_fields": {
-        "voice_local_playout_event": ["reason"]
+        "voice_local_playout_event": [
+          "reason"
+        ]
       },
-      "closed_reasons": ["ready", "client_contract_upgrade_required", "client_readiness_required", "microphone_permission_not_determined", "microphone_permission_denied", "speech_recognition_permission_not_determined", "speech_recognition_permission_denied", "no_microphone", "no_audio_output", "local_processing_not_guaranteed", "local_recognition_unavailable", "local_synthesis_unavailable", "local_recognition_locale_unavailable", "local_synthesis_locale_unavailable", "local_language_download_required", "local_language_installing", "local_language_install_failed", "local_capture_not_ready", "local_session_not_ready", "local_recognition_failed", "local_recognition_cancelled", "local_synthesis_failed", "local_audio_interrupted", "local_engine_lost", "local_announcement_expired", "stopped_by_user", "stale_connection", "stale_session", "stale_speech_revision", "stale_chat_context", "stale_local_turn", "duplicate_local_final", "altered_local_final", "local_final_empty", "local_final_oversized", "local_final_malformed", "local_language_mismatch", "announcement_stale_sequence", "announcement_suppressed_muted", "announcement_suppressed_background", "announcement_consent_invalid", "announcement_invalid", "invalid_binding", "capacity_exhausted", "asr_unavailable", "authentication_required", "backend_mismatch", "backend_selection_invalid", "feature_disabled", "internal_error", "takeover_required", "tts_unavailable", "unsupported_speech_backend", "worker_unavailable"],
-      "required_dispositions": ["ready", "typed_fallback", "rejected", "permission_denied", "final", "speaking", "finished"]
+      "closed_reasons": [
+        "ready",
+        "client_contract_upgrade_required",
+        "client_readiness_required",
+        "microphone_permission_not_determined",
+        "microphone_permission_denied",
+        "speech_recognition_permission_not_determined",
+        "speech_recognition_permission_denied",
+        "no_microphone",
+        "no_audio_output",
+        "local_processing_not_guaranteed",
+        "local_recognition_unavailable",
+        "local_synthesis_unavailable",
+        "local_recognition_locale_unavailable",
+        "local_synthesis_locale_unavailable",
+        "local_language_download_required",
+        "local_language_installing",
+        "local_language_install_failed",
+        "local_capture_not_ready",
+        "local_session_not_ready",
+        "local_recognition_failed",
+        "local_recognition_cancelled",
+        "local_synthesis_failed",
+        "local_audio_interrupted",
+        "local_engine_lost",
+        "local_announcement_expired",
+        "stopped_by_user",
+        "stale_connection",
+        "stale_session",
+        "stale_speech_revision",
+        "stale_chat_context",
+        "stale_local_turn",
+        "duplicate_local_final",
+        "altered_local_final",
+        "local_final_empty",
+        "local_final_oversized",
+        "local_final_malformed",
+        "local_language_mismatch",
+        "announcement_stale_sequence",
+        "announcement_suppressed_muted",
+        "announcement_suppressed_background",
+        "announcement_consent_invalid",
+        "announcement_invalid",
+        "invalid_binding",
+        "capacity_exhausted",
+        "asr_unavailable",
+        "authentication_required",
+        "backend_mismatch",
+        "backend_selection_invalid",
+        "feature_disabled",
+        "internal_error",
+        "takeover_required",
+        "tts_unavailable",
+        "unsupported_speech_backend",
+        "worker_unavailable"
+      ],
+      "required_dispositions": [
+        "ready",
+        "typed_fallback",
+        "rejected",
+        "permission_denied",
+        "final",
+        "speaking",
+        "finished"
+      ]
     }
   },
   "push_types": [
-    {"name": "agent_bundle_deliver", "category": "agents"},
-    {"name": "agent_creation_progress", "category": "creation"},
-    {"name": "agent_host_inventory_reconciled", "category": "agents"},
-    {"name": "agent_host_registered", "category": "agents"},
-    {"name": "agent_host_registration_refused", "category": "agents"},
-    {"name": "agent_lifecycle", "category": "agents"},
-    {"name": "agent_list", "category": "bootstrap"},
-    {"name": "agent_offline", "category": "agents"},
-    {"name": "agent_permissions", "category": "permissions"},
-    {"name": "agent_permissions_updated", "category": "permissions"},
-    {"name": "agent_registered", "category": "bootstrap"},
-    {"name": "agent_stop", "category": "agents"},
-    {"name": "agent_tunnel", "category": "agents"},
-    {"name": "audit_append", "category": "audit"},
-    {"name": "auth_required", "category": "auth"},
-    {"name": "chat_created", "category": "chat"},
-    {"name": "chat_deleted", "category": "chat"},
-    {"name": "chat_loaded", "category": "chat"},
-    {"name": "chat_status", "category": "chat"},
-    {"name": "chat_step", "category": "chat"},
-    {"name": "chrome_menu", "category": "chrome"},
-    {"name": "chrome_render", "category": "chrome"},
-    {"name": "chrome_surface", "category": "chrome"},
-    {"name": "combine_error", "category": "component_verbs"},
-    {"name": "combine_status", "category": "component_verbs"},
-    {"name": "component_deleted", "category": "component_verbs"},
-    {"name": "component_save_error", "category": "component_verbs"},
-    {"name": "component_saved", "category": "component_verbs"},
-    {"name": "components_combined", "category": "component_verbs"},
-    {"name": "components_condensed", "category": "component_verbs"},
-    {"name": "composer_state", "category": "voice"},
-    {"name": "computer_host", "category": "presence"},
-    {"name": "computer_request", "category": "host"},
-    {"name": "computer_session", "category": "presence"},
-    {"name": "conversation_commit_ready", "category": "chat"},
-    {"name": "conversation_snapshot", "category": "chat"},
-    {"name": "error", "category": "error", "shapes": ["code+message", "payload.message", "message"]},
-    {"name": "heartbeat", "category": "chat"},
-    {"name": "history_list", "category": "chat"},
-    {"name": "llm_config_ack", "category": "llm"},
-    {"name": "llm_usage_report", "category": "llm"},
-    {"name": "notification", "category": "notification"},
-    {"name": "operation_status", "category": "operations"},
-    {"name": "rote_config", "category": "bootstrap"},
-    {"name": "saved_components_list", "category": "component_verbs"},
-    {"name": "stream_data", "category": "streaming"},
-    {"name": "stream_error", "category": "streaming"},
-    {"name": "stream_list", "category": "streaming"},
-    {"name": "stream_subscribed", "category": "streaming"},
-    {"name": "stream_unsubscribed", "category": "streaming"},
-    {"name": "system_config", "category": "bootstrap"},
-    {"name": "task_completed", "category": "chat"},
-    {"name": "task_started", "category": "chat"},
-    {"name": "tool_progress", "category": "chat"},
-    {"name": "ui_append", "category": "canvas"},
-    {"name": "ui_render", "category": "canvas"},
-    {"name": "ui_stream_data", "category": "streaming"},
-    {"name": "ui_update", "category": "canvas"},
-    {"name": "ui_upsert", "category": "canvas"},
-    {"name": "user_message_acked", "category": "chat"},
-    {"name": "user_preferences", "category": "bootstrap"},
-    {"name": "voice_announcement_media", "category": "voice_media"},
-    {"name": "voice_control_binding", "category": "voice"},
-    {"name": "voice_local_announcement", "category": "voice"},
-    {"name": "voice_local_final_rejected", "category": "voice"},
-    {"name": "voice_local_session_ready", "category": "voice"},
-    {"name": "voice_local_turn_bound", "category": "voice"},
-    {"name": "voice_session_state", "category": "voice"},
-    {"name": "voice_submission_rejected", "category": "voice"},
-    {"name": "voice_transcript", "category": "voice"},
-    {"name": "voice_turn_state", "category": "voice"},
-    {"name": "workspace_timeline_mode", "category": "chat"}
+    {
+      "name": "agent_bundle_deliver",
+      "category": "agents"
+    },
+    {
+      "name": "agent_creation_progress",
+      "category": "creation"
+    },
+    {
+      "name": "agent_host_inventory_reconciled",
+      "category": "agents"
+    },
+    {
+      "name": "agent_host_registered",
+      "category": "agents"
+    },
+    {
+      "name": "agent_host_registration_refused",
+      "category": "agents"
+    },
+    {
+      "name": "agent_lifecycle",
+      "category": "agents"
+    },
+    {
+      "name": "agent_list",
+      "category": "bootstrap"
+    },
+    {
+      "name": "agent_offline",
+      "category": "agents"
+    },
+    {
+      "name": "agent_permissions",
+      "category": "permissions"
+    },
+    {
+      "name": "agent_permissions_updated",
+      "category": "permissions"
+    },
+    {
+      "name": "agent_registered",
+      "category": "bootstrap"
+    },
+    {
+      "name": "agent_stop",
+      "category": "agents"
+    },
+    {
+      "name": "agent_tunnel",
+      "category": "agents"
+    },
+    {
+      "name": "audit_append",
+      "category": "audit"
+    },
+    {
+      "name": "auth_required",
+      "category": "auth"
+    },
+    {
+      "name": "chat_created",
+      "category": "chat"
+    },
+    {
+      "name": "chat_deleted",
+      "category": "chat"
+    },
+    {
+      "name": "chat_loaded",
+      "category": "chat"
+    },
+    {
+      "name": "chat_status",
+      "category": "chat"
+    },
+    {
+      "name": "chat_step",
+      "category": "chat"
+    },
+    {
+      "name": "chrome_menu",
+      "category": "chrome"
+    },
+    {
+      "name": "chrome_render",
+      "category": "chrome"
+    },
+    {
+      "name": "chrome_surface",
+      "category": "chrome"
+    },
+    {
+      "name": "combine_error",
+      "category": "component_verbs"
+    },
+    {
+      "name": "combine_status",
+      "category": "component_verbs"
+    },
+    {
+      "name": "component_deleted",
+      "category": "component_verbs"
+    },
+    {
+      "name": "component_save_error",
+      "category": "component_verbs"
+    },
+    {
+      "name": "component_saved",
+      "category": "component_verbs"
+    },
+    {
+      "name": "components_combined",
+      "category": "component_verbs"
+    },
+    {
+      "name": "components_condensed",
+      "category": "component_verbs"
+    },
+    {
+      "name": "composer_state",
+      "category": "voice"
+    },
+    {
+      "name": "computer_host",
+      "category": "presence"
+    },
+    {
+      "name": "computer_request",
+      "category": "host"
+    },
+    {
+      "name": "computer_session",
+      "category": "presence"
+    },
+    {
+      "name": "conversation_commit_ready",
+      "category": "chat"
+    },
+    {
+      "name": "conversation_snapshot",
+      "category": "chat"
+    },
+    {
+      "name": "error",
+      "category": "error",
+      "shapes": [
+        "code+message",
+        "payload.message",
+        "message"
+      ]
+    },
+    {
+      "name": "heartbeat",
+      "category": "chat"
+    },
+    {
+      "name": "history_list",
+      "category": "chat"
+    },
+    {
+      "name": "llm_config_ack",
+      "category": "llm"
+    },
+    {
+      "name": "llm_usage_report",
+      "category": "llm"
+    },
+    {
+      "name": "notification",
+      "category": "notification"
+    },
+    {
+      "name": "operation_status",
+      "category": "operations"
+    },
+    {
+      "name": "rote_config",
+      "category": "bootstrap"
+    },
+    {
+      "name": "saved_components_list",
+      "category": "component_verbs"
+    },
+    {
+      "name": "stream_data",
+      "category": "streaming"
+    },
+    {
+      "name": "stream_error",
+      "category": "streaming"
+    },
+    {
+      "name": "stream_list",
+      "category": "streaming"
+    },
+    {
+      "name": "stream_subscribed",
+      "category": "streaming"
+    },
+    {
+      "name": "stream_unsubscribed",
+      "category": "streaming"
+    },
+    {
+      "name": "system_config",
+      "category": "bootstrap"
+    },
+    {
+      "name": "task_completed",
+      "category": "chat"
+    },
+    {
+      "name": "task_started",
+      "category": "chat"
+    },
+    {
+      "name": "tool_progress",
+      "category": "chat"
+    },
+    {
+      "name": "ui_append",
+      "category": "canvas"
+    },
+    {
+      "name": "ui_render",
+      "category": "canvas"
+    },
+    {
+      "name": "ui_stream_data",
+      "category": "streaming"
+    },
+    {
+      "name": "ui_update",
+      "category": "canvas"
+    },
+    {
+      "name": "ui_upsert",
+      "category": "canvas"
+    },
+    {
+      "name": "user_message_acked",
+      "category": "chat"
+    },
+    {
+      "name": "user_preferences",
+      "category": "bootstrap"
+    },
+    {
+      "name": "voice_announcement_media",
+      "category": "voice_media"
+    },
+    {
+      "name": "voice_control_binding",
+      "category": "voice"
+    },
+    {
+      "name": "voice_local_announcement",
+      "category": "voice"
+    },
+    {
+      "name": "voice_local_final_rejected",
+      "category": "voice"
+    },
+    {
+      "name": "voice_local_session_ready",
+      "category": "voice"
+    },
+    {
+      "name": "voice_local_turn_bound",
+      "category": "voice"
+    },
+    {
+      "name": "voice_session_state",
+      "category": "voice"
+    },
+    {
+      "name": "voice_submission_rejected",
+      "category": "voice"
+    },
+    {
+      "name": "voice_transcript",
+      "category": "voice"
+    },
+    {
+      "name": "voice_turn_state",
+      "category": "voice"
+    },
+    {
+      "name": "workspace_timeline_mode",
+      "category": "chat"
+    }
   ],
   "accept_actions": [
     "agent_tunnel",
-    "authorize_action", "cancel_task", "chat_message", "chrome_admin_proposal_decide",
-    "chrome_admin_step_archive", "chrome_admin_step_restore", "chrome_admin_step_save",
-    "chrome_agent_enabled", "chrome_assignment_approval_decide", "chrome_assignment_create",
-    "chrome_assignment_pause", "chrome_assignment_resume", "chrome_assignment_revise",
-    "chrome_assignment_revoke", "chrome_assignment_run_now", "chrome_assignment_stop",
-    "chrome_attachment_delete", "chrome_audit_page",
-    "chrome_author_advance", "chrome_author_analyze", "chrome_author_clarify",
-    "chrome_author_delete", "chrome_author_draft", "chrome_author_edit",
-    "chrome_author_generate", "chrome_author_list", "chrome_author_plan",
-    "chrome_author_quick_answers", "chrome_author_quick_create", "chrome_author_quick_dismiss",
+    "authorize_action",
+    "cancel_task",
+    "chat_message",
+    "chrome_admin_proposal_decide",
+    "chrome_admin_step_archive",
+    "chrome_admin_step_restore",
+    "chrome_admin_step_save",
+    "chrome_agent_enabled",
+    "chrome_assignment_approval_decide",
+    "chrome_assignment_create",
+    "chrome_assignment_pause",
+    "chrome_assignment_resume",
+    "chrome_assignment_revise",
+    "chrome_assignment_revoke",
+    "chrome_assignment_run_now",
+    "chrome_assignment_stop",
+    "chrome_attachment_delete",
+    "chrome_audit_page",
+    "chrome_author_advance",
+    "chrome_author_analyze",
+    "chrome_author_clarify",
+    "chrome_author_delete",
+    "chrome_author_draft",
+    "chrome_author_edit",
+    "chrome_author_generate",
+    "chrome_author_list",
+    "chrome_author_plan",
+    "chrome_author_quick_answers",
+    "chrome_author_quick_create",
+    "chrome_author_quick_dismiss",
     "chrome_author_quick_resend",
-    "chrome_author_revise", "chrome_author_specify", "chrome_author_start",
-    "chrome_author_tasks", "chrome_close",
-    "chrome_computer_forget", "chrome_computer_session_pause", "chrome_computer_session_resume",
-    "chrome_computer_session_start", "chrome_computer_session_stop",
-    "chrome_connection_issue", "chrome_connection_revoke",
-    "chrome_credential_delete", "chrome_credentials_save", "chrome_draft_create",
-    "chrome_dreaming_toggle", "chrome_dreaming_trigger", "chrome_job_delete",
-    "chrome_job_pause", "chrome_job_resume", "chrome_job_run_now", "chrome_llm_clear",
-    "chrome_llm_models", "chrome_llm_save", "chrome_llm_sys_clear", "chrome_llm_sys_models",
-    "chrome_llm_sys_save", "chrome_llm_sys_test", "chrome_llm_test",
-    "chrome_machine_add", "chrome_machine_credential_delete", "chrome_machine_credential_set",
-    "chrome_machine_delete", "chrome_machine_probe", "chrome_machine_retrust",
+    "chrome_author_revise",
+    "chrome_author_specify",
+    "chrome_author_start",
+    "chrome_author_tasks",
+    "chrome_close",
+    "chrome_computer_forget",
+    "chrome_computer_session_pause",
+    "chrome_computer_session_resume",
+    "chrome_computer_session_start",
+    "chrome_computer_session_stop",
+    "chrome_connection_issue",
+    "chrome_connection_revoke",
+    "chrome_credential_delete",
+    "chrome_credentials_save",
+    "chrome_declarative_command",
+    "chrome_declarative_view",
+    "chrome_draft_create",
+    "chrome_dreaming_toggle",
+    "chrome_dreaming_trigger",
+    "chrome_job_delete",
+    "chrome_job_pause",
+    "chrome_job_resume",
+    "chrome_job_run_now",
+    "chrome_job_stop",
+    "chrome_llm_clear",
+    "chrome_llm_models",
+    "chrome_llm_save",
+    "chrome_llm_sys_clear",
+    "chrome_llm_sys_models",
+    "chrome_llm_sys_save",
+    "chrome_llm_sys_test",
+    "chrome_llm_test",
+    "chrome_machine_add",
+    "chrome_machine_credential_delete",
+    "chrome_machine_credential_set",
+    "chrome_machine_delete",
+    "chrome_machine_probe",
+    "chrome_machine_retrust",
     "chrome_memory_delete",
-    "chrome_memory_update", "chrome_open", "chrome_perms_save", "chrome_profile_save",
-    "chrome_safe_set", "chrome_skill_toggle", "chrome_theme_preset", "chrome_tour_event",
-    "chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget",
-    "chrome_user_skill_delete", "chrome_user_skill_edit", "chrome_user_skill_save",
+    "chrome_memory_update",
+    "chrome_note_forget",
+    "chrome_note_save",
+    "chrome_note_search",
+    "chrome_note_toggle",
+    "chrome_open",
+    "chrome_perms_save",
+    "chrome_profile_save",
+    "chrome_safe_set",
+    "chrome_skill_toggle",
+    "chrome_theme_preset",
+    "chrome_tour_event",
+    "chrome_turn_selection_set",
+    "chrome_typesafe_clear",
+    "chrome_typesafe_save",
+    "chrome_user_skill_delete",
+    "chrome_user_skill_edit",
+    "chrome_user_skill_save",
     "chrome_user_skill_toggle",
-    "chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set",
-    "chrome_work_result_save", "chrome_job_stop",
-    "chrome_visibility_set", "chrome_workspace_timeline_live", "chrome_workspace_timeline_view",
-    "combine_components", "component_action", "component_feedback", "component_refine",
-    "component_restore", "computer_event", "computer_response", "condense_components",
-    "delete_saved_component", "discover_agents", "draft_approve", "draft_discard",
-    "draft_refine", "enable_recommended_agents", "feedback_amend", "feedback_retract",
-    "get_agent_permissions", "get_dashboard", "get_history", "get_saved_components",
-    "load_chat", "new_chat", "register_external_agent", "remote_op_decision",
-    "revision_apply", "revision_discard",
-    "save_component", "save_theme", "schedule_decision", "set_agent_permissions",
-    "stream_list", "stream_subscribe", "stream_unsubscribe", "table_paginate",
-    "update_device", "voice_microphone_set", "voice_sensitive_recap_request",
-    "voice_session_end", "voice_session_start", "voice_session_takeover",
-    "voice_speech_mute_set", "voice_speech_stop", "voice_visible_chat_update", "watch_task"
+    "chrome_visibility_set",
+    "chrome_work_result_save",
+    "chrome_workspace_timeline_live",
+    "chrome_workspace_timeline_view",
+    "combine_components",
+    "component_action",
+    "component_feedback",
+    "component_refine",
+    "component_restore",
+    "computer_event",
+    "computer_response",
+    "condense_components",
+    "delete_saved_component",
+    "discover_agents",
+    "draft_approve",
+    "draft_discard",
+    "draft_refine",
+    "enable_recommended_agents",
+    "feedback_amend",
+    "feedback_retract",
+    "get_agent_permissions",
+    "get_dashboard",
+    "get_history",
+    "get_saved_components",
+    "load_chat",
+    "new_chat",
+    "register_external_agent",
+    "remote_op_decision",
+    "revision_apply",
+    "revision_discard",
+    "save_component",
+    "save_theme",
+    "schedule_decision",
+    "set_agent_permissions",
+    "stream_list",
+    "stream_subscribe",
+    "stream_unsubscribe",
+    "table_paginate",
+    "update_device",
+    "voice_microphone_set",
+    "voice_sensitive_recap_request",
+    "voice_session_end",
+    "voice_session_start",
+    "voice_session_takeover",
+    "voice_speech_mute_set",
+    "voice_speech_stop",
+    "voice_visible_chat_update",
+    "watch_task"
   ],
-  "client_local_actions": ["attach_existing", "computer_host_consent"],
+  "client_local_actions": [
+    "attach_existing",
+    "computer_host_consent"
+  ],
   "additive_fields": [
     {
       "field": "usage.basis",
@@ -3003,7 +3810,9 @@
         "elapsed_ms": "observed|estimated|uncertain|none",
         "spend_micro_units": "observed|estimated|uncertain|none"
       },
-      "carried_on": ["chrome_surface.work.detail.operation.usage"],
+      "carried_on": [
+        "chrome_surface.work.detail.operation.usage"
+      ],
       "scope": "Optional per-dimension charge basis. A dimension may be absent; absent is not \"none\", and \"none\" is not a zero amount. An unrecognized token makes the Work view unavailable rather than rendering an unknown basis as a known one.",
       "introduced_by": "feature 088 T052",
       "contract": "work_read_088"
@@ -3013,7 +3822,9 @@
       "shape": {
         "currency": "uppercase ISO-like quote code, 3-8 characters"
       },
-      "carried_on": ["chrome_surface.work.detail.operation.usage"],
+      "carried_on": [
+        "chrome_surface.work.detail.operation.usage"
+      ],
       "scope": "Optional quoted currency for monetary amounts. When absent the owner view continues to say the currency is unavailable; the client never invents or converts one.",
       "introduced_by": "feature 088 T052",
       "contract": "work_read_088"
@@ -3029,7 +3840,9 @@
         "incomplete": "boolean",
         "cutoff": "boolean"
       },
-      "carried_on": ["chrome_surface.work.detail"],
+      "carried_on": [
+        "chrome_surface.work.detail"
+      ],
       "scope": "Optional timing read model for one operation. Absent means no measurement is disclosed; no attempt count, interval sum or elapsed union is ever synthesized for an operation whose host supplies none, and null is unknown, never zero.",
       "introduced_by": "feature 088 T052",
       "contract": "work_read_088"
@@ -3050,15 +3863,23 @@
         "transcript_proof": "64 lowercase hex",
         "proof_expires_at": "RFC3339 UTC timestamp"
       },
-      "carried_on": ["ui_event.chat_message"],
+      "carried_on": [
+        "ui_event.chat_message"
+      ],
       "scope": "proof-bound final transcript only; absent preserves ordinary typed chat semantics",
       "introduced_by": "065-conversational-voice (FR-014, FR-015)",
       "contract": "specs/065-conversational-voice/contracts/voice-control.schema.json"
     },
     {
       "field": "speech",
-      "shape": {"ssml": "string", "text": "string"},
-      "carried_on": ["ui_render", "ui_upsert"],
+      "shape": {
+        "ssml": "string",
+        "text": "string"
+      },
+      "carried_on": [
+        "ui_render",
+        "ui_upsert"
+      ],
       "scope": "watch-profile sockets only; absent when the rendition is unspeakable",
       "introduced_by": "051-apple-native-clients (FR-036)",
       "contract": "specs/051-apple-native-clients/contracts/spoken-rendition.md"
@@ -3066,7 +3887,10 @@
     {
       "field": "component_id",
       "shape": "string",
-      "carried_on": ["ui_stream_data", "stream_subscribed"],
+      "carried_on": [
+        "ui_stream_data",
+        "stream_subscribed"
+      ],
       "scope": "present when the stream is bridged to a workspace component identity; absent on legacy/narrative streams",
       "introduced_by": "055-uniform-artifacts (FR-010)",
       "contract": "specs/055-uniform-artifacts/contracts/wire-contract.md"
@@ -3075,12 +3899,16 @@
       "field": "agent_host",
       "shape": {
         "host_id": "uuid4",
-        "supported_runtime_contract_versions": ["positive integer"],
+        "supported_runtime_contract_versions": [
+          "positive integer"
+        ],
         "runtime_lock_sha256": "64 lowercase hex",
         "platform": "windows | macos",
         "client_version": "strict SemVer"
       },
-      "carried_on": ["register_ui"],
+      "carried_on": [
+        "register_ui"
+      ],
       "scope": "authenticated desktop host advertisement; the client never supplies host_session_id",
       "introduced_by": "060-runtime-reliability-hardening (FR-019)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/personal-agent-runtime.md"
@@ -3088,7 +3916,17 @@
     {
       "field": "connection_generation",
       "shape": "uuid4",
-      "carried_on": ["register_ui", "conversation_commit_ready", "conversation_snapshot", "operation_status", "ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"],
+      "carried_on": [
+        "register_ui",
+        "conversation_commit_ready",
+        "conversation_snapshot",
+        "operation_status",
+        "ui_render",
+        "ui_update",
+        "ui_upsert",
+        "ui_append",
+        "ui_stream_data"
+      ],
       "scope": "fresh equality fence for one WebSocket connection attempt",
       "introduced_by": "060-runtime-reliability-hardening (FR-029, FR-032)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/conversation-continuity.md"
@@ -3096,7 +3934,16 @@
     {
       "field": "request_generation",
       "shape": "uuid4",
-      "carried_on": ["conversation_commit_ready", "conversation_snapshot", "operation_status", "ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"],
+      "carried_on": [
+        "conversation_commit_ready",
+        "conversation_snapshot",
+        "operation_status",
+        "ui_render",
+        "ui_update",
+        "ui_upsert",
+        "ui_append",
+        "ui_stream_data"
+      ],
       "scope": "fresh equality fence for one hydration or commit request",
       "introduced_by": "060-runtime-reliability-hardening (FR-029, FR-032)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/conversation-continuity.md"
@@ -3104,7 +3951,16 @@
     {
       "field": "chat_id",
       "shape": "uuid4",
-      "carried_on": ["conversation_commit_ready", "conversation_snapshot", "operation_status", "ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"],
+      "carried_on": [
+        "conversation_commit_ready",
+        "conversation_snapshot",
+        "operation_status",
+        "ui_render",
+        "ui_update",
+        "ui_upsert",
+        "ui_append",
+        "ui_stream_data"
+      ],
       "scope": "owner-validated active chat; operation_status uses explicit null for surface-only work",
       "introduced_by": "060-runtime-reliability-hardening (FR-029, FR-032)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/conversation-continuity.md"
@@ -3112,7 +3968,13 @@
     {
       "field": "base_render_revision",
       "shape": "unsigned 64-bit integer",
-      "carried_on": ["ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"],
+      "carried_on": [
+        "ui_render",
+        "ui_update",
+        "ui_upsert",
+        "ui_append",
+        "ui_stream_data"
+      ],
       "scope": "disposable preview overlay; must equal the current committed revision",
       "introduced_by": "060-runtime-reliability-hardening (FR-029)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/conversation-continuity.md"
@@ -3120,7 +3982,13 @@
     {
       "field": "frame_sequence",
       "shape": "unsigned 64-bit integer",
-      "carried_on": ["ui_render", "ui_update", "ui_upsert", "ui_append", "ui_stream_data"],
+      "carried_on": [
+        "ui_render",
+        "ui_update",
+        "ui_upsert",
+        "ui_append",
+        "ui_stream_data"
+      ],
       "scope": "strictly increasing within a chat/connection/request overlay generation",
       "introduced_by": "060-runtime-reliability-hardening (FR-029)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/conversation-continuity.md"
@@ -3132,7 +4000,9 @@
         "active_chat_id": "uuid4",
         "request_generation": "uuid4"
       },
-      "carried_on": ["register_ui"],
+      "carried_on": [
+        "register_ui"
+      ],
       "scope": "optional account-scoped active-chat hydration request",
       "introduced_by": "060-runtime-reliability-hardening (FR-027, FR-029)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/conversation-continuity.md"
@@ -3141,10 +4011,15 @@
       "field": "capabilities.personal_agent_host.macos",
       "shape": {
         "supported": "boolean",
-        "runtime_contract_versions": ["positive integer"],
+        "runtime_contract_versions": [
+          "positive integer"
+        ],
         "source_feature": "059 | null"
       },
-      "carried_on": ["system_config", "GET /api/dashboard"],
+      "carried_on": [
+        "system_config",
+        "GET /api/dashboard"
+      ],
       "scope": "immutable candidate-owned applicability; missing or malformed is blocking",
       "introduced_by": "060-runtime-reliability-hardening (FR-050)",
       "contract": "specs/060-runtime-reliability-hardening/contracts/personal-agent-runtime.md"
@@ -3156,21 +4031,132 @@
         "name": "1-64 printable characters",
         "platform": "windows | macos | linux",
         "client_version": "strict SemVer",
-        "screens": ["{index, width, height, scale, primary} (1-8, exactly one primary)"],
-        "verbs": ["non-empty subset of the closed computer-host verb set"],
+        "screens": [
+          "{index, width, height, scale, primary} (1-8, exactly one primary)"
+        ],
+        "verbs": [
+          "non-empty subset of the closed computer-host verb set"
+        ],
         "protocol": 1
       },
-      "carried_on": ["register_ui", "ui_event.computer_event (event=announce, under host)"],
+      "carried_on": [
+        "register_ui",
+        "ui_event.computer_event (event=announce, under host)"
+      ],
       "scope": "present only when the desktop owner switched on 'Allow remote control'; absent means the socket is not a controllable host; a malformed descriptor costs host eligibility, never the session",
       "introduced_by": "076-remote-computer-control (FR-002)",
       "contract": "specs/076-remote-computer-control/contracts/transport.md"
     }
   ],
   "component_types": [
-    "alert", "audio", "badge", "bar_chart", "button", "card", "chat_history", "code",
-    "collapsible", "color_picker", "container", "divider", "download_card", "file_download",
-    "file_upload", "generative", "grid", "hero", "image", "input", "keyvalue", "line_chart",
-    "list", "metric", "param_picker", "pie_chart", "plotly_chart", "progress", "rating",
-    "skeleton", "table", "tabs", "text", "theme_apply", "timeline"
-  ]
+    "action_group",
+    "alert",
+    "audio",
+    "badge",
+    "bar_chart",
+    "button",
+    "card",
+    "chat_history",
+    "code",
+    "collapsible",
+    "color_picker",
+    "container",
+    "divider",
+    "donut_chart",
+    "download_card",
+    "file_download",
+    "file_upload",
+    "gauge",
+    "generative",
+    "grid",
+    "hero",
+    "image",
+    "input",
+    "keyvalue",
+    "line_chart",
+    "list",
+    "metric",
+    "param_picker",
+    "pie_chart",
+    "pipeline_stepper",
+    "plotly_chart",
+    "progress",
+    "radar_chart",
+    "rating",
+    "skeleton",
+    "stat_group",
+    "table",
+    "tabs",
+    "text",
+    "theme_apply",
+    "timeline"
+  ],
+  "component_type_dispositions": {
+    "action_group": {
+      "source_feature": "089-typesafe-a8p-integration",
+      "web": "supported",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "omitted_by_server",
+      "watch": "omitted_by_server",
+      "fallback": "container",
+      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+    },
+    "donut_chart": {
+      "source_feature": "089-typesafe-a8p-integration",
+      "web": "supported",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "omitted_by_server",
+      "watch": "omitted_by_server",
+      "fallback": "pie_chart",
+      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+    },
+    "gauge": {
+      "source_feature": "089-typesafe-a8p-integration",
+      "web": "supported",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "omitted_by_server",
+      "watch": "omitted_by_server",
+      "fallback": "progress",
+      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+    },
+    "pipeline_stepper": {
+      "source_feature": "089-typesafe-a8p-integration",
+      "web": "supported",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "omitted_by_server",
+      "watch": "omitted_by_server",
+      "fallback": "timeline",
+      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+    },
+    "radar_chart": {
+      "source_feature": "089-typesafe-a8p-integration",
+      "web": "supported",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "omitted_by_server",
+      "watch": "omitted_by_server",
+      "fallback": "table",
+      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+    },
+    "stat_group": {
+      "source_feature": "089-typesafe-a8p-integration",
+      "web": "supported",
+      "windows": "omitted_by_server",
+      "android": "omitted_by_server",
+      "ios": "omitted_by_server",
+      "macos": "omitted_by_server",
+      "watch": "omitted_by_server",
+      "fallback": "grid",
+      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+    }
+  }
 }

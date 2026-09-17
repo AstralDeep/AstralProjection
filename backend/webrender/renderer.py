@@ -676,11 +676,35 @@ def _chart_div(c, chart_type, payload):
 
 
 def render_bar_chart(c):
+    """Render every dataset, not only the first (feature 089).
+
+    Before 089 this silently dropped datasets 2..n, so a two-series comparison
+    rendered as a one-series chart that looked correct and was not. Grouped
+    bars are handed to the client as a ``datasets`` list; a single-series chart
+    keeps its original ``data`` payload so nothing about the existing wire
+    shape changes for the common case.
+    """
     datasets = c.get("datasets") or []
     if not datasets:
         return ""
-    data = (datasets[0] or {}).get("data", []) if isinstance(datasets[0], dict) else []
-    return _chart_div(c, "bar", {"labels": c.get("labels", []), "data": data})
+    series = [d for d in datasets if isinstance(d, dict)]
+    if not series:
+        return ""
+    labels = c.get("labels", [])
+    if len(series) == 1:
+        return _chart_div(c, "bar", {"labels": labels, "data": series[0].get("data", [])})
+    return _chart_div(
+        c,
+        "bar",
+        {
+            "labels": labels,
+            "data": series[0].get("data", []),
+            "datasets": [
+                {"label": str(d.get("label") or ""), "data": d.get("data", [])}
+                for d in series
+            ],
+        },
+    )
 
 
 def render_line_chart(c):
@@ -1163,6 +1187,365 @@ def render_download_card(c: Dict[str, Any]) -> str:
     )
 
 
+
+# ---------------------------------------------------------------------------
+# Feature 089 — composite readouts
+#
+# Every one of these follows the file's escape-by-default discipline: text goes
+# through esc()/inline_md(), numbers through _clamped_float(), and no field
+# value ever reaches style, class, href or an on* attribute. Colors come from
+# theme-bound CSS classes, never from component data, because astralprims
+# deliberately gives these types no color field.
+# ---------------------------------------------------------------------------
+
+#: Semantic roles a variant may name. Anything else falls back to "default",
+#: which is what keeps a variant string out of a class name unchecked.
+_089_VARIANTS = ("default", "success", "warning", "error", "info")
+
+#: Series colors cycle through a fixed class list defined in astral.css from
+#: theme variables. Six is the cycle length; a seventh series reuses the first.
+_SERIES_CLASSES = 6
+
+
+def _089_variant(value, fallback="default"):
+    variant = str(value or "").strip().lower()
+    return variant if variant in _089_VARIANTS else fallback
+
+
+def _clamped_float(value, low=0.0, high=1.0, default=0.0):
+    """Coerce to float and clamp. A non-numeric value becomes the default."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    if number != number:  # NaN
+        return default
+    return max(low, min(high, number))
+
+
+def _safe_number(value, default=0.0):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return default
+    return default if number != number else number
+
+
+def _clamped_int(value, low, high, default):
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(low, min(high, number))
+
+
+def render_action_group(c):
+    """A labelled row of buttons.
+
+    Buttons render through the existing ``render_button``, so actions dispatch
+    on the client's existing delegated handler and 089 adds no new event path.
+    """
+    buttons = [b for b in (c.get("buttons") or []) if isinstance(b, dict)]
+    align = str(c.get("align") or "start").strip().lower()
+    align_class = {
+        "start": "justify-start",
+        "center": "justify-center",
+        "end": "justify-end",
+        "between": "justify-between",
+    }.get(align, "justify-start")
+    label = c.get("label")
+    label_html = (
+        f'<span class="text-xs text-astral-muted">{inline_md(label)}</span>'
+        if label
+        else ""
+    )
+    rendered = "".join(render_button(b) for b in buttons)
+    group_label = f' aria-label="{_attr(label)}"' if label else ""
+    return (
+        f'<div{_base_attrs(c)} class="astral-action-group flex flex-col gap-2" '
+        f'role="group"{group_label}>{label_html}'
+        f'<div class="flex flex-wrap gap-2 {align_class}">{rendered}</div></div>'
+    )
+
+
+def render_stat_group(c):
+    """A grid of small KPI readouts, as a definition list."""
+    items = [i for i in (c.get("items") or []) if isinstance(i, dict)]
+    columns = _clamped_int(c.get("columns", 4), 1, 6, 4)
+    title = c.get("title")
+    title_html = (
+        f'<h3 class="text-sm font-semibold text-astral-text mb-2">{inline_md(title)}</h3>'
+        if title
+        else ""
+    )
+    cells = []
+    for item in items:
+        variant = _089_variant(item.get("variant"))
+        trend = str(item.get("trend") or "").strip().lower()
+        glyph = {"up": "\u25b2", "down": "\u25bc", "flat": "\u2013"}.get(trend, "")
+        delta = item.get("delta")
+        delta_html = (
+            f'<span class="astral-stat-delta astral-state-{variant} text-xs">'
+            f'{esc(glyph)} {inline_md(delta)}</span>'
+            if delta
+            else ""
+        )
+        hint = item.get("hint")
+        hint_html = (
+            f'<dd class="text-[11px] text-astral-muted">{inline_md(hint)}</dd>'
+            if hint
+            else ""
+        )
+        cells.append(
+            '<div class="astral-stat rounded-lg border border-white/10 bg-white/5 p-3">'
+            f'<dt class="text-xs text-astral-muted">{inline_md(item.get("label"))}</dt>'
+            f'<dd class="astral-stat-value text-lg font-semibold text-astral-text">'
+            f'{inline_md(item.get("value"))} {delta_html}</dd>'
+            f"{hint_html}</div>"
+        )
+    return (
+        f'<div{_base_attrs(c)} class="astral-stat-group">{title_html}'
+        f'<dl class="astral-stat-grid grid gap-2" data-columns="{columns}">'
+        f'{"".join(cells)}</dl></div>'
+    )
+
+
+def render_gauge(c):
+    """A dial reading one bounded value, drawn as an inline SVG arc."""
+    value = _clamped_float(c.get("value"))
+    label = c.get("label") or ""
+    subtitle = c.get("subtitle")
+    display = c.get("display_value") or f"{round(value * 100)}%"
+
+    # The highest ascending threshold at or below the value picks the role.
+    variant = "default"
+    for threshold in c.get("thresholds") or []:
+        if not isinstance(threshold, dict):
+            continue
+        at = _clamped_float(threshold.get("at"))
+        if value >= at:
+            variant = _089_variant(threshold.get("variant"), variant)
+
+    # A 180-degree arc. The dash offset encodes the value; nothing from the
+    # component reaches a style attribute.
+    circumference = 126.0  # pi * r, r = 40
+    filled = round(circumference * value, 2)
+    name = f"{label}: {display}" if label else display
+    subtitle_html = (
+        f'<p class="text-[11px] text-astral-muted">{inline_md(subtitle)}</p>'
+        if subtitle
+        else ""
+    )
+    return (
+        f'<div{_base_attrs(c)} class="astral-gauge astral-state-{variant} '
+        f'flex flex-col items-center gap-1">'
+        f'<svg viewBox="0 0 100 56" class="astral-gauge-svg w-32" role="img" '
+        f'aria-label="{_attr(name)}">'
+        f'<path class="astral-gauge-track" d="M 10 50 A 40 40 0 0 1 90 50" '
+        f'fill="none" stroke-width="8" stroke-linecap="round" '
+        f'stroke-dasharray="{circumference}"></path>'
+        f'<path class="astral-gauge-fill" d="M 10 50 A 40 40 0 0 1 90 50" '
+        f'fill="none" stroke-width="8" stroke-linecap="round" '
+        f'stroke-dasharray="{filled} {circumference}"></path>'
+        f"</svg>"
+        f'<p class="astral-gauge-value text-lg font-semibold text-astral-text">'
+        f"{esc(display)}</p>"
+        f'<p class="text-xs text-astral-muted">{inline_md(label)}</p>'
+        f"{subtitle_html}</div>"
+    )
+
+
+def render_pipeline_stepper(c):
+    """An ordered sequence of stages, as an ordered list."""
+    steps = [s for s in (c.get("steps") or []) if isinstance(s, dict)]
+    orientation = (
+        "vertical" if str(c.get("orientation") or "").lower() == "vertical" else "horizontal"
+    )
+    title = c.get("title")
+    title_html = (
+        f'<h3 class="text-sm font-semibold text-astral-text mb-2">{inline_md(title)}</h3>'
+        if title
+        else ""
+    )
+    status_variant = {
+        "done": "success",
+        "active": "info",
+        "pending": "default",
+        "error": "error",
+    }
+    rendered = []
+    marked_current = False
+    for step in steps:
+        status = str(step.get("status") or "pending").strip().lower()
+        if status not in status_variant:
+            status = "pending"
+        variant = status_variant[status]
+        # Only the FIRST active step is aria-current: more than one "current"
+        # step tells a screen reader nothing.
+        current = ""
+        if status == "active" and not marked_current:
+            current = ' aria-current="step"'
+            marked_current = True
+        detail = step.get("detail")
+        detail_html = (
+            f'<span class="text-[11px] text-astral-muted">{inline_md(detail)}</span>'
+            if detail
+            else ""
+        )
+        rendered.append(
+            f'<li class="astral-step astral-state-{variant} flex items-center gap-2"'
+            f'{current} data-status="{esc(status)}">'
+            f'<span class="astral-step-dot" aria-hidden="true"></span>'
+            f'<span class="text-xs text-astral-text">{inline_md(step.get("label"))}</span>'
+            f"{detail_html}</li>"
+        )
+    return (
+        f'<div{_base_attrs(c)} class="astral-pipeline-stepper">{title_html}'
+        f'<ol class="astral-stepper-list flex gap-3" data-orientation="{orientation}">'
+        f'{"".join(rendered)}</ol></div>'
+    )
+
+
+def render_donut_chart(c):
+    """A single-series ring with an optional centered readout."""
+    labels = [str(x) for x in (c.get("labels") or [])]
+    values = [max(0.0, _safe_number(v)) for v in (c.get("data") or [])]
+    if not values:
+        return ""
+    total = sum(values) or 1.0
+
+    radius = 40.0
+    circumference = 2 * 3.14159265 * radius
+    segments = []
+    offset = 0.0
+    for index, value in enumerate(values):
+        length = round(circumference * (value / total), 3)
+        series = (index % _SERIES_CLASSES) + 1
+        segments.append(
+            f'<circle class="astral-series-{series}" cx="50" cy="50" r="{radius}" '
+            f'fill="none" stroke-width="14" '
+            f'stroke-dasharray="{length} {round(circumference - length, 3)}" '
+            f'stroke-dashoffset="{round(-offset, 3)}"></circle>'
+        )
+        offset += length
+
+    center_label = c.get("center_label")
+    center_value = c.get("center_value")
+    center = ""
+    if center_value or center_label:
+        center = (
+            f'<div class="astral-donut-center absolute inset-0 flex flex-col '
+            f'items-center justify-center pointer-events-none">'
+            f'<span class="text-lg font-semibold text-astral-text">'
+            f"{inline_md(center_value)}</span>"
+            f'<span class="text-[11px] text-astral-muted">{inline_md(center_label)}</span>'
+            f"</div>"
+        )
+
+    summary = ", ".join(
+        f"{labels[i] if i < len(labels) else f'series {i + 1}'} {values[i]:g}"
+        for i in range(len(values))
+    )
+    title = c.get("title")
+    name = f"Donut chart: {title}" if title else f"Donut chart: {summary}"
+    title_html = (
+        f'<h3 class="text-sm font-semibold text-astral-text mb-2">{inline_md(title)}</h3>'
+        if title
+        else ""
+    )
+    legend = "".join(
+        f'<li class="flex items-center gap-1 text-[11px] text-astral-muted">'
+        f'<span class="astral-legend-swatch astral-series-{(i % _SERIES_CLASSES) + 1}" '
+        f'aria-hidden="true"></span>{esc(labels[i] if i < len(labels) else "")}</li>'
+        for i in range(len(values))
+    )
+    return (
+        f'<div{_base_attrs(c)} class="astral-donut-chart">{title_html}'
+        f'<div class="relative w-40">'
+        f'<svg viewBox="0 0 100 100" class="astral-donut-svg -rotate-90" role="img" '
+        f'aria-label="{_attr(name)}">{"".join(segments)}</svg>{center}</div>'
+        f'<ul class="astral-legend flex flex-wrap gap-2 mt-2">{legend}</ul></div>'
+    )
+
+
+def render_radar_chart(c):
+    """A multi-axis comparison, with a visually hidden data table.
+
+    The table is not a nicety: a polygon conveys nothing to a screen reader,
+    and the numbers behind it are the actual content.
+    """
+    axes = [str(a) for a in (c.get("axes") or [])]
+    datasets = [d for d in (c.get("datasets") or []) if isinstance(d, dict)]
+    if len(axes) < 3 or not datasets:
+        return ""
+
+    values = [
+        [max(0.0, _safe_number(v)) for v in (d.get("data") or [])] for d in datasets
+    ]
+    declared_max = c.get("max_value")
+    observed = max((max(row) for row in values if row), default=0.0)
+    scale = _safe_number(declared_max, observed) or observed or 1.0
+
+    import math
+
+    count = len(axes)
+    rings = "".join(
+        f'<circle class="astral-radar-ring" cx="50" cy="50" r="{r}" fill="none" '
+        f'stroke-width="0.5"></circle>'
+        for r in (12, 24, 36, 45)
+    )
+    polygons = []
+    for index, row in enumerate(values):
+        points = []
+        for axis_index in range(count):
+            magnitude = (row[axis_index] if axis_index < len(row) else 0.0) / scale
+            magnitude = max(0.0, min(1.0, magnitude))
+            angle = (2 * math.pi * axis_index / count) - (math.pi / 2)
+            points.append(
+                f"{round(50 + 45 * magnitude * math.cos(angle), 2)},"
+                f"{round(50 + 45 * magnitude * math.sin(angle), 2)}"
+            )
+        series = (index % _SERIES_CLASSES) + 1
+        polygons.append(
+            f'<polygon class="astral-series-{series} astral-radar-area" '
+            f'points="{" ".join(points)}"></polygon>'
+        )
+
+    header = "".join(f"<th scope=\"col\">{esc(a)}</th>" for a in axes)
+    rows = []
+    for dataset, row in zip(datasets, values):
+        cells = "".join(
+            f"<td>{esc(f'{row[i]:g}') if i < len(row) else ''}</td>"
+            for i in range(count)
+        )
+        rows.append(
+            f'<tr><th scope="row">{esc(dataset.get("label") or "")}</th>{cells}</tr>'
+        )
+
+    title = c.get("title")
+    title_html = (
+        f'<h3 class="text-sm font-semibold text-astral-text mb-2">{inline_md(title)}</h3>'
+        if title
+        else ""
+    )
+    name = f"Radar chart: {title}" if title else "Radar chart"
+    legend = "".join(
+        f'<li class="flex items-center gap-1 text-[11px] text-astral-muted">'
+        f'<span class="astral-legend-swatch astral-series-{(i % _SERIES_CLASSES) + 1}" '
+        f'aria-hidden="true"></span>{esc(d.get("label") or "")}</li>'
+        for i, d in enumerate(datasets)
+    )
+    return (
+        f'<div{_base_attrs(c)} class="astral-radar-chart">{title_html}'
+        f'<svg viewBox="0 0 100 100" class="astral-radar-svg w-48" role="img" '
+        f'aria-label="{_attr(name)}">{rings}{"".join(polygons)}</svg>'
+        f'<ul class="astral-legend flex flex-wrap gap-2 mt-2">{legend}</ul>'
+        f'<table class="astral-sr-only"><caption>{esc(title or "Radar chart data")}'
+        f'</caption><thead><tr><th scope="col"></th>{header}</tr></thead>'
+        f'<tbody>{"".join(rows)}</tbody></table></div>'
+    )
+
+
 PRIMITIVE_RENDERERS.update({
     "container": render_container, "text": render_text, "button": render_button, "input": render_input,
     "param_picker": render_param_picker, "card": render_card, "table": render_table, "list": render_list,
@@ -1176,6 +1559,10 @@ PRIMITIVE_RENDERERS.update({
     "timeline": render_timeline, "rating": render_rating,
     "skeleton": render_skeleton, "chat_history": render_chat_history,
     "download_card": render_download_card,
+    # Feature 089 composite readouts.
+    "action_group": render_action_group, "stat_group": render_stat_group,
+    "gauge": render_gauge, "pipeline_stepper": render_pipeline_stepper,
+    "donut_chart": render_donut_chart, "radar_chart": render_radar_chart,
 })
 
 

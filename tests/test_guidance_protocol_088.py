@@ -76,7 +76,8 @@ def test_exact_guidance_fixtures_match_shared_forms_and_safe_html(name):
 def test_new_088_actions_are_manifested_once_and_nowhere_else():
     document = manifest()
     actions = document["accept_actions"]
-    assert NEW_088_ACTIONS <= set(actions) and len(actions) == len(set(actions)) == 136
+    # 138 = 136 at 088 + the two feature-089 TypeSafe credential actions.
+    assert NEW_088_ACTIONS <= set(actions) and len(actions) == len(set(actions)) == 138
     declared = set()
     for name, (_, _) in GUIDANCE_CONTRACTS.items():
         contract = document["presentation_contracts"][name]

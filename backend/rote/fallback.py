@@ -40,6 +40,16 @@ FALLBACK_LADDER = {
     "divider": ("text",),
     "image": ("text",),
     "skeleton": ("text",),
+    # Feature 089 composite readouts. Each ladder keeps as much of the meaning
+    # as the next target can hold: a gauge is a bounded value, so it becomes a
+    # progress bar before it becomes a metric; a stepper is an ordered sequence
+    # with states, so it becomes a timeline before a plain list.
+    "action_group": ("container", "text"),
+    "stat_group": ("grid", "keyvalue", "table", "text"),
+    "gauge": ("progress", "metric", "text"),
+    "pipeline_stepper": ("timeline", "list", "text"),
+    "donut_chart": ("pie_chart", "table", "list", "text"),
+    "radar_chart": ("table", "list", "text"),
 }
 
 #: Terminal fallback — assumed renderable everywhere.

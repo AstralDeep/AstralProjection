@@ -5,7 +5,7 @@ Takes a list of raw component dicts (as produced by the orchestrator)
 and a DeviceProfile, returns a new list adapted for that device.
 All transformation is rule-based and synchronous.
 """
-from typing import Any, Dict, List, Optional
+from typing import AbstractSet, Any, Dict, List, Optional
 
 from rote import fallback, lod
 from rote.capabilities import DeviceProfile, DeviceType
@@ -89,6 +89,13 @@ class ComponentAdapter:
                 # Fail-open: never let LOD resolution break adaptation.
                 pass
 
+        # Feature 089. The six new types are degraded for non-web profiles
+        # BEFORE per-component adaptation, not after: _adapt_component does not
+        # recognise them, so by the time the substitution ran they would
+        # already have been dropped. Running first means a watch gets the
+        # progress bar and a speaker gets the sentence.
+        components = [cls._degrade_089_for_non_web(c, profile) for c in components]
+
         result = []
         for comp in components:
             adapted = cls._adapt_component(comp, profile)
@@ -106,6 +113,148 @@ class ComponentAdapter:
         return cls._enforce_host_limits(result, profile)
 
     # Capability fallback ladder
+
+    #: Feature 089 introduced these, and only the web renderer draws them.
+    _089_TYPES = frozenset({
+        "action_group",
+        "stat_group",
+        "gauge",
+        "pipeline_stepper",
+        "donut_chart",
+        "radar_chart",
+    })
+
+    #: The device types that render the new vocabulary.
+    _089_WEB_DEVICES = frozenset({"browser", "tablet", "mobile"})
+
+    @classmethod
+    def _degrade_089_for_non_web(cls, comp: Dict, profile: DeviceProfile) -> Dict:
+        """Degrade only the 089 types, only for a non-web profile.
+
+        Every pre-089 type is returned untouched, so this cannot change what a
+        native client already receives. It recurses, because a gauge nested in
+        a card is just as undrawable as a gauge at the top level.
+        """
+        if not isinstance(comp, dict):
+            return comp
+        device = getattr(getattr(profile, "device_type", None), "value", None)
+        if device in cls._089_WEB_DEVICES:
+            return comp
+        return cls._degrade_089_tree(comp, profile)
+
+    @classmethod
+    def _degrade_089_tree(cls, comp: Dict, profile: DeviceProfile) -> Dict:
+        if not isinstance(comp, dict):
+            return comp
+        ctype = str(comp.get("type", "")).strip().lower()
+        if ctype in cls._089_TYPES:
+            # The target's own vocabulary minus the 089 additions: everything
+            # it could render before this feature existed.
+            legacy = cls._legacy_supported_types(profile)
+            return cls._degrade_unsupported(comp, legacy)
+        out = dict(comp)
+        for key in ("content", "children"):
+            kids = comp.get(key)
+            if isinstance(kids, list):
+                out[key] = [
+                    cls._degrade_089_tree(c, profile) if isinstance(c, dict) else c
+                    for c in kids
+                ]
+        tabs = comp.get("tabs")
+        if isinstance(tabs, list):
+            out["tabs"] = [
+                (
+                    {
+                        **tab,
+                        "content": [
+                            cls._degrade_089_tree(c, profile)
+                            if isinstance(c, dict)
+                            else c
+                            for c in tab["content"]
+                        ],
+                    }
+                    if isinstance(tab, dict) and isinstance(tab.get("content"), list)
+                    else tab
+                )
+                for tab in tabs
+            ]
+        return out
+
+    #: Candidate rungs a 089 ladder can land on.
+    _089_CANDIDATE_RUNGS = (
+        "text", "container", "card", "grid", "list", "metric", "progress",
+        "timeline", "keyvalue", "badge", "alert", "hero", "button", "table",
+        "bar_chart", "line_chart", "pie_chart",
+    )
+
+    @classmethod
+    def _legacy_supported_types(cls, profile: DeviceProfile) -> AbstractSet[str]:
+        """What this target actually renders, probed rather than assumed.
+
+        The obvious implementation reads the profile's capability flags, and it
+        is wrong in a way that costs data: a voice surface drops ``progress``
+        outright even though no flag says so, so a gauge degraded to a progress
+        bar disappears on the way to a speaker. Instead each candidate rung is
+        run through the profile's own per-type adaptation, and a rung counts as
+        supported only when it survives with its type intact.
+
+        The answer depends only on the profile, so it is cached per profile
+        identity.
+        """
+        cache = getattr(cls, "_089_rung_cache", None)
+        if cache is None:
+            cache = cls._089_rung_cache = {}
+        key = (
+            getattr(getattr(profile, "device_type", None), "value", None),
+            getattr(profile, "supports_charts", True),
+            getattr(profile, "supports_tables", True),
+            getattr(profile, "supports_tabs", True),
+            getattr(profile, "supports_code", True),
+            getattr(profile, "supports_interactivity", True),
+            getattr(profile, "max_grid_columns", 0),
+        )
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+
+        probes = {
+            "text": {"type": "text", "content": "probe"},
+            "container": {"type": "container", "children": []},
+            "card": {"type": "card", "title": "probe", "content": []},
+            "grid": {"type": "grid", "columns": 2, "children": []},
+            "list": {"type": "list", "items": ["probe"]},
+            "metric": {"type": "metric", "title": "probe", "value": "1"},
+            "progress": {"type": "progress", "value": 0.5, "label": "probe"},
+            "timeline": {"type": "timeline", "items": [{"title": "probe"}]},
+            "keyvalue": {"type": "keyvalue",
+                         "items": [{"label": "k", "value": "v"}]},
+            "badge": {"type": "badge", "label": "probe"},
+            "alert": {"type": "alert", "message": "probe"},
+            "hero": {"type": "hero", "title": "probe"},
+            "button": {"type": "button", "label": "probe", "action": "probe"},
+            "table": {"type": "table", "headers": ["a"], "rows": [["1"]]},
+            "bar_chart": {"type": "bar_chart", "labels": ["a"],
+                          "datasets": [{"label": "s", "data": [1]}]},
+            "line_chart": {"type": "line_chart", "labels": ["a"],
+                           "datasets": [{"label": "s", "data": [1]}]},
+            "pie_chart": {"type": "pie_chart", "labels": ["a"], "data": [1]},
+        }
+        supported = set()
+        for name in cls._089_CANDIDATE_RUNGS:
+            probe = probes.get(name)
+            if probe is None:
+                continue
+            try:
+                result = cls._adapt_component(dict(probe), profile)
+            except Exception:
+                result = None
+            if isinstance(result, dict) and str(result.get("type", "")).lower() == name:
+                supported.add(name)
+        supported.add("text")  # the terminal is always assumed renderable
+        supported -= cls._089_TYPES
+        cache[key] = frozenset(supported)
+        return cache[key]
+
 
     @classmethod
     def _carry_identity(cls, src: Dict, out: Dict) -> Dict:
@@ -142,6 +291,13 @@ class ComponentAdapter:
         target = fallback.first_supported(ctype, supported)
         if target == ctype:
             return cls._degrade_children(comp, supported)
+        # Feature 089: the composite readouts name their fields, so their
+        # mapping runs BEFORE every generic converter -- including the text
+        # terminal, whose extractor knows nothing about steps, axes or
+        # thresholds and would emit an empty node where the numbers were.
+        converted = cls._degrade_089(comp, ctype, target, supported)
+        if converted is not None:
+            return cls._carry_identity(comp, converted)
         if target == "text":
             return cls._carry_identity(comp, {
                 "type": "text",
@@ -153,12 +309,238 @@ class ComponentAdapter:
             return cls._carry_identity(comp, cls._to_table(comp, supported))
         if target in ("container", "card"):
             wrapped = {"type": target,
-                       "content": comp.get("content") or comp.get("children") or []}
-            if comp.get("title"):
-                wrapped["title"] = comp["title"]
+                       "content": (comp.get("content") or comp.get("children")
+                                   or comp.get("buttons") or [])}
+            if comp.get("title") or comp.get("label"):
+                wrapped["title"] = comp.get("title") or comp.get("label")
             return cls._carry_identity(comp, cls._degrade_children(wrapped, supported))
         return cls._carry_identity(
             comp, {"type": "text", "content": cls._extract_text(comp) or "", "variant": "body"})
+
+    #: Step status -> the timeline variant that means the same thing.
+    _STEP_VARIANT = {
+        "done": "success",
+        "active": "info",
+        "pending": "default",
+        "error": "error",
+    }
+
+    @classmethod
+    def _degrade_089(cls, comp: Dict, ctype: str, target: str, supported):
+        """Map a 089 composite readout onto its ladder target, field by field.
+
+        Returns ``None`` when this pair is not a 089 substitution, so the
+        caller falls through to its own handling.
+        """
+        if ctype == "gauge" and target == "progress":
+            out: Dict[str, Any] = {
+                "type": "progress",
+                "value": comp.get("value", 0.0),
+                "show_percentage": not comp.get("display_value"),
+            }
+            label = comp.get("label")
+            display = comp.get("display_value")
+            if label or display:
+                out["label"] = (
+                    f"{label}: {display}" if label and display else (label or display)
+                )
+            return out
+
+        if ctype == "gauge" and target == "metric":
+            return {
+                "type": "metric",
+                "title": comp.get("label") or "",
+                "value": comp.get("display_value")
+                or f"{round(float(comp.get('value') or 0.0) * 100)}%",
+                "subtitle": comp.get("subtitle"),
+                "progress": comp.get("value"),
+            }
+
+        if ctype == "stat_group" and target in ("grid", "keyvalue"):
+            items = [i for i in (comp.get("items") or []) if isinstance(i, dict)]
+            if target == "keyvalue":
+                return {
+                    "type": "keyvalue",
+                    "title": comp.get("title"),
+                    "items": [
+                        {
+                            "label": str(i.get("label") or ""),
+                            "value": str(i.get("value") or ""),
+                            "hint": i.get("hint") or i.get("delta"),
+                        }
+                        for i in items
+                    ],
+                }
+            # Each stat becomes a metric tile, which is what a grid holds.
+            return cls._degrade_children(
+                {
+                    "type": "grid",
+                    "title": comp.get("title"),
+                    "columns": comp.get("columns", 4),
+                    "children": [
+                        {
+                            "type": "metric",
+                            "title": str(i.get("label") or ""),
+                            "value": str(i.get("value") or ""),
+                            "subtitle": i.get("hint") or i.get("delta"),
+                            "variant": i.get("variant") or "default",
+                        }
+                        for i in items
+                    ],
+                },
+                supported,
+            )
+
+        if ctype == "pipeline_stepper" and target == "timeline":
+            steps = [s for s in (comp.get("steps") or []) if isinstance(s, dict)]
+            return {
+                "type": "timeline",
+                "title": comp.get("title"),
+                "items": [
+                    {
+                        "title": str(s.get("label") or ""),
+                        "description": s.get("detail"),
+                        "variant": cls._STEP_VARIANT.get(
+                            str(s.get("status") or "").lower(), "default"
+                        ),
+                    }
+                    for s in steps
+                ],
+            }
+
+        if ctype == "donut_chart" and target == "pie_chart":
+            # The same single series, drawn as a disc instead of a ring.
+            return {
+                "type": "pie_chart",
+                "title": comp.get("title", ""),
+                "labels": list(comp.get("labels") or []),
+                "data": list(comp.get("data") or []),
+            }
+
+        if ctype == "radar_chart" and target == "table":
+            axes = [str(a) for a in (comp.get("axes") or [])]
+            datasets = [d for d in (comp.get("datasets") or []) if isinstance(d, dict)]
+            rows = []
+            for dataset in datasets:
+                values = list(dataset.get("data") or [])
+                rows.append(
+                    [str(dataset.get("label") or "")]
+                    + [
+                        str(values[i]) if i < len(values) else ""
+                        for i in range(len(axes))
+                    ]
+                )
+            return {
+                "type": "table",
+                "title": comp.get("title"),
+                "headers": [""] + axes,
+                "rows": rows,
+            }
+
+        if ctype in ("donut_chart", "radar_chart", "stat_group") and target == "list":
+            return cls._to_list_089(comp, ctype)
+
+        if target == "text" and ctype in (
+            "gauge",
+            "stat_group",
+            "pipeline_stepper",
+            "donut_chart",
+            "radar_chart",
+            "action_group",
+        ):
+            return {
+                "type": "text",
+                "content": cls._summarize_089(comp, ctype),
+                "variant": "body",
+            }
+
+        return None
+
+    @classmethod
+    def _summarize_089(cls, comp: Dict, ctype: str) -> str:
+        """One sentence that still carries the numbers.
+
+        This is what a watch or a voice surface receives. "Humidity" alone
+        would be a worse answer than the unsupported placeholder it replaced.
+        """
+        title = str(comp.get("title") or comp.get("label") or "").strip()
+        if ctype == "gauge":
+            reading = comp.get("display_value") or (
+                f"{round(float(comp.get('value') or 0.0) * 100)}%"
+            )
+            return f"{title}: {reading}".strip(": ")
+        if ctype == "stat_group":
+            parts = [
+                f"{i.get('label', '')} {i.get('value', '')}".strip()
+                for i in (comp.get("items") or [])
+                if isinstance(i, dict)
+            ]
+            return "; ".join(p for p in ([title] if title else []) + parts if p)
+        if ctype == "pipeline_stepper":
+            parts = [
+                f"{s.get('label', '')} ({s.get('status', 'pending')})".strip()
+                for s in (comp.get("steps") or [])
+                if isinstance(s, dict)
+            ]
+            return "; ".join(p for p in ([title] if title else []) + parts if p)
+        if ctype == "donut_chart":
+            labels = [str(x) for x in (comp.get("labels") or [])]
+            values = list(comp.get("data") or [])
+            parts = [
+                f"{labels[i] if i < len(labels) else f'series {i + 1}'} {values[i]}"
+                for i in range(len(values))
+            ]
+            return "; ".join(p for p in ([title] if title else []) + parts if p)
+        if ctype == "radar_chart":
+            axes = [str(a) for a in (comp.get("axes") or [])]
+            parts = []
+            for dataset in comp.get("datasets") or []:
+                if not isinstance(dataset, dict):
+                    continue
+                values = list(dataset.get("data") or [])
+                pairs = ", ".join(
+                    f"{axes[i]} {values[i]}" for i in range(min(len(axes), len(values)))
+                )
+                parts.append(f"{dataset.get('label') or ''} {pairs}".strip())
+            return "; ".join(p for p in ([title] if title else []) + parts if p)
+        # action_group
+        labels = [
+            str(b.get("label") or "")
+            for b in (comp.get("buttons") or [])
+            if isinstance(b, dict)
+        ]
+        return "; ".join(p for p in ([title] if title else []) + labels if p)
+
+    @classmethod
+    def _to_list_089(cls, comp: Dict, ctype: str) -> Dict:
+        """A last-resort list that still carries the numbers."""
+        items = []
+        if ctype == "donut_chart":
+            labels = [str(x) for x in (comp.get("labels") or [])]
+            for index, value in enumerate(comp.get("data") or []):
+                label = labels[index] if index < len(labels) else f"series {index + 1}"
+                items.append(f"{label}: {value}")
+        elif ctype == "radar_chart":
+            axes = [str(a) for a in (comp.get("axes") or [])]
+            for dataset in comp.get("datasets") or []:
+                if not isinstance(dataset, dict):
+                    continue
+                values = list(dataset.get("data") or [])
+                pairs = ", ".join(
+                    f"{axes[i]} {values[i]}"
+                    for i in range(min(len(axes), len(values)))
+                )
+                items.append(f"{dataset.get('label') or ''}: {pairs}".strip(": "))
+        else:  # stat_group
+            for item in comp.get("items") or []:
+                if isinstance(item, dict):
+                    items.append(
+                        f"{item.get('label', '')}: {item.get('value', '')}".strip(": ")
+                    )
+        out: Dict[str, Any] = {"type": "list", "ordered": False, "items": items}
+        if comp.get("title"):
+            out["title"] = comp["title"]
+        return out
 
     @classmethod
     def _degrade_children(cls, comp: Dict, supported) -> Dict:

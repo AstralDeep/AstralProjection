@@ -27,7 +27,9 @@ BUILDERS = {
 NEW_ACTIONS = {SAVE_ACTION, "chrome_job_stop"}
 # 132 (T037 guidance) + chrome_work_result_save + chrome_job_stop.
 # 136 = 134 + the two closed feature-088 T048 Connections actions.
-ACTION_COUNT = 136
+# 138 = 136 + the two feature-089 TypeSafe credential actions
+# (chrome_typesafe_save, chrome_typesafe_clear).
+ACTION_COUNT = 138
 
 
 def manifest():
