@@ -6,7 +6,7 @@
 
 const CACHE_PREFIX = "astraldeep-public-offline-";
 // BEGIN GENERATED PUBLIC ASSETS
-const CACHE_NAME = CACHE_PREFIX + "a9ac406a1629555f1b20cdb0";
+const CACHE_NAME = CACHE_PREFIX + "d770fc1377bf40dfe88199c4";
 const PUBLIC_ASSETS = [
   {
     "path": "/static/offline.html",
@@ -23,20 +23,14 @@ const PUBLIC_ASSETS = [
   {
     "path": "/static/astral.css",
     "type": "text/css",
-    "bytes": 64087,
-    "sha256": "b0a76dc52986c1b1187487b4a166910f24ae7a4494db68af6b3c3746a79fc873"
+    "bytes": 85227,
+    "sha256": "24f689f5f6d3addb896b37a14716d243bb58d581a335e780c862dec247f12da6"
   },
   {
-    "path": "/static/fonts/inter-latin.woff2",
+    "path": "/static/fonts/open-sans-latin.woff2",
     "type": "font/woff2",
-    "bytes": 48256,
-    "sha256": "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
-  },
-  {
-    "path": "/static/fonts/jetbrains-mono-latin.woff2",
-    "type": "font/woff2",
-    "bytes": 21168,
-    "sha256": "14425ba9c695763c1547f48a206b7aa60350a33ae23de09f0407877f3fcd89eb"
+    "bytes": 48320,
+    "sha256": "d8e4fe0452aa2076429a9bb5d8757d00a994dd95986cf950e9a1a371b9a072a0"
   },
   {
     "path": "/static/img/astra-fav.png",

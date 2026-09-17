@@ -1383,7 +1383,7 @@ async function installDeferredAccountEffect(page, effect) {
   if (effect === "export") {
     const { frame } = await registration(page);
     await receive(page, snapshot(frame));
-    for (const name of ["inter-latin.woff2", "jetbrains-mono-latin.woff2"]) {
+    for (const name of ["open-sans-latin.woff2"]) {
       fonts[name] = (await readFile(resolve(ROOT, "backend/webrender/static/fonts", name))).toString("base64");
     }
   }

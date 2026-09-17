@@ -30,11 +30,16 @@ def build() -> tuple[str, dict]:
         # POSIX-separated so the manifest is byte-identical regardless of the
         # host OS the generator runs on (Windows str() would emit backslashes).
         inputs[path.relative_to(ROOT).as_posix()] = hashlib.sha256(raw).hexdigest()
-        return raw
+        # Feature 089: a CRLF working tree (Windows checkout, or a vendored
+        # bundle that ships CRLF) must not change the generated document. The
+        # manifest still records the source file's real digest above; only the
+        # bytes that go INTO the export are newline-normalised, so the artifact
+        # is reproducible from any checkout on any host.
+        return raw.replace(b"\r\n", b"\n")
 
     css = read(STATIC / "astral.css").decode()
     fonts = {}
-    for name in ("inter-latin.woff2", "jetbrains-mono-latin.woff2"):
+    for name in ("open-sans-latin.woff2",):
         fonts[name] = base64.b64encode(read(STATIC / "fonts" / name)).decode()
         css = css.replace("/static/fonts/" + name, "data:font/woff2;base64," + fonts[name])
     icon = base64.b64encode(read(STATIC / "img/astra-fav.png")).decode()

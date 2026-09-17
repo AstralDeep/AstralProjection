@@ -17,8 +17,7 @@ PUBLIC_ASSETS = {
     "offline.html": "text/html",
     "offline.css": "text/css",
     "astral.css": "text/css",
-    "fonts/inter-latin.woff2": "font/woff2",
-    "fonts/jetbrains-mono-latin.woff2": "font/woff2",
+    "fonts/open-sans-latin.woff2": "font/woff2",
     "img/astra-fav.png": "image/png",
     "manifest.webmanifest": "application/manifest+json",
 }

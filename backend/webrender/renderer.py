@@ -528,7 +528,7 @@ def render_code(c):
     lang_html = f'<div class="px-4 py-2 border-b border-white/5 text-xs text-astral-muted">{esc(language)}</div>' if language else ""
     return (
         f'<div{_base_attrs(c)} class="astral-code rounded-lg bg-black/40 border border-white/5 overflow-hidden">{lang_html}'
-        f'<pre class="p-4 text-sm overflow-x-auto" style="font-family:\'JetBrains Mono\',monospace">'
+        f'<pre class="p-4 text-sm overflow-x-auto" style="font-family:var(--astral-font)">'
         f'<code class="text-green-400">{esc(c.get("code",""))}</code></pre></div>'
     )
 

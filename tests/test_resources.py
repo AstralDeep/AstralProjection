@@ -47,8 +47,8 @@ def test_compatibility_packages_and_public_facade_are_importable() -> None:
         (resources.static_path, "offline-registration.js"),
         (resources.static_path, "service-worker.js"),
         (resources.static_path, "manifest.webmanifest"),
-        (resources.font_path, "inter-latin.woff2"),
-        (resources.font_path, "jetbrains-mono-latin.woff2"),
+        (resources.font_path, "open-sans-latin.woff2"),
+        (resources.font_path, "OFL.txt"),
         (resources.image_path, "astra-fav.png"),
         (resources.image_path, "AstralDeep.png"),
         (resources.vendor_path, "plotly.min.js"),
@@ -223,7 +223,7 @@ def test_offline_cache_allowlist_contains_only_exact_public_package_bytes() -> N
     assets = json.loads(match[1])
     assert {asset["path"] for asset in assets} == {
         "/static/offline.html", "/static/offline.css", "/static/astral.css",
-        "/static/fonts/inter-latin.woff2", "/static/fonts/jetbrains-mono-latin.woff2",
+        "/static/fonts/open-sans-latin.woff2",
         "/static/img/astra-fav.png", "/static/manifest.webmanifest",
     }
     for asset in assets:

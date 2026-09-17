@@ -24,7 +24,7 @@
     var jobs = [], count = 0;
     // Fonts are the same public, first-party-hosted assets the live shell uses.
     // Embed their bytes so opening the file makes no server/network requests.
-    [["Inter", "inter-latin.woff2", "400 700"], ["JetBrains Mono", "jetbrains-mono-latin.woff2", "400"]].forEach(function (font) {
+    [["Open Sans", "open-sans-latin.woff2", "400 800"]].forEach(function (font) {
       jobs.push(function () { return Promise.resolve(options.loadFont(font[1])).then(function (buffer) {
         if (buffer.byteLength > 1024 * 1024) throw new Error("Canvas font exceeds the export size limit.");
         var bytes = new Uint8Array(buffer), binary = "";

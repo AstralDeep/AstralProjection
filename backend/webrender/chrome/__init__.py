@@ -18,11 +18,25 @@ from .topbar import render_topbar  # noqa: F401
 
 
 def render_modal_shell(title: str, body_html: str, surface: str = "",
-                       mandatory: bool = False) -> str:
-    """Wrap a surface body in the standard chrome modal (backdrop + card).
+                       mandatory: bool = False, *, subtitle: str = "",
+                       icon: str = "", sections: tuple = (),
+                       footer_html: str = "") -> str:
+    """Wrap a surface body in the standard chrome modal (overlay + card).
 
     ``body_html`` is trusted, already-escaped chrome output from a surface
-    renderer; ``title`` and ``surface`` are escaped here.
+    renderer; ``title``, ``subtitle``, ``icon`` and ``surface`` are escaped
+    here.
+
+    Feature 089 gives the dialog the a8p structure: an icon badge beside the
+    title and a subtitle, an optional tab strip, a scrolling body and a footer
+    for the surface's own actions. A surface that declares ``sections`` gets
+    the tabs; one that does not is unchanged apart from its styling, so every
+    existing caller keeps working without passing anything new.
+
+    ``sections`` is a sequence of ``(key, label)`` pairs. The body is expected
+    to carry one ``data-section="<key>"`` element per pair; ``client.js``
+    shows the selected one. If the body carries no matching element the tab
+    simply selects nothing, which is visible rather than broken.
 
     ``mandatory=True`` (feature 054 first-run gate): the ✕ button is
     omitted, ``data-mandatory="1"`` is stamped on the card so
@@ -32,30 +46,62 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
     """
     if mandatory:
         close_btn = (
-            '<a href="/auth/logout" class="text-xs text-astral-muted '
+            '<a href="/auth/logout" class="astral-modal-signout text-xs text-astral-muted '
             'hover:text-astral-text underline underline-offset-2">Sign out</a>'
         )
         mandatory_attr = ' data-mandatory="1"'
     else:
         close_btn = (
-            '<button type="button" class="astral-modal-close text-astral-muted hover:text-astral-text '
-            'rounded-lg p-1.5 hover:bg-white/5" aria-label="Close">'
+            '<button type="button" class="astral-modal-close" aria-label="Close">'
             '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-            'stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>'
+            'stroke-width="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg></button>'
         )
         mandatory_attr = ""
-    return (
-        f'<div class="astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm '
-        f'flex items-start justify-center overflow-y-auto py-10" data-surface="{esc(surface)}">'
-        f'<div class="astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl '
-        f'shadow-2xl w-full max-w-3xl mx-4 my-auto"{mandatory_attr} role="dialog" aria-modal="true" '
-        f'aria-label="{esc(title)}" tabindex="-1">'
-        f'<div class="flex items-center justify-between px-5 py-4 border-b border-white/5">'
-        f'<h2 class="text-base font-semibold text-astral-text">{esc(title)}</h2>'
-        f'{close_btn}</div>'
-        f'<div class="px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4">{body_html}</div>'
-        f'</div></div>'
+
+    glyph = esc(icon) if icon else "\u2726"
+    subtitle_html = (
+        f'<div class="astral-modal-subtitle">{esc(subtitle)}</div>' if subtitle else
+        '<div class="astral-modal-subtitle"></div>'
     )
+
+    tabs_html = ""
+    if sections:
+        buttons = []
+        for index, entry in enumerate(sections):
+            key, label = (entry if isinstance(entry, (tuple, list)) and len(entry) == 2
+                          else (entry, entry))
+            active = " active" if index == 0 else ""
+            selected = "true" if index == 0 else "false"
+            buttons.append(
+                f'<button type="button" class="astral-modal-tab{active}" role="tab" '
+                f'aria-selected="{selected}" data-section-target="{esc(str(key))}">'
+                f"{esc(str(label))}</button>"
+            )
+        tabs_html = (
+            '<div class="astral-modal-tabs" role="tablist" aria-label="Sections">'
+            + "".join(buttons) + "</div>"
+        )
+
+    footer = (
+        f'<div class="astral-modal-footer">{footer_html}</div>' if footer_html else ""
+    )
+
+    return (
+        f'<div class="astral-modal-backdrop astral-modal-overlay" '
+        f'data-surface="{esc(surface)}">'
+        f'<div class="astral-modal-card"{mandatory_attr} role="dialog" aria-modal="true" '
+        f'aria-label="{esc(title)}" tabindex="-1">'
+        f'<div class="astral-modal-header">'
+        f'<span class="astral-modal-icon" aria-hidden="true">{glyph}</span>'
+        f'<div class="astral-modal-heading">'
+        f'<h2 class="astral-modal-title">{esc(title)}</h2>{subtitle_html}</div>'
+        f"{close_btn}</div>"
+        f"{tabs_html}"
+        f'<div class="astral-modal-body">{body_html}</div>'
+        f"{footer}"
+        f"</div></div>"
+    )
+
 
 
 def chrome_error_block(message: str, retry_surface: str = "") -> str:

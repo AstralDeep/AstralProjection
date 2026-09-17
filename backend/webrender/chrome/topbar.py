@@ -219,7 +219,7 @@ def render_topbar(
     work_enabled: bool = False,
     notes_enabled: bool = False,
 ) -> str:
-    """Inner HTML for ``<header id="astral-topbar">`` — brand, status, Settings.
+    """Inner HTML for ``<header id="astral-topbar">`` — status and controls.
 
     Targets the web client only, but is rendered FROM the shared
     :func:`build_menu_model` so it can never diverge from what the native
@@ -240,8 +240,10 @@ def render_topbar(
         notes_enabled=notes_enabled,
     )
 
-    # Left cluster: brand. Right cluster: status + New chat + interactive
-    # controls + gear, in model order (status, [export], [share], [pulse], timeline, settings).
+    # One cluster: status + New chat + interactive controls + gear, in model
+    # order (status, [export], [share], [pulse], timeline, settings). Feature
+    # 089 places it inside the sidebar's profile widget, so the gear is the
+    # last control and sits at the widget's right edge.
     # New chat is core client chrome, not a settings surface — every native
     # client hardcodes it in its top bar (Windows TopBar.new_btn, Android
     # RootScaffold onNewChat); this is the web twin of that button.
@@ -281,10 +283,12 @@ def render_topbar(
         elif control.kind == "menu":  # the Settings gear + dropdown
             right_parts.append(_settings_html(model))
 
+    # Feature 089: the brand moved to the sidebar's own #astral-brand block,
+    # which is what returns to the landing view. Emitting it here too would
+    # put a second logo and a second data-tour-target="topbar.brand" in the
+    # DOM, so this renderer now emits only the control cluster.
     return (
-        '<div class="flex items-center justify-between px-4 py-3 w-full">'
-        '<div class="flex items-center gap-2" data-tour-target="topbar.brand">'
-        '<img src="/static/img/AstralDeep.png" alt="AstralDeep" '
-        'class="h-8 w-auto select-none" draggable="false"></div>'
-        '<div class="flex items-center gap-3">' + "".join(right_parts) + "</div></div>"
+        '<div class="astral-chrome-row flex items-center gap-1.5">'
+        + "".join(right_parts)
+        + "</div>"
     )

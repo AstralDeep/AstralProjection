@@ -11,6 +11,17 @@ from rote import fallback, lod
 from rote.capabilities import DeviceProfile, DeviceType
 
 
+#: The profiles that actually draw the feature-089 types. Every other profile
+#: has had them substituted upstream, so these rules can never reach one.
+_WEB_PROFILES = frozenset({DeviceType.BROWSER, DeviceType.TABLET, DeviceType.MOBILE})
+
+#: The six additive types, in the order the contract lists them.
+_WEB_089_TYPES = frozenset({
+    "action_group", "stat_group", "gauge", "pipeline_stepper",
+    "donut_chart", "radar_chart",
+})
+
+
 class ComponentAdapter:
     """Stateless, recursive component transformer."""
 
@@ -767,6 +778,12 @@ class ComponentAdapter:
         if comp_type in ("bar_chart", "line_chart", "pie_chart", "plotly_chart"):
             return cls._adapt_chart(comp, profile)
 
+        # Feature 089 types. Reaching here at all means the profile draws them
+        # (the non-web guard substitutes a ladder fallback upstream), so these
+        # rules only ever fit a drawn type to the width it is drawn at.
+        if comp_type in _WEB_089_TYPES:
+            return cls._adapt_089_web(comp, profile)
+
         if comp_type == "table":
             return cls._adapt_table(comp, profile)
 
@@ -808,6 +825,91 @@ class ComponentAdapter:
         return comp
 
     # Per-type adaptation
+
+    @classmethod
+    def _adapt_089_web(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
+        """Fit an 089 type to the web viewport it is being drawn at.
+
+        Per ``contracts/ui-primitives-089.md`` (Web-profile adaptation). Each
+        rule narrows presentation only: no value is dropped, and a component
+        that needs no change is returned as-is so identity carrying and the
+        adapter's no-op fast paths keep working.
+        """
+        if profile.device_type not in _WEB_PROFILES:
+            return comp
+        comp_type = comp.get("type", "")
+        width = profile.capabilities.viewport_width or 0
+
+        if comp_type == "stat_group":
+            columns = comp.get("columns")
+            cap = max(1, int(profile.max_grid_columns or 1))
+            try:
+                current = int(columns)
+            except (TypeError, ValueError):
+                return comp
+            if current <= cap:
+                return comp
+            return {**comp, "columns": cap}
+
+        if comp_type == "gauge":
+            # Below 480 the dial and its readout cannot both be legible at the
+            # size a phone gives them; the compact variant keeps the number.
+            if 0 < width < 480 and comp.get("variant") != "compact":
+                return {**comp, "variant": "compact"}
+            return comp
+
+        if comp_type in ("donut_chart", "radar_chart"):
+            # The same 700px rule the other charts use: below it, a ring or a
+            # web of axes is decoration, and the numbers read better as rows.
+            if 0 < width < 700:
+                return cls._089_as_table(comp)
+            return comp
+
+        if comp_type == "pipeline_stepper":
+            if 0 < width < 768 and comp.get("orientation") != "vertical":
+                return {**comp, "orientation": "vertical"}
+            return comp
+
+        if comp_type == "action_group":
+            actions = comp.get("actions")
+            if not isinstance(actions, list):
+                return comp
+            updated = dict(comp)
+            if profile.device_type == DeviceType.MOBILE:
+                updated["wrap"] = True
+            if len(actions) > 3:
+                # Two in the bar, the rest behind one more — the same shape the
+                # composer uses, so a narrow row never becomes a second row of
+                # controls the reader has to hunt through.
+                updated["actions"] = list(actions[:2])
+                updated["overflow_actions"] = list(actions[2:])
+            return updated if updated != comp else comp
+
+        return comp
+
+    @staticmethod
+    def _089_as_table(comp: Dict) -> Dict:
+        """A donut or radar as the table form, with every value preserved."""
+        identity = {k: comp[k] for k in ("id", "component_id") if k in comp}
+        title = comp.get("title", "")
+        if comp.get("type") == "donut_chart":
+            rows = []
+            for segment in comp.get("segments", []) or []:
+                if not isinstance(segment, dict):
+                    continue
+                rows.append([str(segment.get("label", "")), segment.get("value", "")])
+            return {"type": "table", "title": title,
+                    "columns": ["Segment", "Value"], "rows": rows, **identity}
+        axes = [str(axis) for axis in (comp.get("axes") or [])]
+        rows = []
+        for dataset in comp.get("datasets", []) or []:
+            if not isinstance(dataset, dict):
+                continue
+            values = list(dataset.get("data") or [])
+            values += [""] * (len(axes) - len(values))
+            rows.append([str(dataset.get("label", ""))] + values[:len(axes)])
+        return {"type": "table", "title": title,
+                "columns": [""] + axes, "rows": rows, **identity}
 
     @classmethod
     def _adapt_chart(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:

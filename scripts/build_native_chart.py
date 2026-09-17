@@ -32,9 +32,10 @@ def build() -> str:
     if "</script" in vendor.lower():
         raise ValueError("Plotly cannot be embedded without changing its exact bytes")
     fonts = []
+    # Feature 089: the web stack self-hosts one family for everything, so the
+    # embedded chart document carries exactly that one and nothing else.
     for family, filename, weight in (
-        ("Inter", "inter-latin.woff2", "400 700"),
-        ("JetBrains Mono", "jetbrains-mono-latin.woff2", "400"),
+        ("Open Sans", "open-sans-latin.woff2", "400 800"),
     ):
         encoded_font = base64.b64encode(
             (ROOT / "backend/webrender/static/fonts" / filename).read_bytes()
@@ -122,7 +123,7 @@ __WEB_OPTIONS__
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="{csp}">
 <meta id="payload" content="__ASTRAL_CHART_PAYLOAD_BASE64__">
-<style>{''.join(fonts)}html,body{{margin:0;padding:0;background:transparent;width:100%;overflow:hidden}}#chart{{width:100%;min-height:160px}}#status{{font:14px Inter,system-ui;color:#9CA3AF;padding:12px}}</style>
+<style>{''.join(fonts)}html,body{{margin:0;padding:0;background:transparent;width:100%;overflow:hidden}}#chart{{width:100%;min-height:160px}}#status{{font:14px 'Open Sans',system-ui;color:#9CA3AF;padding:12px}}</style>
 </head><body><div id="chart" role="img"></div><p id="status" role="status">Loading chart…</p>
 <script>__ASTRAL_PLOTLY_VENDOR__</script><script>{script}</script></body></html>
 '''

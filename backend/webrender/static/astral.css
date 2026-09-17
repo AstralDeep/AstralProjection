@@ -8,25 +8,21 @@
    .astral-color-picker, [data-component-id], .dynamic-renderer, chrome ids) is
    untouched; this sheet only styles them. All motion is gated behind
    prefers-reduced-motion: no-preference. */
-/* Self-hosted fonts (no external origin on the render path). The Inter file
-   is Google's latin variable-font slice — one file serves weights 400-700;
-   non-latin text falls through unicode-range to the system stacks below.
+/* Self-hosted font (no external origin on the render path). Feature 089:
+   one Open Sans latin variable-font slice serves every weight the interface
+   uses, 400 through 800, for body text, headings and code alike — the a8p
+   console it matches uses Open Sans throughout, including its code blocks.
+   Non-latin text falls through unicode-range to the system stacks below.
    URLs here are plain (static CSS never gets %%ASTRAL_V%% substitution);
-   cache-busting preloads with versioned URLs live in shell.html. */
+   cache-busting preloads with versioned URLs live in shell.html. OFL licence
+   beside the file in static/fonts/OFL.txt. */
 @font-face {
-  font-family: 'Inter';
+  font-family: 'Open Sans';
   font-style: normal;
-  font-weight: 400 700;
+  font-weight: 400 800;
+  font-stretch: 100%;
   font-display: swap;
-  src: url('/static/fonts/inter-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-@font-face {
-  font-family: 'JetBrains Mono';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/static/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  src: url('/static/fonts/open-sans-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
@@ -47,8 +43,12 @@
   --astral-accent:    6 182 212;    /* #06B6D4 */
 
   /* type scale */
-  --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Feature 089: one family for everything. --astral-font is the token; the
+     two older names stay as aliases so every existing consumer keeps working
+     and nothing can reintroduce a second family by using one of them. */
+  --astral-font: 'Open Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: var(--astral-font);
+  --font-mono: var(--astral-font);
   --font-xs: 0.75rem;
   --font-sm: 0.875rem;
   --font-base: 1rem;
@@ -101,6 +101,12 @@
   --shadow-3: 0 16px 40px -8px rgb(0 0 0 / 0.5);
   --glow-accent: 0 0 0 3px rgb(var(--astral-primary) / 0.18);
 
+  /* 089 layout — the sidebar width is a token so the three responsive bands
+     change one value instead of restating the frame, and the safe-area inset
+     is a token so a probe can see that it is wired at all. */
+  --astral-sidebar-w: 350px;
+  --astral-safe-bottom: env(safe-area-inset-bottom, 0px);
+
   /* motion */
   --motion-fast: 150ms;
   --motion-base: 240ms;
@@ -124,7 +130,7 @@ body {
 
 ::selection {
   background: rgb(var(--astral-primary) / 0.40);
-  color: #fff;
+  color: rgb(var(--astral-text));
 }
 
 /* accessible accent-colored focus ring (keyboard nav) */
@@ -149,18 +155,271 @@ body {
 }
 .scrollbar-thin { scrollbar-width: thin; }
 
-/* 3. Shell — quiet surfaces, canvas vs chat panel distinction, composer */
+/* 3. Shell — the a8p console frame (089): a fixed sidebar and a main column
+      that owns the canvas and the composer bar. Every dimension here comes
+      from contracts/web-layout-parity.md; every color from a token. */
+.astral-app {
+  display: flex;
+  align-items: stretch;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+html, body { overflow: hidden; }
+
+/* --- sidebar ------------------------------------------------------------ */
+.astral-sidebar {
+  flex: 0 0 var(--astral-sidebar-w);
+  width: var(--astral-sidebar-w);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  min-height: 0;
+  background: var(--surface-1);
+  border-right: 1px solid rgb(var(--astral-text) / 0.08);
+  z-index: 30;
+}
+.astral-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 0 0 14px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.astral-brand-logo { height: 34px; width: auto; user-select: none; }
+.astral-brand-text { display: flex; flex-direction: column; min-width: 0; }
+.astral-brand-name {
+  font-size: var(--font-lg);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.astral-brand-sub {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, rgb(var(--astral-secondary)) 72%, rgb(var(--astral-text)));
+}
+.astral-dir-head { display: flex; align-items: center; justify-content: space-between; }
+.astral-dir-title {
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.astral-agent-count {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--astral-primary) / 0.32);
+  background: rgb(var(--astral-primary) / 0.16);
+  color: var(--text-primary);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  line-height: 17px;
+}
+.astral-search-box { position: relative; display: flex; align-items: center; }
+.astral-search-icon {
+  position: absolute;
+  left: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.astral-search-input {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px 8px 32px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgb(var(--astral-text) / 0.14);
+  background: rgb(var(--astral-surface) / 0.6);
+  color: var(--text-primary);
+  font-family: var(--astral-font);
+  font-size: var(--font-sm);
+}
+.astral-search-input::placeholder { color: var(--text-muted); }
+.astral-search-input:focus-visible {
+  outline: 2px solid rgb(var(--astral-primary) / 0.65);
+  outline-offset: 1px;
+}
+.astral-agent-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-right: 4px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.astral-agent-list::-webkit-scrollbar { width: 4px; }
+.astral-agent-list::-webkit-scrollbar-thumb {
+  background: rgb(var(--astral-text) / 0.16);
+  border-radius: 999px;
+}
+.astral-agent-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgb(var(--astral-text) / 0.07);
+  background: rgb(var(--astral-surface) / 0.55);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.astral-agent-item:hover { border-color: rgb(var(--astral-primary) / 0.4); }
+.astral-agent-item.is-active {
+  border-color: rgb(var(--astral-primary) / 0.65);
+  background: rgb(var(--astral-primary) / 0.12);
+}
+.astral-agent-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: rgb(var(--astral-primary) / 0.18);
+  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+}
+.astral-agent-body { min-width: 0; flex: 1 1 auto; }
+.astral-agent-name {
+  display: block;
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.astral-agent-desc {
+  margin-top: 2px;
+  font-size: var(--font-xs);
+  line-height: 1.35;
+  color: var(--text-muted);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.astral-agent-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  margin-top: 9px;
+  border-radius: 999px;
+  background: rgb(var(--color-success));
+}
+.astral-agent-dot[data-state="offline"] { background: rgb(var(--astral-muted)); }
+.astral-agent-dot[data-state="busy"] { background: rgb(var(--color-warning)); }
+
+.astral-recent { flex: 0 0 auto; display: flex; flex-direction: column; min-height: 0; }
+.astral-recent-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--astral-font);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.astral-recent-chevron { transition: transform var(--motion-fast) var(--ease-out); }
+.astral-recent-toggle[aria-expanded="false"] .astral-recent-chevron { transform: rotate(-90deg); }
+.astral-recent-toggle[aria-expanded="false"] + .astral-history-region { display: none; }
+.astral-recent .astral-history-region {
+  max-height: 160px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.astral-profile {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgb(var(--astral-text) / 0.09);
+  background: rgb(var(--astral-surface) / 0.75);
+  box-shadow: var(--shadow-1);
+}
+.astral-profile-avatar {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: var(--accent-grad);
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+}
+.astral-profile-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgb(var(--color-success));
+  border: 2px solid var(--surface-3);
+}
+.astral-profile-id { display: flex; flex-direction: column; min-width: 0; flex: 1 1 auto; }
+.astral-profile-name {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.astral-profile-role {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The server-rendered control cluster, compacted into the profile row. The
+   Settings gear is its last child, so it lands at the widget's right edge. */
 #astral-topbar {
+  flex: 0 0 auto;
+  margin-left: auto;
   position: relative;
   z-index: 40;
-  background: var(--surface-0);
-  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
 }
-#astral-topbar > div { padding: 1rem 1.5rem; }
-#astral-topbar button { min-height: 38px; }
+.astral-chrome-row { flex-wrap: nowrap; }
+#astral-topbar button { min-height: 32px; }
+#astral-topbar #astral-status { display: none; }
+#astral-topbar #astral-newchat-btn span { display: none; }
 #astral-newchat-btn {
   background: transparent;
   border-color: rgb(var(--astral-text) / 0.13);
+  padding: 6px;
 }
 #astral-newchat-btn:hover { background: rgb(var(--astral-text) / 0.06); }
 #astral-settings-btn[aria-expanded="true"] {
@@ -171,15 +430,42 @@ body {
   background: rgb(var(--astral-surface) / 0.92);
   backdrop-filter: blur(16px) saturate(1.3);
   -webkit-backdrop-filter: blur(16px) saturate(1.3);
-  border-color: rgb(255 255 255 / 0.09);
+  border-color: rgb(var(--astral-text) / 0.09);
   box-shadow: var(--shadow-3);
+  bottom: calc(100% + 8px);
+  top: auto;
 }
 .astral-menu-item { border-radius: var(--radius-sm); }
 
-/* canvas = open workspace on the page floor; chat = a distinct quiet rail */
-.astral-canvas-panel { scrollbar-gutter: stable; order: 1; min-width: 0; max-width: 100%; }
-.astral-app > main { min-width: 0; max-width: 100%; }
-.astral-chat-panel { order: 2; }
+/* --- main column -------------------------------------------------------- */
+.astral-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background-image: radial-gradient(
+    circle at 50% 0%,
+    rgb(var(--astral-secondary) / 0.16) 0%,
+    rgb(var(--astral-bg)) 55%,
+    rgb(var(--astral-bg)) 100%
+  );
+}
+.astral-canvas-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  max-width: 100%;
+  padding: 32px 48px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.astral-canvas-panel::-webkit-scrollbar { width: 6px; }
+.astral-canvas-panel::-webkit-scrollbar-thumb {
+  background: rgb(var(--astral-text) / 0.16);
+  border-radius: 999px;
+}
 .astral-start-slot { display: none; }
 
 /* empty canvas: the shared cross-client hint (client.js removes it on the
@@ -190,45 +476,66 @@ body {
   align-items: center;
   justify-content: center;
   text-align: center;
-  min-height: 70%;
+  min-height: 55%;
   padding: 48px 24px;
   color: var(--text-muted);
 }
+.astral-canvas-empty[hidden] { display: none; }
 .astral-canvas-empty-glyph {
   font-size: 28px;
   color: rgb(var(--astral-primary));
   margin-bottom: 10px;
 }
 .astral-canvas-empty-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--font-base);
+  font-weight: var(--weight-semibold);
   color: var(--text-secondary);
 }
-.astral-canvas-empty-sub { font-size: 13px; margin-top: 4px; }
-.astral-chat-panel {
-  background: rgb(var(--astral-surface) / 0.45);
-  border-left: 1px solid rgb(var(--astral-text) / 0.08);
-}
-.astral-chat-form {
+.astral-canvas-empty-sub { font-size: var(--font-sm); margin-top: 4px; }
+
+/* --- composer bar ------------------------------------------------------- */
+.astral-composer {
+  flex: 0 0 auto;
+  padding: 18px 48px;
   border-top: 1px solid rgb(var(--astral-text) / 0.08);
-  background: var(--surface-0);
+  background: rgb(var(--astral-surface) / 0.55);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
 }
-.astral-composer-row { flex-wrap: wrap; }
+.astral-chat-form { display: flex; flex-direction: column; gap: 8px; }
+.astral-composer-row { display: flex; align-items: center; gap: 10px; }
+.astral-composer-controls { display: flex; align-items: center; gap: 6px; }
+.astral-composer-more { display: none; }
 .astral-chat-form #astral-input {
-  flex: 1 1 14rem;
+  flex: 1 1 auto;
   min-width: 0;
-  min-height: 44px;
-  font-size: var(--font-base);
+  min-height: 50px;
+  max-height: 160px;
+  padding: 14px 18px;
+  border-radius: var(--radius-md);
+  resize: none;
+  font-family: var(--astral-font);
+  font-size: var(--font-sm);
   background: rgb(var(--astral-surface) / 0.6);
-  border-color: rgb(var(--astral-text) / 0.16);
+  border: 1px solid rgb(var(--astral-text) / 0.16);
 }
-.astral-chat-form button[type="submit"] {
-  margin-left: auto;
+.astral-send-btn {
+  flex: 0 0 auto;
   min-height: 44px;
-  background-image: none;
-  box-shadow: none;
-  text-shadow: none;
+  padding: 0 22px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background-image: var(--accent-grad);
+  color: var(--text-primary);
+  font-family: var(--astral-font);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
 }
+.astral-send-btn:hover { filter: brightness(1.08); }
+
+/* --- drawer chrome (shown only in the <1024 band, at the end) ----------- */
+.astral-drawer-toggle, .astral-drawer-backdrop { display: none; }
 
 /* Welcome remains shared SDUI; its web type and choices stay deliberately quiet. */
 :is(#astral-canvas, .astral-start-slot) [data-welcome="intro"] {
@@ -306,7 +613,7 @@ body {
   outline: none;
   border-color: rgb(var(--astral-primary) / 0.6);
   box-shadow: var(--glow-accent);
-  background: rgb(255 255 255 / 0.08);
+  background: rgb(var(--astral-text) / 0.08);
 }
 .astral-field:focus-visible { outline: none; }
 .astral-field option {
@@ -333,8 +640,8 @@ select.astral-field { color-scheme: dark; }
 }
 .astral-btn-primary {
   background-image: var(--accent-grad);
-  box-shadow: var(--shadow-1), inset 0 1px 0 rgb(255 255 255 / 0.15);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  box-shadow: var(--shadow-1), inset 0 1px 0 rgb(var(--astral-text) / 0.15);
+  text-shadow: 0 1px 2px rgb(var(--astral-bg) / 0.25);
 }
 .astral-btn-primary:hover { filter: brightness(1.08); }
 .astral-btn-secondary { box-shadow: var(--shadow-1); }
@@ -342,8 +649,8 @@ select.astral-field { color-scheme: dark; }
 /* danger: solid error token — destructive actions (delete, discard, revoke) */
 .astral-btn-danger {
   background: rgb(var(--color-error));
-  box-shadow: var(--shadow-1), inset 0 1px 0 rgb(255 255 255 / 0.15);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  box-shadow: var(--shadow-1), inset 0 1px 0 rgb(var(--astral-text) / 0.15);
+  text-shadow: 0 1px 2px rgb(var(--astral-bg) / 0.25);
 }
 .astral-btn-danger:hover { filter: brightness(1.08); }
 
@@ -371,7 +678,7 @@ select.astral-field { color-scheme: dark; }
 .astral-md pre, .astral-md code { white-space: pre-wrap; overflow-wrap: anywhere; }
 .astral-card:hover {
   box-shadow: var(--shadow-2);
-  border-color: rgb(255 255 255 / 0.12);
+  border-color: rgb(var(--astral-text) / 0.12);
 }
 
 /* metric tiles: big value typography + variant accent edge */
@@ -420,7 +727,7 @@ select.astral-field { color-scheme: dark; }
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
-.astral-table-wrap tbody tr:nth-child(even) { background: rgb(255 255 255 / 0.02); }
+.astral-table-wrap tbody tr:nth-child(even) { background: rgb(var(--astral-text) / 0.02); }
 .astral-pagination {
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
@@ -456,7 +763,7 @@ select.astral-field { color-scheme: dark; }
 
 /* tabs + collapsible: refined summary/details affordance (chevron) */
 .astral-tab, .astral-collapsible {
-  background: rgb(255 255 255 / 0.02);
+  background: rgb(var(--astral-text) / 0.02);
   border: var(--border-soft);
   border-radius: var(--radius-md);
 }
@@ -477,7 +784,7 @@ select.astral-field { color-scheme: dark; }
 
 /* progress bars: rounded track with an inner shadow; fill keeps its
    accent-gradient utilities */
-.astral-progress-track { box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.4); }
+.astral-progress-track { box-shadow: inset 0 1px 2px rgb(var(--astral-bg) / 0.4); }
 
 /* code blocks: monospace polish */
 .astral-code { box-shadow: var(--shadow-1); }
@@ -590,13 +897,13 @@ select.astral-field { color-scheme: dark; }
 
 /* 6. Chrome polish — token-matched */
 #astral-modal .astral-modal-backdrop {
-  background: rgb(0 0 0 / 0.55);
+  background: rgb(var(--astral-bg) / 0.55);
 }
 #astral-modal .astral-modal-card {
   background: rgb(var(--astral-surface) / 0.97);
   backdrop-filter: blur(18px) saturate(1.2);
   -webkit-backdrop-filter: blur(18px) saturate(1.2);
-  border-color: rgb(255 255 255 / 0.09);
+  border-color: rgb(var(--astral-text) / 0.09);
   box-shadow: var(--shadow-3);
 }
 .astral-chrome-notice, .astral-chrome-error { box-shadow: var(--shadow-1); }
@@ -656,14 +963,14 @@ select.astral-field { color-scheme: dark; }
 .glass {
   background: rgb(var(--astral-surface) / 0.60);
   backdrop-filter: blur(12px);
-  border: 1px solid rgb(255 255 255 / 0.10);
+  border: 1px solid rgb(var(--astral-text) / 0.10);
 }
 .glass-card {
   background: rgb(var(--astral-surface) / 0.40);
   backdrop-filter: blur(16px);
-  border: 1px solid rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(var(--astral-text) / 0.05);
   border-radius: 0.75rem;
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  box-shadow: 0 20px 25px -5px rgb(var(--astral-bg) / 0.1), 0 8px 10px -6px rgb(var(--astral-bg) / 0.1);
 }
 
 /* line-clamp-2 fallback (used by detailed list descriptions) */
@@ -688,8 +995,8 @@ details > summary::-webkit-details-marker { display: none; }
 .astral-switch-track {
   display: block; position: relative;
   width: 36px; height: 20px; border-radius: 999px;
-  background: rgb(255 255 255 / 0.10);
-  border: 1px solid rgb(255 255 255 / 0.15);
+  background: rgb(var(--astral-text) / 0.10);
+  border: 1px solid rgb(var(--astral-text) / 0.15);
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 .astral-switch-track::after {
@@ -704,7 +1011,7 @@ details > summary::-webkit-details-marker { display: none; }
 }
 .astral-switch input:checked + .astral-switch-track::after {
   transform: translateX(16px);
-  background: #fff;
+  background: rgb(var(--astral-text));
 }
 .astral-switch input:focus-visible + .astral-switch-track {
   outline: 2px solid rgb(var(--astral-primary));
@@ -748,8 +1055,8 @@ details > summary::-webkit-details-marker { display: none; }
   width: 38px;
   height: 38px;
   border-radius: 0.5rem;
-  border: 1px solid rgb(255 255 255 / 0.10);
-  background: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(var(--astral-text) / 0.10);
+  background: rgb(var(--astral-text) / 0.05);
   color: rgb(var(--astral-muted));
   cursor: pointer;
   transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
@@ -757,7 +1064,7 @@ details > summary::-webkit-details-marker { display: none; }
 #astral-restore-chat-btn[hidden] { display: none; }
 .astral-attach-btn:hover {
   color: rgb(var(--astral-text));
-  background: rgb(255 255 255 / 0.08);
+  background: rgb(var(--astral-text) / 0.08);
   border-color: rgb(var(--astral-primary) / 0.6);
 }
 .astral-attach-btn:focus-visible {
@@ -787,8 +1094,8 @@ details > summary::-webkit-details-marker { display: none; }
   height: 38px;
   padding: 0;
   border-radius: 0.5rem;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  background: rgb(255 255 255 / 0.05);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: rgb(var(--astral-text) / 0.05);
   color: rgb(var(--astral-muted));
   font: inherit;
   cursor: pointer;
@@ -810,7 +1117,7 @@ details > summary::-webkit-details-marker { display: none; }
   opacity: 0.48;
 }
 .astral-voice-control[aria-pressed="true"] {
-  color: #fff;
+  color: rgb(var(--astral-text));
   background: rgb(var(--astral-primary) / 0.78);
   border-color: rgb(var(--astral-primary));
   box-shadow: 0 0 0 2px rgb(var(--astral-primary) / 0.2);
@@ -833,9 +1140,9 @@ details > summary::-webkit-details-marker { display: none; }
   gap: 4px 8px;
   min-height: 25px;
   padding: 5px 8px;
-  border: 1px solid rgb(255 255 255 / 0.09);
+  border: 1px solid rgb(var(--astral-text) / 0.09);
   border-radius: var(--radius-sm);
-  background: rgb(255 255 255 / 0.035);
+  background: rgb(var(--astral-text) / 0.035);
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.35;
@@ -922,7 +1229,7 @@ details > summary::-webkit-details-marker { display: none; }
   color: var(--text-primary);
   font-size: 12px;
   line-height: 1.4;
-  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.06);
+  box-shadow: 0 0 0 1px rgb(var(--astral-text) / 0.06);
 }
 .astral-voice-turn-notice[hidden] { display: none; }
 .astral-voice-turn-notice-icon {
@@ -964,8 +1271,8 @@ details > summary::-webkit-details-marker { display: none; }
   max-width: 220px;
   padding: 0.25rem 0.5rem;
   border-radius: 0.5rem;
-  border: 1px solid rgb(255 255 255 / 0.10);
-  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(var(--astral-text) / 0.10);
+  background: rgb(var(--astral-text) / 0.06);
   font-size: 0.75rem;
   line-height: 1rem;
   color: rgb(var(--astral-text));
@@ -979,8 +1286,8 @@ details > summary::-webkit-details-marker { display: none; }
 .astral-chip.is-uploading { border-color: rgb(var(--astral-primary) / 0.5); }
 .astral-chip.is-ready { border-color: rgb(var(--astral-primary) / 0.7); }
 .astral-chip.is-failed {
-  border-color: rgb(220 60 60 / 0.7);
-  color: rgb(240 180 180);
+  border-color: rgb(var(--color-error) / 0.7);
+  color: color-mix(in srgb, rgb(var(--color-error)) 45%, rgb(var(--astral-text)));
 }
 .astral-chip-remove {
   display: inline-flex;
@@ -996,7 +1303,7 @@ details > summary::-webkit-details-marker { display: none; }
   font-size: 0.85rem;
   line-height: 1;
 }
-.astral-chip-remove:hover { color: rgb(var(--astral-text)); background: rgb(255 255 255 / 0.12); }
+.astral-chip-remove:hover { color: rgb(var(--astral-text)); background: rgb(var(--astral-text) / 0.12); }
 .astral-chip-remove:focus-visible {
   outline: 2px solid rgb(var(--astral-primary));
   outline-offset: 1px;
@@ -1043,9 +1350,9 @@ details > summary::-webkit-details-marker { display: none; }
   flex-direction: column;
   padding: 0.25rem;
   border-radius: 0.6rem;
-  border: 1px solid rgb(255 255 255 / 0.12);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
   background: rgb(var(--astral-surface));
-  box-shadow: 0 8px 24px rgb(0 0 0 / 0.35);
+  box-shadow: 0 8px 24px rgb(var(--astral-bg) / 0.35);
 }
 .astral-attach-menu-item {
   text-align: left;
@@ -1057,7 +1364,7 @@ details > summary::-webkit-details-marker { display: none; }
   font-size: 0.8rem;
   cursor: pointer;
 }
-.astral-attach-menu-item:hover { background: rgb(255 255 255 / 0.08); }
+.astral-attach-menu-item:hover { background: rgb(var(--astral-text) / 0.08); }
 
 /* server-driven loading skeleton (cross-device shimmer) */
 @keyframes astral-shimmer {
@@ -1065,8 +1372,8 @@ details > summary::-webkit-details-marker { display: none; }
   100% { background-position: -200% 0; }
 }
 .astral-skeleton-line {
-  background-color: rgba(255, 255, 255, 0.06);
-  background-image: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.12) 50%, rgba(255,255,255,0) 100%);
+  background-color: rgb(var(--astral-text) / 0.06);
+  background-image: linear-gradient(90deg, rgb(var(--astral-text) / 0) 0%, rgb(var(--astral-text) / 0.12) 50%, rgb(var(--astral-text) / 0) 100%);
   background-size: 200% 100%;
   background-repeat: no-repeat;
   animation: astral-shimmer 1.4s ease-in-out infinite;
@@ -1153,92 +1460,13 @@ details > summary::-webkit-details-marker { display: none; }
 }
 .astral-history-time { flex: 0 0 auto; font-size: 11px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
-/* ==========================================================================
-   Adaptive shell arrangement — the same division of labor as the Android
-   client: ROTE owns per-device COMPONENT adaptation (its DeviceProfile is
-   stamped on body[data-rote-device] by client.js), while the SHELL owns
-   the arrangement via body[data-astral-layout], computed from the window
-   width class exactly like Compose's windowSizeClass — "stacked" below
-   700 CSS px, "collapsed" 700–1023 (or by user preference), "split" at
-   ≥1024, recomputed live on resize. The stacked rules are the web twin of
-   AdaptiveShell.kt StackedShell: canvas-first column, collapsible
-   "Messages (N)" transcript above a docked input, recent chats full-screen
-   behind the topbar speech-bubble button, icon-only brand.
-   ========================================================================== */
+/* Feature 089 replaced the rail-era shell arrangement. The frame is now the
+   a8p two-column console at every width; `body[data-astral-layout]` is still
+   stamped by client.js (the 066 contract and its tests depend on the value)
+   but the responsive band at the end of this sheet, not that attribute,
+   decides the arrangement. */
 .astral-chats-btn, .astral-msgs-toggle { display: none; }
 
-body[data-astral-layout="stacked"] main { flex-direction: column; }
-body[data-astral-layout="stacked"] #astral-canvas { flex: 1 1 auto; min-height: 0; }
-body[data-astral-layout="stacked"] .astral-chat-panel {
-  width: 100%;
-  max-width: 100%;
-  flex: 0 0 auto;
-  border-left: 0;
-  border-top: 1px solid rgb(var(--astral-text) / 0.08);
-}
-body[data-astral-layout="stacked"] .astral-chats-btn { display: flex; }
-
-/* Recent chats: hidden from the dock; the speech-bubble button opens the
-   same server-rendered region full-screen (Android HistoryScreen). While
-   open, the dock's backdrop-filter must go — it turns the panel into the
-   containing block for fixed descendants, pinning the overlay inside the
-   dock instead of the viewport. */
-body[data-astral-layout="stacked"] .astral-history-region { display: none; }
-body[data-astral-layout="stacked"].astral-history-open .astral-chat-panel {
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-body[data-astral-layout="stacked"].astral-history-open .astral-history-region {
-  display: block;
-  position: fixed;
-  z-index: 40;
-  top: var(--astral-topbar-h, 58px);
-  left: 0; right: 0; bottom: 0;
-  max-height: none;
-  border-bottom: 0;
-  background: var(--surface-0);
-  padding: 12px 16px;
-  overflow-y: auto;
-}
-
-/* Transcript: collapsed behind the "Messages (N)" bar docked above the
-   input (Android MessagesPanel); expands to at most 320px over the stack. */
-body[data-astral-layout="stacked"] #astral-chat { display: none; }
-body[data-astral-layout="stacked"].astral-msgs-open #astral-chat {
-  display: block;
-  flex: 0 0 auto;
-  max-height: 320px;
-  overflow-y: auto;
-}
-body[data-astral-layout="stacked"] .astral-msgs-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  padding: 8px 16px;
-  font-size: 12px;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  background: rgb(255 255 255 / 0.03);
-  border: 0;
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
-  cursor: pointer;
-}
-body[data-astral-layout="stacked"] .astral-msgs-toggle[hidden] { display: none; }
-body[data-astral-layout="stacked"] .astral-msgs-toggle::after {
-  content: "▾";
-  transition: transform 0.15s ease;
-}
-body[data-astral-layout="stacked"].astral-msgs-open .astral-msgs-toggle::after { transform: rotate(180deg); }
-
-/* Brand: icon only, like Android's 30dp rounded app icon. */
-body[data-astral-layout="stacked"] #astral-topbar img {
-  content: url("/static/img/astra-fav.png");
-  height: 30px;
-  width: 30px;
-  border-radius: 8px;
-  object-fit: cover;
-}
 .astral-history-preview {
   font-size: 12px;
   color: var(--text-muted);
@@ -1267,9 +1495,9 @@ body[data-astral-layout="stacked"] #astral-topbar img {
   margin-bottom: 4px;
   max-height: 200px;
   overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
   border-radius: 8px;
-  background: rgba(20, 22, 30, 0.96);
+  background: rgb(var(--astral-surface) / 0.96);
   padding: 4px;
 }
 .astral-slash-menu.hidden { display: none; }
@@ -1282,59 +1510,14 @@ body[data-astral-layout="stacked"] #astral-topbar img {
   padding: 6px 8px;
   border-radius: 6px;
   background: transparent;
-  color: var(--astral-text, #e6e6e6);
+  color: var(--text-primary);
   font-size: 13px;
   cursor: pointer;
 }
 .astral-slash-item:hover,
-.astral-slash-item:focus { background: rgba(255, 255, 255, 0.08); }
+.astral-slash-item:focus { background: rgb(var(--astral-text) / 0.08); }
 .astral-slash-name { font-weight: 600; }
 .astral-slash-desc { opacity: 0.7; font-size: 12px; }
-
-/* ==========================================================================
-   Feature 066 — canvas-first adaptive layout.
-   Three modes stamped by client.js on body[data-astral-layout]:
-     "stacked"   (<700px)      canvas column + bottom dock (rules above)
-     "collapsed" (700–1023 default; any width by user choice) canvas full
-                 width + floating composer bar; transcript = overlay drawer
-     "split"     (>=1024 default) right rail, canvas keeps the floor
-   The user's explicit choice persists (localStorage) and wins over the
-   width default at >=700px.
-   ========================================================================== */
-
-/* Base rail width (split); stacked/collapsed override below. */
-.astral-chat-panel { width: clamp(320px, 28vw, 420px); }
-
-/* Rail header — split only. */
-.astral-rail-head {
-  display: none;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px 6px 14px;
-  border-bottom: 1px solid rgb(255 255 255 / 0.06);
-}
-body[data-astral-layout="split"] .astral-rail-head { display: flex; }
-.astral-rail-title {
-  font-size: var(--font-sm);
-  color: var(--text-muted);
-}
-.astral-rail-collapse {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.astral-rail-collapse:hover {
-  color: var(--text-primary);
-  background: rgb(255 255 255 / 0.07);
-  border-color: rgb(255 255 255 / 0.1);
-}
 
 /* Connection pill — hidden while healthily registered. */
 .astral-conn {
@@ -1352,7 +1535,7 @@ body[data-astral-layout="split"] .astral-rail-head { display: flex; }
   border-radius: 999px;
   background: rgb(var(--color-warning));
 }
-.astral-conn[data-conn="offline"] .astral-conn-dot { background: rgb(239 68 68); }
+.astral-conn[data-conn="offline"] .astral-conn-dot { background: rgb(var(--color-error)); }
 @keyframes astral-conn-pulse { 50% { opacity: 0.35; } }
 .astral-conn[data-conn="connecting"] .astral-conn-dot { animation: astral-conn-pulse 1.2s ease-in-out infinite; }
 
@@ -1379,19 +1562,6 @@ body[data-astral-layout="split"] .astral-rail-head { display: flex; }
 }
 @keyframes astral-spin { to { transform: rotate(360deg); } }
 
-/* Composer row: in the narrow split rail the input takes its own full-width
-   line above the controls, so it never degrades to a few characters
-   (066 FR-004). Wide/floating composers keep the single-row arrangement. */
-body[data-astral-layout="split"] .astral-chat-form .flex.gap-2.items-center {
-  flex-wrap: wrap;
-}
-body[data-astral-layout="split"] #astral-input {
-  flex: 1 1 100%;
-  order: -1;
-  min-width: 0;
-}
-#astral-input { min-width: 180px; }
-
 /* Transcript toggle (collapsed mode only) + unread badge. */
 .astral-chat-toggle { display: none; position: relative; }
 .astral-chat-unread {
@@ -1403,7 +1573,7 @@ body[data-astral-layout="split"] #astral-input {
   padding: 0 4px;
   border-radius: 999px;
   background: rgb(var(--astral-primary));
-  color: #fff;
+  color: rgb(var(--astral-text));
   font-size: 10px;
   font-weight: 700;
   line-height: 16px;
@@ -1411,45 +1581,10 @@ body[data-astral-layout="split"] #astral-input {
 }
 .astral-chat-unread[hidden] { display: none; }
 
-/* ---- collapsed mode: canvas owns the page; composer floats ---- */
-body[data-astral-layout="collapsed"] #astral-canvas {
-  flex: 1 1 auto;
-  padding-bottom: 132px; /* keep content clear of the floating composer */
-}
-body[data-astral-layout="collapsed"] .astral-chat-panel {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  bottom: 14px;
-  width: min(760px, calc(100vw - 28px));
-  max-height: min(72vh, 640px);
-  border-radius: 18px;
-  border: 1px solid rgb(var(--astral-text) / 0.12);
-  background: var(--surface-3);
-  box-shadow: var(--shadow-2);
-  z-index: 40;
-}
-body[data-astral-layout="collapsed"] .astral-rail-head { display: none; }
-body[data-astral-layout="collapsed"] .astral-history-region { display: none; }
-body[data-astral-layout="collapsed"] #astral-chat { display: none; }
-body[data-astral-layout="collapsed"] .astral-chat-toggle { display: inline-flex; }
-body[data-astral-layout="collapsed"].astral-chat-open #astral-chat {
-  display: block;
-  flex: 0 0 auto;
-  max-height: min(46vh, 420px);
-  overflow-y: auto;
-  border-bottom: 1px solid rgb(255 255 255 / 0.07);
-}
-body[data-astral-layout="collapsed"].astral-chat-open .astral-history-region {
-  display: block;
-  max-height: 120px;
-}
-body[data-astral-layout="collapsed"] .astral-chat-form { border-top: 0; background: transparent; }
-
 /* Peek: briefly nudge the transcript toggle when assistant text lands while
    hidden. Reduced motion: badge only, no animation. */
 @keyframes astral-peek { 0% { transform: translateY(0); } 30% { transform: translateY(-7px); } 60% { transform: translateY(0); } 100% { transform: translateY(0); } }
-body[data-astral-layout="collapsed"] .astral-chat-toggle.astral-peek { animation: astral-peek 0.7s ease; }
+.astral-chat-toggle.astral-peek { animation: astral-peek 0.7s ease; }
 @media (prefers-reduced-motion: reduce) {
   .astral-chat-toggle.astral-peek { animation: none !important; }
   .astral-conn-dot { animation: none !important; }
@@ -1506,8 +1641,8 @@ body[data-astral-layout="collapsed"] .astral-chat-toggle.astral-peek { animation
   margin-top: 3px;
 }
 .astral-chat-error {
-  border: 1px solid rgb(239 68 68 / 0.45);
-  background: rgb(239 68 68 / 0.08);
+  border: 1px solid rgb(var(--color-error) / 0.45);
+  background: rgb(var(--color-error) / 0.08);
   border-radius: 10px;
   padding: 8px 10px;
   font-size: 12px;
@@ -1522,12 +1657,12 @@ body[data-astral-layout="collapsed"] .astral-chat-toggle.astral-peek { animation
   font-weight: 600;
   padding: 4px 10px;
   border-radius: 8px;
-  border: 1px solid rgb(255 255 255 / 0.14);
-  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(var(--astral-text) / 0.14);
+  background: rgb(var(--astral-text) / 0.06);
   color: var(--text-primary);
   cursor: pointer;
 }
-.astral-chat-error .astral-retry-btn:hover { background: rgb(255 255 255 / 0.12); }
+.astral-chat-error .astral-retry-btn:hover { background: rgb(var(--astral-text) / 0.12); }
 
 /* Transcript empty-state hint (split rail). */
 .astral-chat-empty {
@@ -1539,9 +1674,9 @@ body[data-astral-layout="collapsed"] .astral-chat-toggle.astral-peek { animation
 
 /* Simple markdown inside bubbles. */
 .astral-bubble-md code {
-  font-family: "JetBrains Mono", monospace;
+  font-family: var(--astral-font);
   font-size: 0.9em;
-  background: rgb(255 255 255 / 0.08);
+  background: rgb(var(--astral-text) / 0.08);
   border-radius: 4px;
   padding: 0 4px;
 }
@@ -1608,91 +1743,23 @@ body[data-astral-layout="collapsed"] .astral-chat-toggle.astral-peek { animation
   padding: 0.5rem 1.125rem;
   border-radius: 10px;
 }
-body[data-astral-view="start"] #astral-topbar { border-bottom-color: transparent; }
-body[data-astral-view="start"] main {
-  display: grid;
-  grid-template-columns: minmax(0, 44rem);
-  grid-auto-rows: min-content;
-  justify-content: center;
-  align-content: start;
-  padding: clamp(3rem, 18vh, 11rem) 1.5rem 3rem;
-  overflow-y: auto;
-  scrollbar-gutter: stable both-edges;
-}
-body[data-astral-view="start"] .astral-start-slot,
-body[data-astral-view="start"] .astral-start-slot > .astral-component,
-body[data-astral-view="start"] .astral-chat-panel {
-  display: contents;
-}
-body[data-astral-view="start"] #astral-canvas,
-body[data-astral-view="start"] .astral-rail-head,
-body[data-astral-view="start"] #astral-history,
+/* The two views of the main column. "start" shows the a8p landing — the
+   page header, the overview and the example grid — and "work" shows the
+   conversation feed in its place. The composer bar is in both, pinned to the
+   bottom, so a question can be asked from either one. */
 body[data-astral-view="start"] #astral-chat,
-body[data-astral-view="start"] #astral-msgs-toggle,
-body[data-astral-view="start"] #astral-chat-toggle,
-body[data-astral-view="start"] #astral-topbar-chat-btn {
-  display: none;
-}
-body[data-astral-view="start"] #astral-chats-btn { display: inline-flex; }
-body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="intro"] {
-  grid-row: 1;
-  margin: 0 0 2rem;
-  width: 100%;
-  max-width: none;
-  text-align: center;
-}
-body[data-astral-view="start"] [data-welcome="intro"] > div { justify-content: center; }
-body[data-astral-view="start"] [data-welcome="intro"] h2 {
-  font-size: clamp(1.875rem, 3.2vw, 2.5rem);
-  line-height: 1.2;
-  font-weight: 500;
-  letter-spacing: -0.045em;
-  text-wrap: balance;
-}
-body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="permission"] { grid-row: 2; margin: 0 0 1rem; }
-body[data-astral-view="start"] #astral-form {
-  grid-row: 3;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-}
-body[data-astral-view="start"] .astral-composer-row {
-  padding: 1rem;
-  border-radius: 22px;
-  box-shadow: 0 8px 32px rgb(0 0 0 / 0.12);
-}
-body[data-astral-view="start"] #astral-input { min-height: 5rem; }
-body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="examples"] {
-  grid-row: 4;
+body[data-astral-view="start"] #astral-canvas-empty { display: none; }
+body[data-astral-view="work"] #astral-landing { display: none; }
+body[data-astral-view="work"] #astral-chat { display: flex; }
+
+/* The welcome components are server-rendered SDUI and keep arriving; the
+   landing hosts them in its own slots, quietly, beneath the example grid. */
+body[data-astral-view="start"] .astral-start-slot { display: block; }
+body[data-astral-view="start"] .astral-start-slot:empty { display: none; }
+:is(.astral-start-slot) [data-welcome="examples"] {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
-  margin: 1.5rem 0 0;
-  max-width: none;
-}
-body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="more"] {
-  grid-row: 5;
-  justify-self: center;
-  margin: 0.5rem 0 0;
-  max-width: 100%;
-}
-body[data-astral-view="start"] [data-welcome="more"] > summary {
-  width: fit-content;
-  margin-inline: auto;
-  gap: 0.5rem;
-  border-radius: 8px;
-}
-body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="more"] > div {
-  justify-content: center;
-}
-@media (max-width: 699px) {
-  body[data-astral-view="start"] main { padding: clamp(2rem, 10vh, 5rem) 12px 2rem; }
-  body[data-astral-view="start"] .astral-composer-row { padding: 12px; }
-  body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-welcome="intro"] { margin-bottom: 1.5rem; }
-  #astral-topbar > div { padding: 0.75rem; }
-  .astral-chat-form { padding: 0.625rem; }
+  gap: var(--space-3);
 }
 
 /* ===========================================================================
@@ -1724,9 +1791,9 @@ body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-wel
 /* Semantic state roles, shared by every 089 type. */
 .astral-state-default { --astral-state: var(--astral-primary); }
 .astral-state-info    { --astral-state: var(--astral-accent); }
-.astral-state-success { --astral-state: 34 197 94; }
-.astral-state-warning { --astral-state: 245 158 11; }
-.astral-state-error   { --astral-state: 239 68 68; }
+.astral-state-success { --astral-state: var(--color-success); }
+.astral-state-warning { --astral-state: var(--color-warning); }
+.astral-state-error   { --astral-state: var(--color-error); }
 
 /* Series palette, derived from the theme's own primary/secondary/accent. */
 .astral-series-1 { stroke: rgb(var(--astral-primary)); fill: rgb(var(--astral-primary) / 0.28); }
@@ -1849,6 +1916,707 @@ body[data-astral-view="start"] :is(#astral-canvas, .astral-start-slot) [data-wel
 
 .astral-data-sharing-error {
   font-size: var(--font-xs);
-  color: rgb(239 68 68);
+  color: rgb(var(--color-error));
   margin: 0.25rem 0 0 1.5rem;
+}
+
+
+/* ==========================================================================
+   9. Feature 089 — the a8p console: landing, conversation feed, overlays and
+   the three responsive bands. Dimensions come from
+   contracts/web-layout-parity.md; every color is a --astral-* token or a
+   color-mix() of one, so a theme change restyles all of it.
+   ========================================================================== */
+
+/* --- landing ------------------------------------------------------------ */
+.astral-landing { display: flex; flex-direction: column; gap: 26px; }
+.astral-landing[hidden] { display: none; }
+.astral-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
+}
+.astral-page-title-block { min-width: 0; }
+.astral-page-title {
+  margin: 0;
+  font-size: var(--font-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.astral-page-subtitle {
+  margin: 4px 0 0;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.astral-status-strip { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.astral-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: rgb(var(--astral-surface) / 0.7);
+  color: var(--text-secondary);
+  font-family: var(--astral-font);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+}
+.astral-status-pill[hidden] { display: none; }
+.astral-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgb(var(--color-success));
+}
+.astral-status-resume {
+  border-color: rgb(var(--astral-secondary) / 0.6);
+  background: rgb(var(--astral-secondary) / 0.22);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.astral-overview {
+  padding: 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgb(var(--astral-text) / 0.08);
+  background: rgb(var(--astral-surface) / 0.5);
+}
+.astral-overview-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.astral-overview-title {
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+.astral-overview-subtitle { font-size: var(--font-xs); color: var(--text-muted); }
+.astral-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.astral-overview-item p {
+  margin: 6px 0 0;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.astral-overview-step {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
+}
+
+.astral-scenarios { display: flex; flex-direction: column; gap: 14px; }
+.astral-scenarios-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+.astral-scenarios-title {
+  font-size: var(--font-lg);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.astral-filter-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgb(var(--astral-text) / 0.09);
+  background: rgb(var(--astral-surface) / 0.55);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.astral-filter-tabs::-webkit-scrollbar { display: none; }
+.astral-filter-tab {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--astral-font);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.astral-filter-tab:hover { color: var(--text-primary); }
+.astral-filter-tab.active {
+  border-color: rgb(var(--astral-primary) / 0.45);
+  background: rgb(var(--astral-primary) / 0.2);
+  color: var(--text-primary);
+}
+.astral-scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 14px;
+}
+.astral-scenario-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgb(var(--astral-text) / 0.09);
+  background: rgb(var(--astral-surface) / 0.6);
+  transition: transform var(--motion-fast) var(--ease-out),
+              border-color var(--motion-fast) var(--ease-out),
+              box-shadow var(--motion-fast) var(--ease-out);
+}
+.astral-scenario-card:hover,
+.astral-scenario-card:focus-within {
+  transform: translateY(-3px);
+  border-color: rgb(var(--astral-primary) / 0.45);
+  box-shadow: var(--shadow-2);
+}
+.astral-scenario-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.astral-scenario-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+.astral-scenario-tag-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  background: rgb(var(--astral-primary) / 0.18);
+  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
+  font-size: 10px;
+  font-weight: var(--weight-bold);
+}
+.astral-scenario-badge {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: rgb(var(--astral-text) / 0.05);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+}
+.astral-scenario-title {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+.astral-scenario-desc {
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.astral-scenario-actions { display: flex; gap: 8px; margin-top: auto; padding-top: 4px; }
+.astral-scenario-run {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background-image: var(--accent-grad);
+  color: var(--text-primary);
+  font-family: var(--astral-font);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+}
+.astral-scenario-load {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgb(var(--astral-text) / 0.14);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--astral-font);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+/* --- conversation feed -------------------------------------------------- */
+.astral-feed { display: flex; flex-direction: column; gap: 24px; }
+.astral-feed:empty { display: none; }
+.astral-turn { display: flex; flex-direction: column; gap: 6px; }
+.astral-turn-user { align-items: flex-end; }
+.astral-user-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.astral-turn-pill {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: rgb(var(--astral-text) / 0.04);
+  font-weight: var(--weight-semibold);
+}
+.astral-user-bubble {
+  max-width: min(680px, 78%);
+  padding: 12px 16px;
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg);
+  border: 1px solid rgb(var(--astral-primary) / 0.3);
+  background: rgb(var(--astral-primary) / 0.16);
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.astral-turn-assistant { align-items: stretch; }
+.astral-response-card {
+  width: 100%;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgb(var(--astral-text) / 0.1);
+  background: rgb(var(--astral-surface) / 0.62);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  position: relative;
+}
+.astral-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
+  background: rgb(var(--astral-text) / 0.02);
+}
+.astral-card-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.astral-card-head-right { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.astral-card-agent-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgb(var(--astral-primary) / 0.18);
+  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
+  font-size: var(--font-xs);
+  font-weight: var(--weight-bold);
+}
+.astral-card-agent-name {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+.astral-card-agent-sub { font-size: 11px; color: var(--text-muted); }
+.astral-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: rgb(var(--astral-text) / 0.04);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+}
+.astral-card-body { padding: 16px; min-height: 40px; }
+.astral-expand-chip {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgb(var(--astral-primary) / 0.45);
+  border-radius: 999px;
+  background: rgb(var(--astral-surface) / 0.95);
+  color: var(--text-primary);
+  font-family: var(--astral-font);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--motion-fast) var(--ease-out);
+}
+.astral-response-card:hover .astral-expand-chip,
+.astral-response-card:focus-within .astral-expand-chip {
+  opacity: 1;
+  pointer-events: auto;
+}
+.astral-pending {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: var(--radius-md);
+  border: 1px solid rgb(var(--astral-text) / 0.09);
+  background: rgb(var(--astral-surface) / 0.6);
+}
+.astral-pending-spinner {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 2px solid rgb(var(--astral-primary) / 0.35);
+  border-top-color: rgb(var(--astral-primary));
+  animation: astral-spin 0.9s linear infinite;
+}
+.astral-pending-title {
+  font-size: var(--font-sm);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+.astral-pending-sub { font-size: var(--font-xs); color: var(--text-muted); }
+
+/* Tables inside a response card scroll in their own container and keep a
+   sticky header, so a wide table never widens the card (R8). */
+.astral-card-body .astral-table-wrap,
+.astral-card-body .table-container { overflow-x: auto; max-width: 100%; }
+.astral-card-body table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--surface-3);
+}
+
+/* --- full-screen overlay ------------------------------------------------ */
+.astral-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-0);
+}
+.astral-fullscreen[hidden] { display: none; }
+.astral-fs-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 24px;
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
+  background: rgb(var(--astral-surface) / 0.6);
+}
+.astral-fs-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.astral-fs-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: rgb(var(--astral-primary) / 0.18);
+  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
+  font-size: var(--font-lg);
+}
+.astral-fs-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.astral-fs-title {
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+.astral-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: rgb(var(--astral-text) / 0.04);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: var(--weight-semibold);
+}
+.astral-badge-accent {
+  border-color: rgb(var(--astral-secondary) / 0.5);
+  background: rgb(var(--astral-secondary) / 0.2);
+  color: var(--text-primary);
+}
+.astral-fs-sub { margin-top: 2px; font-size: var(--font-xs); color: var(--text-muted); }
+.astral-fs-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgb(var(--astral-text) / 0.14);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--astral-font);
+  font-size: var(--font-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+.astral-fs-kbd {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgb(var(--astral-text) / 0.16);
+  background: rgb(var(--astral-text) / 0.05);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+.astral-fs-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 24px 32px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.astral-fs-canvas::-webkit-scrollbar { width: 6px; }
+.astral-fs-canvas::-webkit-scrollbar-thumb {
+  background: rgb(var(--astral-text) / 0.16);
+  border-radius: 999px;
+}
+
+/* --- settings dialog ---------------------------------------------------- */
+#astral-modal:empty { display: none; }
+.astral-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(var(--astral-bg) / 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.astral-modal-card {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100%);
+  max-height: min(86vh, 860px);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+  animation: astral-modal-rise var(--motion-base) var(--ease-out);
+}
+@keyframes astral-modal-rise {
+  from { transform: translateY(18px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+.astral-modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
+}
+.astral-modal-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-md);
+  background: rgb(var(--astral-primary) / 0.18);
+  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
+  font-size: var(--font-lg);
+}
+.astral-modal-heading { min-width: 0; flex: 1 1 auto; }
+.astral-modal-title {
+  font-size: var(--font-base);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+.astral-modal-subtitle { margin-top: 2px; font-size: var(--font-xs); color: var(--text-muted); }
+.astral-modal-close {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--font-xl);
+  line-height: 1;
+  cursor: pointer;
+}
+.astral-modal-close:hover { color: var(--text-primary); background: rgb(var(--astral-text) / 0.06); }
+.astral-modal-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 8px 20px 0;
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.astral-modal-tabs::-webkit-scrollbar { display: none; }
+.astral-modal-tab {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--astral-font);
+  font-size: var(--font-sm);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.astral-modal-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: rgb(var(--astral-primary));
+}
+.astral-modal-body { flex: 1 1 auto; min-height: 0; padding: 18px 20px; overflow-y: auto; }
+.astral-modal-footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid rgb(var(--astral-text) / 0.08);
+}
+
+/* --- responsive bands (T053, research R13) ------------------------------ */
+
+/* 1024–1279: a narrower sidebar and tighter canvas padding. */
+@media (max-width: 1279px) and (min-width: 1024px) {
+  :root { --astral-sidebar-w: 288px; }
+  .astral-canvas-panel { padding: 24px; }
+  .astral-composer { padding: 14px 24px; }
+  .astral-scenario-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Below 1024: the sidebar becomes an off-canvas drawer. */
+@media (max-width: 1023px) {
+  .astral-sidebar {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(320px, 86vw);
+    flex-basis: auto;
+    transform: translateX(-102%);
+    transition: transform var(--motion-base) var(--ease-out);
+    z-index: 55;
+    box-shadow: var(--shadow-3);
+  }
+  body.astral-drawer-open .astral-sidebar { transform: translateX(0); }
+  .astral-drawer-toggle {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 56;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgb(var(--astral-text) / 0.14);
+    background: rgb(var(--astral-surface) / 0.92);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+  .astral-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 54;
+    display: block;
+    background: rgb(var(--astral-bg) / 0.6);
+  }
+  .astral-drawer-backdrop[hidden] { display: none; }
+  .astral-canvas-panel { padding: 64px 20px 20px; }
+  .astral-composer { padding: 12px 20px; }
+  .astral-scenario-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .astral-page-header { flex-direction: column; align-items: stretch; }
+  /* Touch-sized controls everywhere in this band (R10). */
+  .astral-filter-tab,
+  .astral-scenario-run,
+  .astral-scenario-load,
+  .astral-status-pill,
+  .astral-recent-toggle,
+  .astral-agent-item,
+  .astral-brand,
+  .astral-modal-tab,
+  #astral-topbar button,
+  .astral-composer-controls button,
+  .astral-composer-more,
+  .astral-send-btn { min-height: 44px; }
+  .astral-composer-controls button,
+  .astral-composer-more { min-width: 44px; }
+  .astral-search-input { min-height: 44px; }
+  .astral-agent-count { min-height: 24px; }
+}
+
+/* Below 768: one column, a pinned composer with an overflow menu, and
+   full-viewport sheets. */
+@media (max-width: 767px) {
+  .astral-main { padding-bottom: 0; }
+  .astral-canvas-panel { padding: 64px 16px calc(112px + var(--astral-safe-bottom)); }
+  .astral-composer {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 45;
+    padding: 12px 16px calc(12px + var(--astral-safe-bottom));
+  }
+  .astral-composer-more { display: inline-flex; }
+  .astral-composer-controls {
+    position: absolute;
+    left: 16px;
+    right: 16px;
+    bottom: calc(100% + 8px);
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgb(var(--astral-text) / 0.12);
+    background: var(--surface-3);
+    box-shadow: var(--shadow-3);
+  }
+  .astral-composer-more[aria-expanded="false"] + .astral-composer-controls { display: none; }
+  .astral-overview-grid { grid-template-columns: minmax(0, 1fr); }
+  .astral-scenario-grid { grid-template-columns: minmax(0, 1fr); }
+  .astral-user-bubble { max-width: 92%; }
+  .astral-fullscreen { inset: 0; }
+  .astral-fs-canvas { padding: 16px; }
+  .astral-modal-overlay { padding: 0; }
+  .astral-modal-card {
+    width: 100vw;
+    height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    border: 0;
+  }
+  .astral-expand-chip { opacity: 1; pointer-events: auto; position: static; margin: 0 14px 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .astral-modal-card,
+  .astral-sidebar,
+  .astral-scenario-card,
+  .astral-expand-chip,
+  .astral-recent-chevron { animation: none !important; transition: none !important; }
 }

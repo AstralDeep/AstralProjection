@@ -613,16 +613,120 @@
       .catch(function () { if (cb) cb(false); });
   }
 
-  var canvas = document.getElementById("astral-canvas");
+  // Feature 089: the main column is a scrolling canvas holding the landing and
+  // a feed of turns. A turn's result lives in its own response card, and the
+  // NEWEST assistant card's body is the live workspace. `canvas` still names
+  // that workspace, so every existing caller — render, upsert, stream, export
+  // flags — keeps working unchanged; what moved is where the element sits.
+  var canvasPanel = document.getElementById("astral-canvas");
   var chat = document.getElementById("astral-chat");
+  var liveTurn = null;
+  var canvas = null;
+  var turnCounter = 0;
+
+  function turnClock() {
+    var now = new Date();
+    return ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
+  }
+
+  /** One assistant turn: a bordered, elevated card with a meta header, a body
+   * that carries the rendered components, and an expand chip that opens the
+   * full-screen view. */
+  function buildAssistantTurn() {
+    turnCounter += 1;
+    var turn = document.createElement("div");
+    turn.className = "astral-turn astral-turn-assistant";
+    turn.setAttribute("data-turn", String(turnCounter));
+
+    var card = document.createElement("div");
+    card.className = "astral-response-card";
+
+    var head = document.createElement("div");
+    head.className = "astral-card-head";
+    var left = document.createElement("div");
+    left.className = "astral-card-head-left";
+    var icon = document.createElement("span");
+    icon.className = "astral-card-agent-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "\u2726";
+    var names = document.createElement("div");
+    var name = document.createElement("div");
+    name.className = "astral-card-agent-name";
+    name.textContent = "AstralDeep";
+    var sub = document.createElement("div");
+    sub.className = "astral-card-agent-sub";
+    sub.textContent = "Result";
+    names.appendChild(name);
+    names.appendChild(sub);
+    left.appendChild(icon);
+    left.appendChild(names);
+
+    var right = document.createElement("div");
+    right.className = "astral-card-head-right";
+    var chip = document.createElement("span");
+    chip.className = "astral-meta-chip";
+    chip.textContent = "Turn " + turnCounter;
+    right.appendChild(chip);
+    head.appendChild(left);
+    head.appendChild(right);
+
+    var body = document.createElement("div");
+    body.className = "astral-card-body";
+
+    var expand = document.createElement("button");
+    expand.type = "button";
+    expand.className = "astral-expand-chip";
+    expand.setAttribute("aria-label", "Open this result in full screen");
+    expand.textContent = "Open full screen";
+
+    card.appendChild(head);
+    card.appendChild(body);
+    card.appendChild(expand);
+    turn.appendChild(card);
+    return { turn: turn, card: card, head: head, name: name, sub: sub,
+             meta: right, body: body, expand: expand };
+  }
+
+  /** Point `canvas` at a fresh live card, creating it if there is not one. */
+  function ensureLiveTurn() {
+    if (liveTurn && liveTurn.turn.parentNode === chat) return liveTurn.body;
+    liveTurn = buildAssistantTurn();
+    liveTurn.turn.setAttribute("data-astral-live-turn", "1");
+    liveTurn.turn.hidden = true; // nothing to show until content arrives
+    chat.appendChild(liveTurn.turn);
+    canvas = liveTurn.body;
+    return canvas;
+  }
+
+  /** Freeze the current card so the next turn gets its own. A card with no
+   * content is reused rather than left behind as an empty frame. */
+  function sealLiveTurn() {
+    if (!liveTurn) return;
+    if (liveTurn.turn.hidden || !liveTurn.body.childNodes.length) return; // reuse
+    liveTurn.turn.removeAttribute("data-astral-live-turn");
+    liveTurn = null;
+    ensureLiveTurn();
+  }
+
+  /** The meta a card shows once the turn has an agent and a routing note. */
+  function describeLiveTurn(agentName, note) {
+    ensureLiveTurn();
+    if (agentName) liveTurn.name.textContent = agentName;
+    if (note) liveTurn.sub.textContent = note;
+  }
+
+  ensureLiveTurn();
+
   // Shared cross-client canvas empty state: the node ships in shell.html; it is
-  // detached on the first render with content and re-attached on canvas clears.
+  // hidden on the first render with content and shown again on canvas clears.
   var canvasEmpty = document.getElementById("astral-canvas-empty");
   function hideCanvasEmpty() {
-    if (canvasEmpty && canvasEmpty.parentNode) canvasEmpty.parentNode.removeChild(canvasEmpty);
+    if (canvasEmpty) canvasEmpty.hidden = true;
+    if (liveTurn) liveTurn.turn.hidden = false;
   }
   function showCanvasEmpty() {
-    if (canvasEmpty && !canvasEmpty.parentNode) canvas.insertBefore(canvasEmpty, canvas.firstChild);
+    if (liveTurn && !liveTurn.body.childNodes.length) liveTurn.turn.hidden = true;
+    if (canvasEmpty) canvasEmpty.hidden = false;
   }
 
   // Start and work are local arrangements of the same mounted regions. A
@@ -800,8 +904,19 @@
       caps.reduced_motion, caps.pointer_type].join("|");
     if (!force && sig === lastCapabilitySignature) return;
     lastCapabilitySignature = sig;
+    // 089 (R12): a viewport change is re-registered whether or not the socket
+    // is up at that instant, so "did the client re-register?" has an answer
+    // that does not depend on connection timing.
+    if (window.__ASTRAL_PARITY__ && window.__ASTRAL_PARITY__.notifyViewportRegistered) {
+      window.__ASTRAL_PARITY__.notifyViewportRegistered();
+    }
     action("update_device", { device: caps }, false);
   }
+  // Rotating a phone changes the viewport without always firing `resize`
+  // first on every engine; both paths land in the same reporter.
+  window.addEventListener("orientationchange", function () {
+    setTimeout(function () { applyLayoutClass(); maybeReportCapabilities(); }, 60);
+  });
   if (navigator.connection && navigator.connection.addEventListener) {
     navigator.connection.addEventListener("change", function () {
       setTimeout(function () { maybeReportCapabilities(); }, 50);
@@ -5741,18 +5856,16 @@
     var d = document.createElement("div"); d.innerHTML = htmlStr || "";
     if (region === canvas) d.setAttribute("data-astral-render-batch", "append");
     region.appendChild(d); processSideEffects(d);
-    region.scrollTop = region.scrollHeight;
+    // 089: the scrolling region is the canvas panel; a card body does not
+    // scroll, so scrolling `region` would be a no-op that hides new content.
+    canvasPanel.scrollTop = canvasPanel.scrollHeight;
   }
   function appendChatBubble(role, htmlStr) {
-    var wrap = document.createElement("div");
-    wrap.className = role === "user" ? "flex justify-end" : "flex justify-start";
-    var bubble = document.createElement("div");
-    bubble.className = (role === "user"
-      ? "bg-astral-primary/20 border border-astral-primary/30"
-      : "bg-white/5 border border-white/5") + " rounded-lg p-3 max-w-[85%] text-sm text-astral-text";
-    bubble.innerHTML = htmlStr || "";
-    wrap.appendChild(bubble); chat.appendChild(wrap); processSideEffects(bubble);
-    chat.scrollTop = chat.scrollHeight;
+    var built = createChatBubbleNode(role);
+    built.bubble.innerHTML = htmlStr || "";
+    chat.appendChild(built.wrap);
+    processSideEffects(built.bubble);
+    canvasPanel.scrollTop = canvasPanel.scrollHeight;
     if (role !== "user") noteAssistantActivity();
   }
 
@@ -5779,7 +5892,7 @@
       err.appendChild(retry);
     }
     chat.appendChild(err);
-    chat.scrollTop = chat.scrollHeight;
+    canvasPanel.scrollTop = canvasPanel.scrollHeight;
     noteAssistantActivity();
   }
 
@@ -5852,7 +5965,7 @@
       + '<div class="astral-skeleton-line h-3 w-1/2 mb-2"></div>';
     var host = requestState ? ensureTransientOverlay().canvas : canvas;
     host.appendChild(d);
-    canvas.scrollTop = canvas.scrollHeight;
+    canvasPanel.scrollTop = canvasPanel.scrollHeight;
   }
   function hideSkeleton() {
     var d = document.getElementById("astral-canvas-skeleton");
@@ -6084,14 +6197,38 @@
   }
 
   function createChatBubbleNode(role) {
+    // Feature 089: a user turn is a right-aligned bubble under a small header
+    // carrying the turn number and the time; an assistant text turn is a
+    // full-width card body, so a text-only answer sits in the feed the same
+    // way a rendered result does.
     var wrap = document.createElement("div");
-    wrap.className = role === "user" ? "flex justify-end" : "flex justify-start";
-    var bubble = document.createElement("div");
-    bubble.className = (role === "user"
-      ? "bg-astral-primary/20 border border-astral-primary/30"
-      : "bg-white/5 border border-white/5") + " rounded-lg p-3 max-w-[85%] text-sm text-astral-text";
-    wrap.appendChild(bubble);
-    return { wrap: wrap, bubble: bubble };
+    wrap.className = "astral-turn " + (role === "user"
+      ? "astral-turn-user" : "astral-turn-assistant");
+    if (role === "user") {
+      turnCounter += 1;
+      var head = document.createElement("div");
+      head.className = "astral-user-head";
+      var pill = document.createElement("span");
+      pill.className = "astral-turn-pill";
+      pill.textContent = "Turn " + turnCounter;
+      var time = document.createElement("span");
+      time.className = "astral-turn-time";
+      time.textContent = turnClock();
+      head.appendChild(pill);
+      head.appendChild(time);
+      wrap.appendChild(head);
+      var bubble = document.createElement("div");
+      bubble.className = "astral-user-bubble";
+      wrap.appendChild(bubble);
+      return { wrap: wrap, bubble: bubble };
+    }
+    var card = document.createElement("div");
+    card.className = "astral-response-card";
+    var body = document.createElement("div");
+    body.className = "astral-card-body";
+    card.appendChild(body);
+    wrap.appendChild(card);
+    return { wrap: wrap, bubble: body };
   }
 
   /** Decode one validated semantic message into a detached visible bubble. */
@@ -7189,12 +7326,10 @@
       html += attachChipHtml(names);
     }
     if (message) html += "<div>" + escapeText(message) + "</div>";
-    var wrap = document.createElement("div");
-    wrap.className = "flex justify-end astral-bubble-queued";
-    var bubble = document.createElement("div");
-    bubble.className = "bg-astral-primary/20 border border-astral-primary/30 rounded-lg p-3 max-w-[85%] text-sm text-astral-text";
-    bubble.innerHTML = html;
-    wrap.appendChild(bubble);
+    var built = createChatBubbleNode("user");
+    var wrap = built.wrap;
+    wrap.classList.add("astral-bubble-queued");
+    built.bubble.innerHTML = html;
     chat.appendChild(wrap);
     chat.scrollTop = chat.scrollHeight;
     var accepted = queueOutboundAction({
@@ -7216,6 +7351,7 @@
   }
 
   function doSendChat(message, ready) {
+    sealLiveTurn(); // 089: this answer gets its own card, below the question
     openRequest("commit", activeChatId);
     var html = "";
     if (ready.length) {
@@ -8491,6 +8627,421 @@
   }
   if (window.requestIdleCallback) window.requestIdleCallback(idlePrefetchVendorBundles, { timeout: 5000 });
   else setTimeout(idlePrefetchVendorBundles, 2500);
+
+  // ==========================================================================
+  // Feature 089 — the a8p console: agent directory, landing, response-card
+  // full screen, the drawer, the dialog's tabs, and the parity hook.
+  //
+  // Everything here reads from window.__ASTRAL_LANDING__ (server-built, web
+  // only) or from elements already in the shell. Untrusted strings — agent
+  // names and descriptions, example titles — are written with textContent,
+  // never innerHTML.
+  // ==========================================================================
+  var LANDING = (function () {
+    var raw = window.__ASTRAL_LANDING__;
+    if (!raw || typeof raw !== "object") return { scenarios: [], categories: [], agents: [] };
+    return {
+      scenarios: Array.isArray(raw.scenarios) ? raw.scenarios : [],
+      categories: Array.isArray(raw.categories) ? raw.categories : [],
+      agents: Array.isArray(raw.agents) ? raw.agents : [],
+    };
+  })();
+
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+  function initialsOf(name) {
+    var parts = String(name || "").trim().split(/\s+/).slice(0, 2);
+    var out = "";
+    for (var i = 0; i < parts.length; i++) out += parts[i].charAt(0);
+    return out.toUpperCase() || "A";
+  }
+
+  // ---- the agent directory ------------------------------------------------
+  var agentListEl = document.getElementById("astral-agent-list");
+  var agentCountEl = document.getElementById("astral-agent-count");
+  var agentSearchEl = document.getElementById("astral-agent-search");
+  var agentItems = [];
+
+  function buildAgentItem(agent) {
+    var item = el("button", "astral-agent-item");
+    item.type = "button";
+    item.setAttribute("role", "listitem");
+    item.setAttribute("data-agent-id", agent.id || "");
+    item.appendChild(el("span", "astral-agent-icon", initialsOf(agent.name)));
+    var body = el("div", "astral-agent-body");
+    body.appendChild(el("span", "astral-agent-name", agent.name || agent.id || "Agent"));
+    body.appendChild(el("span", "astral-agent-desc", agent.description || ""));
+    item.appendChild(body);
+    var dot = el("span", "astral-agent-dot");
+    dot.setAttribute("data-state", agent.state === "ready" ? "ready" : "offline");
+    dot.setAttribute("title", agent.state === "ready" ? "Available" : "Disabled by you");
+    item.appendChild(dot);
+    item.setAttribute("aria-label", (agent.name || "Agent")
+      + (agent.state === "ready" ? "" : " — disabled"));
+    // Selecting an agent is the same Advanced binding the composer offers;
+    // this is a shortcut into it, not a second way to route a turn.
+    item.addEventListener("click", function () {
+      for (var i = 0; i < agentItems.length; i++) agentItems[i].classList.remove("is-active");
+      item.classList.add("is-active");
+      if (input) {
+        input.focus();
+        if (!input.value) input.value = "@" + (agent.name || agent.id) + " ";
+      }
+    });
+    return item;
+  }
+
+  function renderAgentDirectory() {
+    if (!agentListEl) return;
+    agentListEl.replaceChildren();
+    agentItems = LANDING.agents.map(function (agent) {
+      var item = buildAgentItem(agent);
+      agentListEl.appendChild(item);
+      return item;
+    });
+    if (!agentItems.length) {
+      agentListEl.appendChild(el("p", "astral-agent-desc",
+        "No agents are available for your account yet."));
+    }
+    filterAgentDirectory();
+  }
+
+  function filterAgentDirectory() {
+    var query = agentSearchEl ? (agentSearchEl.value || "").trim().toLowerCase() : "";
+    var shown = 0;
+    for (var i = 0; i < agentItems.length; i++) {
+      var agent = LANDING.agents[i] || {};
+      var haystack = ((agent.name || "") + " " + (agent.description || "")).toLowerCase();
+      var match = !query || haystack.indexOf(query) !== -1;
+      agentItems[i].hidden = !match;
+      if (match) shown++;
+    }
+    if (agentCountEl) agentCountEl.textContent = String(shown);
+  }
+
+  if (agentSearchEl) agentSearchEl.addEventListener("input", filterAgentDirectory);
+  renderAgentDirectory();
+
+  // ---- the landing: status pills, filter tabs, scenario cards -------------
+  var statusAgentsEl = document.getElementById("astral-status-agents");
+  var statusAuditEl = document.getElementById("astral-status-audit");
+  var resumePill = document.getElementById("astral-status-resume");
+  if (statusAgentsEl) {
+    statusAgentsEl.textContent = LANDING.agents.length === 1
+      ? "1 agent ready" : LANDING.agents.length + " agents ready";
+  }
+  if (statusAuditEl) statusAuditEl.textContent = "Audit: recording";
+  if (resumePill) resumePill.addEventListener("click", function () {
+    setWorkspaceView("work");
+  });
+
+  var tabsEl = document.querySelector(".astral-filter-tabs");
+  var gridEl = document.getElementById("astral-scenario-grid");
+  var activeCategory = "All";
+
+  function buildScenarioCard(scenario) {
+    var card = el("div", "astral-scenario-card");
+    card.setAttribute("data-category", scenario.category || "");
+    var head = el("div", "astral-scenario-head");
+    var tag = el("span", "astral-scenario-tag");
+    tag.appendChild(el("span", "astral-scenario-tag-icon", scenario.glyph || "✦"));
+    tag.appendChild(el("span", null, scenario.category || "Example"));
+    head.appendChild(tag);
+    head.appendChild(el("span", "astral-scenario-badge", "Example"));
+    card.appendChild(head);
+    card.appendChild(el("div", "astral-scenario-title", scenario.title || ""));
+    card.appendChild(el("p", "astral-scenario-desc", scenario.description || ""));
+    var actions = el("div", "astral-scenario-actions");
+    var run = el("button", "astral-scenario-run", "Run");
+    run.type = "button";
+    run.setAttribute("aria-label", "Run: " + (scenario.title || ""));
+    run.addEventListener("click", function () { sendChat(scenario.prompt || ""); });
+    var load = el("button", "astral-scenario-load", "Load prompt");
+    load.type = "button";
+    load.setAttribute("aria-label", "Load the prompt for: " + (scenario.title || ""));
+    load.addEventListener("click", function () {
+      if (!input) return;
+      input.value = scenario.prompt || "";
+      input.focus();
+    });
+    actions.appendChild(run);
+    actions.appendChild(load);
+    card.appendChild(actions);
+    return card;
+  }
+
+  function renderScenarioGrid() {
+    if (!gridEl) return;
+    gridEl.replaceChildren();
+    LANDING.scenarios.forEach(function (scenario) {
+      if (activeCategory !== "All" && scenario.category !== activeCategory) return;
+      gridEl.appendChild(buildScenarioCard(scenario));
+    });
+  }
+
+  function renderFilterTabs() {
+    if (!tabsEl) return;
+    tabsEl.replaceChildren();
+    ["All"].concat(LANDING.categories).forEach(function (name) {
+      var tab = el("button", "astral-filter-tab" + (name === activeCategory ? " active" : ""), name);
+      tab.type = "button";
+      tab.setAttribute("role", "tab");
+      tab.setAttribute("aria-selected", name === activeCategory ? "true" : "false");
+      tab.addEventListener("click", function () {
+        activeCategory = name;
+        renderFilterTabs();
+        renderScenarioGrid();
+      });
+      tabsEl.appendChild(tab);
+    });
+  }
+  renderFilterTabs();
+  renderScenarioGrid();
+
+  // ---- the brand returns to the landing ----------------------------------
+  var brandBtn = document.getElementById("astral-brand");
+  if (brandBtn) brandBtn.addEventListener("click", function () {
+    document.body.setAttribute("data-astral-view", "start");
+    if (canvasPanel) canvasPanel.scrollTop = 0;
+  });
+
+  // ---- recent work: collapsible ------------------------------------------
+  var recentToggle = document.getElementById("astral-recent-toggle");
+  if (recentToggle) recentToggle.addEventListener("click", function () {
+    var open = recentToggle.getAttribute("aria-expanded") === "true";
+    recentToggle.setAttribute("aria-expanded", open ? "false" : "true");
+  });
+
+  // ---- the full-screen result view ---------------------------------------
+  var fsRoot = document.getElementById("astral-fullscreen");
+  var fsCanvas = document.getElementById("astral-fs-canvas");
+  var fsTitle = document.getElementById("astral-fs-title");
+  var fsSub = document.getElementById("astral-fs-sub");
+  var fsExit = document.getElementById("astral-fs-exit");
+  var fsSource = null;      // the card body whose content is on screen
+  var fsReturnFocus = null;
+
+  function openFullscreen(card) {
+    if (!fsRoot || !fsCanvas || !card) return;
+    var body = card.querySelector(".astral-card-body");
+    if (!body) return;
+    fsSource = body;
+    fsReturnFocus = document.activeElement;
+    // The nodes are MOVED, not copied: a chart or a live component would
+    // otherwise exist twice, and the second copy would not be the one the
+    // server addresses by component id.
+    fsCanvas.replaceChildren();
+    while (body.firstChild) fsCanvas.appendChild(body.firstChild);
+    var head = card.querySelector(".astral-card-agent-name");
+    var sub = card.querySelector(".astral-card-agent-sub");
+    if (fsTitle) fsTitle.textContent = (head ? head.textContent : "Workspace");
+    if (fsSub) fsSub.textContent = (sub ? sub.textContent : "") + " • press Esc to return";
+    fsRoot.hidden = false;
+    fsRoot.classList.add("is-open");
+    document.body.classList.add("astral-fullscreen-open");
+    if (fsExit) fsExit.focus();
+  }
+
+  function closeFullscreen() {
+    if (!fsRoot || fsRoot.hidden) return;
+    if (fsSource) {
+      while (fsCanvas.firstChild) fsSource.appendChild(fsCanvas.firstChild);
+      fsSource = null;
+    }
+    fsRoot.hidden = true;
+    fsRoot.classList.remove("is-open");
+    document.body.classList.remove("astral-fullscreen-open");
+    if (fsReturnFocus && fsReturnFocus.focus) { try { fsReturnFocus.focus(); } catch (e) {} }
+    fsReturnFocus = null;
+  }
+
+  if (fsExit) fsExit.addEventListener("click", closeFullscreen);
+  document.addEventListener("click", function (e) {
+    var chip = e.target && e.target.closest ? e.target.closest(".astral-expand-chip") : null;
+    if (!chip) return;
+    e.preventDefault();
+    openFullscreen(chip.closest(".astral-response-card"));
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || fsRoot.hidden) return;
+    e.stopPropagation();
+    closeFullscreen();
+  }, true);
+
+  // ---- the settings dialog's section tabs --------------------------------
+  function showModalSection(root, key) {
+    var sections = root.querySelectorAll("[data-section]");
+    if (!sections.length) return;
+    for (var i = 0; i < sections.length; i++) {
+      sections[i].hidden = sections[i].getAttribute("data-section") !== key;
+    }
+    var tabs = root.querySelectorAll(".astral-modal-tab");
+    for (var j = 0; j < tabs.length; j++) {
+      var on = tabs[j].getAttribute("data-section-target") === key;
+      tabs[j].classList.toggle("active", on);
+      tabs[j].setAttribute("aria-selected", on ? "true" : "false");
+    }
+  }
+  document.addEventListener("click", function (e) {
+    var tab = e.target && e.target.closest ? e.target.closest(".astral-modal-tab") : null;
+    if (!tab) return;
+    var root = tab.closest(".astral-modal-card");
+    if (root) showModalSection(root, tab.getAttribute("data-section-target"));
+  });
+  // A freshly rendered dialog starts on its first section.
+  if (typeof modalRoot !== "undefined" && modalRoot && window.MutationObserver) {
+    new MutationObserver(function () {
+      var card = modalRoot.querySelector(".astral-modal-card");
+      var first = card && card.querySelector(".astral-modal-tab");
+      if (first) showModalSection(card, first.getAttribute("data-section-target"));
+    }).observe(modalRoot, { childList: true });
+  }
+
+  // ---- the drawer (<1024) -------------------------------------------------
+  var drawerToggle = document.getElementById("astral-drawer-toggle");
+  var drawerBackdrop = document.getElementById("astral-drawer-backdrop");
+  var sidebarEl = document.getElementById("astral-sidebar");
+  var drawerFocusHandler = null;
+
+  function drawerOpen() { return document.body.classList.contains("astral-drawer-open"); }
+  function focusablesIn(root) {
+    return Array.prototype.slice.call(root.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select, textarea,'
+      + ' [tabindex]:not([tabindex="-1"])'
+    )).filter(function (node) {
+      var r = node.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && !node.hidden;
+    });
+  }
+  function setDrawer(open) {
+    if (!sidebarEl || !drawerToggle) return;
+    document.body.classList.toggle("astral-drawer-open", !!open);
+    drawerToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    drawerToggle.setAttribute("aria-label", open
+      ? "Hide the agent directory" : "Show the agent directory");
+    if (drawerBackdrop) drawerBackdrop.hidden = !open;
+    if (open) {
+      var first = focusablesIn(sidebarEl)[0];
+      if (first) first.focus();
+      drawerFocusHandler = function (e) {
+        if (e.key !== "Tab") return;
+        var items = focusablesIn(sidebarEl);
+        if (!items.length) return;
+        var firstItem = items[0];
+        var lastItem = items[items.length - 1];
+        if (!sidebarEl.contains(document.activeElement)) {
+          e.preventDefault();
+          firstItem.focus();
+        } else if (e.shiftKey && document.activeElement === firstItem) {
+          e.preventDefault();
+          lastItem.focus();
+        } else if (!e.shiftKey && document.activeElement === lastItem) {
+          e.preventDefault();
+          firstItem.focus();
+        }
+      };
+      document.addEventListener("keydown", drawerFocusHandler, true);
+    } else {
+      if (drawerFocusHandler) {
+        document.removeEventListener("keydown", drawerFocusHandler, true);
+        drawerFocusHandler = null;
+      }
+      drawerToggle.focus();
+    }
+  }
+  if (drawerToggle) drawerToggle.addEventListener("click", function () {
+    setDrawer(!drawerOpen());
+  });
+  if (drawerBackdrop) drawerBackdrop.addEventListener("click", function () { setDrawer(false); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && drawerOpen()) { e.preventDefault(); setDrawer(false); }
+  });
+  // A click on the backdrop area is the ordinary way out on touch; a click
+  // anywhere outside the open drawer counts as the same intent.
+  document.addEventListener("click", function (e) {
+    if (!drawerOpen() || !sidebarEl) return;
+    if (sidebarEl.contains(e.target) || (drawerToggle && drawerToggle.contains(e.target))) return;
+    setDrawer(false);
+  });
+
+  // ---- the composer overflow (<768) --------------------------------------
+  var composerMore = document.getElementById("astral-composer-more");
+  if (composerMore) {
+    composerMore.addEventListener("click", function () {
+      var open = composerMore.getAttribute("aria-expanded") === "true";
+      composerMore.setAttribute("aria-expanded", open ? "false" : "true");
+    });
+    document.addEventListener("click", function (e) {
+      if (composerMore.getAttribute("aria-expanded") !== "true") return;
+      var group = document.getElementById("astral-composer-controls");
+      if (composerMore.contains(e.target) || (group && group.contains(e.target))) return;
+      composerMore.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  // ---- the parity hook ----------------------------------------------------
+  // Test-only, and deliberately thin: it drives the SAME paths a person does,
+  // so what the parity harness measures is what a real turn produces. It
+  // renders nothing itself beyond routing a fixture's HTML through the normal
+  // component path.
+  var viewportCallbacks = [];
+  window.__ASTRAL_PARITY__ = {
+    reset: function () {
+      closeFullscreen();
+      if (typeof setModal === "function") setModal("");
+      setDrawer(false);
+      chat.replaceChildren();
+      liveTurn = null;
+      turnCounter = 0;
+      ensureLiveTurn();
+      showCanvasEmpty();
+      document.body.setAttribute("data-astral-view", "start");
+      if (agentSearchEl) { agentSearchEl.value = ""; filterAgentDirectory(); }
+      activeCategory = "All";
+      renderFilterTabs();
+      renderScenarioGrid();
+      if (input) input.value = "";
+      if (canvasPanel) canvasPanel.scrollTop = 0;
+    },
+    seedConversation: function (fixture, opts) {
+      var loading = !!(opts && opts.loading);
+      setWorkspaceView("work");
+      appendChatBubble("user", "<div>" + escapeText((fixture && fixture.query) || "") + "</div>");
+      sealLiveTurn();
+      describeLiveTurn((fixture && fixture.agent_id) || "AstralDeep",
+        "Routed result");
+      if (loading) {
+        var pending = el("div", "astral-pending");
+        pending.id = "astral-pending-turn";
+        pending.setAttribute("role", "status");
+        pending.setAttribute("aria-busy", "true");
+        pending.appendChild(el("span", "astral-pending-spinner"));
+        var copy = document.createElement("div");
+        copy.appendChild(el("div", "astral-pending-title", "Working on it"));
+        copy.appendChild(el("div", "astral-pending-sub",
+          "Routing the request and preparing the result…"));
+        pending.appendChild(copy);
+        hideCanvasEmpty();
+        canvas.appendChild(pending);
+        return;
+      }
+      hideCanvasEmpty();
+      setHTML(canvas, (fixture && fixture.ui_html) || "");
+    },
+    openSettings: function () {
+      if (typeof action === "function") action("chrome_open", { surface: "llm" });
+    },
+    onViewportRegister: function (cb) { if (typeof cb === "function") viewportCallbacks.push(cb); },
+    notifyViewportRegistered: function () {
+      for (var i = 0; i < viewportCallbacks.length; i++) {
+        try { viewportCallbacks[i](); } catch (e) {}
+      }
+    },
+  };
 })();
 
 /* Feature 040 (US5): slash-command typeahead. Discovery only — the server
