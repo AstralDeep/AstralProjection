@@ -36,6 +36,8 @@
   var accountIdentityInitialized = false;
   var accountPrivacyEpoch = 0;
   var accountSignedOut = false;
+  // Work reads belong to one live socket/navigation, never the reconnect queue.
+  var ownerSurfaceRequest = null;
   var connectionGeneration = null;
   var requestState = null;
   var committedRevisionByChat = Object.create(null);
@@ -213,7 +215,7 @@
     var hex = Array.prototype.map.call(new Uint8Array(digest), function (value) {
       return value.toString(16).padStart(2, "0");
     }).join("");
-    return "astraldeep.active_chat.v1." + hex;
+    return ACTIVE_CHAT_KEY_PREFIX + hex;
   }
 
   function decodeTokenIdentity(rawToken, fallbackSubject) {
@@ -258,6 +260,171 @@
     catch (e) { return false; }
   }
 
+  // ---- Feature 088 (T011): composition selection for this chat. The picker
+  // is the server-rendered guidance surface (view "selection"); each of its
+  // buttons carries the complete version-1 selection the server issued for
+  // its exact revisions. The client keeps that binding only under the
+  // verified owner's key, attaches it to chat_message.payload.selection, and
+  // erases it on the same definitive events that clear the active-chat
+  // locator. Ordinary Send never depends on it (FR-004).
+  var ACTIVE_CHAT_KEY_PREFIX = "astraldeep.active_chat.v1.";
+  var TURN_SELECTION_KEY_PREFIX = "astraldeep.turn_selection.v1.";
+  var TURN_SELECTION_LISTS = { skills: ["skill_id", 20], notes: ["note_id", 8] };
+  var turnSelection = null;
+
+  function turnSelectionStorageKey(locatorKey) {
+    var key = locatorKey || activeChatLocatorKey;
+    if (typeof key !== "string" || key.indexOf(ACTIVE_CHAT_KEY_PREFIX) !== 0) return null;
+    return TURN_SELECTION_KEY_PREFIX + key.slice(ACTIVE_CHAT_KEY_PREFIX.length);
+  }
+
+  /** Agent ids are plain identifiers: no C0/C1 controls and no lone surrogates. */
+  function isSelectionAgentId(value) {
+    if (typeof value !== "string" || !value || value.length > 255 || value !== value.trim()) return false;
+    for (var i = 0; i < value.length; i++) {
+      var code = value.charCodeAt(i);
+      if (code < 0x20 || (code >= 0x7f && code <= 0x9f) || (code >= 0xd800 && code <= 0xdfff)) return false;
+    }
+    return true;
+  }
+
+  function isSelectionRevision(value) {
+    return typeof value === "number" && isFinite(value) && Math.floor(value) === value
+      && value >= 1 && value <= 9007199254740991;
+  }
+
+  /**
+   * Return a fresh copy in the exact version-1 shape Work admission accepts
+   * ({version, agent, skills, notes}, closed keys, canonical ids, bounded
+   * unique lists), or null for anything else. The all-empty selection is
+   * valid here and means "clear".
+   */
+  function normalizeTurnSelection(value) {
+    if (!hasExactKeys(value, ["version", "agent", "skills", "notes"]) || value.version !== 1) return null;
+    var agent = null;
+    if (value.agent !== null) {
+      var candidate = value.agent;
+      if (!hasExactKeys(candidate, ["agent_id", "revision_id"]) || !isSelectionAgentId(candidate.agent_id)
+          || !isCanonicalUuid4(candidate.revision_id)) return null;
+      agent = { agent_id: candidate.agent_id, revision_id: candidate.revision_id };
+    }
+    var out = { version: 1, agent: agent, skills: [], notes: [] };
+    var kinds = Object.keys(TURN_SELECTION_LISTS);
+    for (var k = 0; k < kinds.length; k++) {
+      var kind = kinds[k], field = TURN_SELECTION_LISTS[kind][0], entries = value[kind];
+      if (!Array.isArray(entries) || entries.length > TURN_SELECTION_LISTS[kind][1]) return null;
+      var seen = {};
+      for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        if (!hasExactKeys(entry, [field, "revision"]) || !isCanonicalUuid4(entry[field])
+            || !isSelectionRevision(entry.revision) || seen[entry[field]]) return null;
+        seen[entry[field]] = true;
+        var normalized = {};
+        normalized[field] = entry[field];
+        normalized.revision = entry.revision;
+        out[kind].push(normalized);
+      }
+    }
+    return out;
+  }
+
+  function isEmptyTurnSelection(selection) {
+    return !selection.agent && !selection.skills.length && !selection.notes.length;
+  }
+
+  function readTurnSelection() {
+    var key = turnSelectionStorageKey();
+    if (!key) return null;
+    var raw;
+    try { raw = localStorage.getItem(key); } catch (e) { return null; }
+    if (!raw) return null;
+    try {
+      var value = JSON.parse(raw);
+      if (!hasExactKeys(value, ["schema_version", "selection", "updated_at"])
+          || value.schema_version !== 1 || !isRfc3339Utc(value.updated_at)) return null;
+      var selection = normalizeTurnSelection(value.selection);
+      return selection && !isEmptyTurnSelection(selection) ? selection : null;
+    } catch (e) { return null; }
+  }
+
+  function persistTurnSelection() {
+    var key = turnSelectionStorageKey();
+    if (!key) return;
+    try {
+      if (turnSelection) {
+        localStorage.setItem(key, JSON.stringify({
+          schema_version: 1, selection: turnSelection, updated_at: new Date().toISOString(),
+        }));
+      } else localStorage.removeItem(key);
+    } catch (e) {}
+  }
+
+  /** Adopt a normalized selection (empty => cleared) for the current owner. */
+  function setTurnSelection(selection) {
+    turnSelection = selection && !isEmptyTurnSelection(selection) ? selection : null;
+    persistTurnSelection();
+    renderTurnSelection();
+  }
+
+  function clearTurnSelection(storageKey) {
+    turnSelection = null;
+    var key = turnSelectionStorageKey(storageKey);
+    if (key) { try { localStorage.removeItem(key); } catch (e) {} }
+    renderTurnSelection();
+  }
+
+  function turnSelectionSummary(selection) {
+    var parts = [];
+    if (selection.agent) parts.push("1 agent");
+    if (selection.skills.length) {
+      parts.push(selection.skills.length + (selection.skills.length === 1 ? " skill" : " skills"));
+    }
+    if (selection.notes.length) {
+      parts.push(selection.notes.length + (selection.notes.length === 1 ? " note" : " notes"));
+    }
+    return "Using " + parts.join(", ") + " for this chat";
+  }
+
+  /** Bounded summary chip: counts only; names and values never reach the client. */
+  function renderTurnSelection() {
+    var host = document.getElementById("astral-selection");
+    var summary = document.getElementById("astral-selection-summary");
+    var advanced = document.getElementById("astral-advanced-btn");
+    if (!host) return;
+    if (!turnSelection) {
+      host.hidden = true;
+      host.classList.add("hidden");
+      if (summary) summary.textContent = "";
+      if (advanced) advanced.removeAttribute("data-selection");
+      return;
+    }
+    if (summary) summary.textContent = turnSelectionSummary(turnSelection);
+    host.hidden = false;
+    host.classList.remove("hidden");
+    if (advanced) advanced.setAttribute("data-selection", "active");
+  }
+
+  function cloneTurnSelection(selection) {
+    return JSON.parse(JSON.stringify(selection));
+  }
+
+  /**
+   * A guidance render may stamp the selection it rendered as selected on its
+   * surface root (data-astral-selection). That server-issued binding replaces
+   * the local one; a malformed stamp is ignored.
+   */
+  function adoptServerSelection(root) {
+    var holder = root && root.querySelector
+      ? root.querySelector('[data-chrome-surface="guidance"][data-astral-selection], '
+        + '[data-chrome-surface="guidance"] [data-astral-selection]')
+      : null;
+    if (!holder) return;
+    var selection = null;
+    try { selection = normalizeTurnSelection(JSON.parse(holder.getAttribute("data-astral-selection") || "")); }
+    catch (e) { selection = null; }
+    if (selection) setTurnSelection(selection);
+  }
+
   /**
    * Clear a locator only for the four definitive contract events. Transient
    * socket/auth/provider failures never call this function.
@@ -268,6 +435,9 @@
     if (reason === "confirmed_deletion" && chatId !== activeChatId) return false;
     var key = storageKey || activeChatLocatorKey;
     if (key) { try { localStorage.removeItem(key); } catch (e) {} }
+    // The selection applies to this chat under this owner only: every
+    // definitive event that ends the chat or the owner session erases it.
+    clearTurnSelection(key);
     if (!storageKey || storageKey === activeChatLocatorKey || reason === "account_switch") {
       var clearedChatId = activeChatId;
       activeChatId = null;
@@ -279,6 +449,7 @@
   }
 
   function clearCommittedConversationView(reason, chatId) {
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     if (chat) chat.replaceChildren();
     if (canvas) { canvas.replaceChildren(); showCanvasEmpty(); }
     setWorkspaceView("start");
@@ -305,6 +476,7 @@
   /** Erase private local work without dispatching it under the next owner. */
   function clearPrivateAccountState() {
     accountPrivacyEpoch += 1;
+    retireOwnerSurface();
     if (input) input.value = "";
     (pendingActions || []).forEach(function (entry) { clearTimeout(entry.timer); });
     pendingActions = [];
@@ -368,6 +540,9 @@
     try { sessionStorage.setItem(ACCOUNT_SESSION_KEY, nextKey); } catch (e) {}
     if (!accountIdentityInitialized || changed) {
       accountIdentityInitialized = true;
+      // Only the verified owner's own draft selection is restored (088).
+      turnSelection = readTurnSelection();
+      renderTurnSelection();
       var selected = new URLSearchParams(location.search).get("chat");
       activeChatId = isCanonicalUuid4(selected) ? selected : readActiveChatLocator();
       if (activeChatId) {
@@ -384,6 +559,7 @@
   }
 
   function openRequest(purpose, chatId, suppliedGeneration) {
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     setWorkspaceView("work");
     requestState = {
       chatId: chatId || null,
@@ -402,6 +578,7 @@
 
   function selectActiveChat(chatId, purpose) {
     if (!isCanonicalUuid4(chatId)) return false;
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     persistActiveChatLocator(chatId);
     activeChatId = chatId;
     syncVoiceVisibleChat(chatId);
@@ -5313,19 +5490,54 @@
   }
 
   function action(name, payload, exposeStatus) {
+    var noteAction = ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"].indexOf(name) !== -1;
+    var selectionAction = name === "chrome_turn_selection_set";
+    var ownerSurface = noteAction || selectionAction ? "guidance"
+      : name === "chrome_open" && payload && ["work", "guidance"].indexOf(payload.surface) !== -1
+        ? payload.surface : null;
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction) retireOwnerSurface();
+    if (noteAction) {
+      // A lost acknowledgement must reconcile current notes, never replay a write.
+      // The retry state contains no form values or obsolete revision command.
+      showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
+    }
+    if (selectionAction) {
+      // 088: the retry re-reads the picker; the selection itself is already
+      // held locally, so nothing about the command is replayed.
+      showModalSkeleton("chrome_open", { surface: "guidance", params: { view: "selection" } });
+    }
+    if ((name === "new_chat" || name === "load_chat") && ownerSurfaceRequest) {
+      retireOwnerSurface(); setModal("");
+    }
     if (name === "chat_message") openRequest("commit", activeChatId);
-    var suppliedGeneration = requestState && (name === "chat_message" || name === "load_chat")
-      ? requestState.generation : null;
+    var suppliedGeneration = ownerSurface ? randomUuid4()
+      : requestState && (name === "chat_message" || name === "load_chat")
+        ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
     var frame = {
       type: "ui_event",
       action: name,
       payload: submission.payload,
-      session_id: activeChatId || undefined,
+      session_id: ownerSurface ? undefined : activeChatId || undefined,
       submission_id: submission.submissionId,
       request_generation: submission.requestGeneration,
     };
     if (connectionGeneration) frame.connection_generation = connectionGeneration;
+    if (ownerSurface) {
+      if (!isSocketReady()) {
+        finishOperationSubmission(submission.requestGeneration);
+        showModalRetry();
+        showToast("Not connected. Retry when the connection returns.", "error");
+        return submission;
+      }
+      ownerSurfaceRequest = { surface: ownerSurface, generation: submission.requestGeneration, socket: ws,
+        connection: connectionGeneration, privacyEpoch: accountPrivacyEpoch, received: false };
+      if (!send(frame)) {
+        retireOwnerSurface();
+        showModalRetry();
+      }
+      return submission;
+    }
     if (!isSocketReady() && name !== "get_history" && name !== "watch_task") {
       // Queue chrome/settings actions too (FR-015): the same no-silent-drop
       // rule chat sends get. Frames are rebuilt at dispatch time so the
@@ -5344,8 +5556,29 @@
     return submission;
   }
 
+  function retireOwnerSurface() {
+    if (ownerSurfaceRequest) finishOperationSubmission(ownerSurfaceRequest.generation);
+    ownerSurfaceRequest = null;
+  }
+
+  function receiveOwnerSurface(data) {
+    var pending = ownerSurfaceRequest;
+    if (!pending || pending.received || !isSocketReady() || accountSignedOut
+        || pending.socket !== ws || pending.connection !== connectionGeneration
+        || pending.privacyEpoch !== accountPrivacyEpoch
+        || data.surface_key !== pending.surface
+        || data.region !== "modal" || data.mode !== "replace"
+        || !isCanonicalUuid4(data.request_generation)
+        || data.request_generation !== pending.generation || typeof data.html !== "string") return false;
+    pending.received = true;
+    finishOperationSubmission(pending.generation);
+    setModal(data.html);
+    return true;
+  }
+
   /** Persist and bind resume scope before the registration frame is sent. */
   function sendRegistration(resumed) {
+    if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     var resume;
     if (activeChatId) {
       persistActiveChatLocator(activeChatId);
@@ -5360,7 +5593,7 @@
     send({
       type: "register_ui",
       token: token,
-      capabilities: ["render", "stream", "voice"],
+      capabilities: ["render", "stream", "voice", "guidance_notes_v1", "guidance_selection_v1"],
       session_id: "ui-" + Date.now(),
       device_id: voiceDeviceId,
       device: device,
@@ -5497,6 +5730,7 @@
   }
   function processSideEffects(root) {
     initCharts(root);
+    refreshChromeFormVisibility(root);
     var themes = root.querySelectorAll(".astral-theme-apply");
     for (var i = 0; i < themes.length; i++) { try { applyTheme(JSON.parse(themes[i].dataset.theme || "{}")); } catch (e) {} }
   }
@@ -6351,6 +6585,9 @@
       // this stays byte-identical to the 060 contract.
       restoreActiveStatusOrClear([operationOwner, submissionOwner]);
     } else if (frame.terminal) {
+      if (ownerSurfaceRequest && ownerSurfaceRequest.generation === frame.request_generation) {
+        retireOwnerSurface(); showModalRetry();
+      }
       // Failure/cancellation/retry guidance persists, but is settled and must
       // never look like work is still in progress.
       setStatus(visible, false, "operation-error:" + frame.operation_id);
@@ -6392,6 +6629,9 @@
         || !validRetryAfter) return false;
     var local = operationSubmissionById[frame.submission_id];
     if (!local) return false;
+    if (ownerSurfaceRequest && ownerSurfaceRequest.generation === local.request_generation) {
+      retireOwnerSurface(); showModalRetry();
+    }
     finishOperationSubmission(local.request_generation);
     setStatus(errorMessage(frame), false, "operation-error:" + frame.submission_id);
     return true;
@@ -6567,6 +6807,7 @@
         }
         break;
       case "auth_required": // recoverable WS auth failure
+        if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
         if (currentVoiceFence() || voiceActivation) {
           voiceRecoverySuppressed = true;
           teardownVoiceMedia(true);
@@ -6615,6 +6856,10 @@
         break;
       }
       case "chrome_render": // server-rendered chrome regions
+        if (data.surface_key === "work" || data.surface_key === "guidance") { receiveOwnerSurface(data); break; }
+        // A delayed legacy modal/close cannot replace the current owner surface.
+        // Explicit navigation retires this guard before sending its new action.
+        if (data.region === "modal" && ownerSurfaceRequest) break;
         if (data.region === "modal") setModal(data.html || "");
         else if (data.region === "topbar") {
           var tb = document.getElementById("astral-topbar");
@@ -6992,6 +7237,9 @@
       });
     }
     if (bgArmed) payload.async_mode = true; // one-shot background-run arming (055)
+    // 088 (T011): the Advanced selection rides the ordinary send as-is; no
+    // selection => no key, so a plain Send is byte-identical to before.
+    if (turnSelection) payload.selection = cloneTurnSelection(turnSelection);
     var submission = beginOperationSubmission("chat_message", payload, requestState.generation);
     send({
       type: "ui_event",
@@ -7147,7 +7395,9 @@
       // historical views are inert except chrome actions.
       var compHost = btn.closest && btn.closest("[data-component-id]");
       if (compHost && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
-      if (!payload.chat_id && activeChatId) payload.chat_id = activeChatId;
+      if (!payload.chat_id && activeChatId && !(act === "chrome_open" && payload.surface === "work")) {
+        payload.chat_id = activeChatId;
+      }
       if (timelineMode && compHost && act && act.indexOf("chrome_") !== 0) {
         setStatus("Read-only history view — go back to live to interact.");
         return;
@@ -7767,6 +8017,9 @@
   function showModalRetry() {
     modalSkeletonTimer = null;
     if (!modalRoot || !modalSkeletonRequest) return;
+    if (modalSkeletonRequest.action === "chrome_open" && ["work", "guidance"].indexOf(modalSkeletonRequest.payload.surface) !== -1) {
+      retireOwnerSurface();
+    }
     modalRoot.innerHTML = modalShellHtml(
       '<div class="text-sm text-astral-text" role="status">This is taking longer than expected.</div>'
       + '<div class="flex gap-2">'
@@ -7794,6 +8047,7 @@
       // Feature 077: the "My agents & skills" surface carries the user's
       // current /commands — refresh the typeahead without a reload.
       if (typeof window.__astralRefreshCommands === "function") window.__astralRefreshCommands(modalRoot);
+      adoptServerSelection(modalRoot);
       var card = modalRoot.querySelector(".astral-modal-card");
       if (card) card.focus();
       maybeStartTour();
@@ -7892,6 +8146,36 @@
     return fields;
   }
 
+  function refreshChromeFormVisibility(root) {
+    if (!root || !root.querySelectorAll) return;
+    var groups = root.querySelectorAll("[data-chrome-visible-when]");
+    for (var index = 0; index < groups.length; index++) {
+      var group = groups[index], form = group.closest("[data-ui-form]");
+      var visible = false;
+      try {
+        var condition = JSON.parse(group.getAttribute("data-chrome-visible-when"));
+        var fields = collectChromeFields(form);
+        if (condition && typeof condition === "object" && !Array.isArray(condition)) {
+          if (typeof condition.field === "string" && Object.prototype.hasOwnProperty.call(condition, "equals")) {
+            visible = Object.prototype.hasOwnProperty.call(fields, condition.field)
+              && fields[condition.field] === condition.equals;
+          } else {
+            var names = Object.keys(condition);
+            visible = names.length > 0 && names.every(function (name) {
+              return Object.prototype.hasOwnProperty.call(fields, name) && fields[name] === condition[name];
+            });
+          }
+        }
+      } catch (error) { /* Malformed conditions keep the field hidden. */ }
+      group.hidden = !visible;
+    }
+  }
+
+  document.addEventListener("change", function (event) {
+    var form = event.target.closest && event.target.closest("[data-ui-form]");
+    if (form) refreshChromeFormVisibility(form);
+  });
+
   var AUTHORING_MUTATION_ACTIONS = Object.freeze({
     chrome_author_create: true,
     chrome_author_edit: true,
@@ -7949,7 +8233,30 @@
       if (!payload.params.chat_id && activeChatId) payload.params.chat_id = activeChatId;
     }
     if (act === "chrome_open") { setMenu(false, false); showModalSkeleton(act, payload); }
+    if (act === "chrome_turn_selection_set") {
+      // 088 (T011): the button's payload IS the server-issued selection for
+      // exact revisions. Keep it under the verified owner's key (empty =>
+      // clear) and send the normalized shape; anything else is refused here.
+      var chosen = normalizeTurnSelection(payload);
+      if (!chosen) {
+        e.preventDefault();
+        showToast("That selection could not be applied.", "error");
+        return;
+      }
+      setTurnSelection(chosen);
+      payload = chosen;
+    }
     action(act, payload);
+  });
+
+  // 088 (T011): the summary chip's x clears the selection locally; focus moves
+  // to Advanced so keyboard users are not dropped when the chip disappears.
+  document.addEventListener("click", function (e) {
+    var clear = e.target.closest && e.target.closest("#astral-selection-clear");
+    if (!clear) return;
+    clearTurnSelection();
+    var advanced = document.getElementById("astral-advanced-btn");
+    if (advanced) { try { advanced.focus(); } catch (err) {} }
   });
 
   // Permission sections (Agents & permissions): the section master gates its
@@ -8140,6 +8447,7 @@
     ws.onclose = function () {
       if (accountSignedOut || ws !== thisSocket) return;
       socketReady = false;
+      if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
       setConnState("offline", "Reconnecting — messages will queue");
       operationSubmissionByGeneration = Object.create(null);
       operationSubmissionById = Object.create(null);

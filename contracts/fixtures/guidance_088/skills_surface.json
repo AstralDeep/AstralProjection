@@ -1,0 +1,522 @@
+{
+  "version": 1,
+  "description": "Synthetic skill fixture; generated from the exact shared builder. No real user content.",
+  "states": {
+    "list": {
+      "status": "ready",
+      "mode": "list",
+      "skills": [
+        {
+          "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+          "command_id": "7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21",
+          "revision": 4,
+          "slug": "standup-format",
+          "name": "Standup format <script>alert(\"priva",
+          "command": "standup",
+          "applies_to": [
+            "web-research-1",
+            "summarizer-1"
+          ],
+          "enabled": true,
+          "instructions": "Three lines: yesterday, today, blockers. <script>alert(\"private\")</script> **literal** https://example.invalid/private"
+        },
+        {
+          "skill_id": "b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32",
+          "command_id": "c2d4e6f8-0a1b-4c3d-8e5f-6a7b8c9d0e43",
+          "revision": 1,
+          "slug": "plain-language",
+          "name": "Plain language",
+          "command": "",
+          "applies_to": [],
+          "enabled": false,
+          "instructions": "Explain like a colleague."
+        }
+      ]
+    },
+    "new": {
+      "status": "ready",
+      "mode": "new",
+      "skill_id": "5f7a9b1d-3c5e-4f7a-9b1d-3c5e7f9a1b54",
+      "command_id": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a65"
+    },
+    "edit": {
+      "status": "ready",
+      "mode": "edit",
+      "skill": {
+        "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+        "command_id": "7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21",
+        "revision": 4,
+        "slug": "standup-format",
+        "name": "Standup format <script>alert(\"priva",
+        "command": "standup",
+        "applies_to": [
+          "web-research-1",
+          "summarizer-1"
+        ],
+        "enabled": true,
+        "instructions": "Three lines: yesterday, today, blockers. <script>alert(\"private\")</script> **literal** https://example.invalid/private"
+      }
+    },
+    "delete": {
+      "status": "ready",
+      "mode": "delete",
+      "skill": {
+        "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+        "command_id": "7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21",
+        "revision": 4,
+        "slug": "standup-format",
+        "name": "Standup format <script>alert(\"priva",
+        "command": "standup",
+        "applies_to": [
+          "web-research-1",
+          "summarizer-1"
+        ],
+        "enabled": true,
+        "instructions": "Three lines: yesterday, today, blockers. <script>alert(\"private\")</script> **literal** https://example.invalid/private"
+      }
+    }
+  },
+  "frames": {
+    "list": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "My skills",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Skills are standing instructions you can select for your work; a /command makes one a shortcut you can type.",
+          "variant": "body"
+        },
+        {
+          "type": "button",
+          "label": "Add skill",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "view": "skills",
+              "mode": "new"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "card",
+          "title": "Standup format <script>alert(\"priva",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Enabled",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "/standup",
+              "variant": "caption"
+            },
+            {
+              "type": "text",
+              "content": "Applies to agents: web-research-1, summarizer-1",
+              "variant": "caption"
+            },
+            {
+              "type": "button",
+              "label": "Edit",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "guidance",
+                "params": {
+                  "view": "skills",
+                  "mode": "edit",
+                  "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                  "expected_revision": 4
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Disable",
+              "action": "chrome_user_skill_toggle",
+              "payload": {
+                "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                "command_id": "7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21",
+                "expected_revision": 4,
+                "enabled": false
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Delete",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "guidance",
+                "params": {
+                  "view": "skills",
+                  "mode": "delete",
+                  "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                  "expected_revision": 4
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "card",
+          "title": "Plain language",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Disabled",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Applies to every chat",
+              "variant": "caption"
+            },
+            {
+              "type": "button",
+              "label": "Edit",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "guidance",
+                "params": {
+                  "view": "skills",
+                  "mode": "edit",
+                  "skill_id": "b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32",
+                  "expected_revision": 1
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Enable",
+              "action": "chrome_user_skill_toggle",
+              "payload": {
+                "skill_id": "b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32",
+                "command_id": "c2d4e6f8-0a1b-4c3d-8e5f-6a7b8c9d0e43",
+                "expected_revision": 1,
+                "enabled": true
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            },
+            {
+              "type": "button",
+              "label": "Delete",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "guidance",
+                "params": {
+                  "view": "skills",
+                  "mode": "delete",
+                  "skill_id": "b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32",
+                  "expected_revision": 1
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "view": "skills",
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e"
+    },
+    "new": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "My skills",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "button",
+          "label": "Back to skills",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "view": "skills",
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "param_picker",
+          "title": "Add skill",
+          "description": "",
+          "fields": [
+            {
+              "name": "skill_name",
+              "label": "Name",
+              "kind": "text",
+              "default": "",
+              "help": "2 to 60 characters."
+            },
+            {
+              "name": "skill_command",
+              "label": "/command (optional)",
+              "kind": "text",
+              "default": "",
+              "help": "Lowercase letters, digits, - or _; up to 24 characters."
+            },
+            {
+              "name": "skill_applies",
+              "label": "Applies to",
+              "kind": "text",
+              "default": "",
+              "help": "Leave empty for every chat, or list agent ids separated by commas."
+            },
+            {
+              "name": "skill_instructions",
+              "label": "Instructions",
+              "kind": "textarea",
+              "default": "",
+              "help": "Standing guidance in your own words. Do not include patient information."
+            }
+          ],
+          "submit_label": "Add skill",
+          "submit_action": "chrome_user_skill_save",
+          "submit_payload": {
+            "skill_id": "5f7a9b1d-3c5e-4f7a-9b1d-3c5e7f9a1b54",
+            "command_id": "e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a65",
+            "expected_revision": 0,
+            "skill_slug": "",
+            "skill_enabled": "true"
+          }
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e"
+    },
+    "edit": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "My skills",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "button",
+          "label": "Back to skills",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "view": "skills",
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "text",
+          "content": "Current skill",
+          "variant": "h3"
+        },
+        {
+          "type": "badge",
+          "label": "Enabled",
+          "variant": "default"
+        },
+        {
+          "type": "text",
+          "content": "/standup",
+          "variant": "caption"
+        },
+        {
+          "type": "text",
+          "content": "Applies to agents: web-research-1, summarizer-1",
+          "variant": "caption"
+        },
+        {
+          "type": "param_picker",
+          "title": "Edit skill",
+          "description": "",
+          "fields": [
+            {
+              "name": "skill_name",
+              "label": "Name",
+              "kind": "text",
+              "default": "Standup format <script>alert(\"priva",
+              "help": "2 to 60 characters."
+            },
+            {
+              "name": "skill_command",
+              "label": "/command (optional)",
+              "kind": "text",
+              "default": "standup",
+              "help": "Lowercase letters, digits, - or _; up to 24 characters."
+            },
+            {
+              "name": "skill_applies",
+              "label": "Applies to",
+              "kind": "text",
+              "default": "web-research-1, summarizer-1",
+              "help": "Leave empty for every chat, or list agent ids separated by commas."
+            },
+            {
+              "name": "skill_instructions",
+              "label": "Instructions",
+              "kind": "textarea",
+              "default": "Three lines: yesterday, today, blockers. <script>alert(\"private\")</script> **literal** https://example.invalid/private",
+              "help": "Standing guidance in your own words. Do not include patient information."
+            }
+          ],
+          "submit_label": "Save skill",
+          "submit_action": "chrome_user_skill_save",
+          "submit_payload": {
+            "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+            "command_id": "7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21",
+            "expected_revision": 4,
+            "skill_slug": "standup-format",
+            "skill_enabled": "true"
+          }
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e"
+    },
+    "delete": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "My skills",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "button",
+          "label": "Keep skill",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "view": "skills",
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "card",
+          "title": "Standup format <script>alert(\"priva",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Enabled",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "/standup",
+              "variant": "caption"
+            },
+            {
+              "type": "text",
+              "content": "Applies to agents: web-research-1, summarizer-1",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "alert",
+          "message": "Delete permanently removes this skill and its /command. This cannot be undone.",
+          "variant": "warning"
+        },
+        {
+          "type": "button",
+          "label": "Delete skill",
+          "action": "chrome_user_skill_delete",
+          "payload": {
+            "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+            "command_id": "7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21",
+            "expected_revision": 4
+          },
+          "variant": "danger",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e"
+    }
+  },
+  "web_frames": {
+    "list": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"My skills\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">My skills</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">My skills</h2><p data-text-variant=\"body\">Skills are standing instructions you can select for your work; a /command makes one a shortcut you can type.</p><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;new&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Add skill</button><section aria-label=\"Standup format &lt;script&gt;alert(&quot;priva\"><h3>Standup format &lt;script&gt;alert(&quot;priva</h3><span role=\"status\" data-badge-variant=\"default\">Enabled</span><small data-text-variant=\"caption\">/standup</small><small data-text-variant=\"caption\">Applies to agents: web-research-1, summarizer-1</small><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;expected_revision&quot;:4,&quot;mode&quot;:&quot;edit&quot;,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Edit</button><button type=\"button\" data-ui-action=\"chrome_user_skill_toggle\" data-ui-payload=\"{&quot;command_id&quot;:&quot;7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21&quot;,&quot;enabled&quot;:false,&quot;expected_revision&quot;:4,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;}\">Disable</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;expected_revision&quot;:4,&quot;mode&quot;:&quot;delete&quot;,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Delete</button></section><section aria-label=\"Plain language\"><h3>Plain language</h3><span role=\"status\" data-badge-variant=\"default\">Disabled</span><small data-text-variant=\"caption\">Applies to every chat</small><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;expected_revision&quot;:1,&quot;mode&quot;:&quot;edit&quot;,&quot;skill_id&quot;:&quot;b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Edit</button><button type=\"button\" data-ui-action=\"chrome_user_skill_toggle\" data-ui-payload=\"{&quot;command_id&quot;:&quot;c2d4e6f8-0a1b-4c3d-8e5f-6a7b8c9d0e43&quot;,&quot;enabled&quot;:true,&quot;expected_revision&quot;:1,&quot;skill_id&quot;:&quot;b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32&quot;}\">Enable</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;expected_revision&quot;:1,&quot;mode&quot;:&quot;delete&quot;,&quot;skill_id&quot;:&quot;b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Delete</button></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Refresh</button></section></div></div></div>"
+    },
+    "new": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"My skills\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">My skills</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">My skills</h2><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Back to skills</button><div data-ui-form=\"true\" role=\"form\"><h3>Add skill</h3><label>Name<input type=\"text\" name=\"skill_name\" value=\"\" aria-label=\"Name\" aria-describedby=\"field-skill_name-help\"></label><small id=\"field-skill_name-help\">2 to 60 characters.</small><label>/command (optional)<input type=\"text\" name=\"skill_command\" value=\"\" aria-label=\"/command (optional)\" aria-describedby=\"field-skill_command-help\"></label><small id=\"field-skill_command-help\">Lowercase letters, digits, - or _; up to 24 characters.</small><label>Applies to<input type=\"text\" name=\"skill_applies\" value=\"\" aria-label=\"Applies to\" aria-describedby=\"field-skill_applies-help\"></label><small id=\"field-skill_applies-help\">Leave empty for every chat, or list agent ids separated by commas.</small><label>Instructions<textarea name=\"skill_instructions\" aria-label=\"Instructions\" aria-describedby=\"field-skill_instructions-help\"></textarea></label><small id=\"field-skill_instructions-help\">Standing guidance in your own words. Do not include patient information.</small><button type=\"button\" data-ui-action=\"chrome_user_skill_save\" data-ui-payload=\"{&quot;command_id&quot;:&quot;e1f2a3b4-c5d6-4e7f-8a9b-0c1d2e3f4a65&quot;,&quot;expected_revision&quot;:0,&quot;skill_enabled&quot;:&quot;true&quot;,&quot;skill_id&quot;:&quot;5f7a9b1d-3c5e-4f7a-9b1d-3c5e7f9a1b54&quot;,&quot;skill_slug&quot;:&quot;&quot;}\" data-ui-collect=\"true\">Add skill</button></div></section></div></div></div>"
+    },
+    "edit": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"My skills\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">My skills</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">My skills</h2><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Back to skills</button><h3 data-text-variant=\"h3\">Current skill</h3><span role=\"status\" data-badge-variant=\"default\">Enabled</span><small data-text-variant=\"caption\">/standup</small><small data-text-variant=\"caption\">Applies to agents: web-research-1, summarizer-1</small><div data-ui-form=\"true\" role=\"form\"><h3>Edit skill</h3><label>Name<input type=\"text\" name=\"skill_name\" value=\"Standup format &lt;script&gt;alert(&quot;priva\" aria-label=\"Name\" aria-describedby=\"field-skill_name-help\"></label><small id=\"field-skill_name-help\">2 to 60 characters.</small><label>/command (optional)<input type=\"text\" name=\"skill_command\" value=\"standup\" aria-label=\"/command (optional)\" aria-describedby=\"field-skill_command-help\"></label><small id=\"field-skill_command-help\">Lowercase letters, digits, - or _; up to 24 characters.</small><label>Applies to<input type=\"text\" name=\"skill_applies\" value=\"web-research-1, summarizer-1\" aria-label=\"Applies to\" aria-describedby=\"field-skill_applies-help\"></label><small id=\"field-skill_applies-help\">Leave empty for every chat, or list agent ids separated by commas.</small><label>Instructions<textarea name=\"skill_instructions\" aria-label=\"Instructions\" aria-describedby=\"field-skill_instructions-help\">Three lines: yesterday, today, blockers. &lt;script&gt;alert(&quot;private&quot;)&lt;/script&gt; **literal** https://example.invalid/private</textarea></label><small id=\"field-skill_instructions-help\">Standing guidance in your own words. Do not include patient information.</small><button type=\"button\" data-ui-action=\"chrome_user_skill_save\" data-ui-payload=\"{&quot;command_id&quot;:&quot;7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21&quot;,&quot;expected_revision&quot;:4,&quot;skill_enabled&quot;:&quot;true&quot;,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;,&quot;skill_slug&quot;:&quot;standup-format&quot;}\" data-ui-collect=\"true\">Save skill</button></div></section></div></div></div>"
+    },
+    "delete": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"My skills\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">My skills</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">My skills</h2><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;,&quot;view&quot;:&quot;skills&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Keep skill</button><section aria-label=\"Standup format &lt;script&gt;alert(&quot;priva\"><h3>Standup format &lt;script&gt;alert(&quot;priva</h3><span role=\"status\" data-badge-variant=\"default\">Enabled</span><small data-text-variant=\"caption\">/standup</small><small data-text-variant=\"caption\">Applies to agents: web-research-1, summarizer-1</small></section><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">Delete permanently removes this skill and its /command. This cannot be undone.</div><button type=\"button\" data-ui-action=\"chrome_user_skill_delete\" data-ui-payload=\"{&quot;command_id&quot;:&quot;7a5e1c3b-9d2f-4b6a-8c4e-1f3a5b7d9e21&quot;,&quot;expected_revision&quot;:4,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;}\">Delete skill</button></section></div></div></div>"
+    }
+  }
+}

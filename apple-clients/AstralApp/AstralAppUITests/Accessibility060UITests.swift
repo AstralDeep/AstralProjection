@@ -11,7 +11,7 @@ final class Accessibility060UITests: XCTestCase {
 
     func testFirstLoginControlsExposeStableRoleNameStateAndFocusBehavior() {
         app = XCUIApplication()
-        app.launchArguments = ["--astral-ui-test-first-login", "invalid-credentials"]
+        app.launchArguments = ["--astral-ui-test-first-login", "client-watchdog"]
         app.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
         app.launch()
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 from collections.abc import Iterable, Mapping
 from itertools import groupby
 
@@ -25,6 +27,14 @@ from ._components import (
 )
 
 _AUDIT_OUTCOMES = ("success", "failure", "in_progress", "interrupted")
+# Feature 088 T052: the runtime diagnostics disclosure mirrors the collector's
+# own low-cardinality guarantees. A sample whose name, label name or label value
+# is outside those bounded token shapes is not rendered at all -- the surface
+# never becomes a channel for an identity, URL, prose or credential that the
+# collector was supposed to keep out of its labels.
+_METRIC_NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,127}")
+_METRIC_TOKEN_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_DIAGNOSTIC_SAMPLE_KEYS = {"name", "value", "labels"}
 
 
 def _rows(values: Iterable[Mapping[str, object]]) -> tuple[Mapping[str, object], ...]:
@@ -239,6 +249,92 @@ def _build_audit_detail(
         if artifact_components:
             components.append(card("Artifacts", artifact_components))
     return build_view("audit", "Audit log", components, theme=theme, layout=layout)
+
+
+def _diagnostic_number(value: object) -> str | None:
+    """Accept only a finite real sample; a bool or NaN is not a measurement."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        return repr(value)
+    return str(value)
+
+
+def _diagnostic_samples(
+    snapshot: object,
+) -> list[tuple[str, str, str]]:
+    """Select exactly the well-formed samples; an unknown shape is dropped."""
+    raw = snapshot.get("metrics") if isinstance(snapshot, Mapping) else snapshot
+    if isinstance(raw, Mapping) or not isinstance(raw, (list, tuple)):
+        return []
+    rows: list[tuple[str, str, str]] = []
+    for item in raw:
+        if not isinstance(item, Mapping) or set(item) != _DIAGNOSTIC_SAMPLE_KEYS:
+            continue
+        name = item["name"]
+        if not isinstance(name, str) or not _METRIC_NAME_RE.fullmatch(name):
+            continue
+        number = _diagnostic_number(item["value"])
+        labels = item["labels"]
+        if number is None or not isinstance(labels, Mapping):
+            continue
+        pairs = []
+        for key in sorted(labels):
+            label = labels[key]
+            if not isinstance(key, str) or not _METRIC_NAME_RE.fullmatch(key):
+                pairs = None
+                break
+            if not isinstance(label, str) or not _METRIC_TOKEN_RE.fullmatch(label):
+                pairs = None
+                break
+            pairs.append(f"{key}={label}")
+        if pairs is None:
+            continue
+        rows.append((name, ", ".join(pairs) or "no labels", number))
+    return sorted(rows)
+
+
+def build_diagnostics_view(
+    snapshot: object = (),
+    *,
+    denied: bool = False,
+    error: str | None = None,
+    theme: ThemeView | None = None,
+    layout: LayoutView | None = None,
+) -> ChromeViewModel:
+    """Render already-authorized runtime samples read-only.
+
+    The host filters by role before calling this builder and stays authoritative;
+    ``denied`` only renders the refusal it already decided. The view carries no
+    action of any kind: runtime diagnostics are an observation, and nothing here
+    resets, exports or reconfigures the collector.
+    """
+    if denied:
+        return denied_view(
+            "admin_tools", "Runtime diagnostics", "Admin role required to view this surface."
+        )
+    if error:
+        return unavailable_view("admin_tools", "Runtime diagnostics", error)
+    rows = _diagnostic_samples(snapshot)
+    components: list[ComponentView] = [
+        text(
+            "Deployment-wide runtime counters and gauges. No user, conversation, credential or "
+            "target identity is recorded here.",
+            "caption",
+        )
+    ]
+    if not rows:
+        components.append(alert("No runtime samples have been recorded yet.", "info"))
+        return build_view(
+            "admin_tools", "Runtime diagnostics", components, theme=theme, layout=layout
+        )
+    for name, batch in groupby(rows, key=lambda row: row[0]):
+        components.append(
+            card(name, [key_value([(labels, value) for _, labels, value in batch])])
+        )
+    return build_view("admin_tools", "Runtime diagnostics", components, theme=theme, layout=layout)
 
 
 def build_feedback_view(
@@ -526,6 +622,7 @@ def build_admin_view(
 __all__ = [
     "build_admin_view",
     "build_audit_view",
+    "build_diagnostics_view",
     "build_feedback_view",
     "build_onboarding_view",
 ]

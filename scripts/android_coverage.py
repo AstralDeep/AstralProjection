@@ -54,6 +54,19 @@ def require(condition: bool, code: str) -> None:
         raise InvalidCoverage(code)
 
 
+def failure_token(error: BaseException) -> str:
+    """A diagnostic token that can never carry a path, command line or secret.
+
+    `InvalidCoverage` messages are a closed vocabulary chosen by this module, so
+    they are printed verbatim. Every other exception (OSError, ValueError,
+    ET.ParseError, subprocess errors) can embed a filename or an argument
+    vector, so only the exception class name is disclosed.
+    """
+    if isinstance(error, InvalidCoverage):
+        return str(error)
+    return type(error).__name__
+
+
 def digest(path: Path) -> str:
     require(path.is_file() and not path.is_symlink(), "file_missing_or_symlink")
     with path.open("rb") as stream:
@@ -482,7 +495,7 @@ def device(
     attempt_id = uuid.uuid4().hex
     try:
         _device(root, output, adb, serial, lane, arguments, attempt_id)
-    except Exception:
+    except Exception as error:
         started = output / f"{lane}.started.json"
         failed = output / f"{lane}.failed.json"
         if (
@@ -498,6 +511,9 @@ def device(
                     "version": VERSION,
                     "lane": lane,
                     "status": "failed",
+                    # Closed token only: a later reader must learn WHY without
+                    # inheriting any path or command line from the failure.
+                    "reason": failure_token(error),
                     "started_sha256": digest(started),
                 },
             )
@@ -661,8 +677,8 @@ def main(argv: list[str] | None = None) -> int:
             verify(root, output, args.lanes.split(","))
         else:
             report(root, output, args.lanes.split(","))
-    except (InvalidCoverage, OSError, ValueError, ET.ParseError, subprocess.SubprocessError):
-        print("android_coverage_failed", file=sys.stderr)
+    except (InvalidCoverage, OSError, ValueError, ET.ParseError, subprocess.SubprocessError) as error:
+        print(f"android_coverage_failed {failure_token(error)}", file=sys.stderr)
         return 1
     return 0
 

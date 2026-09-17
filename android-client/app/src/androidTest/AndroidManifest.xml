@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
         <provider
+            android:name="com.personalailabs.astraldeep.app.workspace.WorkspaceTestDocumentsControl"
+            android:authorities="com.personalailabs.astraldeep.test.workspace.documents.control"
+            android:exported="true" />
+        <provider
             android:name="com.personalailabs.astraldeep.app.workspace.WorkspaceTestDocuments"
             android:authorities="com.personalailabs.astraldeep.test.workspace.documents"
             android:exported="true"

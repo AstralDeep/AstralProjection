@@ -43,6 +43,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Download
 import com.personalailabs.astraldeep.app.render.Emit
+import com.personalailabs.astraldeep.app.render.LocalGuidanceNotes
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.ThemeSink
 import com.personalailabs.astraldeep.app.ui.theme.AstralMono
@@ -151,8 +152,16 @@ internal fun rendersAsDropdown(f: JsonObject): Boolean = fieldKind(f) == "select
 internal fun fieldIsVisible(
     f: JsonObject,
     texts: Map<String, String>,
+    guidanceNotes: Boolean = false,
 ): Boolean {
-    val vw = f["visible_when"] as? JsonObject ?: return true
+    val vw = f["visible_when"] as? JsonObject ?: return !guidanceNotes || "visible_when" !in f
+    if (guidanceNotes) {
+        // Shared note forms use {controller: exact string}; legacy forms keep their original rule.
+        return vw.isNotEmpty() &&
+            vw.all { (controller, expected) ->
+                expected is JsonPrimitive && expected.isString && texts[controller] == expected.content
+            }
+    }
     val controller = fieldStr(vw, "field") ?: return true
     val expected = fieldStr(vw, "equals") ?: return true
     val current = texts[controller] ?: fieldStr(vw, "default") ?: ""
@@ -274,7 +283,7 @@ private fun ParamPickerPrimitive(
                 // 063.1: a hidden field keeps its state and still submits — it only
                 // stops rendering. Reading `texts` here re-evaluates visibility on
                 // every controller change (SnapshotStateMap subscription).
-                if (!fieldIsVisible(f, texts)) return@forEach
+                if (!fieldIsVisible(f, texts, guidanceNotes = LocalGuidanceNotes.current)) return@forEach
                 val label = fieldStr(f, "label") ?: name
                 val kind = fieldKind(f)
                 when {

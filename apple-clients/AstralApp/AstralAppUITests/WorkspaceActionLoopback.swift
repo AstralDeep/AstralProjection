@@ -6,7 +6,7 @@ import XCTest
 /// A bounded HTTP peer owned by one UI test, never by the product. The native
 /// app exercises its normal URLSession, authorization, export and share paths.
 final class WorkspaceActionLoopback: @unchecked Sendable {
-    enum Route: Hashable { case authorization, presentation, share, componentCSV }
+    enum Route: Hashable { case authorization, presentation, share, componentCSV, firstLoginCompletion }
     struct Reply {
         var status = 200
         var error: String? = nil
@@ -39,10 +39,18 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
     private var registrationCount = 0
     private var socketConnections: [NWConnection] = []
     private var socketPaused = false
+    private let supportsWorkReads: Bool
+    private let supportsGuidanceNotes: Bool
+    private var workWire: [Data] = []
 
-    init(replies: [Route: [Reply]], supportsWebSocket: Bool = false) throws {
+    init(
+        replies: [Route: [Reply]], supportsWebSocket: Bool = false, supportsWorkReads: Bool = false,
+        supportsGuidanceNotes: Bool = false
+    ) throws {
         self.replies = replies
         self.supportsWebSocket = supportsWebSocket
+        self.supportsWorkReads = supportsWorkReads
+        self.supportsGuidanceNotes = supportsGuidanceNotes
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -54,6 +62,17 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
     var port: UInt16? { listener.port?.rawValue }
     var componentFrames: [Data] { queue.sync { componentWire } }
     var registrations: Int { queue.sync { registrationCount } }
+    var workFrames: [Data] { queue.sync { workWire } }
+
+    func sendWorkFrame(_ fields: [String: Any]) throws {
+        let data = try JSONSerialization.data(withJSONObject: fields)
+        try queue.sync {
+            guard supportsWorkReads, data.count <= 65535, let connection = socketConnections.last else {
+                throw NSError(domain: "WorkUITest", code: 1)
+            }
+            sendSocket(data, on: connection)
+        }
+    }
 
     func start() {
         listener.stateUpdateHandler = { [weak self] state in
@@ -200,6 +219,7 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
         }
         let route: Route
         switch (method, path) {
+        case ("GET", "/ui-test/first-login/completion"): route = .firstLoginCompletion
         case ("GET", "/api/export/canvas/\(Self.chat).html?render_revision=0"): route = .authorization
         case ("POST", "/api/export/canvas/\(Self.chat)/presentation?render_revision=0"): route = .presentation
         case ("POST", "/api/share"): route = .share
@@ -213,7 +233,11 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
             Request(
                 route: route, method: method, path: path,
                 authorization: headers["authorization"] ?? "", body: body))
-        guard headers["authorization"] == "Bearer \(Self.token)", var choices = replies[route], !choices.isEmpty else {
+        let authorized =
+            route == .firstLoginCompletion
+            ? headers["authorization"] == nil && body.isEmpty
+            : headers["authorization"] == "Bearer \(Self.token)"
+        guard authorized, var choices = replies[route], !choices.isEmpty else {
             unexpected.append("Unexpected authorization or repeated \(route)")
             send(response(status: 403, body: Data()), on: connection)
             return
@@ -221,7 +245,9 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
         let reply = choices.removeFirst()
         replies[route] = choices
         let data: Data
-        if let error = reply.error {
+        if route == .firstLoginCompletion {
+            data = Data()
+        } else if let error = reply.error {
             data =
                 (try? JSONSerialization.data(withJSONObject: ["error": error, "detail": "PRIVATE_SERVER_DETAIL"]))
                 ?? Data()
@@ -365,7 +391,13 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
                     registrationCount += 1
                     sendSocket(Data(#"{"type":"pong"}"#.utf8), on: connection)
                 } else if object["type"] as? String == "ui_event", let action = object["action"] as? String {
-                    if ["component_refine", "component_restore"].contains(action) {
+                    if (self.supportsWorkReads && ["chrome_open", "chrome_close"].contains(action))
+                        || (self.supportsGuidanceNotes
+                            && ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"]
+                                .contains(action))
+                    {
+                        self.workWire.append(payload)
+                    } else if ["component_refine", "component_restore"].contains(action) {
                         componentWire.append(payload)
                     } else if !["get_history", "discover_agents", "update_device", "new_chat", "load_chat"].contains(
                         action)

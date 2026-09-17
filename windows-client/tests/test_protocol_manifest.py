@@ -72,6 +72,48 @@ def test_persistent_assignment_actions_use_existing_generic_surface():
     assert is_handled("notification")
 
 
+def test_feature_088_guidance_actions_are_closed_and_not_desktop_frames():
+    """Feature 088 T037 drift pin: the shared skills/agents/selection views add three closed
+    actions (129 -> 132) and NO push type; the desktop never advertises the capabilities that
+    would make a host send one, so its frame classification is unaffected (Windows redesign
+    remains deferred, T059)."""
+    data = _manifest()
+    actions = data["accept_actions"]
+    # 132 T037 actions + the two T043/T044 actions and the two T048 Connections
+    # actions pinned by the tests below.
+    assert len(actions) == len(set(actions)) == 136
+    assert {"chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set"} <= set(actions)
+    guidance = ["guidance_notes_088", "guidance_skills_088", "guidance_agents_088", "guidance_selection_088"]
+    contracts = data["presentation_contracts"]
+    assert [contracts[name]["client_capability"] for name in guidance] == [
+        "guidance_notes_v1", "guidance_skills_v1", "guidance_agents_v1", "guidance_selection_v1"]
+    assert all(contracts[name]["surface_key"] == "guidance" for name in guidance)
+    assert not {name for name in _manifest_push_types() if name.startswith(("guidance", "declarative"))}
+    assert not {name for name in CLASSIFICATION if name.startswith(("guidance", "declarative"))}
+
+
+def test_feature_088_save_recurring_and_saved_results_are_closed_and_not_desktop_frames():
+    """Feature 088 T043/T044 drift pin: the exact Save command and the terminal job Stop add two
+    closed actions (132 -> 134) and NO push type; the desktop never advertises work_save_v1,
+    recurring_work_v1 or saved_results_v1, so it keeps its compatible Work/Schedule views
+    (Windows redesign remains deferred, T059)."""
+    data = _manifest()
+    actions = data["accept_actions"]
+    assert len(actions) == len(set(actions)) == 136
+    assert {"chrome_work_result_save", "chrome_job_stop"} <= set(actions)
+    contracts = data["presentation_contracts"]
+    names = ["work_save_088", "recurring_work_088", "saved_results_088"]
+    assert [contracts[name]["client_capability"] for name in names] == [
+        "work_save_v1", "recurring_work_v1", "saved_results_v1"]
+    assert [contracts[name]["surface_key"] for name in names] == ["work", "personalization", "saved_results"]
+    assert all(contracts[name]["native_response"]["type"] == "chrome_surface" for name in names)
+    assert set(contracts["work_save_088"]["commands"]) == {"propose", "save"}
+    assert not {name for name in _manifest_push_types()
+                if name.startswith(("work_save", "recurring_work", "saved_result"))}
+    assert not {name for name in CLASSIFICATION
+                if name.startswith(("work_save", "recurring_work", "saved_result"))}
+
+
 def test_client_local_voice_contract_is_pinned_to_closed_v2_dispositions():
     contract = _manifest()["frame_contracts"]["voice_075"]
     assert contract["schema_version"] == "2"

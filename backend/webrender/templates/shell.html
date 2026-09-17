@@ -84,6 +84,15 @@
           <div id="astral-turn-status" class="astral-turn-status" role="status" aria-live="polite" aria-atomic="true" hidden></div>
           <!-- Attachment chips for files staged on the next turn -->
           <div id="astral-attachments" class="astral-attachments hidden flex flex-wrap gap-1.5"></div>
+          <!-- Feature 088 (T011): bounded summary of the composition selection
+               chosen through Advanced (agent / skills / private notes for this
+               chat). Hidden until a selection exists; the × clears it locally. -->
+          <div id="astral-selection" class="astral-selection hidden" hidden>
+            <span class="astral-chip is-selection">
+              <span id="astral-selection-summary" class="astral-chip-name" role="status" aria-live="polite"></span>
+              <button type="button" id="astral-selection-clear" class="astral-chip-remove" aria-label="Clear the selection for this chat">×</button>
+            </span>
+          </div>
           <!-- Feature 040 (US5): slash-command typeahead (shown while typing a
                leading "/"). Discovery only — the server expands the command
                into a normal prompt through the usual permission/audit gates. -->
@@ -106,6 +115,17 @@
                     title="Run in background - keep using other chats; you will be notified when it finishes."
                     aria-label="Run in background">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            </button>
+            <!-- Feature 088 (T011): Advanced disclosure. Opens the server-
+                 rendered selection surface (guidance view "selection") through
+                 the generic chrome_open path; optional — ordinary Send needs
+                 no selection and no preflight. client.js keeps the chosen
+                 binding per verified owner and attaches it to the next sends. -->
+            <button type="button" id="astral-advanced-btn" class="astral-attach-btn astral-advanced-btn shrink-0"
+                    aria-haspopup="dialog" title="Advanced: choose the agent, skills and private notes for this chat"
+                    data-ui-action="chrome_open" data-ui-payload='{"surface":"guidance","params":{"view":"selection"}}'>
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="20" y2="18"></line><circle cx="9" cy="6" r="2" fill="currentColor"></circle><circle cx="15" cy="12" r="2" fill="currentColor"></circle><circle cx="7" cy="18" r="2" fill="currentColor"></circle></svg>
+              <span class="astral-advanced-label">Advanced</span>
             </button>
             <!-- Feature 065 host + 066 default: the voice affordance is ALWAYS
                  present. This pre-rendered start control is the client-local

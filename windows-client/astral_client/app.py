@@ -921,7 +921,7 @@ class SurfaceDialog(QDialog):
     LOAD_TIMEOUT_MS = 10000
 
     def __init__(self, parent, emit, download=None, on_retry=None, apply_theme=None,
-                 on_sign_out=None):
+                 on_sign_out=None, on_close=None, on_timeout=None):
         super().__init__(parent)
         self.setModal(False)
         self.resize(600, 560)
@@ -929,6 +929,8 @@ class SurfaceDialog(QDialog):
         # page — SURFACE_2 is that raised token.
         self.setStyleSheet(f"QDialog {{ background:{T.SURFACE_2}; }}")
         self._raw_emit = emit
+        self._on_close = on_close
+        self._timeout_observer = on_timeout
         self._on_retry = on_retry
         self._on_sign_out = on_sign_out
         self._surface = ""
@@ -1016,12 +1018,16 @@ class SurfaceDialog(QDialog):
         # Esc / programmatic dismissal: refused while the gate is pinned (054).
         if self._mandatory:
             return
+        if callable(self._on_close):
+            self._on_close()
         super().reject()
 
     def closeEvent(self, event) -> None:
         if self._mandatory:
             event.ignore()
             return
+        if callable(self._on_close):
+            self._on_close()
         super().closeEvent(event)
 
     def _clear_body(self) -> None:
@@ -1044,6 +1050,8 @@ class SurfaceDialog(QDialog):
         # But a client-local action (e.g. attach_existing) is handled in-app and
         # never produces a server chrome_surface re-render, so arming the
         # load-timeout would wrongly fire and wipe the surface — skip it.
+        if action == "chrome_open" and payload.get("surface") == "work":
+            return
         if action != "chat_message" and action not in _CLIENT_LOCAL_ACTIONS:
             self._status.setText("Applying…")
             self._status.setVisible(True)
@@ -1068,6 +1076,8 @@ class SurfaceDialog(QDialog):
     def _on_timeout(self) -> None:
         """The surface didn't arrive in time — show an inline error + Retry."""
         self._timer.stop()
+        if self._surface == "work" and callable(self._timeout_observer):
+            self._timeout_observer()
         self._status.setVisible(False)
         self._clear_body()
         box = QWidget()
@@ -1868,6 +1878,7 @@ class MainWindow(QMainWindow):
         self._token = token
         self._audit_dialog: Optional[AuditDialog] = None
         self._surface_dialog: Optional[SurfaceDialog] = None  # feature 043 (SDUI settings)
+        self._work_read = None
         # Feature 044 turn/UI state.
         self._turn_active = False
         # 066: True while the turn's OWN phase text (chat_status.message or a
@@ -1900,6 +1911,7 @@ class MainWindow(QMainWindow):
                 supported_types=native_types(),
                 voice_capability=self._voice_audio.capability(),
             ),
+            work_reads=True,
         )
         configure_host = getattr(self.client, "configure_agent_host", None)
         if callable(configure_host):
@@ -2216,6 +2228,7 @@ class MainWindow(QMainWindow):
         keeps running (and no agent looks 'live' to the server) after the window
         is gone. The server sees the socket drop and takes them honestly offline.
         """
+        self._retire_work_read()
         try:
             self._byo.stop_all()
         except Exception:  # noqa: BLE001 — never block the close
@@ -2436,6 +2449,8 @@ class MainWindow(QMainWindow):
             self._voice_controller.cancel_pending_activation()
 
     def _voice_connection_changed(self, connection: str) -> None:
+        if self._work_read is not None and self._work_read[1] != connection:
+            self._retire_work_read()
         pending = self._pending_voice_chat
         if pending is not None and pending.get("connection_generation") != connection:
             self._pending_voice_chat = None
@@ -2585,6 +2600,7 @@ class MainWindow(QMainWindow):
         sender(message, chat_id, **kwargs)
 
     def _new_chat(self) -> None:
+        self._retire_work_read()
         old_chat = self.active_chat
         self._resume_store.clear("explicit_new_chat", old_chat)
         if old_chat and _canonical_uuid4(old_chat):
@@ -2598,6 +2614,7 @@ class MainWindow(QMainWindow):
         self.client.send_event("new_chat", {})
 
     def _open_agents(self) -> None:
+        self._retire_work_read()
         if self._agents_dialog is None:
             self._agents_dialog = AgentsDialog(
                 self, self._emit_chrome,
@@ -2615,6 +2632,10 @@ class MainWindow(QMainWindow):
         (workspace_timeline included — its SDUI snapshot list/view/back-to-live
         is server-driven) goes through the generic SDUI chrome_open round-trip."""
         s = (surface or "").strip()
+        if s == "work":
+            self._request_work_surface({})
+            return
+        self._retire_work_read()
         if s == "agents":
             self._open_agents()
         elif s == "audit":
@@ -2626,7 +2647,8 @@ class MainWindow(QMainWindow):
             if self._surface_dialog is None:
                 self._surface_dialog = SurfaceDialog(
                     self, self._emit, self._download, on_retry=self._retry_surface,
-                    apply_theme=self._apply_theme_pref, on_sign_out=self._sign_out)
+                    apply_theme=self._apply_theme_pref, on_sign_out=self._sign_out,
+                    on_close=self._retire_work_read, on_timeout=self._finish_work_read)
             self._surface_dialog.begin_load(s, {}, title=label or s)
             self._surface_dialog.show()
             self._surface_dialog.raise_()
@@ -2635,7 +2657,53 @@ class MainWindow(QMainWindow):
     def _retry_surface(self, surface: str, params: dict) -> None:
         """Feature 044 (T040): re-request a settings surface that failed to load
         in time (the SurfaceDialog re-arms its in-flight state; we re-send)."""
+        if surface == "work":
+            self._request_work_surface(params or {})
+            return
         self.client.send_event("chrome_open", {"surface": surface, "params": params or {}})
+
+    def _work_read_current(self, ticket) -> bool:
+        return (self._work_read is ticket and ticket[0] is self.client
+                and ticket[1] == getattr(self.client, "connection_generation", None)
+                and ticket[2] == self._resume_store.storage_key)
+
+    def _finish_work_read(self) -> None:
+        ticket, self._work_read = self._work_read, None
+        if ticket is not None:
+            retire = getattr(ticket[0], "retire_work_read", None)
+            if callable(retire):
+                retire(ticket[3])
+            self._finish_local_submission_by_generation(ticket[3])
+            if getattr(self, "_operation_banner_request_generation", None) == ticket[3]:
+                self._hide_banner()
+
+    def _retire_work_read(self) -> None:
+        self._finish_work_read()
+        dialog = self._surface_dialog
+        if dialog is not None and dialog._surface == "work":
+            dialog._on_timeout()
+
+    def _request_work_surface(self, params: dict) -> None:
+        self._retire_work_read()
+        if self._surface_dialog is None:
+            self._surface_dialog = SurfaceDialog(
+                self, self._emit, self._download, on_retry=self._retry_surface,
+                apply_theme=self._apply_theme_pref, on_sign_out=self._sign_out,
+                on_close=self._retire_work_read, on_timeout=self._finish_work_read)
+        dialog = self._surface_dialog
+        dialog.begin_load("work", dict(params), "Recent work")
+        dialog.show()
+        dialog.raise_()
+        connection = getattr(self.client, "connection_generation", None)
+        owner = self._resume_store.storage_key
+        sender = getattr(self.client, "send_current_work_read", None)
+        if not _canonical_uuid4(connection) or not owner or not callable(sender):
+            dialog._on_timeout()
+            return
+        ticket = (self.client, connection, owner, str(uuid.uuid4()))
+        self._work_read = ticket
+        if not sender(params, ticket[3], is_current=lambda: self._work_read_current(ticket)) and self._work_read is ticket:
+            self._retire_work_read()
 
     def _open_local_agents(self) -> None:
         """Feature 077: the client-local "Agents on this PC" window."""
@@ -2649,6 +2717,7 @@ class MainWindow(QMainWindow):
         dialog.activateWindow()
 
     def _open_history(self) -> None:
+        self._retire_work_read()
         if self._history_dialog is None:
             self._history_dialog = HistoryDialog(self, self._load_chat)
         self.client.send_event("get_history", {})
@@ -2656,6 +2725,7 @@ class MainWindow(QMainWindow):
         self._history_dialog.raise_()
 
     def _open_audit(self) -> None:
+        self._retire_work_read()
         if self._audit_dialog is None:
             self._audit_dialog = AuditDialog(self, self._query_audit)
         self._audit_dialog.show()
@@ -2676,17 +2746,36 @@ class MainWindow(QMainWindow):
         Feature 054 (T019): ``mode:"mandatory"`` (reserved field, previously
         always "replace") pins the dialog as the undismissable first-run gate;
         the blank close frame clears the pin before closing."""
+        dialog = self._surface_dialog
+        if (dialog is not None and dialog.isVisible() and dialog._surface == "work"
+                and msg.get("surface_key") != "work"):
+            return
+        if msg.get("surface_key") == "work" or "request_generation" in msg:
+            ticket = self._work_read
+            dialog = self._surface_dialog
+            if (ticket is None or msg.get("surface_key") != "work"
+                    or msg.get("mode", "replace") != "replace"
+                    or not _canonical_uuid4(msg.get("request_generation"))
+                    or msg["request_generation"] != ticket[3]
+                    or not self._work_read_current(ticket) or dialog is None
+                    or not dialog.isVisible() or dialog._surface != "work"):
+                return
+            self._finish_work_read()
         components = msg.get("components") or []
         mode = str(msg.get("mode") or "replace")
         if not msg.get("surface_key") and not components:
+            self._retire_work_read()
             if self._surface_dialog is not None:
                 self._surface_dialog.set_mandatory(False)
                 self._surface_dialog.close()
             return
+        if msg.get("surface_key") != "work":
+            self._retire_work_read()
         if self._surface_dialog is None:
             self._surface_dialog = SurfaceDialog(
                 self, self._emit, self._download, on_retry=self._retry_surface,
-                apply_theme=self._apply_theme_pref, on_sign_out=self._sign_out)
+                apply_theme=self._apply_theme_pref, on_sign_out=self._sign_out,
+                on_close=self._retire_work_read, on_timeout=self._finish_work_read)
         self._surface_dialog.set_mandatory(mode == "mandatory")
         self._surface_dialog.set_surface(
             msg.get("title") or "Settings", components)
@@ -2917,6 +3006,7 @@ class MainWindow(QMainWindow):
             self._audit_dialog.add_page(result.get("rows") or [], result.get("next_cursor"))
 
     def _load_chat(self, chat_id: str) -> None:
+        self._retire_work_read()
         if not _canonical_uuid4(chat_id):
             # Bounded compatibility for pre-060/noncanonical test fixtures.
             self.rail.clear()
@@ -2946,6 +3036,7 @@ class MainWindow(QMainWindow):
             != QMessageBox.StandardButton.Yes
         ):
             return
+        self._retire_work_read()
         old_chat = self.active_chat
         self._resume_store.clear("definitive_sign_out", old_chat)
         self._continuity.clear_chat(old_chat, all_accounts=True)
@@ -3212,6 +3303,12 @@ class MainWindow(QMainWindow):
         self._clear_sent_attachments()
 
     def _emit(self, action: str, payload: dict) -> None:
+        if action == "chrome_open" and payload.get("surface") == "work":
+            params = payload.get("params")
+            self._request_work_surface(params if isinstance(params, dict) else {})
+            return
+        if action in {"chrome_open", "chrome_close"}:
+            self._retire_work_read()
         if action == "attach_existing":
             # Feature 044 (US4): the attachments-surface 'Attach' button stages a
             # chip locally — it is NOT forwarded to the server.
@@ -3283,6 +3380,12 @@ class MainWindow(QMainWindow):
 
     # --- inbound --------------------------------------------------------- #
     def _on_status(self, s: str) -> None:
+        if s.startswith("work_read_failed:"):
+            if self._work_read is not None and self._work_read[3] == s.partition(":")[2]:
+                self._retire_work_read()
+            return
+        if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
+            self._retire_work_read()
         # Feature 044: the transport now owns reconnect + a bounded outbound
         # queue, so its status vocabulary widened to connecting / connected /
         # reconnecting:<n> / closed:<why> / auth_required:<reason> /
@@ -3452,6 +3555,7 @@ class MainWindow(QMainWindow):
             self._prompt_reauth()
 
     def _reconnect(self, token: str) -> None:
+        self._retire_work_read()
         if self._byo_enabled:
             self._byo.on_transport_disconnected()
         try:
@@ -3490,6 +3594,7 @@ class MainWindow(QMainWindow):
             self._url,
             token,
             device_caps(supported_types=native_types()),
+            work_reads=True,
         )
         configure_host = getattr(self.client, "configure_agent_host", None)
         if callable(configure_host):

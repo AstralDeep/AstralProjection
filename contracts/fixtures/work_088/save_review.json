@@ -1,0 +1,832 @@
+{
+  "version": 1,
+  "description": "Feature 088 T043: the Save result button on a result view with server-issued propose bindings, and the review layout (exact content, destination, expiry) with the bound save step, an expired review and an undecidable review. Synthetic identities; generated from build_work_view.",
+  "states": {
+    "result_saveable": {
+      "mode": "result",
+      "status": "ready",
+      "operation": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "instruction_revision": 1,
+        "control_epoch": 1,
+        "title": "Public page research",
+        "kind": "research",
+        "disposition": "completed",
+        "lifecycle": "completed",
+        "phase": "waiting",
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "updated_at": "2026-09-12T12:00:00+00:00",
+        "next_wake_at": null,
+        "deadline_at": "2026-09-12T12:00:00+00:00",
+        "schema_supported": true,
+        "safe_error_code": null,
+        "usage": {}
+      },
+      "result": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "result": {
+          "version": 1,
+          "available": true,
+          "reason": null,
+          "content": {
+            "version": 1,
+            "scope": "one_page_excerpts",
+            "disposition": "evidence",
+            "source": {
+              "requested_url": "https://example.org/start",
+              "final_url": "https://example.org/page",
+              "retrieved_at": "2026-09-12T12:00:00+00:00",
+              "media_type": "text/html",
+              "extraction_profile": "html_readable_v1",
+              "title": "Original source",
+              "body_complete": true,
+              "extraction_complete": true,
+              "excerpt_complete": true,
+              "redacted": false,
+              "action_id": "fc5c2124-ce23-48d9-927b-9c004d950c10",
+              "result_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "passages": [
+              {
+                "id": "p001",
+                "text": "Exact retained evidence.\nSecond line."
+              }
+            ]
+          }
+        }
+      },
+      "save": {
+        "submission_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+        "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+        "expected_revision": 3,
+        "conversation_id": "chat-1",
+        "conversation_title": "Reviewed result destination",
+        "expected_workspace_revision": 0,
+        "expected_workspace_publication_id": null
+      }
+    },
+    "review": {
+      "mode": "review",
+      "status": "ready",
+      "operation": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 4,
+        "instruction_revision": 1,
+        "control_epoch": 1,
+        "title": "Public page research",
+        "kind": "research",
+        "disposition": "completed",
+        "lifecycle": "completed",
+        "phase": "waiting",
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "updated_at": "2026-09-12T12:00:00+00:00",
+        "next_wake_at": null,
+        "deadline_at": "2026-09-12T12:00:00+00:00",
+        "schema_supported": true,
+        "safe_error_code": null,
+        "usage": {}
+      },
+      "review": {
+        "version": 1,
+        "status": "review_required",
+        "created": true,
+        "revision": 4,
+        "proposal": {
+          "action_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+          "proposal_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+          "conversation_id": "chat-1",
+          "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "base_render_revision": 0,
+          "base_publication_id": null,
+          "content_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "stage_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "expires_at": "2026-09-12T12:15:00+00:00"
+        },
+        "component": {
+          "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "component_type": "card",
+          "title": "Public page research",
+          "position": 0,
+          "payload": {
+            "type": "card",
+            "title": "Public page research",
+            "variant": "default",
+            "content": [
+              {
+                "type": "text",
+                "content": "Exact retained evidence.\nSecond line.",
+                "variant": "body"
+              },
+              {
+                "type": "text",
+                "content": "Selected source text, not a summary of the full visual page.",
+                "variant": "caption"
+              },
+              {
+                "type": "keyvalue",
+                "title": "Original source",
+                "columns": 2,
+                "items": [
+                  {
+                    "label": "Requested URL",
+                    "value": "https://example.org/start"
+                  },
+                  {
+                    "label": "Retrieved URL",
+                    "value": "https://example.org/page"
+                  },
+                  {
+                    "label": "Retrieved at",
+                    "value": "2026-09-12T12:00:00+00:00"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "approve": {
+        "submission_id": "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+        "expired": false
+      },
+      "conversation_title": "Reviewed result destination"
+    },
+    "review_expired": {
+      "mode": "review",
+      "status": "ready",
+      "operation": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 4,
+        "instruction_revision": 1,
+        "control_epoch": 1,
+        "title": "Public page research",
+        "kind": "research",
+        "disposition": "completed",
+        "lifecycle": "completed",
+        "phase": "waiting",
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "updated_at": "2026-09-12T12:00:00+00:00",
+        "next_wake_at": null,
+        "deadline_at": "2026-09-12T12:00:00+00:00",
+        "schema_supported": true,
+        "safe_error_code": null,
+        "usage": {}
+      },
+      "review": {
+        "version": 1,
+        "status": "review_required",
+        "created": true,
+        "revision": 4,
+        "proposal": {
+          "action_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+          "proposal_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+          "conversation_id": "chat-1",
+          "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "base_render_revision": 0,
+          "base_publication_id": null,
+          "content_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "stage_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "expires_at": "2026-09-12T12:15:00+00:00"
+        },
+        "component": {
+          "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "component_type": "card",
+          "title": "Public page research",
+          "position": 0,
+          "payload": {
+            "type": "card",
+            "title": "Public page research",
+            "variant": "default",
+            "content": [
+              {
+                "type": "text",
+                "content": "Exact retained evidence.\nSecond line.",
+                "variant": "body"
+              },
+              {
+                "type": "text",
+                "content": "Selected source text, not a summary of the full visual page.",
+                "variant": "caption"
+              },
+              {
+                "type": "keyvalue",
+                "title": "Original source",
+                "columns": 2,
+                "items": [
+                  {
+                    "label": "Requested URL",
+                    "value": "https://example.org/start"
+                  },
+                  {
+                    "label": "Retrieved URL",
+                    "value": "https://example.org/page"
+                  },
+                  {
+                    "label": "Retrieved at",
+                    "value": "2026-09-12T12:00:00+00:00"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      },
+      "approve": {
+        "submission_id": "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+        "expired": true
+      }
+    },
+    "review_undecidable": {
+      "mode": "review",
+      "status": "ready",
+      "operation": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 4,
+        "instruction_revision": 1,
+        "control_epoch": 1,
+        "title": "Public page research",
+        "kind": "research",
+        "disposition": "completed",
+        "lifecycle": "completed",
+        "phase": "waiting",
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "updated_at": "2026-09-12T12:00:00+00:00",
+        "next_wake_at": null,
+        "deadline_at": "2026-09-12T12:00:00+00:00",
+        "schema_supported": true,
+        "safe_error_code": null,
+        "usage": {}
+      },
+      "review": {
+        "version": 1,
+        "status": "review_required",
+        "created": true,
+        "revision": 4,
+        "proposal": {
+          "action_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+          "proposal_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+          "conversation_id": "chat-1",
+          "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "base_render_revision": 0,
+          "base_publication_id": null,
+          "content_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "stage_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "expires_at": "2026-09-12T12:15:00+00:00"
+        },
+        "component": {
+          "component_id": "au_work_result_180cd30b-cc38-432d-8349-1851b0d3ad7e",
+          "component_type": "card",
+          "title": "Public page research",
+          "position": 0,
+          "payload": {
+            "type": "card",
+            "title": "Public page research",
+            "variant": "default",
+            "content": [
+              {
+                "type": "text",
+                "content": "Exact retained evidence.\nSecond line.",
+                "variant": "body"
+              },
+              {
+                "type": "text",
+                "content": "Selected source text, not a summary of the full visual page.",
+                "variant": "caption"
+              },
+              {
+                "type": "keyvalue",
+                "title": "Original source",
+                "columns": 2,
+                "items": [
+                  {
+                    "label": "Requested URL",
+                    "value": "https://example.org/start"
+                  },
+                  {
+                    "label": "Retrieved URL",
+                    "value": "https://example.org/page"
+                  },
+                  {
+                    "label": "Retrieved at",
+                    "value": "2026-09-12T12:00:00+00:00"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "frames": {
+    "result_saveable": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "work",
+      "title": "Public page research",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Selected excerpts",
+          "variant": "h3"
+        },
+        {
+          "type": "text",
+          "content": "Exact retained evidence.\nSecond line.",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "Selected source text, not a summary of the full visual page.",
+          "variant": "caption"
+        },
+        {
+          "type": "card",
+          "title": "Original source",
+          "content": [
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Requested URL",
+                  "value": "https://example.org/start"
+                },
+                {
+                  "label": "Retrieved URL",
+                  "value": "https://example.org/page"
+                },
+                {
+                  "label": "Retrieved at",
+                  "value": "2026-09-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Extraction",
+                  "value": "HTML readable text"
+                }
+              ]
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Response body",
+              "value": "Response body complete"
+            },
+            {
+              "label": "Text extraction",
+              "value": "Extraction complete for this extractor"
+            },
+            {
+              "label": "Retained text",
+              "value": "Bounded extracted text retained"
+            },
+            {
+              "label": "Redaction",
+              "value": "No redaction reported"
+            }
+          ],
+          "title": "Completeness"
+        },
+        {
+          "type": "card",
+          "title": "Save this result",
+          "content": [
+            {
+              "type": "text",
+              "content": "Saving is a separate review of the exact content and destination. Viewing this result does not save it.",
+              "variant": "caption"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Destination",
+                  "value": "Reviewed result destination"
+                }
+              ]
+            },
+            {
+              "type": "button",
+              "label": "Save result",
+              "action": "chrome_work_result_save",
+              "payload": {
+                "version": 1,
+                "command": "propose",
+                "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+                "conversation_id": "chat-1",
+                "expected_revision": 3,
+                "expected_workspace_publication_id": null,
+                "expected_workspace_revision": 0,
+                "publication_id": "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f",
+                "submission_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580"
+              },
+              "variant": "primary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "result",
+              "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to recent work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "44444444-4444-4444-8444-444444444444"
+    },
+    "review": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "work",
+      "title": "Public page research",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "Review the exact content and destination. Nothing is saved until you approve it here.",
+          "variant": "info"
+        },
+        {
+          "type": "text",
+          "content": "Exact content to be saved",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "Public page research",
+          "content": [
+            {
+              "type": "text",
+              "content": "Exact retained evidence.\nSecond line.",
+              "variant": "body"
+            },
+            {
+              "type": "text",
+              "content": "Selected source text, not a summary of the full visual page.",
+              "variant": "caption"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Requested URL",
+                  "value": "https://example.org/start"
+                },
+                {
+                  "label": "Retrieved URL",
+                  "value": "https://example.org/page"
+                },
+                {
+                  "label": "Retrieved at",
+                  "value": "2026-09-12T12:00:00+00:00"
+                }
+              ],
+              "title": "Original source"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Destination",
+              "value": "Reviewed result destination"
+            },
+            {
+              "label": "Review expires",
+              "value": "2026-09-12T12:15:00+00:00"
+            }
+          ],
+          "title": "Where it will be saved"
+        },
+        {
+          "type": "button",
+          "label": "Save exactly this content",
+          "action": "chrome_work_result_save",
+          "payload": {
+            "version": 1,
+            "command": "save",
+            "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+            "action_id": "48873d61-2e9b-4f38-bc36-bbfa81d78580",
+            "submission_id": "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b",
+            "expected_revision": 4,
+            "proposal_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          },
+          "variant": "primary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to result",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "result",
+              "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to recent work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "review_expired": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "work",
+      "title": "Public page research",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "Review the exact content and destination. Nothing is saved until you approve it here.",
+          "variant": "info"
+        },
+        {
+          "type": "text",
+          "content": "Exact content to be saved",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "Public page research",
+          "content": [
+            {
+              "type": "text",
+              "content": "Exact retained evidence.\nSecond line.",
+              "variant": "body"
+            },
+            {
+              "type": "text",
+              "content": "Selected source text, not a summary of the full visual page.",
+              "variant": "caption"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Requested URL",
+                  "value": "https://example.org/start"
+                },
+                {
+                  "label": "Retrieved URL",
+                  "value": "https://example.org/page"
+                },
+                {
+                  "label": "Retrieved at",
+                  "value": "2026-09-12T12:00:00+00:00"
+                }
+              ],
+              "title": "Original source"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Destination",
+              "value": "chat-1"
+            },
+            {
+              "label": "Review expires",
+              "value": "2026-09-12T12:15:00+00:00"
+            }
+          ],
+          "title": "Where it will be saved"
+        },
+        {
+          "type": "alert",
+          "message": "This review expired before a decision. Open the result and start Save result again.",
+          "variant": "warning"
+        },
+        {
+          "type": "button",
+          "label": "Back to result",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "result",
+              "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to recent work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "66666666-6666-4666-8666-666666666666"
+    },
+    "review_undecidable": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "work",
+      "title": "Public page research",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "Review the exact content and destination. Nothing is saved until you approve it here.",
+          "variant": "info"
+        },
+        {
+          "type": "text",
+          "content": "Exact content to be saved",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "Public page research",
+          "content": [
+            {
+              "type": "text",
+              "content": "Exact retained evidence.\nSecond line.",
+              "variant": "body"
+            },
+            {
+              "type": "text",
+              "content": "Selected source text, not a summary of the full visual page.",
+              "variant": "caption"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Requested URL",
+                  "value": "https://example.org/start"
+                },
+                {
+                  "label": "Retrieved URL",
+                  "value": "https://example.org/page"
+                },
+                {
+                  "label": "Retrieved at",
+                  "value": "2026-09-12T12:00:00+00:00"
+                }
+              ],
+              "title": "Original source"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Destination",
+              "value": "chat-1"
+            },
+            {
+              "label": "Review expires",
+              "value": "2026-09-12T12:15:00+00:00"
+            }
+          ],
+          "title": "Where it will be saved"
+        },
+        {
+          "type": "text",
+          "content": "This proposal is not available for a decision. Reload the result and start Save result again.",
+          "variant": "caption"
+        },
+        {
+          "type": "button",
+          "label": "Back to result",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "result",
+              "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to recent work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "77777777-7777-4777-8777-777777777777"
+    }
+  },
+  "web_frames": {
+    "result_saveable": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "work",
+      "mode": "replace",
+      "request_generation": "44444444-4444-4444-8444-444444444444",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"work\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Public page research\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Public page research</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"work\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-work-title\"><h2 id=\"chrome-work-title\">Public page research</h2><h3 data-text-variant=\"h3\">Selected excerpts</h3><p data-text-variant=\"body\">Exact retained evidence.\nSecond line.</p><small data-text-variant=\"caption\">Selected source text, not a summary of the full visual page.</small><section aria-label=\"Original source\"><h3>Original source</h3><section><dl><div><dt>Requested URL</dt><dd>https://example.org/start</dd></div><div><dt>Retrieved URL</dt><dd>https://example.org/page</dd></div><div><dt>Retrieved at</dt><dd>2026-09-12T12:00:00+00:00</dd></div><div><dt>Extraction</dt><dd>HTML readable text</dd></div></dl></section></section><section><h3>Completeness</h3><dl><div><dt>Response body</dt><dd>Response body complete</dd></div><div><dt>Text extraction</dt><dd>Extraction complete for this extractor</dd></div><div><dt>Retained text</dt><dd>Bounded extracted text retained</dd></div><div><dt>Redaction</dt><dd>No redaction reported</dd></div></dl></section><section aria-label=\"Save this result\"><h3>Save this result</h3><small data-text-variant=\"caption\">Saving is a separate review of the exact content and destination. Viewing this result does not save it.</small><section><dl><div><dt>Destination</dt><dd>Reviewed result destination</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_work_result_save\" data-ui-payload=\"{&quot;command&quot;:&quot;propose&quot;,&quot;conversation_id&quot;:&quot;chat-1&quot;,&quot;expected_revision&quot;:3,&quot;expected_workspace_publication_id&quot;:null,&quot;expected_workspace_revision&quot;:0,&quot;operation_id&quot;:&quot;180cd30b-cc38-432d-8349-1851b0d3ad7e&quot;,&quot;publication_id&quot;:&quot;7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f&quot;,&quot;submission_id&quot;:&quot;48873d61-2e9b-4f38-bc36-bbfa81d78580&quot;,&quot;version&quot;:1}\">Save result</button></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;result&quot;,&quot;operation_id&quot;:&quot;180cd30b-cc38-432d-8349-1851b0d3ad7e&quot;},&quot;surface&quot;:&quot;work&quot;}\">Refresh</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;work&quot;}\">Back to recent work</button></section></div></div></div>"
+    },
+    "review": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "work",
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"work\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Public page research\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Public page research</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"work\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-work-title\"><h2 id=\"chrome-work-title\">Public page research</h2><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">Review the exact content and destination. Nothing is saved until you approve it here.</div><h3 data-text-variant=\"h3\">Exact content to be saved</h3><section aria-label=\"Public page research\"><h3>Public page research</h3><p data-text-variant=\"body\">Exact retained evidence.\nSecond line.</p><small data-text-variant=\"caption\">Selected source text, not a summary of the full visual page.</small><section><h3>Original source</h3><dl><div><dt>Requested URL</dt><dd>https://example.org/start</dd></div><div><dt>Retrieved URL</dt><dd>https://example.org/page</dd></div><div><dt>Retrieved at</dt><dd>2026-09-12T12:00:00+00:00</dd></div></dl></section></section><section><h3>Where it will be saved</h3><dl><div><dt>Destination</dt><dd>Reviewed result destination</dd></div><div><dt>Review expires</dt><dd>2026-09-12T12:15:00+00:00</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_work_result_save\" data-ui-payload=\"{&quot;action_id&quot;:&quot;48873d61-2e9b-4f38-bc36-bbfa81d78580&quot;,&quot;command&quot;:&quot;save&quot;,&quot;expected_revision&quot;:4,&quot;operation_id&quot;:&quot;180cd30b-cc38-432d-8349-1851b0d3ad7e&quot;,&quot;proposal_digest&quot;:&quot;cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&quot;,&quot;submission_id&quot;:&quot;9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b&quot;,&quot;version&quot;:1}\">Save exactly this content</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;result&quot;,&quot;operation_id&quot;:&quot;180cd30b-cc38-432d-8349-1851b0d3ad7e&quot;},&quot;surface&quot;:&quot;work&quot;}\">Back to result</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;work&quot;}\">Back to recent work</button></section></div></div></div>"
+    },
+    "review_expired": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "work",
+      "mode": "replace",
+      "request_generation": "66666666-6666-4666-8666-666666666666",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"work\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Public page research\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Public page research</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"work\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-work-title\"><h2 id=\"chrome-work-title\">Public page research</h2><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">Review the exact content and destination. Nothing is saved until you approve it here.</div><h3 data-text-variant=\"h3\">Exact content to be saved</h3><section aria-label=\"Public page research\"><h3>Public page research</h3><p data-text-variant=\"body\">Exact retained evidence.\nSecond line.</p><small data-text-variant=\"caption\">Selected source text, not a summary of the full visual page.</small><section><h3>Original source</h3><dl><div><dt>Requested URL</dt><dd>https://example.org/start</dd></div><div><dt>Retrieved URL</dt><dd>https://example.org/page</dd></div><div><dt>Retrieved at</dt><dd>2026-09-12T12:00:00+00:00</dd></div></dl></section></section><section><h3>Where it will be saved</h3><dl><div><dt>Destination</dt><dd>chat-1</dd></div><div><dt>Review expires</dt><dd>2026-09-12T12:15:00+00:00</dd></div></dl></section><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">This review expired before a decision. Open the result and start Save result again.</div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;result&quot;,&quot;operation_id&quot;:&quot;180cd30b-cc38-432d-8349-1851b0d3ad7e&quot;},&quot;surface&quot;:&quot;work&quot;}\">Back to result</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;work&quot;}\">Back to recent work</button></section></div></div></div>"
+    },
+    "review_undecidable": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "work",
+      "mode": "replace",
+      "request_generation": "77777777-7777-4777-8777-777777777777",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"work\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Public page research\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Public page research</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"work\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-work-title\"><h2 id=\"chrome-work-title\">Public page research</h2><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">Review the exact content and destination. Nothing is saved until you approve it here.</div><h3 data-text-variant=\"h3\">Exact content to be saved</h3><section aria-label=\"Public page research\"><h3>Public page research</h3><p data-text-variant=\"body\">Exact retained evidence.\nSecond line.</p><small data-text-variant=\"caption\">Selected source text, not a summary of the full visual page.</small><section><h3>Original source</h3><dl><div><dt>Requested URL</dt><dd>https://example.org/start</dd></div><div><dt>Retrieved URL</dt><dd>https://example.org/page</dd></div><div><dt>Retrieved at</dt><dd>2026-09-12T12:00:00+00:00</dd></div></dl></section></section><section><h3>Where it will be saved</h3><dl><div><dt>Destination</dt><dd>chat-1</dd></div><div><dt>Review expires</dt><dd>2026-09-12T12:15:00+00:00</dd></div></dl></section><small data-text-variant=\"caption\">This proposal is not available for a decision. Reload the result and start Save result again.</small><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;result&quot;,&quot;operation_id&quot;:&quot;180cd30b-cc38-432d-8349-1851b0d3ad7e&quot;},&quot;surface&quot;:&quot;work&quot;}\">Back to result</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;work&quot;}\">Back to recent work</button></section></div></div></div>"
+    }
+  }
+}

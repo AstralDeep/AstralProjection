@@ -297,6 +297,28 @@ MobileDevice and Xcode UserData profile directories and asserts it found ≥3.
   privacy-policy URL; age rating — that only the operator can author, and
   Apple's submission API refuses an incomplete listing.
 
+### Check the exported Mac package's nested signatures
+
+Xcode can retain Development signatures on SwiftPM resource bundles even when
+the outer app has a valid Store Distribution signature. After a Mac Store export,
+run this from the Projection repository root and upload the verified output:
+
+```sh
+python3 apple-clients/Scripts/repair_macos_store_package.py \
+  --input export-macos/AstralDeep.pkg \
+  --output export-macos/AstralDeep-verified.pkg
+```
+
+The helper reuses the exported app's profile-authorized Distribution certificate
+and the package's exact Store installer certificate. It signs resource bundles
+inside-out, seals the outer app last, and checks every nested architecture's
+certificate in the final package. The original remains intact. Changed
+entitlements, executable code, symlink targets, or installer metadata cause
+refusal. The outer app must already have hardened runtime enabled. No version
+increment, compilation, profile creation, upload, or review submission occurs.
+The Deep-owned release workflow invokes this check after export; this does not
+activate the extracted workflow in this repository.
+
 ## Parity + CI
 
 - Per-frame/per-component dispositions live in

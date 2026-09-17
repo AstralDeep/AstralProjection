@@ -21,6 +21,7 @@ from ._components import (
     text,
     unavailable_view,
 )
+from .guidance import build_declarative_agents_view
 
 
 def _rows(values: Iterable[Mapping[str, object]]) -> tuple[Mapping[str, object], ...]:
@@ -720,5 +721,6 @@ __all__ = [
     "build_agents_view",
     "build_attachments_view",
     "build_authoring_view",
+    "build_declarative_agents_view",
     "build_drafts_view",
 ]

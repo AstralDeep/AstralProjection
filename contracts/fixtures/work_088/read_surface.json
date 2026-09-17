@@ -1,0 +1,671 @@
+{
+  "version": 1,
+  "device": {
+    "device_type": "watch"
+  },
+  "states": {
+    "list": {
+      "mode": "list",
+      "status": "ready",
+      "operation": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "instruction_revision": 1,
+        "control_epoch": 1,
+        "title": "Public page research",
+        "kind": "research",
+        "disposition": "completed",
+        "lifecycle": "completed",
+        "phase": "waiting",
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "updated_at": "2026-09-12T12:00:00+00:00",
+        "next_wake_at": null,
+        "deadline_at": "2026-09-12T12:00:00+00:00",
+        "schema_supported": true,
+        "safe_error_code": null,
+        "usage": {}
+      },
+      "result": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "result": {
+          "version": 1,
+          "available": true,
+          "reason": null,
+          "content": {
+            "version": 1,
+            "scope": "one_page_excerpts",
+            "disposition": "evidence",
+            "source": {
+              "requested_url": "https://example.org/start",
+              "final_url": "https://example.org/page",
+              "retrieved_at": "2026-09-12T12:00:00+00:00",
+              "media_type": "text/html",
+              "extraction_profile": "html_readable_v1",
+              "title": "Original source",
+              "body_complete": true,
+              "extraction_complete": true,
+              "excerpt_complete": true,
+              "redacted": false,
+              "action_id": "fc5c2124-ce23-48d9-927b-9c004d950c10",
+              "result_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "passages": [
+              {
+                "id": "p001",
+                "text": "Exact retained evidence.\nSecond line."
+              }
+            ]
+          }
+        }
+      },
+      "page": {
+        "operations": [
+          {
+            "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+            "revision": 3,
+            "instruction_revision": 1,
+            "control_epoch": 1,
+            "title": "Public page research",
+            "kind": "research",
+            "disposition": "completed",
+            "lifecycle": "completed",
+            "phase": "waiting",
+            "created_at": "2026-09-12T12:00:00+00:00",
+            "updated_at": "2026-09-12T12:00:00+00:00",
+            "next_wake_at": null,
+            "deadline_at": "2026-09-12T12:00:00+00:00",
+            "schema_supported": true,
+            "safe_error_code": null,
+            "usage": {}
+          }
+        ],
+        "next_cursor": null,
+        "page_full": false
+      }
+    },
+    "detail": {
+      "mode": "detail",
+      "status": "ready",
+      "operation": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "instruction_revision": 1,
+        "control_epoch": 1,
+        "title": "Public page research",
+        "kind": "research",
+        "disposition": "completed",
+        "lifecycle": "completed",
+        "phase": "waiting",
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "updated_at": "2026-09-12T12:00:00+00:00",
+        "next_wake_at": null,
+        "deadline_at": "2026-09-12T12:00:00+00:00",
+        "schema_supported": true,
+        "safe_error_code": null,
+        "usage": {}
+      },
+      "result": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "result": {
+          "version": 1,
+          "available": true,
+          "reason": null,
+          "content": {
+            "version": 1,
+            "scope": "one_page_excerpts",
+            "disposition": "evidence",
+            "source": {
+              "requested_url": "https://example.org/start",
+              "final_url": "https://example.org/page",
+              "retrieved_at": "2026-09-12T12:00:00+00:00",
+              "media_type": "text/html",
+              "extraction_profile": "html_readable_v1",
+              "title": "Original source",
+              "body_complete": true,
+              "extraction_complete": true,
+              "excerpt_complete": true,
+              "redacted": false,
+              "action_id": "fc5c2124-ce23-48d9-927b-9c004d950c10",
+              "result_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "revision_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            },
+            "passages": [
+              {
+                "id": "p001",
+                "text": "Exact retained evidence.\nSecond line."
+              }
+            ]
+          }
+        }
+      },
+      "page": {
+        "operations": [
+          {
+            "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+            "revision": 3,
+            "instruction_revision": 1,
+            "control_epoch": 1,
+            "title": "Public page research",
+            "kind": "research",
+            "disposition": "completed",
+            "lifecycle": "completed",
+            "phase": "waiting",
+            "created_at": "2026-09-12T12:00:00+00:00",
+            "updated_at": "2026-09-12T12:00:00+00:00",
+            "next_wake_at": null,
+            "deadline_at": "2026-09-12T12:00:00+00:00",
+            "schema_supported": true,
+            "safe_error_code": null,
+            "usage": {}
+          }
+        ],
+        "next_cursor": null,
+        "page_full": false
+      }
+    },
+    "result": {
+      "mode": "result",
+      "status": "ready",
+      "operation": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "instruction_revision": 1,
+        "control_epoch": 1,
+        "title": "Public page research",
+        "kind": "research",
+        "disposition": "completed",
+        "lifecycle": "completed",
+        "phase": "waiting",
+        "created_at": "2026-09-12T12:00:00+00:00",
+        "updated_at": "2026-09-12T12:00:00+00:00",
+        "next_wake_at": null,
+        "deadline_at": "2026-09-12T12:00:00+00:00",
+        "schema_supported": true,
+        "safe_error_code": null,
+        "usage": {}
+      },
+      "result": {
+        "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+        "revision": 3,
+        "result": {
+          "version": 1,
+          "available": true,
+          "reason": null,
+          "content": {
+            "version": 1,
+            "scope": "one_page_excerpts",
+            "disposition": "evidence",
+            "source": {
+              "requested_url": "https://example.org/段落/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "final_url": "https://example.org/段落/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "retrieved_at": "2026-09-12T12:00:00+00:00",
+              "media_type": "text/html",
+              "extraction_profile": "html_readable_v1",
+              "title": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+              "body_complete": true,
+              "extraction_complete": true,
+              "excerpt_complete": true,
+              "redacted": false,
+              "action_id": "fc5c2124-ce23-48d9-927b-9c004d950c10",
+              "result_digest": "352f8ea11cb852aa7af1b109e2a7e3ee66446e3538ca0cda386dee3ef96131a3",
+              "revision_digest": "64da6a6614b04dc7ea9387e165821bb971e817b8e58f4d8d981d5d24d1e403e1"
+            },
+            "passages": [
+              {
+                "id": "p001",
+                "text": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "id": "p002",
+                "text": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "id": "p003",
+                "text": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "id": "p004",
+                "text": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "id": "p005",
+                "text": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "id": "p006",
+                "text": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "id": "p007",
+                "text": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+              },
+              {
+                "id": "p008",
+                "text": "zq"
+              }
+            ]
+          }
+        }
+      },
+      "page": {
+        "operations": [
+          {
+            "id": "180cd30b-cc38-432d-8349-1851b0d3ad7e",
+            "revision": 3,
+            "instruction_revision": 1,
+            "control_epoch": 1,
+            "title": "Public page research",
+            "kind": "research",
+            "disposition": "completed",
+            "lifecycle": "completed",
+            "phase": "waiting",
+            "created_at": "2026-09-12T12:00:00+00:00",
+            "updated_at": "2026-09-12T12:00:00+00:00",
+            "next_wake_at": null,
+            "deadline_at": "2026-09-12T12:00:00+00:00",
+            "schema_supported": true,
+            "safe_error_code": null,
+            "usage": {}
+          }
+        ],
+        "next_cursor": null,
+        "page_full": false
+      }
+    },
+    "loading": {
+      "mode": "list",
+      "status": "loading"
+    },
+    "unavailable": {
+      "mode": "list",
+      "status": "unavailable"
+    },
+    "empty": {
+      "mode": "list",
+      "status": "ready",
+      "page": {
+        "operations": [],
+        "next_cursor": null,
+        "page_full": false
+      }
+    }
+  },
+  "frames": {
+    "list": {
+      "type": "chrome_surface",
+      "surface_key": "work",
+      "region": "modal",
+      "title": "Recent work",
+      "mode": "replace",
+      "admin_only": false,
+      "request_generation": "33333333-3333-4333-8333-333333333333",
+      "components": [
+        {
+          "type": "card",
+          "title": "Public page research",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Completed",
+              "variant": "default"
+            },
+            {
+              "type": "button",
+              "label": "View task",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "work",
+                "params": {
+                  "mode": "detail",
+                  "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ]
+    },
+    "detail": {
+      "type": "chrome_surface",
+      "surface_key": "work",
+      "region": "modal",
+      "title": "Public page research",
+      "mode": "replace",
+      "admin_only": false,
+      "request_generation": "33333333-3333-4333-8333-333333333333",
+      "components": [
+        {
+          "type": "badge",
+          "label": "Completed",
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "View result",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "result",
+              "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Created",
+              "value": "2026-09-12T12:00:00+00:00"
+            },
+            {
+              "label": "Updated",
+              "value": "2026-09-12T12:00:00+00:00"
+            },
+            {
+              "label": "Next activity",
+              "value": "Not scheduled"
+            },
+            {
+              "label": "Deadline",
+              "value": "2026-09-12T12:00:00+00:00"
+            }
+          ]
+        },
+        {
+          "type": "text",
+          "content": "Usage not recorded.",
+          "variant": "caption"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "detail",
+              "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to recent work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ]
+    },
+    "result": {
+      "type": "chrome_surface",
+      "surface_key": "work",
+      "region": "modal",
+      "title": "Public page research",
+      "mode": "replace",
+      "admin_only": false,
+      "request_generation": "33333333-3333-4333-8333-333333333333",
+      "components": [
+        {
+          "type": "text",
+          "content": "Selected excerpts",
+          "variant": "h3"
+        },
+        {
+          "type": "text",
+          "content": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "🙂xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "zq",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "Selected source text, not a summary of the full visual page.",
+          "variant": "caption"
+        },
+        {
+          "type": "card",
+          "title": "🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂🙂",
+          "content": [
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Requested URL",
+                  "value": "https://example.org/段落/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                },
+                {
+                  "label": "Retrieved URL",
+                  "value": "https://example.org/段落/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                },
+                {
+                  "label": "Retrieved at",
+                  "value": "2026-09-12T12:00:00+00:00"
+                },
+                {
+                  "label": "Extraction",
+                  "value": "HTML readable text"
+                }
+              ]
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Response body",
+              "value": "Response body complete"
+            },
+            {
+              "label": "Text extraction",
+              "value": "Extraction complete for this extractor"
+            },
+            {
+              "label": "Retained text",
+              "value": "Bounded extracted text retained"
+            },
+            {
+              "label": "Redaction",
+              "value": "No redaction reported"
+            }
+          ],
+          "title": "Completeness"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "result",
+              "operation_id": "180cd30b-cc38-432d-8349-1851b0d3ad7e"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to recent work",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ]
+    },
+    "loading": {
+      "type": "chrome_surface",
+      "surface_key": "work",
+      "region": "modal",
+      "title": "Recent work",
+      "mode": "replace",
+      "admin_only": false,
+      "request_generation": "33333333-3333-4333-8333-333333333333",
+      "components": [
+        {
+          "type": "alert",
+          "message": "Loading work…",
+          "variant": "info"
+        }
+      ]
+    },
+    "unavailable": {
+      "type": "chrome_surface",
+      "surface_key": "work",
+      "region": "modal",
+      "title": "Recent work",
+      "mode": "replace",
+      "admin_only": false,
+      "request_generation": "33333333-3333-4333-8333-333333333333",
+      "components": [
+        {
+          "type": "alert",
+          "message": "Work is unavailable. Refresh to check its current state.",
+          "variant": "info"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ]
+    },
+    "empty": {
+      "type": "chrome_surface",
+      "surface_key": "work",
+      "region": "modal",
+      "title": "Recent work",
+      "mode": "replace",
+      "admin_only": false,
+      "request_generation": "33333333-3333-4333-8333-333333333333",
+      "components": [
+        {
+          "type": "text",
+          "content": "No work yet.",
+          "variant": "body"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "work",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ]
+    }
+  },
+  "menu": {
+    "version": 2,
+    "topbar": [
+      {
+        "key": "work",
+        "kind": "action",
+        "label": "Recent work",
+        "icon": "briefcase",
+        "action": {
+          "surface": "work",
+          "params": {
+            "mode": "list"
+          }
+        }
+      }
+    ],
+    "menu": [],
+    "signout": {}
+  }
+}

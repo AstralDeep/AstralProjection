@@ -4,6 +4,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.runBlocking
+import okhttp3.HttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
@@ -19,9 +20,9 @@ class ComponentRest088Test {
     @Test fun component_share_uses_exact_scope_identity_and_existing_closed_response_policy() =
         runBlocking {
             MockWebServer().use { server ->
-                val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 server.enqueue(MockResponse().setResponseCode(201).setBody("""{"share_url":"/share/${"a".repeat(32)}"}"""))
-                assertEquals(server.url("/share/${"a".repeat(32)}").toString(), api.shareComponent("token", "chat", "wc_a"))
+                assertEquals(server.localUrl("/share/${"a".repeat(32)}").toString(), api.shareComponent("token", "chat", "wc_a"))
                 val request = server.takeRequest()
                 assertEquals("POST", request.method)
                 assertEquals("/api/share", request.path)
@@ -43,7 +44,7 @@ class ComponentRest088Test {
     @Test fun csv_is_authenticated_bounded_and_failed_or_cancelled_bytes_are_removed() =
         runBlocking {
             MockWebServer().use { server ->
-                val api = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true, maxExportBytes = 12)
+                val api = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true, maxExportBytes = 12)
                 val file = Files.createTempFile("component-test", ".csv").toFile()
                 try {
                     server.enqueue(MockResponse().setBody("a,b\n1,2"))
@@ -68,3 +69,10 @@ class ComponentRest088Test {
             }
         }
 }
+
+/**
+ * MockWebServer's own `url()` builds on the machine's reverse-DNS host name, which is not
+ * always a loopback literal, so the product's local-HTTP allowance would reject it. Pin the
+ * explicit loopback host the way ServerSession088Test does.
+ */
+private fun MockWebServer.localUrl(path: String): HttpUrl = url(path).newBuilder().host("localhost").build()

@@ -6,7 +6,6 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.provider.DocumentsContract
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.ActivityResultRegistry
@@ -61,8 +60,6 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-
-internal const val DOCUMENT_AUTHORITY = "com.personalailabs.astraldeep.test.workspace.documents"
 
 /** Registration and result delivery still use AndroidX's real Activity lifecycle. */
 internal class WorkspaceResultRegistry : ActivityResultRegistry() {
@@ -358,12 +355,12 @@ internal class WorkspaceControllerFixture(
         return files
     }
 
-    fun document(name: String): Uri = checkNotNull(DocumentsContract.createDocument(resolver, DocumentsContract.buildDocumentUri(DOCUMENT_AUTHORITY, "root"), "text/html", name))
+    fun document(name: String): Uri = TestDocuments.create(name)
 
-    fun status(uri: Uri): Bundle = checkNotNull(resolver.call(DOCUMENT_AUTHORITY, "test-status", DocumentsContract.getDocumentId(uri), null))
+    fun status(uri: Uri): Bundle = TestDocuments.status(uri)
 
     fun release(uri: Uri) {
-        resolver.call(DOCUMENT_AUTHORITY, "test-release", DocumentsContract.getDocumentId(uri), null)
+        TestDocuments.release(uri)
     }
 
     fun normalResponse(request: RecordedRequest): MockResponse {

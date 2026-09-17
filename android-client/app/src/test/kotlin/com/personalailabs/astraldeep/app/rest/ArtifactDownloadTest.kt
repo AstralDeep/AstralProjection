@@ -1,5 +1,6 @@
 package com.personalailabs.astraldeep.app.rest
 
+import okhttp3.HttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import java.io.ByteArrayOutputStream
@@ -53,15 +54,15 @@ class ArtifactDownloadTest {
         MockWebServer().use { origin ->
             MockWebServer().use { external ->
                 origin.enqueue(MockResponse().setBody("export bytes"))
-                val downloader = ArtifactDownload(origin.url("/").toString(), allowLocalHttp = true)
+                val downloader = ArtifactDownload(origin.localUrl("/").toString(), allowLocalHttp = true)
                 val sink = ByteArrayOutputStream()
                 downloader.copyTo("/api/export/canvas/a.html", "test-token", sink)
                 assertEquals("export bytes", sink.toString())
                 assertEquals("Bearer test-token", origin.takeRequest().getHeader("Authorization"))
-                origin.enqueue(MockResponse().setResponseCode(302).setHeader("Location", external.url("/capture")))
+                origin.enqueue(MockResponse().setResponseCode(302).setHeader("Location", external.localUrl("/capture")))
                 assertFailsWith<IOException> { downloader.copyTo("/api/export/canvas/a.html", "test-token", ByteArrayOutputStream()) }
                 assertEquals(0, external.requestCount)
-                assertFails { downloader.copyTo(external.url("/api/export/x").toString(), "test-token", ByteArrayOutputStream()) }
+                assertFails { downloader.copyTo(external.localUrl("/api/export/x").toString(), "test-token", ByteArrayOutputStream()) }
                 assertEquals(0, external.requestCount)
             }
         }
@@ -70,7 +71,7 @@ class ArtifactDownloadTest {
     @Test
     fun server_denials_and_bounded_stream_fail_honestly() {
         MockWebServer().use { server ->
-            val downloader = ArtifactDownload(server.url("/").toString(), allowLocalHttp = true, maxBytes = 4)
+            val downloader = ArtifactDownload(server.localUrl("/").toString(), allowLocalHttp = true, maxBytes = 4)
             server.enqueue(MockResponse().setResponseCode(403))
             assertFailsWith<IOException> { downloader.copyTo("/api/download/chat/file", "token", ByteArrayOutputStream()) }
             server.enqueue(MockResponse().setBody("too large"))
@@ -82,3 +83,10 @@ class ArtifactDownloadTest {
         }
     }
 }
+
+/**
+ * MockWebServer's own `url()` builds on the machine's reverse-DNS host name, which is not
+ * always a loopback literal, so the product's local-HTTP allowance would reject it. Pin the
+ * explicit loopback host the way ServerSession088Test does.
+ */
+private fun MockWebServer.localUrl(path: String): HttpUrl = url(path).newBuilder().host("localhost").build()

@@ -1,0 +1,383 @@
+{
+  "list": {
+    "type": "chrome_surface",
+    "surface_key": "guidance",
+    "title": "Private notes",
+    "request_generation": "22222222-2222-4222-8222-222222222222",
+    "components": [
+      {
+        "type": "text",
+        "content": "Private notes are guidance you can select for your work.",
+        "variant": "body"
+      },
+      {
+        "type": "button",
+        "label": "Add note",
+        "action": "chrome_open",
+        "payload": {
+          "surface": "guidance",
+          "params": {
+            "mode": "new"
+          }
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      },
+      {
+        "type": "param_picker",
+        "title": "",
+        "description": "",
+        "fields": [
+          {
+            "name": "search",
+            "label": "Search notes",
+            "kind": "text",
+            "default": ""
+          }
+        ],
+        "submit_label": "Search",
+        "submit_action": "chrome_note_search",
+        "submit_payload": {}
+      },
+      {
+        "type": "card",
+        "title": "Preference",
+        "content": [
+          {
+            "type": "badge",
+            "label": "Enabled",
+            "variant": "default"
+          },
+          {
+            "type": "text",
+            "content": "**Literal** [notes](https://example.invalid/note) <b>text</b>",
+            "variant": "body"
+          },
+          {
+            "type": "text",
+            "content": "No expiry",
+            "variant": "caption"
+          },
+          {
+            "type": "button",
+            "label": "Edit",
+            "action": "chrome_open",
+            "payload": {
+              "surface": "guidance",
+              "params": {
+                "mode": "edit",
+                "note_id": "11111111-1111-4111-8111-111111111111",
+                "expected_revision": 7
+              }
+            },
+            "variant": "secondary",
+            "disabled": false,
+            "local": false
+          },
+          {
+            "type": "button",
+            "label": "Disable",
+            "action": "chrome_note_toggle",
+            "payload": {
+              "note_id": "11111111-1111-4111-8111-111111111111",
+              "expected_revision": 7,
+              "enabled": false
+            },
+            "variant": "secondary",
+            "disabled": false,
+            "local": false
+          },
+          {
+            "type": "button",
+            "label": "Forget",
+            "action": "chrome_open",
+            "payload": {
+              "surface": "guidance",
+              "params": {
+                "mode": "forget",
+                "note_id": "11111111-1111-4111-8111-111111111111",
+                "expected_revision": 7
+              }
+            },
+            "variant": "secondary",
+            "disabled": false,
+            "local": false
+          }
+        ],
+        "variant": "default"
+      },
+      {
+        "type": "button",
+        "label": "Refresh",
+        "action": "chrome_open",
+        "payload": {
+          "surface": "guidance",
+          "params": {
+            "mode": "list",
+            "search": ""
+          }
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      }
+    ],
+    "region": "modal",
+    "mode": "replace",
+    "admin_only": false
+  },
+  "new": {
+    "type": "chrome_surface",
+    "surface_key": "guidance",
+    "title": "Private notes",
+    "request_generation": "22222222-2222-4222-8222-222222222222",
+    "components": [
+      {
+        "type": "button",
+        "label": "Back to notes",
+        "action": "chrome_open",
+        "payload": {
+          "surface": "guidance",
+          "params": {
+            "mode": "list"
+          }
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      },
+      {
+        "type": "param_picker",
+        "title": "Add note",
+        "description": "",
+        "fields": [
+          {
+            "name": "category",
+            "label": "Category",
+            "kind": "select",
+            "default": "Context",
+            "options": [
+              "Profession",
+              "Goal",
+              "Preference",
+              "Workflow tag",
+              "Context"
+            ]
+          },
+          {
+            "name": "value",
+            "label": "Note",
+            "kind": "textarea",
+            "default": "",
+            "help": "Describe your preferences or context. Do not include patient information."
+          },
+          {
+            "name": "enabled",
+            "label": "Enabled",
+            "kind": "boolean",
+            "default": true
+          },
+          {
+            "name": "expiry",
+            "label": "Expiry",
+            "kind": "select",
+            "default": "No expiry",
+            "options": [
+              "No expiry",
+              "Set a date"
+            ]
+          },
+          {
+            "name": "expiry_date",
+            "label": "Expiry date (UTC)",
+            "kind": "text",
+            "default": "",
+            "help": "Use a UTC date and time, for example 2026-12-31T23:59:00Z.",
+            "visible_when": {
+              "expiry": "Set a date"
+            }
+          }
+        ],
+        "submit_label": "Save note",
+        "submit_action": "chrome_note_save",
+        "submit_payload": {
+          "note_id": "11111111-1111-4111-8111-111111111111",
+          "expected_revision": 0
+        }
+      }
+    ],
+    "region": "modal",
+    "mode": "replace",
+    "admin_only": false
+  },
+  "edit": {
+    "type": "chrome_surface",
+    "surface_key": "guidance",
+    "title": "Private notes",
+    "request_generation": "22222222-2222-4222-8222-222222222222",
+    "components": [
+      {
+        "type": "button",
+        "label": "Back to notes",
+        "action": "chrome_open",
+        "payload": {
+          "surface": "guidance",
+          "params": {
+            "mode": "list"
+          }
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      },
+      {
+        "type": "text",
+        "content": "Current note",
+        "variant": "h3"
+      },
+      {
+        "type": "badge",
+        "label": "Enabled",
+        "variant": "default"
+      },
+      {
+        "type": "text",
+        "content": "**Literal** [notes](https://example.invalid/note) <b>text</b>",
+        "variant": "body"
+      },
+      {
+        "type": "text",
+        "content": "No expiry",
+        "variant": "caption"
+      },
+      {
+        "type": "param_picker",
+        "title": "Edit note",
+        "description": "",
+        "fields": [
+          {
+            "name": "category",
+            "label": "Category",
+            "kind": "select",
+            "default": "Preference",
+            "options": [
+              "Profession",
+              "Goal",
+              "Preference",
+              "Workflow tag",
+              "Context"
+            ]
+          },
+          {
+            "name": "value",
+            "label": "Note",
+            "kind": "textarea",
+            "default": "**Literal** [notes](https://example.invalid/note) <b>text</b>",
+            "help": "Describe your preferences or context. Do not include patient information."
+          },
+          {
+            "name": "enabled",
+            "label": "Enabled",
+            "kind": "boolean",
+            "default": true
+          },
+          {
+            "name": "expiry",
+            "label": "Expiry",
+            "kind": "select",
+            "default": "Keep current expiry",
+            "options": [
+              "Keep current expiry",
+              "No expiry",
+              "Set a date"
+            ]
+          },
+          {
+            "name": "expiry_date",
+            "label": "Expiry date (UTC)",
+            "kind": "text",
+            "default": "",
+            "help": "Use a UTC date and time, for example 2026-12-31T23:59:00Z.",
+            "visible_when": {
+              "expiry": "Set a date"
+            }
+          }
+        ],
+        "submit_label": "Save note",
+        "submit_action": "chrome_note_save",
+        "submit_payload": {
+          "note_id": "11111111-1111-4111-8111-111111111111",
+          "expected_revision": 7
+        }
+      }
+    ],
+    "region": "modal",
+    "mode": "replace",
+    "admin_only": false
+  },
+  "forget": {
+    "type": "chrome_surface",
+    "surface_key": "guidance",
+    "title": "Private notes",
+    "request_generation": "22222222-2222-4222-8222-222222222222",
+    "components": [
+      {
+        "type": "button",
+        "label": "Keep note",
+        "action": "chrome_open",
+        "payload": {
+          "surface": "guidance",
+          "params": {
+            "mode": "list"
+          }
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      },
+      {
+        "type": "card",
+        "title": "Preference",
+        "content": [
+          {
+            "type": "badge",
+            "label": "Enabled",
+            "variant": "default"
+          },
+          {
+            "type": "text",
+            "content": "**Literal** [notes](https://example.invalid/note) <b>text</b>",
+            "variant": "body"
+          },
+          {
+            "type": "text",
+            "content": "No expiry",
+            "variant": "caption"
+          }
+        ],
+        "variant": "default"
+      },
+      {
+        "type": "alert",
+        "message": "Forget permanently erases this note's current value. This cannot be undone.",
+        "variant": "warning"
+      },
+      {
+        "type": "button",
+        "label": "Forget note",
+        "action": "chrome_note_forget",
+        "payload": {
+          "note_id": "11111111-1111-4111-8111-111111111111",
+          "expected_revision": 7
+        },
+        "variant": "danger",
+        "disabled": false,
+        "local": false
+      }
+    ],
+    "region": "modal",
+    "mode": "replace",
+    "admin_only": false
+  }
+}

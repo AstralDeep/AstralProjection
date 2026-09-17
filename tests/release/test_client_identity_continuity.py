@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import plistlib
+import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
@@ -105,10 +107,63 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     app = _plist("apple-clients/AstralApp/Info.plist")
     watch = _plist("apple-clients/AstralApp/WatchInfo.plist")
 
-    assert project.count("CURRENT_PROJECT_VERSION = 62;") == 10
-    assert project.count("MARKETING_VERSION = 1.6;") == 10
+    configurations = _project_objects(project, "XCBuildConfiguration")
+    original = {
+        "222F50332FFD60D90016B0D6", "222F50342FFD60D90016B0D6",
+        "AA00000000000000000000B8", "AA00000000000000000000B9",
+        "AA00000000000000000000E9", "AA00000000000000000000EA",
+        "AB0000000000000000000011", "AB0000000000000000000012",
+        "AB0000000000000000000014", "AB0000000000000000000015",
+    }
+    navigation = {
+        "AD0881000000000000000014", "AD0881000000000000000015",
+        "AD0881000000000000000016", "AD0881000000000000000017",
+    }
+    versioned = {key for key, body in configurations.items() if "CURRENT_PROJECT_VERSION" in body}
+    assert versioned == original | navigation
+    assert len(original) == 10 and len(navigation) == 4
+    for key in original | navigation:
+        assert "CURRENT_PROJECT_VERSION = 62;" in configurations[key]
+        assert "MARKETING_VERSION = 1.6;" in configurations[key]
+    for key in navigation:
+        body = configurations[key]
+        assert "SUPPORTED_PLATFORMS = watchsimulator;" in body
+        assert "SKIP_INSTALL = YES;" in body
+        assert "CODE_SIGNING_ALLOWED = NO;" in body
+        assert "PRODUCT_NAME = AstralWatchNavigation" in body
     assert "CURRENT_PROJECT_VERSION = 1;" not in project
     assert "CURRENT_PROJECT_VERSION = 2;" not in project
     assert "MARKETING_VERSION = 1.4;" not in project
     assert app["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
     assert watch["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
+
+
+def _project_objects(project: str, section: str) -> dict[str, str]:
+    text = project.split(f"/* Begin {section} section */", 1)[1].split(f"/* End {section} section */", 1)[0]
+    return dict(re.findall(r"^\t\t([A-F0-9]{24}) /\* .*? \*/ = \{\n(.*?)^\t\t\};", text, re.M | re.S))
+
+
+def test_watch_navigation_harness_stays_outside_shipping_targets_and_archives() -> None:
+    project = _text("apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj")
+    targets = _project_objects(project, "PBXNativeTarget")
+    harness, ui = "AD0881000000000000000008", "AD0881000000000000000009"
+    assert "name = AstralWatchNavigationHarness;" in targets[harness]
+    assert "name = AstralWatchNavigationUITests;" in targets[ui]
+    assert 'productType = "com.apple.product-type.bundle.ui-testing";' in targets[ui]
+    app, watch = targets["222F50262FFD60D80016B0D6"], targets["AA00000000000000000000B3"]
+    assert re.search(r"dependencies = \(\s*AA00000000000000000000C3 /\* PBXTargetDependency \*/,\s*\);", app)
+    assert re.search(r"dependencies = \(\s*\);", watch)
+    for body in (app, watch):
+        assert "AD0881" not in body
+    schemes = ROOT / "apple-clients/AstralApp/AstralApp.xcodeproj/xcshareddata/xcschemes"
+    for name in ("AstralApp", "AstralWatch"):
+        tree = ET.parse(schemes / f"{name}.xcscheme")
+        assert all(node.get("BlueprintIdentifier") not in {harness, ui}
+                   for node in tree.findall(".//BuildableReference"))
+    tree = ET.parse(schemes / "AstralWatchNavigation.xcscheme")
+    assert tree.find("ArchiveAction") is None
+    entries = tree.findall(".//BuildActionEntry")
+    assert entries and all(node.get("buildForArchiving") == "NO" for node in entries)
+    references = tree.findall(".//BuildableReference")
+    assert {node.get("BlueprintIdentifier") for node in references} == {harness, ui}
+    assert "membershipExceptions = (AstralWatchApp.swift, );" in project

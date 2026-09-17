@@ -8,6 +8,8 @@ import SwiftUI
 
 struct WatchComponentView: View {
     let component: AstralComponent
+    var workRead = false
+    var guidance = false
     @Environment(WatchModel.self) var model
     @State private var expanded = false
 
@@ -23,7 +25,7 @@ struct WatchComponentView: View {
                 .accessibilityValue(expanded ? "Expanded" : "Collapsed")
                 if expanded {
                     ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                        WatchComponentView(component: child)
+                        WatchComponentView(component: child, workRead: workRead, guidance: guidance)
                     }
                 }
             }
@@ -141,7 +143,7 @@ struct WatchComponentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     titleLine
                     ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                        WatchComponentView(component: child)
+                        WatchComponentView(component: child, workRead: workRead, guidance: guidance)
                     }
                 }
                 .padding(6)
@@ -150,7 +152,24 @@ struct WatchComponentView: View {
         case "divider":
             Divider()
         case "button":
-            if WorkspaceWelcome.chatMessage(of: component) != nil {
+            if guidance, let action = component.raw["action"]?.stringValue,
+                let payload = component.raw["payload"],
+                let request = GuidanceRequest(action: action, payload: payload)
+            {
+                Button {
+                    _ = model.sendGuidanceRequest(action: request.action, payload: request.payload)
+                } label: {
+                    Text(verbatim: component.label ?? "")
+                }
+                .buttonStyle(.bordered)
+                .disabled(component.raw["disabled"]?.boolValue != false || !model.connected)
+                .accessibilityLabel(component.label ?? "")
+            } else if workRead, let payload = component.raw["payload"], WorkReadRequest(payload: payload) != nil {
+                Button(component.label ?? "") { model.sendWorkComponent(component) }
+                    .buttonStyle(.bordered)
+                    .disabled(component.raw["disabled"]?.boolValue != false || !model.connected)
+                    .accessibilityLabel(component.label ?? "")
+            } else if WorkspaceWelcome.chatMessage(of: component) != nil {
                 Button(component.label ?? component.fallbackText) {
                     model.sendWelcomeExample(component)
                 }
@@ -159,7 +178,13 @@ struct WatchComponentView: View {
             } else {
                 handoff
             }
-        case "input", "file_upload", "color_picker", "param_picker":
+        case "param_picker":
+            if guidance, let form = GuidanceForm(component: component) {
+                WatchGuidanceFormView(form: form)
+            } else {
+                handoff
+            }
+        case "input", "file_upload", "color_picker":
             handoff
         default:
             // Deterministic fallback chain terminates in readable text —
@@ -188,7 +213,8 @@ struct WatchComponentView: View {
     /// flatten block structure to plain lines, then parse inline spans — the
     /// wrist shows neither literal asterisks nor literal `##`/fence syntax.
     private func markdown(_ string: String) -> Text {
-        Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(string)))
+        (workRead || guidance)
+            ? Text(verbatim: string) : Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(string)))
     }
 
     @ViewBuilder

@@ -253,7 +253,11 @@ def _render_fields(component: Mapping[str, object]) -> str:
         default = clean_text(raw.get("default"))
         help_text = clean_text(raw.get("help"))
         help_id = f"field-{name}-help"
-        described = f' aria-describedby="{help_id}"' if help_text else ""
+        # Keep the control's accessible name independent of textarea contents
+        # and select option text inside the wrapping visual label.
+        described = f' aria-label="{label}"'
+        if help_text:
+            described += f' aria-describedby="{help_id}"'
         if kind == "textarea":
             control = f'<textarea name="{escape(name)}"{described}>{escape(default)}</textarea>'
         elif kind == "boolean":
@@ -280,7 +284,12 @@ def _render_fields(component: Mapping[str, object]) -> str:
             value = "" if input_type == "password" else f' value="{escape(default, quote=True)}"'
             control = f'<input type="{input_type}" name="{escape(name)}"{value}{described}>'
         help_html = f'<small id="{help_id}">{escape(help_text)}</small>' if help_text else ""
-        rendered.append(f"<label>{label}{control}</label>{help_html}")
+        entry = f"<label>{label}{control}</label>{help_html}"
+        condition = raw.get("visible_when")
+        if isinstance(condition, Mapping) and condition:
+            encoded = escape(json.dumps(dict(condition), ensure_ascii=True), quote=True)
+            entry = f'<div data-chrome-visible-when="{encoded}" hidden>{entry}</div>'
+        rendered.append(entry)
     return "".join(rendered)
 
 
@@ -362,6 +371,16 @@ def _render_component(component: Mapping[str, object]) -> str:
         return f"<{tag}>{items}</{tag}>"
     if component_type == "param_picker":
         return _render_form(component)
+    if component_type == "file_download":
+        url = clean_text(component.get("url"))
+        label = clean_text(component.get("label")) or "Download"
+        raw_name = component.get("filename")
+        name = clean_text(raw_name) if isinstance(raw_name, str) and raw_name else ""
+        download = f' download="{escape(name, quote=True)}"' if name else " download"
+        return (
+            f'<a class="astral-file-download" href="{escape(url, quote=True)}"{download}'
+            f' data-component="file_download">{escape(label)}</a>'
+        )
     return _render_alert(
         {
             "variant": "info",

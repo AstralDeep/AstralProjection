@@ -204,13 +204,20 @@ struct SurfaceView: View {
                         }
                         ForEach(Array(surface.components.enumerated()), id: \.offset) { _, comp in
                             ComponentView(component: comp)
+                                .environment(
+                                    \.astralWorkReadSurface, ["work", "guidance"].contains(surface.surfaceKey)
+                                )
+                                .environment(\.astralGuidanceSurface, surface.surfaceKey == "guidance")
+                                .id(model.guidanceUpdate?.generation ?? "legacy")
                         }
                     }
                     .padding(16)
                 }
-            } else if timedOut {
+            } else if timedOut || model.workReadFailed
+                || (model.pendingSurfaceKey == "guidance" && model.guidanceFailed)
+            {
                 VStack(spacing: 12) {
-                    Text("Couldn't load this settings screen")
+                    Text("Couldn't load this screen")
                         .font(AstralTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
                     Text("The server didn't send it in time. Check your connection and try again.")
                         .font(AstralTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
@@ -238,6 +245,8 @@ struct SurfaceView: View {
         // a surface arrives, and for every explicit Retry of the same request.
         .task(id: surfaceTaskKey) {
             timedOut = false
+            let workGeneration = model.workReadState.generation
+            let guidanceGeneration = model.guidanceState.generation
             if model.pendingSurface != nil { return }
             do {
                 try await Task.sleep(nanoseconds: 10_000_000_000)
@@ -245,6 +254,8 @@ struct SurfaceView: View {
                 return
             }
             guard !Task.isCancelled, model.pendingSurface == nil else { return }
+            if model.pendingSurfaceKey == "work" { model.failWorkRead(generation: workGeneration) }
+            if model.pendingSurfaceKey == "guidance" { model.failGuidanceRequest(generation: guidanceGeneration) }
             timedOut = true
         }
     }
@@ -263,7 +274,7 @@ struct SurfaceView: View {
     }
 
     private var surfaceTaskKey: String {
-        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)"
+        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")"
     }
 }
 

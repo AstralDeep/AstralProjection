@@ -124,6 +124,9 @@ fun RootScaffold(
                             surfaceKey = state.pendingSurfaceKey,
                             renderer = renderer,
                             onRetry = vm::retryPendingSurface,
+                            requestGeneration = state.privateSurfaceRequest?.requestGeneration,
+                            loadFailed = state.privateSurfaceFailed,
+                            onTimeout = vm::timeoutPrivateSurface,
                         )
                 }
             }

@@ -6,6 +6,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -29,7 +30,7 @@ class CanvasPresentationRest088Test {
             MockWebServer().use { server ->
                 server.enqueue(MockResponse().setHeader("X-Astral-Render-Revision", "2").setBody("Discard this historical HTML"))
                 server.enqueue(response())
-                val rest = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val rest = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 rest.authorizeCanvas("token", "chat", 2u)
                 assertEquals(response, rest.canvasPresentation("token", "chat", 2u, capture))
                 assertEquals("/api/export/canvas/chat.html?render_revision=2", server.takeRequest().path)
@@ -46,7 +47,7 @@ class CanvasPresentationRest088Test {
     @Test fun staleMalformedAndRefusedPresentationNeverBecomeFallbackHtml() =
         runBlocking {
             MockWebServer().use { server ->
-                val rest = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val rest = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 val invalid =
                     listOf(
                         response().setHeader("X-Astral-Render-Revision", "3"),
@@ -71,7 +72,7 @@ class CanvasPresentationRest088Test {
     @Test fun oversizedOrInvalidRevisionRequestNeverLeavesClient() =
         runBlocking {
             MockWebServer().use { server ->
-                val rest = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val rest = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 val huge = JsonObject(capture + ("components" to JsonPrimitive("x".repeat(8 * 1024 * 1024))))
                 assertFailsWith<WorkspaceRequestException> { rest.canvasPresentation("token", "chat", 2u, huge) }
                 assertFailsWith<WorkspaceRequestException> { rest.canvasPresentation("token", "chat", ULong.MAX_VALUE, capture) }
@@ -82,13 +83,13 @@ class CanvasPresentationRest088Test {
     @Test fun uncertainPostAndCancelledHeadersNeverRetry() =
         runBlocking {
             MockWebServer().use { server ->
-                val rest = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val rest = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST))
                 assertFailsWith<WorkspaceRequestException> { rest.canvasPresentation("token", "chat", 2u, capture) }
                 assertEquals(1, server.requestCount)
                 server.takeRequest()
                 server.enqueue(response().setHeadersDelay(1, TimeUnit.SECONDS))
-                val fresh = WorkspaceRest(server.url("/").toString(), allowLocalHttp = true)
+                val fresh = WorkspaceRest(server.localUrl("/").toString(), allowLocalHttp = true)
                 val pending = async { fresh.canvasPresentation("token", "chat", 2u, capture) }
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { server.takeRequest(5, TimeUnit.SECONDS) }
                 pending.cancelAndJoin()
@@ -101,7 +102,7 @@ class CanvasPresentationRest088Test {
         runBlocking {
             MockWebServer().use { server ->
                 val client = OkHttpClient.Builder().callTimeout(500, TimeUnit.MILLISECONDS).build()
-                val rest = WorkspaceRest(server.url("/").toString(), client, allowLocalHttp = true)
+                val rest = WorkspaceRest(server.localUrl("/").toString(), client, allowLocalHttp = true)
                 server.dispatcher =
                     object : okhttp3.mockwebserver.Dispatcher() {
                         override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse =
@@ -114,3 +115,10 @@ class CanvasPresentationRest088Test {
             }
         }
 }
+
+/**
+ * MockWebServer's own `url()` builds on the machine's reverse-DNS host name, which is not
+ * always a loopback literal, so the product's local-HTTP allowance would reject it. Pin the
+ * explicit loopback host the way ServerSession088Test does.
+ */
+private fun MockWebServer.localUrl(path: String): HttpUrl = url(path).newBuilder().host("localhost").build()

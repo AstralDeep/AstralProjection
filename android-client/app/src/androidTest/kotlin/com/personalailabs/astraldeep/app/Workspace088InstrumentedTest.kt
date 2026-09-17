@@ -5,14 +5,17 @@ import android.view.View
 import android.webkit.WebView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
@@ -30,6 +33,7 @@ import androidx.compose.ui.test.performScrollToIndex
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso
 import androidx.test.platform.app.InstrumentationRegistry
@@ -309,12 +313,32 @@ class Workspace088InstrumentedTest {
     fun adapted_phone_welcome_container_keeps_examples_in_centered_wrapping_rows() {
         val adapted = welcome.first { it.type == "grid" }.copy(type = "container")
         val renderer = Renderer(Emit { _, _ -> }).registerAllRenderers()
-        rule.setContent { FixtureTheme { renderer.render(adapted) } }
+        val width = mutableStateOf(320)
+        rule.setContent {
+            // Both real logical phone widths fit the CI emulator's 320px viewport.
+            // Keep the font scale fixed so host density cannot select a different layout.
+            CompositionLocalProvider(LocalDensity provides Density(0.75f, fontScale = 1f)) {
+                FixtureTheme {
+                    Box(Modifier.width(width.value.dp).testTag("welcome-example-box")) { renderer.render(adapted) }
+                }
+            }
+        }
         val labels = adapted.children.map { it.attributes.getValue("label").toString().trim('"') }
-        val first = rule.onNodeWithText(labels[0]).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val second = rule.onNodeWithText(labels[1]).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        assertEquals(first.center.y, second.center.y, 1f)
-        assertTrue(second.left > first.right)
+
+        fun bounds() = labels.map { rule.onNodeWithText(it).assertIsDisplayed().fetchSemanticsNode().boundsInRoot }
+        val narrow = bounds()
+        val narrowBox = rule.onNodeWithTag("welcome-example-box").fetchSemanticsNode().boundsInRoot
+        assertTrue(narrow[1].top > narrow[0].bottom)
+        assertTrue(narrow[2].top > narrow[1].bottom)
+        narrow.forEach { assertEquals(narrowBox.center.x, it.center.x, 1f) }
+        rule.runOnIdle { width.value = 400 }
+        val wide = bounds()
+        val wideBox = rule.onNodeWithTag("welcome-example-box").fetchSemanticsNode().boundsInRoot
+        assertEquals(wide[0].center.y, wide[1].center.y, 1f)
+        assertTrue(wide[1].left > wide[0].right)
+        assertTrue(wide[2].top > wide[1].bottom)
+        assertEquals(wideBox.center.x, (wide[0].left + wide[1].right) / 2, 1f)
+        assertEquals(wideBox.center.x, wide[2].center.x, 1f)
     }
 
     @Test

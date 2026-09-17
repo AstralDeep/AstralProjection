@@ -30,8 +30,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.personalailabs.astraldeep.app.render.Emit
+import com.personalailabs.astraldeep.app.render.LocalWorkReadText
 import com.personalailabs.astraldeep.app.render.MarkdownText
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.inlineMarkdown
@@ -57,7 +61,27 @@ fun Renderer.registerBasicRenderers(): Renderer =
 
 @Composable
 private fun TextPrimitive(c: Component) {
-    MarkdownText(text = c.str("content") ?: c.str("text").orEmpty())
+    val content = c.str("content") ?: c.str("text").orEmpty()
+    if (!LocalWorkReadText.current) {
+        MarkdownText(text = content)
+        return
+    }
+    val variant = c.str("variant")
+    val base = MaterialTheme.typography.bodyMedium
+    val style =
+        when (variant) {
+            "h1" -> base.copy(fontSize = 24.sp, lineHeight = 32.sp, fontWeight = FontWeight.Bold)
+            "h2" -> base.copy(fontSize = 20.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold)
+            "h3" -> base.copy(fontSize = 18.sp, lineHeight = 28.sp, fontWeight = FontWeight.Medium)
+            "caption" -> base.copy(fontSize = 12.sp, lineHeight = 16.sp)
+            else -> base.copy(fontSize = 14.sp, lineHeight = 22.75.sp)
+        }
+    Text(
+        text = content,
+        style = style,
+        color = if (variant == "caption") MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+        modifier = if (variant in setOf("h1", "h2", "h3")) Modifier.semantics { heading() } else Modifier,
+    )
 }
 
 @Composable
@@ -71,9 +95,7 @@ private fun CardPrimitive(
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Box(Modifier.width(4.dp).height(16.dp).clip(RoundedCornerShape(50)).background(MaterialTheme.colorScheme.primary))
                 Text(
-                    inlineMarkdown(
-                        title,
-                    ),
+                    if (LocalWorkReadText.current) AnnotatedString(title) else inlineMarkdown(title),
                     style = AstralWebStyle.CardTitle,
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier =

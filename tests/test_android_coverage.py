@@ -8,10 +8,55 @@ import shutil
 import subprocess
 import sys
 from types import SimpleNamespace
+import xml.etree.ElementTree as ET
 
 import pytest
 
 from scripts import android_coverage as c
+
+
+def test_coverage_network_overlay_is_loopback_only_and_separate_from_release() -> None:
+    """Only the opt-in fixture APK may use its explicit loopback transport allowance."""
+    app = Path(__file__).resolve().parents[1] / "android-client/app"
+    android = "{http://schemas.android.com/apk/res/android}"
+    manifest = ET.parse(app / "src/coverage/AndroidManifest.xml").getroot()
+    assert manifest.find("application").attrib == {
+        android + "networkSecurityConfig": "@xml/coverage_network_security_config"
+    }
+    policy = ET.parse(
+        app / "src/coverage/res/xml/coverage_network_security_config.xml"
+    ).getroot()
+    assert [node.tag for node in policy] == ["base-config", "domain-config"]
+    assert policy[0].attrib == {"cleartextTrafficPermitted": "false"}
+    assert policy[1].attrib == {"cleartextTrafficPermitted": "true"}
+    assert [(node.tag, node.text, node.attrib) for node in policy[1]] == [
+        ("domain", "localhost", {}),
+        ("domain", "127.0.0.1", {}),
+    ]
+    for folder in ("main", "release"):
+        for path in (app / "src" / folder).rglob("*.xml"):
+            tree = ET.parse(path).getroot()
+            for node in tree.iter():
+                assert node.get(android + "networkSecurityConfig") is None
+                assert node.get(android + "usesCleartextTraffic") != "true"
+    gradle = (app / "build.gradle.kts").read_text()
+    tooling = (app.parent / "gradle/coverage.gradle").read_text()
+    assert "src/coverage" not in gradle
+    assert "initWith(android.buildTypes.getByName('debug'))" in tooling
+
+
+def _brace_block(text: str, opener: str) -> str:
+    """Return the body of the first `opener` block, matched by brace depth."""
+    start = text.index(opener) + len(opener)
+    depth = 1
+    for index in range(start, len(text)):
+        if text[index] == "{":
+            depth += 1
+        elif text[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start:index]
+    raise AssertionError(f"unterminated block for {opener!r}")
 
 
 def put(path: Path, content: str | bytes = "fixture") -> Path:
@@ -389,7 +434,40 @@ def test_cli_failure_is_data_free(prepared, capsys):
     assert (
         c.main(["verify", "--root", str(root), "--output", str(output), "--lanes", "staging"]) == 1
     )
-    assert capsys.readouterr().err == "android_coverage_failed\n"
+    assert capsys.readouterr().err == "android_coverage_failed invalid_json_file\n"
+
+
+def test_cli_failure_token_never_echoes_a_private_path(prepared, monkeypatch, capsys):
+    """Only closed InvalidCoverage codes print verbatim; anything else prints its class."""
+    root, output, _ = prepared
+    secret = "/private/astral-secret-path/app.apk"
+
+    def explode(*_args, **_kwargs):
+        # A bare OSError stays OSError (errno 2 would become FileNotFoundError).
+        raise OSError("cannot open " + secret)
+
+    monkeypatch.setattr(c, "verify", explode)
+    assert (
+        c.main(["verify", "--root", str(root), "--output", str(output), "--lanes", "fixtures"])
+        == 1
+    )
+    captured = capsys.readouterr().err
+    assert captured == "android_coverage_failed OSError\n"
+    assert secret not in captured
+
+
+def test_coverage_unit_lane_is_never_cached_or_up_to_date() -> None:
+    """A FROM-CACHE or UP-TO-DATE unit lane would leave prepare() with no receipt."""
+    script = (
+        Path(__file__).resolve().parents[1] / "android-client/gradle/coverage.gradle"
+    ).read_text(encoding="utf-8")
+    block = _brace_block(script, "tasks.withType(Test).configureEach {")
+    assert "doNotTrackState(" in block
+    body = _brace_block(block, "doFirst {")
+    # Configuration-cache safety: the execution-time body may not touch the script
+    # object graph, so every layout provider is captured at configuration time.
+    assert "layout." not in body, body
+    assert "unitAgentFile.get().asFile" in body and "task: taskPath" in body
 
 
 def test_run_errors_never_echo_private_arguments(monkeypatch):
@@ -552,7 +630,11 @@ def test_transport_timeout_does_not_expose_private_command_arguments(
     with pytest.raises(c.InvalidCoverage, match="^device_transport_failed$") as error:
         c.device(root, output, "adb", "emulator-5584", "staging", args)
     assert "private" not in str(error.value)
-    assert c.read_json(output / "staging.failed.json")["status"] == "failed"
+    marker = c.read_json(output / "staging.failed.json")
+    assert marker["status"] == "failed"
+    # The persisted reason is the closed transport code, never the command vector.
+    assert marker["reason"] == "device_transport_failed"
+    assert "private" not in json.dumps(marker)
 
 
 @pytest.mark.parametrize("failed", [False, True])
@@ -562,6 +644,8 @@ def test_duplicate_invocation_cannot_write_into_previous_attempt(prepared, monke
     if failed:
         with pytest.raises(c.InvalidCoverage):
             c.device(root, output, "adb", "emulator-5584", "fixtures", None)
+        marker = c.read_json(output / "fixtures.failed.json")
+        assert marker["reason"] == "device_tests_not_passed"
     else:
         c.device(root, output, "adb", "emulator-5584", "fixtures", None)
     before = {p.name: p.read_bytes() for p in output.glob("fixtures.*")}

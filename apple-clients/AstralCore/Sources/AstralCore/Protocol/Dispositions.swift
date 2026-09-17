@@ -145,12 +145,12 @@ public struct ClientDispositions: Sendable {
         frames: frames(
             // 055 background-task continuity: a completion notification
             // reaches the wrist as a brief status line + spoken rendition.
-            extraHandled: ["notification"],
+            // Chrome handling is restricted to negotiated Work reads. Other
+            // surfaces and artifact workspace verbs retain their omission.
+            extraHandled: ["notification", "chrome_menu", "chrome_surface"],
             extraIgnored: [
                 "agent_creation_progress": "no drafting UX on the wrist",
                 "agent_list": "agent management happens on phone/desktop/web",
-                "chrome_menu": "no chrome surfaces on the wrist",
-                "chrome_surface": "no chrome surfaces on the wrist",
                 "combine_error": "workspace verbs are larger-screen affordances (055 carve-out)",
                 "combine_status": "workspace verbs are larger-screen affordances (055 carve-out)",
                 "component_deleted": "workspace verbs are larger-screen affordances (055 carve-out)",

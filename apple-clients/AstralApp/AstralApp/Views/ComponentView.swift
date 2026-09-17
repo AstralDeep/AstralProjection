@@ -6,6 +6,38 @@ import AstralCore
 // unknown falls back to readable text with a type badge (FR-003).
 import SwiftUI
 
+private struct WorkReadSurfaceKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private struct GuidanceSurfaceKey: EnvironmentKey { static let defaultValue = false }
+
+extension EnvironmentValues {
+    var astralGuidanceSurface: Bool {
+        get { self[GuidanceSurfaceKey.self] }
+        set { self[GuidanceSurfaceKey.self] = newValue }
+    }
+    var astralWorkReadSurface: Bool {
+        get { self[WorkReadSurfaceKey.self] }
+        set { self[WorkReadSurfaceKey.self] = newValue }
+    }
+}
+
+/// Work observations are retained literal evidence, including alert messages.
+/// Ordinary component alerts retain their existing Markdown presentation.
+struct ComponentAlertMessage: View {
+    let text: String
+    let literal: Bool
+
+    var body: some View {
+        if literal {
+            Text(verbatim: text).fixedSize(horizontal: false, vertical: true)
+        } else {
+            MarkdownBlockView(source: text)
+        }
+    }
+}
+
 #if os(macOS)
     import AppKit
 #endif
@@ -14,6 +46,7 @@ struct ComponentView: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @Environment(\.astralWorkReadSurface) private var workReadSurface
     @Environment(\.astralViewportWidth) private var viewportWidth
     @Environment(\.canvasCapturePath) private var capturePath
     /// Measured width of this component's slot, used to clamp multi-column
@@ -143,7 +176,7 @@ struct ComponentView: View {
     @ViewBuilder
     private var textView: some View {
         let text = component.textContent ?? component.fallbackText
-        if component.variant == "markdown" {
+        if component.variant == "markdown" && !workReadSurface {
             // The server explicitly declared block content (web parity:
             // block_md) — headings/fences/lists/tables must not stay literal.
             MarkdownBlockView(source: text)
@@ -180,7 +213,7 @@ struct ComponentView: View {
                 if let title = component.title, !title.isEmpty {
                     markdown(title).font(AstralTypography.subheadline.bold()).foregroundStyle(color)
                 }
-                MarkdownBlockView(source: component.message ?? component.fallbackText)
+                ComponentAlertMessage(text: component.message ?? component.fallbackText, literal: workReadSurface)
                     .foregroundStyle(p.text)
             }
             Spacer(minLength: 0)
@@ -641,7 +674,7 @@ struct ComponentView: View {
     }
 
     private func markdown(_ string: String) -> Text {
-        Text(InlineMarkdown.attributed(string))
+        workReadSurface ? Text(verbatim: string) : Text(InlineMarkdown.attributed(string))
     }
 
     private func isTruthy(_ value: JSONValue?) -> Bool {
@@ -1034,6 +1067,7 @@ struct InputComponent: View {
 /// templated chat message or a `submit_action` with `{fields:{…}}`.
 struct ParamPickerComponent: View {
     let component: AstralComponent
+    @Environment(\.astralGuidanceSurface) private var guidanceSurface
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @State private var values: [String: String] = [:]
@@ -1050,14 +1084,14 @@ struct ParamPickerComponent: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let title = component.title, !title.isEmpty {
-                Text(InlineMarkdown.attributed(title))
+                formText(title)
                     .font(AstralTypography.headline).foregroundStyle(p.text)
                     .accessibilityIdentifier(
                         hasLLMSave ? "llm-provider-form-title" : "param-picker-form-title")
             }
             // The form's operative instructions live here (web parity).
             if let desc = component.raw["description"]?.stringValue, !desc.isEmpty {
-                Text(InlineMarkdown.attributed(desc))
+                formText(desc)
                     .font(AstralTypography.caption).foregroundStyle(p.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1110,6 +1144,10 @@ struct ParamPickerComponent: View {
         .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(p.border))
     }
 
+    private func formText(_ text: String) -> Text {
+        guidanceSurface ? Text(verbatim: text) : Text(InlineMarkdown.attributed(text))
+    }
+
     @ViewBuilder
     private func fieldView(_ field: JSONValue) -> some View {
         if fieldIsVisible(field) { fieldBody(field) }
@@ -1120,6 +1158,11 @@ struct ParamPickerComponent: View {
     /// controller field's current value matches. Fields without the attribute
     /// are always visible, so servers can emit it freely for older clients.
     private func fieldIsVisible(_ field: JSONValue) -> Bool {
+        if guidanceSurface, let form = GuidanceForm(component: component) {
+            return form.visible(
+                field,
+                values: values.mapValues(JSONValue.string).merging(flags.mapValues(JSONValue.bool)) { _, flag in flag })
+        }
         guard let vw = field["visible_when"],
             let controller = vw["field"]?.stringValue,
             let expected = vw["equals"]?.stringValue
@@ -1155,7 +1198,10 @@ struct ParamPickerComponent: View {
                 Picker(
                     label,
                     selection: Binding(
-                        get: { values[name] ?? options.first ?? "" },
+                        get: {
+                            values[name] ?? (guidanceSurface ? field["default"]?.stringValue : nil) ?? options.first
+                                ?? ""
+                        },
                         set: { values[name] = $0 })
                 ) {
                     ForEach(options, id: \.self) { Text($0).tag($0) }
@@ -1163,7 +1209,9 @@ struct ParamPickerComponent: View {
                 .pickerStyle(.menu).tint(p.primary)
                 .accessibilityIdentifier("param-field-\(name)")
                 .accessibilityLabel(label)
-                .accessibilityValue(values[name] ?? options.first ?? "Not selected")
+                .accessibilityValue(
+                    values[name] ?? (guidanceSurface ? field["default"]?.stringValue : nil) ?? options.first
+                        ?? "Not selected")
             case "checklist":
                 let options =
                     field["options"]?.arrayValue?.compactMap { $0.stringValue ?? $0["value"]?.stringValue } ?? []
@@ -1252,8 +1300,8 @@ struct ParamPickerComponent: View {
         }
         .buttonStyle(AstralButtonStyle(palette: p, variant: variant))
         .disabled(
-            action == "chrome_llm_save"
-                && (model.llmFirstLoginOperation?.isLoading ?? false)
+            (action == "chrome_llm_save" && (model.llmFirstLoginOperation?.isLoading ?? false))
+                || (guidanceSurface && (!model.connected || model.guidanceUpdate == nil))
         )
         .accessibilityIdentifier(
             action == "chrome_llm_save" ? "llm-save-button" : "param-action-\(action ?? "message")"
@@ -1282,6 +1330,11 @@ struct ParamPickerComponent: View {
             } else if let def = field["default"] {
                 collected[name] = def
             }
+        }
+        if guidanceSurface {
+            guard let request = GuidanceForm(component: component)?.request(values: collected) else { return }
+            _ = model.sendGuidanceRequest(action: request.action, payload: request.payload)
+            return
         }
         if let action {
             _ = model.submitParamPicker(action: action, fields: collected, payload: payload)

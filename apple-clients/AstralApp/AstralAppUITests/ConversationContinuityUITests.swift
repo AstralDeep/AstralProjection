@@ -111,23 +111,36 @@ final class ConversationContinuityUITests: XCTestCase {
     }
 
     private func assertSemanticConversation(timeout: TimeInterval) {
-        XCTAssertTrue(text(containing: "Continuity question").waitForExistence(timeout: timeout))
-        XCTAssertTrue(text(containing: "continuity.pdf").exists)
-        XCTAssertTrue(text(containing: "Continuity total: 21").exists)
-        XCTAssertTrue(text(containing: "Continuity component answer").exists)
-        XCTAssertTrue(text(containing: "Restored continuity canvas").exists)
-        XCTAssertFalse(text(containing: "Your generated interface appears here").exists)
-        XCTAssertFalse(text(containing: "locator was not restored").exists)
-    }
-
-    private func text(containing fragment: String) -> XCUIElement {
-        // iOS exposes static-text content as the LABEL; macOS exposes it as
-        // the VALUE (with an empty label). Match either, or every semantic
-        // assertion fails on macOS while the content is visibly on screen.
-        app.staticTexts.matching(
-            NSPredicate(
-                format: "label CONTAINS[c] %@ OR value CONTAINS[c] %@", fragment, fragment)
-        ).firstMatch
+        let required = [
+            "Continuity question", "continuity.pdf", "Continuity total: 21",
+            "Continuity component answer", "Restored continuity canvas",
+        ]
+        let forbidden = ["Your generated interface appears here", "locator was not restored"]
+        let deadline = Date().addingTimeInterval(timeout)
+        var texts: [String] = []
+        repeat {
+            // One public accessibility snapshot observes the whole restored
+            // conversation atomically. Seven remote queries plus XCTest's
+            // existence-polling floor consumed the launch-inclusive budget.
+            if let snapshot = try? app.snapshot() {
+                var pending: [XCUIElementSnapshot] = [snapshot]
+                texts.removeAll(keepingCapacity: true)
+                while let node = pending.popLast() {
+                    if node.elementType == .staticText {
+                        texts.append(node.label)
+                        if let value = node.value as? String { texts.append(value) }
+                    }
+                    pending.append(contentsOf: node.children)
+                }
+                if required.allSatisfy({ fragment in texts.contains { $0.contains(fragment) } }) { break }
+            }
+        } while Date() < deadline
+        for fragment in required {
+            XCTAssertTrue(texts.contains { $0.contains(fragment) }, "Missing restored text: \(fragment)")
+        }
+        for fragment in forbidden {
+            XCTAssertFalse(texts.contains { $0.contains(fragment) }, "Unexpected restored text: \(fragment)")
+        }
     }
 
     private func percentile(_ fraction: Double, sorted: [TimeInterval]) -> TimeInterval {

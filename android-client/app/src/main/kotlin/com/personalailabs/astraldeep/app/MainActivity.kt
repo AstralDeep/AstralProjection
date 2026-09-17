@@ -41,10 +41,15 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.personalailabs.astraldeep.app.auth.AuthAttemptFence
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.ClearReason
 import com.personalailabs.astraldeep.app.auth.KeycloakLogout
 import com.personalailabs.astraldeep.app.auth.OidcAuth
+import com.personalailabs.astraldeep.app.auth.ServerSessionCoordinator
+import com.personalailabs.astraldeep.app.auth.ServerSessionException
+import com.personalailabs.astraldeep.app.auth.ServerSessionScope
+import com.personalailabs.astraldeep.app.auth.ServerSessionTransport
 import com.personalailabs.astraldeep.app.auth.TokenStore
 import com.personalailabs.astraldeep.app.auth.keycloakEndpoints
 import com.personalailabs.astraldeep.app.auth.routeAfterRefresh
@@ -86,7 +91,25 @@ class MainActivity : ComponentActivity() {
     private val componentActions by lazy { ComponentActionController(this, { authToken.value }) }
     private val workspaceActions by lazy { WorkspaceActionController(this, { authToken.value }, canvasCapture) }
 
-    private val client by lazy { OrchestratorClient(AppConfig.WS_URL) }
+    private val authFence = AuthAttemptFence()
+    private val serverScope by lazy {
+        if (AppConfig.API_BASE.startsWith("https://")) {
+            ServerSessionScope(AppConfig.API_BASE, AppConfig.KEYCLOAK_AUTHORITY, AppConfig.OIDC_CLIENT_ID, AppConfig.OIDC_REDIRECT_URI)
+        } else {
+            null
+        }
+    }
+    private val serverTransport by lazy { serverScope?.let { ServerSessionTransport(it) } }
+    private val serverSession by lazy { serverTransport?.let { ServerSessionCoordinator(it, store) } }
+    private val client by lazy {
+        OrchestratorClient(AppConfig.WS_URL, serverSession = {
+            if (authFence.currentMode() == AuthAttemptFence.Mode.SERVER) {
+                serverSession ?: throw ServerSessionException(ServerSessionException.Reason.RETIRED)
+            } else {
+                null
+            }
+        })
+    }
     private val rest by lazy { AstralRest(AppConfig.API_BASE) }
     private val voiceScope by lazy { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
     private val voiceController by lazy {
@@ -172,21 +195,38 @@ class MainActivity : ComponentActivity() {
     private val authToken = MutableStateFlow<String?>(null)
     private val signInError = MutableStateFlow<String?>(null)
 
+    private class PendingSignIn(
+        val ticket: AuthAttemptFence.Ticket,
+        val custody: ServerSessionCoordinator.Attempt?,
+    )
+
+    private var pendingSignIn: PendingSignIn? = null
+
     private val authLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val pending = pendingSignIn ?: return@registerForActivityResult
+            pendingSignIn = null
             val data = result.data ?: return@registerForActivityResult
             lifecycleScope.launch(Dispatchers.IO) {
-                runCatching {
-                    val state = oidc.exchange(data)
-                    val token = oidc.freshToken(state)
-                    store.save(state) // persist AFTER the first refresh (captures rotation)
-                    token
-                }.onSuccess {
-                    applyAuthToken(it)
-                    signInError.value = null
-                }.onFailure {
-                    Log.w("MainActivity", "sign-in exchange failed: ${it.message}")
-                    signInError.value = it.message ?: "sign-in failed"
+                try {
+                    authFence.consume(pending.ticket)
+                    val token =
+                        if (pending.ticket.mode == AuthAttemptFence.Mode.SERVER) {
+                            val scope = serverScope ?: throw ServerSessionException(ServerSessionException.Reason.INVALID)
+                            val code = oidc.serverCode(data, scope)
+                            checkNotNull(serverSession).exchange(checkNotNull(pending.custody), code)
+                        } else {
+                            val state = oidc.exchange(data)
+                            val value = oidc.freshToken(state)
+                            ensureActive()
+                            authFence.guarded(pending.ticket) { store.save(state) }
+                            value
+                        }
+                    applyAuthToken(token, pending.ticket)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    authFailure(pending.ticket, "Sign-in failed. Start sign-in again.")
                 }
             }
         }
@@ -202,19 +242,32 @@ class MainActivity : ComponentActivity() {
         // refresh rejection routes to the sign-in screen with an explanation, never a
         // dead app (T016); a transient failure (offline, IdP briefly down) keeps the
         // cached token so a valid year-long session is never kicked out offline.
+        val initial = authFence.capture()
         lifecycleScope.launch(Dispatchers.IO) {
-            val st = store.load() ?: return@launch
-            val cached = st.accessToken?.takeIf { it.isNotBlank() }
-            cached?.let { applyAuthToken(it) }
-            val route =
-                routeAfterRefresh(
-                    runCatching { oidc.freshToken(st) }
-                        .onSuccess { store.save(st) }
-                        .onFailure { Log.w("MainActivity", "silent token refresh failed: ${it.message}") },
-                    cachedToken = cached,
-                )
-            applyAuthToken(route.token)
-            signInError.value = route.error
+            try {
+                val restored = authFence.guarded(initial) { serverSession?.restore() == true }
+                if (restored) {
+                    authFence.select(initial, AuthAttemptFence.Mode.SERVER)
+                    applyAuthToken(checkNotNull(serverSession).refresh(), initial)
+                } else {
+                    val st = authFence.guarded(initial) { store.load() } ?: return@launch
+                    val cached = st.accessToken?.takeIf { it.isNotBlank() }
+                    cached?.let { applyAuthToken(it, initial) }
+                    val route =
+                        routeAfterRefresh(
+                            runCatching { oidc.freshToken(st) }.onSuccess {
+                                ensureActive()
+                                authFence.guarded(initial) { store.save(st) }
+                            },
+                            cachedToken = cached,
+                        )
+                    applyAuthToken(route.token, initial, route.error)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                authFailure(initial, "Could not resume this session. Try again.")
+            }
         }
         setContent {
             val vm: AppViewModel =
@@ -266,17 +319,30 @@ class MainActivity : ComponentActivity() {
                     // (FR-012/T016) — never a silent dead session.
                     LaunchedEffect(uiState.connection) {
                         if (uiState.connection == ConnectionState.AuthRequired) {
-                            val route =
-                                withContext(Dispatchers.IO) {
-                                    routeAfterRefresh(
-                                        runCatching {
-                                            val st = checkNotNull(store.load()) { "no stored session" }
-                                            oidc.freshToken(st).also { store.save(st) }
-                                        },
-                                    )
-                                }
-                            applyAuthToken(route.token)
-                            signInError.value = route.error
+                            val ticket = authFence.capture()
+                            try {
+                                val route =
+                                    withContext(Dispatchers.IO) {
+                                        if (ticket.mode == AuthAttemptFence.Mode.SERVER) {
+                                            com.personalailabs.astraldeep.app.auth.AuthRoute(checkNotNull(serverSession).refresh(), null)
+                                        } else {
+                                            routeAfterRefresh(
+                                                runCatching {
+                                                    val st = authFence.guarded(ticket) { checkNotNull(store.load()) }
+                                                    oidc.freshToken(st).also {
+                                                        ensureActive()
+                                                        authFence.guarded(ticket) { store.save(st) }
+                                                    }
+                                                },
+                                            )
+                                        }
+                                    }
+                                applyAuthToken(route.token, ticket, route.error)
+                            } catch (cancelled: CancellationException) {
+                                throw cancelled
+                            } catch (_: Exception) {
+                                authFailure(ticket, "Session unavailable. Sign in again.")
+                            }
                         }
                     }
                     val componentShare by componentActions.share.collectAsStateWithLifecycle()
@@ -293,20 +359,77 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private suspend fun applyAuthToken(next: String?) =
-        withContext(Dispatchers.Main.immediate) {
-            val oldOwner = ConversationResumeStore.accountFromAccessToken(authToken.value.orEmpty())
-            val newOwner = ConversationResumeStore.accountFromAccessToken(next.orEmpty())
-            if (next == null || oldOwner != newOwner) {
-                workspaceActions.clear()
-                componentActions.clear()
+    private suspend fun applyAuthToken(
+        next: String?,
+        ticket: AuthAttemptFence.Ticket,
+        error: String? = null,
+    ) = withContext(Dispatchers.Main.immediate) {
+        ensureActive()
+        authFence.publish(ticket) {
+            val publish = {
+                val oldOwner = ConversationResumeStore.accountFromAccessToken(authToken.value.orEmpty())
+                val newOwner = ConversationResumeStore.accountFromAccessToken(next.orEmpty())
+                if (next == null || oldOwner != newOwner) {
+                    workspaceActions.clear()
+                    componentActions.clear()
+                }
+                authToken.value = next
+                signInError.value = error
             }
-            authToken.value = next
+            if (next != null && ticket.mode == AuthAttemptFence.Mode.SERVER) {
+                checkNotNull(serverSession).withToken(next, publish)
+            } else {
+                publish()
+            }
         }
+    }
+
+    private suspend fun authFailure(
+        ticket: AuthAttemptFence.Ticket,
+        message: String,
+    ) {
+        withContext(Dispatchers.Main.immediate) {
+            try {
+                authFence.guarded(ticket) {
+                    if (ticket.mode == AuthAttemptFence.Mode.SERVER) {
+                        client.clearOwnerSession()
+                        workspaceActions.clear()
+                        componentActions.clear()
+                        authToken.value = null
+                    }
+                    signInError.value = message
+                }
+            } catch (_: ServerSessionException) {
+                // A newer attempt owns the UI.
+            }
+        }
+    }
 
     private fun startSignIn() {
-        runCatching { authLauncher.launch(oidc.authorizeIntent()) }
-            .onFailure { signInError.value = it.message ?: "could not start sign-in" }
+        val ticket = authFence.begin()
+        pendingSignIn = null
+        lifecycleScope.launch {
+            try {
+                // A failed HTTPS capability probe never authorizes a legacy fallback.
+                val transport = serverTransport ?: throw ServerSessionException(ServerSessionException.Reason.UNAVAILABLE)
+                val selected = withContext(Dispatchers.IO) { transport.probe() }
+                ensureActive()
+                if (ticket.mode == AuthAttemptFence.Mode.SERVER && !selected) {
+                    throw ServerSessionException(ServerSessionException.Reason.UNAVAILABLE)
+                }
+                authFence.select(ticket, if (selected) AuthAttemptFence.Mode.SERVER else AuthAttemptFence.Mode.LEGACY)
+                authFence.guarded(ticket) {
+                    val custody = if (selected) checkNotNull(serverSession).begin() else null
+                    val intent = if (selected) oidc.authorizeServerIntent(checkNotNull(serverScope)) else oidc.authorizeIntent()
+                    pendingSignIn = PendingSignIn(ticket, custody)
+                    authLauncher.launch(intent)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                authFailure(ticket, "Could not start secure sign-in. Try again.")
+            }
+        }
     }
 
     override fun onStart() {
@@ -326,6 +449,10 @@ class MainActivity : ComponentActivity() {
      * the fallback — so the refresh token dies even when the backend is down.
      */
     private fun signOut(vm: AppViewModel) {
+        val custodyMode = authFence.currentMode() == AuthAttemptFence.Mode.SERVER
+        authFence.retire()
+        pendingSignIn = null
+        val retired = if (custodyMode) runCatching { serverSession?.retire() }.getOrNull() else null
         workspaceActions.clear()
         componentActions.clear()
         voiceController.logout()
@@ -350,6 +477,20 @@ class MainActivity : ComponentActivity() {
             signInError.value = null
             authToken.value = null
         }
+        if (custodyMode) {
+            if (retired != null) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    try {
+                        serverSession?.logout(retired)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        Log.w("MainActivity", "Server session logout unconfirmed")
+                    }
+                }
+            }
+            return
+        }
         if (refresh.isNullOrBlank()) return
         // Best-effort server-side revocation off the main thread — fine to be
         // cancelled at onDestroy, the local session is already gone.
@@ -370,6 +511,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        authFence.retire()
+        pendingSignIn = null
         workspaceActions.clear()
         componentActions.clear()
         oidc.dispose()

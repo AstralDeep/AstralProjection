@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,6 +32,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.personalailabs.astraldeep.app.render.LocalGuidanceNotes
+import com.personalailabs.astraldeep.app.render.LocalWorkReadText
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.rest.AuditEvent
 import com.personalailabs.astraldeep.app.transport.ConnectionState
@@ -38,6 +41,7 @@ import com.personalailabs.astraldeep.app.ui.theme.AstralMono
 import com.personalailabs.astraldeep.core.protocol.Agent
 import com.personalailabs.astraldeep.core.protocol.ChatSummary
 import com.personalailabs.astraldeep.core.protocol.Inbound
+import com.personalailabs.astraldeep.core.protocol.isPrivateChromeSurface
 import kotlinx.coroutines.delay
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -267,18 +271,22 @@ fun SurfaceScreen(
     surfaceKey: String,
     renderer: Renderer,
     onRetry: () -> Unit,
+    requestGeneration: String? = null,
+    loadFailed: Boolean = false,
+    onTimeout: (String?) -> Unit = {},
 ) {
-    var attempt by remember(surfaceKey) { mutableStateOf(0) }
-    var timedOut by remember(surfaceKey) { mutableStateOf(false) }
+    var attempt by remember(surfaceKey, requestGeneration) { mutableStateOf(0) }
+    var timedOut by remember(surfaceKey, requestGeneration) { mutableStateOf(false) }
     val hasSurface = surface != null
-    LaunchedEffect(surfaceKey, attempt, hasSurface) {
+    LaunchedEffect(surfaceKey, requestGeneration, attempt, hasSurface) {
         if (!hasSurface) {
             timedOut = false
             delay(SURFACE_TIMEOUT_MS)
+            onTimeout(requestGeneration)
             timedOut = true
         }
     }
-    when (surfaceViewState(hasSurface, timedOut)) {
+    when (surfaceViewState(hasSurface, timedOut || loadFailed)) {
         SurfaceViewState.Loaded -> SurfaceContent(surface!!, renderer)
         SurfaceViewState.Loading -> SkeletonList()
         SurfaceViewState.TimedOut ->
@@ -322,7 +330,12 @@ private fun SurfaceContent(
             )
         }
         itemsIndexed(surface.components, key = { i, _ -> "$revision-$i" }) { _, comp ->
-            renderer.render(comp)
+            CompositionLocalProvider(
+                LocalWorkReadText provides isPrivateChromeSurface(surface.surfaceKey),
+                LocalGuidanceNotes provides (surface.surfaceKey == "guidance"),
+            ) {
+                renderer.render(comp)
+            }
         }
     }
 }

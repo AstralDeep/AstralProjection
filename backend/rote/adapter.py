@@ -15,6 +15,60 @@ class ComponentAdapter:
     """Stateless, recursive component transformer."""
 
     @staticmethod
+    def adapt_guidance_surface(state: Dict, profile: DeviceProfile) -> List[Dict]:
+        """Keep the closed notes builder's complete controls on every device.
+
+        Generic wrist adaptation drops secondary buttons. Private note editing
+        instead requires the exact shared forms and navigation. Host limits or
+        unsupported primitives refuse the complete view, never a partial form.
+        Form submissions count toward the same host action budget as buttons.
+        """
+        import json
+        from astralprojection.chrome.guidance import build_notes_view
+
+        components = [item.to_dict() for item in build_notes_view(state).components]
+        supported = profile.supported_types
+        actions = 0
+        count = 0
+
+        def visit(node, depth=0):
+            nonlocal actions, count
+            count += 1
+            kind = node["type"]
+            if (count > 1024 or depth > 8
+                    or kind not in {"text", "alert", "badge", "card", "button", "param_picker"}
+                    or (supported is not None and kind not in supported)):
+                raise ValueError("guidance_surface_unavailable")
+            if kind == "button":
+                actions += 1
+            elif kind == "param_picker":
+                actions += len(node.get("actions") or []) or int(bool(node.get("submit_action")))
+            elif kind == "card":
+                for child in node["content"]:
+                    visit(child, depth + 1)
+
+        for component in components:
+            visit(component)
+        limit = getattr(profile, "max_actions", 0) or 0
+        if ((actions and not profile.supports_interactivity) or (limit > 0 and actions > limit)
+                or len(json.dumps(components, ensure_ascii=False).encode("utf-8")) > 1024 * 1024):
+            raise ValueError("guidance_surface_unavailable")
+        return components
+
+    @classmethod
+    def adapt_work_surface(cls, components: List[Dict], profile: DeviceProfile) -> List[Dict]:
+        """Preserve complete bounded Work reads using their explicit disposition.
+
+        Closed passive primitives and read-only navigation require no content
+        degradation on the wrist. Host interactivity/action limits still apply;
+        unsupported primitive capabilities refuse the entire surface.
+        """
+        from rote.work import validate_work_components
+
+        validated = validate_work_components(components, profile.supported_types)
+        return cls._enforce_host_limits(validated, profile)
+
+    @staticmethod
     def adapt_voice_capability(profile: DeviceProfile) -> Dict[str, object]:
         """Project normalized client-local facts into a closed ROTE disposition."""
         return fallback.local_voice_disposition(profile.capabilities)

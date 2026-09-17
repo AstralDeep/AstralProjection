@@ -1,0 +1,403 @@
+{
+  "version": 1,
+  "description": "Synthetic per-chat selection fixture; generated from the exact shared builder. No real user content.",
+  "states": {
+    "picker": {
+      "status": "ready",
+      "agents": [
+        {
+          "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+          "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09",
+          "display_name": "Literature scout <script>alert(\"private\")"
+        }
+      ],
+      "skills": [
+        {
+          "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+          "revision": 4,
+          "name": "Standup format",
+          "command": "standup",
+          "enabled": true
+        },
+        {
+          "skill_id": "b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32",
+          "revision": 1,
+          "name": "Plain language <script>alert(\"priva",
+          "command": "",
+          "enabled": false
+        }
+      ],
+      "notes": [
+        {
+          "note_id": "7a8b9c0d-1e2f-4a3b-8c5d-6e7f8a9b0c43",
+          "revision": 3,
+          "category": "preference",
+          "enabled": true
+        },
+        {
+          "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+          "revision": 9,
+          "category": "context",
+          "enabled": true
+        }
+      ],
+      "selected": {
+        "agent": {
+          "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+          "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+        },
+        "skills": [
+          {
+            "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+            "revision": 4
+          }
+        ],
+        "notes": [
+          {
+            "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+            "revision": 9
+          }
+        ]
+      }
+    },
+    "empty": {
+      "status": "ready",
+      "agents": [],
+      "skills": [],
+      "notes": [],
+      "selected": {
+        "agent": null,
+        "skills": [],
+        "notes": []
+      }
+    }
+  },
+  "frames": {
+    "picker": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "Use for this chat",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Use for this chat: your selection applies to this chat only. Each task you send carries exactly the agent revision, skill revisions and note revisions listed here; the server rechecks them when the task is accepted and refuses anything changed or forgotten since.",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "Agent",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "Literature scout <script>alert(\"private\")",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Selected",
+              "variant": "success"
+            },
+            {
+              "type": "text",
+              "content": "Revision 3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09",
+              "variant": "caption"
+            },
+            {
+              "type": "button",
+              "label": "Stop using this agent",
+              "action": "chrome_turn_selection_set",
+              "payload": {
+                "version": 1,
+                "agent": null,
+                "skills": [
+                  {
+                    "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                    "revision": 4
+                  }
+                ],
+                "notes": [
+                  {
+                    "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+                    "revision": 9
+                  }
+                ]
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "text",
+          "content": "Skills",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "Standup format",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Selected",
+              "variant": "success"
+            },
+            {
+              "type": "text",
+              "content": "/standup",
+              "variant": "caption"
+            },
+            {
+              "type": "text",
+              "content": "Revision 4",
+              "variant": "caption"
+            },
+            {
+              "type": "button",
+              "label": "Remove skill",
+              "action": "chrome_turn_selection_set",
+              "payload": {
+                "version": 1,
+                "agent": {
+                  "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+                  "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+                },
+                "skills": [],
+                "notes": [
+                  {
+                    "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+                    "revision": 9
+                  }
+                ]
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "card",
+          "title": "Plain language <script>alert(\"priva",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Disabled",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Revision 1",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "text",
+          "content": "Private notes",
+          "variant": "h3"
+        },
+        {
+          "type": "card",
+          "title": "Preference",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Enabled",
+              "variant": "default"
+            },
+            {
+              "type": "text",
+              "content": "Revision 3",
+              "variant": "caption"
+            },
+            {
+              "type": "button",
+              "label": "Add note",
+              "action": "chrome_turn_selection_set",
+              "payload": {
+                "version": 1,
+                "agent": {
+                  "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+                  "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+                },
+                "skills": [
+                  {
+                    "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                    "revision": 4
+                  }
+                ],
+                "notes": [
+                  {
+                    "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+                    "revision": 9
+                  },
+                  {
+                    "note_id": "7a8b9c0d-1e2f-4a3b-8c5d-6e7f8a9b0c43",
+                    "revision": 3
+                  }
+                ]
+              },
+              "variant": "primary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "card",
+          "title": "Context",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Selected",
+              "variant": "success"
+            },
+            {
+              "type": "text",
+              "content": "Revision 9",
+              "variant": "caption"
+            },
+            {
+              "type": "button",
+              "label": "Remove note",
+              "action": "chrome_turn_selection_set",
+              "payload": {
+                "version": 1,
+                "agent": {
+                  "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+                  "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+                },
+                "skills": [
+                  {
+                    "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                    "revision": 4
+                  }
+                ],
+                "notes": []
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Clear selection",
+          "action": "chrome_turn_selection_set",
+          "payload": {
+            "version": 1,
+            "agent": null,
+            "skills": [],
+            "notes": []
+          },
+          "variant": "danger",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "view": "selection"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e"
+    },
+    "empty": {
+      "type": "chrome_surface",
+      "region": "modal",
+      "surface_key": "guidance",
+      "title": "Use for this chat",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "Use for this chat: your selection applies to this chat only. Each task you send carries exactly the agent revision, skill revisions and note revisions listed here; the server rechecks them when the task is accepted and refuses anything changed or forgotten since.",
+          "variant": "body"
+        },
+        {
+          "type": "text",
+          "content": "Agent",
+          "variant": "h3"
+        },
+        {
+          "type": "text",
+          "content": "No active agent revision to select.",
+          "variant": "caption"
+        },
+        {
+          "type": "text",
+          "content": "Skills",
+          "variant": "h3"
+        },
+        {
+          "type": "text",
+          "content": "No skills to select.",
+          "variant": "caption"
+        },
+        {
+          "type": "text",
+          "content": "Private notes",
+          "variant": "h3"
+        },
+        {
+          "type": "text",
+          "content": "No private notes to select.",
+          "variant": "caption"
+        },
+        {
+          "type": "button",
+          "label": "Refresh",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "guidance",
+            "params": {
+              "view": "selection"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e"
+    }
+  },
+  "web_frames": {
+    "picker": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Use for this chat\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Use for this chat</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">Use for this chat</h2><p data-text-variant=\"body\">Use for this chat: your selection applies to this chat only. Each task you send carries exactly the agent revision, skill revisions and note revisions listed here; the server rechecks them when the task is accepted and refuses anything changed or forgotten since.</p><h3 data-text-variant=\"h3\">Agent</h3><section aria-label=\"Literature scout &lt;script&gt;alert(&quot;private&quot;)\"><h3>Literature scout &lt;script&gt;alert(&quot;private&quot;)</h3><span role=\"status\" data-badge-variant=\"success\">Selected</span><small data-text-variant=\"caption\">Revision 3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09</small><button type=\"button\" data-ui-action=\"chrome_turn_selection_set\" data-ui-payload=\"{&quot;agent&quot;:null,&quot;notes&quot;:[{&quot;note_id&quot;:&quot;8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54&quot;,&quot;revision&quot;:9}],&quot;skills&quot;:[{&quot;revision&quot;:4,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;}],&quot;version&quot;:1}\">Stop using this agent</button></section><h3 data-text-variant=\"h3\">Skills</h3><section aria-label=\"Standup format\"><h3>Standup format</h3><span role=\"status\" data-badge-variant=\"success\">Selected</span><small data-text-variant=\"caption\">/standup</small><small data-text-variant=\"caption\">Revision 4</small><button type=\"button\" data-ui-action=\"chrome_turn_selection_set\" data-ui-payload=\"{&quot;agent&quot;:{&quot;agent_id&quot;:&quot;1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76&quot;,&quot;revision_id&quot;:&quot;3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09&quot;},&quot;notes&quot;:[{&quot;note_id&quot;:&quot;8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54&quot;,&quot;revision&quot;:9}],&quot;skills&quot;:[],&quot;version&quot;:1}\">Remove skill</button></section><section aria-label=\"Plain language &lt;script&gt;alert(&quot;priva\"><h3>Plain language &lt;script&gt;alert(&quot;priva</h3><span role=\"status\" data-badge-variant=\"default\">Disabled</span><small data-text-variant=\"caption\">Revision 1</small></section><h3 data-text-variant=\"h3\">Private notes</h3><section aria-label=\"Preference\"><h3>Preference</h3><span role=\"status\" data-badge-variant=\"default\">Enabled</span><small data-text-variant=\"caption\">Revision 3</small><button type=\"button\" data-ui-action=\"chrome_turn_selection_set\" data-ui-payload=\"{&quot;agent&quot;:{&quot;agent_id&quot;:&quot;1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76&quot;,&quot;revision_id&quot;:&quot;3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09&quot;},&quot;notes&quot;:[{&quot;note_id&quot;:&quot;8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54&quot;,&quot;revision&quot;:9},{&quot;note_id&quot;:&quot;7a8b9c0d-1e2f-4a3b-8c5d-6e7f8a9b0c43&quot;,&quot;revision&quot;:3}],&quot;skills&quot;:[{&quot;revision&quot;:4,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;}],&quot;version&quot;:1}\">Add note</button></section><section aria-label=\"Context\"><h3>Context</h3><span role=\"status\" data-badge-variant=\"success\">Selected</span><small data-text-variant=\"caption\">Revision 9</small><button type=\"button\" data-ui-action=\"chrome_turn_selection_set\" data-ui-payload=\"{&quot;agent&quot;:{&quot;agent_id&quot;:&quot;1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76&quot;,&quot;revision_id&quot;:&quot;3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09&quot;},&quot;notes&quot;:[],&quot;skills&quot;:[{&quot;revision&quot;:4,&quot;skill_id&quot;:&quot;0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13&quot;}],&quot;version&quot;:1}\">Remove note</button></section><button type=\"button\" data-ui-action=\"chrome_turn_selection_set\" data-ui-payload=\"{&quot;agent&quot;:null,&quot;notes&quot;:[],&quot;skills&quot;:[],&quot;version&quot;:1}\">Clear selection</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;view&quot;:&quot;selection&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Refresh</button></section></div></div></div>"
+    },
+    "empty": {
+      "type": "chrome_render",
+      "region": "modal",
+      "surface_key": "guidance",
+      "mode": "replace",
+      "request_generation": "3d1f6c5a-7b2e-4c8d-9a4f-2e6b1c0d5a7e",
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"guidance\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Use for this chat\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Use for this chat</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"guidance\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-guidance-title\"><h2 id=\"chrome-guidance-title\">Use for this chat</h2><p data-text-variant=\"body\">Use for this chat: your selection applies to this chat only. Each task you send carries exactly the agent revision, skill revisions and note revisions listed here; the server rechecks them when the task is accepted and refuses anything changed or forgotten since.</p><h3 data-text-variant=\"h3\">Agent</h3><small data-text-variant=\"caption\">No active agent revision to select.</small><h3 data-text-variant=\"h3\">Skills</h3><small data-text-variant=\"caption\">No skills to select.</small><h3 data-text-variant=\"h3\">Private notes</h3><small data-text-variant=\"caption\">No private notes to select.</small><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;view&quot;:&quot;selection&quot;},&quot;surface&quot;:&quot;guidance&quot;}\">Refresh</button></section></div></div></div>"
+    }
+  }
+}

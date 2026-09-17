@@ -1,6 +1,8 @@
 package com.personalailabs.astraldeep.app.transport
 
 import android.util.Log
+import com.personalailabs.astraldeep.app.auth.ServerSessionCoordinator
+import com.personalailabs.astraldeep.app.auth.ServerSessionException
 import com.personalailabs.astraldeep.core.protocol.ChatAttachment
 import com.personalailabs.astraldeep.core.protocol.ConversationResume
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
@@ -8,6 +10,8 @@ import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent
 import com.personalailabs.astraldeep.core.protocol.VoiceTranscript
 import com.personalailabs.astraldeep.core.protocol.Wire
+import com.personalailabs.astraldeep.core.protocol.isGuidanceNoteAction
+import com.personalailabs.astraldeep.core.protocol.isPrivateChromeSurface
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
@@ -26,6 +30,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import okhttp3.Authenticator
+import okhttp3.CookieJar
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -101,7 +107,21 @@ class OrchestratorClient(
     private val url: String,
     private val client: OkHttpClient = defaultClient(),
     private val uuidFactory: () -> String = { UUID.randomUUID().toString() },
+    private val serverSession: ((String) -> ServerSessionCoordinator?)? = null,
 ) {
+    private val socketClient =
+        if (serverSession == null) {
+            client
+        } else {
+            client.newBuilder()
+                .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
+                .cookieJar(CookieJar.NO_COOKIES).authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE)
+                .apply {
+                    interceptors().clear()
+                    networkInterceptors().clear()
+                }.build()
+        }
+
     /** An outbound frame queued while offline (its `action` kept for the drop notice). */
     private data class Queued(
         val action: String,
@@ -181,6 +201,15 @@ class OrchestratorClient(
                         onQueuedSubmission,
                     ) { attempt = 0 },
                 )
+                if (_state.value == ConnectionState.AuthRequired && serverSession != null) {
+                    val custodyRequired =
+                        try {
+                            serverSession.invoke(token) != null
+                        } catch (_: ServerSessionException) {
+                            true
+                        }
+                    if (custodyRequired) return@flow
+                }
                 _state.value = ConnectionState.Disconnected
                 attempt += 1
                 delay(backoffDelayMs(attempt))
@@ -198,33 +227,60 @@ class OrchestratorClient(
         callbackFlow {
             val epoch = ownerEpoch
             _state.value = ConnectionState.Connecting
-            val request = Request.Builder().url(url).build()
+            var custodyOwner: ServerSessionCoordinator? = null
+            val custody =
+                try {
+                    custodyOwner = serverSession?.invoke(token)
+                    custodyOwner?.socketTicket(url, token)
+                } catch (_: ServerSessionException) {
+                    _state.value = ConnectionState.AuthRequired
+                    trySend(Inbound.AuthRequired("session_required"))
+                    close()
+                    return@callbackFlow
+                }
+            val request =
+                Request.Builder().url(url).apply {
+                    if (custody != null) header("Cookie", custody.cookie)
+                }.build()
+
+            fun current(): Boolean = custody == null || custodyOwner?.isCurrent(custody) == true
+
+            fun guarded(block: () -> Unit) {
+                if (custody == null) block() else custodyOwner?.withCurrent(custody, block)
+            }
             val listener =
                 object : WebSocketListener() {
                     override fun onOpen(
                         webSocket: WebSocket,
                         response: Response,
                     ) {
-                        synchronized(pending) {
-                            if (epoch != ownerEpoch) {
-                                webSocket.cancel()
-                                return
+                        try {
+                            guarded {
+                                synchronized(pending) {
+                                    if (epoch != ownerEpoch) {
+                                        webSocket.cancel()
+                                        return@synchronized
+                                    }
+                                    // register_ui MUST be the first frame on the socket:
+                                    // only after it is enqueued may the offline queue flush
+                                    // and Connected-reactive sends (the reconnect load_chat
+                                    // refresh) flow, or the server would refuse them as
+                                    // unregistered.
+                                    val registration = createRegistrationAttempt(token, device, sessionId())
+                                    connectionGeneration = registration.binding.connectionGeneration
+                                    // Install the equality fence before register_ui can produce
+                                    // a hydration response on this socket.
+                                    onGeneration(registration.binding)
+                                    webSocket.send(registration.frame)
+                                    open = true
+                                    onOpen()
+                                    flushPending(webSocket, onGeneration, onQueuedSubmission)
+                                    _state.value = ConnectionState.Connected
+                                }
                             }
-                            // register_ui MUST be the first frame on the socket:
-                            // only after it is enqueued may the offline queue flush
-                            // and Connected-reactive sends (the reconnect load_chat
-                            // refresh) flow, or the server would refuse them as
-                            // unregistered.
-                            val registration = createRegistrationAttempt(token, device, sessionId())
-                            connectionGeneration = registration.binding.connectionGeneration
-                            // Install the equality fence before register_ui can produce
-                            // a hydration response on this socket.
-                            onGeneration(registration.binding)
-                            webSocket.send(registration.frame)
-                            open = true
-                            onOpen()
-                            flushPending(webSocket, onGeneration, onQueuedSubmission)
-                            _state.value = ConnectionState.Connected
+                        } catch (_: ServerSessionException) {
+                            webSocket.cancel()
+                            close()
                         }
                     }
 
@@ -232,7 +288,7 @@ class OrchestratorClient(
                         webSocket: WebSocket,
                         text: String,
                     ) {
-                        if (epoch != ownerEpoch) return
+                        if (epoch != ownerEpoch || !current()) return
                         val msg = Wire.decode(text)
                         if (msg is Inbound.AuthRequired) _state.value = ConnectionState.AuthRequired
                         trySend(msg)
@@ -258,11 +314,18 @@ class OrchestratorClient(
                         if (epoch != ownerEpoch) return
                         open = false
                         connectionGeneration = null
-                        Log.w(TAG, "WebSocket failure: ${t.message}")
+                        if (custody == null) Log.w(TAG, "WebSocket failure: ${t.message}") else Log.w(TAG, "Session WebSocket failed")
                         close()
                     }
                 }
-            socket = client.newWebSocket(request, listener)
+            try {
+                guarded { socket = socketClient.newWebSocket(request, listener) }
+            } catch (_: ServerSessionException) {
+                _state.value = ConnectionState.AuthRequired
+                trySend(Inbound.AuthRequired("session_required"))
+                close()
+                return@callbackFlow
+            }
             val connectedSocket = socket
             awaitClose {
                 if (epoch == ownerEpoch && socket === connectedSocket) {
@@ -474,6 +537,39 @@ class OrchestratorClient(
             true
         }
 
+    /** Owner surfaces and note commands are current-only; even failed writes never join replay. */
+    internal fun sendCurrentSurfaceEvent(
+        surface: String,
+        action: String,
+        payload: JsonObject,
+        isCurrent: () -> Boolean,
+        onSubmission: (LocalSubmission, String) -> Unit,
+    ): Boolean =
+        synchronized(pending) {
+            val currentSocket = socket
+            val generation = connectionGeneration
+            val epoch = ownerEpoch
+            if (!open || currentSocket == null || generation == null || !isCurrent()) return@synchronized false
+            if (!isPrivateChromeSurface(surface) ||
+                !(
+                    action == "chrome_open" && (payload["surface"] as? JsonPrimitive)?.contentOrNull == surface ||
+                        surface == "guidance" && isGuidanceNoteAction(action)
+                )
+            ) {
+                return@synchronized false
+            }
+            val submission = newSubmission(action, null)
+            val frame = Wire.encodeUiEvent(action, null, payload, submission.requestGeneration, submission.submissionId)
+            onSubmission(submission, generation)
+            if (!open || socket !== currentSocket || generation != connectionGeneration || epoch != ownerEpoch ||
+                !isCurrent() || !currentSocket.send(frame)
+            ) {
+                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Private surface request was not sent"))
+                return@synchronized false
+            }
+            true
+        }
+
     fun sendEvent(
         action: String,
         sessionId: String?,
@@ -485,6 +581,12 @@ class OrchestratorClient(
         // See sendChat: local acknowledgement is synchronous and precedes
         // both the offline queue and any live WebSocket send.
         onSubmission(submission)
+        if (isGuidanceNoteAction(action) ||
+            action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
+        ) {
+            _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Private surface request requires a current connection"))
+            return submission
+        }
         val request =
             when (action) {
                 "load_chat" -> {
@@ -535,6 +637,8 @@ class OrchestratorClient(
                     device = device,
                     connectionGeneration = connection,
                     resume = request?.let { ConversationResume(activeChatId!!, it) },
+                    workReads = true,
+                    guidanceNotes = true,
                 ),
         )
     }

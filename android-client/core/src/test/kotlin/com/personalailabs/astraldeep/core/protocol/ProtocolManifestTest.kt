@@ -90,6 +90,56 @@ class ProtocolManifestTest {
     }
 
     @Test
+    fun feature_088_guidance_actions_are_closed_and_contracted_without_new_frames() {
+        val root = manifestRoot()
+        val actions = root.getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(136, actions.size, "129 + chrome_declarative_view/command + chrome_turn_selection_set + chrome_work_result_save + chrome_job_stop + chrome_connection_issue/revoke")
+        assertEquals(actions.size, actions.toSet().size)
+        assertTrue(actions.containsAll(listOf("chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set")))
+        val contracts = root.getValue("presentation_contracts").jsonObject
+        val guidance = listOf("guidance_notes_088", "guidance_skills_088", "guidance_agents_088", "guidance_selection_088")
+        assertEquals(
+            listOf("guidance_notes_v1", "guidance_skills_v1", "guidance_agents_v1", "guidance_selection_v1"),
+            guidance.map { contracts.getValue(it).jsonObject.getValue("client_capability").jsonPrimitive.content },
+        )
+        guidance.forEach { name ->
+            val contract = contracts.getValue(name).jsonObject
+            assertEquals("guidance", contract.getValue("surface_key").jsonPrimitive.content)
+            assertEquals("chrome_surface", contract.getValue("native_response").jsonObject.getValue("type").jsonPrimitive.content)
+        }
+        // The new views ride the existing chrome_surface frame; no push type was added.
+        assertTrue(manifestPushTypes().none { it.startsWith("guidance") || it.startsWith("declarative") })
+    }
+
+    @Test
+    fun feature_088_save_recurring_and_saved_results_are_closed_and_contracted_without_new_frames() {
+        val root = manifestRoot()
+        val actions = root.getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(136, actions.size, "132 + chrome_work_result_save + chrome_job_stop + chrome_connection_issue/revoke")
+        assertEquals(actions.size, actions.toSet().size)
+        assertTrue(actions.containsAll(listOf("chrome_work_result_save", "chrome_job_stop")))
+        val contracts = root.getValue("presentation_contracts").jsonObject
+        val names = listOf("work_save_088", "recurring_work_088", "saved_results_088")
+        assertEquals(
+            listOf("work_save_v1", "recurring_work_v1", "saved_results_v1"),
+            names.map { contracts.getValue(it).jsonObject.getValue("client_capability").jsonPrimitive.content },
+        )
+        assertEquals(
+            listOf("work", "personalization", "saved_results"),
+            names.map { contracts.getValue(it).jsonObject.getValue("surface_key").jsonPrimitive.content },
+        )
+        names.forEach { name ->
+            val contract = contracts.getValue(name).jsonObject
+            assertEquals("chrome_surface", contract.getValue("native_response").jsonObject.getValue("type").jsonPrimitive.content)
+        }
+        // The Save command has exactly the two Deep body shapes; the client invents no authority.
+        val commands = contracts.getValue("work_save_088").jsonObject.getValue("commands").jsonObject
+        assertEquals(setOf("propose", "save"), commands.keys)
+        // The new views ride the existing chrome_surface frame; no push type was added.
+        assertTrue(manifestPushTypes().none { it.startsWith("work_save") || it.startsWith("recurring_work") || it.startsWith("saved_result") })
+    }
+
+    @Test
     fun core_loop_frames_are_handled() {
         listOf(
             "ui_render", "ui_upsert", "chat_status", "error", "auth_required",
