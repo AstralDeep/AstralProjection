@@ -199,7 +199,9 @@ export const CANDIDATE_SELECTORS = {
   fsKbd: '.astral-fs-kbd',
   fsCanvas: '#astral-fs-canvas',
 
-  modal: '#astral-modal',
+  // The host div has no box of its own; the overlay inside it is what
+  // covers the viewport, which is what the reference measures too.
+  modal: '#astral-modal .astral-modal-overlay',
   modalCard: '#astral-modal .astral-modal-card',
   modalIcon: '.astral-modal-icon',
   modalTitle: '.astral-modal-title',
@@ -691,7 +693,7 @@ export const ITEMS = [
       }
       return dims(true, [
         ['card.w', m.card.box.w, ref.modal.card.box.w],
-        ['tabstrip.h', m.tabStrip.height, ref.modal.tabStrip.height],
+        ['tabstrip.h', m.tabStrip.h, ref.modal.tabStrip.h],
       ]);
     },
   },

@@ -285,29 +285,56 @@ async function exerciseSheets(page, fixture, vp) {
  * control that performs it; one interaction each.
  */
 const CAPABILITY_PATHS = [
-  { name: 'new chat', open: null, target: '#astral-newchat-btn' },
-  { name: 'recent chats', open: null, target: '#astral-recent-work, #astral-chats-btn' },
-  { name: 'attach', open: null, target: '#astral-attach-btn, #astral-composer-more' },
-  { name: 'background run', open: null, target: '#astral-bg-btn, #astral-composer-more' },
-  { name: 'advanced selection', open: null, target: '#astral-advanced-btn, #astral-composer-more' },
-  { name: 'voice', open: null, target: '#astral-voice-controls button, #astral-composer-more' },
-  { name: 'settings', open: null, target: '#astral-settings-btn' },
+  { name: 'new chat', via: 'drawer', target: '#astral-newchat-btn' },
+  { name: 'recent chats', via: 'drawer', target: '#astral-recent-work, #astral-chats-btn' },
+  { name: 'settings', via: 'drawer', target: '#astral-settings-btn' },
+  { name: 'attach', via: 'composer', target: '#astral-attach-btn' },
+  { name: 'background run', via: 'composer', target: '#astral-bg-btn' },
+  { name: 'advanced selection', via: 'composer', target: '#astral-advanced-btn' },
+  { name: 'voice', via: 'composer', target: '#astral-voice-controls button' },
 ];
 
 async function reachability(page) {
-  await candidateDriver.landing(page);
+  // Two passes, because the two disclosures cover each other: below 1024 the
+  // directory is behind the drawer toggle, and below 768 the secondary
+  // composer controls are behind the overflow button — one interaction each,
+  // which is what the checklist allows. Opening both at once would have the
+  // drawer sitting on top of the composer.
+  const width = page.viewportSize().width;
   const unreachable = [];
-  for (const cap of CAPABILITY_PATHS) {
-    // eslint-disable-next-line no-await-in-loop
-    const found = await page.evaluate((sel) => {
-      const el = document.querySelector(sel);
-      if (!el) return false;
-      const r = el.getBoundingClientRect();
-      const cs = getComputedStyle(el);
-      return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none';
-    }, cap.target);
-    if (!found) unreachable.push(cap.name);
+
+  async function sweep(via) {
+    for (const cap of CAPABILITY_PATHS.filter((c) => c.via === via)) {
+      // eslint-disable-next-line no-await-in-loop
+      const found = await page.evaluate((sel) => Array.prototype.some.call(
+        document.querySelectorAll(sel),
+        (el) => {
+          const r2 = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return r2.width > 0 && r2.height > 0 && cs.visibility !== 'hidden'
+            && cs.display !== 'none' && r2.right > 0 && r2.left < window.innerWidth
+            && r2.bottom > 0 && r2.top < window.innerHeight;
+        },
+      ), cap.target);
+      if (!found) unreachable.push(cap.name);
+    }
   }
+
+  await candidateDriver.landing(page);
+  if (width < 1024) {
+    const toggle = page.locator(CANDIDATE_SELECTORS.drawerToggle);
+    if (await toggle.count()) { await toggle.first().click(); await page.waitForTimeout(450); }
+  }
+  await sweep('drawer');
+
+  await candidateDriver.landing(page);
+  if (width < 768) {
+    const more = page.locator(CANDIDATE_SELECTORS.composerOverflow);
+    if (await more.count()) { await more.first().click(); await page.waitForTimeout(350); }
+  }
+  await sweep('composer');
+
+  await candidateDriver.landing(page);
   return { unreachable };
 }
 
@@ -325,15 +352,20 @@ async function exerciseOrientation(page, vp) {
   });
   await page.setViewportSize({ width: vp.height, height: vp.width });
   await page.waitForTimeout(700);
-  const result = await page.evaluate((sel) => ({
-    viewportReRegistered: (window.__ASTRAL_VIEWPORT_REGISTRATIONS__ || 0) > 0,
-    draftKept: (document.querySelector(sel.composerInput) || {}).value
-      === 'draft that must survive rotation',
-    scrollKept: (() => {
-      const canvas = document.querySelector(sel.canvas);
-      return !!canvas && canvas.scrollTop > 0;
-    })(),
-  }), CANDIDATE_SELECTORS);
+  const result = await page.evaluate((sel) => {
+    const canvas = document.querySelector(sel.canvas);
+    // Where the content now fits the rotated viewport there is no scroll
+    // position left to keep, and demanding one would fail a page for being
+    // short. The question only has an answer while the region can scroll.
+    const scrollable = !!canvas && canvas.scrollHeight - canvas.clientHeight > 4;
+    return {
+      viewportReRegistered: (window.__ASTRAL_VIEWPORT_REGISTRATIONS__ || 0) > 0,
+      draftKept: (document.querySelector(sel.composerInput) || {}).value
+        === 'draft that must survive rotation',
+      scrollable,
+      scrollKept: !scrollable || canvas.scrollTop > 0,
+    };
+  }, CANDIDATE_SELECTORS);
   await page.setViewportSize({ width: vp.width, height: vp.height });
   await page.waitForTimeout(400);
   return result;

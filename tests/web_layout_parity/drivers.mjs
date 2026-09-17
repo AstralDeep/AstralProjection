@@ -211,13 +211,19 @@ async function collectContext(page, driver, fixture, sel) {
 
   // B3 — the search input filters the list live.
   await driver.landing(page);
-  const before = await page.locator(sel.agentItem).count();
+  // Count what a reader can SEE: one implementation removes the nodes, the
+  // other hides them, and "the list filtered" means the same thing either way.
+  const visibleItems = () => page.evaluate((s) => Array.prototype.filter.call(
+    document.querySelectorAll(s),
+    (el) => el.getBoundingClientRect().height > 0 && !el.hidden,
+  ).length, sel.agentItem);
+  const before = await visibleItems();
   await page.fill(sel.searchInput, 'zzzzqqq');
   await page.waitForTimeout(250);
-  const afterNoMatch = await page.locator(sel.agentItem).count();
+  const afterNoMatch = await visibleItems();
   await page.fill(sel.searchInput, '');
   await page.waitForTimeout(250);
-  const afterClear = await page.locator(sel.agentItem).count();
+  const afterClear = await visibleItems();
   ctx.filtersLive = before > 0 && afterNoMatch < before && afterClear === before;
 
   // C4 — the scenario card lifts on hover.

@@ -695,6 +695,9 @@
     liveTurn.turn.hidden = true; // nothing to show until content arrives
     chat.appendChild(liveTurn.turn);
     canvas = liveTurn.body;
+    // The page actions follow the live canvas from card to card; they act on
+    // whatever the newest turn rendered, so they belong in its header.
+    if (typeof placePageActions === "function") placePageActions();
     return canvas;
   }
 
@@ -812,6 +815,11 @@
     if (node.nodeType === 3) return !!node.textContent.trim();
     if (node.nodeType !== 1) return false;
     if (node === canvasEmpty || welcomePlacementRole(node) || node.matches("script, style")) return false;
+    // 089: the live turn's card is mounted before it has anything in it, so
+    // the feed always has somewhere to render. While it is still hidden it is
+    // scaffolding, not content — counting its expand chip as content would
+    // put the workspace view on screen before the first answer exists.
+    if (node.hasAttribute("data-astral-live-turn") && node.hidden) return false;
     if (node.hasAttribute("data-component-id")
         || node.matches("img, svg, canvas, video, audio, iframe, input, textarea, button")) return true;
     return Array.prototype.some.call(node.childNodes, hasWorkspaceContent);
@@ -5787,8 +5795,12 @@
         margin: { l: 40, r: 20, t: 20, b: 40 },
         paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
         font: { color: "#9CA3AF" },
-        xaxis: { gridcolor: "rgba(255,255,255,0.1)", tickfont: { size: 10 } },
-        yaxis: { gridcolor: "rgba(255,255,255,0.1)", tickfont: { size: 10 } },
+        // 089 (R9): 11px is the legibility floor for a chart label at every
+        // width. Plotly writes its tick font inline, so the size has to be
+        // right here — a stylesheet floor would only paint over a layout it
+        // had already computed for smaller text.
+        xaxis: { gridcolor: "rgba(255,255,255,0.1)", tickfont: { size: 11 } },
+        yaxis: { gridcolor: "rgba(255,255,255,0.1)", tickfont: { size: 11 } },
       };
       var traces, cfg = { displayModeBar: false, responsive: true };
       if (kind === "bar") traces = [{ x: spec.labels, y: spec.data, type: "bar", marker: { color: "#6366F1" } }];
@@ -8802,6 +8814,31 @@
   renderFilterTabs();
   renderScenarioGrid();
 
+  // ---- chrome homes ------------------------------------------------------
+  // The chat controls belong with the chat list; the canvas page actions
+  // belong in the card whose canvas they act on. Moving the server's own
+  // nodes keeps every id, label, tour target and delegated action intact.
+  var recentToggleEl = document.getElementById("astral-recent-toggle");
+  var chatActionsHost = null;
+  (function placeChatControls() {
+    if (!recentToggleEl) return;
+    chatActionsHost = el("div", "astral-recent-actions");
+    recentToggleEl.parentNode.insertBefore(chatActionsHost, recentToggleEl);
+    chatActionsHost.appendChild(recentToggleEl);
+    ["astral-newchat-btn", "astral-chats-btn"].forEach(function (id) {
+      var btn = document.getElementById(id);
+      if (btn) chatActionsHost.appendChild(btn);
+    });
+  })();
+
+  /** Move the canvas page actions into the newest card's header. */
+  function placePageActions() {
+    if (!liveTurn) return;
+    var actions = document.querySelectorAll(".astral-page-action");
+    for (var i = 0; i < actions.length; i++) liveTurn.meta.appendChild(actions[i]);
+  }
+  placePageActions();
+
   // ---- the brand returns to the landing ----------------------------------
   var brandBtn = document.getElementById("astral-brand");
   if (brandBtn) brandBtn.addEventListener("click", function () {
@@ -9030,7 +9067,23 @@
         return;
       }
       hideCanvasEmpty();
-      setHTML(canvas, (fixture && fixture.ui_html) || "");
+      // The candidate renders the fixture's components with ITS OWN renderer
+      // and ROTE profile, per viewport. Injecting the reference's markup
+      // instead would score the reference's styling twice and tell us nothing
+      // about this client.
+      var html = "";
+      var variants = fixture && fixture.astral_ui_html;
+      if (variants) {
+        var widths = [1920, 1440, 1280, 1024, 768, 390, 320];
+        for (var i = 0; i < widths.length; i++) {
+          if (window.innerWidth >= widths[i] && variants[String(widths[i])]) {
+            html = variants[String(widths[i])];
+            break;
+          }
+        }
+        if (!html) html = variants["320"] || "";
+      }
+      setHTML(canvas, html || (fixture && fixture.ui_html) || "");
     },
     openSettings: function () {
       if (typeof action === "function") action("chrome_open", { surface: "llm" });

@@ -89,19 +89,29 @@ export function probePage(selectors) {
     if (props) result.extra = styles(el, props);
     return result;
   }
+  function renderedColumns(el) {
+    const kids = Array.prototype.slice.call(el.children).filter(visible);
+    if (kids.length) {
+      const top = Math.round(kids[0].getBoundingClientRect().top);
+      return kids.filter(
+        (k) => Math.abs(Math.round(k.getBoundingClientRect().top) - top) <= 2,
+      ).length;
+    }
+    const cols = getComputedStyle(el).gridTemplateColumns;
+    if (!cols || cols === 'none') return 0;
+    const repeat = /^repeat\((\d+),/.exec(cols.trim());
+    if (repeat) return Number(repeat[1]);
+    return cols.trim().split(/\s+/).length;
+  }
   function count(name) { return all(name).length; }
+  /** How many children actually share the first row — which is the number a
+   * reader counts. The declared track list is only a fallback, because a
+   * `repeat()` value survives in the computed style of an element that is not
+   * a grid container at all. */
   function gridColumns(name) {
     const el = one(name);
     if (!el) return 0;
-    const cols = getComputedStyle(el).gridTemplateColumns;
-    if (!cols || cols === 'none') {
-      // Flex-wrap grids: count the children sharing the first row's top edge.
-      const kids = Array.prototype.slice.call(el.children).filter(visible);
-      if (!kids.length) return 0;
-      const top = Math.round(kids[0].getBoundingClientRect().top);
-      return kids.filter((k) => Math.abs(Math.round(k.getBoundingClientRect().top) - top) <= 2).length;
-    }
-    return cols.trim().split(/\s+/).length;
+    return renderedColumns(el);
   }
 
   // -- A. global frame ---------------------------------------------------
@@ -415,7 +425,39 @@ export function probeResponsive(input) {
     const r = el.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return false;
     const cs = getComputedStyle(el);
-    return cs.visibility !== 'hidden' && cs.display !== 'none' && Number(cs.opacity) > 0.01;
+    if (cs.visibility === 'hidden' || cs.display === 'none' || Number(cs.opacity) <= 0.01) {
+      return false;
+    }
+    // An off-canvas drawer is still laid out: its controls have boxes, all in
+    // the same place, entirely outside the viewport. Treating them as on
+    // screen would report every one of them as overlapping every other.
+    if (r.right <= 0 || r.left >= window.innerWidth
+      || r.bottom <= 0 || r.top >= window.innerHeight) return false;
+    // Same for a row scrolled past the end of the list it lives in: it has a
+    // box, but it is behind whatever comes after the list.
+    const scroller = nearestScroller(el);
+    if (scroller) {
+      const s = scroller.getBoundingClientRect();
+      if (r.bottom <= s.top || r.top >= s.bottom
+        || r.right <= s.left || r.left >= s.right) return false;
+    }
+    return true;
+  }
+  /** The nearest ancestor that scrolls or clips — the box this element is
+   * actually seen through. */
+  function nearestScroller(el) {
+    let node = el.parentElement;
+    while (node && node !== document.body) {
+      const cs = getComputedStyle(node);
+      // A fixed-position subtree escapes every scroller above it, so the walk
+      // ends there rather than reporting the page frame as its clipper.
+      if (cs.position === 'fixed') return null;
+      const flow = cs.overflow + cs.overflowX + cs.overflowY;
+      if (flow.indexOf('auto') !== -1 || flow.indexOf('scroll') !== -1
+        || flow.indexOf('hidden') !== -1) return node;
+      node = node.parentElement;
+    }
+    return null;
   }
   function label(el) {
     const id = el.id ? `#${el.id}` : '';
@@ -463,29 +505,46 @@ export function probeResponsive(input) {
   out.clipped = [];
   const controls = Array.prototype.slice
     .call(document.querySelectorAll(interactive)).filter(visible);
+  /** The part of an element a reader can actually see: its rect clamped to
+   * the scroller it sits in. A row half-scrolled out of a list does not
+   * overlap what is below the list. */
+  function seenRect(el) {
+    const r = el.getBoundingClientRect();
+    const host = nearestScroller(el);
+    if (!host) return r;
+    const s = host.getBoundingClientRect();
+    return {
+      left: Math.max(r.left, s.left), right: Math.min(r.right, s.right),
+      top: Math.max(r.top, s.top), bottom: Math.min(r.bottom, s.bottom),
+    };
+  }
   for (let i = 0; i < controls.length; i += 1) {
-    const a = controls[i].getBoundingClientRect();
+    const a = seenRect(controls[i]);
     for (let j = i + 1; j < controls.length; j += 1) {
       if (controls[i].contains(controls[j]) || controls[j].contains(controls[i])) continue;
-      const b = controls[j].getBoundingClientRect();
+      const b = seenRect(controls[j]);
       const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left);
       const oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
       if (ox > 2 && oy > 2) {
         out.overlaps.push({ a: label(controls[i]), b: label(controls[j]) });
       }
     }
-    let node = controls[i].parentElement;
-    while (node && node !== document.body) {
-      const cs = getComputedStyle(node);
-      if (cs.overflow === 'hidden' || cs.overflowX === 'hidden' || cs.overflowY === 'hidden') {
-        const p = node.getBoundingClientRect();
+    // Only a hidden ancestor truly clips: content inside a scroller is one
+    // scroll away, which is how a list is supposed to work. A fixed-position
+    // element is not clipped by an ancestor's overflow at all.
+    const own = getComputedStyle(controls[i]).position;
+    const host = own === 'fixed' ? null : nearestScroller(controls[i]);
+    if (host) {
+      const cs = getComputedStyle(host);
+      const flow = cs.overflow + cs.overflowX + cs.overflowY;
+      const scrolls = flow.indexOf('auto') !== -1 || flow.indexOf('scroll') !== -1;
+      if (!scrolls) {
+        const p = host.getBoundingClientRect();
         if (a.right > p.right + 1 || a.left < p.left - 1
           || a.bottom > p.bottom + 1 || a.top < p.top - 1) {
-          out.clipped.push({ el: label(controls[i]), by: label(node) });
+          out.clipped.push({ el: label(controls[i]), by: label(host) });
         }
-        break;
       }
-      node = node.parentElement;
     }
   }
   out.overlaps = out.overlaps.slice(0, 25);
@@ -572,8 +631,17 @@ export function probeResponsive(input) {
   function columnsOf(sel) {
     const el = sel && document.querySelector(sel);
     if (!el) return null;
+    const kids = Array.prototype.slice.call(el.children).filter(visible);
+    if (kids.length) {
+      const top = Math.round(kids[0].getBoundingClientRect().top);
+      return kids.filter(
+        (k) => Math.abs(Math.round(k.getBoundingClientRect().top) - top) <= 2,
+      ).length;
+    }
     const cols = getComputedStyle(el).gridTemplateColumns;
     if (!cols || cols === 'none') return null;
+    const repeat = /^repeat\((\d+),/.exec(cols.trim());
+    if (repeat) return Number(repeat[1]);
     return cols.trim().split(/\s+/).length;
   }
   out.columns = {
