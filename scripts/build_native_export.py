@@ -27,7 +27,9 @@ def build() -> tuple[str, dict]:
 
     def read(path: Path) -> bytes:
         raw = path.read_bytes()
-        inputs[str(path.relative_to(ROOT))] = hashlib.sha256(raw).hexdigest()
+        # POSIX-separated so the manifest is byte-identical regardless of the
+        # host OS the generator runs on (Windows str() would emit backslashes).
+        inputs[path.relative_to(ROOT).as_posix()] = hashlib.sha256(raw).hexdigest()
         return raw
 
     css = read(STATIC / "astral.css").decode()
