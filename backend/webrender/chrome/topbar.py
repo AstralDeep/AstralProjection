@@ -1,10 +1,17 @@
 """Top bar + static settings menu (server-rendered, role-gated).
 
-Rendered into the shell at ``GET /`` so the menu is *static*: always present,
-opens with zero server round-trip. The Admin tools group is rendered ONLY when
-the session roles include ``admin`` — absent from the DOM for everyone else
-(UX-only gating, server-side checks stay authoritative). Entries whose
-availability rule fails are omitted; empty groups hide their heading.
+The gear opens the settings dialog directly. It used to drop a static
+dropdown rendered here at ``GET /``; the menu that dropdown carried is now
+the dialog's own left rail (:mod:`webrender.chrome.settings_nav`), which is
+built from the same model and is on screen for every settings surface rather
+than only while a popover is open. Role gating is unchanged and still
+UX-only: the Admin tools group is absent from the rail for a non-admin, and
+server-side ``chrome_open`` checks stay authoritative either way.
+
+The model's ``action`` controls (Pulse, Recent work, Workspace timeline) moved
+with it. The account row at the sidebar's bottom carries the gear alone, so
+those controls render as rail entries; a native client still receives them in
+``topbar`` exactly as before, because the MODEL did not change.
 
 Feature 042: the menu structure is NOT defined here — it comes from the single
 server-owned :func:`webrender.chrome.menu_model.build_menu_model`, the same
@@ -37,15 +44,6 @@ _GEAR_SVG = (
     '2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
 )
 
-# "history" glyph (clock + counter-clockwise arrow) for the top-bar
-# Workspace-timeline button: a recognizable "go back to an earlier version"
-# affordance sitting right next to Settings.
-_HISTORY_SVG = (
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>'
-    '<path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>'
-)
 
 # "plus" glyph for the New-chat button — the same core affordance the native
 # clients hardcode in their top bars (Windows "＋ New", Android's New-chat
@@ -66,14 +64,6 @@ _CHATS_SVG = (
     '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'
 )
 
-# "sparkle" glyph for the Pulse digest button — a recognizable "here's what I
-# noticed" affordance. Only rendered when FF_PULSE_DIGEST is enabled.
-_PULSE_SVG = (
-    '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-    'stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
-    '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1'
-    'M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg>'
-)
 
 # Page-scoped canvas actions (066): export the whole canvas, share the whole
 # canvas. These used to live in a sticky bar pinned above the canvas content,
@@ -98,14 +88,6 @@ _SHARE_SVG = (
     '<line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>'
 )
 
-# icon id (from the model) -> SVG glyph
-_WORK_SVG = (
-    '<svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
-    'stroke-width="1.8" aria-hidden="true"><rect x="3" y="7" width="18" height="14" rx="2"/>'
-    '<path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v3h4v-3"/></svg>'
-)
-_ICON_SVG = {"gear": _GEAR_SVG, "history": _HISTORY_SVG, "sparkle": _PULSE_SVG, "briefcase": _WORK_SVG}
-
 
 def _workspace_action_button(control) -> str:
     """Render a model-owned canvas operation using its existing web hooks."""
@@ -122,88 +104,35 @@ def _workspace_action_button(control) -> str:
         f'aria-label="{esc(control.label)}" title="{title}">{svg}</button>'
     )
 
-# Web-specific presentation for the interactive top-bar icon buttons, keyed by
-# the model control key. The MODEL owns presence/order/action; the web renderer
-# owns these DOM ids / tooltips / tour anchors.
-_TOPBAR_BTN_CHROME = {
-    "pulse": {
-        "id": "astral-pulse-btn",
-        "tour": "topbar.pulse",
-        "title": "Pulse — what the assistant worked out while you were away",
-    },
-    "timeline": {
-        "id": "astral-timeline-btn",
-        "tour": "topbar.timeline",
-        "title": "Workspace timeline — revisit an earlier version of this canvas",
-    },
-}
-
-
-def _icon_button(control) -> str:
-    """Render a top-bar ``action`` control (pulse/timeline) as an icon button
-    that fires the generic ``chrome_open`` delegation (client.js injects the
-    active chat id into params where needed)."""
-    chrome = _TOPBAR_BTN_CHROME.get(control.key, {})
-    payload = json.dumps(control.action.to_dict()) if control.action else "{}"
-    svg = _ICON_SVG.get(control.icon or "", "")
-    btn_id = chrome.get("id", f"astral-{control.key}-btn")
-    tour = chrome.get("tour", f"topbar.{control.key}")
-    title = chrome.get("title", control.label or "")
-    return (
-        f'<button type="button" id="{esc(btn_id)}" data-tour-target="{esc(tour)}" '
-        'class="flex items-center justify-center p-1.5 rounded-lg text-astral-muted '
-        'hover:text-astral-text hover:bg-white/5" '
-        f'aria-label="{esc(control.label or "")}" title="{esc(title)}" '
-        'data-ui-action="chrome_open" '
-        f"data-ui-payload='{esc(payload)}'>{svg}</button>"
-    )
-
-
-def _menu_html(model) -> str:
-    """The settings dropdown inner HTML, rendered from the model's groups +
-    the sign-out entry."""
-    items = []
-    for group in model.menu:
-        items.append(
-            f'<div class="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider '
-            f'text-astral-muted" role="presentation">{esc(group.label)}</div>'
-        )
-        for item in group.items:
-            payload = json.dumps({"surface": item.surface, "params": item.params})
-            items.append(
-                f'<button type="button" role="menuitem" tabindex="-1" '
-                f'class="astral-menu-item w-full text-left px-3 py-2 text-sm text-astral-text '
-                f'hover:bg-white/5 focus:bg-white/10 focus:outline-none rounded-lg" '
-                f'data-menu-key="{esc(item.key)}" data-tour-target="sidebar.{esc(item.key)}" '
-                f"data-ui-action=\"chrome_open\" data-ui-payload='{esc(payload)}'>{esc(item.label)}</button>"
-            )
-    # Session group — Sign out is a plain link so it works without JS
-    # (logout semantics live behind GET /auth/logout).
-    so = model.signout
-    items.append(
-        '<div class="border-t border-white/5 mt-1 pt-1" role="presentation"></div>'
-        '<a href="/auth/logout" role="menuitem" tabindex="-1" '
-        'class="astral-menu-item block px-3 py-2 text-sm text-red-400 hover:bg-white/5 '
-        f'focus:bg-white/10 focus:outline-none rounded-lg" data-menu-key="{esc(so.key)}">'
-        f"{esc(so.label)}</a>"
-    )
-    return "".join(items)
-
-
 def _settings_html(model) -> str:
-    """The gear button + its dropdown, rendered from the model."""
+    """The gear — a ``chrome_open`` button, not a popover toggle.
+
+    ``model`` decides only whether a gear is offered at all; where it lands is
+    :func:`settings_entry_surface`, the first entry of the rail it opens, so
+    the dialog and its rail can never disagree about what "settings" means.
+    """
+    payload = json.dumps({"surface": settings_entry_surface(model)})
     return (
-        '<div class="relative" id="astral-settings">'
         '<button type="button" id="astral-settings-btn" data-tour-target="topbar.settings" '
         'class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm text-astral-muted '
-        'hover:text-astral-text hover:bg-white/5" aria-haspopup="menu" aria-expanded="false" '
-        f'aria-controls="astral-settings-menu" aria-label="Settings">{_GEAR_SVG}'
+        'hover:text-astral-text hover:bg-white/5" aria-haspopup="dialog" '
+        'aria-label="Settings" title="Settings" data-ui-action="chrome_open" '
+        f"data-ui-payload='{esc(payload)}'>{_GEAR_SVG}"
         '<span class="hidden sm:inline">Settings</span></button>'
-        '<div id="astral-settings-menu" role="menu" aria-label="Settings" hidden '
-        'class="absolute right-0 mt-2 w-64 max-h-[70vh] overflow-y-auto rounded-xl border '
-        'border-white/10 bg-astral-surface shadow-2xl p-1.5 z-50">'
-        f"{_menu_html(model)}</div></div>"
     )
+
+
+def settings_entry_surface(model) -> str:
+    """The surface the gear opens: the first entry the rail will show.
+
+    Falls back to ``"agents"`` only if a model somehow carries no menu groups
+    at all — a gear that opens nothing would be worse than one that opens the
+    surface every deployment has.
+    """
+    for group in model.menu:
+        for item in group.items:
+            return item.surface
+    return "agents"
 
 
 def render_topbar(
@@ -240,19 +169,25 @@ def render_topbar(
         notes_enabled=notes_enabled,
     )
 
-    # One cluster: status + New chat + interactive controls + gear, in model
-    # order (status, [export], [share], [pulse], timeline, settings). Feature
-    # 089 places it inside the sidebar's profile widget, so the gear is the
-    # last control and sits at the widget's right edge.
+    # One cluster: status + New chat + the page actions + the gear, in model
+    # order. It sits inside the sidebar's account row, which now carries the
+    # gear and nothing else visible: status is hidden by the stylesheet, New
+    # chat and Recent chats are re-homed by client.js into the Recent-work
+    # header, the page actions are hidden until a live canvas flags them (and
+    # then move into that canvas's card), and the model's action controls
+    # render in the dialog's rail.
     # New chat is core client chrome, not a settings surface — every native
     # client hardcodes it in its top bar (Windows TopBar.new_btn, Android
     # RootScaffold onNewChat); this is the web twin of that button.
+    # Icon only. The plus beside the History heading says "new chat" on its
+    # own, and the word next to it was the second of two adjacent buttons that
+    # both read as "start a chat". The name stays for assistive tech.
     new_chat_btn = (
         '<button type="button" id="astral-newchat-btn" data-tour-target="topbar.new-chat" '
-        'class="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-sm '
+        'class="flex items-center justify-center p-1.5 rounded-lg '
         "bg-astral-primary/20 border border-astral-primary/30 text-astral-text "
         'hover:bg-astral-primary/30" aria-label="New chat" title="Start a new chat">'
-        f'{_PLUS_SVG}<span class="hidden sm:inline">New chat</span></button>'
+        f'{_PLUS_SVG}<span class="astral-sr-only">New chat</span></button>'
     )
     # Recent chats — like New chat this is core client chrome the native
     # clients hardcode (Android RootScaffold's speech-bubble button). The
@@ -279,7 +214,10 @@ def render_topbar(
             # client.js retains its existing live-canvas flag/visibility rule.
             right_parts.append(_workspace_action_button(control))
         elif control.kind == "action":
-            right_parts.append(_icon_button(control))
+            # Pulse / Recent work / Workspace timeline render in the settings
+            # dialog's rail now (settings_nav), not beside the gear. The model
+            # entry is untouched, so native clients are unaffected.
+            continue
         elif control.kind == "menu":  # the Settings gear + dropdown
             right_parts.append(_settings_html(model))
 

@@ -1,13 +1,13 @@
 {
   "version": "astral.canvas-export/v1",
   "sources": {
-    "backend/webrender/static/astral.css": "84596c82209e3e179ed90f1e180ff3a9888eb715b4dbb07f2dacaab64c244dc9",
+    "backend/webrender/static/astral.css": "cda2d70e7e4d34a2907747ff7dde205e264e5a8e6ee0db2d275ce7717fcc722d",
     "backend/webrender/static/fonts/open-sans-latin.woff2": "d8e4fe0452aa2076429a9bb5d8757d00a994dd95986cf950e9a1a371b9a072a0",
     "backend/webrender/static/img/astra-fav.png": "c7ad520fb2cf7ee04953404bcada21e587a36f24a8919c5bf4e1bd9bdc4d879a",
-    "backend/webrender/templates/shell.html": "5924cde9772bc82f2bf44f9d15014efdd672dbb6e2bbd6d12966bd9144ccd338",
+    "backend/webrender/templates/shell.html": "c90de8b7dbaa11529ae180841068d9135089f986fc2acf8d43624c456e8cf884",
     "backend/webrender/static/vendor/tailwind.js": "3f81aa7f6ecdb1acc14c202e513dfee00b6c7703cd81ce1be25bf5215a92e8cb",
     "backend/webrender/static/canvas-export.js": "a8e5dc10f8639aaaf4c450385d8cf2276d47999d058dcfd855f306a8d501d637",
     "backend/webrender/static/canvas-export-host.js": "9b363ec2b97fe12027598c40df086ab886827d1885cc2284c160546b6b553686"
   },
-  "template_sha256": "cb0ec9843a6bfc6561b413db29875b722b859f629174a534b24de73a6c011f29"
+  "template_sha256": "c3d8f97c19c91a136a2e3b044fa7d6f36b877115af4a1021cc4bbaa35128ee53"
 }

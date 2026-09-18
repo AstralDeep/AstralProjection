@@ -59,7 +59,7 @@
             "title": "Synthetic conversation 0",
             "preview": "Preview removed on watch",
             "time": "just now",
-            "icon": "🌤️",
+            "icon": "WX",
             "saved": true
           },
           {
@@ -67,7 +67,7 @@
             "title": "Synthetic conversation 1",
             "preview": "Preview removed on watch",
             "time": "2m",
-            "icon": "💬",
+            "icon": "",
             "saved": false
           },
           {
@@ -75,7 +75,7 @@
             "title": "Synthetic conversation 2",
             "preview": "Preview removed on watch",
             "time": "4m",
-            "icon": "💬",
+            "icon": "",
             "saved": false
           },
           {
@@ -83,7 +83,7 @@
             "title": "Synthetic conversation 3",
             "preview": "Preview removed on watch",
             "time": "6m",
-            "icon": "💬",
+            "icon": "",
             "saved": false
           },
           {
@@ -91,7 +91,7 @@
             "title": "Synthetic conversation 4",
             "preview": "Preview removed on watch",
             "time": "8m",
-            "icon": "💬",
+            "icon": "",
             "saved": false
           },
           {
@@ -99,7 +99,7 @@
             "title": "Synthetic conversation 5",
             "preview": "Preview removed on watch",
             "time": "10m",
-            "icon": "💬",
+            "icon": "",
             "saved": false
           }
         ]
@@ -143,28 +143,28 @@
               "chat_id": "watch-fixture-0",
               "title": "Synthetic conversation 0",
               "time": "just now",
-              "icon": "🌤️",
+              "icon": "WX",
               "saved": true
             },
             {
               "chat_id": "watch-fixture-1",
               "title": "Synthetic conversation 1",
               "time": "2m",
-              "icon": "💬",
+              "icon": "",
               "saved": false
             },
             {
               "chat_id": "watch-fixture-2",
               "title": "Synthetic conversation 2",
               "time": "4m",
-              "icon": "💬",
+              "icon": "",
               "saved": false
             },
             {
               "chat_id": "watch-fixture-3",
               "title": "Synthetic conversation 3",
               "time": "6m",
-              "icon": "💬",
+              "icon": "",
               "saved": false
             }
           ]

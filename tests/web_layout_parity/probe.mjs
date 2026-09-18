@@ -187,6 +187,9 @@ export function probePage(selectors) {
   out.brand = region('brand');
   out.brandLogo = { present: !!one('brandLogo'), box: box(one('brandLogo')) };
   out.brandText = { present: !!one('brandText'), lines: count('brandTextLine') };
+  // B1 scores the ABSENCE of the wordmark/tagline lines since the
+  // 2026-09-18 correction, so the count has to be reachable on its own.
+  out.brandTextLine = { n: count('brandTextLine') };
   out.dirHead = region('dirHead');
   out.agentCount = { present: !!one('agentCount'), box: box(one('agentCount')) };
   out.searchBox = region('searchBox');
@@ -215,6 +218,8 @@ export function probePage(selectors) {
       ? { present: true, box: box(el), expanded: el.getAttribute('aria-expanded') }
       : { present: false };
   })();
+  // The buttons the History header carries beside its own collapse toggle.
+  out.recentActions = count('recentAction');
   out.profile = region('profile');
   out.profileParts = {
     avatar: box(one('profileAvatar')),
@@ -402,6 +407,10 @@ export function probePage(selectors) {
       close: !!one('modalClose'),
       tabs: count('modalTab'),
       tabStrip: box(one('modalTabStrip')),
+      // F2 scores the settings rail since the 2026-09-18 correction: the
+      // gear opens the dialog and the menu runs down its left side.
+      nav: box(one('settingsNav')),
+      navItems: count('settingsNavItem'),
       body: box(one('modalBody')),
       footer: box(one('modalFooter')),
     };

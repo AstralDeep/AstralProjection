@@ -31,7 +31,7 @@ def test_history_enrichment_survives_real_watch_bounds():
     assert [item["chat_id"] for item in component["items"]] == [f"watch-fixture-{i}" for i in range(4)]
     assert component["items"][0]["saved"] is True
     assert component["items"][0]["time"] == "just now"
-    assert component["items"][0]["icon"] == "🌤️"
+    assert component["items"][0]["icon"] == "WX"
     assert all("preview" not in item for item in component["items"])
     loading = FIXTURE["frames"]["loading"]["components"]
     assert loading[1]["type"] == "skeleton" and loading[1]["count"] == 3

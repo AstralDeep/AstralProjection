@@ -12,7 +12,11 @@ from astralprojection.chrome.guidance import (
 from rote.adapter import ComponentAdapter
 from rote.capabilities import DeviceProfile
 from webrender.chrome import render_modal_shell
-from webrender.chrome.menu_model import menu_model_dict, project_watch_menu_model
+from webrender.chrome.menu_model import (
+    build_menu_model,
+    menu_model_dict,
+    project_watch_menu_model,
+)
 from webrender.chrome.topbar import render_topbar
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -134,8 +138,13 @@ def test_notes_entry_has_one_shared_label_and_action(enabled):
     notes = [item for group in model["menu"] for item in group["items"]
              if item["surface"] == "guidance"]
     assert len(notes) == int(enabled)
-    web = render_topbar(notes_enabled=enabled)
+    # The notes entry is a menu item, so the web renders it in the settings
+    # dialog's rail; the account row carries the gear alone.
+    from webrender.chrome.settings_nav import render_settings_nav
+
+    web = render_settings_nav(build_menu_model(notes_enabled=enabled))
     assert ("Private notes" in web) is enabled
+    assert "Private notes" not in render_topbar(notes_enabled=enabled)
     watch = project_watch_menu_model(model)
     assert [item["key"] for item in watch["topbar"]] == (["work", "guidance"] if enabled else ["work"])
     if enabled:

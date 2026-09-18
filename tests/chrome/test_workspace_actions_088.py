@@ -53,7 +53,11 @@ def test_flag_resolved_inventory_and_web_hooks_have_identical_order(export, shar
             assert "astral-page-action" in button["class"].split()
             assert button["aria-label"] == f"{key.title()} page"
             assert "data-ui-action" not in button
-            assert ids.index("astral-chats-btn") < ids.index(identity) < ids.index("astral-pulse-btn")
+            # The page actions sit between the chat controls and the gear.
+            # (They used to be bounded above by the Pulse icon, which is a
+            # rail entry now, so the gear is the row's last control.)
+            assert (ids.index("astral-chats-btn") < ids.index(identity)
+                    < ids.index("astral-settings-btn"))
     if export and share:
         assert ids.index("astral-export-page-btn") < ids.index("astral-share-page-btn")
     if share:

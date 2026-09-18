@@ -11,7 +11,11 @@ from astralprojection.chrome.work import build_work_view
 from rote.adapter import ComponentAdapter
 from rote.capabilities import DeviceProfile
 from rote.work import validate_work_components, validate_work_navigation
-from webrender.chrome.menu_model import menu_model_dict, project_watch_menu_model
+from webrender.chrome.menu_model import (
+    build_menu_model,
+    menu_model_dict,
+    project_watch_menu_model,
+)
 from webrender.chrome.topbar import render_topbar
 
 spec = importlib.util.spec_from_file_location(
@@ -40,8 +44,13 @@ def test_work_navigation_is_one_server_descriptor_with_explicit_watch_projection
     assert not project_watch_menu_model(enabled)["topbar"]
     assert not project_watch_menu_model(None)["topbar"]
     assert not project_watch_menu_model({"topbar": 3})["topbar"]
-    assert "Recent work" not in render_topbar()
-    assert "Recent work" in render_topbar(work_enabled=True)
+    # Recent work is one of the model's action controls, and the web draws
+    # those in the settings dialog's rail rather than beside the gear.
+    from webrender.chrome.settings_nav import render_settings_nav
+
+    assert "Recent work" not in render_settings_nav(build_menu_model())
+    assert "Recent work" in render_settings_nav(build_menu_model(work_enabled=True))
+    assert "Recent work" not in render_topbar(work_enabled=True)
 
 
 @pytest.mark.parametrize("mode", ["list", "detail", "result"])
