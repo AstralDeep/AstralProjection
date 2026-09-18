@@ -824,14 +824,38 @@
         || node.matches("img, svg, canvas, video, audio, iframe, input, textarea, button")) return true;
     return Array.prototype.some.call(node.childNodes, hasWorkspaceContent);
   }
+  /** True when either mounted region holds something worth a workspace. */
+  function workspaceHasContent() {
+    return Boolean((chat && Array.prototype.some.call(chat.childNodes, hasWorkspaceContent))
+      || (canvas && Array.prototype.some.call(canvas.childNodes, hasWorkspaceContent)));
+  }
   function syncWorkspaceView() {
     placeWelcomeContent();
     if (document.body.getAttribute("data-astral-view") === "work") return;
-    if ((requestState && (requestState.purpose === "commit" || requestState.purpose === "hydration"))
-        || (chat && Array.prototype.some.call(chat.childNodes, hasWorkspaceContent))
-        || (canvas && Array.prototype.some.call(canvas.childNodes, hasWorkspaceContent))) {
+    // A resumed conversation selects work BEFORE its first registration so the
+    // landing never flashes on the way to restored content (feature 060's
+    // continuity contract). That anticipation has to expire once the snapshot
+    // it was anticipating has been applied: without the `hydrationApplied`
+    // guard, a hydration that restores nothing visible keeps re-asserting work
+    // on every mutation, and `settleEmptyHydration` below can never take the
+    // view back. A signed-in user whose remembered chat hydrates empty is then
+    // left on a blank canvas for the whole session with no way out of it.
+    if ((requestState && (requestState.purpose === "commit"
+          || (requestState.purpose === "hydration" && !requestState.hydrationApplied)))
+        || workspaceHasContent()) {
       setWorkspaceView("work");
     }
+  }
+  /** Hydration finished and restored nothing: go back to the start view.
+   *
+   * The anticipated workspace was a bet that content was coming. When the
+   * authoritative snapshot lands empty the bet lost, and leaving the bet in
+   * place shows the person an empty void where the landing should be. */
+  function settleEmptyHydration() {
+    if (document.body.getAttribute("data-astral-view") !== "work") return;
+    if (workspaceHasContent()) return;
+    setWorkspaceView("start");
+    placeWelcomeContent();
   }
   setWorkspaceView("start");
   syncWorkspaceView();
@@ -6495,6 +6519,7 @@
       // load_chat request. Retire only that local submission/status owner;
       // committed result snapshots still wait for their operation terminal.
       settleHydrationStatus(frame.request_generation);
+      settleEmptyHydration();
     }
     continueVoiceAfterHydration(frame);
     return continuityDisposition("snapshot_applied");
