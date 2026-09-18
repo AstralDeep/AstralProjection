@@ -9,11 +9,21 @@ import { expect, test } from "@playwright/test";
 const STATIC = resolve(import.meta.dirname, "../../../backend/webrender/static");
 const worker = await readFile(resolve(STATIC, "service-worker.js"), "utf8");
 const assets = JSON.parse(worker.match(/const PUBLIC_ASSETS = (\[[\s\S]*?\]);/)[1]);
+// The worker's digests are over LF bytes, because .gitattributes stores this
+// tree with LF and the image that serves these files is Linux. A Windows
+// checkout materialises CRLF, so serve what a real deployment would serve or
+// the worker refuses its own assets and never takes control -- on that host
+// alone, which is the sort of failure that gets read as flake.
+const TEXT_ASSET = /\.(html|css|js|webmanifest)$/u;
+const normalise = (path, body) => (TEXT_ASSET.test(path)
+  ? Buffer.from(body.toString("binary").replaceAll("\r\n", "\n"), "binary")
+  : body);
+
 const routes = new Map(await Promise.all([...assets,
   { path: "/static/service-worker.js", type: "text/javascript" },
   { path: "/static/offline-registration.js", type: "text/javascript" },
 ].map(async asset => [asset.path, { ...asset,
-  body: await readFile(resolve(STATIC, asset.path.slice(8))),
+  body: normalise(asset.path, await readFile(resolve(STATIC, asset.path.slice(8)))),
 }])));
 const PRIVATE = "synthetic-owner-private-shell-never-cache";
 

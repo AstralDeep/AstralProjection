@@ -416,6 +416,15 @@ for (const [width, font] of [[320, "100%"], [320, "200%"]]) {
   test(`keyboard-only selection at ${width}px with ${font} text stays operable`, async ({ page }) => {
     await setup(page, { width, font });
     await noHorizontalScroll(page, width);
+    // Below 768 the composer's secondary controls sit behind one overflow
+    // button so Send is never pushed off the bar (089 T053). Advanced is one
+    // of them, so a keyboard user reaches it through that button -- which is
+    // the thing worth proving here: still reachable, still without a mouse.
+    const more = page.locator("#astral-composer-more");
+    if (await more.isVisible()) {
+      await more.focus();
+      await page.keyboard.press("Enter");
+    }
     await page.locator("#astral-input").focus();
     for (let step = 0; step < 12 && !(await advanced(page).evaluate(el => el === document.activeElement)); step++) {
       await page.keyboard.press("Tab");
@@ -454,7 +463,10 @@ for (const [width, font] of [[320, "100%"], [320, "200%"]]) {
     await expect(clear).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(chip(page)).toBeHidden();
-    await expect(advanced(page)).toBeFocused();
+    // Focus returns to whatever opens the picker at this width: Advanced
+    // itself, or the overflow button it sits behind on a narrow composer.
+    await expect(await advanced(page).isVisible()
+      ? advanced(page) : page.locator("#astral-composer-more")).toBeFocused();
     expect("selection" in (await send(page, "Keyboard only")).payload).toBe(false);
   });
 }

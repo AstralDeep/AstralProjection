@@ -14,13 +14,14 @@ pickers in the Theme surface) so client-side side effects stay wired.
 """
 from webrender import esc, render_one, safe_url  # noqa: F401  (re-exported for surfaces)
 
+from .settings_nav import render_settings_nav  # noqa: F401
 from .topbar import render_topbar  # noqa: F401
 
 
 def render_modal_shell(title: str, body_html: str, surface: str = "",
                        mandatory: bool = False, *, subtitle: str = "",
                        icon: str = "", sections: tuple = (),
-                       footer_html: str = "") -> str:
+                       footer_html: str = "", nav_html: str = "") -> str:
     """Wrap a surface body in the standard chrome modal (overlay + card).
 
     ``body_html`` is trusted, already-escaped chrome output from a surface
@@ -37,6 +38,12 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
     to carry one ``data-section="<key>"`` element per pair; ``client.js``
     shows the selected one. If the body carries no matching element the tab
     simply selects nothing, which is visible rather than broken.
+
+    ``nav_html`` is the settings rail (:func:`render_settings_nav`). When it
+    is given, the body sits in a two-column split with the rail on the left —
+    that is what the gear now opens instead of a dropdown. A dialog with no
+    rail (an error notice, the first-run gate, a surface opened from
+    somewhere other than the menu) renders exactly as before.
 
     ``mandatory=True`` (feature 054 first-run gate): the ✕ button is
     omitted, ``data-mandatory="1"`` is stamped on the card so
@@ -86,10 +93,22 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
         f'<div class="astral-modal-footer">{footer_html}</div>' if footer_html else ""
     )
 
+    body = f'<div class="astral-modal-body">{body_html}</div>'
+    card_cls = "astral-modal-card"
+    pane_tabs = ""
+    if nav_html:
+        card_cls += " has-nav"
+        # A tab strip belongs to the pane it switches, not to the dialog: run
+        # across the whole width it sits over the rail as well, which reads as
+        # navigation for the rail too.
+        pane_tabs, tabs_html = tabs_html, ""
+        body = (f'<div class="astral-modal-split">{nav_html}'
+                f'<div class="astral-modal-pane">{pane_tabs}{body}</div></div>')
+
     return (
         f'<div class="astral-modal-backdrop astral-modal-overlay" '
         f'data-surface="{esc(surface)}">'
-        f'<div class="astral-modal-card"{mandatory_attr} role="dialog" aria-modal="true" '
+        f'<div class="{card_cls}"{mandatory_attr} role="dialog" aria-modal="true" '
         f'aria-label="{esc(title)}" tabindex="-1">'
         f'<div class="astral-modal-header">'
         f'<span class="astral-modal-icon" aria-hidden="true">{glyph}</span>'
@@ -97,7 +116,7 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
         f'<h2 class="astral-modal-title">{esc(title)}</h2>{subtitle_html}</div>'
         f"{close_btn}</div>"
         f"{tabs_html}"
-        f'<div class="astral-modal-body">{body_html}</div>'
+        f"{body}"
         f"{footer}"
         f"</div></div>"
     )

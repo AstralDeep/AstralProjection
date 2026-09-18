@@ -16,7 +16,13 @@ import json
 import re
 
 from webrender.chrome import esc
-from webrender.chrome.guide_content import SECTIONS
+# Imported under a local name: the dispatcher reads a module-level
+# ``SECTIONS`` as the modal's TAB STRIP (a sequence of (key, label) pairs).
+# Binding the guide's own content sections to that name handed the dispatcher
+# a list of section dicts, which it rendered as one tab whose label was the
+# repr of a dict. The guide's table of contents is its own left column inside
+# the body; it is not a tab strip.
+from webrender.chrome.guide_content import SECTIONS as GUIDE_SECTIONS
 
 TITLE = "User guide"
 
@@ -38,7 +44,7 @@ def _visible_sections(roles):
         Ordered list of section dicts from ``guide_content.SECTIONS``.
     """
     is_admin = "admin" in (roles or [])
-    return [s for s in SECTIONS if not s.get("admin_only") or is_admin]
+    return [s for s in GUIDE_SECTIONS if not s.get("admin_only") or is_admin]
 
 
 def _toc_button(section, active: bool) -> str:

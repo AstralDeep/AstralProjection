@@ -60,11 +60,7 @@
       <!-- Brand block: returns to the landing view, like a8p's logo. -->
       <button type="button" id="astral-brand" class="astral-brand" data-tour-target="topbar.brand"
               aria-label="Return to the dashboard" title="Return to the dashboard">
-        <img src="/static/img/AstralDeep.png?v=%%ASTRAL_V:img/AstralDeep.png%%" alt="" class="astral-brand-logo" draggable="false">
-        <span class="astral-brand-text">
-          <span class="astral-brand-name">AstralDeep</span>
-          <span class="astral-brand-sub">Multi-agent workspace</span>
-        </span>
+        <img src="/static/img/AstralDeep.png?v=%%ASTRAL_V:img/AstralDeep.png%%" alt="AstralDeep" class="astral-brand-logo" draggable="false">
       </button>
 
       <div id="astral-dir-head" class="astral-dir-head">
@@ -88,28 +84,27 @@
       <section id="astral-recent-work" class="astral-recent">
         <button type="button" id="astral-recent-toggle" class="astral-recent-toggle"
                 aria-expanded="true" aria-controls="astral-history">
-          <span class="astral-recent-title">Recent work</span>
+          <span class="astral-recent-title">History</span>
           <svg class="astral-recent-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </button>
         <div id="astral-history" class="astral-history-region"></div>
       </section>
 
-      <!-- Profile widget, pinned to the sidebar bottom. The server-rendered
-           chrome (status, New chat, Recent chats, workspace actions and the
-           Settings gear + menu) lives inside it, so the gear sits at the
-           widget's right exactly as the contract describes. -->
+      <!-- Account row, pinned to the sidebar bottom: who is signed in, and the
+           settings gear. The picture is a default drawn glyph, not an uploaded
+           photo — there is no avatar to upload yet — and the name and role come
+           from the session's own claims through web_auth.session_identity, the
+           same derivation the settings dialog's account block uses. Display
+           only: no id, no address, and no authorization depends on it.
+           #astral-topbar keeps its id so every server-rendered control, tour
+           anchor and client.js hook is untouched. -->
       <div id="astral-profile" class="astral-profile">
-        <span class="astral-profile-avatar" aria-hidden="true">
-          <span class="astral-profile-initials">%%ASTRAL_USER_INITIALS%%</span>
-          <span class="astral-profile-dot"></span>
-        </span>
+        <img src="/static/img/user-avatar.png?v=%%ASTRAL_V:img/user-avatar.png%%" alt=""
+             class="astral-profile-avatar" draggable="false" width="32" height="32">
         <span class="astral-profile-id">
           <span id="astral-profile-name" class="astral-profile-name">%%ASTRAL_USER_NAME%%</span>
           <span id="astral-profile-role" class="astral-profile-role">%%ASTRAL_USER_ROLE%%</span>
         </span>
-        <!-- Server-rendered chrome (role-gated at GET / time; see
-             webrender/chrome/topbar.py). Surface styling lives in astral.css
-             (#astral-topbar). -->
         <header id="astral-topbar" class="astral-topbar">%%ASTRAL_TOPBAR%%</header>
       </div>
     </aside>
@@ -130,27 +125,6 @@
               <span class="astral-status-pill" id="astral-status-agents" role="status" aria-live="polite">Agents loading…</span>
               <span class="astral-status-pill" id="astral-status-audit" role="status" aria-live="polite">Audit: ready</span>
               <button type="button" class="astral-status-pill astral-status-resume" id="astral-status-resume" hidden>Resume chat</button>
-            </div>
-          </div>
-
-          <div id="astral-overview" class="astral-overview">
-            <div class="astral-overview-header">
-              <span class="astral-overview-title">How a turn runs</span>
-              <span class="astral-overview-subtitle">From your message to a sealed result</span>
-            </div>
-            <div class="astral-overview-grid">
-              <div class="astral-overview-item">
-                <div class="astral-overview-step">1. Route</div>
-                <p>Your message is matched to the agent and tools that fit it, with the permissions you have granted.</p>
-              </div>
-              <div class="astral-overview-item">
-                <div class="astral-overview-step">2. Gate</div>
-                <p>Every tool call passes the permission gates and is recorded in the audit ledger before it runs.</p>
-              </div>
-              <div class="astral-overview-item">
-                <div class="astral-overview-step">3. Render</div>
-                <p>Results come back as typed components the server lays out and every client can draw.</p>
-              </div>
             </div>
           </div>
 
@@ -204,7 +178,7 @@
           <div id="astral-selection" class="astral-selection hidden" hidden>
             <span class="astral-chip is-selection">
               <span id="astral-selection-summary" class="astral-chip-name" role="status" aria-live="polite"></span>
-              <button type="button" id="astral-selection-clear" class="astral-chip-remove" aria-label="Clear the selection for this chat">×</button>
+              <button type="button" id="astral-selection-clear" class="astral-chip-remove" aria-label="Clear the selection for this chat"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"></path></svg></button>
             </span>
           </div>
           <!-- Feature 040 (US5): slash-command typeahead (shown while typing a
@@ -246,10 +220,10 @@
                    no selection and no preflight. client.js keeps the chosen
                    binding per verified owner and attaches it to the next sends. -->
               <button type="button" id="astral-advanced-btn" class="astral-attach-btn astral-advanced-btn"
-                      aria-haspopup="dialog" title="Advanced: choose the agent, skills and private notes for this chat"
+                      aria-haspopup="dialog" aria-label="Advanced"
+                      title="Advanced: choose the agent, skills and private notes for this chat"
                       data-ui-action="chrome_open" data-ui-payload='{"surface":"guidance","params":{"view":"selection"}}'>
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"></line><line x1="4" y1="12" x2="20" y2="12"></line><line x1="4" y1="18" x2="20" y2="18"></line><circle cx="9" cy="6" r="2" fill="currentColor"></circle><circle cx="15" cy="12" r="2" fill="currentColor"></circle><circle cx="7" cy="18" r="2" fill="currentColor"></circle></svg>
-                <span class="astral-advanced-label">Advanced</span>
               </button>
               <!-- Feature 065 host + 066 default: the voice affordance is ALWAYS
                    present. This pre-rendered start control is the client-local

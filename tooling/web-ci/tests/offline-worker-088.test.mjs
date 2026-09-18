@@ -13,8 +13,17 @@ const worker = await readFile(resolve(STATIC, "service-worker.js"), "utf8");
 const registration = await readFile(resolve(STATIC, "offline-registration.js"), "utf8");
 const ORIGIN = "https://astral.example";
 const assets = JSON.parse(worker.match(/const PUBLIC_ASSETS = (\[[\s\S]*?\]);/)[1]);
-const bodies = new Map(await Promise.all(assets.map(async asset =>
-  [asset.path, await readFile(resolve(STATIC, asset.path.slice(8)))])));
+// The generator hashes text assets with LF endings, because .gitattributes
+// stores them that way and the image that serves them is Linux. A Windows
+// checkout materialises CRLF, so read them the same way the generator did or
+// every digest here disagrees with the worker on that host alone.
+const TEXT_ASSETS = /\.(html|css|webmanifest)$/u;
+const bodies = new Map(await Promise.all(assets.map(async (asset) => {
+  const raw = await readFile(resolve(STATIC, asset.path.slice(8)));
+  return [asset.path, TEXT_ASSETS.test(asset.path)
+    ? Buffer.from(raw.toString("binary").replaceAll("\r\n", "\n"), "binary")
+    : raw];
+})));
 
 function responseFor(asset, overrides = {}) {
   const response = new Response(overrides.body ?? bodies.get(asset.path), {

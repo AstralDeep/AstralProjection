@@ -925,7 +925,7 @@
       "sourcePath": "backend/rote/adapter.py",
       "sourceBlob": "ada87b7c601058cff8acbf9a62d11367406d0438",
       "sourceMode": "100644",
-      "resultSha256": "af9aad54b89b54a346c9337dda0cff4c13b3f7e3f2805af898ccd28541b953fd",
+      "resultSha256": "193625792ddc016d78f06dcd87eb7d0215cd0881718acc054890d40e172b0c25",
       "task": "T017/T054",
       "reason": "Project normalized client-local speech facts into the closed ready or typed-fallback ROTE disposition. Feature 088 review: Adapt phone chart geometry by viewport capabilities and preserve every Plotly point in static table fallbacks. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 committed continuation: Add explicit Work adaptation that validates the closed complete read surface before enforcing existing host limits. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
     },
@@ -943,7 +943,7 @@
       "sourcePath": "backend/rote/fallback.py",
       "sourceBlob": "32e901e62c19a0a32f4465d5ac0f94bba0253745",
       "sourceMode": "100644",
-      "resultSha256": "9edf5a4c9bb60e9540ab5a9da3c46d8292fe1e21cfa52bf7256f4a2b47bafd0c",
+      "resultSha256": "076e4002c4d83ee582923b7cc30b94102a1e0ed6e0e64acbe121f05ea40e9ccb",
       "task": "T017",
       "reason": "Classify local speech readiness with closed reasons and preserve an explicit typed fallback for every unavailable posture."
     },
@@ -955,6 +955,24 @@
       "resultSha256": "8d6c9df86afe13466034fa468b6145d076f51a9f61558d40f5f70b621f133ea5",
       "task": "T060/T061",
       "reason": "Feature 088 component actions: expose a detached socket-scoped copy of original cached components so legacy viewport fallback rebuilds host-owned metadata after adaptation without mutating the cache."
+    },
+    {
+      "path": "backend/webrender/chrome/__init__.py",
+      "sourcePath": "backend/webrender/chrome/__init__.py",
+      "sourceBlob": "ce9cafa3b8409376449aa163014646ea27ddf4fc",
+      "sourceMode": "100644",
+      "resultSha256": "ee3d48a9dcbddcf3159c635269479edfeb11c03be49baefaa86aa84d690d6bd4",
+      "task": "T075/T090",
+      "reason": "The chrome modal shell takes a settings rail and a pane: the gear opens the dialog directly and the menu is that dialog's left rail, with a surface's own tab strip inside the pane beside it rather than across the whole dialog."
+    },
+    {
+      "path": "backend/webrender/chrome/guide_content.py",
+      "sourcePath": "backend/webrender/chrome/guide_content.py",
+      "sourceBlob": "d3cfd4ba3115a5dfc21de52538e0e0e163c32674",
+      "sourceMode": "100644",
+      "resultSha256": "8c48365549945c2a6ac0782560d947916e8ce0019fa7e912b9e2bda063125c9b",
+      "task": "T081",
+      "reason": "The user guide still described a top bar and a Settings dropdown that no longer exist; its copy follows the console the product actually renders."
     },
     {
       "path": "backend/webrender/chrome/menu_model.py",
@@ -1027,6 +1045,15 @@
       "resultStatus": "removed",
       "task": "T046",
       "reason": "Remove the Deep-coupled draft controller; Projection now exposes a pure supplied-state draft builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/guide.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/guide.py",
+      "sourceBlob": "b8802f77390676a34ef98a92b5e103bbbcb04ce1",
+      "sourceMode": "100644",
+      "resultSha256": "3e8bc4525f08c2cbbb15ea147022c7a8335ef875c8089abecf370e95413d7108",
+      "task": "T081",
+      "reason": "The guide imported its content sections under the name the chrome dispatcher reads as a modal tab strip, so the dialog printed the repr of a section dict across its top. The import is renamed."
     },
     {
       "path": "backend/webrender/chrome/surfaces/llm.py",
@@ -1105,7 +1132,7 @@
       "sourcePath": "backend/webrender/chrome/topbar.py",
       "sourceBlob": "60411d8364415d1cd1ef687ce59457673d8c62cb",
       "sourceMode": "100644",
-      "resultSha256": "71565544b4aae1e2571c39b0b561df689812cc646347ca8fc3477aa1eeb62926",
+      "resultSha256": "3eebb032ed9a420c33d156cbf369747e1d41801e401a67583613697a460b3e0d",
       "task": "T044/T040/T008/T054",
       "reason": "Require the authenticated host to supply feature availability instead of resolving Deep policy inside Projection. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 review: Move restoration of the desktop conversation rail into the floating composer. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 committed continuation: Render the shared Work briefcase action when host availability enables it. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
     },
@@ -1116,7 +1143,7 @@
       "sourceMode": "100644",
       "task": "T008",
       "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels. Feature 088 live mobile review: preserve escaped placement metadata on known welcome containers with absent or wel_ identity, so ROTE grid collapse cannot turn three welcome prompts into work content; preserve transparent ordinary containers and reject malformed hints. Reject every conflicting or malformed present identity field instead of allowing one identity to mask another. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences.",
-      "resultSha256": "7c5b63e6fd27baa398f9fca3bd244ee469db5ee992e899e63cd20700ee609c56"
+      "resultSha256": "329c8040856625e2d1f87bf49fff58cb0376700ca4aabc0f46faadc0ee7ee84a"
     },
     {
       "path": "backend/webrender/static/astral.css",
@@ -1125,23 +1152,41 @@
       "sourceMode": "100644",
       "task": "T008/T054",
       "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition.",
-      "resultSha256": "eabe923408ff2d227e904609f209894be34f19ecb626c7842a9f382dd9ae963f"
+      "resultSha256": "c2803110d3528eaf8e57cc7aa2d7c595bca0e35eac8317415906d7cbb299b575"
     },
     {
       "path": "backend/webrender/static/client.js",
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "3e5926e3a39e24ee63a604e38e1e9d19dad0764c9f07eeebbc22a1631ca8280c",
+      "resultSha256": "6e8aba3c420a8cbf7b31b03ca01da529ee377b67ae692baffec3ee2b72f9cee5",
       "task": "T052/T063/T029/T008/T009",
       "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior. Feature 088 review: Restore floating chat to the rail, resize charts with their canvas, and create inert visual canvas downloads bound to authorization, owner, chat and committed render revision. Feature 088 live review: clear New chat drafts, staged attachments, autocomplete and one-shot background arming; cancel only unsent chat queues and expiry callbacks; ignore upload completions for removed staging entries while retaining same-owner reconnect and accepted background tasks. Keep conversation toggle expansion and Show/Hide labels synchronized with actual layout classes after breakpoint transitions, transcript clearing and New chat. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 committed continuation: Correlate Work reads and rendered replies, isolate them from conversation mutation fields, and retire stale output on navigation, timeout or authentication changes. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
+    },
+    {
+      "path": "backend/webrender/static/fonts/inter-latin.woff2",
+      "sourcePath": "backend/webrender/static/fonts/inter-latin.woff2",
+      "sourceBlob": "d15208de03cd1ad7c5199f0a0ce915fe841e4722",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T052",
+      "reason": "Open Sans is the web client's only typeface (089 FR-032); Inter is no longer loaded by anything."
+    },
+    {
+      "path": "backend/webrender/static/fonts/jetbrains-mono-latin.woff2",
+      "sourcePath": "backend/webrender/static/fonts/jetbrains-mono-latin.woff2",
+      "sourceBlob": "585887339efd032b6b715466ae72d86e306bec79",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T052",
+      "reason": "Open Sans serves monospace-styled code as well (089 FR-032); JetBrains Mono is no longer loaded by anything."
     },
     {
       "path": "backend/webrender/templates/shell.html",
       "sourcePath": "backend/webrender/templates/shell.html",
       "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
       "sourceMode": "100644",
-      "resultSha256": "91892536e31656595332bf8d1bcb5d100054f2d18e977303d0b3b0c0e581c69f",
+      "resultSha256": "768b7ec7c099b499967bff9ae83ec201267211dca240e7fc8eb1815d4ab5cd53",
       "task": "T042/T008/T012",
       "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer. Feature 088 T012: register the public-only offline fallback and install manifest without caching authenticated documents or work. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
     },
@@ -1150,7 +1195,7 @@
       "sourcePath": "backend/shared/ui_protocol.json",
       "sourceBlob": "3951960ad76e49ccdc30e2e5eb996df2e7558c38",
       "sourceMode": "100644",
-      "resultSha256": "c6e8b934057ea5dd3626d31f681a67af9fd873d083d02a7be075baa222e76592",
+      "resultSha256": "5533a32617867d17b9c3e42818a6279556129d4c430415df37109b3e96f8803b",
       "task": "T013/T015/T040/T023/T054",
       "reason": "Freeze strict REST-v2 and client_local/v1 field, reason, disposition, and remote-v1 byte-invariant vocabulary in Projection's authoritative manifest. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 079 adds eight persistent assignment actions using existing generic surface frames and client dispositions. Feature 088 native checkpoint: preserve validated welcome role hints through capability adaptation without promoting ordinary identified results or bypassing effect gates. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences. Feature 088 committed continuation: Bind the shared Work fixture, capability, closed read navigation, exact response correlation and lifecycle retirement contract across clients. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
     },
@@ -1222,7 +1267,7 @@
       "sourcePath": "backend/tests/webrender/test_voice_renderer_065.py",
       "sourceBlob": "ef1d30981a28d4860243ac7dd172bd9bfc7ae479",
       "sourceMode": "100644",
-      "resultSha256": "039f70290308f01cc41c2f68d0298c9f737229d18170234f04dbd12adf2bf2c5",
+      "resultSha256": "e97952621549bd12e343239dad46572b6c4d8b663fdccf3cbbab5e1a36c4bc73",
       "task": "T043/T013/T014/T008",
       "reason": "Read both canonical voice fixtures through the standalone Projection resource facade and pin the remote-v1 byte invariant. Feature 088: verify the accessible multiline typed composer remains available beside voice controls."
     },
@@ -1267,7 +1312,7 @@
       "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
       "sourceMode": "100644",
-      "resultSha256": "8b924b108119e788b41783c31b3fae6e67df94b33355d824ac174cfffdb481ca",
+      "resultSha256": "ce8eb226c972d33cad2566a16090d499560b416a71d81d3d52659651a12aa918",
       "task": "T052/T063/T008/T009",
       "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset. Feature 088 live mobile review: consume actual ROTE/renderer HTML goldens for mobile New chat after a plaintext-only conversation, tablet re-adaptation and repeated New chat without losing welcome groups. Load the exact authoritative canvas export module before client.js in the synthetic harness, matching production script order and preserving export/owner-denial assertions."
     },
@@ -1662,7 +1707,7 @@
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action’s line-oriented script execution, preserving the exact device/report arguments and gates."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action\u2019s line-oriented script execution, preserving the exact device/report arguments and gates."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

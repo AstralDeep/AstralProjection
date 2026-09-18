@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from webrender.chrome.menu_model import build_menu_model
+from webrender.chrome.settings_nav import render_settings_nav
 from webrender.chrome.topbar import render_topbar
 
 
@@ -30,18 +31,27 @@ def test_menu_model_uses_only_explicit_host_feature_state() -> None:
     assert {"my-agents", "remote-machines"} <= _menu_keys(enabled)
 
 
-def test_topbar_renders_supplied_state_without_host_imports() -> None:
-    default = render_topbar(["user"])
-    assert "astral-pulse-btn" not in default
-    assert "My agents" not in default
-    assert "Remote machines" not in default
+def test_chrome_renders_supplied_state_without_host_imports() -> None:
+    """The host's booleans decide what is offered, on both web renderers.
 
-    enabled = render_topbar(
-        ["user"],
-        pulse_enabled=True,
-        byo_enabled=True,
-        remote_enabled=True,
-    )
-    assert "astral-pulse-btn" in enabled
-    assert "My agents" in enabled
-    assert "Remote machines" in enabled
+    The account row renders the gear; the rail renders the menu the gear
+    opens. Both are built from the same supplied state and neither reads a
+    host flag module, so an availability input that is off leaves nothing
+    behind in either one.
+    """
+    options = {"pulse_enabled": True, "byo_enabled": True, "remote_enabled": True}
+    default_nav = render_settings_nav(build_menu_model(["user"]))
+    assert "Pulse digest" not in default_nav
+    assert "My agents" not in default_nav
+    assert "Remote machines" not in default_nav
+
+    enabled_nav = render_settings_nav(build_menu_model(["user"], **options))
+    assert "Pulse digest" in enabled_nav
+    assert "My agents" in enabled_nav
+    assert "Remote machines" in enabled_nav
+
+    # None of it leaks into the account row, which carries the gear alone.
+    for html in (render_topbar(["user"]), render_topbar(["user"], **options)):
+        assert "astral-pulse-btn" not in html
+        assert "My agents" not in html
+        assert "Remote machines" not in html

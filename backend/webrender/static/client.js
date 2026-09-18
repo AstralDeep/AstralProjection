@@ -633,10 +633,12 @@
    * that carries the rendered components, and an expand chip that opens the
    * full-screen view. */
   function buildAssistantTurn() {
-    turnCounter += 1;
+    // A result card answers a turn; it is not a turn of its own. It carries
+    // the number of the message it is answering, which is why this reads the
+    // counter instead of advancing it.
     var turn = document.createElement("div");
     turn.className = "astral-turn astral-turn-assistant";
-    turn.setAttribute("data-turn", String(turnCounter));
+    turn.setAttribute("data-turn", String(turnCounter || 1));
 
     var card = document.createElement("div");
     card.className = "astral-response-card";
@@ -665,7 +667,7 @@
     right.className = "astral-card-head-right";
     var chip = document.createElement("span");
     chip.className = "astral-meta-chip";
-    chip.textContent = "Turn " + turnCounter;
+    chip.textContent = "Turn " + (turnCounter || 1);
     right.appendChild(chip);
     head.appendChild(left);
     head.appendChild(right);
@@ -684,7 +686,7 @@
     card.appendChild(expand);
     turn.appendChild(card);
     return { turn: turn, card: card, head: head, name: name, sub: sub,
-             meta: right, body: body, expand: expand };
+             meta: right, body: body, expand: expand, chip: chip };
   }
 
   /** Point `canvas` at a fresh live card, creating it if there is not one. */
@@ -699,6 +701,20 @@
     // whatever the newest turn rendered, so they belong in its header.
     if (typeof placePageActions === "function") placePageActions();
     return canvas;
+  }
+
+  /** Empty the feed and give it a fresh live card.
+   *
+   * `canvas` is a node INSIDE the feed, so anything that clears the feed
+   * orphans it. Every caller that empties `#astral-chat` has to come through
+   * here, or it keeps rendering into a node that is no longer in the page —
+   * which is exactly how a turn's components stopped appearing. */
+  function resetFeed() {
+    chat.replaceChildren();
+    turnCounter = 0;
+    liveTurn = null;
+    ensureLiveTurn();
+    canvas.replaceChildren();
   }
 
   /** Freeze the current card so the next turn gets its own. A card with no
@@ -725,7 +741,13 @@
   var canvasEmpty = document.getElementById("astral-canvas-empty");
   function hideCanvasEmpty() {
     if (canvasEmpty) canvasEmpty.hidden = true;
-    if (liveTurn) liveTurn.turn.hidden = false;
+    if (!liveTurn) return;
+    liveTurn.turn.hidden = false;
+    // The card is built before the turn it answers exists; name it now that
+    // there is something in it.
+    var n = String(turnCounter || 1);
+    liveTurn.turn.setAttribute("data-turn", n);
+    if (liveTurn.chip) liveTurn.chip.textContent = "Turn " + n;
   }
   function showCanvasEmpty() {
     if (liveTurn && !liveTurn.body.childNodes.length) liveTurn.turn.hidden = true;
@@ -820,6 +842,11 @@
     // scaffolding, not content — counting its expand chip as content would
     // put the workspace view on screen before the first answer exists.
     if (node.hasAttribute("data-astral-live-turn") && node.hidden) return false;
+    // A response card's header and its expand button are the card's frame,
+    // not the turn's content. Counting them made an empty-but-revealed card
+    // look like a workspace, which then discarded the welcome instead of
+    // placing it.
+    if (node.matches(".astral-card-head, .astral-expand-chip")) return false;
     if (node.hasAttribute("data-component-id")
         || node.matches("img, svg, canvas, video, audio, iframe, input, textarea, button")) return true;
     return Array.prototype.some.call(node.childNodes, hasWorkspaceContent);
@@ -861,8 +888,14 @@
   syncWorkspaceView();
   if (window.MutationObserver) {
     var workspaceObserver = new MutationObserver(syncWorkspaceView);
-    if (canvas) workspaceObserver.observe(canvas, { childList: true, subtree: true, characterData: true });
+    // 089: the live canvas is a node inside the feed and is replaced whenever
+    // the feed is rebuilt, so watching it by identity would leave the observer
+    // on a discarded node. Watching the feed covers it. A shell that still
+    // keeps the two apart is watched separately.
     if (chat) workspaceObserver.observe(chat, { childList: true, subtree: true, characterData: true });
+    if (canvas && !(chat && chat.contains(canvas))) {
+      workspaceObserver.observe(canvas, { childList: true, subtree: true, characterData: true });
+    }
   }
   var statusEl = document.getElementById("astral-status");
   // Identifies the operation/submission that currently owns the shared status
@@ -1675,13 +1708,33 @@
     return resolved;
   }
 
-  function setVoiceFeedback(state, reason, message, forceVisible) {
+  // The composer used to narrate every voice state under the input:
+  // connecting, listening, transcribing, speaking. That is a running
+  // commentary on something the person is already doing, in the one place
+  // they are looking. These are the states it stays quiet for. The rest --
+  // unavailable, reconnecting, an error, an ended session -- still show,
+  // because those are the ones that need a decision and would otherwise fail
+  // silently (088 FR-028: voice state is never conveyed by colour alone).
+  var VOICE_QUIET_STATES = Object.freeze({
+    off: true, connecting: true, greeting: true, listening: true,
+    speech_detected: true, transcribing: true, acknowledging: true,
+    processing: true, waiting_on_user: true, speaking_progress: true,
+    speaking_result: true, muted: true, suspended: true,
+  });
+
+  // `_forceVisible` is what the eighty-odd callers used to decide visibility
+  // with, one at a time. It decides nothing now: the panel shows when there is
+  // a message to read, or when the state is one that needs a decision. The
+  // parameter keeps its place so the rule lives here and only here.
+  function setVoiceFeedback(state, reason, message, _forceVisible) {
     if (!VOICE_STATES[state]) state = "error";
     reason = typeof reason === "string" && reason ? reason : "internal_error";
     if (voiceFeedbackEl) {
       voiceFeedbackEl.setAttribute("data-state", state);
       voiceFeedbackEl.setAttribute("data-reason", reason);
-      voiceFeedbackEl.hidden = !forceVisible && state === "off" && !message;
+      // An explicit message is always someone telling the person something,
+      // so it shows whatever the state is; a bare running state does not.
+      voiceFeedbackEl.hidden = !message && !!VOICE_QUIET_STATES[state];
     }
     if (voiceControlsEl) {
       voiceControlsEl.setAttribute("data-state", state);
@@ -2035,6 +2088,99 @@
     "speaker-consent": '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>',
   };
 
+  // ---- voice preflight ---------------------------------------------------
+  // Whether the voice service can be reached at all is a question with an
+  // answer before anyone clicks anything, so it is asked in the background
+  // once the socket is registered rather than discovered by a click that
+  // half-starts a session and then fails. `null` means not answered yet.
+  var voicePreflight = null;
+  var voicePreflightGeneration = null;
+  var VOICE_PREFLIGHT_TIMEOUT_MS = 6000;
+  var VOICE_PREFLIGHT_REASONS = {
+    voice_unavailable: "Voice is not available on this deployment.",
+    speech_unavailable: "The speech service is not reachable from the server.",
+  };
+
+  function voiceUnavailableMessage() {
+    if (!voicePreflight || voicePreflight.ok) return "";
+    return VOICE_PREFLIGHT_REASONS[voicePreflight.reason]
+      || VOICE_PREFLIGHT_REASONS.voice_unavailable;
+  }
+
+  /** Reflect the preflight verdict on whatever voice control is on screen.
+   *  The button stays focusable and keeps its click: a disabled button
+   *  cannot explain itself, and "why is this greyed out" is the whole
+   *  question. `aria-disabled` says the same thing to assistive tech. */
+  function applyVoicePreflight() {
+    if (!voiceControlsEl || !voicePreflight || voicePreflight.ok) return;
+    var why = voiceUnavailableMessage();
+    var buttons = voiceControlsEl.querySelectorAll("button");
+    for (var i = 0; i < buttons.length; i++) {
+      var button = buttons[i];
+      button.disabled = false;
+      button.setAttribute("aria-disabled", "true");
+      button.setAttribute("data-voice-blocked", "1");
+      button.title = why;
+    }
+  }
+
+  // Delegated, so it also covers the client-local default control, which has
+  // no click handler of its own and would otherwise answer a click with
+  // nothing at all.
+  if (voiceControlsEl) voiceControlsEl.addEventListener("click", function (event) {
+    var button = event.target.closest && event.target.closest("[data-voice-blocked]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+    showToast(voiceUnavailableMessage(), "error");
+  }, true);
+
+  //: How long the server gets to answer for itself. composer_state arrives
+  //: right after registration and carries the authoritative voice state, so
+  //: the preflight is for the case where it never comes -- which is exactly
+  //: the case where the mic would otherwise sit there saying "Checking voice
+  //: availability" for the rest of the session.
+  var VOICE_PREFLIGHT_DELAY_MS = 1500;
+
+  function runVoicePreflight() {
+    var generation = connectionGeneration;
+    if (voicePreflightGeneration === generation) return;
+    voicePreflightGeneration = generation;
+    voicePreflight = null;
+    setTimeout(function () {
+      if (voicePreflightGeneration === generation && !voiceComposer) askVoicePreflight(generation);
+    }, VOICE_PREFLIGHT_DELAY_MS);
+  }
+
+  function askVoicePreflight(generation) {
+    var controller = typeof AbortController === "function" ? new AbortController() : null;
+    var timer = setTimeout(function () { if (controller) controller.abort(); },
+                           VOICE_PREFLIGHT_TIMEOUT_MS);
+    fetch(API_URL + "/api/voice/v2/capability", {
+      credentials: "same-origin",
+      headers: token ? { Authorization: "Bearer " + token } : {},
+      signal: controller ? controller.signal : undefined,
+    }).then(function (response) {
+      // 404 is an older server that has no capability route but does have
+      // voice; only an explicit refusal counts as unavailable.
+      if (response.status === 404 || response.ok) return { ok: true };
+      return response.json().catch(function () { return {}; }).then(function (body) {
+        return { ok: false, reason: (body && body.reason) || "voice_unavailable" };
+      });
+    }).catch(function () {
+      // A probe that could not be made is not an answer. Taking the mic away
+      // for the rest of the session over one failed background request would
+      // turn a blip into an outage; the activation path does its own discovery
+      // and reports its own failure if voice really is down.
+      return { ok: true };
+    }).then(function (verdict) {
+      clearTimeout(timer);
+      if (voicePreflightGeneration !== generation) return;
+      voicePreflight = verdict;
+      applyVoicePreflight();
+    });
+  }
+
   // 066: the voice affordance is ALWAYS present — this client-local default
   // renders before any composer_state frame arrives (and again on socket
   // teardown) so an absent/failed server projection can never leave the
@@ -2059,6 +2205,7 @@
     label.textContent = "Start voice conversation";
     button.appendChild(label);
     voiceControlsEl.replaceChildren(button);
+    applyVoicePreflight();
   }
 
   function renderVoiceControls(voice) {
@@ -2086,6 +2233,7 @@
       fragment.appendChild(button);
     });
     voiceControlsEl.replaceChildren(fragment);
+    applyVoicePreflight();
   }
 
   function consumeComposerState(frame) {
@@ -4478,6 +4626,13 @@
   }
 
   function onVoiceControlClick(control) {
+    // The preflight already knows this cannot work. Say so, once, where the
+    // person clicked -- rather than starting a session that fails on its way
+    // up and leaves them guessing.
+    if (voicePreflight && !voicePreflight.ok) {
+      showToast(voiceUnavailableMessage(), "error");
+      return;
+    }
     if (!control || !control.enabled) return;
     switch (control.action) {
       case "voice_session_start": beginVoiceActivation("start"); break;
@@ -6232,21 +6387,24 @@
     return { nodes: nodes, envelopes: envelopes, workspace: sharedWorkspace };
   }
 
-  function createChatBubbleNode(role) {
+  function createChatBubbleNode(role, turnNo) {
     // Feature 089: a user turn is a right-aligned bubble under a small header
     // carrying the turn number and the time; an assistant text turn is a
     // full-width card body, so a text-only answer sits in the feed the same
     // way a rendered result does.
+    // `turnNo`, when given, numbers a bubble being rebuilt from a committed
+    // transcript; the counter itself is only advanced by live sends, so a
+    // re-decoded transcript cannot inflate the numbers people read.
     var wrap = document.createElement("div");
     wrap.className = "astral-turn " + (role === "user"
       ? "astral-turn-user" : "astral-turn-assistant");
     if (role === "user") {
-      turnCounter += 1;
+      var number = turnNo == null ? (turnCounter += 1) : turnNo;
       var head = document.createElement("div");
       head.className = "astral-user-head";
       var pill = document.createElement("span");
       pill.className = "astral-turn-pill";
-      pill.textContent = "Turn " + turnCounter;
+      pill.textContent = "Turn " + number;
       var time = document.createElement("span");
       time.className = "astral-turn-time";
       time.textContent = turnClock();
@@ -6268,8 +6426,8 @@
   }
 
   /** Decode one validated semantic message into a detached visible bubble. */
-  function decodeSemanticMessage(message) {
-    var built = createChatBubbleNode(message.role);
+  function decodeSemanticMessage(message, turnNo) {
+    var built = createChatBubbleNode(message.role, turnNo);
     var presentations = [];
     var hasVisibleContent = false;
     message.attachments.forEach(function (attachment) {
@@ -6396,8 +6554,13 @@
   function prepareSnapshotCandidate(frame) {
     var transcriptFragment = document.createDocumentFragment();
     var transcriptPresentations = [];
+    // A turn is one thing the person asked for, so the transcript's own user
+    // messages number it. Preparing a candidate that is later rejected must
+    // leave the live counter alone, which is why this counts locally.
+    var turns = 0;
     frame.transcript.forEach(function (message) {
-      var decoded = decodeSemanticMessage(message);
+      if (message.role === "user") turns += 1;
+      var decoded = decodeSemanticMessage(message, message.role === "user" ? turns : null);
       transcriptFragment.appendChild(decoded.node);
       transcriptPresentations = transcriptPresentations.concat(decoded.presentations);
     });
@@ -6413,6 +6576,7 @@
     return {
       chatFragment: transcriptFragment,
       canvasRoot: canvasRoot,
+      turnCount: turns,
       emptyCanvas: !canvasPresentation.nodes.length,
       semanticCanonical: stableStringify(semanticClone(frame)),
       presentationCanonical: stableStringify({
@@ -6428,11 +6592,21 @@
     lastSnapshotIdByChat[frame.chat_id] = frame.snapshot_id;
     transientOverlay = null;
     chat.replaceChildren(candidate.chatFragment);
+    // 089: `canvas` is the newest response card's BODY, and that card lives
+    // inside the feed — so replacing the transcript above just detached it.
+    // Rebuild the live card against the fresh transcript before the committed
+    // workspace is placed; appending it to the orphaned node instead is why a
+    // turn's components stopped appearing at all. Turn numbering restarts from
+    // what the transcript actually contains.
+    turnCounter = candidate.turnCount;
+    liveTurn = null;
+    ensureLiveTurn();
     canvas.replaceChildren();
     if (candidate.emptyCanvas) showCanvasEmpty();
     else {
       canvas.appendChild(candidate.canvasRoot);
       processSideEffects(candidate.canvasRoot);
+      hideCanvasEmpty();
     }
     hideSkeleton();
     timelineMode = false;
@@ -6593,6 +6767,12 @@
   function reduceTransientFrame(frame) {
     if (!acceptTransientFrame(frame)) return continuityDisposition("transient_frame_ignored");
     var overlay = ensureTransientOverlay();
+    // The live card is mounted hidden so the feed always has somewhere to
+    // render; a frame arriving for it is the moment it has something to show.
+    // Without this the turn's own components are drawn into a hidden card and
+    // the person watches an empty canvas while the work happens.
+    hideSkeleton();
+    hideCanvasEmpty();
     if (frame.type === "ui_render") {
       if (frame.target === "chat") appendChatBubbleTo(overlay.chat, "assistant", frame.html);
       else setHTML(overlay.canvas, frame.html);
@@ -7209,6 +7389,9 @@
           socketReady = true;
           setConnState("connected");
           flushPendingActions();
+          // Ask whether voice can work at all, now, in the background. The
+          // answer decides whether the mic is offered; nothing waits on it.
+          runVoicePreflight();
         }
         break;
       case "agent_list":
@@ -7265,12 +7448,18 @@
 
   function escapeText(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
 
-  // Render attachment(s) as a pill on its own line above the request text (a
-  // plain "📎 name" prefix collapses onto the query line because chat bubbles
-  // don't preserve newlines).
+  // Render attachment(s) as a pill on its own line above the request text (an
+  // inline prefix collapses onto the query line because chat bubbles don't
+  // preserve newlines). The paperclip is drawn, not typed: the same icon the
+  // composer's attach button uses, so the two read as one affordance.
+  var ATTACH_CLIP_SVG = "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" "
+    + "stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" "
+    + "stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21.44 11.05l-9.19 9.19a6 6 0 "
+    + "0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48\">"
+    + "</path></svg>";
   function attachChipHtml(names) {
     return "<div class=\"mb-1\"><span class=\"inline-flex items-center gap-1 rounded "
-      + "bg-white/10 border border-white/10 px-2 py-0.5 text-xs\">📎 "
+      + "bg-white/10 border border-white/10 px-2 py-0.5 text-xs\">" + ATTACH_CLIP_SVG
       + escapeText(names) + "</span></div>";
   }
 
@@ -7481,8 +7670,7 @@
     streamChartPlot = {};
     stepEls = {};
     hideSkeleton();
-    chat.innerHTML = "";
-    canvas.innerHTML = "";
+    resetFeed();
     showCanvasEmpty();
     setStatus("");
     action("new_chat", {});
@@ -7921,6 +8109,7 @@
 
   // Attachment staging: paperclip → pick → upload → chip → send as structured
   // attachments[] on the next chat_message.
+  var CHIP_CLOSE_SVG = "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"></path></svg>";
   var stagedAttachments = [];   // {uid, attachment_id|null, filename, category, state, note}
   var attachSeq = 0;
   var MAX_ATTACHMENTS = 10;
@@ -7964,7 +8153,9 @@
       x.className = "astral-chip-remove";
       x.setAttribute("aria-label", "Remove " + a.filename);
       x.setAttribute("data-remove-uid", String(a.uid));
-      x.textContent = "×";
+      // Drawn, not typed: the multiplication sign carries its own line box,
+      // which overflowed the button and sat off its centre.
+      x.innerHTML = CHIP_CLOSE_SVG;
       chip.appendChild(x);
       attachEl.appendChild(chip);
     });
@@ -8174,17 +8365,69 @@
       + 'shadow-2xl w-full max-w-3xl mx-4 my-auto" role="dialog" aria-modal="true" tabindex="-1">'
       + '<div class="px-5 py-4 space-y-4">' + bodyHtml + "</div></div></div>";
   }
+  var SKELETON_BODY_HTML =
+    '<div class="astral-skeleton" role="status" aria-busy="true" aria-live="polite">'
+    + '<span class="sr-only">Loading…</span>'
+    + '<div class="astral-skeleton-line h-3 w-1/3 mb-3"></div>'
+    + '<div class="astral-skeleton-line h-20 w-full mb-3"></div>'
+    + '<div class="astral-skeleton-line h-20 w-full mb-3"></div>'
+    + '<div class="astral-skeleton-line h-3 w-1/2 mb-2"></div></div>';
+  var RETRY_BODY_HTML =
+    '<div class="text-sm text-astral-text" role="status">This is taking longer than expected.</div>'
+    + '<div class="flex gap-2 mt-3">'
+    + '<button type="button" class="astral-modal-retry px-3 py-1.5 rounded-lg text-xs font-medium '
+    + 'bg-astral-primary text-white">Retry</button>'
+    + '<button type="button" class="astral-modal-close px-3 py-1.5 rounded-lg text-xs '
+    + 'bg-white/5 border border-white/10 text-astral-text">Close</button></div>';
+
+  /** The settings dialog currently on screen, if one is. */
+  function openSettingsDialog() {
+    return modalRoot && modalRoot.querySelector(".astral-modal-card.has-nav");
+  }
+  /** Move the rail current marker onto the given key, so the rail says where
+   *  you are while the pane it points at is still loading. */
+  function markNavCurrent(key) {
+    var nav = modalRoot && modalRoot.querySelector(".astral-settings-nav");
+    if (!nav || !key) return;
+    var items = nav.querySelectorAll("[data-menu-key]");
+    var current = null;
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].getAttribute("data-menu-key") === key) {
+        items[i].setAttribute("aria-current", "true");
+        current = items[i];
+      } else items[i].removeAttribute("aria-current");
+    }
+    // Name the section being opened straight away. Leaving the previous
+    // section's heading over a loading pane says the dialog is showing
+    // something it is not.
+    var heading = modalRoot.querySelector(".astral-modal-title");
+    if (current && heading) {
+      heading.textContent = (current.textContent || "").trim() || heading.textContent;
+      var subtitle = modalRoot.querySelector(".astral-modal-subtitle");
+      if (subtitle) subtitle.remove();
+    }
+  }
+  /** Put bodyHtml in the open dialog pane, keeping the dialog itself. False
+   *  when there is no dialog to put it in. */
+  function setDialogPane(bodyHtml) {
+    var card = openSettingsDialog();
+    var body = card && card.querySelector(".astral-modal-body");
+    if (!body) return false;
+    body.innerHTML = bodyHtml;
+    return true;
+  }
   function showModalSkeleton(act, payload) {
     if (!modalRoot) return;
     clearModalSkeletonTimer();
     modalSkeletonRequest = { action: act, payload: payload || {} };
-    modalRoot.innerHTML = modalShellHtml(
-      '<div class="astral-skeleton" role="status" aria-busy="true" aria-live="polite">'
-      + '<span class="sr-only">Loading…</span>'
-      + '<div class="astral-skeleton-line h-3 w-1/3 mb-3"></div>'
-      + '<div class="astral-skeleton-line h-20 w-full mb-3"></div>'
-      + '<div class="astral-skeleton-line h-20 w-full mb-3"></div>'
-      + '<div class="astral-skeleton-line h-3 w-1/2 mb-2"></div></div>');
+    // Moving between settings sections keeps the dialog: only the pane goes to
+    // a skeleton. Replacing the whole thing made the dialog close and reopen
+    // on every rail click, and put the slow-render card where the dialog had
+    // been whenever a render took its time.
+    var inPlace = act === "chrome_open" && openSettingsDialog()
+      && setDialogPane(SKELETON_BODY_HTML);
+    if (inPlace) markNavCurrent((payload || {}).surface);
+    else modalRoot.innerHTML = modalShellHtml(SKELETON_BODY_HTML);
     modalSkeletonTimer = setTimeout(showModalRetry, MODAL_SKELETON_TIMEOUT_MS);
   }
   function showModalRetry() {
@@ -8193,13 +8436,7 @@
     if (modalSkeletonRequest.action === "chrome_open" && ["work", "guidance"].indexOf(modalSkeletonRequest.payload.surface) !== -1) {
       retireOwnerSurface();
     }
-    modalRoot.innerHTML = modalShellHtml(
-      '<div class="text-sm text-astral-text" role="status">This is taking longer than expected.</div>'
-      + '<div class="flex gap-2">'
-      + '<button type="button" class="astral-modal-retry px-3 py-1.5 rounded-lg text-xs font-medium '
-      + 'bg-astral-primary text-white">Retry</button>'
-      + '<button type="button" class="astral-modal-close px-3 py-1.5 rounded-lg text-xs '
-      + 'bg-white/5 border border-white/10 text-astral-text">Close</button></div>');
+    if (!setDialogPane(RETRY_BODY_HTML)) modalRoot.innerHTML = modalShellHtml(RETRY_BODY_HTML);
     var retry = modalRoot.querySelector(".astral-modal-retry");
     if (retry) retry.addEventListener("click", function () {
       var req = modalSkeletonRequest;
@@ -8208,22 +8445,100 @@
     });
   }
 
+  /** Replace selector inside card with node, insert it after `after` when it
+   *  is new, or remove what is there when node is absent. */
+  function replaceOrDrop(root, selector, node, after, before) {
+    var existing = root.querySelector(selector);
+    if (node && existing) existing.replaceWith(node);
+    else if (node && before) before.insertAdjacentElement("beforebegin", node);
+    else if (node && after) after.insertAdjacentElement("afterend", node);
+    else if (node) root.appendChild(node);
+    else if (existing) existing.remove();
+  }
+
+  /** Swap an open settings dialog contents for html without replacing the
+   *  dialog itself.
+   *
+   *  Every settings surface renders the same card and the same rail; the
+   *  heading, the optional tab strip, the pane and the footer are what differ.
+   *  Rebuilding all of it on a rail click threw away the rail scroll position,
+   *  moved focus, and made the dialog blink out and back. False when the
+   *  incoming dialog is not the same kind, and the caller replaces it whole. */
+  function morphSettingsDialog(html) {
+    var card = openSettingsDialog();
+    if (!card) return false;
+    var holder = document.createElement("template");
+    holder.innerHTML = html;
+    var next = holder.content.querySelector(".astral-modal-card.has-nav");
+    var nextBody = next && next.querySelector(".astral-modal-body");
+    var nextNav = next && next.querySelector(".astral-settings-nav");
+    var nav = card.querySelector(".astral-settings-nav");
+    if (!next || !nextBody || !nextNav || !nav) return false;
+    // A dialog that refuses dismissal is a different contract from one that
+    // does not; never morph one into the other.
+    if (next.hasAttribute("data-mandatory") !== card.hasAttribute("data-mandatory")) return false;
+
+    var overlay = modalRoot.querySelector(".astral-modal-overlay");
+    var nextOverlay = holder.content.querySelector(".astral-modal-overlay");
+    if (overlay && nextOverlay) {
+      overlay.setAttribute("data-surface", nextOverlay.getAttribute("data-surface") || "");
+    }
+    if (next.hasAttribute("aria-label")) card.setAttribute("aria-label", next.getAttribute("aria-label"));
+
+    var header = card.querySelector(".astral-modal-header");
+    var nextHeader = next.querySelector(".astral-modal-header");
+    if (header && nextHeader) {
+      var icon = header.querySelector(".astral-modal-icon");
+      var nextIcon = nextHeader.querySelector(".astral-modal-icon");
+      if (icon && nextIcon) icon.textContent = nextIcon.textContent;
+      var heading = header.querySelector(".astral-modal-heading");
+      var nextHeading = nextHeader.querySelector(".astral-modal-heading");
+      if (heading && nextHeading) heading.replaceWith(nextHeading);
+    }
+    // The tab strip lives in the pane beside the rail, above the body.
+    var pane = card.querySelector(".astral-modal-pane") || card;
+    replaceOrDrop(pane, ".astral-modal-tabs", next.querySelector(".astral-modal-tabs"), null,
+                  pane.querySelector(".astral-modal-body"));
+    card.querySelector(".astral-modal-body").replaceWith(nextBody);
+    replaceOrDrop(card, ".astral-modal-footer", next.querySelector(".astral-modal-footer"), null);
+    // The rail is the same inventory on every surface, so it stays where it is
+    // (with its scroll intact) and only its current marker moves.
+    var current = nextNav.querySelector('[aria-current="true"]');
+    markNavCurrent(current && current.getAttribute("data-menu-key"));
+    processSideEffects(nextBody);
+    return true;
+  }
+
   /** Replace the chrome modal content; empty html closes it (restores focus). */
   function setModal(htmlStr) {
     if (!modalRoot) return;
     clearAuthoringControlPending();
     clearModalSkeletonTimer();
     if (htmlStr) {
-      modalReturnFocus = document.activeElement;
-      modalRoot.innerHTML = htmlStr;
-      processSideEffects(modalRoot);
+      // A settings dialog that is already open keeps its card, its rail and
+      // its scroll; only the pane it is showing is replaced. The dialog is
+      // static from the moment it opens until it is closed.
+      var swapped = morphSettingsDialog(htmlStr);
+      if (!swapped) {
+        modalReturnFocus = document.activeElement;
+        modalRoot.innerHTML = htmlStr;
+        processSideEffects(modalRoot);
+      }
       // Feature 077: the "My agents & skills" surface carries the user's
       // current /commands — refresh the typeahead without a reload.
       if (typeof window.__astralRefreshCommands === "function") window.__astralRefreshCommands(modalRoot);
       adoptServerSelection(modalRoot);
-      var card = modalRoot.querySelector(".astral-modal-card");
-      if (card) card.focus();
+      // Focus moves on open, not on a section change: stealing it back to the
+      // card would drop a keyboard user out of the rail on every click.
+      if (!swapped) {
+        var card = modalRoot.querySelector(".astral-modal-card");
+        if (card) card.focus();
+      }
       maybeStartTour();
+      // A step waiting on the settings dialog can be shown now that its rail
+      // is in the DOM. The tour card sits above the dialog, so the highlighted
+      // entry stays visible behind it.
+      if (tourState && tourAwaitingChrome === tourState.idx) showTourStep();
     } else {
       modalRoot.innerHTML = "";
       if (modalReturnFocus && modalReturnFocus.focus) { try { modalReturnFocus.focus(); } catch (e) {} }
@@ -8269,8 +8584,11 @@
   }
 
   document.addEventListener("click", function (e) {
+    // The gear opens the settings dialog through the ordinary chrome_open
+    // delegation below. It only toggles a popover on a build that still
+    // renders one, so this branch must not swallow the click otherwise.
     var btn = e.target.closest && e.target.closest("#astral-settings-btn");
-    if (btn) { setMenu(!menuOpen(), false); return; }
+    if (btn && menuEl()) { setMenu(!menuOpen(), false); return; }
     // Tour-card clicks must not count as "outside" — the tour opens the menu
     // to spotlight in-menu targets, and Next would otherwise close it again.
     var inTour = e.target.closest && e.target.closest("#astral-tour-card");
@@ -8405,6 +8723,20 @@
       payload.params = payload.params || {};
       if (!payload.params.chat_id && activeChatId) payload.params.chat_id = activeChatId;
     }
+    // "Load" fills the composer and stops there: it is a local convenience,
+    // never a turn, so it is handled here and nothing is sent.
+    if (act === "compose_prompt") {
+      e.preventDefault();
+      closeModal();
+      if (input) {
+        input.value = typeof payload.message === "string" ? payload.message : "";
+        input.focus();
+      }
+      return;
+    }
+    // Running an example from a dialog should leave the dialog: the answer
+    // lands on the canvas behind it.
+    if (act === "chat_message" && modalRoot && modalRoot.contains(el)) closeModal();
     if (act === "chrome_open") { setMenu(false, false); showModalSkeleton(act, payload); }
     if (act === "chrome_turn_selection_set") {
       // 088 (T011): the button's payload IS the server-issued selection for
@@ -8428,8 +8760,13 @@
     var clear = e.target.closest && e.target.closest("#astral-selection-clear");
     if (!clear) return;
     clearTurnSelection();
+    // Back to the control that opens the picker. Below 768 that control sits
+    // behind the composer's overflow button, and focusing something the
+    // stylesheet is not showing drops the keyboard user nowhere.
     var advanced = document.getElementById("astral-advanced-btn");
-    if (advanced) { try { advanced.focus(); } catch (err) {} }
+    var target = advanced && advanced.offsetParent !== null
+      ? advanced : (document.getElementById("astral-composer-more") || advanced);
+    if (target) { try { target.focus(); } catch (err) {} }
   });
 
   // Permission sections (Agents & permissions): the section master gates its
@@ -8495,6 +8832,12 @@
 
   // ---- tour runner (steps server-rendered into [data-tour-steps]; A10 skips) ----
   var tourState = null;
+  // The step index a settings-dialog open was requested for, so the retry
+  // happens once and only for the step that asked for it.
+  var tourAwaitingChrome = null;
+  // Any settings surface renders the whole rail, so the first entry is as
+  // good an anchor as any and is the one the gear itself opens.
+  var TOUR_SETTINGS_SURFACE = "agents";
   function maybeStartTour() {
     var holder = modalRoot && modalRoot.querySelector("[data-tour-steps]");
     if (!holder) return;
@@ -8533,6 +8876,19 @@
     // navigation, the no-target intro/outro cards).
     if (target && (target.id === "astral-settings-menu" || (target.closest && target.closest("#astral-settings-menu")))) setMenu(true, false);
     else if (menuOpen()) setMenu(false, false);
+    // The settings entries a "sidebar.*" step points at live in the settings
+    // dialog's rail now, so they exist only while that dialog is open. Open
+    // it once and re-run the step when the server's render lands, rather than
+    // telling the person their own settings aren't available yet. One attempt
+    // per step: if the dialog still does not carry the target, the step falls
+    // through to the ordinary "not available" note instead of looping.
+    if (!target && step.target_key && step.target_key.indexOf("sidebar.") === 0
+        && !tourAwaitingChrome) {
+      tourAwaitingChrome = tourState.idx;
+      action("chrome_open", { surface: TOUR_SETTINGS_SURFACE });
+      return;
+    }
+    tourAwaitingChrome = null;
     if (target) {
       target.classList.add("astral-tour-highlight");
       if (target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
@@ -8571,8 +8927,11 @@
   function endTour(outcome) {
     var wasRunning = !!tourState;
     tourState = null; // before setMenu so the gear regains focus at tour end
+    tourAwaitingChrome = null;
     clearTourHighlight();
     setMenu(false, false);
+    // A tour that walked through the settings dialog leaves it open otherwise.
+    if (wasRunning) closeModal();
     if (wasRunning) action("chrome_tour_event", { event: outcome });
   }
 
@@ -8690,13 +9049,6 @@
     if (text != null) node.textContent = text;
     return node;
   }
-  function initialsOf(name) {
-    var parts = String(name || "").trim().split(/\s+/).slice(0, 2);
-    var out = "";
-    for (var i = 0; i < parts.length; i++) out += parts[i].charAt(0);
-    return out.toUpperCase() || "A";
-  }
-
   // ---- the agent directory ------------------------------------------------
   var agentListEl = document.getElementById("astral-agent-list");
   var agentCountEl = document.getElementById("astral-agent-count");
@@ -8708,7 +9060,6 @@
     item.type = "button";
     item.setAttribute("role", "listitem");
     item.setAttribute("data-agent-id", agent.id || "");
-    item.appendChild(el("span", "astral-agent-icon", initialsOf(agent.name)));
     var body = el("div", "astral-agent-body");
     body.appendChild(el("span", "astral-agent-name", agent.name || agent.id || "Agent"));
     body.appendChild(el("span", "astral-agent-desc", agent.description || ""));
@@ -8719,15 +9070,19 @@
     item.appendChild(dot);
     item.setAttribute("aria-label", (agent.name || "Agent")
       + (agent.state === "ready" ? "" : " — disabled"));
-    // Selecting an agent is the same Advanced binding the composer offers;
-    // this is a shortcut into it, not a second way to route a turn.
+    // Clicking an agent asks what it is for, which is what someone
+    // browsing a directory of unfamiliar agents actually wants. It used to
+    // drop an "@Name" mention into the composer, and only when the composer
+    // was empty — so the second agent you clicked appeared to do nothing
+    // while the first one's name sat in the box. The dialog answers the
+    // question and offers the agent's own examples; Run still goes out as an
+    // ordinary turn through the ordinary gates.
     item.addEventListener("click", function () {
       for (var i = 0; i < agentItems.length; i++) agentItems[i].classList.remove("is-active");
       item.classList.add("is-active");
-      if (input) {
-        input.focus();
-        if (!input.value) input.value = "@" + (agent.name || agent.id) + " ";
-      }
+      var payload = { surface: "agent_intro", params: { agent_id: agent.id || "" } };
+      showModalSkeleton("chrome_open", payload);
+      action("chrome_open", payload);
     });
     return item;
   }
@@ -8785,7 +9140,6 @@
     card.setAttribute("data-category", scenario.category || "");
     var head = el("div", "astral-scenario-head");
     var tag = el("span", "astral-scenario-tag");
-    tag.appendChild(el("span", "astral-scenario-tag-icon", scenario.glyph || "✦"));
     tag.appendChild(el("span", null, scenario.category || "Example"));
     head.appendChild(tag);
     head.appendChild(el("span", "astral-scenario-badge", "Example"));
@@ -8850,10 +9204,11 @@
     chatActionsHost = el("div", "astral-recent-actions");
     recentToggleEl.parentNode.insertBefore(chatActionsHost, recentToggleEl);
     chatActionsHost.appendChild(recentToggleEl);
-    ["astral-newchat-btn", "astral-chats-btn"].forEach(function (id) {
-      var btn = document.getElementById(id);
-      if (btn) chatActionsHost.appendChild(btn);
-    });
+    // New chat only. Recent chats used to come too, but the list it opens is
+    // the one directly below this heading, so on the web it was a button that
+    // showed you what you were already looking at.
+    var newChat = document.getElementById("astral-newchat-btn");
+    if (newChat) chatActionsHost.appendChild(newChat);
   })();
 
   /** Move the canvas page actions into the newest card's header. */
@@ -8873,9 +9228,13 @@
 
   // ---- recent work: collapsible ------------------------------------------
   var recentToggle = document.getElementById("astral-recent-toggle");
+  var recentSection = document.getElementById("astral-recent-work");
   if (recentToggle) recentToggle.addEventListener("click", function () {
     var open = recentToggle.getAttribute("aria-expanded") === "true";
     recentToggle.setAttribute("aria-expanded", open ? "false" : "true");
+    // The section owns the collapsed state: the toggle has been re-homed away
+    // from the list it controls, so it can no longer style it as a sibling.
+    if (recentSection) recentSection.classList.toggle("is-collapsed", open);
   });
 
   // ---- the full-screen result view ---------------------------------------

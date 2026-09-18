@@ -3,10 +3,15 @@
 Ported from the former React panel
 (``frontend/src/components/guide/UserGuidePanel.tsx`` at commit ``29de624``).
 Every section of the source panel is carried over; wording that described
-React-era chrome that no longer exists (the left sidebar, draggable floating
-chat, URL-persisted filters, instant-save permissions) is adapted to the
-current server-rendered UI (top-bar Settings menu, fixed chat panel,
-explicit-save surfaces).
+chrome that no longer exists is adapted to the current server-rendered UI.
+Two rounds of that so far: the React era (a left sidebar, draggable floating
+chat, URL-persisted filters, instant-save permissions), and the a8p console
+(feature 089 plus the 2026-09-18 refinements — the frame is a left sidebar
+and a main column again, there is no top bar, and the settings gear at the
+sidebar's bottom opens a dialog whose left rail IS the menu).
+
+Keep this file honest when the chrome moves: a guide that names a control by a
+place it no longer occupies is worse than one that does not mention it.
 
 The guide is intentionally static content (no live data, no DB access).
 ``SECTIONS`` is an ordered list of ``{"slug", "title", "body_html"}`` dicts
@@ -128,7 +133,7 @@ _INTRO = "".join([
         ),
         _li(
             _strong("Want a hands-on walkthrough?"), " Use ", _em("Take the tour"),
-            " in the top-bar Settings menu to launch the interactive getting-started tour.",
+            " in Settings to launch the interactive getting-started tour.",
         ),
         _li(
             _strong("Looking for something specific?"), " Browse the table of contents, or "
@@ -163,7 +168,7 @@ _SIGNING_IN = "".join([
     ),
     _h2("Signing out"),
     _p(
-        "Open the ", _strong("Settings"), " menu in the top bar and choose ",
+        "Open ", _strong("Settings"), " from the gear at the bottom of the sidebar and choose ",
         _strong("Sign out"),
         ". Your session ends both in AstralDeep and at your SSO provider.",
     ),
@@ -172,44 +177,73 @@ _SIGNING_IN = "".join([
 _DASHBOARD = "".join([
     _h1("Dashboard tour"),
     _p(
-        "The dashboard is a single screen: a top bar across the top, the main canvas on the "
-        "left, and the chat panel on the right.",
+        "The dashboard is a single screen in two columns: a sidebar down the left, and the "
+        "main column beside it with the canvas above and the message box pinned to its "
+        "bottom.",
     ),
-    _h2("Top bar"),
+    _h2("Sidebar"),
     _ul(
         _li(
-            _strong("Brand & status"),
-            " — shows the AstralDeep mark and whether your connection to the orchestrator "
-            "is live.",
+            _strong("The logo"),
+            " — at the top; click it any time to come back to this dashboard.",
         ),
         _li(
-            _strong("Settings menu"),
-            " — the gear button opens a grouped menu with everything configurable: ",
+            _strong("Agent directory"),
+            " — every agent available to you, with a live search box. Click one to see what "
+            "it does, the example prompts it ships, and the tools it can reach (see ",
+            _em("Browsing agents"), ").",
+        ),
+        _li(
+            _strong("Recent work"),
+            " — your recent chats, and the button that starts a new one.",
+        ),
+        _li(
+            _strong("The settings gear"),
+            " — at the very bottom. It opens the Settings dialog: the menu runs down the "
+            "dialog's left side and stays there, so you can move between ",
             _em("Agents & permissions"), ", ", _em("LLM settings"), ", ",
-            _em("Personalization"), ", ", _em("Audit log"), ", and ", _em("Theme"),
-            " under Account; ", _em("Take the tour"), " and ", _em("User guide"),
-            " under Help; and ", _em("Sign out"), " at the bottom.",
+            _em("Personalization"), ", ", _em("Audit log"), " and ", _em("Theme"),
+            " without closing and reopening it. ", _em("Take the tour"), " and ",
+            _em("User guide"), " are under Help, and ", _em("Sign out"),
+            " is at the rail's bottom.",
         ),
         _li(
             _strong("Admin entries"),
-            " — administrators also see an Admin tools group (see ",
+            " — administrators also see an Admin tools group in that rail (see ",
             _em("For administrators"), ").",
         ),
+    ),
+    _h2("Page header"),
+    _p(
+        "Across the top of the main column: the console's name, and status pills telling you "
+        "the system is live, how many agents are ready, and that the audit ledger is "
+        "recording.",
     ),
     _tip(
         "Hover any control for about half a second to see a short tooltip describing what it "
         "does. The same tooltips appear when you Tab through the controls with the keyboard.",
     ),
+    _h2("Start here"),
+    _p(
+        "Before your first question the canvas shows a handful of worked examples, filtered "
+        "by kind. ", _strong("Run"), " sends one as it stands; ", _strong("Load prompt"),
+        " puts it in the message box so you can edit it first. They are ordinary questions "
+        "with no shortcuts — the same routing, permissions and audit apply.",
+    ),
     _h2("Main canvas"),
     _p(
-        "When agents render rich components — tables, charts, file downloads, forms — they "
-        "appear on the canvas. You can save individual components for later, combine or "
-        "condense groups of them, and provide feedback on each one.",
+        "Once a conversation starts, each answer gets its own card down the canvas. When "
+        "agents render rich components — tables, charts, file downloads, forms — they appear "
+        "in that card. You can save individual components for later, combine or condense "
+        "groups of them, expand a result to full screen, and give feedback on each one.",
     ),
-    _h2("Chat panel"),
+    _h2("Message box"),
     _p(
-        "The chat panel on the right is your primary input. Type a message and press ",
-        _kbd("Enter"), " or click ", _strong("Send"), " to talk to an agent.",
+        "The box pinned to the bottom of the main column is your primary input. Type a "
+        "message and press ", _kbd("Enter"), " or click ", _strong("Send"),
+        ". The small buttons beside it attach files, run a turn in the background, open ",
+        _strong("Advanced"), " (choose the agent, skills and private notes for this chat), "
+        "and start a voice conversation.",
     ),
 ])
 
@@ -295,7 +329,7 @@ _AGENTS = "".join([
     _h1("Browsing agents"),
     _p(
         "Open ", _strong("Agents & permissions"),
-        " from the top-bar Settings menu to see every agent the orchestrator can route "
+        " from Settings to see every agent the orchestrator can route "
         "requests to. Each agent advertises a set of ", _em("tools"),
         " — small functions it can call — and a set of ", _em("scopes"),
         " that gate which categories of tools you've granted it.",
@@ -431,7 +465,7 @@ _AUDIT = "".join([
     _h2("Filtering & search"),
     _p(
         "Open ", _strong("Audit log"),
-        " from the top-bar Settings menu, then use its filters to narrow by event class "
+        " from Settings, then use its filters to narrow by event class "
         "(auth, conversation, tool call, file, settings) or outcome. New entries appear as "
         "new actions occur.",
     ),
@@ -467,7 +501,7 @@ _TUTORIAL = "".join([
         ),
         _li(
             _strong("Replay"), " — open ", _em("Take the tour"),
-            " in the top-bar Settings menu to relaunch the overlay any time.",
+            " in Settings to relaunch the overlay any time.",
         ),
     ),
     _h2("Resume on reload"),
@@ -516,13 +550,13 @@ _PREFERENCES = "".join([
     _h1("Theme & preferences"),
     _p(
         "Open ", _strong("Theme"),
-        " from the top-bar Settings menu to restyle the workspace. Pick one of the preset "
+        " from Settings to restyle the workspace. Pick one of the preset "
         "palettes or fine-tune individual colors with the per-key pickers; changes apply "
         "instantly once saved and follow your account across devices.",
     ),
     _h2("Other preferences"),
     _p(
-        "The same Settings menu holds your other per-account configuration: ",
+        "The same Settings dialog holds your other per-account configuration: ",
         _em("LLM settings"), " for your model connection and ", _em("Personalization"),
         " for profile, memory, skills, schedules, and dreaming.",
     ),
@@ -597,7 +631,7 @@ _ADMIN = "".join([
     _h1("For administrators"),
     _p(
         "Admins see an extra ", _strong("Admin tools"),
-        " group in the top-bar Settings menu:",
+        " group in Settings:",
     ),
     _h2("Tutorial admin"),
     _p(

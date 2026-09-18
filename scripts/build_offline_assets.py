@@ -21,6 +21,14 @@ PUBLIC_ASSETS = {
     "img/astra-fav.png": "image/png",
     "manifest.webmanifest": "application/manifest+json",
 }
+#: The text assets among them. Their bytes depend on how the checkout wrote
+#: its line endings, and the digest below must not: .gitattributes stores this
+#: tree with LF, a Windows checkout with core.autocrlf materialises CRLF, and
+#: the image that serves these files is Linux. Hashing the checkout's bytes
+#: produced a worker that refused its own assets ("Public offline asset differs
+#: from its package") on every host but the one that generated it.
+TEXT_ASSETS = frozenset({"offline.html", "offline.css", "astral.css",
+                         "manifest.webmanifest"})
 BEGIN = "// BEGIN GENERATED PUBLIC ASSETS"
 END = "// END GENERATED PUBLIC ASSETS"
 
@@ -30,6 +38,8 @@ def render_worker() -> str:
     assets = []
     for name, content_type in PUBLIC_ASSETS.items():
         data = (STATIC / name).read_bytes()
+        if name in TEXT_ASSETS:
+            data = data.replace(b'\r\n', b'\n')
         assets.append({"path": f"/static/{name}", "type": content_type,
                        "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()})
     serialized = json.dumps(assets, indent=2)

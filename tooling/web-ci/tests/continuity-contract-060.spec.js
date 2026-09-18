@@ -90,12 +90,14 @@ function htmlShell() {
     <main>
       <div id="astral-start-intro"></div>
       <div id="astral-start-permission"></div>
-      <div id="astral-chat"></div>
       <div id="astral-status"></div>
       <form id="astral-form"><textarea id="astral-input" rows="2"></textarea><button type="submit">Send</button></form>
       <div id="astral-start-examples"></div>
       <div id="astral-start-more"></div>
-      <section id="astral-canvas"><div id="astral-canvas-empty">Empty</div></section>
+      <section id="astral-canvas">
+        <div id="astral-canvas-empty">Empty</div>
+        <div id="astral-chat" class="astral-feed"></div>
+      </section>
       <div id="astral-attachments" class="hidden"></div>
       <button id="astral-attach-btn" type="button"></button>
       <input id="astral-attach-input" class="astral-file-upload" type="file" hidden>
@@ -226,47 +228,77 @@ test("floating conversation restores to the right without losing its draft", asy
 });
 
 
-test("responsive conversation toggles reflect the visible transcript after resize and New chat", async ({ page }) => {
+test("a committed workspace lands in the visible feed, not an orphaned card", async ({ page }) => {
+  // Feature 089 made `canvas` the newest response card's body, which lives
+  // inside the feed. Replacing the transcript therefore detaches it, and the
+  // committed workspace was being appended to a node no longer in the page —
+  // the turn ran, the components existed, and nothing was drawn.
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+  const placed = await page.evaluate(() => {
+    const node = document.querySelector('[data-component-id="rote-new"]');
+    return {
+      found: Boolean(node),
+      connected: Boolean(node && node.isConnected),
+      inFeed: Boolean(node && document.getElementById("astral-chat").contains(node)),
+      inHiddenCard: Boolean(node && node.closest(".astral-turn")?.hidden),
+    };
+  });
+  expect(placed).toEqual({ found: true, connected: true, inFeed: true, inHiddenCard: false });
+  await expect(page.locator('[data-component-id="rote-new"]')).toBeVisible();
+});
+
+
+test("turn numbering follows the transcript rather than every rebuild", async ({ page }) => {
+  await installHarness(page);
+  const scope = (await registration(page)).frame;
+  const twoTurns = {
+    transcript: [
+      { message_id: "m1", role: "user", created_at: COMMITTED_AT, parts: [{ type: "text", text: "First" }], attachments: [] },
+      { message_id: "m2", role: "assistant", created_at: COMMITTED_AT, parts: [{ type: "text", text: "Answer" }], attachments: [] },
+      { message_id: "m3", role: "user", created_at: COMMITTED_AT, parts: [{ type: "text", text: "Second" }], attachments: [] },
+    ],
+  };
+  await receive(page, snapshot(scope, twoTurns));
+  await expect(page.locator(".astral-turn-pill")).toHaveText(["Turn 1", "Turn 2"]);
+  // Re-committing the same transcript at a later revision must not renumber it.
+  await receive(page, snapshot(scope, {
+    ...twoTurns,
+    snapshot_id: SNAPSHOT_B,
+    render_revision: 1,
+    snapshot_purpose: "hydration",
+  }));
+  await expect(page.locator(".astral-turn-pill")).toHaveText(["Turn 1", "Turn 2"]);
+});
+
+
+test("the conversation feed stays reachable at every width and keeps the draft", async ({ page }) => {
+  // Feature 089 retired the collapsible transcript: the feed IS the main
+  // column at every width, so there is no toggle to reveal it and no width at
+  // which it can be hidden while the workspace is on screen. What still has to
+  // hold across a resize is that the committed transcript stays put and the
+  // composer keeps an unsent draft.
   await page.setViewportSize({ width: 390, height: 900 });
   await installHarness(page);
   await page.addStyleTag({ path: resolve(ROOT, "backend/webrender/static/astral.css") });
-  await page.evaluate(() => {
-    document.querySelector("#astral-chat-toggle").classList.add("astral-chat-toggle");
-    document.querySelector("#astral-msgs-toggle").classList.add("astral-msgs-toggle");
-  });
   await receive(page, snapshot((await registration(page)).frame));
-  const messages = page.locator("#astral-msgs-toggle");
-  const conversation = page.locator("#astral-chat-toggle");
   const transcript = page.locator("#astral-chat");
-  await messages.click();
-  await expect(messages).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
   await expect(transcript).toBeVisible();
+  await expect(transcript).toContainText("Committed answer");
   await page.locator("#astral-input").fill("Preserve this draft\nAcross breakpoints");
 
-  await page.setViewportSize({ width: 900, height: 900 });
-  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "collapsed");
-  await expect(transcript).toBeHidden();
-  await expect(messages).toHaveAttribute("aria-expanded", "false");
-  await expect(conversation).toHaveAttribute("aria-expanded", "false");
-  await expect(conversation).toHaveAttribute("aria-label", "Show conversation");
-  await conversation.click();
-  await expect(conversation).toHaveAttribute("aria-expanded", "true");
-  await expect(transcript).toBeVisible();
+  for (const width of [900, 1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(transcript).toBeVisible();
+    await expect(transcript).toContainText("Committed answer");
+    await expect(page.locator("#astral-input")).toHaveValue("Preserve this draft\nAcross breakpoints");
+  }
 
-  await page.setViewportSize({ width: 390, height: 900 });
-  await expect(page.locator("body")).toHaveAttribute("data-astral-layout", "stacked");
-  await expect(transcript).toBeHidden();
-  await expect(messages).toHaveAttribute("aria-expanded", "false");
-  await expect(conversation).toHaveAttribute("aria-expanded", "false");
-  await expect(conversation).toHaveAttribute("aria-label", "Show conversation");
-  await expect(page.locator("#astral-input")).toHaveValue("Preserve this draft\nAcross breakpoints");
-  await messages.click();
-  await expect(messages).toHaveAttribute("aria-expanded", "true");
-  await expect(transcript).toBeVisible();
   await page.getByRole("button", { name: "New chat" }).click();
-  await expect(messages).toHaveAttribute("aria-expanded", "false");
-  await expect(messages).toBeHidden();
-  await expect(transcript).toBeHidden();
+  await expect(page.locator("#astral-chat .astral-turn:not([hidden])")).toHaveCount(0);
+  await expect(page.locator("#astral-input")).toHaveValue("");
 });
 
 
@@ -352,8 +384,11 @@ test("locator is present before registration and equal hydration replaces atomic
   }));
 
   await page.evaluate(() => {
-    document.querySelector("#astral-chat").innerHTML = '<div id="old-transcript">Old transcript</div>';
-    document.querySelector("#astral-canvas").innerHTML = '<div id="old-canvas">Old canvas</div>';
+    // Poison both surfaces in place. Replacing #astral-canvas wholesale would
+    // take the feed with it, which the shipped shell nests inside it.
+    document.querySelector("#astral-chat")
+      .insertAdjacentHTML("afterbegin", '<div id="old-transcript">Old transcript</div>');
+    document.querySelector(".astral-card-body").innerHTML = '<div id="old-canvas">Old canvas</div>';
   });
   await receive(page, snapshot(event.frame));
 
@@ -699,7 +734,7 @@ test("normal new-turn equal is rejected, next commit wins, and lower or old requ
     canvas: { target: "canvas", components: [presentation("commit-next", "Revision one canvas")] },
   }));
   await expect(page.locator("#astral-chat")).toContainText("Committed next turn");
-  await expect(page.locator("#astral-chat [data-astral-transient-overlay]")).toHaveCount(0);
+  await expect(page.locator("[data-astral-transient-overlay=\"chat\"]")).toHaveCount(0);
   await expect(page.locator("#astral-canvas")).toContainText("Revision one canvas");
 
   await receive(page, snapshot(commitScope, {
@@ -784,8 +819,8 @@ test("sequenced transient overlay never mutates committed transcript or canvas",
     html: '<div id="transient-answer">Transient answer</div>',
   });
 
-  await expect(page.locator("#astral-canvas [data-astral-transient-overlay]")).toContainText("Disposable preview");
-  await expect(page.locator("#astral-chat [data-astral-transient-overlay]")).toContainText("Transient answer");
+  await expect(page.locator("[data-astral-transient-overlay=\"canvas\"]")).toContainText("Disposable preview");
+  await expect(page.locator("[data-astral-transient-overlay=\"chat\"]")).toContainText("Transient answer");
   await expect(page.locator("#astral-canvas")).toContainText("ROTE-adapted canvas");
   await expect(page.locator("#astral-canvas")).not.toContainText("Duplicate must not win");
   await expect(page.locator("#astral-canvas")).not.toContainText("Wrong base");
@@ -796,8 +831,8 @@ test("sequenced transient overlay never mutates committed transcript or canvas",
   await receive(page, operationStatus(previewScope, OPERATION_A, 0, "completed"));
   await expect(page.locator("#astral-status")).toHaveText("");
   await expect(page.locator("#astral-status")).toHaveAttribute("aria-busy", "false");
-  await expect(page.locator("#astral-chat [data-astral-transient-overlay]")).toContainText("Transient answer");
-  await expect(page.locator("#astral-canvas [data-astral-transient-overlay]")).toContainText("Disposable preview");
+  await expect(page.locator("[data-astral-transient-overlay=\"chat\"]")).toContainText("Transient answer");
+  await expect(page.locator("[data-astral-transient-overlay=\"canvas\"]")).toContainText("Disposable preview");
 });
 
 
@@ -1069,7 +1104,9 @@ test("new chat cancels the offline expiry callback without restoring the discard
   await page.getByRole("button", { name: "New chat" }).click();
   await page.clock.runFor(46000);
   await expect(page.locator("#astral-input")).toHaveValue("");
-  await expect(page.locator("#astral-chat")).toBeEmpty();
+  // The feed always carries one hidden live card so a render has somewhere to
+  // land; "discarded" means no turn is left showing, not an empty element.
+  await expect(page.locator("#astral-chat .astral-turn:not([hidden])")).toHaveCount(0);
   await expect(page.locator("#astral-status")).not.toContainText("your message was not sent");
   await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
 });
@@ -1783,7 +1820,10 @@ test("late welcome cannot replace work content or repopulate the start slots", a
   await receive(page, { type: "ui_render", target: "canvas", html: "<p>Current work result</p>" });
   await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
   await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
-  await expect(page.locator("#astral-canvas")).toHaveText("Current work result");
+  // The card carries its own chrome, so the claim is about the workspace's
+  // content: the work result is still there and the welcome did not land.
+  await expect(page.locator("#astral-canvas")).toContainText("Current work result");
+  await expect(page.locator("#astral-canvas [data-welcome]")).toHaveCount(0);
   await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);
   await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
 });

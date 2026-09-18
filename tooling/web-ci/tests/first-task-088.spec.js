@@ -55,15 +55,49 @@ const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.h
   .replace("%%ASTRAL_TOPBAR%%", () => RENDERED.topbar);
 
 // Every control a first task needs, named by the role the success criteria use.
+// Recent chats is not among them any more: on the web it opened the list that
+// sits directly beneath it in the sidebar, and the owner took it off the
+// History header on 2026-09-19. It is still in the chrome model, and a native
+// client still receives it.
 const CONTROLS = [
   ["New chat", "#astral-newchat-btn"],
-  ["Recent", "#astral-chats-btn"],
   ["Settings", "#astral-settings-btn"],
   ["Composer", "#astral-input"],
   ["Paperclip", "#astral-attach-btn"],
   ["Voice", "#astral-voice-controls button[data-voice-key=\"voice-start\"]"],
   ["Send", "#astral-form button[type=\"submit\"]"],
 ];
+
+/** Below 768 the composer keeps its secondary controls behind one button so
+ *  Send is never pushed off the bar (089 T053). They are reachable through it,
+ *  which is what these checks are about; open it so they are on screen. */
+async function revealComposerControls(page) {
+  const more = page.locator("#astral-composer-more");
+  if (await more.isVisible()) await more.click();
+}
+
+/** Below 1024 the sidebar is an off-canvas drawer (089 T053), so the controls
+ *  it hosts sit outside the viewport until its toggle opens it. Open it, for
+ *  the same reason: reachable is the claim, not permanently on screen. */
+async function revealSidebar(page) {
+  const toggle = page.locator("#astral-drawer-toggle");
+  if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") !== "true") {
+    await toggle.click();
+  }
+  // The drawer slides in. Measuring before it lands reads the position it is
+  // travelling through, not the one it comes to rest at.
+  await page.waitForFunction(() => {
+    const sidebar = document.getElementById("astral-sidebar");
+    return !sidebar || sidebar.getBoundingClientRect().x >= 0;
+  });
+}
+
+async function closeSidebar(page) {
+  const toggle = page.locator("#astral-drawer-toggle");
+  if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") === "true") {
+    await page.keyboard.press("Escape");
+  }
+}
 
 async function receive(page, frame) {
   await page.evaluate(value => window.__sockets.at(-1).receive(value), frame);
@@ -161,43 +195,78 @@ async function operable(page, names) {
   }
 }
 
+// Below 1024 the shell has two regions rather than one flat surface: a
+// focus-trapped sidebar drawer, and the composer, whose secondary controls sit
+// behind one overflow button. They are deliberately never open together -- the
+// drawer's backdrop covers the composer -- so each region is checked where its
+// own controls live. Every control still has to be reachable and on screen.
+const SIDEBAR = "#astral-sidebar";
+const COMPOSER = "#astral-composer";
+
+async function inRegion(page, scope) {
+  return page.evaluate(([controls, selector]) => controls
+    .map(([name, control]) => [name, document.querySelector(control)])
+    .filter(([, element]) => element && element.closest(selector))
+    .sort(([, a], [, b]) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
+    .map(([name]) => name), [CONTROLS, scope]);
+}
+
+async function enterRegion(page, scope) {
+  if (scope === SIDEBAR) {
+    await revealSidebar(page);
+  } else {
+    await closeSidebar(page);
+    await revealComposerControls(page);
+  }
+}
+
 for (const [width, font] of [[1440, "100%"], [768, "100%"], [320, "100%"], [320, "200%"]]) {
   test(`the first task fits ${width}px at ${font} text without horizontal scrolling`, async ({ page }) => {
     await setup(page, { width, font });
     await noHorizontalScroll(page, width);
-    for (const [, selector] of CONTROLS) {
-      const control = page.locator(selector);
-      await expect(control).toBeVisible();
-      const box = await control.boundingBox();
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    const covered = [];
+    for (const scope of [SIDEBAR, COMPOSER]) {
+      await enterRegion(page, scope);
+      for (const name of await inRegion(page, scope)) {
+        const [, selector] = CONTROLS.find(([label]) => label === name);
+        const control = page.locator(selector);
+        await expect(control).toBeVisible();
+        const box = await control.boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width).toBeLessThanOrEqual(width);
+        covered.push(name);
+      }
+      await noHorizontalScroll(page, width);
     }
+    expect([...covered].sort()).toEqual(CONTROLS.map(([name]) => name).sort());
   });
 
   test(`every first-task control is tab reachable in DOM order at ${width}px / ${font}`, async ({ page }) => {
     await setup(page, { width, font });
-    const expected = await page.evaluate(controls => controls
-      .map(([name, selector]) => {
-        const element = document.querySelector(selector);
-        if (!element) throw new Error(`missing ${name}`);
-        return [name, element];
-      })
-      .sort(([, a], [, b]) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1))
-      .map(([name]) => name), CONTROLS);
-    expect([...expected].sort()).toEqual(CONTROLS.map(([name]) => name).sort());
-
-    await page.evaluate(() => document.activeElement?.blur?.());
     const observed = [];
-    for (let step = 0; step < 60 && observed.length < expected.length; step++) {
-      await page.keyboard.press("Tab");
-      const name = await page.evaluate(controls => {
-        const active = document.activeElement;
-        const hit = controls.find(([, selector]) => active?.matches?.(selector));
-        return hit ? hit[0] : null;
-      }, CONTROLS);
-      if (name) observed.push(name);
+    for (const scope of [SIDEBAR, COMPOSER]) {
+      await enterRegion(page, scope);
+      const present = await inRegion(page, scope);
+      await page.evaluate(() => document.activeElement?.blur?.());
+      const seen = [];
+      for (let step = 0; step < 60 && seen.length < present.length; step++) {
+        await page.keyboard.press("Tab");
+        const name = await page.evaluate(([controls, selector]) => {
+          const active = document.activeElement;
+          if (!active?.closest?.(selector)) return null;
+          const hit = controls.find(([, control]) => active.matches?.(control));
+          return hit ? hit[0] : null;
+        }, [CONTROLS, scope]);
+        if (name && !seen.includes(name)) seen.push(name);
+      }
+      // Tab order must follow DOM order; where the walk happens to start is an
+      // accident of what had focus when the region was entered, so compare the
+      // sequence as the cycle it is rather than pinning its first element.
+      const from = Math.max(present.indexOf(seen[0]), 0);
+      expect(seen).toEqual([...present.slice(from), ...present.slice(0, from)]);
+      observed.push(...seen);
     }
-    expect(observed).toEqual(expected);
+    expect([...observed].sort()).toEqual(CONTROLS.map(([name]) => name).sort());
   });
 }
 

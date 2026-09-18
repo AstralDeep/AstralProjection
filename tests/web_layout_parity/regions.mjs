@@ -45,6 +45,7 @@ export const REFERENCE_SELECTORS = {
   recentWork: null, // a8p has no 088 recent-work section
   recentToggle: null,
   profile: '#user-profile-box',
+  recentAction: '.astral-recent-actions button:not(.astral-recent-toggle)',
   profileAvatar: '.user-avatar-container',
   profileDot: '.user-online-dot',
   profileName: '#user-display-name',
@@ -129,6 +130,9 @@ export const CANDIDATE_SELECTORS = {
   brandLogo: '#astral-brand img',
   brandText: '.astral-brand-text',
   brandTextLine: '.astral-brand-name, .astral-brand-sub',
+  // The account row is the gear alone; the identity it used to print heads
+  // the settings dialog instead (see the 2026-09-18 contract correction).
+  profileIdentity: '#astral-profile-name, #astral-profile-role, .astral-profile-avatar',
   dirHead: '#astral-dir-head',
   agentCount: '#astral-agent-count',
   searchBox: '.astral-search-box',
@@ -137,12 +141,15 @@ export const CANDIDATE_SELECTORS = {
   agentList: '#astral-agent-list',
   agentItem: '.astral-agent-item',
   agentItemIcon: '.astral-agent-icon',
+  settingsNav: '.astral-settings-nav',
+  settingsNavItem: '.astral-settings-nav-item',
   agentItemName: '.astral-agent-name',
   agentItemDesc: '.astral-agent-desc',
   agentItemDot: '.astral-agent-dot',
   recentWork: '#astral-recent-work',
   recentToggle: '#astral-recent-toggle',
   profile: '#astral-profile',
+  recentAction: '.astral-recent-actions button:not(.astral-recent-toggle)',
   profileAvatar: '.astral-profile-avatar',
   profileDot: '.astral-profile-dot',
   profileName: '#astral-profile-name',
@@ -331,15 +338,24 @@ export const ITEMS = [
   // B. Sidebar (22)
   {
     id: 'B1', group: 'B', weight: 4, auto: true, state: 'landing',
-    title: 'Brand block: logo + stacked name/subtitle, bottom divider, returns to landing',
+    title: 'Brand block: logo only (no product name or tagline), bottom divider, returns to landing',
     score(ref, cand) {
+      // Owner directive 2026-09-18: the wordmark and tagline came off. The
+      // logo, the divider and the return-to-landing behavior are what this
+      // row still scores; the name/subtitle lines must be ABSENT.
       const structure = present(cand.brand) && cand.brandLogo.present
-        && cand.brandText.lines >= 2 && cand.brand.borderBottom > 0
+        && cand.brandTextLine.n === 0 && cand.brand.borderBottom > 0
         && cand.brand.box.y < cand.dirHead.box.y;
-      return dims(structure, [
+      if (!structure) {
+        return {
+          verdict: 'fail',
+          detail: `logo=${cand.brandLogo.present}, textLines=${cand.brandTextLine.n}, `
+            + `divider=${cand.brand.borderBottom}`,
+        };
+      }
+      return dims(true, [
         ['logo.h', cand.brandLogo.box && cand.brandLogo.box.h,
           ref.brandLogo.box && ref.brandLogo.box.h],
-        ['brand.h', cand.brand.box.h, ref.brand.box.h],
       ]);
     },
   },
@@ -373,11 +389,14 @@ export const ITEMS = [
   },
   {
     id: 'B4', group: 'B', weight: 5, auto: true, state: 'landing',
-    title: 'Scrollable agent list filling the remaining height; icon, name, description, status dot',
+    title: 'Scrollable agent list filling the remaining height; name and description flush left, status dot',
     score(ref, cand) {
+      // Owner directive 2026-09-18: no per-agent icon. The name and the
+      // description start at the card's left padding instead, so the row
+      // scores the absence of the icon and the presence of everything else.
       const p = cand.agentItems.parts;
       const structure = present(cand.agentList) && cand.agentItems.n > 0 && !!p
-        && p.icon && p.name && p.desc && p.dot
+        && !p.icon && p.name && p.desc && p.dot
         && (cand.agentList.overflowY === 'auto' || cand.agentList.overflowY === 'scroll');
       if (!structure) {
         return {
@@ -391,34 +410,41 @@ export const ITEMS = [
   },
   {
     id: 'B5', group: 'B', weight: 2, auto: true, state: 'landing', referenceOptional: true,
-    title: 'Recent work section below the agent list, collapsible',
+    title: 'History section below the agent list, collapsible',
     score(ref, cand) {
+      // Owner directive 2026-09-19: the header carries one New-chat button,
+      // and the collapse control has to actually collapse the list.
       const structure = present(cand.recentWork) && cand.recentToggle.present
         && cand.recentWork.box.y >= cand.agentList.box.bottom - 2
-        && cand.recentToggle.expanded !== null;
+        && cand.recentToggle.expanded !== null
+        && cand.recentActions === 1;
       return ok(structure, `present=${present(cand.recentWork)}, `
-        + `toggle=${cand.recentToggle.present}, expanded=${cand.recentToggle.expanded}`);
+        + `toggle=${cand.recentToggle.present}, expanded=${cand.recentToggle.expanded}, `
+        + `buttons=${cand.recentActions}`);
     },
   },
   {
     id: 'B6', group: 'B', weight: 4, auto: true, state: 'landing',
-    title: 'Profile widget pinned to the sidebar bottom: avatar + online dot, name, role, cog at right',
+    title: 'Account row pinned to the sidebar bottom: picture, name, role, settings cog',
     score(ref, cand) {
+      // Owner directive 2026-09-18 took the identity off this row; the
+      // owner's 2026-09-19 walkthrough put it back, because a console with no
+      // sign of whose account it is reads as signed out. The dialog still
+      // heads itself with the same identity, from the same derivation.
       const p = cand.profileParts;
-      const structure = present(cand.profile) && p.avatar && p.dot && p.name && p.role && p.cog
+      const structure = present(cand.profile) && p.cog && p.avatar && p.name && p.role
         && cand.sidebar.box.bottom - cand.profile.box.bottom <= cand.sidebar.padding[2] + 4
-        && cand.profile.box.right - p.cog.right <= 20;
+        && cand.profile.box.right - p.cog.right <= 20
+        && p.avatar.right <= p.name.left;
       if (!structure) {
         return {
           verdict: 'fail',
-          detail: `parts=${Object.keys(p).filter((k) => !p[k]).join(',') || 'all'}; `
+          detail: `cog=${!!p.cog}, missing=`
+            + `${['avatar', 'name', 'role'].filter((k) => !p[k]).join(',') || 'none'}; `
             + `bottomGap=${cand.sidebar.box.bottom - cand.profile.box.bottom}`,
         };
       }
-      return dims(true, [
-        ['widget.h', cand.profile.box.h, ref.profile.box.h],
-        ['avatar.w', p.avatar.w, ref.profileParts.avatar.w],
-      ]);
+      return ok(true, 'identity then cog');
     },
   },
 
@@ -439,23 +465,19 @@ export const ITEMS = [
     },
   },
   {
-    id: 'C2', group: 'C', weight: 3, auto: true, state: 'landing',
-    title: 'Overview panel: header row + 3-column grid of numbered steps',
+    id: 'C2', group: 'C', weight: 3, auto: true, state: 'landing', referenceOptional: true,
+    title: 'No explanatory overview panel between the page header and the examples',
     score(ref, cand) {
-      const structure = present(cand.overview) && present(cand.overviewHeader)
-        && cand.overviewGrid.columns === 3 && cand.overviewItems.n === 3
-        && cand.overviewItems.steps === 3;
-      if (!structure) {
-        return {
-          verdict: 'fail',
-          detail: `columns=${cand.overviewGrid.columns}, items=${cand.overviewItems.n}, `
-            + `steps=${cand.overviewItems.steps}`,
-        };
+      // Owner directive 2026-09-18: the "How a turn runs" panel came off the
+      // landing. The examples are the explanation. This row now scores its
+      // ABSENCE, and that the examples sit directly under the page header.
+      if (present(cand.overview)) {
+        return { verdict: 'fail', detail: 'the overview panel is still rendered' };
       }
-      return dims(true, [
-        ['panel.h', cand.overview.box.h, ref.overview.box.h],
-        ['panel.padding', cand.overview.padding[0], ref.overview.padding[0]],
-      ]);
+      const structure = present(cand.scenarios)
+        && cand.scenarios.box.y >= cand.pageHeader.box.bottom - 2;
+      return ok(structure, `scenariosTop=${cand.scenarios.box && cand.scenarios.box.y}, `
+        + `headerBottom=${cand.pageHeader.box && cand.pageHeader.box.bottom}`);
     },
   },
   {
@@ -675,26 +697,29 @@ export const ITEMS = [
     },
   },
   {
-    id: 'F2', group: 'F', weight: 6, auto: true, state: 'settings',
-    title: 'Settings dialog: centered card with slide-up (reduced motion respected), icon + title + subtitle + close, tab strip, tab content, footer actions',
+    id: 'F2', group: 'F', weight: 6, auto: true, state: 'settings', referenceOptional: true,
+    title: 'Settings dialog: centered card with slide-up (reduced motion respected), icon + title + close, left menu rail, right options pane',
     score(ref, cand, ctx) {
+      // Owner directive 2026-09-18: the gear opens the dialog directly and
+      // the menu is a rail down its left side, so this row scores the rail
+      // and its pane rather than a8p's tab strip. The reference has no rail
+      // to measure against, hence referenceOptional.
       const m = cand.modal;
-      const structure = m.present && m.visible && m.icon && m.title && m.subtitle && m.close
-        && m.tabs >= 2 && m.tabStrip && m.body && m.footer
+      const structure = m.present && m.visible && m.icon && m.title && m.close
+        && m.nav && m.navItems >= 4 && m.body
+        && m.nav.right <= m.body.x + 1
         && m.centered && m.centered.dx <= 8
         && ctx.modalAnimates === true && ctx.modalReducedMotionStill === true;
       if (!structure) {
         return {
           verdict: 'fail',
-          detail: `icon=${m.icon}, title=${m.title}, subtitle=${m.subtitle}, close=${m.close}, `
-            + `tabs=${m.tabs}, footer=${!!m.footer}, dx=${m.centered && m.centered.dx}, `
+          detail: `icon=${m.icon}, title=${m.title}, close=${m.close}, nav=${!!m.nav}, `
+            + `navItems=${m.navItems}, railRight=${m.nav && m.nav.right}, `
+            + `paneLeft=${m.body && m.body.x}, dx=${m.centered && m.centered.dx}, `
             + `animates=${ctx.modalAnimates}, stillUnderReducedMotion=${ctx.modalReducedMotionStill}`,
         };
       }
-      return dims(true, [
-        ['card.w', m.card.box.w, ref.modal.card.box.w],
-        ['tabstrip.h', m.tabStrip.h, ref.modal.tabStrip.h],
-      ]);
+      return ok(true, `rail=${Math.round(m.nav.w)}px, items=${m.navItems}`);
     },
   },
 ];
