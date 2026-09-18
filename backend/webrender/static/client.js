@@ -2099,7 +2099,6 @@
   var VOICE_PREFLIGHT_REASONS = {
     voice_unavailable: "Voice is not available on this deployment.",
     speech_unavailable: "The speech service is not reachable from the server.",
-    unreachable: "The voice service did not answer. Typed chat still works.",
   };
 
   function voiceUnavailableMessage() {
@@ -2136,11 +2135,24 @@
     showToast(voiceUnavailableMessage(), "error");
   }, true);
 
+  //: How long the server gets to answer for itself. composer_state arrives
+  //: right after registration and carries the authoritative voice state, so
+  //: the preflight is for the case where it never comes -- which is exactly
+  //: the case where the mic would otherwise sit there saying "Checking voice
+  //: availability" for the rest of the session.
+  var VOICE_PREFLIGHT_DELAY_MS = 1500;
+
   function runVoicePreflight() {
     var generation = connectionGeneration;
     if (voicePreflightGeneration === generation) return;
     voicePreflightGeneration = generation;
     voicePreflight = null;
+    setTimeout(function () {
+      if (voicePreflightGeneration === generation && !voiceComposer) askVoicePreflight(generation);
+    }, VOICE_PREFLIGHT_DELAY_MS);
+  }
+
+  function askVoicePreflight(generation) {
     var controller = typeof AbortController === "function" ? new AbortController() : null;
     var timer = setTimeout(function () { if (controller) controller.abort(); },
                            VOICE_PREFLIGHT_TIMEOUT_MS);
@@ -2156,7 +2168,11 @@
         return { ok: false, reason: (body && body.reason) || "voice_unavailable" };
       });
     }).catch(function () {
-      return { ok: false, reason: "unreachable" };
+      // A probe that could not be made is not an answer. Taking the mic away
+      // for the rest of the session over one failed background request would
+      // turn a blip into an outage; the activation path does its own discovery
+      // and reports its own failure if voice really is down.
+      return { ok: true };
     }).then(function (verdict) {
       clearTimeout(timer);
       if (voicePreflightGeneration !== generation) return;
@@ -8721,19 +8737,6 @@
     // Running an example from a dialog should leave the dialog: the answer
     // lands on the canvas behind it.
     if (act === "chat_message" && modalRoot && modalRoot.contains(el)) closeModal();
-    if (act === "chrome_open" && payload.surface === "guidance"
-        && (payload.params || {}).view === "selection") {
-      // Open the picker on what the composer is actually holding, so it does
-      // not look like the selection was forgotten. The server re-reads every
-      // id it names and drops anything that has changed since.
-      payload = {
-        surface: "guidance",
-        params: {
-          view: "selection",
-          selection: turnSelection ? cloneTurnSelection(turnSelection) : null,
-        },
-      };
-    }
     if (act === "chrome_open") { setMenu(false, false); showModalSkeleton(act, payload); }
     if (act === "chrome_turn_selection_set") {
       // 088 (T011): the button's payload IS the server-issued selection for
@@ -8757,8 +8760,13 @@
     var clear = e.target.closest && e.target.closest("#astral-selection-clear");
     if (!clear) return;
     clearTurnSelection();
+    // Back to the control that opens the picker. Below 768 that control sits
+    // behind the composer's overflow button, and focusing something the
+    // stylesheet is not showing drops the keyboard user nowhere.
     var advanced = document.getElementById("astral-advanced-btn");
-    if (advanced) { try { advanced.focus(); } catch (err) {} }
+    var target = advanced && advanced.offsetParent !== null
+      ? advanced : (document.getElementById("astral-composer-more") || advanced);
+    if (target) { try { target.focus(); } catch (err) {} }
   });
 
   // Permission sections (Agents & permissions): the section master gates its

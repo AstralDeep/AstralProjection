@@ -421,7 +421,14 @@ html, body { overflow: hidden; }
   color: var(--text-primary);
   background: rgb(var(--astral-primary) / 0.15);
 }
+/* One line where there is room for one, and wrapping where there is not. At
+   320px with 200% text the account row's controls do not fit across, and a
+   control pushed off the edge is a control the person cannot reach (088
+   FR-028, and SC-009's 200%-text check). */
 .astral-chrome-row { flex-wrap: nowrap; gap: 2px; }
+@media (max-width: 699px) {
+  .astral-chrome-row { flex-wrap: wrap; }
+}
 
 /* --- main column -------------------------------------------------------- */
 .astral-main {
