@@ -26,16 +26,18 @@ def build() -> tuple[str, dict]:
     inputs = {}
 
     def read(path: Path) -> bytes:
-        raw = path.read_bytes()
+        # Feature 089: a CRLF working tree (a Windows checkout, or a vendored
+        # bundle that ships CRLF) must not change what this generator produces.
+        # Normalised BEFORE the digest, not after: recording the checkout's own
+        # bytes made the manifest disagree with itself between a Windows
+        # checkout and the Linux image that serves the result, which is the one
+        # thing a reproducibility manifest must never do. .gitattributes stores
+        # this tree with LF, so LF is the canonical form of every text source.
+        raw = path.read_bytes().replace(b"\r\n", b"\n")
         # POSIX-separated so the manifest is byte-identical regardless of the
         # host OS the generator runs on (Windows str() would emit backslashes).
         inputs[path.relative_to(ROOT).as_posix()] = hashlib.sha256(raw).hexdigest()
-        # Feature 089: a CRLF working tree (Windows checkout, or a vendored
-        # bundle that ships CRLF) must not change the generated document. The
-        # manifest still records the source file's real digest above; only the
-        # bytes that go INTO the export are newline-normalised, so the artifact
-        # is reproducible from any checkout on any host.
-        return raw.replace(b"\r\n", b"\n")
+        return raw
 
     css = read(STATIC / "astral.css").decode()
     fonts = {}
@@ -84,11 +86,14 @@ def main() -> int:
     markup, manifest = build()
     contents = {"export.html": markup, "manifest.json": json.dumps(manifest, indent=2) + "\n"}
     if args.check:
-        return 0 if all((OUTPUT / name).is_file() and (OUTPUT / name).read_text() == value
+        return 0 if all((OUTPUT / name).is_file()
+                        and (OUTPUT / name).read_text(encoding="utf-8") == value
                         for name, value in contents.items()) else 1
     OUTPUT.mkdir(parents=True, exist_ok=True)
     for name, value in contents.items():
-        (OUTPUT / name).write_text(value)
+        # newline="" so the artifact is LF on every host, matching the digest
+        # the manifest records and the bytes .gitattributes stores.
+        (OUTPUT / name).write_text(value, encoding="utf-8", newline="")
     return 0
 
 

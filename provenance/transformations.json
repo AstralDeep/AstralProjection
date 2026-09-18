@@ -957,6 +957,24 @@
       "reason": "Feature 088 component actions: expose a detached socket-scoped copy of original cached components so legacy viewport fallback rebuilds host-owned metadata after adaptation without mutating the cache."
     },
     {
+      "path": "backend/webrender/chrome/__init__.py",
+      "sourcePath": "backend/webrender/chrome/__init__.py",
+      "sourceBlob": "ce9cafa3b8409376449aa163014646ea27ddf4fc",
+      "sourceMode": "100644",
+      "resultSha256": "ee3d48a9dcbddcf3159c635269479edfeb11c03be49baefaa86aa84d690d6bd4",
+      "task": "T075/T090",
+      "reason": "The chrome modal shell takes a settings rail and a pane: the gear opens the dialog directly and the menu is that dialog's left rail, with a surface's own tab strip inside the pane beside it rather than across the whole dialog."
+    },
+    {
+      "path": "backend/webrender/chrome/guide_content.py",
+      "sourcePath": "backend/webrender/chrome/guide_content.py",
+      "sourceBlob": "d3cfd4ba3115a5dfc21de52538e0e0e163c32674",
+      "sourceMode": "100644",
+      "resultSha256": "8c48365549945c2a6ac0782560d947916e8ce0019fa7e912b9e2bda063125c9b",
+      "task": "T081",
+      "reason": "The user guide still described a top bar and a Settings dropdown that no longer exist; its copy follows the console the product actually renders."
+    },
+    {
       "path": "backend/webrender/chrome/menu_model.py",
       "sourcePath": "backend/webrender/chrome/menu_model.py",
       "sourceBlob": "c9959a05cf00d1f70a3ed9032b5d9450fc12283d",
@@ -1027,6 +1045,15 @@
       "resultStatus": "removed",
       "task": "T046",
       "reason": "Remove the Deep-coupled draft controller; Projection now exposes a pure supplied-state draft builder."
+    },
+    {
+      "path": "backend/webrender/chrome/surfaces/guide.py",
+      "sourcePath": "backend/webrender/chrome/surfaces/guide.py",
+      "sourceBlob": "b8802f77390676a34ef98a92b5e103bbbcb04ce1",
+      "sourceMode": "100644",
+      "resultSha256": "3e8bc4525f08c2cbbb15ea147022c7a8335ef875c8089abecf370e95413d7108",
+      "task": "T081",
+      "reason": "The guide imported its content sections under the name the chrome dispatcher reads as a modal tab strip, so the dialog printed the repr of a section dict across its top. The import is renamed."
     },
     {
       "path": "backend/webrender/chrome/surfaces/llm.py",
@@ -1135,6 +1162,24 @@
       "resultSha256": "3e5926e3a39e24ee63a604e38e1e9d19dad0764c9f07eeebbc22a1631ca8280c",
       "task": "T052/T063/T029/T008/T009",
       "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior. Feature 088 review: Restore floating chat to the rail, resize charts with their canvas, and create inert visual canvas downloads bound to authorization, owner, chat and committed render revision. Feature 088 live review: clear New chat drafts, staged attachments, autocomplete and one-shot background arming; cancel only unsent chat queues and expiry callbacks; ignore upload completions for removed staging entries while retaining same-owner reconnect and accepted background tasks. Keep conversation toggle expansion and Show/Hide labels synchronized with actual layout classes after breakpoint transitions, transcript clearing and New chat. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 committed continuation: Correlate Work reads and rendered replies, isolate them from conversation mutation fields, and retire stale output on navigation, timeout or authentication changes. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
+    },
+    {
+      "path": "backend/webrender/static/fonts/inter-latin.woff2",
+      "sourcePath": "backend/webrender/static/fonts/inter-latin.woff2",
+      "sourceBlob": "d15208de03cd1ad7c5199f0a0ce915fe841e4722",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T052",
+      "reason": "Open Sans is the web client's only typeface (089 FR-032); Inter is no longer loaded by anything."
+    },
+    {
+      "path": "backend/webrender/static/fonts/jetbrains-mono-latin.woff2",
+      "sourcePath": "backend/webrender/static/fonts/jetbrains-mono-latin.woff2",
+      "sourceBlob": "585887339efd032b6b715466ae72d86e306bec79",
+      "sourceMode": "100644",
+      "resultStatus": "removed",
+      "task": "T052",
+      "reason": "Open Sans serves monospace-styled code as well (089 FR-032); JetBrains Mono is no longer loaded by anything."
     },
     {
       "path": "backend/webrender/templates/shell.html",
@@ -1662,7 +1707,7 @@
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action’s line-oriented script execution, preserving the exact device/report arguments and gates."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action\u2019s line-oriented script execution, preserving the exact device/report arguments and gates."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",
