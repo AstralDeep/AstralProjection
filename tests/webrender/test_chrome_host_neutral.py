@@ -46,7 +46,7 @@ def test_chrome_renders_supplied_state_without_host_imports() -> None:
     assert "Remote machines" not in default_nav
 
     enabled_nav = render_settings_nav(build_menu_model(["user"], **options))
-    assert "Pulse digest" in enabled_nav
+    assert "Pulse digest" not in enabled_nav
     assert "My agents" in enabled_nav
     assert "Remote machines" in enabled_nav
 

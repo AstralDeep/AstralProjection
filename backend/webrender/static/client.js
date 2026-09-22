@@ -683,7 +683,7 @@
 
     card.appendChild(head);
     card.appendChild(body);
-    card.appendChild(expand);
+    right.appendChild(expand);
     turn.appendChild(card);
     return { turn: turn, card: card, head: head, name: name, sub: sub,
              meta: right, body: body, expand: expand, chip: chip };
@@ -7058,6 +7058,68 @@
     appendChatBubbleTo(ensureTransientOverlay().chat, role, htmlStr);
   }
 
+  function applyHistoryRender(html) {
+    var hr = document.getElementById("astral-history");
+    if (!hr) return;
+    var oldTitles = {};
+    // Collect optimistic/pending items that the server might not know about yet.
+    // These are: the current pending-new-chat placeholder, and any item keyed
+    // to activeChatId that hasn't been persisted (no messages yet).
+    var pendingNodes = [];
+    var existingItems = hr.querySelectorAll(".astral-history-item");
+    for (var i = 0; i < existingItems.length; i++) {
+      var el = existingItems[i];
+      var cid = el.getAttribute("data-chat-id");
+      if (!cid) {
+        try {
+          var p = JSON.parse(el.getAttribute("data-payload") || "{}");
+          cid = p.chat_id;
+        } catch (_) {}
+      }
+      var nameEl = el.querySelector(".astral-history-name");
+      if (cid && nameEl) oldTitles[cid] = nameEl.textContent.trim();
+      // Track optimistic items the server may not have rendered yet.
+      if (cid === "pending-new-chat" || (activeChatId && cid === activeChatId
+          && el.classList.contains("astral-history-item-entering"))) {
+        pendingNodes.push(el.cloneNode(true));
+      }
+    }
+    setHTML(hr, html);
+    // Re-insert optimistic items that the server didn't include yet.
+    if (pendingNodes.length) {
+      var list = hr.querySelector(".astral-history-list");
+      for (var k = pendingNodes.length - 1; k >= 0; k--) {
+        var pn = pendingNodes[k];
+        var pnCid = pn.getAttribute("data-chat-id");
+        // Only re-insert if the server's new HTML doesn't already include it.
+        var alreadyPresent = pnCid && hr.querySelector('.astral-history-item[data-chat-id="' + pnCid + '"]');
+        if (!alreadyPresent && list) {
+          list.insertBefore(pn, list.firstChild);
+        }
+      }
+    }
+    var newItems = hr.querySelectorAll(".astral-history-item");
+    for (var j = 0; j < newItems.length; j++) {
+      var nEl = newItems[j];
+      var nCid = nEl.getAttribute("data-chat-id");
+      if (!nCid) {
+        try {
+          var np = JSON.parse(nEl.getAttribute("data-payload") || "{}");
+          nCid = np.chat_id;
+        } catch (_) {}
+      }
+      var nNameEl = nEl.querySelector(".astral-history-name");
+      if (nCid && nNameEl && oldTitles[nCid]) {
+        var newTitle = nNameEl.textContent.trim();
+        if (newTitle !== oldTitles[nCid]) {
+          nNameEl.classList.remove("astral-title-renamed");
+          void nNameEl.offsetWidth;
+          nNameEl.classList.add("astral-title-renamed");
+        }
+      }
+    }
+  }
+
   // ---- incoming messages ----
   function onMessage(ev) {
     var data; try { data = JSON.parse(ev.data); } catch (e) { return; }
@@ -7110,7 +7172,7 @@
         break;
       case "ui_render":
         if (isLateWelcomeRender(data)) break;
-        if (data.target === "history") { var hr = document.getElementById("astral-history"); if (hr) setHTML(hr, data.html); }
+        if (data.target === "history") { applyHistoryRender(data.html); }
         else if (activeChatId) reduceTransientFrame(data);
         else if (data.target === "chat") appendChatBubble("assistant", data.html);
         else {
@@ -7293,6 +7355,11 @@
           activeChatId = data.payload.chat_id;
           syncVoiceVisibleChat(activeChatId);
           if (requestState && !requestState.chatId) requestState.chatId = activeChatId;
+          var pending = document.querySelector('.astral-history-item[data-chat-id="pending-new-chat"]');
+          if (pending) {
+            pending.setAttribute("data-chat-id", activeChatId);
+            pending.setAttribute("data-payload", JSON.stringify({ chat_id: activeChatId }));
+          }
         }
         break;
       case "chat_loaded":
@@ -7576,6 +7643,58 @@
     }
   }
 
+  function firstFourWords(text) {
+    if (!text || typeof text !== "string") return "";
+    var words = text.trim().split(/\s+/).filter(Boolean);
+    return words.slice(0, 4).join(" ");
+  }
+
+  function showOptimisticHistoryItem(message) {
+    var historyEl = document.getElementById("astral-history");
+    if (!historyEl) return;
+    var title = firstFourWords(message);
+    if (!title) return;
+    var list = historyEl.querySelector(".astral-history-list");
+    if (!list) {
+      historyEl.innerHTML = '<div class="astral-history"><div class="astral-history-list"></div></div>';
+      list = historyEl.querySelector(".astral-history-list");
+    }
+    if (!list) return;
+    // Skip only if the exact chat id is already in the list (server rendered it or we
+    // already inserted an optimistic item for this chat id). If there's a pending-new-chat
+    // item, we'll update it below regardless of whether activeChatId is set.
+    if (activeChatId) {
+      var activeExisting = list.querySelector('.astral-history-item[data-chat-id="' + activeChatId + '"]');
+      if (activeExisting) return; // Already present as a real (server or optimistic) item.
+    }
+    var existingPending = list.querySelector('.astral-history-item[data-chat-id="pending-new-chat"]');
+    if (existingPending) {
+      var nameEl = existingPending.querySelector(".astral-history-name");
+      if (nameEl) nameEl.textContent = title;
+      var previewEl = existingPending.querySelector(".astral-history-preview");
+      if (previewEl) previewEl.textContent = message.trim();
+      return;
+    }
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "astral-action astral-history-item astral-history-item-entering";
+    btn.setAttribute("data-action", "load_chat");
+    var cid = activeChatId || "pending-new-chat";
+    btn.setAttribute("data-chat-id", cid);
+    btn.setAttribute("data-payload", JSON.stringify({ chat_id: cid }));
+    btn.setAttribute("aria-label", "Open chat: " + title + ", just now");
+    btn.innerHTML =
+      '<span class="astral-history-body">' +
+        '<span class="astral-history-row1">' +
+          '<span class="astral-history-name">' + escapeText(title) + '</span>' +
+          '<span class="astral-history-time">just now</span>' +
+        '</span>' +
+        '<span class="astral-history-preview">' + escapeText(message.trim()) + '</span>' +
+      '</span>' +
+      '<span class="astral-history-saved"></span>';
+    list.insertBefore(btn, list.firstChild);
+  }
+
   function doSendChat(message, ready) {
     sealLiveTurn(); // 089: this answer gets its own card, below the question
     openRequest("commit", activeChatId);
@@ -7586,6 +7705,7 @@
     }
     if (message) html += "<div>" + escapeText(message) + "</div>";
     appendTransientChatBubble("user", html);
+    if (message) showOptimisticHistoryItem(message);
     var payload = {
       message: message || "",
       chat_id: activeChatId,
@@ -9389,18 +9509,34 @@
     setDrawer(false);
   });
 
-  // ---- the composer overflow (<768) --------------------------------------
+  // ---- the composer options menu -----------------------------------------
   var composerMore = document.getElementById("astral-composer-more");
   if (composerMore) {
-    composerMore.addEventListener("click", function () {
+    composerMore.addEventListener("click", function (e) {
+      e.stopPropagation();
       var open = composerMore.getAttribute("aria-expanded") === "true";
       composerMore.setAttribute("aria-expanded", open ? "false" : "true");
     });
+    var composerControls = document.getElementById("astral-composer-controls");
+    if (composerControls) {
+      composerControls.addEventListener("click", function (e) {
+        var item = e.target.closest && e.target.closest(".astral-composer-menu-item");
+        if (item) {
+          composerMore.setAttribute("aria-expanded", "false");
+        }
+      });
+    }
     document.addEventListener("click", function (e) {
       if (composerMore.getAttribute("aria-expanded") !== "true") return;
       var group = document.getElementById("astral-composer-controls");
       if (composerMore.contains(e.target) || (group && group.contains(e.target))) return;
       composerMore.setAttribute("aria-expanded", "false");
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && composerMore.getAttribute("aria-expanded") === "true") {
+        composerMore.setAttribute("aria-expanded", "false");
+        composerMore.focus();
+      }
     });
   }
 

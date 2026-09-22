@@ -10,6 +10,13 @@ The package preserves the public Python import names `webrender` and `rote`
 while exposing stable metadata, resources, view models, and pure chrome
 builders through `astralprojection`.
 
+## Current web experience: UI v2
+
+[UI v2](docs/UI_V2.md) documents the current web console, its source ownership,
+the desktop and responsive control placement, native-client scope, and the
+local verification results. UI v2 names the web design checkpoint; it does not
+rename the Python package version or the shared wire protocol.
+
 ## Repository layout
 
 - `src/astralprojection/` — stable contracts, packaged-resource access, and

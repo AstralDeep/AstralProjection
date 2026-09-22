@@ -44,12 +44,13 @@ def test_work_navigation_is_one_server_descriptor_with_explicit_watch_projection
     assert not project_watch_menu_model(enabled)["topbar"]
     assert not project_watch_menu_model(None)["topbar"]
     assert not project_watch_menu_model({"topbar": 3})["topbar"]
-    # Recent work is one of the model's action controls, and the web draws
-    # those in the settings dialog's rail rather than beside the gear.
+    # UI v2's settings rail contains settings sections only. The shared model
+    # still carries Recent work for native/watch consumers; its presence there
+    # must not reintroduce the removed web action row.
     from webrender.chrome.settings_nav import render_settings_nav
 
     assert "Recent work" not in render_settings_nav(build_menu_model())
-    assert "Recent work" in render_settings_nav(build_menu_model(work_enabled=True))
+    assert "Recent work" not in render_settings_nav(build_menu_model(work_enabled=True))
     assert "Recent work" not in render_topbar(work_enabled=True)
 
 

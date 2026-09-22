@@ -43,6 +43,7 @@ def test_composer_has_an_accessible_name_and_retains_existing_controls() -> None
     assert ids.index("astral-chat") < ids.index("astral-form")
     assert ids.index("astral-start-intro") < ids.index("astral-start-examples")
     assert ids.index("astral-start-examples") < ids.index("astral-start-more")
+    assert ids.index("astral-recent-work") < ids.index("astral-agent-list")
     assert ids.index("astral-input") < ids.index("astral-attach-btn")
     for status in ("astral-conn-text", "astral-turn-status", "astral-voice-status"):
         assert by_id[status][1]["role"] == "status"

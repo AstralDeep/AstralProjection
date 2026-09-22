@@ -81,16 +81,6 @@ def render_settings_nav(model, active_surface: str = "", *, identity=None) -> st
         without one instead.
     """
     parts = []
-    actions = [c for c in model.topbar if c.kind == "action" and c.action]
-    if actions:
-        parts.append(
-            f'<div class="astral-settings-nav-group" role="presentation">'
-            f"{esc(_ACTIONS_GROUP_LABEL)}</div>"
-        )
-        for control in actions:
-            parts.append(_nav_item(
-                control.label or control.key, control.key,
-                control.action.to_dict(), control.action.surface == active_surface))
     for group in model.menu:
         parts.append(
             f'<div class="astral-settings-nav-group" role="presentation">'

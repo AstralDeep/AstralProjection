@@ -100,11 +100,14 @@ def test_grounded_component_keeps_identity_without_tool_footer():
     assert "agent-x" not in out
 
 
-def test_generated_garnish_gets_ai_footer():
+@pytest.mark.parametrize("provenance", [None, "generated", "unknown"])
+def test_generated_garnish_has_no_ai_footer(provenance):
     out = render_component_fragment({
-        "type": "text", "component_id": "dgABC", "content": "AI narrative"})
-    assert "astral-provenance--generated" in out
-    assert "AI-generated" in out
+        "type": "text", "component_id": "dgABC", "content": "AI narrative",
+        "provenance": provenance})
+    assert "astral-provenance" not in out
+    assert "AI-generated" not in out
+    assert "AI narrative" in out
 
 
 def test_estimated_explicit_footer():

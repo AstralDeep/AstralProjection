@@ -1,4 +1,4 @@
-// Feature 088 T011 (web half): the Advanced disclosure beside the composer
+// Feature 088 T011 (web half): Advanced settings in the UI v2 composer menu
 // opens the server-rendered composition picker (guidance view "selection"),
 // the client keeps the server-issued selection under the verified owner's key
 // only, and the ordinary Send stays a single action — no preflight, and no
@@ -37,6 +37,9 @@ const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.h
   .replaceAll("%%ASTRAL_TOKEN%%", "fixture-owner-token")
   .replaceAll("%%ASTRAL_RESUMED%%", "true")
   .replaceAll("%%ASTRAL_ACCEPT%%", ".txt,.pdf")
+  .replaceAll("%%ASTRAL_LANDING%%", JSON.stringify({ agents: [], scenarios: [], categories: [] }))
+  .replaceAll("%%ASTRAL_USER_NAME%%", "Fixture owner")
+  .replaceAll("%%ASTRAL_USER_ROLE%%", "Member")
   .replace("%%ASTRAL_TOPBAR%%", () => TOPBAR);
 
 const coverageOutput = process.env.ASTRAL_SELECTION_COVERAGE_OUTPUT;
@@ -142,12 +145,19 @@ async function lastFrame(page, action) {
   return (await frames(page, action)).at(-1);
 }
 
-const advanced = page => page.getByRole("button", { name: "Advanced", exact: true });
+const advanced = page => page.locator("#astral-advanced-btn");
 const chip = page => page.locator("#astral-selection");
 const modal = page => page.locator("#astral-modal");
 
-async function openPicker(page) {
+async function requestPicker(page) {
+  const more = page.getByRole("button", { name: "More options", exact: true });
+  if (await more.getAttribute("aria-expanded") !== "true") await more.click();
+  await expect(page.getByRole("menuitem", { name: "Advanced settings", exact: true })).toBeVisible();
   await advanced(page).click();
+}
+
+async function openPicker(page) {
+  await requestPicker(page);
   const pending = await lastFrame(page, "chrome_open");
   await receive(page, { ...FIXTURE.web_frames.picker, request_generation: pending.request_generation });
   await expect(modal(page).getByRole("dialog", { name: "Use for this chat" })).toBeVisible();
@@ -186,7 +196,8 @@ async function noHorizontalScroll(page, width) {
 test("a plain Send is one action with no preflight and no selection key", async ({ page }) => {
   const registration = await setup(page);
   expect(registration.capabilities).toContain("guidance_selection_v1");
-  await expect(advanced(page)).toBeVisible();
+  await expect(page.getByRole("button", { name: "More options", exact: true })).toBeVisible();
+  await expect(advanced(page)).toBeHidden();
   await expect(chip(page)).toBeHidden();
   const sent = await send(page, "What is on my plate today?");
   expect(sent.payload.message).toBe("What is on my plate today?");
@@ -199,7 +210,7 @@ test("a plain Send is one action with no preflight and no selection key", async 
 
 test("Advanced opens the server-rendered picker on demand and Close, Escape and stale replies retire it", async ({ page }) => {
   await setup(page);
-  await advanced(page).click();
+  await requestPicker(page);
   const pending = await lastFrame(page, "chrome_open");
   expect(pending.payload).toMatchObject({ surface: "guidance", params: { view: "selection" } });
   expect(Object.keys(pending.payload.params)).toEqual(["view"]);
@@ -268,7 +279,7 @@ test("Clear selection in the picker and the chip control both remove the selecti
   const commands = (await frames(page, "chrome_turn_selection_set")).length;
   await page.getByRole("button", { name: "Clear the selection for this chat", exact: true }).click();
   await expect(chip(page)).toBeHidden();
-  await expect(advanced(page)).toBeFocused();
+  await expect(page.getByRole("button", { name: "More options", exact: true })).toBeFocused();
   expect((await frames(page, "chrome_turn_selection_set")).length).toBe(commands);
   expect(await storedSelections(page)).toEqual([]);
   expect("selection" in (await send(page, "Still plain")).payload).toBe(false);
@@ -362,7 +373,7 @@ test("a server-issued binding on a guidance render replaces the local one; other
   // A malformed stamp and a notes render never disturb the binding.
   await page.keyboard.press("Escape");
   await expect(modal(page)).toBeEmpty();
-  await advanced(page).click();
+  await requestPicker(page);
   const reopened = await lastFrame(page, "chrome_open");
   const broken = FIXTURE.web_frames.picker.html.replace(
     'data-chrome-surface="guidance"', 'data-chrome-surface="guidance" data-astral-selection="{not json"');
@@ -416,8 +427,8 @@ for (const [width, font] of [[320, "100%"], [320, "200%"]]) {
   test(`keyboard-only selection at ${width}px with ${font} text stays operable`, async ({ page }) => {
     await setup(page, { width, font });
     await noHorizontalScroll(page, width);
-    // Below 768 the composer's secondary controls sit behind one overflow
-    // button so Send is never pushed off the bar (089 T053). Advanced is one
+    // UI v2's secondary controls sit behind More options at every width.
+    // Advanced settings is one
     // of them, so a keyboard user reaches it through that button -- which is
     // the thing worth proving here: still reachable, still without a mouse.
     const more = page.locator("#astral-composer-more");

@@ -1022,12 +1022,14 @@ def render_chat_history(c: Dict[str, Any]) -> str:
         preview = str(it.get("preview") or "").strip()
         preview_html = (f'<span class="astral-history-preview">{esc(preview)}</span>'
                         if preview else "")
+        # Saved-components marker retained as an empty span for test/contract compatibility,
+        # but the star icon is removed from the chat history list per user directive.
         saved_html = ('<span class="astral-history-saved" title="Has saved components" '
-                      'aria-hidden="true">★</span>') if it.get("saved") else ""
+                      'aria-hidden="true"></span>') if it.get("saved") else ""
         aria = esc(f"Open chat: {name}" + (f", {it.get('time')}" if it.get("time") else ""))
         rows.append(
             f'<button type="button" class="astral-action astral-history-item" '
-            f'data-action="load_chat" data-payload="{payload}" aria-label="{aria}">'
+            f'data-action="load_chat" data-payload="{payload}" data-chat-id="{esc(str(cid))}" aria-label="{aria}">'
             f'<span class="astral-history-body">'
             f'<span class="astral-history-row1">'
             f'<span class="astral-history-name">{esc(name)}</span>{time_html}</span>'
@@ -1727,16 +1729,13 @@ def _provenance_footer(component: Dict[str, Any]) -> str:
     if str(_cid).startswith("wel_"):
         return ""
     kind = provenance_of(component)
-    if kind == "grounded":
-        # Ordinary tool results need no repeated success decoration. The
+    if kind in ("grounded", "generated"):
+        # Ordinary results need no repeated provenance decoration. The
         # server-stamped provenance remains available to audit and export.
         return ""
     elif kind == "estimated":
         title = "Estimated / low-confidence value"
         icon, label, tone = "≈", "estimated", "text-yellow-400/70"
-    else:
-        title = "Written by the assistant — not sourced from a tool"
-        icon, label, tone = "✦", "AI-generated", "text-astral-muted/70"
     return (
         f'<div class="astral-provenance astral-provenance--{kind} mt-1 flex justify-end" '
         f'title="{_attr(title)}">'

@@ -21,8 +21,8 @@ import {
 } from './regions.mjs';
 import { candidateDriver, probeReducedMotionDialog, MODAL_CARD } from './drivers.mjs';
 
-/** The 088 composer controls the bar must keep: attach, background, Advanced, voice. */
-const REQUIRED_COMPOSER_CONTROLS = 4;
+/** The composer controls on the bar: attach, voice, more options (with background, advanced, timeline, pulse nested). */
+const REQUIRED_COMPOSER_CONTROLS = 3;
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`);

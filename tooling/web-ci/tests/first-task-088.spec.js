@@ -5,7 +5,7 @@
 // client reducer, not institutional IAM or a live staging deployment.
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { delimiter, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
@@ -31,7 +31,7 @@ const PY = [
 
 const RENDERED = JSON.parse(execFileSync(process.env.ASTRAL_TEST_PYTHON || "python3", ["-c", PY], {
   cwd: ROOT,
-  env: { ...process.env, PYTHONUTF8: "1", PYTHONPATH: `${resolve(ROOT, "src")}:${resolve(ROOT, "backend")}` },
+  env: { ...process.env, PYTHONUTF8: "1", PYTHONPATH: [resolve(ROOT, "src"), resolve(ROOT, "backend")].join(delimiter) },
   encoding: "utf8",
   maxBuffer: 32 * 1024 * 1024,
 }));
@@ -52,6 +52,9 @@ const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.h
   .replaceAll("%%ASTRAL_TOKEN%%", "fixture-owner-token")
   .replaceAll("%%ASTRAL_RESUMED%%", "true")
   .replaceAll("%%ASTRAL_ACCEPT%%", ".txt,.pdf")
+  .replaceAll("%%ASTRAL_LANDING%%", JSON.stringify({ agents: [], scenarios: [], categories: [] }))
+  .replaceAll("%%ASTRAL_USER_NAME%%", "Fixture owner")
+  .replaceAll("%%ASTRAL_USER_ROLE%%", "Member")
   .replace("%%ASTRAL_TOPBAR%%", () => RENDERED.topbar);
 
 // Every control a first task needs, named by the role the success criteria use.
@@ -65,15 +68,18 @@ const CONTROLS = [
   ["Composer", "#astral-input"],
   ["Paperclip", "#astral-attach-btn"],
   ["Voice", "#astral-voice-controls button[data-voice-key=\"voice-start\"]"],
+  ["More options", "#astral-composer-more"],
+  ["Background", "#astral-bg-btn"],
+  ["Advanced", "#astral-advanced-btn"],
+  ["Workspace timeline", "#astral-timeline-btn"],
+  ["Pulse", "#astral-pulse-btn"],
   ["Send", "#astral-form button[type=\"submit\"]"],
 ];
 
-/** Below 768 the composer keeps its secondary controls behind one button so
- *  Send is never pushed off the bar (089 T053). They are reachable through it,
- *  which is what these checks are about; open it so they are on screen. */
+/** UI v2 keeps secondary controls behind More options at every width. */
 async function revealComposerControls(page) {
   const more = page.locator("#astral-composer-more");
-  if (await more.isVisible()) await more.click();
+  if (await more.isVisible() && await more.getAttribute("aria-expanded") !== "true") await more.click();
 }
 
 /** Below 1024 the sidebar is an off-canvas drawer (089 T053), so the controls
@@ -104,6 +110,8 @@ async function receive(page, frame) {
 }
 
 async function setup(page, { width = 320, font = "100%" } = {}) {
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
   await page.setViewportSize({ width, height: 800 });
   await page.addInitScript(() => {
     window.__frames = [];
@@ -155,6 +163,7 @@ async function setup(page, { width = 320, font = "100%" } = {}) {
   const registration = await page.evaluate(() => window.__frames.find(f => f.type === "register_ui"));
   await receive(page, { ...VOICE, connection_generation: registration.connection_generation });
   await expect(page.locator("#astral-voice-controls button[data-voice-key=\"voice-start\"]")).toBeEnabled();
+  expect(errors, "the real shell must initialize without JavaScript errors").toEqual([]);
   return registration;
 }
 
@@ -232,8 +241,8 @@ for (const [width, font] of [[1440, "100%"], [768, "100%"], [320, "100%"], [320,
         const control = page.locator(selector);
         await expect(control).toBeVisible();
         const box = await control.boundingBox();
-        expect(box.x).toBeGreaterThanOrEqual(0);
-        expect(box.x + box.width).toBeLessThanOrEqual(width);
+        expect(box.x, `${name} must fit the viewport's left edge`).toBeGreaterThanOrEqual(0);
+        expect(box.x + box.width, `${name} must fit the viewport's right edge`).toBeLessThanOrEqual(width);
         covered.push(name);
       }
       await noHorizontalScroll(page, width);
@@ -288,6 +297,31 @@ test("Enter in the composer sends exactly one chat message and opens no modal", 
   await page.locator("#astral-input").press("Shift+Enter");
   expect(await page.evaluate(() => window.__frames
     .filter(frame => frame.action === "chat_message").length)).toBe(1);
+});
+
+test("UI v2 options close on Escape, outside click and surface selection", async ({ page }) => {
+  await setup(page, { width: 1440 });
+  const more = page.getByRole("button", { name: "More options", exact: true });
+  const menu = page.locator("#astral-composer-controls");
+  await expect(menu).toBeHidden();
+  await more.click();
+  await expect(menu.getByRole("menuitem")).toHaveCount(4);
+  await page.keyboard.press("Escape");
+  await expect(menu).toBeHidden();
+  await expect(more).toBeFocused();
+  await more.click();
+  await page.getByRole("textbox", { name: "Message", exact: true }).click();
+  await expect(menu).toBeHidden();
+  for (const [label, surface] of [["Advanced settings", "guidance"],
+    ["Workspace timeline", "workspace_timeline"], ["Pulse digest", "pulse"]]) {
+    await more.click();
+    await menu.getByRole("menuitem", { name: label, exact: true }).click();
+    await expect(menu).toBeHidden();
+    const request = await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_open").at(-1));
+    expect(request.payload.surface).toBe(surface);
+    await receive(page, { type: "chrome_render", region: "modal", mode: "replace", surface_key: surface,
+      request_generation: request.request_generation, html: "" });
+  }
 });
 
 test("the Work modal stays operable at 320px with 200% text", async ({ page }) => {

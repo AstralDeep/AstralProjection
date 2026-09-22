@@ -328,10 +328,8 @@ async function reachability(page) {
   await sweep('drawer');
 
   await candidateDriver.landing(page);
-  if (width < 768) {
-    const more = page.locator(CANDIDATE_SELECTORS.composerOverflow);
-    if (await more.count()) { await more.first().click(); await page.waitForTimeout(350); }
-  }
+  const more = page.locator(CANDIDATE_SELECTORS.composerOverflow);
+  if (await more.count()) { await more.first().click(); await page.waitForTimeout(350); }
   await sweep('composer');
 
   await candidateDriver.landing(page);

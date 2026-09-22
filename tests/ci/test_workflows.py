@@ -4,7 +4,6 @@ import os
 import re
 import shlex
 import shutil
-import stat
 import subprocess
 import sys
 import textwrap
@@ -772,9 +771,13 @@ def test_apple_aggregate_rejects_missing_pinned_marker_download_action(
 
 
 def test_android_ci_wrapper_is_committed_executable() -> None:
-    wrapper_mode = (ROOT / "android-client" / "gradlew").stat().st_mode
-
-    assert wrapper_mode & stat.S_IXUSR
+    # Windows has no POSIX executable mode. CI receives the Git index mode,
+    # which is the contract this check is intended to verify on every host.
+    indexed = subprocess.run(
+        ["git", "ls-files", "--stage", "--", "android-client/gradlew"],
+        cwd=ROOT, capture_output=True, text=True, check=True,
+    ).stdout
+    assert indexed.startswith("100755 "), indexed
 
 
 def test_native_ci_aggregates_run_fail_closed_after_required_jobs() -> None:

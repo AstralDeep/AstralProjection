@@ -1,6 +1,7 @@
 // Deterministic client reducer/continuity contract suite. This intentionally
 // uses a synthetic DOM and is never the feature-060 qualifying release proof.
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -249,6 +250,58 @@ test("a committed workspace lands in the visible feed, not an orphaned card", as
   await expect(page.locator('[data-component-id="rote-new"]')).toBeVisible();
 });
 
+
+test("canvas source stays in the result and opens the unchanged Markdown URL", async ({ page }) => {
+  const url = "https://en.wikipedia.org/wiki/Dog_grooming";
+  const source = `Source: [${url}](${url})`;
+  // Exercise the real server sanitizer, then let the browser parse and open
+  // its anchor. A text-only substring assertion missed the corrupt href.
+  const html = execFileSync("python3", [
+    "-c", "import runpy,sys; print(runpy.run_path(sys.argv[1])['block_md'](sys.argv[2]))",
+    resolve(ROOT, "backend/webrender/sanitize.py"), source,
+  ], { encoding: "utf8" }).trim();
+  await installHarness(page);
+  const component = presentation("wc-source", source);
+  component._presentation.html = `<div class="astral-component" data-component-id="wc-source">${html}</div>`;
+  await receive(page, snapshot((await registration(page)).frame, {
+    canvas: { target: "canvas", components: [component] },
+  }));
+  for (const width of [1440, 393]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(page.locator('#astral-chat [data-astral-live-turn="1"] a')).toHaveCount(1);
+    await expect(page.locator('#astral-chat .astral-turn:not([data-astral-live-turn]) a')).toHaveCount(0);
+    await expect(page.locator("#astral-chat")).toContainText("Committed answer");
+    const link = page.getByRole("link", { name: url, exact: true });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", url);
+    await expect(link).toHaveAttribute("target", "_blank");
+    expect(await link.evaluate((node) => node.href)).toBe(url);
+  }
+  await page.context().route(url, (route) => route.fulfill({
+    contentType: "text/html", body: "<title>Source destination</title>",
+  }));
+  const popupPromise = page.waitForEvent("popup");
+  await page.getByRole("link", { name: url, exact: true }).click();
+  const popup = await popupPromise;
+  await expect(popup).toHaveURL(url);
+  await popup.close();
+});
+
+
+test("full screen control follows the turn label in the result header", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.addStyleTag({ path: resolve(ROOT, "backend/webrender/static/astral.css") });
+  for (const width of [1440, 393]) {
+    await page.setViewportSize({ width, height: 900 });
+    const button = page.locator(".astral-card-head-right > .astral-meta-chip + .astral-expand-chip");
+    await expect(button).toHaveText("Open full screen");
+    await expect(button).toBeVisible();
+    await expect(button).toHaveCSS("position", "static");
+    await expect(button).toHaveCSS("opacity", "1");
+    await expect(page.locator(".astral-response-card > .astral-expand-chip")).toHaveCount(0);
+  }
+});
 
 test("turn numbering follows the transcript rather than every rebuild", async ({ page }) => {
   await installHarness(page);

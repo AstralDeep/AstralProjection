@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import html
 import re
+import secrets
 from typing import Any
 
 _ALLOWED_URL = re.compile(r"^(https?://|mailto:|/)", re.IGNORECASE)
@@ -32,6 +33,7 @@ _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 _BOLD = re.compile(r"\*\*([^*]+)\*\*|__([^_]+)__")
 _STRIKE = re.compile(r"~~([^~]+)~~")
 _EM = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)")
+_INLINE_TOKEN = re.compile(rf"{_CODE.pattern}|{_LINK.pattern}")
 
 # Block patterns (GFM subset).
 _HR = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
@@ -47,20 +49,49 @@ _UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
 def inline_md(text: Any) -> str:
     """Render a small set of inline markdown on escaped text:
     `code`, [text](url), **bold**/__bold__, ~~strike~~, *em*/_em_."""
-    s = _esc(text)
-    s = _CODE.sub(lambda m: f'<code class="text-astral-accent bg-white/5 px-1 rounded">{m.group(1)}</code>', s)
+    return _inline_escaped(_esc(text))
 
-    def _link(m):
-        label, url = m.group(1), _safe_url(m.group(2))
-        # url came from the original (pre-escape) string already escaped by _esc; it's safe in an attr
-        return (f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
-                f'class="text-astral-primary hover:text-astral-secondary hover:underline">{label}</a>')
 
-    s = _LINK.sub(_link, s)
+def _inline_escaped(s: str, *, links: bool = True) -> str:
+    """Format escaped prose while keeping code and link destinations opaque.
+
+    Never run emphasis substitutions over generated HTML: even ``_blank``
+    can pair with an underscore in an href and corrupt the destination.
+    The marker cannot occur in the input, so user text cannot forge a token.
+    Link labels allow emphasis and code, but cannot introduce nested anchors.
+    """
+    marker = f"\x00md{secrets.token_hex(16)}:"
+    while marker in s:
+        marker = f"\x00md{secrets.token_hex(16)}:"
+    fragments: list[str] = []
+
+    def protect(m: re.Match[str]) -> str:
+        if m.group(1) is not None:
+            fragment = (
+                '<code class="text-astral-accent bg-white/5 px-1 rounded">'
+                f'{m.group(1)}</code>'
+            )
+        else:
+            label = _inline_escaped(m.group(2), links=False)
+            url = _safe_url(m.group(3))  # already escaped for an HTML attribute
+            fragment = (
+                f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
+                'class="text-astral-primary hover:text-astral-secondary hover:underline">'
+                f'{label}</a>'
+            )
+        token = f"{marker}{len(fragments)}{marker}"
+        fragments.append(fragment)
+        return token
+
+    s = (_INLINE_TOKEN if links else _CODE).sub(protect, s)
     s = _BOLD.sub(lambda m: f'<strong class="text-astral-text">{m.group(1) or m.group(2)}</strong>', s)
     s = _STRIKE.sub(lambda m: f"<del>{m.group(1)}</del>", s)
     s = _EM.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", s)
-    return s
+    return re.sub(
+        re.escape(marker) + r"(\d+)" + re.escape(marker),
+        lambda m: fragments[int(m.group(1))],
+        s,
+    )
 
 
 def _split_table_row(line: str) -> list[str]:

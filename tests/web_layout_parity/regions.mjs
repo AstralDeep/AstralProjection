@@ -410,12 +410,12 @@ export const ITEMS = [
   },
   {
     id: 'B5', group: 'B', weight: 2, auto: true, state: 'landing', referenceOptional: true,
-    title: 'History section below the agent list, collapsible',
+    title: 'History section above the agent directory, collapsible',
     score(ref, cand) {
-      // Owner directive 2026-09-19: the header carries one New-chat button,
-      // and the collapse control has to actually collapse the list.
+      // Owner directive 2026-09-21: History and the agent directory switched
+      // places — History sits on top, with the agent directory below.
       const structure = present(cand.recentWork) && cand.recentToggle.present
-        && cand.recentWork.box.y >= cand.agentList.box.bottom - 2
+        && cand.recentWork.box.bottom <= cand.agentList.box.y + 2
         && cand.recentToggle.expanded !== null
         && cand.recentActions === 1;
       return ok(structure, `present=${present(cand.recentWork)}, `
@@ -450,16 +450,16 @@ export const ITEMS = [
 
   // C. Landing (18)
   {
-    id: 'C1', group: 'C', weight: 4, auto: true, state: 'landing',
-    title: 'Page header: title + subtitle left, status pill strip right',
+    id: 'C1', group: 'C', weight: 4, auto: true, state: 'landing', referenceOptional: true,
+    title: 'Page header: title + subtitle left, status pill strip removed',
     score(ref, cand) {
+      // Owner directive 2026-09-21: The status pill strip in the page header
+      // is removed; the page header carries only the title and subtitle.
       const structure = present(cand.pageHeader) && cand.pageTitle.box && cand.pageSubtitle.box
-        && present(cand.statusStrip) && cand.statusPills.n >= 3
-        && cand.pageTitle.box.x < cand.statusStrip.box.x
-        && cand.pageHeader.box.right - cand.statusStrip.box.right <= 4
+        && (!present(cand.statusStrip) || cand.statusPills.n === 0)
         && cand.pageSubtitle.box.y >= cand.pageTitle.box.bottom - 2;
       if (!structure) {
-        return { verdict: 'fail', detail: `pills=${cand.statusPills.n}` };
+        return { verdict: 'fail', detail: `header=${present(cand.pageHeader)}, statusStrip=${present(cand.statusStrip)}` };
       }
       return dims(true, [['header.h', cand.pageHeader.box.h, ref.pageHeader.box.h]]);
     },
