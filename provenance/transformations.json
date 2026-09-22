@@ -1142,8 +1142,17 @@
       "sourceBlob": "21f98cc84bd4d81670f8c1fece4ab119468206ce",
       "sourceMode": "100644",
       "task": "T008",
-      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels. Feature 088 live mobile review: preserve escaped placement metadata on known welcome containers with absent or wel_ identity, so ROTE grid collapse cannot turn three welcome prompts into work content; preserve transparent ordinary containers and reject malformed hints. Reject every conflicting or malformed present identity field instead of allowing one identity to mask another. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences.",
-      "resultSha256": "329c8040856625e2d1f87bf49fff58cb0376700ca4aabc0f46faadc0ee7ee84a"
+      "reason": "Feature 088 review: Remove repetitive grounded tool-data decoration while retaining server provenance and estimated/generated labels. Feature 088 live mobile review: preserve escaped placement metadata on known welcome containers with absent or wel_ identity, so ROTE grid collapse cannot turn three welcome prompts into work content; preserve transparent ordinary containers and reject malformed hints. Reject every conflicting or malformed present identity field instead of allowing one identity to mask another. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 component action parity: build one bounded server-owned inventory from canonical component identity/type and host flags, stamp only outbound copies, preserve valid web markup, and declare native history/restore/CSV/share with explicit context fences. UI v2 checkpoint: retain estimated warnings while omitting ordinary generated provenance decoration; history exposes its chat identity without the saved star.",
+      "resultSha256": "0ed23d172857365ce28ec7b88a4c8bfeb9acf9131193ec4601c308789b6ded73"
+    },
+    {
+      "path": "backend/webrender/sanitize.py",
+      "sourcePath": "backend/webrender/sanitize.py",
+      "sourceBlob": "bce994903a0bab3b4c38c20469f76e632c0f8367",
+      "sourceMode": "100644",
+      "resultSha256": "eebc166f399741788a934da06fff97ef6f53e5169708a7b0b48a0464982e8f61",
+      "task": "T052",
+      "reason": "UI v2 checkpoint: protect inline code and link destinations from later emphasis substitutions, preserving escaped labels and safe URL handling; qualify markdown link regressions."
     },
     {
       "path": "backend/webrender/static/astral.css",
@@ -1151,17 +1160,17 @@
       "sourceBlob": "a4a7714b1479db47ad1550018b6ad9610cc56d9a",
       "sourceMode": "100644",
       "task": "T008/T054",
-      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition.",
-      "resultSha256": "c2803110d3528eaf8e57cc7aa2d7c595bca0e35eac8317415906d7cbb299b575"
+      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. UI v2 checkpoint: record the owner-reviewed console, history, composer menu and responsive stylesheet without further visual changes.",
+      "resultSha256": "48a2ffbeb0063bcfba858c840c8946b37f4f9caa6a0a44ac2b1ac1539711a256"
     },
     {
       "path": "backend/webrender/static/client.js",
       "sourcePath": "backend/webrender/static/client.js",
       "sourceBlob": "399225bec437d2f1911f09457d453f44b5a938f1",
       "sourceMode": "100644",
-      "resultSha256": "6e8aba3c420a8cbf7b31b03ca01da529ee377b67ae692baffec3ee2b72f9cee5",
+      "resultSha256": "1e9ab34493728c1d33dc9e9728f808b406d2143df6e942b53118508ce243b556",
       "task": "T052/T063/T029/T008/T009",
-      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior. Feature 088 review: Restore floating chat to the rail, resize charts with their canvas, and create inert visual canvas downloads bound to authorization, owner, chat and committed render revision. Feature 088 live review: clear New chat drafts, staged attachments, autocomplete and one-shot background arming; cancel only unsent chat queues and expiry callbacks; ignore upload completions for removed staging entries while retaining same-owner reconnect and accepted background tasks. Keep conversation toggle expansion and Show/Hide labels synchronized with actual layout classes after breakpoint transitions, transcript clearing and New chat. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 committed continuation: Correlate Work reads and rendered replies, isolate them from conversation mutation fields, and retire stale output on navigation, timeout or authentication changes. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values."
+      "reason": "Name the standalone Projection manifest as the current error-frame contract source. Feature 079: preserve all selected values in shared chrome checklist forms so reviewed assignment tool scopes round-trip without losing selections. Feature 088: bind private browser state and asynchronous effects to account transitions; add start/work presentation, identity-preserving server welcome placement and multiline composer keyboard behavior. Feature 088 review: Restore floating chat to the rail, resize charts with their canvas, and create inert visual canvas downloads bound to authorization, owner, chat and committed render revision. Feature 088 live review: clear New chat drafts, staged attachments, autocomplete and one-shot background arming; cancel only unsent chat queues and expiry callbacks; ignore upload completions for removed staging entries while retaining same-owner reconnect and accepted background tasks. Keep conversation toggle expansion and Show/Hide labels synchronized with actual layout classes after breakpoint transitions, transcript clearing and New chat. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 committed continuation: Correlate Work reads and rendered replies, isolate them from conversation mutation fields, and retire stale output on navigation, timeout or authentication changes. Feature 088 private notes: negotiated exact owner-surface correlation, complete native form disposition, canonical menu, accessible labels and conditional fields; uncertain commands retry through a current read without retaining or replaying private values. UI v2 checkpoint: header expansion control, optimistic history/title updates and composer option dispatch; place the history helper before the frame switch without changing behavior."
     },
     {
       "path": "backend/webrender/static/fonts/inter-latin.woff2",
@@ -1186,9 +1195,9 @@
       "sourcePath": "backend/webrender/templates/shell.html",
       "sourceBlob": "0e3c1962fa924f9d265be4f0015b7a80412c308d",
       "sourceMode": "100644",
-      "resultSha256": "768b7ec7c099b499967bff9ae83ec201267211dca240e7fc8eb1815d4ab5cd53",
+      "resultSha256": "1c807b3c246761f5eb4e81af3c0d2b83fec72f5d96fc639abcda70dc5a210b92",
       "task": "T042/T008/T012",
-      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer. Feature 088 T012: register the public-only offline fallback and install manifest without caching authenticated documents or work. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities."
+      "reason": "Expose the accessible browser-local speech installation and typed-fallback controls required by the client-local web adapter. Feature 088: add empty welcome placement hosts in reading order around the existing mounted multiline composer and retain accessible attachment, voice, history and status controls. Feature 088 review: Place the accessible restore-conversation control beside the floating composer. Feature 088 T012: register the public-only offline fallback and install manifest without caching authenticated documents or work. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. UI v2 checkpoint: History above Agent Directory, hidden legacy welcome slots and one More options menu for background, guidance, timeline and Pulse."
     },
     {
       "path": "contracts/ui_protocol.json",
@@ -1250,8 +1259,8 @@
       "sourceBlob": "7230719fdad10c38309b94d472c0adc92010d989",
       "sourceMode": "100644",
       "task": "T008",
-      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities.",
-      "resultSha256": "412cb843482a94235e60aa1d9b9ea5c9a8a6f1fcb113a0b03b0663e495408f6c"
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities. UI v2 checkpoint: replace obsolete generated-footer expectations while preserving estimated-warning coverage.",
+      "resultSha256": "d994ab9c5d1390c171915779cdf9dcc74cae8dbead0bfa215e52eee64941224f"
     },
     {
       "path": "tests/webrender/test_render_a11y.py",
@@ -1312,9 +1321,9 @@
       "sourcePath": "tooling/web-ci/tests/continuity-contract-060.spec.js",
       "sourceBlob": "92ee58589239d50f7a472f36c7202c30cbeaff4f",
       "sourceMode": "100644",
-      "resultSha256": "ce8eb226c972d33cad2566a16090d499560b416a71d81d3d52659651a12aa918",
+      "resultSha256": "e2a188c25ec7c467f9d5eb9b19f87a4aee9ab46643f4e072dd613e44a63dbc63",
       "task": "T052/T063/T008/T009",
-      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset. Feature 088 live mobile review: consume actual ROTE/renderer HTML goldens for mobile New chat after a plaintext-only conversation, tablet re-adaptation and repeated New chat without losing welcome groups. Load the exact authoritative canvas export module before client.js in the synthetic harness, matching production script order and preserving export/owner-denial assertions."
+      "reason": "Read the continuity contract from Projection's canonical standalone protocol path. Feature 088: add owner-change, logout, stale asynchronous work, welcome placement/retirement, responsive history and multiline keyboard regression fixtures. Feature 088 review: Exercise floating chat restoration and authorized visual export with committed canvas content, font bytes and revision binding. Feature 088 live review: cover multiline New chat reset, late upload outcomes, queued-message cancellation and expiry, preserved settings actions, same-owner reconnect, running background task completion and autocomplete cleanup. Add CSS-backed phone/tablet/phone visibility and accessibility-state regression coverage with draft preservation and New chat reset. Feature 088 live mobile review: consume actual ROTE/renderer HTML goldens for mobile New chat after a plaintext-only conversation, tablet re-adaptation and repeated New chat without losing welcome groups. Load the exact authoritative canvas export module before client.js in the synthetic harness, matching production script order and preserving export/owner-denial assertions. UI v2 checkpoint: exercise optimistic history updates through the existing continuity harness."
     },
     {
       "path": "tooling/web-ci/tests/coverage-conversion.test.mjs",
