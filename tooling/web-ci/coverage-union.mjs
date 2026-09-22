@@ -29,6 +29,7 @@ export const UNION_COVERAGE_PRODUCER = Object.freeze({
 });
 
 export const NODE_LANE_SOURCE_PATHS = Object.freeze([
+  "tooling/web-ci/browser-v8-cli.mjs",
   "tooling/web-ci/coverage-conversion-cli.mjs",
   "tooling/web-ci/coverage-conversion.mjs",
   "tooling/web-ci/coverage-union-cli.mjs",

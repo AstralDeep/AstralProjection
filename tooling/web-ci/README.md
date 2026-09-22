@@ -78,3 +78,22 @@ image is the authority, and coverage gates are only meaningful there.
 `first-task-088.spec.js` serves the real `backend/webrender/templates/shell.html`
 and `backend/webrender/static/**` over a routed `http://` origin, so the page is
 not a secure context and no service worker registers during that spec.
+
+### Canonical browser coverage for the backend/web gate
+
+Set the three optional `client.js` sinks above for a Chromium run. Convert their
+raw arrays against the exact checked-out source before the four-lane union:
+
+```bash
+node tooling/web-ci/browser-v8-cli.mjs --repo-root . \
+  --input build/work-raw.json --input build/guidance-raw.json \
+  --input build/first-task-raw.json --output build/browser-javascript.json
+```
+
+The converter rejects empty or duplicate inputs, stale source, non-browser
+observations, and other assets. It converts each observation separately and
+unions observed hits only; an unobserved line stays uncovered. The output retains
+the canonical browser producer identity. It is fixture execution evidence and
+does not replace authenticated staging acceptance. Run its tests with
+`npm run test:coverage-conversion:browser-cli` under `NODE_V8_COVERAGE`; the exact
+Node lane now includes this CLI alongside the seven existing tooling sources.

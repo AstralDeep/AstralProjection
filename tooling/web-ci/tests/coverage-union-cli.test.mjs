@@ -21,6 +21,7 @@ import { UNION_COVERAGE_PRODUCER } from "../coverage-union.mjs";
 const TOOLING_ROOT = resolve(import.meta.dirname, "..");
 const CLI = resolve(TOOLING_ROOT, "coverage-union-cli.mjs");
 const NODE_PATHS = [
+  "tooling/web-ci/browser-v8-cli.mjs",
   "tooling/web-ci/coverage-conversion-cli.mjs",
   "tooling/web-ci/coverage-conversion.mjs",
   "tooling/web-ci/coverage-union-cli.mjs",

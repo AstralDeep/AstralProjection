@@ -23,6 +23,7 @@ import {
 
 const SOURCE = "const alpha = 1;\nalpha;\n";
 const NODE_PATHS = Object.freeze([
+  "tooling/web-ci/browser-v8-cli.mjs",
   "tooling/web-ci/coverage-conversion-cli.mjs",
   "tooling/web-ci/coverage-conversion.mjs",
   "tooling/web-ci/coverage-union-cli.mjs",
@@ -263,7 +264,7 @@ test("all four lanes are disjoint and preserve zero-hit observations", () => {
   const value = fixture();
   const result = unionCanonicalCoverage(value);
   assert.equal(result.producer_version, 3);
-  assert.equal(Object.keys(result.coverage).length, 12);
+  assert.equal(Object.keys(result.coverage).length, 13);
   for (const path of [...OFFLINE_PATHS, ...EXPORT_PATHS]) {
     assert.deepEqual(result.coverage[path].s, { 0: 1, 1: 0 });
     assert.deepEqual(result.coverage[path].statementMap, record(path).statementMap);
