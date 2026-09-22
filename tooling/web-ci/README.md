@@ -69,10 +69,12 @@ image is the authority, and coverage gates are only meaningful there.
 | Variable | Used by | Purpose |
 | --- | --- | --- |
 | `ASTRAL_ASSIGNMENT_FIXTURE_DIR` | `persistent-agents-079.spec.js` | Rendered assignment fixtures |
+| `ASTRAL_ALL_CLIENT_COVERAGE_DIR` | Seven complete-source client suites | Optional directory containing one exact-source raw array per suite; use instead of the individual client coverage sinks |
 | `ASTRAL_EXPORT_COVERAGE_OUTPUT` | `native-export-088.spec.js` | Portable-export V8 coverage sink |
 | `ASTRAL_WORK_COVERAGE_OUTPUT` | `work-reads-088.spec.js` | Optional `client.js` coverage sink |
 | `ASTRAL_GUIDANCE_COVERAGE_OUTPUT` | `guidance-notes-088.spec.js` | Optional `client.js` coverage sink |
 | `ASTRAL_FIRST_TASK_COVERAGE_OUTPUT` | `first-task-088.spec.js` | Optional `client.js` coverage sink (Chromium only) |
+| `ASTRAL_SELECTION_RAW_COVERAGE_OUTPUT` | `selection-088.spec.js` | Optional raw `client.js` coverage sink for the canonical converter (Chromium only) |
 | `ASTRAL_TEST_PYTHON` | `workspace-topbar-088.spec.js`, `first-task-088.spec.js` | Interpreter that renders the real top bar / modal chrome (defaults to `python3`; needs no third-party packages) |
 
 `first-task-088.spec.js` serves the real `backend/webrender/templates/shell.html`
@@ -81,14 +83,26 @@ not a secure context and no service worker registers during that spec.
 
 ### Canonical browser coverage for the backend/web gate
 
-Set the three optional `client.js` sinks above for a Chromium run. Convert their
-raw arrays against the exact checked-out source before the four-lane union:
+For the complete Chromium contract run, set `ASTRAL_ALL_CLIENT_COVERAGE_DIR` and
+`ASTRAL_EXPORT_COVERAGE_OUTPUT`, leaving individual client sinks unset. Run one
+worker so each suite owns its output. Convert the seven complete-source arrays
+against the exact checked-out source before the four-lane union:
 
 ```bash
 node tooling/web-ci/browser-v8-cli.mjs --repo-root . \
-  --input build/work-raw.json --input build/guidance-raw.json \
-  --input build/first-task-raw.json --output build/browser-javascript.json
+  --input build/client-raw/continuity-contract-060.json \
+  --input build/client-raw/voice-conversation-065.json \
+  --input build/client-raw/persistent-agents-079.json \
+  --input build/client-raw/work-reads-088.json \
+  --input build/client-raw/guidance-notes-088.json \
+  --input build/client-raw/first-task-088.json \
+  --input build/client-raw/selection-088.json \
+  --output build/browser-javascript.json
 ```
+
+Canvas and workspace-topbar tests inject partial source fragments, so their tests
+remain required but do not contribute canonical `client.js` coverage. The four
+individual raw sinks remain available for focused diagnostics.
 
 The converter rejects empty or duplicate inputs, stale source, non-browser
 observations, and other assets. It converts each observation separately and

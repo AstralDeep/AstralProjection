@@ -4,6 +4,10 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
+import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+
+collectClientCoverage(test, "guidance-notes-088");
+
 const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT = resolve(ROOT, "backend/webrender/static/client.js");
 const SOURCE = await readFile(CLIENT, "utf8");

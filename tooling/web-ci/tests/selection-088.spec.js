@@ -11,6 +11,10 @@ import { dirname, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+
+collectClientCoverage(test, "selection-088");
+
 import { convertPlaywrightV8Coverage } from "../coverage-conversion.mjs";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
@@ -43,18 +47,22 @@ const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.h
   .replace("%%ASTRAL_TOPBAR%%", () => TOPBAR);
 
 const coverageOutput = process.env.ASTRAL_SELECTION_COVERAGE_OUTPUT;
+const rawCoverageOutput = process.env.ASTRAL_SELECTION_RAW_COVERAGE_OUTPUT;
 const coverageDocuments = [];
+const rawCoverage = [];
 
 test.beforeEach(async ({ page, browserName }) => {
-  if (!coverageOutput) return;
+  if (!coverageOutput && !rawCoverageOutput) return;
   if (browserName !== "chromium") throw new Error("Selection coverage requires pinned Chromium");
   await page.coverage.startJSCoverage({ reportAnonymousScripts: true, resetOnNavigation: false });
 });
 
 test.afterEach(async ({ page }) => {
-  if (!coverageOutput) return;
+  if (!coverageOutput && !rawCoverageOutput) return;
   for (const entry of await page.coverage.stopJSCoverage()) {
     if (entry.source !== SOURCE) continue;
+    if (rawCoverageOutput) rawCoverage.push(entry);
+    if (!coverageOutput) continue;
     coverageDocuments.push(await convertPlaywrightV8Coverage(
       [{ ...entry, sourcePath: CLIENT_PATH }], candidate => candidate.sourcePath,
     ));
@@ -62,6 +70,12 @@ test.afterEach(async ({ page }) => {
 });
 
 test.afterAll(async () => {
+  if (rawCoverageOutput) {
+    expect(await readFile(resolve(ROOT, CLIENT_PATH), "utf8")).toBe(SOURCE);
+    expect(rawCoverage.length).toBeGreaterThan(0);
+    await mkdir(dirname(resolve(rawCoverageOutput)), { recursive: true });
+    await writeFile(resolve(rawCoverageOutput), JSON.stringify(rawCoverage) + "\n", { mode: 0o600 });
+  }
   if (!coverageOutput) return;
   if (!coverageDocuments.length) throw new Error("Missing exact client.js browser coverage");
   const output = { ...coverageDocuments[0], coverage: {} };

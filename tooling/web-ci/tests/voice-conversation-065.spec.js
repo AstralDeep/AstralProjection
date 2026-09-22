@@ -6,6 +6,10 @@ import { dirname, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+
+collectClientCoverage(test, "voice-conversation-065");
+
 import { convertPlaywrightV8Coverage } from "../coverage-conversion.mjs";
 
 
@@ -764,7 +768,8 @@ async function installHarness(page, {
   const url = selectedChat ? `https://candidate.example/?chat=${CHAT_ID}` : "https://candidate.example/";
   await page.goto(url);
   const source = await readFile(CLIENT_PATH, "utf8");
-  await page.addScriptTag({ content: `${source}\n//# sourceURL=https://candidate.example/static/client.js` });
+  await page.addScriptTag({ content: process.env.ASTRAL_ALL_CLIENT_COVERAGE_DIR
+    ? source : `${source}\n//# sourceURL=https://candidate.example/static/client.js` });
   await page.waitForFunction(() => window.__socketEvents.some((frame) => frame.type === "register_ui"));
 }
 

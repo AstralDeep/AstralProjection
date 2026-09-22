@@ -9,6 +9,10 @@ import { delimiter, dirname, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+
+collectClientCoverage(test, "first-task-088");
+
 const ROOT = resolve(import.meta.dirname, "../../..");
 const STATIC = resolve(ROOT, "backend/webrender/static");
 const ORIGIN = "http://first-task.test";

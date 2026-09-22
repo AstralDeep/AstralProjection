@@ -7,6 +7,10 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+
+collectClientCoverage(test, "persistent-agents-079");
+
 const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT = resolve(ROOT, "backend/webrender/static/client.js");
 const FIXTURE = resolve(import.meta.dirname, "../fixtures/persistent-agents-079.py");

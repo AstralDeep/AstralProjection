@@ -550,10 +550,10 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "tooling/python-ci/requirements.lock.txt": (
             "a91870671b818da8bd06565b6b21af406a4c96cbb812f0006db730d36a1e1d59"
         ),
-        # Feature 088 adds exact-byte release-runner tests to the existing
-        # Node-only test command, with no dependency or product-runtime change.
+        # Backend/web readiness adds exact-source coverage conversion commands
+        # and tests only; dependencies, lockfile and product runtime are unchanged.
         "tooling/web-ci/package.json": (
-            "1de9c3d86dc0ed416f530d58787ee82a19e2e059180c62599b4459b9ab3367fb"
+            "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
         ),
         "tooling/web-ci/package-lock.json": (
             "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"

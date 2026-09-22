@@ -7,6 +7,10 @@ import { resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
+import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+
+collectClientCoverage(test, "continuity-contract-060");
+
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT_PATH = resolve(ROOT, "backend/webrender/static/client.js");
@@ -196,7 +200,7 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
   const exportSource = await readFile(CANVAS_EXPORT_PATH, "utf8");
   await page.addScriptTag({ content: `${exportSource}\n//# sourceURL=https://candidate.example/static/canvas-export.js` });
   const source = await readFile(CLIENT_PATH, "utf8");
-  await page.addScriptTag({ content: `${source}\n//# sourceURL=https://candidate.example/static/client.js` });
+  await page.addScriptTag({ content: source });
   await page.waitForFunction(() => window.__socketEvents.some((event) => event.frame.type === "register_ui"));
 }
 
