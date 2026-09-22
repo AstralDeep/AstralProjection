@@ -1160,8 +1160,8 @@
       "sourceBlob": "a4a7714b1479db47ad1550018b6ad9610cc56d9a",
       "sourceMode": "100644",
       "task": "T008/T054",
-      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. UI v2 checkpoint: record the owner-reviewed console, history, composer menu and responsive stylesheet without further visual changes.",
-      "resultSha256": "48a2ffbeb0063bcfba858c840c8946b37f4f9caa6a0a44ac2b1ac1539711a256"
+      "reason": "Feature 088: center the initial composer, simplify semantic-theme surfaces and welcome choices, and preserve readable narrow and enlarged-text layouts. Feature 088 review: Keep phone canvas components within the viewport, scroll intact table cells, size charts responsively, and honor the floating rail restoration button hidden state. Feature 088 workspace contract: define server-owned Export/Share descriptors and independent capability flags, retain web handlers and compact wrapping, and document the existing watchOS chrome-free file-I/O disposition. UI v2 checkpoint: record the owner-reviewed console, history, composer menu and responsive stylesheet without further visual changes. Backend/web readiness repair: keep the More menu within the composer at 320 CSS pixels with enlarged text and derive settings status colors from shared theme channels; preserve UI v2 and regenerate shared offline/export assets.",
+      "resultSha256": "12c67ef9e821bbb38c6a36b654a90c14d500fa77c94cda5cfbc5c70b2dab07fd"
     },
     {
       "path": "backend/webrender/static/client.js",
@@ -1716,7 +1716,7 @@
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action\u2019s line-oriented script execution, preserving the exact device/report arguments and gates."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator action’s line-oriented script execution, preserving the exact device/report arguments and gates."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

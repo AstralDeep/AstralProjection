@@ -101,6 +101,7 @@
   --shadow-1: 0 1px 2px rgb(0 0 0 / 0.25);
   --shadow-2: 0 6px 16px -4px rgb(0 0 0 / 0.35);
   --shadow-3: 0 16px 40px -8px rgb(0 0 0 / 0.5);
+  --shadow-menu: 0 12px 32px rgb(0 0 0 / 0.45), 0 2px 8px rgb(0 0 0 / 0.25);
   --glow-accent: 0 0 0 3px rgb(var(--astral-primary) / 0.18);
 
   /* 089 layout — the sidebar width is a token so the three responsive bands
@@ -512,13 +513,15 @@ html, body { overflow: hidden; }
   position: absolute;
   bottom: calc(100% + 10px);
   right: 0;
+  width: max-content;
   min-width: 220px;
+  max-width: calc(100vw - 32px);
   background: rgb(var(--astral-surface) / 0.96);
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border: 1px solid rgb(var(--astral-text) / 0.12);
   border-radius: var(--radius-md);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
+  box-shadow: var(--shadow-menu);
   padding: 6px;
   display: flex;
   flex-direction: column;
@@ -556,7 +559,8 @@ html, body { overflow: hidden; }
   text-align: left;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .astral-composer-menu-item.astral-advanced-btn {
   justify-content: flex-start;
@@ -2816,21 +2820,21 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
 }
 /* Success badge (Selected / Enabled / Active) */
 [data-chrome-surface] span[role="status"][data-badge-variant="success"] {
-  background: rgb(34 197 94 / 0.14);
-  color: #4ade80;
-  border: 1px solid rgb(34 197 94 / 0.28);
+  background: rgb(var(--color-success) / 0.14);
+  color: color-mix(in srgb, rgb(var(--color-success)) 55%, rgb(var(--astral-text)));
+  border: 1px solid rgb(var(--color-success) / 0.28);
 }
 /* Warning badge (Expired / Archived / Paused) */
 [data-chrome-surface] span[role="status"][data-badge-variant="warning"] {
-  background: rgb(234 179 8 / 0.14);
-  color: #facc15;
-  border: 1px solid rgb(234 179 8 / 0.28);
+  background: rgb(var(--color-warning) / 0.14);
+  color: color-mix(in srgb, rgb(var(--color-warning)) 55%, rgb(var(--astral-text)));
+  border: 1px solid rgb(var(--color-warning) / 0.28);
 }
 /* Error badge (Revoked / Failed) */
 [data-chrome-surface] span[role="status"][data-badge-variant="error"] {
-  background: rgb(239 68 68 / 0.14);
-  color: #f87171;
-  border: 1px solid rgb(239 68 68 / 0.28);
+  background: rgb(var(--color-error) / 0.14);
+  color: color-mix(in srgb, rgb(var(--color-error)) 55%, rgb(var(--astral-text)));
+  border: 1px solid rgb(var(--color-error) / 0.28);
 }
 /* Default badge (Available / Disabled / Default) */
 [data-chrome-surface] span[role="status"][data-badge-variant="default"],
@@ -2877,7 +2881,7 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
 [data-chrome-surface] button[data-ui-payload*='"mode": "new"'],
 [data-chrome-surface] button[data-button-variant="primary"] {
   background: rgb(var(--astral-primary) / 0.2);
-  color: color-mix(in srgb, rgb(var(--astral-primary)) 70%, white);
+  color: color-mix(in srgb, rgb(var(--astral-primary)) 70%, rgb(var(--astral-text)));
   border-color: rgb(var(--astral-primary) / 0.4);
   font-weight: var(--weight-semibold);
 }
@@ -2887,24 +2891,24 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
 [data-chrome-surface] button[data-button-variant="primary"]:hover {
   background: rgb(var(--astral-primary) / 0.35);
   border-color: rgb(var(--astral-primary) / 0.6);
-  color: #fff;
+  color: var(--text-primary);
 }
 /* Danger button styles: forget, delete, clear */
 [data-chrome-surface] button[data-ui-action*="forget"],
 [data-chrome-surface] button[data-ui-action*="delete"],
 [data-chrome-surface] button[data-ui-payload*='{"agent":null'],
 [data-chrome-surface] button[data-ui-payload*='{"agent": null'] {
-  background: rgb(239 68 68 / 0.12);
-  color: #f87171;
-  border-color: rgb(239 68 68 / 0.28);
+  background: rgb(var(--color-error) / 0.12);
+  color: color-mix(in srgb, rgb(var(--color-error)) 55%, rgb(var(--astral-text)));
+  border-color: rgb(var(--color-error) / 0.28);
 }
 [data-chrome-surface] button[data-ui-action*="forget"]:hover,
 [data-chrome-surface] button[data-ui-action*="delete"]:hover,
 [data-chrome-surface] button[data-ui-payload*='{"agent":null']:hover,
 [data-chrome-surface] button[data-ui-payload*='{"agent": null']:hover {
-  background: rgb(239 68 68 / 0.25);
-  border-color: rgb(239 68 68 / 0.5);
-  color: #fff;
+  background: rgb(var(--color-error) / 0.25);
+  border-color: rgb(var(--color-error) / 0.5);
+  color: var(--text-primary);
 }
 
 /* Forms & field layouts */
@@ -3026,19 +3030,19 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
   color: var(--text-primary);
 }
 [data-chrome-surface] [data-alert-variant="warning"] {
-  background: rgb(234 179 8 / 0.12);
-  border: 1px solid rgb(234 179 8 / 0.28);
-  color: #fef08a;
+  background: rgb(var(--color-warning) / 0.12);
+  border: 1px solid rgb(var(--color-warning) / 0.28);
+  color: color-mix(in srgb, rgb(var(--color-warning)) 35%, rgb(var(--astral-text)));
 }
 [data-chrome-surface] [data-alert-variant="error"] {
-  background: rgb(239 68 68 / 0.12);
-  border: 1px solid rgb(239 68 68 / 0.28);
-  color: #fca5a5;
+  background: rgb(var(--color-error) / 0.12);
+  border: 1px solid rgb(var(--color-error) / 0.28);
+  color: color-mix(in srgb, rgb(var(--color-error)) 35%, rgb(var(--astral-text)));
 }
 [data-chrome-surface] [data-alert-variant="success"] {
-  background: rgb(34 197 94 / 0.12);
-  border: 1px solid rgb(34 197 94 / 0.28);
-  color: #bbf7d0;
+  background: rgb(var(--color-success) / 0.12);
+  border: 1px solid rgb(var(--color-success) / 0.28);
+  color: color-mix(in srgb, rgb(var(--color-success)) 35%, rgb(var(--astral-text)));
 }
 
 /* Keyvalue / DL lists */
@@ -3188,14 +3192,18 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
     padding: 12px 16px calc(12px + var(--astral-safe-bottom));
   }
   #astral-composer-more { display: inline-flex; }
+  /* Anchor the enlarged-text menu to the whole composer row. The icon's
+     narrow box leaves too little room to its left at phone widths. */
+  .astral-composer-row { position: relative; }
+  .astral-composer-menu-anchor { position: static; }
   .astral-composer-controls {
     position: absolute;
     left: auto;
     right: 0;
     bottom: calc(100% + 8px);
-    width: auto;
-    min-width: 220px;
-    max-width: calc(100vw - 32px);
+    width: max-content;
+    min-width: min(220px, 100%);
+    max-width: 100%;
   }
   .astral-composer-more[aria-expanded="false"] + .astral-composer-controls { display: none; }
   .astral-filter-tabs { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }

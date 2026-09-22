@@ -229,8 +229,9 @@ async function enterRegion(page, scope) {
   }
 }
 
-for (const [width, font] of [[1440, "100%"], [768, "100%"], [320, "100%"], [320, "200%"]]) {
-  test(`the first task fits ${width}px at ${font} text without horizontal scrolling`, async ({ page }) => {
+for (const [width, font] of [[1440, "100%"], [1440, "200%"], [1024, "100%"],
+  [768, "100%"], [768, "200%"], [390, "100%"], [320, "100%"], [320, "200%"]]) {
+  test(`the first task fits ${width}px at ${font} text without horizontal scrolling`, async ({ page }, testInfo) => {
     await setup(page, { width, font });
     await noHorizontalScroll(page, width);
     const covered = [];
@@ -246,6 +247,22 @@ for (const [width, font] of [[1440, "100%"], [768, "100%"], [320, "100%"], [320,
         covered.push(name);
       }
       await noHorizontalScroll(page, width);
+      if (scope === COMPOSER) {
+        const menu = page.locator("#astral-composer-controls");
+        const bounds = await menu.boundingBox();
+        expect(bounds.x).toBeGreaterThanOrEqual(0);
+        expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+        expect(bounds.y).toBeGreaterThanOrEqual(0);
+        for (const item of await menu.getByRole("menuitem").all()) {
+          // A clipped label can hide inside an in-bounds button. Check the
+          // content as well, without shrinking the user's selected text size.
+          expect(await item.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+          await item.click({ trial: true });
+        }
+        await testInfo.attach(`composer-${width}-${font}.png`, {
+          body: await page.screenshot(), contentType: "image/png",
+        });
+      }
     }
     expect([...covered].sort()).toEqual(CONTROLS.map(([name]) => name).sort());
   });
@@ -278,6 +295,65 @@ for (const [width, font] of [[1440, "100%"], [768, "100%"], [320, "100%"], [320,
     expect([...observed].sort()).toEqual(CONTROLS.map(([name]) => name).sort());
   });
 }
+
+test("settings status colors and actions follow the current shared theme", async ({ page }) => {
+  await setup(page, { width: 768 });
+  // These chrome attributes are emitted by the host's settings renderer.
+  // Exercise the shipped stylesheet with both dark and light theme channels.
+  await page.evaluate(() => {
+    const surface = document.createElement("section");
+    surface.id = "palette-probe";
+    surface.dataset.chromeSurface = "theme";
+    for (const variant of ["success", "warning", "error"]) {
+      const badge = document.createElement("span");
+      badge.role = "status";
+      badge.dataset.badgeVariant = variant;
+      badge.textContent = variant;
+      const alert = document.createElement("div");
+      alert.dataset.alertVariant = variant;
+      alert.textContent = variant;
+      surface.append(badge, alert);
+    }
+    for (const action of ["save", "forget"]) {
+      const button = document.createElement("button");
+      button.dataset.uiAction = `chrome_note_${action}`;
+      if (action === "save") button.dataset.buttonVariant = "primary";
+      button.textContent = action;
+      surface.append(button);
+    }
+    document.getElementById("astral-canvas").append(surface);
+  });
+  const readColors = () => page.locator("#palette-probe").evaluate(el =>
+    [...el.children].map(child => {
+      const style = getComputedStyle(child);
+      return { color: style.color, background: style.backgroundColor, border: style.borderTopColor };
+    }));
+  const dark = await readColors();
+  await page.evaluate(() => {
+    const style = document.documentElement.style;
+    style.setProperty("--astral-bg", "248 250 252");
+    style.setProperty("--astral-surface", "255 255 255");
+    style.setProperty("--astral-text", "15 23 42");
+    style.setProperty("--astral-primary", "29 78 216");
+  });
+  const light = await readColors();
+  for (let index = 0; index < dark.length; index++) {
+    expect(light[index].color, `settings control ${index} must follow the theme`).not.toBe(dark[index].color);
+  }
+  // Semantic channels remain centralized too; the three status roles must
+  // affect foregrounds, borders and translucent fills rather than literals.
+  await page.evaluate(() => {
+    for (const role of ["success", "warning", "error"]) {
+      document.documentElement.style.setProperty(`--color-${role}`, "91 33 182");
+    }
+  });
+  const changed = await readColors();
+  for (let index = 0; index < 6; index++) {
+    for (const property of ["color", "background", "border"]) {
+      expect(changed[index][property]).not.toBe(light[index][property]);
+    }
+  }
+});
 
 test("Enter in the composer sends exactly one chat message and opens no modal", async ({ page }) => {
   await setup(page, { width: 320, font: "200%" });
