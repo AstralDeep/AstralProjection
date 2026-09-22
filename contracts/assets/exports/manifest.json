@@ -4,7 +4,7 @@
     "backend/webrender/static/astral.css": "12c67ef9e821bbb38c6a36b654a90c14d500fa77c94cda5cfbc5c70b2dab07fd",
     "backend/webrender/static/fonts/open-sans-latin.woff2": "d8e4fe0452aa2076429a9bb5d8757d00a994dd95986cf950e9a1a371b9a072a0",
     "backend/webrender/static/img/astra-fav.png": "e4a9b4893b3f50c5ff4da487bbd9d6515563201d01ae44dac5e74125a6090e31",
-    "backend/webrender/templates/shell.html": "1c807b3c246761f5eb4e81af3c0d2b83fec72f5d96fc639abcda70dc5a210b92",
+    "backend/webrender/templates/shell.html": "fc6482f9d1ce9814e89a65ca9f0da21760b556c1309b1a031d6d5433f48c28d5",
     "backend/webrender/static/vendor/tailwind.js": "3f81aa7f6ecdb1acc14c202e513dfee00b6c7703cd81ce1be25bf5215a92e8cb",
     "backend/webrender/static/canvas-export.js": "a8e5dc10f8639aaaf4c450385d8cf2276d47999d058dcfd855f306a8d501d637",
     "backend/webrender/static/canvas-export-host.js": "9b363ec2b97fe12027598c40df086ab886827d1885cc2284c160546b6b553686"

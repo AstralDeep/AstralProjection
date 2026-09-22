@@ -72,6 +72,7 @@ image is the authority, and coverage gates are only meaningful there.
 | `ASTRAL_EXPORT_COVERAGE_OUTPUT` | `native-export-088.spec.js` | Portable-export V8 coverage sink |
 | `ASTRAL_WORK_COVERAGE_OUTPUT` | `work-reads-088.spec.js` | Optional `client.js` coverage sink |
 | `ASTRAL_GUIDANCE_COVERAGE_OUTPUT` | `guidance-notes-088.spec.js` | Optional `client.js` coverage sink |
+| `ASTRAL_FIRST_TASK_COVERAGE_OUTPUT` | `first-task-088.spec.js` | Optional `client.js` coverage sink (Chromium only) |
 | `ASTRAL_TEST_PYTHON` | `workspace-topbar-088.spec.js`, `first-task-088.spec.js` | Interpreter that renders the real top bar / modal chrome (defaults to `python3`; needs no third-party packages) |
 
 `first-task-088.spec.js` serves the real `backend/webrender/templates/shell.html`

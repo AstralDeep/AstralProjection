@@ -4,14 +4,35 @@
 // with 200% root text. Synthetic socket replies exercise presentation and the
 // client reducer, not institutional IAM or a live staging deployment.
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
-import { delimiter, resolve } from "node:path";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { delimiter, dirname, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 
 const ROOT = resolve(import.meta.dirname, "../../..");
 const STATIC = resolve(ROOT, "backend/webrender/static");
 const ORIGIN = "http://first-task.test";
+const CLIENT = resolve(STATIC, "client.js");
+const SOURCE = await readFile(CLIENT, "utf8");
+const coverageOutput = process.env.ASTRAL_FIRST_TASK_COVERAGE_OUTPUT;
+const rawCoverage = [];
+
+test.beforeEach(async ({ page }) => {
+  if (coverageOutput) await page.coverage.startJSCoverage({ reportAnonymousScripts: true, resetOnNavigation: false });
+});
+test.afterEach(async ({ page }) => {
+  if (!coverageOutput) return;
+  for (const entry of await page.coverage.stopJSCoverage()) {
+    if (entry.source === SOURCE) rawCoverage.push(entry);
+  }
+});
+test.afterAll(async () => {
+  if (!coverageOutput) return;
+  expect(await readFile(CLIENT, "utf8")).toBe(SOURCE);
+  expect(rawCoverage.length).toBeGreaterThan(0);
+  await mkdir(dirname(resolve(coverageOutput)), { recursive: true });
+  await writeFile(resolve(coverageOutput), JSON.stringify(rawCoverage) + "\n", { mode: 0o600 });
+});
 
 // One python hop renders the same chrome the server sends: the role-gated top
 // bar, and the tracked Work surface frames put through the real web component
@@ -19,14 +40,16 @@ const ORIGIN = "http://first-task.test";
 const PY = [
   "import json",
   "from webrender import render_one",
-  "from webrender.chrome import render_modal_shell",
+  "from webrender.chrome import render_modal_shell, render_settings_nav",
+  "from webrender.chrome.menu_model import build_menu_model",
   "from webrender.chrome.topbar import render_topbar",
   "frames = json.load(open('contracts/fixtures/work_088/read_surface.json', encoding='utf-8'))['frames']",
   "work = {name: render_modal_shell(frames[name]['title'],"
     + " ''.join(render_one(component) for component in frames[name]['components']), 'work')"
     + " for name in ('detail', 'unavailable')}",
   "print(json.dumps({'topbar': render_topbar(['user'], export_enabled=True, share_enabled=True,"
-    + " pulse_enabled=True), 'work': work}))",
+    + " pulse_enabled=True), 'work': work, 'settings': render_modal_shell('Agents & permissions', '', 'agents',"
+    + " nav_html=render_settings_nav(build_menu_model(['user']), 'agents'))}))",
 ].join("\n");
 
 const RENDERED = JSON.parse(execFileSync(process.env.ASTRAL_TEST_PYTHON || "python3", ["-c", PY], {
@@ -183,6 +206,58 @@ async function openSurface(page, surface, params) {
   return await page.evaluate(name => window.__frames.filter(frame => frame.action === "chrome_open"
     && frame.payload.surface === name).at(-1), surface);
 }
+
+async function startTour(page, targets) {
+  const pending = await openSurface(page, "tour", {});
+  const steps = targets.map(key => ({ target_kind: "static", target_key: key, title: key, body: "Tour fixture" }));
+  await receive(page, { type: "chrome_render", region: "modal", mode: "replace", surface_key: "tour",
+    request_generation: pending.request_generation,
+    html: `<div data-tour-steps='${JSON.stringify(steps)}'></div>` });
+}
+
+async function replyWithSettings(page) {
+  const pending = await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_open").at(-1));
+  expect(pending.payload.surface).toBe("agents");
+  await receive(page, { type: "chrome_render", region: "modal", mode: "replace", surface_key: "agents",
+    request_generation: pending.request_generation, html: RENDERED.settings });
+}
+
+for (const [width, font] of [[1440, "100%"], [320, "200%"]]) {
+  test(`the persisted tour moves between settings and the real timeline menu at ${width}px/${font}`, async ({ page }) => {
+    await setup(page, { width, font });
+    await startTour(page, ["sidebar.agents", "topbar.timeline", "canvas.workspace"]);
+    await replyWithSettings(page);
+    await expect(page.locator('[data-tour-target="sidebar.agents"]')).toHaveClass(/astral-tour-highlight/u);
+    await expect(page.locator("#astral-tour-card")).not.toContainText("isn’t available");
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await expect(page.locator("#astral-modal")).toBeEmpty();
+    await expect(page.locator("#astral-composer-more")).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#astral-timeline-btn")).toBeVisible();
+    await expect(page.locator("#astral-timeline-btn")).toHaveClass(/astral-tour-highlight/u);
+    await expect(page.locator("#astral-tour-card")).not.toContainText("isn’t available");
+    await noHorizontalScroll(page, width);
+    await page.getByRole("button", { name: "Back", exact: true }).click();
+    await replyWithSettings(page);
+    await expect(page.locator("#astral-composer-more")).toHaveAttribute("aria-expanded", "false");
+    await expect(page.locator('[data-tour-target="sidebar.agents"]')).toHaveClass(/astral-tour-highlight/u);
+    await page.getByRole("button", { name: "Next", exact: true }).click();
+    await page.getByRole("button", { name: "Skip tour", exact: true }).click();
+    await expect(page.locator("#astral-tour-card")).toHaveCount(0);
+    await expect(page.locator("#astral-composer-more")).toHaveAttribute("aria-expanded", "false");
+  });
+}
+
+test("a missing first settings target is reported after one server response, without retrying forever", async ({ page }) => {
+  await setup(page);
+  await startTour(page, ["sidebar.unavailable"]);
+  await replyWithSettings(page);
+  await expect(page.locator("#astral-tour-card")).toContainText("isn’t available");
+  expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_open"
+    && frame.payload.surface === "agents").length)).toBe(1);
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
+  await expect(page.locator("#astral-tour-card")).toHaveCount(0);
+  await expect(page.locator("#astral-modal")).toBeEmpty();
+});
 
 async function noHorizontalScroll(page, width) {
   expect(await page.evaluate(() => ({

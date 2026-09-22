@@ -8654,11 +8654,12 @@
         var card = modalRoot.querySelector(".astral-modal-card");
         if (card) card.focus();
       }
+      var pendingTour = tourState;
       maybeStartTour();
       // A step waiting on the settings dialog can be shown now that its rail
       // is in the DOM. The tour card sits above the dialog, so the highlighted
       // entry stays visible behind it.
-      if (tourState && tourAwaitingChrome === tourState.idx) showTourStep();
+      if (tourState && tourState === pendingTour && tourAwaitingChrome === tourState.idx) showTourStep();
     } else {
       modalRoot.innerHTML = "";
       if (modalReturnFocus && modalReturnFocus.focus) { try { modalReturnFocus.focus(); } catch (e) {} }
@@ -8985,6 +8986,12 @@
     clearTourHighlight();
     var step = tourState.steps[tourState.idx];
     var target = tourTargetEl(step);
+    // Keep persisted tour targets stable as UI v2 moves their controls. A
+    // settings dialog must not cover the next canvas/composer highlight.
+    var settingsTarget = step.target_key && step.target_key.indexOf("sidebar.") === 0;
+    if (!settingsTarget) closeModal();
+    if (composerMore) composerMore.setAttribute("aria-expanded",
+      target && target.closest("#astral-composer-controls") ? "true" : "false");
     var skippedNote = "";
     if (step.target_kind === "static" && step.target_key && !target) {
       // A10: target belongs to chrome that isn't built yet — note + no highlight.
@@ -9002,8 +9009,7 @@
     // telling the person their own settings aren't available yet. One attempt
     // per step: if the dialog still does not carry the target, the step falls
     // through to the ordinary "not available" note instead of looping.
-    if (!target && step.target_key && step.target_key.indexOf("sidebar.") === 0
-        && !tourAwaitingChrome) {
+    if (!target && settingsTarget && tourAwaitingChrome === null) {
       tourAwaitingChrome = tourState.idx;
       action("chrome_open", { surface: TOUR_SETTINGS_SURFACE });
       return;
@@ -9050,6 +9056,7 @@
     tourAwaitingChrome = null;
     clearTourHighlight();
     setMenu(false, false);
+    if (composerMore) composerMore.setAttribute("aria-expanded", "false");
     // A tour that walked through the settings dialog leaves it open otherwise.
     if (wasRunning) closeModal();
     if (wasRunning) action("chrome_tour_event", { event: outcome });
@@ -9528,6 +9535,8 @@
     }
     document.addEventListener("click", function (e) {
       if (composerMore.getAttribute("aria-expanded") !== "true") return;
+      // Advancing the tour may have just revealed this menu's stable target.
+      if (e.target.closest && e.target.closest("#astral-tour-card")) return;
       var group = document.getElementById("astral-composer-controls");
       if (composerMore.contains(e.target) || (group && group.contains(e.target))) return;
       composerMore.setAttribute("aria-expanded", "false");
