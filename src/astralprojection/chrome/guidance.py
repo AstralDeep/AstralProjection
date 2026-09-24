@@ -14,7 +14,7 @@ from uuid import UUID
 
 from astralprojection.models import ChromeViewModel, LayoutView, ThemeView
 
-from ._components import alert, badge, build_view, bullet_list, button, card, container, field, form, text
+from ._components import alert, badge, build_view, button, card, field, form, text
 
 NOTE_CATEGORY_LABELS = {
     "profession": "Profession", "goal": "Goal", "preference": "Preference",
@@ -439,9 +439,9 @@ def _agents_list(state):
     if not agents:
         components.append(card("No agents yet", [
             text("Create your first agent to keep its instructions and revision history in one place."),
-            bullet_list(["Give the agent a name and define its job.",
-                         "Save and review the definition before activating it.",
-                         "Choose the active agent from your chat's selections."], ordered=True),
+            text("1. Give the agent a name and define its job."),
+            text("2. Save and review the definition before activating it."),
+            text("3. Choose the active agent from your chat's selections."),
         ]))
     for agent in agents:
         actions = [_agent_nav("History", "history", agent_id=agent["agent_id"])]
@@ -451,8 +451,7 @@ def _agents_list(state):
         if agent["status"] != "archived":
             actions.append(_agent_nav("Archive", "archive", **_agent_route(agent)))
         actions.append(_agent_nav("Delete", "delete", **_agent_route(agent)))
-        components.append(card(agent["display_name"], [*_agent_summary(agent),
-                                                      container(actions, direction="row")]))
+        components.append(card(agent["display_name"], [*_agent_summary(agent), *actions]))
     components.append(_agent_nav("Refresh"))
     return components
 

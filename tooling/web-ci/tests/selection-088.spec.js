@@ -328,7 +328,7 @@ test("New chat erases the selection because it applies to this chat only", async
   await openPicker(page);
   await choose(page, "Add note");
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.locator("#astral-newchat-btn").click();
   await expect(chip(page)).toBeHidden();
   expect(await storedSelections(page)).toEqual([]);
   expect("selection" in (await send(page, "Fresh chat")).payload).toBe(false);

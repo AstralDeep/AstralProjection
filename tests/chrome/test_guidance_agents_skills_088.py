@@ -486,7 +486,11 @@ def test_invalid_selection_offers_refuse_the_form_without_diagnostics(bad):
 
 def test_empty_listings_and_pages_say_so_without_claiming_more():
     assert "No skills yet" in render_html(build_skills_view(skills_state(skills=[])))
-    assert "No agents yet" in render_html(build_declarative_agents_view(agents_state(agents=[])))
+    empty = build_declarative_agents_view(agents_state(agents=[]))
+    assert "No agents yet" in render_html(empty)
+    assert {item["type"] for item in nodes(empty.to_dict()) if "type" in item} <= {
+        "text", "alert", "badge", "card", "button", "param_picker",
+    }
     paged = build_declarative_agents_view(agents_state("history", revisions=[], next_before=1))
     assert "No revisions on this page" in render_html(paged) and "No revisions yet" not in render_html(paged)
     first = build_declarative_agents_view(agents_state("history", revisions=[]))
