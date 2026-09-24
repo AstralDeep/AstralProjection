@@ -54,6 +54,11 @@ def test_the_rail_marks_where_you_are_and_offers_sign_out():
     assert 'class="astral-settings-nav"' in html
     assert html.count('aria-current="true"') == 1
     assert 'href="/auth/logout"' in html
+    model = build_menu_model(["admin"])
+    for tab, key in (("tutorial", "tutorial-admin"), ("quality", "tool-quality")):
+        html = render_settings_nav(model, "admin_tools", active_params={"tab": tab})
+        assert html.count('aria-current="true"') == 1
+        assert f'aria-current="true" data-menu-key="{key}"' in html
 
 
 def test_a_model_with_nothing_to_navigate_to_renders_no_rail():

@@ -9243,13 +9243,8 @@
     }
   });
 
-  // ---- tour runner (steps server-rendered into [data-tour-steps]; A10 skips) ----
   var tourState = null;
-  // The step index a settings-dialog open was requested for, so the retry
-  // happens once and only for the step that asked for it.
   var tourAwaitingChrome = null;
-  // Any settings surface renders the whole rail, so the first entry is as
-  // good an anchor as any and is the one the gear itself opens.
   var TOUR_SETTINGS_SURFACE = "agents";
   function maybeStartTour() {
     var holder = modalRoot && modalRoot.querySelector("[data-tour-steps]");
@@ -9257,64 +9252,121 @@
     var steps = [];
     try { steps = JSON.parse(holder.getAttribute("data-tour-steps") || "[]"); } catch (e) { return; }
     if (!steps.length) return;
-    setModal(""); // tour replaces the modal with its floating card
+    setModal("");
     action("chrome_close", {});
-    tourState = { steps: steps, idx: 0 };
+    tourState = { steps: steps, idx: 0, revealed: -1, drawerWasOpen: drawerOpen() };
     action("chrome_tour_event", { event: "started" });
     showTourStep();
   }
   function tourTargetEl(step) {
     if (!step.target_key) return null;
-    try { return document.querySelector('[data-tour-target="' + step.target_key + '"]'); } catch (e) { return null; }
+    var targets = document.querySelectorAll("[data-tour-target]");
+    for (var i = 0; i < targets.length; i++) {
+      if (targets[i].getAttribute("data-tour-target") === step.target_key) return targets[i];
+    }
+    return null;
   }
   function clearTourHighlight() {
     var hl = document.querySelectorAll(".astral-tour-highlight");
     for (var i = 0; i < hl.length; i++) hl[i].classList.remove("astral-tour-highlight");
     var card = document.getElementById("astral-tour-card");
     if (card) card.parentNode.removeChild(card);
+    var spotlight = document.getElementById("astral-tour-spotlight");
+    if (spotlight) spotlight.remove();
+  }
+  function positionTour() {
+    if (!tourState) return;
+    var card = document.getElementById("astral-tour-card");
+    if (!card) return;
+    var target = tourTargetEl(tourState.steps[tourState.idx]);
+    var spotlight = document.getElementById("astral-tour-spotlight");
+    var viewport = window.visualViewport;
+    var width = viewport ? viewport.width : window.innerWidth;
+    var height = viewport ? viewport.height : window.innerHeight;
+    var offsetLeft = viewport ? viewport.offsetLeft : 0;
+    var offsetTop = viewport ? viewport.offsetTop : 0;
+    var edge = 12;
+    var rect = target && target.getBoundingClientRect();
+    var visible = rect && rect.width > 0 && rect.height > 0
+      && rect.right > offsetLeft && rect.left < offsetLeft + width
+      && rect.bottom > offsetTop && rect.top < offsetTop + height;
+    if (spotlight) {
+      spotlight.hidden = !visible;
+      if (visible) {
+        var left = Math.max(offsetLeft + 3, rect.left - 4);
+        var top = Math.max(offsetTop + 3, rect.top - 4);
+        spotlight.style.left = left + "px";
+        spotlight.style.top = top + "px";
+        spotlight.style.width = Math.max(0, Math.min(offsetLeft + width - 3, rect.right + 4) - left) + "px";
+        spotlight.style.height = Math.max(0, Math.min(offsetTop + height - 3, rect.bottom + 4) - top) + "px";
+      }
+    }
+    card.style.maxWidth = Math.max(0, width - edge * 2) + "px";
+    card.style.maxHeight = Math.max(0, height - edge * 2) + "px";
+    var cardRect = card.getBoundingClientRect();
+    var cardLeft = offsetLeft + (width - cardRect.width) / 2;
+    var cardTop = offsetTop + height - cardRect.height - edge;
+    if (visible) {
+      if (rect.bottom + cardRect.height + edge * 2 <= offsetTop + height) {
+        cardTop = rect.bottom + edge;
+      } else if (rect.top - cardRect.height - edge * 2 >= offsetTop) {
+        cardTop = rect.top - cardRect.height - edge;
+      } else if (rect.top + rect.height / 2 > offsetTop + height / 2) {
+        cardTop = offsetTop + edge;
+      }
+    }
+    card.style.left = Math.max(offsetLeft + edge, cardLeft) + "px";
+    card.style.top = Math.max(offsetTop + edge, cardTop) + "px";
+    card.style.bottom = "auto";
   }
   function showTourStep() {
     if (!tourState) return;
     clearTourHighlight();
     var step = tourState.steps[tourState.idx];
     var target = tourTargetEl(step);
-    // Keep persisted tour targets stable as UI v2 moves their controls. A
-    // settings dialog must not cover the next canvas/composer highlight.
     var settingsTarget = step.target_key && step.target_key.indexOf("sidebar.") === 0;
     if (!settingsTarget) closeModal();
+    var needsDrawer = !!(target && target.closest("#astral-sidebar") && window.innerWidth < 1024);
+    if (drawerOpen() !== needsDrawer) setDrawer(needsDrawer);
     if (composerMore) composerMore.setAttribute("aria-expanded",
       target && target.closest("#astral-composer-controls") ? "true" : "false");
     var skippedNote = "";
-    if (step.target_kind === "static" && step.target_key && !target) {
-      // A10: target belongs to chrome that isn't built yet — note + no highlight.
-      skippedNote = '<div class="text-xs text-astral-muted italic mt-1">(this step’s target isn’t available yet)</div>';
-    }
-    // In-menu targets need the popover open (and laid out — scrollIntoView is
-    // a no-op while it is hidden) BEFORE the highlight; any other step closes
-    // it again so it doesn't cover the topbar/canvas highlights (Back
-    // navigation, the no-target intro/outro cards).
     if (target && (target.id === "astral-settings-menu" || (target.closest && target.closest("#astral-settings-menu")))) setMenu(true, false);
     else if (menuOpen()) setMenu(false, false);
-    // The settings entries a "sidebar.*" step points at live in the settings
-    // dialog's rail now, so they exist only while that dialog is open. Open
-    // it once and re-run the step when the server's render lands, rather than
-    // telling the person their own settings aren't available yet. One attempt
-    // per step: if the dialog still does not carry the target, the step falls
-    // through to the ordinary "not available" note instead of looping.
     if (!target && settingsTarget && tourAwaitingChrome === null) {
       tourAwaitingChrome = tourState.idx;
       action("chrome_open", { surface: TOUR_SETTINGS_SURFACE });
       return;
     }
+    if (target && settingsTarget && tourState.revealed !== tourState.idx) {
+      var payload;
+      try { payload = JSON.parse(target.getAttribute("data-ui-payload") || "{}"); } catch (e) { payload = {}; }
+      if (payload.surface && (target.getAttribute("aria-current") !== "true"
+          || Object.keys(payload.params || {}).length)) {
+        tourAwaitingChrome = tourState.idx;
+        tourState.revealed = tourState.idx;
+        action("chrome_open", payload);
+        return;
+      }
+    }
     tourAwaitingChrome = null;
+    if (step.target_key && (!target || !target.getClientRects().length)) {
+      skippedNote = '<div class="text-xs text-astral-muted italic mt-1">This step’s target isn’t available in the current view.</div>';
+    }
     if (target) {
       target.classList.add("astral-tour-highlight");
-      if (target.scrollIntoView) target.scrollIntoView({ block: "nearest" });
+      if (target.scrollIntoView) target.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+      var spotlight = document.createElement("div");
+      spotlight.id = "astral-tour-spotlight";
+      spotlight.setAttribute("aria-hidden", "true");
+      document.body.appendChild(spotlight);
     }
     var card = document.createElement("div");
     card.id = "astral-tour-card";
-    card.className = "fixed bottom-6 left-1/2 -translate-x-1/2 z-[70] w-[360px] max-w-[90vw] " +
-      "bg-astral-surface border border-white/10 rounded-xl shadow-2xl p-4";
+    card.className = "bg-astral-surface border border-white/10 rounded-xl shadow-2xl p-4";
+    card.setAttribute("role", "region");
+    card.setAttribute("aria-label", "Guided tour");
+    card.setAttribute("aria-describedby", "astral-tour-body");
     var last = tourState.idx === tourState.steps.length - 1;
     card.innerHTML =
       '<div class="text-xs text-astral-muted mb-1">Step ' + (tourState.idx + 1) + " of " + tourState.steps.length + "</div>" +
@@ -9327,31 +9379,38 @@
       '<button type="button" class="astral-tour-next px-3 py-1.5 rounded-lg text-xs font-medium bg-astral-primary text-white">' + (last ? "Finish" : "Next") + "</button>" +
       "</div></div>";
     document.body.appendChild(card);
-    // server step content is text — set via textContent to stay inert
     card.querySelector("#astral-tour-title").textContent = step.title || "";
     card.querySelector("#astral-tour-body").textContent = step.body || "";
     var next = card.querySelector(".astral-tour-next");
     next.addEventListener("click", function () {
       if (last) { endTour("completed"); }
-      else { tourState.idx++; showTourStep(); }
+      else { tourState.idx++; tourState.revealed = -1; showTourStep(); }
     });
     var back = card.querySelector(".astral-tour-back");
-    if (back) back.addEventListener("click", function () { tourState.idx--; showTourStep(); });
+    if (back) back.addEventListener("click", function () { tourState.idx--; tourState.revealed = -1; showTourStep(); });
     card.querySelector(".astral-tour-skip").addEventListener("click", function () { endTour("skipped"); });
-    // Each step rebuilds the card, dropping focus to <body>; put it on Next so
-    // Enter keeps advancing for keyboard users.
-    try { next.focus(); } catch (e) {}
+    positionTour();
+    window.requestAnimationFrame(positionTour);
+    try { next.focus({ preventScroll: true }); } catch (e) {}
   }
   function endTour(outcome) {
     var wasRunning = !!tourState;
-    tourState = null; // before setMenu so the gear regains focus at tour end
+    var restoreDrawer = tourState && tourState.drawerWasOpen && window.innerWidth < 1024;
+    tourState = null;
     tourAwaitingChrome = null;
     clearTourHighlight();
     setMenu(false, false);
     if (composerMore) composerMore.setAttribute("aria-expanded", "false");
-    // A tour that walked through the settings dialog leaves it open otherwise.
     if (wasRunning) closeModal();
+    if (wasRunning && drawerOpen() !== !!restoreDrawer) setDrawer(!!restoreDrawer);
     if (wasRunning) action("chrome_tour_event", { event: outcome });
+  }
+  window.addEventListener("resize", positionTour);
+  document.addEventListener("scroll", positionTour, true);
+  document.addEventListener("transitionend", positionTour);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", positionTour);
+    window.visualViewport.addEventListener("scroll", positionTour);
   }
 
   // ---- connection lifecycle ----
@@ -9826,12 +9885,16 @@
     drawerToggle.setAttribute("aria-expanded", open ? "true" : "false");
     drawerToggle.setAttribute("aria-label", open
       ? "Hide the agent directory" : "Show the agent directory");
+    drawerToggle.title = open ? "Hide the agent directory" : "Show the agent directory";
+    drawerToggle.innerHTML = open
+      ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>'
+      : '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>';
     if (drawerBackdrop) drawerBackdrop.hidden = !open;
     if (open) {
       var first = focusablesIn(sidebarEl)[0];
       if (first) first.focus();
       drawerFocusHandler = function (e) {
-        if (e.key !== "Tab") return;
+        if (e.key !== "Tab" || tourState) return;
         var items = focusablesIn(sidebarEl);
         if (!items.length) return;
         var firstItem = items[0];
@@ -9867,7 +9930,8 @@
   // anywhere outside the open drawer counts as the same intent.
   document.addEventListener("click", function (e) {
     if (!drawerOpen() || !sidebarEl) return;
-    if (sidebarEl.contains(e.target) || (drawerToggle && drawerToggle.contains(e.target))) return;
+    if (e.target.closest && e.target.closest("#astral-tour-card")) return;
+    if (sidebarEl.contains(e.target) || (drawerToggle && e.composedPath().indexOf(drawerToggle) >= 0)) return;
     setDrawer(false);
   });
 

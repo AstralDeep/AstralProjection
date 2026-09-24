@@ -111,13 +111,13 @@
       <!-- Top dashboard overview bar (a8p console frame) -->
       <header id="astral-response-top-nav" class="response-top-nav">
         <button type="button" id="astral-back-dash-btn" class="btn-back-dash" title="Return to Dashboard">
-          &larr; Dashboard Overview
+          <span aria-hidden="true">&larr;</span> <span>Dashboard<span class="astral-desktop-label"> Overview</span></span>
         </button>
         <div class="response-query-chip">
           <button type="button" id="astral-turns-chip" class="astral-turns-chip" disabled>(0 turns)</button>
         </div>
         <div class="response-top-nav-right">
-          <button type="button" id="astral-top-newchat-btn" class="btn-new-chat" title="Start New Conversation">
+          <button type="button" id="astral-top-newchat-btn" class="btn-new-chat" title="Start New Conversation" aria-label="New chat">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             <span>New Chat</span>
           </button>
@@ -261,7 +261,9 @@
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M15 3v18M6 12h6m-3-3 3 3-3 3"></path></svg>
             </button>
 
-            <button type="submit" id="astral-send-btn" class="astral-btn astral-btn-primary astral-send-btn">Send</button>
+            <button type="submit" id="astral-send-btn" class="astral-btn astral-btn-primary astral-send-btn" aria-label="Send message" title="Send message">
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7"/></svg>
+            </button>
           </div>
           <!-- Local adapter feedback remains textual and live so permission,
                device, autoplay, and server states never rely on color alone.
@@ -323,8 +325,9 @@
         </div>
       </div>
       <div id="astral-fs-actions" class="astral-fs-actions"></div>
-      <button type="button" id="astral-fs-exit" class="astral-fs-exit">
-        <span>Exit full screen</span><span class="astral-fs-kbd">Esc</span>
+      <button type="button" id="astral-fs-exit" class="astral-fs-exit" aria-label="Exit full screen" title="Exit full screen">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="m6 6 12 12M6 18 18 6"/></svg>
+        <span class="astral-desktop-label">Exit full screen</span><span class="astral-fs-kbd">Esc</span>
       </button>
     </div>
     <div id="astral-fs-canvas" class="astral-fs-canvas"></div>
