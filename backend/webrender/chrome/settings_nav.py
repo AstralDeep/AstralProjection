@@ -39,7 +39,13 @@ def _who_block(identity) -> str:
     )
 
 
-def render_settings_nav(model, active_surface: str = "", *, identity=None) -> str:
+def render_settings_nav(model, active_surface: str = "", *, identity=None, active_params=None) -> str:
+    candidates = [item for group in model.menu for item in group.items
+                  if item.surface == active_surface]
+    current = next((item for item in candidates
+                    if all((active_params or {}).get(key) == value
+                           for key, value in item.params.items())),
+                   candidates[0] if candidates else None)
     parts = []
     for group in model.menu:
         parts.append(
@@ -49,7 +55,7 @@ def render_settings_nav(model, active_surface: str = "", *, identity=None) -> st
         for item in group.items:
             parts.append(_nav_item(
                 item.label, item.key, {"surface": item.surface, "params": item.params},
-                item.surface == active_surface))
+                item is current))
     if not parts:
         return ""
     signout = model.signout

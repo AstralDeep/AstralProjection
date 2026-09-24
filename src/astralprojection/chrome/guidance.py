@@ -14,7 +14,7 @@ from uuid import UUID
 
 from astralprojection.models import ChromeViewModel, LayoutView, ThemeView
 
-from ._components import alert, badge, build_view, button, card, field, form, text
+from ._components import alert, badge, build_view, bullet_list, button, card, container, field, form, text
 
 NOTE_CATEGORY_LABELS = {
     "profession": "Profession", "goal": "Goal", "preference": "Preference",
@@ -22,6 +22,14 @@ NOTE_CATEGORY_LABELS = {
 }
 _NOTICES = {"saved": "Note saved.", "enabled": "Note enabled.",
             "disabled": "Note disabled.", "forgotten": "Note forgotten."}
+_NOTE_ERRORS = {
+    "sensitive": "This note was not saved because it may contain sensitive information. "
+                 "Remove personal or patient details and try again.",
+    "privacy_unavailable": "This note was not saved because its privacy check is temporarily unavailable. "
+                           "Try again shortly.",
+    "changed": "This note changed since you opened it. Reopen the current version before editing.",
+    "not_found": "This note is no longer available. Return to your current notes.",
+}
 _MAX = 2**53 - 1
 
 
@@ -152,7 +160,10 @@ def build_notes_view(state: Mapping[str, object], *, theme: ThemeView | None = N
         _require(type(status) is str and status in {"ready", "loading", "unavailable"})
         if status != "ready":
             components = [text("Loading private notes…") if status == "loading" else
-                          alert("Private notes are unavailable. Refresh to try again.", "error")]
+                          alert(_NOTE_ERRORS.get(state.get("error"),
+                                "Private notes are unavailable. Refresh to try again."), "error")]
+            if status == "unavailable":
+                components.append(_nav("Back to notes"))
         else:
             mode = state.get("mode")
             _require(type(mode) is str and mode in {"list", "new", "edit", "forget"})
@@ -391,8 +402,8 @@ def _agent_revision(value, agent):
     return value
 
 
-def _agent_nav(label, mode="list", **params):
-    return button(label, "chrome_declarative_view", {"mode": mode, **params})
+def _agent_nav(label, mode="list", *, variant="secondary", **params):
+    return button(label, "chrome_declarative_view", {"mode": mode, **params}, variant=variant)
 
 
 def _agent_command(command, command_id, agent_id, **extra):
@@ -419,11 +430,19 @@ def _agents_list(state):
     for agent in agents:
         _agent_head(agent)
     _require(len({agent["agent_id"] for agent in agents}) == len(agents))
-    components = [text("Declarative agents are versioned definitions you can select for your work. "
-                       "Activating a revision selects it; it grants nothing and starts nothing."),
-                  _agent_nav("New agent", "new")]
+    components = [card("Declarative agents", [
+        text("Save a reusable set of instructions and capabilities for your work."),
+        text("Create a definition, review its revisions, then activate the version you want to select "
+             "for a chat. Your usual permissions and approvals still apply.", "caption"),
+        _agent_nav("New agent", "new", variant="primary"),
+    ])]
     if not agents:
-        components.append(text("No agents yet."))
+        components.append(card("No agents yet", [
+            text("Create your first agent to keep its instructions and revision history in one place."),
+            bullet_list(["Give the agent a name and define its job.",
+                         "Save and review the definition before activating it.",
+                         "Choose the active agent from your chat's selections."], ordered=True),
+        ]))
     for agent in agents:
         actions = [_agent_nav("History", "history", agent_id=agent["agent_id"])]
         if agent["status"] != "archived":
@@ -432,7 +451,8 @@ def _agents_list(state):
         if agent["status"] != "archived":
             actions.append(_agent_nav("Archive", "archive", **_agent_route(agent)))
         actions.append(_agent_nav("Delete", "delete", **_agent_route(agent)))
-        components.append(card(agent["display_name"], [*_agent_summary(agent), *actions]))
+        components.append(card(agent["display_name"], [*_agent_summary(agent),
+                                                      container(actions, direction="row")]))
     components.append(_agent_nav("Refresh"))
     return components
 
@@ -485,8 +505,14 @@ def _agents_new(state):
     agent_id, revision_id, command_id = (_identity(state[key])
                                          for key in ("agent_id", "revision_id", "command_id"))
     _require(len({agent_id, revision_id, command_id}) == 3)
+    template = {"version": 1, "purpose": "Describe the agent's goal.",
+                "instructions": "Describe how the agent should approach its work.",
+                "capabilities": [], "memory": {"mode": "none"}, "triggers": [{"kind": "manual"}],
+                "limits": {}, "approvals": {"policy": "normal"}}
     return [_agent_nav("Back to agents"),
-            form(_definition_fields("", ""), title="New agent",
+            form(_definition_fields("", _definition(template)), title="New agent",
+                 description="Name this agent and customize the starter definition below. Saving creates "
+                             "a draft revision with no tool access; review its capabilities before activation.",
                  submit_action="chrome_declarative_command", submit_label="Create agent",
                  submit_payload=_agent_command("create", command_id, agent_id, revision_id=revision_id))]
 

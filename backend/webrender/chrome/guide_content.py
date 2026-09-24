@@ -115,8 +115,7 @@ _SIGNING_IN = "".join([
         ),
         _li(
             _strong("Admin"),
-            " — everything users can do, plus the admin tools (tool quality, knowledge "
-            "proposals, quarantine, tutorial editor).",
+            " — everything users can do, plus Tool quality, Tutorial admin and System LLM settings.",
         ),
     ),
     _p(
@@ -135,9 +134,9 @@ _SIGNING_IN = "".join([
 _DASHBOARD = "".join([
     _h1("Dashboard tour"),
     _p(
-        "The dashboard is a single screen in two columns: a sidebar down the left, and the "
-        "main column beside it with the canvas above and the message box pinned to its "
-        "bottom.",
+        "On a wide screen, the sidebar sits beside your conversation and results, with the "
+        "message box at the bottom. On a phone or tablet, the hamburger button opens the "
+        "sidebar as a drawer. Close it to return to your full-width conversation.",
     ),
     _h2("Sidebar"),
     _ul(
@@ -153,12 +152,13 @@ _DASHBOARD = "".join([
         ),
         _li(
             _strong("Recent work"),
-            " — your recent chats, and the button that starts a new one.",
+            " — the History section contains recent chats and a button to start a new one.",
         ),
         _li(
             _strong("The settings gear"),
             " — at the very bottom. It opens the Settings dialog: the menu runs down the "
-            "dialog's left side and stays there, so you can move between ",
+            "dialog's left side on wide screens. On a phone, scroll the navigation row "
+            "horizontally to move between ",
             _em("Agents & permissions"), ", ", _em("LLM settings"), ", ",
             _em("Personalization"), ", ", _em("Audit log"), " and ", _em("Theme"),
             " without closing and reopening it. ", _em("Take the tour"), " and ",
@@ -173,9 +173,9 @@ _DASHBOARD = "".join([
     ),
     _h2("Page header"),
     _p(
-        "Across the top of the main column: the console's name, and status pills telling you "
-        "the system is live, how many agents are ready, and that the audit ledger is "
-        "recording.",
+        "The conversation header has Dashboard Overview, the conversation's turn count and "
+        "New Chat. Dashboard Overview returns to the example requests; New Chat starts a "
+        "separate conversation. Each interactive result has its own title and toolbar.",
     ),
     _tip(
         "Hover any control for about half a second to see a short tooltip describing what it "
@@ -198,10 +198,10 @@ _DASHBOARD = "".join([
     _h2("Message box"),
     _p(
         "The box pinned to the bottom of the main column is your primary input. Type a "
-        "message and press ", _kbd("Enter"), " or click ", _strong("Send"),
-        ". The small buttons beside it attach files, run a turn in the background, open ",
-        _strong("Advanced"), " (choose the agent, skills and private notes for this chat), "
-        "and start a voice conversation.",
+        "message and press ", _kbd("Enter"), " or click the ", _strong("send arrow"),
+        ". Use ", _kbd("Shift+Enter"), " for a new line. The paperclip attaches files and "
+        "the microphone starts voice. The three-dot menu opens background work, ",
+        _strong("Advanced"), " (agent, skill and private-note choices), and Workspace timeline.",
     ),
 ])
 
