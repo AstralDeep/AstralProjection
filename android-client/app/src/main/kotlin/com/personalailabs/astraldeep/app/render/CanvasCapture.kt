@@ -1,3 +1,7 @@
+// Captures and cleans canvas snapshots for export/sharing: a main-thread, owner-scoped, non-persisting
+// registry that reuses each renderer's tolerant field readers so undisplayed data never leaks into the
+// exported capture.
+
 package com.personalailabs.astraldeep.app.render
 
 import com.personalailabs.astraldeep.app.render.renderers.arr
@@ -30,15 +34,12 @@ internal fun interface CanvasPixels {
 internal class CanvasCaptureUnavailable : IllegalStateException("The visible canvas is not ready for export.")
 
 internal data class CanvasCapture(val presentation: JsonObject, internal val generation: Long, internal val context: WorkspaceContext) {
-    // Once bytes are frozen, later local layout/disclosure changes do not retarget the snapshot.
-    // Delivery still requires current owner/session/chat/revision and server capability.
     fun canDeliver(current: WorkspaceContext?): Boolean =
         current != null && current.owner == context.owner &&
             current.epoch == context.epoch && current.chatId == context.chatId && current.revision == context.revision &&
             "export_canvas" in current.operations
 }
 
-/** Main-thread, bounded, owner-scoped display memory. It never fetches or persists content. */
 internal class CanvasCaptureRegistry {
     internal class Node(val raw: JsonObject) {
         var selected = 0
@@ -298,8 +299,6 @@ internal class CanvasCaptureRegistry {
             val images = mutableListOf<kotlinx.coroutines.Deferred<JsonObject>>()
             var count = 0
 
-            // Project each primitive through the same tolerant readers as its native renderer.
-            // A field used by another primitive, or an undisplayed nested map, is never display data.
             fun clean(
                 raw: JsonObject,
                 type: String,
@@ -482,7 +481,7 @@ internal class CanvasCaptureRegistry {
                         out["width"] = JsonPrimitive(size.first)
                         out["height"] = JsonPrimitive(size.second)
                     }
-                    // No source URL, raw chart inputs, request metadata or unneeded keys leave the client.
+                    // Allowlist only — no source URLs or raw inputs leave the client
                     out.keys.retainAll(setOf("type", "id", "component_id", "title", "alt", "caption", "width", "height"))
                     images +=
                         async {

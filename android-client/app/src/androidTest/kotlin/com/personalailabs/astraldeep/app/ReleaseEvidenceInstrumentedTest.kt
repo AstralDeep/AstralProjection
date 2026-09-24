@@ -1,3 +1,6 @@
+// Instrumented release-evidence producer (CI-only, real staging transport over Wire/OkHttp) exercising
+// sign-in, chat, reconnect, and accessibility, then emitting one platform_evidence report.
+
 package com.personalailabs.astraldeep.app
 
 import android.os.SystemClock
@@ -53,29 +56,6 @@ import java.util.UUID
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.TimeUnit
 
-/**
- * Connected Spec 060 release-evidence producer (T109, US8).
- *
- * Runs only inside the `android-producer` job of `release-readiness.yml`
- * against the trusted staging endpoint, using the REAL production transport
- * ([Wire] encode/decode over OkHttp). Every check must pass — the single flow
- * then writes one `platform_evidence` report (`platform: android`, artifact
- * kind `android_apk` re-hashed from the installed APK bytes) into the app's
- * external files dir and logs `release_evidence_output=<path>` for the
- * workflow to `adb pull`. Skips (JUnit Assume) ONLY when `astralStagingUrl`
- * is absent; once it is present every other argument is required.
- *
- * Instrumentation arguments (all via
- * `-Pandroid.testInstrumentationRunnerArguments.<name>=<value>`):
- * `astralStagingUrl`, `astralAccessToken`, `astralCandidateSha`,
- * `astralReleaseId`, `astralReleaseVersion`, `astralLifecycleAgentId`,
- * `astralLifecycleStates` (comma-separated), `astralStagingEnvironmentB64`
- * (base64 stage-deploy outputs JSON), `astralToolchainCanaryB64` (base64
- * android-next-major-readiness.json), `astralRunnerImage`, `astralRunnerName`,
- * `astralRunnerArch`, `astralRunnerEnvironment`, `astralWorkflowName`,
- * `astralRunId`, `astralRunAttempt`, `astralJobId`, and optional
- * `astralLifecycleTimeoutMs` (default 120000).
- */
 @RunWith(AndroidJUnit4::class)
 class ReleaseEvidenceInstrumentedTest {
     @get:Rule val rule = createComposeRule()
@@ -125,11 +105,6 @@ class ReleaseEvidenceInstrumentedTest {
         writeReport(stagingUrl, startedAt)
     }
 
-    // ------------------------------------------------------------------
-    // Checks
-    // ------------------------------------------------------------------
-
-    /** Invalid principal refused up front; the staging token registers cleanly. */
     private fun runSignIn(
         wsUrl: String,
         token: String,
@@ -157,7 +132,6 @@ class ReleaseEvidenceInstrumentedTest {
         return StepResult(SystemClock.elapsedRealtime() - started, raw)
     }
 
-    /** One real turn: new chat, dice prompt, durable two-sided transcript + canvas. */
     private fun runRenderedChat(
         wsUrl: String,
         token: String,
@@ -194,7 +168,6 @@ class ReleaseEvidenceInstrumentedTest {
         }
     }
 
-    /** Twenty fresh-connection resume trials with explicit success counters. */
     private fun runReconnectResumeTrials(
         wsUrl: String,
         token: String,
@@ -236,7 +209,6 @@ class ReleaseEvidenceInstrumentedTest {
         return StepResult(SystemClock.elapsedRealtime() - started, raw)
     }
 
-    /** Generation-fenced lifecycle projection covers every expected state. */
     private fun runAgentLifecycle(
         wsUrl: String,
         token: String,
@@ -267,7 +239,6 @@ class ReleaseEvidenceInstrumentedTest {
             "lifecycle states ${expected - observed} never arrived for $agentId",
             observed.containsAll(expected),
         )
-        // Wire already refuses malformed frames; assert the fence fields survived.
         events.forEach { event ->
             assertTrue("state outside vocabulary: ${event.state}", event.state in LIFECYCLE_STATES)
             assertTrue("label must be present", event.label.isNotBlank())
@@ -294,7 +265,6 @@ class ReleaseEvidenceInstrumentedTest {
         return StepResult(SystemClock.elapsedRealtime() - started, raw)
     }
 
-    /** The flag-gated authoring surface renders natively for this principal. */
     private fun runAuthoringSurface(
         wsUrl: String,
         token: String,
@@ -331,7 +301,6 @@ class ReleaseEvidenceInstrumentedTest {
         }
     }
 
-    /** TalkBack semantics of the changed authoring controls (T113 contracts). */
     private fun runAccessibilitySemantics(): StepResult {
         val started = SystemClock.elapsedRealtime()
         val weather =
@@ -389,7 +358,6 @@ class ReleaseEvidenceInstrumentedTest {
         return StepResult(SystemClock.elapsedRealtime() - started, raw)
     }
 
-    /** The official next-major toolchain diagnostic reached a fail-closed verdict. */
     private fun runToolchainReadiness(): StepResult {
         val started = SystemClock.elapsedRealtime()
         val canary = Json.parseToJsonElement(decodeBase64Argument("astralToolchainCanaryB64")).jsonObject
@@ -407,10 +375,6 @@ class ReleaseEvidenceInstrumentedTest {
             }
         return StepResult(SystemClock.elapsedRealtime() - started, raw)
     }
-
-    // ------------------------------------------------------------------
-    // Report assembly
-    // ------------------------------------------------------------------
 
     private fun recordCheck(
         checkId: String,
@@ -542,7 +506,6 @@ class ReleaseEvidenceInstrumentedTest {
         Log.i(TAG, "release_evidence_sha256=${sha256(bytes)}")
     }
 
-    /** Project the exact schema fields from the trusted stage-deploy outputs. */
     private fun stagingEnvironment(stagingUrl: String): JsonObject {
         val stage = Json.parseToJsonElement(decodeBase64Argument("astralStagingEnvironmentB64")).jsonObject
         STAGING_FIELDS.forEach { field ->
@@ -559,7 +522,6 @@ class ReleaseEvidenceInstrumentedTest {
         return buildJsonObject { STAGING_FIELDS.forEach { put(it, stage.getValue(it)) } }
     }
 
-    /** Validate the stage-owned object without constructing a candidate replacement. */
     private fun validateVoiceRuntime(value: JsonElement) {
         assertTrue("trusted voice_runtime is not an object", value is JsonObject)
         val runtime = value.jsonObject
@@ -615,10 +577,6 @@ class ReleaseEvidenceInstrumentedTest {
                 error("unreachable")
             }
         }
-
-    // ------------------------------------------------------------------
-    // Helpers
-    // ------------------------------------------------------------------
 
     private fun loadTranscriptSize(
         socket: StagingSocket,
@@ -702,10 +660,6 @@ class ReleaseEvidenceInstrumentedTest {
         val transcriptSize: Int,
     )
 
-    /**
-     * One registered staging connection: production [Wire] bytes over OkHttp,
-     * inbound frames decoded into [Inbound] and drained with bounded waits.
-     */
     private class StagingSocket(
         client: OkHttpClient,
         url: String,

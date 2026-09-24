@@ -1,4 +1,7 @@
-"""Neutral-vector conformance for the frozen-safe Windows BYO supervisor."""
+"""Tests for win_agent/process_supervision.py: the frozen-safe BYO supervisor against
+the neutral conformance fixture — bounded pipe reading, spawn ownership, full
+descendant-tree termination, and leak-free cleanup across repeated trials.
+"""
 
 from __future__ import annotations
 
@@ -338,8 +341,6 @@ def test_noncooperative_tree_is_force_killed_by_four_and_clean_by_five_seconds()
 
 
 def test_hundred_trials_per_behavior_leave_no_worker_resources() -> None:
-    """One hundred independent launches for each neutral fault behavior."""
-
     observed = {vector_id: 0 for vector_id in _EXPECTED_IDS}
     cleanup_ms = {vector_id: [] for vector_id in _EXPECTED_IDS}
     ordered = sorted(_EXPECTED_IDS)

@@ -1,9 +1,6 @@
-"""Host-neutral presentation records for AstralProjection.
-
-These records deliberately contain no AstralDeep implementation types.  A host
-authorizes and queries state, translates it into plain values, and then passes
-those values to Projection's pure view builders.  Every record is immutable and
-serializes to JSON-compatible values so it can be used by web and native hosts.
+"""Immutable, JSON-serializable presentation records (ComponentView, ThemeView,
+LayoutView, DeviceCapabilities, ChromeViewModel) shared by every
+astralprojection.chrome view builder and both web and native hosts.
 """
 
 from __future__ import annotations
@@ -35,7 +32,6 @@ def _token(value: str, label: str) -> str:
 
 
 def _freeze_json(value: object, path: str = "value") -> object:
-    """Validate and freeze a JSON-compatible value without string coercion."""
     if value is None or isinstance(value, (bool, int, str)):
         return value
     if isinstance(value, float):
@@ -55,7 +51,6 @@ def _freeze_json(value: object, path: str = "value") -> object:
 
 
 def thaw_json(value: object) -> JsonValue:
-    """Return a detached JSON-compatible copy of a frozen presentation value."""
     if isinstance(value, Mapping):
         return {str(key): thaw_json(item) for key, item in value.items()}
     if isinstance(value, tuple):
@@ -65,8 +60,6 @@ def thaw_json(value: object) -> JsonValue:
 
 @dataclass(frozen=True, slots=True)
 class ComponentView:
-    """One protocol-neutral UI component dictionary."""
-
     component_type: str
     properties: Mapping[str, object] = field(default_factory=dict)
 
@@ -82,8 +75,6 @@ class ComponentView:
 
 @dataclass(frozen=True, slots=True)
 class FrameView:
-    """A transport-neutral frame payload for a host to wrap and deliver."""
-
     frame_type: str
     payload: Mapping[str, object]
     schema_version: int = 1
@@ -106,8 +97,6 @@ class FrameView:
 
 @dataclass(frozen=True, slots=True)
 class ThemeView:
-    """Resolved semantic theme supplied to a presentation surface."""
-
     name: str = "midnight"
     colors: Mapping[str, str] = field(default_factory=dict)
     color_scheme: str = "dark"
@@ -144,8 +133,6 @@ class ThemeView:
 
 @dataclass(frozen=True, slots=True)
 class LayoutView:
-    """Shared layout intent, bounded for every supported client."""
-
     mode: str = "standard"
     columns: int = 1
     density: str = "comfortable"
@@ -178,8 +165,6 @@ class LayoutView:
 
 @dataclass(frozen=True, slots=True)
 class DegradationView:
-    """Explicit, user-visible record of a supported presentation fallback."""
-
     active: bool = False
     reason: str = ""
     unsupported_components: tuple[str, ...] = ()
@@ -210,8 +195,6 @@ class DegradationView:
 
 @dataclass(frozen=True, slots=True)
 class DeviceCapabilities:
-    """Presentation capabilities advertised by a web or native client."""
-
     profile: str
     component_types: frozenset[str]
     supports_forms: bool = True
@@ -248,8 +231,6 @@ class DeviceCapabilities:
 
 @dataclass(frozen=True, slots=True)
 class ChromeViewModel:
-    """Complete pure output for one shared application-chrome surface."""
-
     surface: str
     title: str
     components: tuple[ComponentView, ...]
@@ -281,7 +262,6 @@ class ChromeViewModel:
         return FrameView("chrome_surface", self.to_dict())
 
     def for_device(self, capabilities: DeviceCapabilities) -> ChromeViewModel:
-        """Replace unsupported top-level components with an explicit fallback."""
         supported: list[ComponentView] = []
         unsupported: set[str] = set()
         for component in self.components:

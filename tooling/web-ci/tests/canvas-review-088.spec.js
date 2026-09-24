@@ -1,5 +1,6 @@
-// Canvas regression fixtures exercise real Plotly and downloaded HTML offline.
-// These deterministic browser checks do not replace an authenticated live smoke.
+// Browser tests for canvas review rendering: real Plotly output and downloaded HTML are exercised
+// offline, as a deterministic complement to a live smoke test.
+
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";

@@ -1,4 +1,6 @@
-"""Stable access to AstralProjection's authoritative UI protocol manifest."""
+"""Reads and validates AstralProjection's authoritative UI protocol manifest, deriving
+its canonical bytes and version; built on resources.py.
+"""
 
 from __future__ import annotations
 
@@ -15,14 +17,12 @@ def _reject_nonfinite(value: str) -> None:
 
 
 def read_protocol_manifest() -> dict[str, Any]:
-    """Read a fresh validated JSON object from the authoritative manifest."""
-
     document = json.loads(
         protocol_manifest_path().read_text(encoding="utf-8"),
         parse_constant=_reject_nonfinite,
     )
     if not isinstance(document, dict):
-        raise ValueError(  # noqa: TRY004 - stable manifest-validation API
+        raise ValueError(  # noqa: TRY004
             "UI protocol manifest must be a JSON object"
         )
     manifest_metadata(document)
@@ -30,8 +30,6 @@ def read_protocol_manifest() -> dict[str, Any]:
 
 
 def canonical_manifest_bytes(document: object) -> bytes:
-    """Return whitespace- and key-order-independent UTF-8 JSON bytes."""
-
     return json.dumps(
         document,
         ensure_ascii=False,
@@ -42,10 +40,8 @@ def canonical_manifest_bytes(document: object) -> bytes:
 
 
 def manifest_metadata(document: object) -> tuple[str, str]:
-    """Validate and derive the public version and canonical SHA-256."""
-
     if not isinstance(document, Mapping):
-        raise ValueError(  # noqa: TRY004 - stable manifest-validation API
+        raise ValueError(  # noqa: TRY004
             "UI protocol manifest must be a JSON object"
         )
     version = document.get("version")

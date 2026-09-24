@@ -1,3 +1,6 @@
+// Unions the four coverage execution lanes (node, browser, offline-node, export-browser) into one
+// canonical, envelope-validated report; used by coverage-union-cli.mjs and its tests.
+
 import {
   lstatSync,
   readFileSync,
@@ -43,7 +46,6 @@ export const BROWSER_LANE_SOURCE_PATHS = Object.freeze([
   "backend/webrender/static/client.js",
 ]);
 
-// Separate observed execution domains; neither may impersonate staging coverage.
 export const OFFLINE_NODE_SOURCE_PATHS = Object.freeze([
   "backend/webrender/static/offline-registration.js",
   "backend/webrender/static/service-worker.js",
@@ -329,7 +331,6 @@ function validateEnvelope(
   return validated;
 }
 
-/** Union four mandatory, disjoint, source-bound execution lanes. */
 export function unionCanonicalCoverage({ node, browser, offlineNode, exportBrowser, repoRoot }) {
   let canonicalRoot;
   try {

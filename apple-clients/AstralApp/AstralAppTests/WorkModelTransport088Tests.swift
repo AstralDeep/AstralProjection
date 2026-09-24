@@ -1,3 +1,7 @@
+// Tests for the Work-surface transport (Chrome/WorkSurface.swift): reads, navigation, and close stay on one
+// socket without queueing, and connection or ownership changes before a send cannot leak or replay an old
+// read.
+
 import AstralCore
 import Foundation
 import Network
@@ -103,7 +107,6 @@ final class WorkModelTransport088Tests: XCTestCase {
                 if case .frame(let frame) = event { model.handleFrame(frame) }
             }
         }
-        // Synthetic peer exercises transport and current-view checks, never real IAM/bootstrap.
         await socket.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
         await fulfillment(of: [ready], timeout: 3)
         model.connected = true

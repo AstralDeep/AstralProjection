@@ -1,10 +1,10 @@
+// UI tests (iOS only) for toolbar and sheet workspace actions against WorkspaceActionLoopback's owned fixture
+// peer, without creating a real share or choosing a system-sharing destination.
+
 #if os(iOS)
     import UIKit
     import XCTest
 
-    /// Actual toolbar/sheet interactions against an owned loopback peer. These
-    /// tests deliberately do not create a share on any real backend or choose a
-    /// destination in the system sharing UI.
     final class WorkspaceActionsUITests: XCTestCase {
         private var app: XCUIApplication!
         private var peer: WorkspaceActionLoopback!
@@ -29,8 +29,6 @@
             XCTAssertEqual(peer.requests.map(\.route), [.authorization, .presentation])
             try assertCapturedVisibleCanvas()
             save.tap()
-            // Invoke the platform handoff, then cancel without sending a file to
-            // any external app or writing a user-selected destination.
             let activityList = app.otherElements["ActivityListView"]
             XCTAssertTrue(activityList.waitForExistence(timeout: 8))
             XCTAssertTrue(app.cells["Save to Files"].exists)
@@ -38,8 +36,6 @@
             activity.name = "Workspace export native share sheet"
             activity.lifetime = .keepAlways
             add(activity)
-            // iOS 26 presents this activity view as a popover with a native
-            // dismissal region, not an additional Close button.
             app.otherElements["PopoverDismissRegion"].tap()
             XCTAssertTrue(activityList.waitForNonExistence(timeout: 3))
             XCTAssertTrue(save.isHittable)
@@ -114,8 +110,6 @@
             waitForRequests(2)
             app.buttons["new-chat-button"].tap()
             XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
-            // Read only the counter after the transition settles, never clipboard
-            // text. A stale completion must not write even when its banner is hidden.
             let afterNewChat = UIPasteboard.general.changeCount
             peer.releaseHeldReplies()
             XCTAssertFalse(app.buttons["Save or share astraldeep-canvas.html"].waitForExistence(timeout: 1))
@@ -125,8 +119,6 @@
             XCTAssertEqual(peer.requests.map(\.route), [.authorization, .share])
             XCTAssertTrue(peer.unexpectedRequests.isEmpty, "Unexpected fixture requests: \(peer.unexpectedRequests)")
 
-            // A second isolated launch proves the actual account sign-out path,
-            // independently of a chat change and without touching the Keychain.
             app.terminate()
             peer.stop()
             try launch(replies: [.share: [.init(status: 201, held: true)]])
@@ -308,7 +300,6 @@
             peer.resumeSocketConnections()
             let reconnected = XCTNSPredicateExpectation(
                 predicate: NSPredicate { [weak self] _, _ in (self?.peer.registrations ?? 0) >= 2 }, object: nil)
-            // Normal socket backoff can reach 30 seconds; do not accelerate it for the fixture.
             XCTAssertEqual(XCTWaiter.wait(for: [reconnected], timeout: 35), .completed)
             XCTAssertTrue(peer.componentFrames.isEmpty)
         }

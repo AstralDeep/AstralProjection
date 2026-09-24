@@ -1,4 +1,6 @@
-"""Static release-identity continuity guards for extracted native clients."""
+"""Tests for Android and Apple client release identity: store/OIDC registration, signing
+configuration, and build numbering stay stable.
+"""
 
 from __future__ import annotations
 

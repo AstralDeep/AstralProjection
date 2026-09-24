@@ -1,30 +1,7 @@
 #!/usr/bin/env python3
-"""Generate the Apple app-icon assets for AstralDeep from a single square master.
-
-Feature 053. Zero third-party dependencies (Constitution V): resampling is done by
-the Apple toolchain (`sips`); PNG decode/encode, alpha stripping, and the macOS
-squircle mask are pure-stdlib.
-
-Why each platform differs (see specs/053-apple-production-release/research.md D15/D17):
-
-* iOS / watchOS  — a SINGLE 1024x1024 square PNG. The system masks the corners
-  (rounded-rect on iOS, circle on watchOS), so the artwork must be full-bleed and
-  must NOT bake in rounding. It MUST be fully opaque: an alpha channel fails App
-  Store validation with ITMS-90717 ("The App Store Icon ... can't be transparent
-  nor contain an alpha channel").
-
-* macOS — the classic `AppIcon.appiconset` workflow does NOT mask. Each of the ten
-  slots (16/32/128/256/512 at @1x and @2x) must therefore supply the rounded-rect
-  shape itself, inset inside a transparent gutter. Apple's macOS icon grid puts an
-  824x824 body on the 1024 canvas (a ~100px gutter on each side) with a ~185.4px
-  continuous-corner radius. Transparency is expected here and is not an ITMS-90717
-  violation (that rule governs the iOS/watchOS App Store icon slot).
-
-Usage:
-    python3 apple-clients/Scripts/generate_app_icons.py [--master PATH] [--check]
-
-`--check` verifies the emitted assets satisfy the invariants (sizes, and that the
-iOS/watch 1024 icons carry no alpha channel) and exits non-zero on violation.
+"""Generates Apple app-icon PNGs from one square master using sips plus a stdlib-only
+PNG codec: an opaque full-bleed 1024 square for iOS/watchOS (system-masked) and a
+squircle-rounded body on a transparent canvas for macOS's ten icon slots.
 """
 
 from __future__ import annotations
@@ -43,15 +20,11 @@ DEFAULT_MASTER = REPO / "android-client" / "Android Raw Assets" / "AppIcon.png"
 APP_ICONSET = REPO / "apple-clients/AstralApp/AstralApp/Assets.xcassets/AppIcon.appiconset"
 WATCH_ICONSET = REPO / "apple-clients/AstralWatch/Assets.xcassets/AppIcon.appiconset"
 
-# Apple macOS icon grid, expressed on the 1024 canvas.
 MAC_CANVAS = 1024
 MAC_BODY = 824
 MAC_RADIUS = 185.4
-# Continuous-corner ("squircle") exponent. n=2 is a circular corner; Apple's
-# continuous corners sit near 4-5. 4.0 tracks the shipped shape closely.
 SQUIRCLE_N = 4.0
 
-# (size, scale) -> emitted pixel size, for the ten classic macOS slots.
 MAC_SLOTS = [
     (16, 1, 16), (16, 2, 32),
     (32, 1, 32), (32, 2, 64),
@@ -60,8 +33,6 @@ MAC_SLOTS = [
     (512, 1, 512), (512, 2, 1024),
 ]
 
-
-# ---------------------------------------------------------------- PNG codec
 
 def _paeth(a: int, b: int, c: int) -> int:
     p = a + b - c
@@ -72,7 +43,6 @@ def _paeth(a: int, b: int, c: int) -> int:
 
 
 def read_png(path: pathlib.Path) -> tuple[int, int, int, bytearray]:
-    """Return (width, height, channels, pixel bytes). Channels is 3 (RGB) or 4 (RGBA)."""
     data = path.read_bytes()
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError(f"{path}: not a PNG")
@@ -127,7 +97,7 @@ def write_png(path: pathlib.Path, width: int, height: int, channels: int, px: by
     stride = width * channels
     raw = bytearray()
     for y in range(height):
-        raw.append(0)  # filter: none
+        raw.append(0)
         raw += px[y * stride:(y + 1) * stride]
 
     def chunk(tag: bytes, payload: bytes) -> bytes:
@@ -152,10 +122,7 @@ def sips_resize(src: pathlib.Path, dst: pathlib.Path, size: int) -> None:
     )
 
 
-# ---------------------------------------------------------------- transforms
-
 def strip_alpha(width: int, height: int, channels: int, px: bytearray) -> bytearray:
-    """Drop the alpha channel. Refuses to silently composite real transparency."""
     if channels == 3:
         return px
     alphas = px[3::4]
@@ -168,7 +135,6 @@ def strip_alpha(width: int, height: int, channels: int, px: bytearray) -> bytear
 
 
 def _coverage(dx: float, dy: float, r: float, n: float, samples: int = 4) -> float:
-    """Antialiased superellipse coverage for a corner pixel at (dx, dy) from the corner centre."""
     hit = 0
     step = 1.0 / samples
     for sy in range(samples):
@@ -184,36 +150,33 @@ def _coverage(dx: float, dy: float, r: float, n: float, samples: int = 4) -> flo
 
 
 def squircle_alpha(size: int, radius: float, n: float) -> bytearray:
-    """Alpha mask (0..255) for a `size` square with continuous-corner rounding."""
     mask = bytearray(b"\xff" * (size * size))
     r = radius
     for y in range(size):
-        # distance into the corner band, vertically
         if y < r:
             cy = r - y - 0.5
         elif y >= size - r:
             cy = y - (size - r) + 0.5
         else:
-            continue  # middle band: fully opaque row
+            continue
         for x in range(size):
             if x < r:
                 cx = r - x - 0.5
             elif x >= size - r:
                 cx = x - (size - r) + 0.5
             else:
-                continue  # middle band: fully opaque
+                continue
             cov = _coverage(cx - 0.5, cy - 0.5, r, n)
             mask[y * size + x] = int(round(cov * 255))
     return mask
 
 
 def build_mac_canvas(body_png: pathlib.Path) -> tuple[int, int, int, bytearray]:
-    """Place the masked 824 body, centred, on a transparent 1024 canvas."""
     bw, bh, bch, bpx = read_png(body_png)
     if (bw, bh) != (MAC_BODY, MAC_BODY):
         raise ValueError(f"expected {MAC_BODY}x{MAC_BODY} body, got {bw}x{bh}")
     mask = squircle_alpha(MAC_BODY, MAC_RADIUS, SQUIRCLE_N)
-    canvas = bytearray(MAC_CANVAS * MAC_CANVAS * 4)  # zeroed => transparent
+    canvas = bytearray(MAC_CANVAS * MAC_CANVAS * 4)
     off = (MAC_CANVAS - MAC_BODY) // 2
     for y in range(MAC_BODY):
         drow = ((y + off) * MAC_CANVAS + off) * 4
@@ -228,8 +191,6 @@ def build_mac_canvas(body_png: pathlib.Path) -> tuple[int, int, int, bytearray]:
             canvas[d + 3] = mask[mrow + x]
     return MAC_CANVAS, MAC_CANVAS, 4, canvas
 
-
-# ---------------------------------------------------------------- catalogs
 
 def write_app_contents() -> None:
     images = [
@@ -261,13 +222,10 @@ def write_watch_contents() -> None:
         root.write_text(json.dumps({"info": {"author": "xcode", "version": 1}}, indent=2) + "\n")
 
 
-# ---------------------------------------------------------------- driver
-
 def generate(master: pathlib.Path) -> None:
     with tempfile.TemporaryDirectory() as td:
         tmp = pathlib.Path(td)
 
-        # --- iOS + watchOS: one opaque, full-bleed 1024 square (system masks it).
         base = tmp / "base-1024.png"
         sips_resize(master, base, 1024)
         w, h, ch, px = read_png(base)
@@ -278,7 +236,6 @@ def generate(master: pathlib.Path) -> None:
             write_png(target, w, h, 3, rgb)
         print("  ios/watch  1024x1024 opaque  -> 3 files")
 
-        # --- macOS: rounded-rect body inside a transparent gutter, ten slots.
         body = tmp / "body-824.png"
         sips_resize(master, body, MAC_BODY)
         cw, chh, cch, cpx = build_mac_canvas(body)

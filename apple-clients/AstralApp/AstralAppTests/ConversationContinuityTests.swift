@@ -1,3 +1,7 @@
+// Tests for ConversationContinuity's reducer (Protocol/ConversationContinuity.swift): opaque per-account
+// locators, the four definitive clear actions, snapshot replace semantics, and commit-generation fencing for
+// mid-turn overlays.
+
 import AstralCore
 import XCTest
 

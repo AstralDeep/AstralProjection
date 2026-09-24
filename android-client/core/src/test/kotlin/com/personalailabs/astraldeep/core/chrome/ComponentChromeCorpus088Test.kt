@@ -1,3 +1,5 @@
+// Tests ComponentChrome's rules against a corpus of real component shapes for regression coverage.
+
 package com.personalailabs.astraldeep.core.chrome
 
 import com.personalailabs.astraldeep.core.sdui.Component

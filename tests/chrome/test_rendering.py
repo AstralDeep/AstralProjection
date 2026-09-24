@@ -1,3 +1,7 @@
+"""Tests for src/astralprojection/chrome/_components.py: the shared component
+vocabulary, form degradation and the safe HTML renderer.
+"""
+
 from __future__ import annotations
 
 import pytest

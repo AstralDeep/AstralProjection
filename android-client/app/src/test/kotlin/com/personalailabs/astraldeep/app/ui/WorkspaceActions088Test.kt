@@ -1,3 +1,6 @@
+// Tests for workspaceControls and WorkspaceActionLeases: resolving workspace-level actions and leasing them
+// by identity ticket.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.AccountIdentity

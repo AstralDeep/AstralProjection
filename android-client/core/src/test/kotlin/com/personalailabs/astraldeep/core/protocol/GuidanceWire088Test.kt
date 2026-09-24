@@ -1,3 +1,5 @@
+// Tests for decoding the closed guidance-notes wire shape into GuidanceNotes' native view model.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.Json

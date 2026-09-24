@@ -1,3 +1,6 @@
+// Tests for Component.fromJson: type/id/attribute decoding, id fallback from component_id to id, and nested
+// children parsing.
+
 package com.personalailabs.astraldeep.core.sdui
 
 import kotlinx.serialization.json.Json
@@ -51,7 +54,7 @@ class ComponentTest {
                 listOf(CanvasOp("upsert", "a", comp("""{"type":"alert","component_id":"a"}"""))),
             )
         assertEquals("alert", replaced.first { it.id == "a" }.type)
-        assertEquals(listOf("a", "b"), replaced.map { it.id }) // position preserved
+        assertEquals(listOf("a", "b"), replaced.map { it.id })
     }
 
     @Test

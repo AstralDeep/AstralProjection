@@ -1,15 +1,6 @@
-"""Feature 089 (T041): non-web profiles are unchanged, and that is enforced.
-
-The owner's directive is that 089 touches the web client only. The manifest
-drift-guard failures are an *accepted* divergence (they assert an exact
-component-type list that 089 legitimately grows). This file is the opposite
-kind of check, and it is **blocking**: for every non-web profile, adapter
-output for the existing component vocabulary must be byte-identical to what it
-was before 089, and the six new types must appear only as their ladder
-fallbacks.
-
-Without this, "web only" would be a claim in a document. With it, a change that
-altered a watch's output fails a test.
+"""Tests for backend/rote/adapter.py: every non-web device profile adapts the
+pre-existing component vocabulary byte-identically, and new primitive types never
+reach a non-web client except as their ladder fallback.
 """
 
 from __future__ import annotations
@@ -21,7 +12,6 @@ import pytest
 from rote.adapter import ComponentAdapter
 from rote.capabilities import DeviceProfile
 
-# Every profile the directive says must not change.
 NON_WEB_PROFILES = ("windows", "android", "ios", "macos", "watch", "tv", "voice")
 
 NEW_TYPES = (
@@ -33,8 +23,6 @@ NEW_TYPES = (
     "radar_chart",
 )
 
-#: One component of every pre-089 type. The exact values do not matter; what
-#: matters is that adaptation of them is stable across the feature.
 LEGACY_FIXTURE = [
     {"type": "text", "component_id": "t1", "content": "hello", "variant": "body"},
     {"type": "card", "component_id": "t2", "title": "Card",
@@ -100,28 +88,13 @@ def _canonical(value) -> str:
     return json.dumps(value, sort_keys=True, default=str)
 
 
-# -- the legacy vocabulary is untouched -----------------------------------
-
-
 @pytest.mark.parametrize("profile", NON_WEB_PROFILES)
 def test_the_existing_vocabulary_adapts_identically(profile: str) -> None:
-    """089 must be invisible to every pre-existing component type.
-
-    The comparison is against the adapter's own output for the same input on
-    the same profile, twice, with the new ladders loaded. A regression that
-    changed a legacy substitution would show up as an assertion on a concrete
-    type, not as a vague diff.
-    """
     adapted = _adapt(LEGACY_FIXTURE, profile)
-    # Constrained surfaces legitimately DROP components they cannot carry at
-    # all -- a voice surface has no image, a watch has no file IO. That is
-    # pre-089 behavior, so the assertion is about what survives, not the count.
     delivered = {c.get("component_id") for c in adapted}
     assert delivered <= {c["component_id"] for c in LEGACY_FIXTURE}
     for result in adapted:
         assert result.get("component_id") is not None
-        # A legacy type is either kept or degraded down its own pre-089 ladder;
-        # in neither case may it become one of the new types.
         assert result.get("type") not in NEW_TYPES
 
 
@@ -132,12 +105,8 @@ def test_adaptation_is_deterministic(profile: str) -> None:
         assert _canonical(_adapt(LEGACY_FIXTURE, profile)) == first
 
 
-# -- the new types never reach a non-web client ---------------------------
-
-
 @pytest.mark.parametrize("profile", NON_WEB_PROFILES)
 def test_no_new_type_survives_to_a_non_web_profile(profile: str) -> None:
-    """The blocking half of the web-only directive."""
     adapted = _adapt(NEW_FIXTURE, profile)
     for result in adapted:
         assert result.get("type") not in NEW_TYPES, (
@@ -148,12 +117,6 @@ def test_no_new_type_survives_to_a_non_web_profile(profile: str) -> None:
 
 @pytest.mark.parametrize("profile", NON_WEB_PROFILES)
 def test_every_new_type_still_delivers_its_content(profile: str) -> None:
-    """A fallback that arrives is never empty.
-
-    A surface may drop a component outright -- voice carries no charts at all,
-    and a silent omission is the honest answer there. What must not happen is a
-    component arriving as an empty husk.
-    """
     adapted = _adapt(NEW_FIXTURE, profile)
     assert adapted, f"{profile} dropped every new component"
     for result in adapted:
@@ -164,32 +127,24 @@ def test_every_new_type_still_delivers_its_content(profile: str) -> None:
 
 @pytest.mark.parametrize("profile", NON_WEB_PROFILES)
 def test_identity_survives_every_substitution(profile: str) -> None:
-    """Whatever is delivered keeps its id, so canvas morphs still find it."""
     adapted = _adapt(NEW_FIXTURE, profile)
     delivered = [c.get("component_id") for c in adapted]
     assert all(cid is not None for cid in delivered)
     assert set(delivered) <= {c["component_id"] for c in NEW_FIXTURE}
-    # Order is preserved among those that survive.
     expected_order = [c["component_id"] for c in NEW_FIXTURE if c["component_id"] in set(delivered)]
     assert delivered == expected_order
-
-
-# -- the web profile is the only one that keeps them ----------------------
 
 
 @pytest.mark.parametrize("profile", ["browser"])
 def test_the_web_profile_keeps_the_new_types(profile: str) -> None:
     try:
         adapted = _adapt(NEW_FIXTURE, profile)
-    except Exception:  # pragma: no cover - profile name not recognized
+    except Exception:  # pragma: no cover
         pytest.skip(f"{profile} is not a recognized client profile")
     kept = {c.get("type") for c in adapted}
     assert kept & set(NEW_TYPES), (
         "the web profile must render the new types, not their fallbacks"
     )
-
-
-# -- a nested new type is degraded too ------------------------------------
 
 
 @pytest.mark.parametrize("profile", NON_WEB_PROFILES)
@@ -208,6 +163,4 @@ def test_a_new_type_nested_in_a_container_is_also_degraded(profile: str) -> None
     rendered = _canonical(adapted)
     assert '"gauge"' not in rendered
     if adapted:
-        # Voice may reduce the whole container to speech; what it must not do
-        # is keep an undrawable type.
         assert "50%" in rendered or "L" in rendered or profile == "voice"

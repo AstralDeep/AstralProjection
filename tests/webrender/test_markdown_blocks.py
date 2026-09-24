@@ -1,9 +1,8 @@
-"""Markdown pipe tables + horizontal rules in ``block_md`` (escape-by-default).
-
-Chat responses frequently contain GFM pipe tables (e.g. weather metric/value
-tables); these previously fell through to paragraph handling and rendered as
-literal ``|`` text. Same structural/behavioral style as test_escaping.py.
+"""Tests for GFM pipe-table and horizontal-rule handling in block_md
+(backend/webrender/sanitize.py): table structure, inline markdown in cells, escaping,
+alignment, ragged rows, and where a table block starts and ends.
 """
+
 from webrender.sanitize import block_md
 
 XSS = '<script>alert(1)</script><img src=x onerror=alert(2)>'
@@ -21,7 +20,6 @@ def test_pipe_table_renders_table_markup():
     assert "<table" in out and "<thead" in out and "<tbody>" in out
     assert "<th" in out and out.count("<tr") == 3
     assert ">Metric<" in out and ">Value<" in out
-    # No literal pipes leak into the rendered output.
     assert "|" not in out
 
 
@@ -44,7 +42,7 @@ def test_pipe_table_alignment_classes():
 
 def test_pipe_table_ragged_rows_padded_and_truncated():
     out = block_md("| a | b |\n|---|---|\n| only-one |\n| 1 | 2 | extra |")
-    assert out.count("<td") == 4  # short row padded, long row truncated
+    assert out.count("<td") == 4
     assert "extra" not in out
     assert "only-one" in out
 
@@ -79,7 +77,6 @@ def test_horizontal_rule():
 
 
 def test_table_delimiter_lookalike_without_pipes_is_hr_not_table():
-    # "---" on its own (no pipe header above) renders as a rule, not a table.
     out = block_md("***")
     assert "<hr" in out and "<table" not in out
 
@@ -91,7 +88,7 @@ def test_existing_blocks_unaffected():
 
 def test_table_body_stops_at_heading():
     out = block_md("| a | b |\n|---|---|\n| 1 | 2 |\n## Section | details")
-    assert out.count("<tr") == 2  # header + one data row only
+    assert out.count("<tr") == 2
     assert "<h2" in out and "Section | details" in out
 
 
@@ -109,7 +106,6 @@ def test_table_body_break_loses_no_content():
 
 
 def test_delimiter_row_requires_pipe():
-    # A pipe-less dashes line is a rule, never a 1-column table delimiter.
     out = block_md("|wrapped|\n---\nafter")
     assert "<table" not in out
     assert "<hr" in out and "wrapped" in out and "after" in out

@@ -1,3 +1,6 @@
+// Downloads authenticated backend files and opens public files in the system browser without credentials;
+// refuses redirects so the owner's token can never leak to a new host.
+
 package com.personalailabs.astraldeep.app.rest
 
 import okhttp3.HttpUrl
@@ -41,7 +44,6 @@ internal fun artifactDownloadUrl(
     return url
 }
 
-/** Public HTTPS files open in the system browser without app credentials or headers. */
 internal fun publicDownloadBrowserUrl(
     baseUrl: String,
     reference: String,
@@ -60,7 +62,7 @@ internal fun publicDownloadBrowserUrl(
 internal fun safeDownloadFilename(value: String): String =
     value.replace(Regex("[\\\\/\\p{C}]"), "_").take(120).trim(' ', '.').ifBlank { "download" }
 
-/** Redirects are refused before any new request can receive the owner's token. */
+// Redirects refused — a new host must never receive the owner's token
 internal class ArtifactDownload(
     private val baseUrl: String,
     client: OkHttpClient = OkHttpClient(),

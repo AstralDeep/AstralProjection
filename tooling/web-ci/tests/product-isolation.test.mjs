@@ -1,3 +1,6 @@
+// Tests for product-isolation.mjs: package discovery and Dockerfile isolation between sibling
+// products.
+
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";

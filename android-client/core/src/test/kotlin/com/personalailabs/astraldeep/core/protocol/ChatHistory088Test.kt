@@ -1,3 +1,5 @@
+// Tests for decoding chat-history REST/WS payloads into ChatSummary and ChatTranscript models.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.Json

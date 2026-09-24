@@ -1,9 +1,6 @@
-"""Feature 044 — desktop protocol-coverage drift guard.
-
-The committed manifest ``contracts/ui_protocol.json`` is the single source
-of the server->client frame vocabulary. The desktop classification table must
-cover it exactly: no unclassified frame, no stale entry. A new server frame
-type therefore fails this suite until the desktop deliberately classifies it.
+"""Tests for astral_client/protocol_manifest.py: the desktop's frame-classification
+table covers the committed ui_protocol.json manifest exactly, with pinned
+client-local-action and voice-disposition drift guards.
 """
 
 import json
@@ -52,9 +49,6 @@ def test_classification_covers_manifest_exactly():
 
 
 def test_client_local_actions_matches_manifest():
-    """The committed CLIENT_LOCAL_ACTIONS constant (a packaged build has no repo
-    tree to probe at import time) must mirror the manifest's
-    ``client_local_actions`` exactly."""
     data = json.loads(MANIFEST.read_text(encoding="utf-8"))
     assert CLIENT_LOCAL_ACTIONS == frozenset(data["client_local_actions"])
 
@@ -73,14 +67,8 @@ def test_persistent_assignment_actions_use_existing_generic_surface():
 
 
 def test_feature_088_guidance_actions_are_closed_and_not_desktop_frames():
-    """Feature 088 T037 drift pin: the shared skills/agents/selection views add three closed
-    actions (129 -> 132) and NO push type; the desktop never advertises the capabilities that
-    would make a host send one, so its frame classification is unaffected (Windows redesign
-    remains deferred, T059)."""
     data = _manifest()
     actions = data["accept_actions"]
-    # 132 T037 actions + the two T043/T044 actions and the two T048 Connections
-    # actions pinned by the tests below.
     assert len(actions) == len(set(actions)) == 136
     assert {"chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set"} <= set(actions)
     guidance = ["guidance_notes_088", "guidance_skills_088", "guidance_agents_088", "guidance_selection_088"]
@@ -93,10 +81,6 @@ def test_feature_088_guidance_actions_are_closed_and_not_desktop_frames():
 
 
 def test_feature_088_save_recurring_and_saved_results_are_closed_and_not_desktop_frames():
-    """Feature 088 T043/T044 drift pin: the exact Save command and the terminal job Stop add two
-    closed actions (132 -> 134) and NO push type; the desktop never advertises work_save_v1,
-    recurring_work_v1 or saved_results_v1, so it keeps its compatible Work/Schedule views
-    (Windows redesign remains deferred, T059)."""
     data = _manifest()
     actions = data["accept_actions"]
     assert len(actions) == len(set(actions)) == 136

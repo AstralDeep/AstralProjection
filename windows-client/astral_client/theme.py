@@ -1,22 +1,13 @@
-"""Theme tokens mirroring the AstralDeep web palette (backend/webrender/static/
-astral.css `:root`) so the native client reads as the same product:
-indigo→purple accent, #0F1221 bg with corner glows, layered translucent
-surfaces, soft white borders, Inter type.
-
-Feature 044 (US5) — the palette is now **mutable** and the stylesheet
-**rebuildable** so a chosen theme applies live. ``apply_theme(theme)`` mutates
-the active :data:`PALETTE` from a named preset / a ``colors`` map / a single
-``color_key``+``color_value`` (the shapes the backend Theme surface emits) and
-``build_stylesheet()`` re-renders the QSS from the current palette. The five
-named presets mirror ``backend/webrender/chrome/surfaces/theme.py`` PRESETS.
+"""Mutable theme tokens and QSS generation for the native client, mirroring
+backend/webrender/chrome/surfaces/theme.py PRESETS. apply_theme() mutates PALETTE;
+build_stylesheet() re-renders the QSS used by app.py and renderer.py.
 """
+
 from __future__ import annotations
 
 import re
 
-# Named presets (the seven server theme channels each). Values are the EXACT
-# copies from backend/webrender/chrome/surfaces/theme.py PRESETS so a preset
-# picked on any client renders identically.
+# Must byte-match webrender's PRESETS (cross-client parity)
 PRESETS = {
     "midnight": {"bg": "#0F1221", "surface": "#1A1E2E", "primary": "#6366F1",
                  "secondary": "#8B5CF6", "text": "#F3F4F6", "muted": "#9CA3AF",
@@ -35,14 +26,11 @@ PRESETS = {
                "accent": "#A3E635"},
 }
 
-#: The active theme channels (mutated in place by :func:`apply_theme`).
 PALETTE: dict = dict(PRESETS["midnight"])
 
 FONT = "'Inter', 'Segoe UI', system-ui, sans-serif"
 MONO = "'JetBrains Mono', 'Cascadia Code', Consolas, monospace"
 
-# Fixed semantic status colors (info/success/warning/error do not theme; the
-# palette-tied accent/default entries are recomputed in _derive()).
 _SEMANTIC = {
     "info": ("#3B82F6", "rgba(59,130,246,0.14)"),
     "success": ("#22C55E", "rgba(34,197,94,0.14)"),
@@ -52,8 +40,6 @@ _SEMANTIC = {
 
 _HEX_RE = re.compile(r"^#?[0-9a-fA-F]{6}$")
 
-# Style tokens derived from PALETTE by _derive() (declared here so they are
-# always defined module-level names — the values below are placeholders).
 BG = SURFACE = SURFACE_2 = BORDER = TEXT = MUTED = ""
 PRIMARY = SECONDARY = ACCENT = PRIMARY_SOFT = GRAD = ""
 VARIANT_COLORS: dict = {}
@@ -85,7 +71,6 @@ def _mix(a: str, b: str, t: float) -> str:
 
 
 def _normalize_hex(value) -> str:
-    """Return ``#RRGGBB`` for a valid 6-digit hex string, else ``""``."""
     s = str(value or "").strip()
     if not _HEX_RE.match(s):
         return ""
@@ -93,7 +78,6 @@ def _normalize_hex(value) -> str:
 
 
 def _derive() -> None:
-    """(Re)compute the module-level style tokens from the active PALETTE."""
     global BG, SURFACE, SURFACE_2, BORDER, TEXT, MUTED
     global PRIMARY, SECONDARY, ACCENT, PRIMARY_SOFT, GRAD, VARIANT_COLORS
     global _ROOT_BG, ROOT_BG_STYLE
@@ -105,11 +89,8 @@ def _derive() -> None:
     muted = PALETTE["muted"]
     accent = PALETTE["accent"]
     BG = bg
-    # The palette carries one solid raised surface; the layered surface-1 tone
-    # sits halfway between the bg and that raised surface (works dark AND light).
     SURFACE = _mix(bg, surface, 0.5)
     SURFACE_2 = surface
-    # A soft border derived from the text color so it reads on light themes too.
     BORDER = _rgba(text, 0.10)
     TEXT = text
     MUTED = muted
@@ -117,7 +98,6 @@ def _derive() -> None:
     SECONDARY = secondary
     ACCENT = accent
     PRIMARY_SOFT = _rgba(primary, 0.15)
-    # 135° primary→secondary accent gradient (hero / primary button).
     GRAD = (f"qlineargradient(x1:0, y1:0, x2:1, y2:1, "
             f"stop:0 {primary}, stop:1 {secondary})")
     VARIANT_COLORS = {
@@ -125,7 +105,6 @@ def _derive() -> None:
         "accent": (accent, _rgba(accent, 0.14)),
         "default": (primary, _rgba(primary, 0.14)),
     }
-    # Root background carries the same corner radial glows as the web body.
     _ROOT_BG = (f"qradialgradient(cx:0.85, cy:-0.05, radius:0.9, "
                 f"stop:0 {_rgba(secondary, 0.10)}, stop:0.6 transparent), "
                 f"qradialgradient(cx:-0.05, cy:1.05, radius:0.9, "
@@ -134,16 +113,6 @@ def _derive() -> None:
 
 
 def build_stylesheet() -> str:
-    """Render the application QSS from the current (mutable) palette. Called at
-    import for :data:`APP_STYLESHEET` and again by the app on every live theme
-    change (feature 044 US5).
-
-    The treatments mirror ``backend/webrender/static/astral.css`` (the web
-    reference, feature 066 style parity): radius-sm 6 / radius-md 10 with
-    rounded-lg (8px) buttons+fields, translucent text-channel surfaces instead
-    of solid grays, the primary→secondary accent gradient on primary actions,
-    and the same secondary / ghost / tint button families the web renderer
-    emits."""
     return f"""
 * {{ font-family: {FONT}; }}
 QWidget {{ background: transparent; color: {TEXT}; font-size: 14px; }}
@@ -265,22 +234,11 @@ QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
 
 def apply_theme(theme) -> bool:
-    """Mutate :data:`PALETTE` from a theme spec, returning ``True`` when it
-    changed (so the caller can re-apply the stylesheet).
-
-    Accepts the shapes the backend Theme surface / ``theme_apply`` component
-    emit: a preset name (a bare string OR ``{"preset": name}``), a ``{"colors":
-    {channel: hex}}`` map, or a single ``{"color_key", "color_value"}`` pair.
-    Unknown presets / invalid hex are ignored (no-op → ``False``)."""
     if isinstance(theme, str):
         theme = {"preset": theme}
     if not isinstance(theme, dict):
         return False
     before = dict(PALETTE)
-    # Preset name first (the fallback for old servers), then an explicit
-    # ``colors`` map wins per channel — the server resolves the preset to its
-    # channel map and sends it alongside the name, and the resolved colors are
-    # authoritative (the local preset table is only a fallback).
     preset = theme.get("preset")
     if isinstance(preset, str) and preset in PRESETS:
         PALETTE.update(PRESETS[preset])
@@ -302,6 +260,5 @@ def apply_theme(theme) -> bool:
     return True
 
 
-# Compute the derived tokens + the initial stylesheet at import.
 _derive()
 APP_STYLESHEET = build_stylesheet()

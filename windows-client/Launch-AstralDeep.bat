@@ -1,9 +1,5 @@
 @echo off
-REM ============================================================================
-REM  AstralDeep — native Windows client launcher
-REM  Double-click this file to start the official app with its reviewed bundled
-REM  production profile. Pass --deployment-profile with one complete JSON file
-REM  for an explicitly managed or generic/developer override.
-REM ============================================================================
+REM Double-click launcher for the packaged Windows client: runs dist\AstralDeep.exe, forwarding all
+REM arguments (e.g. --deployment-profile for an explicit or developer override).
 
 "%~dp0dist\AstralDeep.exe" %*

@@ -1,4 +1,7 @@
-"""Closed package repair tests; real Apple-tool replay is retained separately."""
+"""Tests for the macOS Store package repair script: export shape repair, signing/profile
+refusal, symlink and payload-change detection, and native tool failure handling stay
+closed and bounded.
+"""
 
 from __future__ import annotations
 

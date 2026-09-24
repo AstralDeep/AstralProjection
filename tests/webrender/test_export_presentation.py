@@ -1,4 +1,8 @@
-"""Untrusted visible-capture boundaries; no application services are loaded."""
+"""Tests for backend/webrender/export_presentation.py: untrusted visible-capture
+envelopes are validated against closed renderer constants, refusing injected
+markup/urls/effects and requiring every chart to carry current pixels.
+"""
+
 import base64
 import copy
 import json

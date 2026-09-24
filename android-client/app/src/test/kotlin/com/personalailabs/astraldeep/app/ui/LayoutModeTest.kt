@@ -1,3 +1,6 @@
+// Tests for layoutModeFor and welcomePlacementRole: single-pane vs split canvas layout decisions across
+// window sizes.
+
 package com.personalailabs.astraldeep.app.ui
 
 import androidx.lifecycle.viewModelScope

@@ -1,3 +1,6 @@
+// Tests for the pure container-layout rules (ContainerPrimitive): the native css subset for
+// background/height/flex, and the row-wrapping used by preset swatch strips and settings-surface forms.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -7,14 +10,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/**
- * Settings-surface parity — the pure container layout rules behind
- * [ContainerPrimitive]: the minimal native `css` subset (background / height /
- * flex) and the `direction:"row"` handling that render the Theme surface's
- * preset swatch strips as colored proportional boxes (never blank space) and
- * wrap plain rows (tab bars / form actions) instead of overflowing a phone
- * width. Mirrors the Windows twin's tests (test_renderer.py).
- */
 class ContainerCssTest {
     private fun comp(json: String): Component = Component.fromJson(Json.parseToJsonElement(json) as JsonObject)
 
@@ -33,8 +28,8 @@ class ContainerCssTest {
     fun css_parsing_is_tolerant_of_garbage() {
         val c = comp("""{"type":"container","children":[],"css":{"background":"","height":"tall","flex":"wide"}}""")
         assertNull(c.cssBackground())
-        assertEquals(22, c.cssHeightPx(22)) // default kept
-        assertEquals(1f, c.cssFlex(1f)) // default kept
+        assertEquals(22, c.cssHeightPx(22))
+        assertEquals(1f, c.cssFlex(1f))
         val noCss = comp("""{"type":"container","children":[]}""")
         assertNull(noCss.cssBackground())
     }
@@ -77,7 +72,6 @@ class ContainerCssTest {
             ContainerMode.Column,
             containerMode(comp("""{"type":"container","children":[{"type":"text","content":"hi"}]}""")),
         )
-        // An EMPTY row container is a (childless) wrap-row, never a strip.
         assertEquals(
             ContainerMode.WrapRow,
             containerMode(comp("""{"type":"container","direction":"row","children":[]}""")),

@@ -1,4 +1,6 @@
-"""Pure audit, feedback, onboarding, and administrative view builders."""
+"""Pure view builders for the audit, runtime-diagnostics, feedback and onboarding/admin
+surfaces, rendering only already host-authorized state via _components.py.
+"""
 
 from __future__ import annotations
 
@@ -27,11 +29,6 @@ from ._components import (
 )
 
 _AUDIT_OUTCOMES = ("success", "failure", "in_progress", "interrupted")
-# Feature 088 T052: the runtime diagnostics disclosure mirrors the collector's
-# own low-cardinality guarantees. A sample whose name, label name or label value
-# is outside those bounded token shapes is not rendered at all -- the surface
-# never becomes a channel for an identity, URL, prose or credential that the
-# collector was supposed to keep out of its labels.
 _METRIC_NAME_RE = re.compile(r"[a-z][a-z0-9_]{0,127}")
 _METRIC_TOKEN_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _DIAGNOSTIC_SAMPLE_KEYS = {"name", "value", "labels"}
@@ -68,7 +65,6 @@ def build_audit_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the owner-filtered audit surface from already-authorized state."""
     if denied:
         return denied_view("audit", "Audit log", "You are not allowed to view this audit log.")
     if error:
@@ -140,7 +136,6 @@ def build_audit_view(
 
 
 def _audit_pager(active: Mapping[str, object], next_cursor: str | None) -> list[ComponentView]:
-    """Preserve bounded cursor history and filters across both native directions."""
     try:
         history = json.loads(str(active.get("history") or "[]"))
     except (ValueError, RecursionError):
@@ -167,7 +162,6 @@ def _audit_pager(active: Mapping[str, object], next_cursor: str | None) -> list[
 
 
 def _audit_entry(entry: Mapping[str, object], active: Mapping[str, object]) -> ComponentView:
-    """Render one authorized row with an exact filter-preserving detail action."""
     outcome = clean_text(entry.get("outcome") or "unknown")
     description = " ".join(clean_text(entry.get("description")).split())
     if len(description) > 120:
@@ -252,7 +246,6 @@ def _build_audit_detail(
 
 
 def _diagnostic_number(value: object) -> str | None:
-    """Accept only a finite real sample; a bool or NaN is not a measurement."""
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
     if isinstance(value, float):
@@ -265,7 +258,6 @@ def _diagnostic_number(value: object) -> str | None:
 def _diagnostic_samples(
     snapshot: object,
 ) -> list[tuple[str, str, str]]:
-    """Select exactly the well-formed samples; an unknown shape is dropped."""
     raw = snapshot.get("metrics") if isinstance(snapshot, Mapping) else snapshot
     if isinstance(raw, Mapping) or not isinstance(raw, (list, tuple)):
         return []
@@ -304,13 +296,6 @@ def build_diagnostics_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Render already-authorized runtime samples read-only.
-
-    The host filters by role before calling this builder and stays authoritative;
-    ``denied`` only renders the refusal it already decided. The view carries no
-    action of any kind: runtime diagnostics are an observation, and nothing here
-    resets, exports or reconfigures the collector.
-    """
     if denied:
         return denied_view(
             "admin_tools", "Runtime diagnostics", "Admin role required to view this surface."
@@ -346,7 +331,6 @@ def build_feedback_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the admin tool-quality surface from supplied feedback summaries."""
     if denied:
         return denied_view("admin_tools", "Tool quality", "Admin role required for this action.")
     if error:
@@ -423,7 +407,6 @@ def build_onboarding_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build either the guided tour or the authorized tutorial-admin surface."""
     rows = _rows(steps)
     if not admin:
         intro = text(
@@ -571,7 +554,6 @@ def build_admin_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the role-gated admin shell and its active supplied-state tab."""
     if not is_admin:
         return denied_view(
             "admin_tools", "Admin tools", "Admin role required to view this surface."

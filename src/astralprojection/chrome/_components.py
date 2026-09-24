@@ -1,4 +1,7 @@
-"""Small protocol-neutral component constructors and a safe web renderer."""
+"""Protocol-neutral component constructors (card, button, form, etc.) and a safe HTML
+renderer built on models.py's ChromeViewModel; the shared base every
+astralprojection.chrome view builder renders through.
+"""
 
 from __future__ import annotations
 
@@ -18,7 +21,6 @@ _FIELD_KINDS = frozenset(
 
 
 def clean_text(value: object) -> str:
-    """Keep display text intact while removing unsafe control characters."""
     return "" if value is None else _CONTROL_RE.sub("", str(value))
 
 
@@ -253,8 +255,6 @@ def _render_fields(component: Mapping[str, object]) -> str:
         default = clean_text(raw.get("default"))
         help_text = clean_text(raw.get("help"))
         help_id = f"field-{name}-help"
-        # Keep the control's accessible name independent of textarea contents
-        # and select option text inside the wrapping visual label.
         described = f' aria-label="{label}"'
         if help_text:
             described += f' aria-describedby="{help_id}"'
@@ -393,7 +393,6 @@ def _render_component(component: Mapping[str, object]) -> str:
 
 
 def render_html(view: ChromeViewModel) -> str:
-    """Render a safe, accessible web representation of a chrome view model."""
     title_id = f"chrome-{view.surface}-title"
     degradation = ""
     if view.degradation.active:

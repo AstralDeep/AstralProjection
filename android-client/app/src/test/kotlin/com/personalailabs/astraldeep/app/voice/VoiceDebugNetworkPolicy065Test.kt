@@ -1,3 +1,6 @@
+// Tests that the cleartext-HTTP network exception for local voice development is restricted to debug builds
+// only.
+
 package com.personalailabs.astraldeep.app.voice
 
 import java.io.File
@@ -5,7 +8,6 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Locks the local-development cleartext exception to debug packaging only. */
 class VoiceDebugNetworkPolicy065Test {
     @Test
     fun debugAllowsLanMediaWhileTheReleaseBaseManifestRetainsPlatformTlsDefaults() {

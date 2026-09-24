@@ -1,4 +1,6 @@
-"""Owner-supplied assignment views retain consent and cross-client semantics."""
+"""Tests for src/astralprojection/chrome/assignments.py: assignment and recurring-job
+list/detail/control states, consent, cost disclosure and watch dispositions.
+"""
 
 from __future__ import annotations
 
@@ -80,7 +82,7 @@ def test_list_is_bounded_and_has_no_mutations_without_host_controls():
     assert html.count("Baseline saved") == 50
     assert "More ongoing agents" in html
     assert all(item["action"] == "chrome_open" for item in buttons(view))
-    assert "Scheduled tasks" not in html  # The existing scheduler remains a separate view.
+    assert "Scheduled tasks" not in html
 
 
 @pytest.mark.parametrize("lifecycle,phase,label", [
@@ -292,8 +294,6 @@ def test_remaining_empty_error_and_expired_control_states():
     bad = assignment(assignment_id="not-an-id")
     assert "View assignment" not in render_html(build_assignments_view(state("list", assignments=[bad])))
 
-
-# ── Feature 088 T044: recurring work (scheduled jobs + typed monitoring outcomes) ──
 
 from astralprojection.chrome.assignments import build_recurring_work_view  # noqa: E402
 

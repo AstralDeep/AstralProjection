@@ -1,3 +1,6 @@
+// Instrumented UI test exercising the shipping recursive surface renderer for read-only Work surfaces,
+// without a real authenticated app graph.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.material3.MaterialTheme
@@ -26,7 +29,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** Exercise the shipping surface/recursive renderer, without an authenticated app graph. */
 class WorkSurfaceRead088UiTest {
     @get:Rule val rule = createComposeRule()
 

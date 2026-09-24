@@ -1,3 +1,6 @@
+// Tests that ProtocolManifest's HANDLED/IGNORED table exactly covers every frame type in the committed
+// ui_protocol.json manifest, failing the build on undeclared drift.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.Json
@@ -10,12 +13,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/**
- * Feature 044 — Android protocol-coverage drift guard. The committed manifest
- * (`contracts/ui_protocol.json`) is the single source of the server->client
- * frame vocabulary; the app's classification table must cover it exactly, so a
- * new server frame type fails the build until it is deliberately classified.
- */
 class ProtocolManifestTest {
     private val admissionRefusalCodes =
         listOf(
@@ -107,7 +104,6 @@ class ProtocolManifestTest {
             assertEquals("guidance", contract.getValue("surface_key").jsonPrimitive.content)
             assertEquals("chrome_surface", contract.getValue("native_response").jsonObject.getValue("type").jsonPrimitive.content)
         }
-        // The new views ride the existing chrome_surface frame; no push type was added.
         assertTrue(manifestPushTypes().none { it.startsWith("guidance") || it.startsWith("declarative") })
     }
 
@@ -132,10 +128,8 @@ class ProtocolManifestTest {
             val contract = contracts.getValue(name).jsonObject
             assertEquals("chrome_surface", contract.getValue("native_response").jsonObject.getValue("type").jsonPrimitive.content)
         }
-        // The Save command has exactly the two Deep body shapes; the client invents no authority.
         val commands = contracts.getValue("work_save_088").jsonObject.getValue("commands").jsonObject
         assertEquals(setOf("propose", "save"), commands.keys)
-        // The new views ride the existing chrome_surface frame; no push type was added.
         assertTrue(manifestPushTypes().none { it.startsWith("work_save") || it.startsWith("recurring_work") || it.startsWith("saved_result") })
     }
 

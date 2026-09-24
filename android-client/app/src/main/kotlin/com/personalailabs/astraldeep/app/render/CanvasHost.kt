@@ -1,3 +1,6 @@
+// Per-component artifact-chrome context (export URL scope; read-only pauses Refine) and the virtualized SDUI
+// canvas keyed by component identity so streaming upserts preserve item state and scroll.
+
 package com.personalailabs.astraldeep.app.render
 
 import androidx.compose.foundation.layout.Arrangement
@@ -23,23 +26,12 @@ import com.personalailabs.astraldeep.app.ui.SkeletonCanvas
 import com.personalailabs.astraldeep.app.ui.theme.exportPalette
 import com.personalailabs.astraldeep.core.sdui.Component
 
-/**
- * Canvas-level context for the per-component artifact chrome (055 US4/US5):
- * the chat the export URLs are scoped to, and whether a read-only view has
- * mutations paused (hides Refine). Null renders bare components — chrome
- * surfaces and previews keep today's markup exactly.
- */
 @Immutable
 data class CanvasChrome(
     val chatId: String?,
     val mutationsLocked: Boolean,
 )
 
-/**
- * The SDUI canvas: a virtualized column of components keyed by component identity,
- * so in-place upserts / streaming updates preserve item state and scroll position
- * (the Compose analogue of the Windows Canvas keyed by `component_id`).
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CanvasHost(

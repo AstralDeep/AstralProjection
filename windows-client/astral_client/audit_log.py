@@ -1,20 +1,6 @@
-"""Append-only, hash-chained audit log for the Windows coding agent.
-
-The orchestrator records its own ``tool`` audit event for every dispatch, but
-the client is where files are actually touched and commands actually run. This
-module records **what the tool did on disk** — once per action — in an
-append-only JSONL file at ``%APPDATA%/AstralDeep/audit.log`` (rotated), hash-
-chained with an HMAC key derived from the machine + user identity, mirroring
-the backend's per-user hash-chain posture.
-
-Each entry: ``ts, seq, actor, tool, args(redacted), outcome, correlation_id,
-prev_hash, hash``. The dangerous-bypass path emits ``event_class =
-"dangerous_bypass"`` with the full command text (kept, never redacted, so the
-audit trail shows exactly what ran).
-
-Fail-open for the *product* (an audit-write failure must not block a user
-action that the permission gate already allowed), but every write failure is
-logged to stderr so it is visible.
+"""Append-only, HMAC hash-chained audit log of on-disk tool actions for the Windows
+coding agent, written to %APPDATA%/AstralDeep/audit.log; used by win_agent/tools.py
+and win_agent/agent.py.
 """
 
 from __future__ import annotations
@@ -29,7 +15,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger("astral.audit")
 
-_MAX_ROTATE_BYTES = 5 * 1024 * 1024  # 5 MB then rotate
+_MAX_ROTATE_BYTES = 5 * 1024 * 1024
 _KEEP_ROTATED = 3
 
 
@@ -48,12 +34,6 @@ def _audit_path() -> str:
 
 
 def _chain_key(actor: str) -> bytes:
-    """Derive a per-machine+user HMAC key for the hash chain.
-
-    Not a secret intended to resist a determined local attacker (anyone with
-    the machine can forge it) — it ties the chain to this user on this machine
-    so casual tampering is detectable, matching the backend's per-user posture.
-    """
     ident = f"{os.getenv('COMPUTERNAME', '')}|{os.getenv('USERNAME', '')}|{actor}"
     return hashlib.sha256(("astral-audit|" + ident).encode("utf-8")).digest()
 
@@ -63,14 +43,12 @@ def _hmac(key: bytes, msg: str) -> str:
 
 
 def _read_last_hash(path: str) -> str:
-    """Return the hash field of the last non-empty line, or '' if none."""
     try:
         with open(path, "rb") as f:
             f.seek(0, os.SEEK_END)
             size = f.tell()
             if size == 0:
                 return ""
-            # read the tail
             chunk = min(size, 8192)
             f.seek(size - chunk)
             tail = f.read().decode("utf-8", errors="replace")
@@ -100,8 +78,6 @@ def _rotate_if_needed(path: str) -> None:
 
 
 class AuditLogger:
-    """Append-only hash-chained JSONL audit log."""
-
     def __init__(self, actor: str = "unknown"):
         self.actor = actor or "unknown"
         self._key = _chain_key(self.actor)
@@ -112,18 +88,17 @@ class AuditLogger:
         *,
         tool: str,
         args: Any,
-        outcome: str,  # success | refused | phi_blocked | error
+        outcome: str,
         correlation_id: Optional[str] = None,
         event_class: str = "tool",
         detail: str = "",
     ) -> None:
-        """Append one audit entry. Never raises (fail-open for the product)."""
         try:
             _rotate_if_needed(self._path)
             prev = _read_last_hash(self._path)
             entry = {
                 "ts": int(time.time()),
-                "seq": 0,  # filled below
+                "seq": 0,
                 "actor": self.actor,
                 "event_class": event_class,
                 "tool": tool,
@@ -133,7 +108,6 @@ class AuditLogger:
                 "detail": detail,
                 "prev_hash": prev,
             }
-            # seq = number of existing lines + 1 (best-effort)
             try:
                 with open(self._path, "r", encoding="utf-8") as f:
                     entry["seq"] = sum(1 for _ in f) + 1
@@ -143,7 +117,7 @@ class AuditLogger:
             entry["hash"] = _hmac(self._key, canon)
             with open(self._path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(entry) + "\n")
-        except Exception:  # noqa: BLE001 — fail-open
+        except Exception:  # noqa: BLE001
             logger.warning(
                 "audit log write failed (tool=%s outcome=%s)",
                 tool,
@@ -152,7 +126,6 @@ class AuditLogger:
             )
 
     def tail(self, n: int = 50) -> list:
-        """Return the last ``n`` entries (for the native 'View audit log' dialog)."""
         try:
             with open(self._path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
@@ -162,11 +135,6 @@ class AuditLogger:
 
 
 def _redact_args(tool: str, args: Any) -> Any:
-    """Redact file paths to workspace-relative; keep command text for exec tools.
-
-    The dangerous-bypass command is deliberately kept verbatim (the whole point
-    of auditing it is to know exactly what ran).
-    """
     if not isinstance(args, dict):
         return args
     ws = _workspace_root()
@@ -175,23 +143,21 @@ def _redact_args(tool: str, args: Any) -> Any:
         if k == "path" and isinstance(v, str):
             out[k] = _rel(ws, v)
         elif k in ("command", "cmd") and isinstance(v, str):
-            out[k] = v  # keep command text (audit trail)
+            # Kept verbatim — the dangerous-bypass audit needs the real command
+            out[k] = v
         else:
             out[k] = v
     return out
 
 
 def _workspace_root() -> str:
-    # Honor the desktop GUI's runtime override (the user's chosen folder) so
-    # audit path-redaction is relative to the active workspace, not the launch
-    # default. Falls back to the env var when no override is set.
     try:
         from win_agent import tools as _tools
 
         override = getattr(_tools, "_WORKSPACE_OVERRIDE", None)
         if override:
             return override
-    except Exception:  # noqa: BLE001 — tools module optional in some test contexts
+    except Exception:  # noqa: BLE001
         pass
     return os.path.realpath(
         os.path.expanduser(

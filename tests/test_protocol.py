@@ -1,3 +1,8 @@
+"""Tests for src/astralprojection/protocol.py: canonicalization, metadata validation,
+client drift-guard/voice-fixture consumption, transformation-record source binding,
+and that release workflows stay inert and dependency-locked.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -216,7 +221,7 @@ def test_all_client_drift_guards_use_the_standalone_contract() -> None:
 
     for path in guarded_files:
         text = path.read_text(encoding="utf-8")
-        assert "contracts/ui_protocol.json" in text, path
+        assert "contracts/ui_protocol.json" in text or '"contracts" / "ui_protocol.json"' in text, path
         assert "backend/shared/ui_protocol.json" not in text, path
 
     apple = guarded_files[-1].read_text(encoding="utf-8")
@@ -545,13 +550,9 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
 
 def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
     immutable_manifests = {
-        # Feature 079: approved build-only setuptools security update to 83.0.0;
-        # every third-party runtime/model dependency remains unchanged.
         "tooling/python-ci/requirements.lock.txt": (
             "a91870671b818da8bd06565b6b21af406a4c96cbb812f0006db730d36a1e1d59"
         ),
-        # Backend/web readiness adds exact-source coverage conversion commands
-        # and tests only; dependencies, lockfile and product runtime are unchanged.
         "tooling/web-ci/package.json": (
             "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
         ),
@@ -576,27 +577,18 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         "android-client/settings-gradle.lockfile": (
             "5e2d075903b5cd264613e7538c7c51b1484fe2ed489d4ead3e6b4ba0cf3911c4"
         ),
-        # Feature 088: already pinned MockWebServer 4.12.0 also supports real
-        # controller instrumentation. Only AndroidTest configurations changed;
-        # normal debug/release runtime graphs and all coordinates are unchanged.
         "android-client/app/gradle.lockfile": (
             "ae8b335179a021b46e0a3326b22d5e6d5e908370a215fa67d764a42bd0497d37"
         ),
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
-        # Feature 078: targetSdk/compileSdk 35 -> 36 for the Play target-API
-        # requirement; every dependency coordinate and version is unchanged.
         "android-client/gradle/libs.versions.toml": (
             "82828ae879287fe521102d9e3c1492342173ef1c41715438f4213f42f3dc2d1b"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"
         ),
-        # Feature 088 packages the shared offline export resources; feature 089
-        # moves the ONE runtime dependency to astralprims 0.4.0 for the six
-        # additive component types. No dependency was added or unpinned — that
-        # is what this table exists to prove, and it is still true.
         "pyproject.toml": (
             "e4384cda1aec04d50a46d2134a6d9524b3a3ec3d1000e4d052a437cf44741e3b"
         ),
@@ -621,9 +613,6 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
         assert hashlib.sha256((ROOT / relative).read_bytes()).hexdigest() == expected, relative
 
     project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    # Feature 089 added six primitive types; the exact-pin rule this test
-    # protects is that there is exactly ONE runtime dependency and it is
-    # pinned to an exact version, not that the version never moves.
     assert 'dependencies = ["astralprims==0.4.0"]' in project
     apple = (ROOT / "apple-clients" / "AstralCore" / "Package.swift").read_text(
         encoding="utf-8"

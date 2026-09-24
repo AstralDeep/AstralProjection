@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Offline verifier for the bounded Windows dual-identity bridge.
-
-The command reads only local files.  Sigstore is explicitly placed in offline
-mode, so the machine must already have a usable production trusted-root cache;
-the verifier never fetches release assets and never publishes or signs.
+"""Offline verifier for the Windows dual-identity release bridge, checking local
+Sigstore bundles and repository/version fences without any network access or
+publishing.
 """
 from __future__ import annotations
 
@@ -254,8 +252,6 @@ def candidate_is_trusted(
     artifact_sha256: str,
     current_version: str,
 ) -> bool:
-    """Apply source, transition, and downgrade fences without network access."""
-
     try:
         candidate = parse_version(version)
         current = parse_version(current_version)

@@ -1,4 +1,7 @@
-"""Pure agent, authoring, draft, and attachment presentation builders."""
+"""Pure view builders for the agents list, BYO authoring flow, drafts and attachment
+library surfaces, built from host-authorized snapshots via _components.py and
+guidance.py.
+"""
 
 from __future__ import annotations
 
@@ -69,7 +72,6 @@ def build_agents_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build an agent list/detail using only state authorized by the host."""
     if denied:
         return denied_view("agents", "Agents & permissions", "Agent access was denied.")
     if error:
@@ -371,7 +373,6 @@ def build_authoring_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the personal-agent authoring flow from a controller snapshot."""
     if not enabled:
         return unavailable_view(
             "agent_authoring", "My agents", "Personal agents are not enabled on this deployment."
@@ -529,7 +530,6 @@ def build_drafts_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the owner-scoped draft list or detail surface."""
     if error:
         return unavailable_view("drafts", "Drafts & creation", error)
     if selected is not None:
@@ -656,7 +656,6 @@ def build_attachments_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the reusable attachment library without storage access."""
     if error:
         return unavailable_view("attachments", "Attachments", error)
     rows = _rows(attachments)

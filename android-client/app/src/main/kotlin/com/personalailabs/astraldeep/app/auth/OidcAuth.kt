@@ -1,3 +1,7 @@
+// Keycloak OIDC Authorization-Code+PKCE sign-in via AppAuth's system-browser flow for the public
+// astral-mobile client; MainActivity launches authorizeIntent and calls exchange/freshToken to complete and
+// refresh sessions.
+
 package com.personalailabs.astraldeep.app.auth
 
 import android.content.Context
@@ -14,13 +18,6 @@ import net.openid.appauth.AuthorizationServiceConfiguration
 import net.openid.appauth.ResponseTypeValues
 import net.openid.appauth.TokenResponse
 
-/**
- * Real Keycloak OIDC Authorization-Code + PKCE via AppAuth (RFC 8252 — the system
- * browser / Custom Tab). Public client `astral-mobile`, redirect
- * `com.personalailabs.astraldeep:/oauth2redirect`. The Activity launches
- * [authorizeIntent] and feeds the result back to [exchange]; [freshToken]
- * transparently refreshes.
- */
 class OidcAuth(context: Context) {
     val service = AuthorizationService(context)
     private var pendingServerRequest: AuthorizationRequest? = null
@@ -35,7 +32,6 @@ class OidcAuth(context: Context) {
         )
     }
 
-    /** The intent that opens the system browser for sign-in (PKCE added by AppAuth). */
     fun authorizeIntent(): Intent {
         return service.getAuthorizationRequestIntent(newRequest())
     }
@@ -47,14 +43,10 @@ class OidcAuth(context: Context) {
             ResponseTypeValues.CODE,
             Uri.parse(AppConfig.OIDC_REDIRECT_URI),
         )
-            // `offline_access` yields a DURABLE (offline) refresh token whose
-            // lifetime is the realm's offline-session setting rather than the
-            // short interactive SSO session — the basis for the "sign in once a
-            // year" policy. Its rotation is persisted after every refresh.
+            // offline_access enables year-long sessions, not just SSO timeout
             .setScope("openid profile email offline_access")
             .build()
 
-    /** Dormant custody mode still lets AppAuth generate and validate state and S256 PKCE. */
     @Synchronized
     fun authorizeServerIntent(scope: ServerSessionScope): Intent {
         checkScope(scope)
@@ -64,7 +56,6 @@ class OidcAuth(context: Context) {
         }
     }
 
-    /** Consume the exact original request once, before any backend I/O. */
     @Synchronized
     fun serverCode(
         intent: Intent,
@@ -91,7 +82,6 @@ class OidcAuth(context: Context) {
         }
     }
 
-    /** Exchange the redirect's authorization code for tokens; returns a populated AuthState. */
     suspend fun exchange(intent: Intent): AuthState {
         val response = AuthorizationResponse.fromIntent(intent)
         val authEx = AuthorizationException.fromIntent(intent)
@@ -111,7 +101,6 @@ class OidcAuth(context: Context) {
         return state
     }
 
-    /** A fresh access token, refreshing via the refresh token when needed. */
     suspend fun freshToken(state: AuthState): String =
         suspendCancellableCoroutine { cont ->
             state.performActionWithFreshTokens(service) { accessToken, _, e ->

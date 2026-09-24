@@ -1,3 +1,7 @@
+// Tests for the watch guidance surface: home-control ordering and clearing on owner/connection change,
+// isolation from conversation speech, disabled-button validity, admission-refusal ticket retirement, and
+// reconnect retry retention.
+
 import AstralCore
 import XCTest
 

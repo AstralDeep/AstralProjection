@@ -1,3 +1,7 @@
+"""Tests for scripts/apple_build_number.py: monotonic build numbering, environment
+handling, and fail-closed input validation.
+"""
+
 from __future__ import annotations
 
 import importlib.util

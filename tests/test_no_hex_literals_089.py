@@ -1,14 +1,6 @@
-"""Feature 089 (T050): every color in the web stylesheet is a theme token.
-
-The 089 layout is scored with colors excluded, because colors come from
-``ThemeView``: ``theme_apply`` and the color picker mutate the ``--astral-*``
-channel triplets at runtime and the whole interface is expected to follow. A
-literal anywhere outside the ``:root`` block is a color that does not follow —
-it stays put while everything around it changes, which is exactly the kind of
-defect a person only notices after picking a light theme.
-
-So: literals are allowed where the palette is *defined* (``:root`` and its
-dark/light variants) and nowhere else.
+"""Tests confirming every color in the web stylesheet
+(src/astralprojection/resources.py) is a theme token: literals may appear only inside
+the :root/media-query blocks that define the palette, never where it is consumed.
 """
 
 from __future__ import annotations
@@ -19,12 +11,8 @@ import pytest
 
 from astralprojection import resources
 
-# `#abc`, `#aabbcc`, `#aabbccdd`, `rgb(12 34 56)`, `rgba(1, 2, 3, .4)`.
-# `rgb(var(--astral-text) / 0.08)` is a token reference, not a literal, and
-# does not match because what follows the paren is `var(`, not a digit.
 LITERAL = re.compile(r"#[0-9a-fA-F]{3,8}\b|rgba?\(\s*[0-9]")
 
-# Rules that define the palette. Everything else consumes it.
 DEFINITION_SELECTORS = (":root", "@media (prefers-color-scheme")
 
 
@@ -33,7 +21,6 @@ def _stylesheet() -> str:
 
 
 def _definition_spans(css: str) -> list[tuple[int, int]]:
-    """Character ranges of the palette-defining blocks."""
     spans: list[tuple[int, int]] = []
     for match in re.finditer(r"^[^\n{]*\{", css, re.MULTILINE):
         selector = match.group(0)[:-1].strip()
@@ -66,8 +53,6 @@ def _offenders(css: str) -> list[tuple[int, str]]:
 
 
 def test_the_palette_is_defined_somewhere() -> None:
-    """A guard on the guard: if :root ever stops carrying literals, the test
-    above would pass vacuously and stop protecting anything."""
     css = _stylesheet()
     spans = _definition_spans(css)
     assert spans, "no palette-defining block found in astral.css"
@@ -84,7 +69,6 @@ def test_no_color_literal_outside_the_palette_block() -> None:
 
 
 def test_the_check_would_catch_a_reintroduced_literal() -> None:
-    """The regex has to match the shapes people actually write."""
     for snippet in (
         ".x { color: #fff; }",
         ".x { color: #E6E6E6; }",
@@ -108,6 +92,4 @@ def test_the_check_would_catch_a_reintroduced_literal() -> None:
     "--astral-text", "--astral-muted", "--astral-accent",
 ])
 def test_every_theme_channel_is_still_defined(token: str) -> None:
-    """The literals were replaced by these; a rename would silently blank the
-    interface, since an undefined var() falls back to nothing."""
     assert f"{token}:" in _stylesheet()

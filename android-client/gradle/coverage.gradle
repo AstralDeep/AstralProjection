@@ -1,7 +1,8 @@
+// Opt-in coverage build (-PastralCoverage=true): a JaCoCo-instrumented build type and test task,
+// plus a detached receipt so CI can rebuild the native coverage-report task outside this build.
 import groovy.json.JsonOutput
 import org.gradle.api.tasks.testing.Test
 
-// Opt-in tooling only. Normal debug/release and core coverage remain unchanged.
 def mode = providers.gradleProperty('astralCoverage').orNull
 if (mode != null && mode != 'true' && mode != 'false') {
     throw new GradleException('astralCoverage must be true or false')
@@ -29,16 +30,7 @@ if (mode == 'true') {
     }
     extensions.getByName('kover').useJacoco('0.8.14')
     tasks.withType(Test).configureEach { task ->
-        // Coverage mode only ever runs testCoverageUnitTest, and that run produces two
-        // things prepare() reads which Gradle does NOT know about: the JaCoCo probe file
-        // (Kover 0.9.8 never declares build/kover/bin-reports/testCoverageUnitTest.exec as
-        // an output) and the unit-agent receipt written below. A build-cache hit or an
-        // UP-TO-DATE skip would therefore leave prepare() with no receipt at all, so this
-        // lane deliberately opts out of both. Debug/release Test tasks are untouched:
-        // configureEach only reaches them under -PastralCoverage=true, where they refuse.
         task.doNotTrackState('coverage probes and the unit-agent receipt are collected fresh; neither is a declared output')
-        // Captured at configuration time so the doFirst body holds no script or project
-        // reference (configuration-cache safe).
         def unitAgentFile = layout.buildDirectory.file('coverage/unit-agent.json')
         def taskPath = task.path
         doFirst {
@@ -87,8 +79,6 @@ if (mode == 'true') {
             if (original.class.superclass.name != 'com.android.build.gradle.internal.coverage.JacocoReportTask') {
                 throw new GradleException('Unsupported pinned AGP coverage task')
             }
-            // Detached files have no connected-test/build dependencies. Verification
-            // reconstructs this entire input document before the native task runs.
             tasks.register('coverageReport', original.class.superclass) {
                 projectPath.set(project.path)
                 variantName = 'coverage'

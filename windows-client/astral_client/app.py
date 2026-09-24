@@ -1,12 +1,6 @@
-"""AstralDeep native Windows client — main window.
-
-A native, 100% Qt desktop app (no embedded web view): a top bar (identity,
-connection, new chat, history, agents, sign-out), a chat rail on the left and a
-native SDUI canvas on the right. Inbound `ui_render`/`ui_upsert` messages are
-drawn as native Qt widgets via renderer.render; button / history-row / agent
-interactions post `ui_event`s back. App chrome (agents & permissions, history)
-is reimplemented as native Qt dialogs driven by the SAME WS events as the web
-chrome — never an embedded HTML surface.
+"""Native Qt main window for the Windows client: top bar, chat rail, and SDUI canvas
+driven by protocol.py's WebSocket events; renders via renderer.render and
+reimplements web chrome (agents, history, audit) as native Qt dialogs.
 """
 
 from __future__ import annotations
@@ -99,18 +93,10 @@ from win_agent.byo_host import (
 
 logger = logging.getLogger("astral.client")
 
-#: Windows shell identity. The taskbar groups windows — and chooses the button's
-#: icon — by this id; without it a source run inherits python.exe's identity (and
-#: python.exe's icon). Keep it stable: changing it splits pinned taskbar entries.
 APP_USER_MODEL_ID = "AstralDeep.WindowsClient"
 
-# Connection bootstrap and background reconciliation are protocol operations,
-# but they are not user work. Retain them for exact acknowledgement/terminal
-# handling without flashing the global activity banner on first load.
 _SILENT_LOCAL_STATUS_ACTIONS = frozenset(
     {"discover_agents", "get_history", "register_external_agent", "watch_task",
-     # Feature 076: host-side chatter (a response per verb, heartbeats) is
-     # machinery, not user work — never flash the activity banner for it.
      "computer_event", "computer_response"}
 )
 
@@ -126,16 +112,11 @@ def _canonical_uuid4(value: object) -> bool:
 
 
 def app_icon_path() -> str:
-    """Absolute path to the bundled .ico. ``assets/`` sits beside the source tree
-    in dev and is extracted to ``sys._MEIPASS`` in a frozen build."""
     base = getattr(sys, "_MEIPASS", os.path.join(os.path.dirname(__file__), ".."))
     return os.path.join(base, "assets", "astraldeep.ico")
 
 
 def normalize_error(msg: dict) -> str:
-    """Feature 044 (FR-002): collapse the three historical server error shapes —
-    ``{code,message}`` | ``{payload:{message}}`` | ``{message}`` — into one
-    human string for the error banner."""
     text = (
         msg.get("message")
         or (msg.get("payload") or {}).get("message")
@@ -146,9 +127,6 @@ def normalize_error(msg: dict) -> str:
 
 
 def parser_status_glyph(status: str) -> tuple:
-    """Feature 044 (US4): map an attachment ``parser_status`` to a
-    ``(glyph, label)`` for its chip — covered→ready, preparing/pending→working,
-    unavailable→can't-read. Mirrors the web chip states."""
     return {
         "covered": ("✓", "ready"),
         "preparing": ("⏳", "preparing a reader"),
@@ -158,12 +136,6 @@ def parser_status_glyph(status: str) -> tuple:
 
 
 def replacement_ops(msg: dict) -> list:
-    """Feature 055 (US3): ``components_combined`` / ``components_condensed`` →
-    canvas ops — remove each consumed id, upsert each carried result. Results
-    are saved-row shapes (``{id, chat_id, component_data, …}``); the component
-    dict rides in ``component_data`` and may not carry a workspace identity yet
-    (the server stamps it in the reconcile ``ui_render`` that follows), so
-    identity falls back to the fresh row id — mirroring the Apple twin."""
     ops = [
         {"op": "remove", "component_id": str(rid)}
         for rid in msg.get("removed_ids") or [] if rid
@@ -184,26 +156,13 @@ def replacement_ops(msg: dict) -> list:
 
 
 def frame_chat_id(msg: dict) -> Optional[str]:
-    """The chat a background push frame belongs to. Task frames
-    (``task_started``/``task_completed``) carry it under ``payload``; scheduler
-    ``notification`` frames carry it at the top level; absent on legacy frames."""
     cid = (msg.get("payload") or {}).get("chat_id") or msg.get("chat_id")
     return str(cid) if cid else None
 
 
-#: ui_event actions handled entirely in-app (never sent to the server, so they
-#: never produce a server ``chrome_surface`` re-render) — a surface's
-#: load-timeout bound is NOT armed for them (which would wrongly fire and wipe
-#: the surface, feature 044 fix). A committed constant mirroring the manifest's
-#: ``client_local_actions`` (a packaged build has no repo tree to probe);
-#: tests/test_protocol_manifest.py asserts the sync.
 _CLIENT_LOCAL_ACTIONS = CLIENT_LOCAL_ACTIONS
 
 
-# Feature 040 (US5): slash-command discovery. Mirrors the web client's typeahead
-# and the server's orchestrator/slash_commands.COMMANDS registry — the server
-# expands a typed "/command" into a normal prompt; this popup just lets users
-# see the options as they type. Keep in sync with the web list.
 _SLASH_COMMANDS = [
     ("/help", "show available commands"),
     ("/agents", "list your enabled agents"),
@@ -214,14 +173,6 @@ _SLASH_COMMANDS = [
 
 
 class _SlashCommandModel(QAbstractListModel):
-    """Completion model for slash commands.
-
-    Exposes the human-readable ``name  —  description`` under ``DisplayRole`` (so
-    the popup is discoverable) while ``EditRole`` is the clean ``/command ``
-    token QCompleter matches against and inserts. A ``QStandardItem`` cannot do
-    this — it unifies Display/Edit roles — hence this small dedicated model.
-    """
-
     def __init__(self, commands, parent=None):
         super().__init__(parent)
         self._commands = list(commands)
@@ -241,20 +192,11 @@ class _SlashCommandModel(QAbstractListModel):
 
 
 def build_slash_completer(parent=None):
-    """Build a QCompleter that pops up the available slash commands when the
-    user starts typing ``/``.
-
-    The popup DISPLAYS ``name  —  description`` (so options are discoverable) but
-    inserts only the clean ``/command `` token (``Qt.EditRole``) so the field is
-    ready for arguments. Filtering is case-insensitive prefix matching, so ``/``
-    surfaces every command and ``/sum`` narrows to ``/summarize``.
-    """
     completer = QCompleter(parent)
-    # Parent the model to the completer so it survives past this function
-    # (PySide6 GCs an unparented model whose last Python reference is dropped).
+    # Must parent to completer — PySide6 GCs an unparented model
     model = _SlashCommandModel(_SLASH_COMMANDS, completer)
     completer.setModel(model)
-    completer.setCompletionRole(Qt.ItemDataRole.EditRole)  # match/insert "/command "
+    completer.setCompletionRole(Qt.ItemDataRole.EditRole)
     completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
     completer.setFilterMode(Qt.MatchFlag.MatchStartsWith)
     completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
@@ -262,7 +204,6 @@ def build_slash_completer(parent=None):
 
 
 def _user_from_token(token: str) -> str:
-    """Best-effort display name from a JWT (preferred_username → name → sub)."""
     if not token or token == "dev-token":
         return "Developer"
     try:
@@ -281,8 +222,6 @@ def _user_from_token(token: str) -> str:
 
 
 class ChatRail(QWidget):
-    """The text-only conversation rail (mirrors the web app's chat rail)."""
-
     def __init__(self):
         super().__init__()
         outer = QVBoxLayout(self)
@@ -302,18 +241,12 @@ class ChatRail(QWidget):
 
     def _drop_hint(self) -> None:
         if self._hint is not None:
-            self._hint.setParent(None)  # remove from layout immediately
+            self._hint.setParent(None)
             self._hint.deleteLater()
             self._hint = None
 
     @staticmethod
     def _bubble_frame(role: str) -> QFrame:
-        """One transcript bubble styled like the web (client.js bubble classes):
-        user = primary/20 fill + primary/30 border, right-shifted; assistant =
-        white/5 fill + hairline, left; rounded-lg with p-3 padding. Alignment is
-        carried by a directional inset (Qt labels negotiate wrap width poorly
-        inside stretch rows). The role stays on the accessible name so parity
-        with the label-less web bubbles costs assistive tech nothing."""
         bubble = QFrame()
         is_user = role == "user"
         if is_user:
@@ -329,7 +262,6 @@ class ChatRail(QWidget):
         return bubble
 
     def _insert_bubble(self, bubble: QFrame, role: str) -> None:
-        """Directional inset (web: flex justify-end / justify-start + max-w-85%)."""
         wrap = QWidget()
         row = QHBoxLayout(wrap)
         inset = 36
@@ -355,11 +287,6 @@ class ChatRail(QWidget):
         bar.setValue(bar.maximum())
 
     def _semantic_bubble(self, message: SemanticMessage, ctx: RenderContext) -> QWidget:
-        """Build one detached semantic turn using the shared native renderer.
-        System/tool turns keep a small muted role caption (the web renders
-        those inline too); user/assistant turns rely on side + tint alone,
-        exactly like the web bubbles."""
-
         bubble = self._bubble_frame(message.role)
         layout = QVBoxLayout(bubble)
         layout.setContentsMargins(12, 10, 12, 10)
@@ -393,7 +320,6 @@ class ChatRail(QWidget):
                 body.setWordWrap(True)
                 body.setTextFormat(Qt.TextFormat.MarkdownText)
                 body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-                # 066 T023: a lifted caption keeps its weight on hydration.
                 if part.variant == "caption":
                     body.setStyleSheet(
                         f"color:{T.MUTED}; font-size:11px; background:transparent;"
@@ -440,8 +366,6 @@ class ChatRail(QWidget):
     def replace_semantic(
         self, messages: list[SemanticMessage], ctx: RenderContext
     ) -> None:
-        """Replace the committed transcript in one main-thread reducer action."""
-
         prepared = [
             (self._semantic_bubble(message, ctx), message.role)
             for message in messages
@@ -450,15 +374,11 @@ class ChatRail(QWidget):
         for bubble, role in prepared:
             self._insert_bubble(bubble, role)
         if not prepared:
-            # An empty committed chat is valid; it is not a generic new-chat
-            # welcome. Keep the rail intentionally blank.
             return
         bar = self._scroll.verticalScrollBar()
         bar.setValue(bar.maximum())
 
     def show_transient(self, text: str) -> None:
-        """Show disposable request output without changing committed bubbles."""
-
         self.clear_transient()
         if not text:
             return
@@ -490,8 +410,6 @@ class ChatRail(QWidget):
                 item.widget().deleteLater()
 
     def add_note(self, text: str) -> None:
-        """A small muted line in the rail (feature 044 — used to show a turn's
-        attachment chips, mirroring the web '📎 name')."""
         self._drop_hint()
         lbl = QLabel(str(text))
         lbl.setWordWrap(True)
@@ -504,7 +422,6 @@ class ChatRail(QWidget):
         bar.setValue(bar.maximum())
 
     def show_empty_hint(self) -> None:
-        """A gentle empty-state so a fresh chat rail isn't a blank void."""
         self.clear()
         hint = QLabel(
             "Ask something below and AstralDeep will build a live interface for it."
@@ -519,9 +436,6 @@ class ChatRail(QWidget):
 
 
 def _ask_refine_instruction(parent, title: str) -> str:
-    """Small modal prompt for a component-refine instruction (055 US4).
-    Factored out (like renderer._choose_color) so the emit path is
-    offscreen-testable without driving a modal dialog. '' == cancelled."""
     what = f'"{title}"' if title else "this component"
     text, ok = QInputDialog.getText(
         parent, "Refine component", f"How should {what} change?")
@@ -529,13 +443,10 @@ def _ask_refine_instruction(parent, title: str) -> str:
 
 
 def _open_external(url: str) -> None:
-    """Open a URL in the system browser (the download-card / OIDC model)."""
     QDesktopServices.openUrl(QUrl(url))
 
 
 class Canvas(QScrollArea):
-    """The SDUI canvas: native widgets per structured component, keyed by id."""
-
     def __init__(self, ctx: RenderContext):
         super().__init__()
         self.ctx = ctx
@@ -547,37 +458,13 @@ class Canvas(QScrollArea):
         self._lay.addStretch(1)
         self.setWidget(self._inner)
         self._by_id: Dict[str, QWidget] = {}
-        # Source component payload per id, so a full render that re-delivers an
-        # existing id with CHANGED content (timeline snapshots, combine/condense)
-        # renders fresh instead of reusing the stale widget (parity with the
-        # Android twin's in-place update).
         self._rendered: Dict[str, Any] = {}
-        # Retained last-rendered component list so a live theme change can rebuild
-        # inline-styled content with the new palette (feature 044 US5, restyle()).
         self._last_components: list = []
-        # True whenever the canvas diverged from _last_components (apply_ops
-        # patches, restyle's forced rebuild) — gates the set_components
-        # unchanged-payload early exit.
         self._mutated_since_render = False
-        # Shared cross-client empty-canvas hint (parity with web/Android/Apple).
         self._empty: Optional[QWidget] = None
-        # Query-start loading placeholder (the Android twin's SkeletonCanvas):
-        # shown when a chat turn is sent, removed by the FIRST canvas content
-        # of the turn (set_components / apply_ops, which streaming also routes
-        # through) or explicitly when the turn ends without any.
         self._skeleton: Optional[QWidget] = None
-        # Feature 060 request-scoped preview. It is a sibling of committed
-        # widgets and never enters `_last_components` / `_by_id`.
         self._transient_overlay: Optional[QWidget] = None
-        # Mirrors the window's per-turn flag (feature 055 US1): an EMPTY full
-        # render mid-turn keeps the loading state instead of swapping the
-        # skeleton for the idle hint; out-of-turn empty renders remain
-        # authoritative clears.
         self.turn_active = False
-        # Feature 055 (US4/US5): per-component context menu (refine + export).
-        # `timeline_mode` mirrors the window's read-only flag (refine disabled);
-        # `http_base` is set by the MainWindow; `open_url` is injectable for
-        # offscreen tests.
         self.timeline_mode = False
         self.http_base = ""
         self.open_url = _open_external
@@ -592,8 +479,6 @@ class Canvas(QScrollArea):
             self._empty = None
 
     def show_empty_state(self) -> None:
-        """The shared empty-canvas copy (sparkle + headline + subtitle), muted,
-        shown while no components are rendered."""
         if self._empty is not None:
             return
         box = QWidget()
@@ -623,8 +508,6 @@ class Canvas(QScrollArea):
         self._lay.insertWidget(self._lay.count() - 1, widget)
 
     def set_transient_overlay(self, components: list[dict[str, Any]]) -> None:
-        """Render a disposable semantic preview above committed canvas state."""
-
         self.clear_transient_overlay()
         if not components:
             return
@@ -647,11 +530,8 @@ class Canvas(QScrollArea):
             frame.deleteLater()
 
     def show_skeleton(self) -> None:
-        """Append the loading placeholder below any existing components."""
         if self._skeleton is not None:
             return
-        # The idle hint never co-shows with a turn's loading state (055
-        # FR-005); resolve_loading restores it if the turn ends canvas-empty.
         self._drop_empty()
         w = render({"type": "skeleton", "variant": "card", "count": 3}, self.ctx)
         self._skeleton = w
@@ -665,23 +545,11 @@ class Canvas(QScrollArea):
             w.deleteLater()
 
     def resolve_loading(self) -> None:
-        """Turn-end resolution (chat_status done / error): drop the skeleton
-        and, when the turn ended with no canvas output (a text-only answer
-        after the welcome purge), restore the idle empty-state hint — the
-        server no longer sends the turn-start empty render that used to leave
-        the hint behind (feature 055 US1)."""
         self.hide_skeleton()
         if not self._last_components and not self._by_id:
             self.show_empty_state()
 
     def purge_welcome(self) -> None:
-        """Feature 055 (US1, uniform rule): at turn start drop every ephemeral
-        welcome component — identity (``component_id`` or ``id``) prefixed
-        ``wel_`` — re-rendering the remainder through the identity-reconciled
-        path. When the server flag is off the welcome arrives id-less, nothing
-        matches and this is a byte-equivalent no-op. Callers flip
-        ``turn_active`` first, so a welcome-only canvas empties WITHOUT the
-        idle hint (the skeleton is armed right after)."""
         kept = [
             comp for comp in self._last_components
             if not (isinstance(comp, dict) and str(
@@ -692,28 +560,7 @@ class Canvas(QScrollArea):
             self.set_components(kept)
 
     def set_components(self, components: list) -> None:
-        """Full canvas render (a `ui_render` to the canvas region), reconciled BY
-        component identity instead of a blind drop-and-rebuild (feature 044 T024).
-
-        A component_id already on the canvas keeps its existing widget — its
-        identity persists across the render (streaming nodes, interactive state,
-        scroll position). Ids absent from the new set are removed; brand-new ids
-        (and unkeyed components) are rendered fresh. This is the fix for the
-        clobber bug where a full render threw away components the new set still
-        contains (e.g. one just added via a `ui_upsert`).
-
-        Cheap early-exit: when nothing has mutated the canvas since the last
-        full render and the incoming list is the same object as (or compares
-        equal to) the previous one, the canvas already IS this state — skip
-        reconciliation entirely. apply_ops/restyle flip ``_mutated_since_render``
-        so patched or palette-stale canvases always reconcile.
-
-        Feature 055 (US1): an EMPTY set while a turn is in flight
-        (``turn_active``) keeps the loading state — the armed skeleton
-        survives the rebuild and the idle empty-state hint is NOT shown. Only
-        out-of-turn empty renders resolve to the hint (authoritative clears)."""
         incoming = components or []
-        # Mid-turn empty render: never swap the skeleton for the idle hint.
         keep_loading = not incoming and self.turn_active
         if not self._mutated_since_render and (
             incoming is self._last_components
@@ -725,16 +572,9 @@ class Canvas(QScrollArea):
         components = list(incoming)
         skeleton = self._skeleton if keep_loading else None
         if skeleton is None:
-            self.hide_skeleton()  # canvas content arrived (or is being rebuilt)
-        self._last_components = components  # retained for restyle() (US5)
-        # The empty-state hint is dropped before the rebuild (the detach loop
-        # below would otherwise delete it out from under self._empty) and
-        # re-shown afterwards when the new set is empty.
+            self.hide_skeleton()
+        self._last_components = components
         self._drop_empty()
-        # A widget is reusable only when its id survives into the new set AND
-        # the incoming component payload equals what it was rendered from — a
-        # re-delivered id with CHANGED content (timeline snapshots, combine/
-        # condense) must render fresh, not keep showing stale live data.
         reusable: Dict[str, QWidget] = {}
         for comp in components:
             if isinstance(comp, dict):
@@ -743,8 +583,6 @@ class Canvas(QScrollArea):
                 if (cid and cid not in reusable and cid in self._by_id
                         and self._rendered.get(cid) == comp):
                     reusable[cid] = self._by_id[cid]
-        # Detach every current child (keep the trailing stretch); widgets not
-        # reused (unkeyed, dropped ids, changed content) are deleted.
         detached: List[QWidget] = []
         while self._lay.count() > 1:
             item = self._lay.takeAt(0)
@@ -756,8 +594,6 @@ class Canvas(QScrollArea):
             if w not in reused and w is not skeleton:
                 w.setParent(None)
                 w.deleteLater()
-        # Re-insert in the new order, reusing a kept widget by id or rendering
-        # fresh. `_insert` appends before the stretch, so order follows the list.
         self._by_id = {}
         rendered: Dict[str, Any] = {}
         placed: set = set()
@@ -766,9 +602,6 @@ class Canvas(QScrollArea):
             if isinstance(comp, dict):
                 raw = comp.get("component_id") or comp.get("id")
                 cid = str(raw) if raw else None
-            # A component_id repeated within one payload must NOT reuse (or
-            # re-insert) the same widget twice — render the duplicate fresh so a
-            # single widget object is never added to the layout more than once.
             w = reusable.get(cid) if (cid and cid not in placed) else None
             if w is None:
                 w = render(comp, self.ctx, top_level=True)
@@ -781,41 +614,25 @@ class Canvas(QScrollArea):
                     rendered[cid] = comp
                 placed.add(cid)
         if skeleton is not None:
-            self._insert(skeleton)  # the loading placeholder stays at the bottom
+            self._insert(skeleton)
         self._rendered = rendered
         self._mutated_since_render = False
         if not components and not keep_loading:
             self.show_empty_state()
 
     def restyle(self) -> None:
-        """Re-render the retained components so inline-styled SDUI content (cards,
-        hero, alerts, badges — styled from the theme palette AT render time, not
-        via global QSS) picks up a live theme change (feature 044 US5). Identity
-        reconciliation would reuse the existing widgets, which keep their stale
-        inline CSS, so the id map is cleared to force a fresh rebuild.
-
-        The full rebuild here is INTENTIONAL: every renderer reads the palette
-        globals at render time, so after a theme change effectively all retained
-        widgets are palette-stale — there is no "unaffected component" subset to
-        preserve. The per-frame path (set_components) keeps identity reuse plus
-        the unchanged-payload early exit; only theme changes pay for a rebuild."""
         comps = self._last_components
-        # Force a fresh render (reused widgets keep stale inline CSS); the
-        # payload map is cleared with the id map so reuse can't kick in.
         self._by_id = {}
         self._rendered = {}
         self._mutated_since_render = True
         self.set_components(comps)
 
     def apply_ops(self, ops: list) -> None:
-        """In-place workspace patch (a `ui_upsert`)."""
         if ops:
-            self.hide_skeleton()  # first canvas content of the turn
-            # The canvas now diverges from _last_components, so the next full
-            # render must reconcile even if its payload looks unchanged.
+            self.hide_skeleton()
             self._mutated_since_render = True
         if any((op or {}).get("op", "upsert") != "remove" for op in ops or []):
-            self._drop_empty()  # content is arriving — hide the empty-state hint
+            self._drop_empty()
         for op in ops or []:
             kind = op.get("op", "upsert")
             cid = op.get("component_id")
@@ -836,16 +653,9 @@ class Canvas(QScrollArea):
             else:
                 self._insert(new_w)
             self._by_id[cid] = new_w
-            self._rendered[cid] = comp  # keep the payload map in sync
-
-    # --- 055 US4/US5: component context menu (refine + export) ------------- #
+            self._rendered[cid] = comp
 
     def _component_at(self, pos) -> tuple:
-        """``(component_id, component dict)`` of the top-level canvas component
-        under ``pos`` (inner coords), else ``(None, None)``. Walks parents from
-        the deepest child, accepting only canvas-tracked identities — nested
-        children may carry an author ``id`` property that is NOT a workspace
-        identity and must not be targeted by refine/export."""
         w = self._inner.childAt(pos)
         while w is not None and w is not self._inner:
             raw = w.property("component_id")
@@ -856,10 +666,6 @@ class Canvas(QScrollArea):
         return None, None
 
     def component_menu(self, cid, comp) -> Optional[QMenu]:
-        """Build the context menu for a component (or bare canvas when ``cid``
-        is None): Refine… (055 US4, disabled while viewing history), Export
-        data (CSV) for tables, Export canvas (HTML). Returns ``None`` when no
-        entry applies (no menu shown)."""
         comp = comp if isinstance(comp, dict) else {}
         chat_id = getattr(self.ctx, "chat_id", None)
         menu = QMenu(self)
@@ -892,11 +698,6 @@ class Canvas(QScrollArea):
             menu.exec(self._inner.mapToGlobal(pos))
 
     def request_refine(self, cid: str) -> None:
-        """Prompt for an instruction and emit ``component_refine`` (wire-contract
-        §3). Empty/cancelled prompt sends nothing; historical views are
-        read-only (the server also refuses — `_ws_timeline_mode` guard).
-        No versions submenu: no native frame carries the version list, so
-        restore stays a web affordance (declared in the parity matrix)."""
         if self.timeline_mode:
             return
         comp = self._rendered.get(cid)
@@ -912,12 +713,6 @@ class Canvas(QScrollArea):
 
 
 class SurfaceDialog(QDialog):
-    """Feature 043 — a settings surface delivered as SDUI (``chrome_surface``),
-    rendered natively with the SAME component renderer used for the chat canvas.
-    Replaces the "coming soon" placeholder for the ported surfaces (theme, user
-    guide, LLM settings, personalization)."""
-
-    #: How long to wait for a `chrome_surface` before showing the retry error.
     LOAD_TIMEOUT_MS = 10000
 
     def __init__(self, parent, emit, download=None, on_retry=None, apply_theme=None,
@@ -925,8 +720,6 @@ class SurfaceDialog(QDialog):
         super().__init__(parent)
         self.setModal(False)
         self.resize(600, 560)
-        # Web modal card: raised solid surface (surface/0.97) over the dimmed
-        # page — SURFACE_2 is that raised token.
         self.setStyleSheet(f"QDialog {{ background:{T.SURFACE_2}; }}")
         self._raw_emit = emit
         self._on_close = on_close
@@ -935,16 +728,8 @@ class SurfaceDialog(QDialog):
         self._on_sign_out = on_sign_out
         self._surface = ""
         self._params: dict = {}
-        # Feature 054 (T019): first-run gate pin. While the server pushes
-        # mode:"mandatory" the dialog is application-modal with every dismissal
-        # affordance suppressed; only the server's blank close frame (or Sign
-        # out) releases it. _flags_before restores the stock flags on unpin.
         self._mandatory = False
         self._flags_before = self.windowFlags()
-        # Feature 044 (T040): actions submitted from inside the surface show an
-        # in-flight state and re-arm the load bound (the server replies with a
-        # chrome_surface re-render that cancels it). `apply_theme` routes the
-        # Theme surface's theme_apply/color-pick to the app's single theme path.
         self._ctx = RenderContext(emit=self._emit_from_surface, download=download,
                                   apply_theme=apply_theme)
         outer = QVBoxLayout(self)
@@ -966,10 +751,6 @@ class SurfaceDialog(QDialog):
         self._lay.addStretch(1)
         scroll.setWidget(self._inner)
         outer.addWidget(scroll, 1)
-        # Feature 054 (T019): the mandatory gate blocks the main window (and
-        # its gear menu) behind an application-modal dialog, so the FR-013
-        # sign-out escape hatch must live IN the dialog — same routine as the
-        # gear menu's Sign out. Hidden unless mandatory.
         self._signout_btn = QPushButton("Sign out")
         self._signout_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._signout_btn.clicked.connect(self._request_sign_out)
@@ -978,24 +759,16 @@ class SurfaceDialog(QDialog):
         btn_row.addStretch(1)
         btn_row.addWidget(self._signout_btn)
         outer.addLayout(btn_row)
-        # Load-timeout bound (T040): armed on open/submit, cancelled on arrival.
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(self.LOAD_TIMEOUT_MS)
         self._timer.timeout.connect(self._on_timeout)
 
     def set_mandatory(self, on: bool) -> None:
-        """Feature 054 (T019): pin/unpin the first-run gate. Pinned = the
-        dialog is application-modal and undismissable: the titlebar ✕ is
-        removed (CustomizeWindowHint — clearing the close hint alone leaves
-        the platform defaults in force) and Esc/close are refused by the
-        reject/closeEvent overrides until the server's blank close frame."""
         on = bool(on)
         if on == self._mandatory:
             return
         self._mandatory = on
-        # Modality and window flags only apply on the next show(); a flag
-        # change also re-creates the native window — hide first, re-show after.
         was_visible = self.isVisible()
         if was_visible:
             self.hide()
@@ -1015,7 +788,6 @@ class SurfaceDialog(QDialog):
             self._on_sign_out()
 
     def reject(self) -> None:
-        # Esc / programmatic dismissal: refused while the gate is pinned (054).
         if self._mandatory:
             return
         if callable(self._on_close):
@@ -1035,21 +807,12 @@ class SurfaceDialog(QDialog):
             item = self._lay.takeAt(0)
             w = item.widget()
             if w is not None:
-                # Reparent BEFORE deleteLater: a deferred delete only runs once
-                # control returns to the exec() loop, so during nested event
-                # processing (or a synthetic processEvents pump, e.g. the
-                # screenshot harness) the removed widget would otherwise keep
-                # painting over the next surface's components — visible as one
-                # settings page stacking on another when switching surfaces.
+                # Reparent before deleteLater — a pending delete still paints
                 w.setParent(None)
                 w.deleteLater()
 
     def _emit_from_surface(self, action: str, payload: dict) -> None:
         self._raw_emit(action, payload)
-        # A form submit re-renders the surface; show in-flight + re-arm the bound.
-        # But a client-local action (e.g. attach_existing) is handled in-app and
-        # never produces a server chrome_surface re-render, so arming the
-        # load-timeout would wrongly fire and wipe the surface — skip it.
         if action == "chrome_open" and payload.get("surface") == "work":
             return
         if action != "chat_message" and action not in _CLIENT_LOCAL_ACTIONS:
@@ -1058,8 +821,6 @@ class SurfaceDialog(QDialog):
             self._timer.start()
 
     def begin_load(self, surface: str, params: dict, title: str = "") -> None:
-        """Show the in-flight state for a requested surface and arm the
-        load-timeout bound (T040). Called right after sending `chrome_open`."""
         self._surface = surface or self._surface
         self._params = params or {}
         self.setWindowTitle(title or self._surface or "Settings")
@@ -1074,7 +835,6 @@ class SurfaceDialog(QDialog):
         self._timer.start()
 
     def _on_timeout(self) -> None:
-        """The surface didn't arrive in time — show an inline error + Retry."""
         self._timer.stop()
         if self._surface == "work" and callable(self._timeout_observer):
             self._timeout_observer()
@@ -1101,14 +861,11 @@ class SurfaceDialog(QDialog):
         self._lay.insertWidget(self._lay.count() - 1, box)
 
     def _retry(self) -> None:
-        """Re-send `chrome_open` for the pending surface (re-arms the bound)."""
         self.begin_load(self._surface, self._params, title=self._title.text())
         if callable(self._on_retry):
             self._on_retry(self._surface, self._params)
 
     def set_surface(self, title: str, components: list) -> None:
-        """Replace the modal body with a freshly-rendered component list. Cancels
-        the load-timeout bound — this is the arrival path (T040)."""
         self._timer.stop()
         self._status.setVisible(False)
         self.setWindowTitle(title or "Settings")
@@ -1119,26 +876,11 @@ class SurfaceDialog(QDialog):
 
 
 class TopBar(QFrame):
-    """Native app chrome header, identical across clients (feature 042 —
-    Constitution XII): a small brand mark · a New-chat button · a Recent-chats
-    button · a Settings gear whose dropdown holds ALL settings (ACCOUNT / HELP /
-    ADMIN TOOLS + a red Sign out), built from the single server-owned menu model.
-    Nothing else — Agents/Audit/LLM/etc. live inside the gear menu, exactly as on
-    the web. Connection/integrity status is carried in the mark's tooltip so the
-    bar stays clean."""
-
     def __init__(self, user: str, on_new_chat, on_recent, on_open_surface, on_sign_out,
                  local_items=None):
         super().__init__()
         self.setObjectName("topbar")
-        #: Feature 077: client-local Settings entries — ``[(label, callable)]`` —
-        #: appended after the server-owned groups under their own heading.
-        #: Server model + client-local acts, one menu; the model stays the
-        #: single definition of everything that is a server surface.
         self._local_items = list(local_items or [])
-        # Web #astral-topbar: translucent bg-tinted glass band with a soft
-        # bottom hairline (Qt has no backdrop blur; the alpha tint over the
-        # root's nebula glows gives the same layered read).
         self.setStyleSheet(
             f"#topbar {{ background:{T._rgba(T.BG, 0.65)};"
             f"border-bottom:1px solid {T._rgba(T.TEXT, 0.06)}; }}"
@@ -1150,8 +892,6 @@ class TopBar(QFrame):
         lay.setContentsMargins(14, 8, 12, 8)
         lay.setSpacing(8)
 
-        # Brand mark (status-tinted; tooltip carries connection/integrity) +
-        # the "AstralDeep" wordmark, matching the web's logo + wordmark brand.
         self._mark = QLabel("◆")
         self._mark.setObjectName("applicationStatus")
         self._mark.setAccessibleName("Application status")
@@ -1168,87 +908,51 @@ class TopBar(QFrame):
         self.new_btn = QPushButton("＋ New chat")
         self.new_btn.setObjectName("primary")
         self.new_btn.clicked.connect(on_new_chat)
-        # 066 cross-client style parity: web and Android render every top-bar
-        # control EXCEPT "＋ New" as an icon-only button with the name in the
-        # tooltip. Windows carried full text labels ("💬 Recent chats",
-        # "⚙ Settings"), which read as a different application beside them.
-        # Same order, same affordances — icon-only presentation.
-        # Recent chats — reopen a past conversation. Speech-bubble glyph, NOT a
-        # clock: the clock belongs to the server-model "Workspace timeline"
-        # control that sits right beside it (same call as android RootScaffold).
         self.recent_btn = QPushButton(_icons.GLYPH_FALLBACK["chats"])
         self.recent_btn.setToolTip("Recent chats")
         self.recent_btn.setAccessibleName("Recent chats")
         self.recent_btn.setObjectName("iconGhost")
         self.recent_btn.clicked.connect(on_recent)
-        # Settings gear → dropdown built from the server-owned menu model.
         self.settings_btn = QPushButton(_icons.GLYPH_FALLBACK["gear"])
         self.settings_btn.setToolTip("Settings")
         self.settings_btn.setAccessibleName("Settings")
         self.settings_btn.setObjectName("iconGhost")
-        # The glyphs above are only the fallback: the buttons draw the same SVG
-        # line icons as the web top bar (icons.py) — emoji text rendered by
-        # Segoe UI Emoji came out half-coloured and smeared on Windows.
         self._svg_buttons = [(self.recent_btn, "chats"), (self.settings_btn, "gear")]
         self.apply_icons()
-        # Menu chrome (surface, radius, subtle primary hover) comes from the
-        # global QMenu rules in theme.build_stylesheet() — web parity.
         self._menu = QMenu(self)
         self.settings_btn.setMenu(self._menu)
         for b in (self.new_btn, self.recent_btn, self.settings_btn):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Feature 044 (T038): server-model top-bar action controls (pulse,
-        # timeline, …) render as buttons in this holder. Each emits its
-        # chrome_open{surface} via on_open_surface. Rebuilt from the chrome menu
-        # model; empty until it arrives.
         self._actions_holder = QWidget()
         self._actions_lay = QHBoxLayout(self._actions_holder)
         self._actions_lay.setContentsMargins(0, 0, 0, 0)
         self._actions_lay.setSpacing(6)
         self._action_buttons: List[QPushButton] = []
 
-        # Constitution XII — the bar is one shared definition; no client may
-        # reorder it. Web/Android/Apple all run
-        #   brand · New chat · Recent chats · <server-model actions> · Settings
-        # and the server-model cluster goes AFTER the client-local buttons, not
-        # before them. Pinned by tests/test_top_bar.py. The brand is a
-        # two-widget cluster (status mark + wordmark), exactly like the web's
-        # logo + "AstralDeep" text.
         lay.addWidget(self._mark)
         lay.addWidget(self.brand_label)
         lay.addStretch(1)
         lay.addWidget(self.new_btn)
         lay.addWidget(self.recent_btn)
-        lay.addWidget(self._actions_holder)   # server-model actions (pulse, timeline)
+        lay.addWidget(self._actions_holder)
         lay.addWidget(self.settings_btn)
 
-        # Until the server model arrives, offer just Sign out (always safe).
         self._rebuild_menu({"sections": [], "signout": {"label": "Sign out", "action": "logout"}})
 
-    #: Server top-bar action icon names → the text FALLBACK glyph (the real
-    #: rendering is the SVG in icons.py, the same paths as web's `_ICON_SVG`
-    #: vocabulary in `chrome/topbar.py`). `pulse`, `activity` and `clock` are
-    #: names the server never sends and are kept only as tolerant aliases.
     _ACTION_ICONS = {
         name: _icons.GLYPH_FALLBACK[key] for name, key in _icons.ACTION_ICON_NAMES.items()
     }
 
     def apply_icons(self) -> None:
-        """(Re)paint every SVG icon button in the current palette — called at
-        construction, after the server model rebuilds the action buttons, and
-        after a theme change (the icon colour is baked into the pixmap)."""
         for btn, name in list(getattr(self, "_svg_buttons", [])):
             try:
                 if not _icons.apply(btn, name, T.MUTED, T.TEXT):
                     btn.setText(_icons.GLYPH_FALLBACK.get(name, btn.text()))
-            except Exception:  # noqa: BLE001 — a dead widget after a rebuild
+            except Exception:  # noqa: BLE001
                 logger.debug("icon apply failed for %s", name, exc_info=True)
 
     def set_menu_model(self, model: dict) -> None:
-        """(Re)build the Settings dropdown AND the top-bar action buttons from the
-        server-owned chrome model (the `chrome_menu` WS frame / GET
-        /api/chrome/menu)."""
         from .rest import parse_chrome_menu
 
         parsed = parse_chrome_menu(model)
@@ -1256,9 +960,6 @@ class TopBar(QFrame):
         self._rebuild_topbar_actions(parsed.get("topbar_actions", []))
 
     def _rebuild_topbar_actions(self, actions: list) -> None:
-        """Render the server model's `kind:"action"` top-bar controls as buttons
-        (feature 044 T038). Each triggers its `chrome_open{surface}` through the
-        shared on_open_surface callback — the same path the gear-menu items use."""
         while self._actions_lay.count():
             item = self._actions_lay.takeAt(0)
             if item.widget():
@@ -1274,9 +975,6 @@ class TopBar(QFrame):
                 continue
             label = a.get("label") or surface
             glyph = self._ACTION_ICONS.get(a.get("icon", ""), "")
-            # 066: icon-only with the label in the tooltip, matching web and
-            # Android. A model entry with no known glyph keeps its text so an
-            # unrecognized action is never an unlabelled mystery button.
             btn = QPushButton(glyph if glyph else str(label))
             if glyph:
                 btn.setObjectName("iconGhost")
@@ -1298,9 +996,6 @@ class TopBar(QFrame):
         for section in parsed.get("sections", []):
             heading = str(section.get("label", "")).strip()
             if heading:
-                # A styled QWidgetAction, NOT addSection(): several QStyles
-                # (Fusion included) drop a section's text entirely, which hid
-                # the ACCOUNT / HELP group headers the web + Android menus show.
                 head = QLabel(heading.upper())
                 head.setStyleSheet(
                     f"color:{T.MUTED}; font-size:10px; font-weight:700; "
@@ -1312,8 +1007,6 @@ class TopBar(QFrame):
                 self._menu.addAction(ha)
             for item in section.get("items", []):
                 label = item.get("label", "")
-                # Qt mnemonic escape: "Agents & permissions" must render its
-                # ampersand literally, exactly like the web/Android menus.
                 act = QAction(_btn_label(label), self._menu)
                 surface = item.get("surface", "")
                 act.triggered.connect(
@@ -1335,7 +1028,6 @@ class TopBar(QFrame):
                 act.triggered.connect(lambda _checked=False, h=handler: h())
                 self._menu.addAction(act)
         self._menu.addSeparator()
-        # Red Sign out at the very bottom (a QWidgetAction so we can color it).
         so = parsed.get("signout", {}) or {}
         so_label = QLabel(so.get("label", "Sign out"))
         so_label.setStyleSheet("color:#EF4444; padding:6px 24px; background:transparent;")
@@ -1354,8 +1046,6 @@ class TopBar(QFrame):
             self._on_sign_out()
 
     def set_status(self, text: str, color: str) -> None:
-        """Status/integrity is surfaced on the brand mark (tooltip + tint) so the
-        top bar stays minimal (logo · New · Recent · Settings)."""
         self._mark.setToolTip(text)
         self._mark.setAccessibleDescription(text or "No active operation")
         self._mark.setStyleSheet(
@@ -1363,25 +1053,13 @@ class TopBar(QFrame):
         )
 
     def set_user(self, user: str) -> None:
-        """No-op retained for callers: the identity label was removed from the
-        minimal top bar (feature 042)."""
         return
 
     def highlight_agents(self, on: bool) -> None:
-        """No-op retained for callers: Agents now lives inside the Settings menu
-        (matching the web), so there is no standalone Agents button to accent."""
         return
 
 
 class AgentsDialog(QDialog):
-    """Native 'Agents & permissions' — one-click enable + per-agent state.
-
-    Drives the same WS actions as the web chrome (`enable_recommended_agents`,
-    scoped per-agent enable). For the Windows coding agent it additionally
-    exposes per-scope Read/Write/Execute toggles (write/execute are never
-    granted by the consent flow, so the user grants them explicitly here) and a
-    workspace-folder chooser (the directory the coding agent is confined to)."""
-
     def __init__(self, parent, emit, on_change_workspace=None,
                  on_verify_integrity=None):
         super().__init__(parent)
@@ -1461,7 +1139,6 @@ class AgentsDialog(QDialog):
     def _change_ws(self) -> None:
         if self._on_change_workspace is not None:
             self._on_change_workspace()
-        # Refresh the label after the picker closes.
         self._ws_label.setText(self._workspace_label())
 
     def _verify_integrity(self) -> None:
@@ -1474,13 +1151,6 @@ class AgentsDialog(QDialog):
         )
 
     def _set_scope(self, agent_id: str, scope: str, enabled: bool) -> None:
-        """Grant/revoke a single scope on an agent (audited server-side).
-
-        This is the path that grants ``tools:write`` — the recommended-agents
-        consent flow deliberately never grants write, so the desktop client
-        must call the granular ``set_agent_permissions`` ui_event for the
-        coding agent's write/execute scopes.
-        """
         self._emit(
             "set_agent_permissions",
             {"agent_id": agent_id, "scopes": {scope: bool(enabled)}},
@@ -1500,9 +1170,6 @@ class AgentsDialog(QDialog):
         on = any(bool(v) for v in scopes.values())
         public = bool(a.get("is_public"))
         aid = a.get("id", "")
-        # The Windows coding agent exposes write/execute scopes the user must
-        # grant explicitly (the consent flow never grants write). Give it
-        # per-scope toggles instead of a single Enable button.
         is_win_agent = aid == "windows-tools-1"
         card = QFrame()
         _scoped(
@@ -1569,11 +1236,6 @@ class AgentsDialog(QDialog):
     def _scope_toggles(
         self, aid: str, scopes: dict, agent_name: str
     ) -> QHBoxLayout:
-        """Per-scope Read/Write/Execute checkboxes for the Windows coding agent.
-
-        Execute is only enabled when the local ``ASTRAL_DANGEROUS_BYPASS`` flag
-        is set (mirrors the agent's own advertisement of ``run_shell``).
-        """
         row = QHBoxLayout()
         row.setSpacing(8)
         bypass = os.getenv("ASTRAL_DANGEROUS_BYPASS", "0") in ("1", "true", "yes", "on")
@@ -1606,8 +1268,6 @@ class AgentsDialog(QDialog):
 
 
 class HistoryDialog(QDialog):
-    """Native recent-chats picker (the web app's history surface, as Qt)."""
-
     def __init__(self, parent, on_open):
         super().__init__(parent)
         self._on_open = on_open
@@ -1657,19 +1317,8 @@ class HistoryDialog(QDialog):
 
 
 class AuditDialog(QDialog):
-    """Native, read-only audit-log viewer (parity with the web ``audit`` chrome
-    surface), backed by ``GET /api/audit``.
-
-    A filter bar (event class / outcome / keyword) over a reverse-chronological
-    table — time, class, action, outcome, description — with cursor-based
-    "Load more" pagination. The MainWindow fetches pages on a background thread
-    and feeds them in via ``begin_load`` / ``add_page`` / ``set_error``; this
-    dialog owns no I/O and no token.
-    """
-
     _COLUMNS = ("Time", "Class", "Action", "Outcome", "Description")
     _ROW_KEYS = ("recorded_at", "event_class", "action_type", "outcome", "description")
-    # Map an outcome to a theme variant for the cell colour (parity with the web badges).
     _OUTCOME_VARIANT = {
         "success": "success", "failure": "error",
         "in_progress": "accent", "interrupted": "warning",
@@ -1677,7 +1326,7 @@ class AuditDialog(QDialog):
 
     def __init__(self, parent, on_query):
         super().__init__(parent)
-        self._on_query = on_query  # callable(filters: dict, reset: bool) -> None
+        self._on_query = on_query
         self._next_cursor: Optional[str] = None
         self.setWindowTitle("Audit log")
         self.resize(940, 580)
@@ -1744,7 +1393,6 @@ class AuditDialog(QDialog):
         foot.addWidget(self._more_btn)
         root.addLayout(foot)
 
-    # --- filter state --- #
     def filters(self) -> dict:
         return {
             "event_class": self._class.currentData() or "",
@@ -1761,7 +1409,6 @@ class AuditDialog(QDialog):
             f["cursor"] = self._next_cursor
             self._on_query(f, False)
 
-    # --- population (called on the GUI thread) --- #
     def begin_load(self, reset: bool) -> None:
         if reset:
             self._table.setRowCount(0)
@@ -1802,24 +1449,14 @@ class AuditDialog(QDialog):
 
 
 class MainWindow(QMainWindow):
-    # Launch-time integrity verdict, marshalled from the worker thread to the
-    # GUI thread (level, message). Qt queues the emit across threads safely.
     _integrity_notice = Signal(str, str)
-    # Audit-log page fetched off-thread -> GUI thread (dict payload).
     _audit_loaded = Signal(object)
     _download_done = Signal(object)
-    # Attachment upload resolved off-thread -> GUI thread (dict payload).
     _attachment_uploaded = Signal(object)
-    # Sign-out revocation resolved off-thread -> GUI thread (outcome string).
     _signed_out = Signal(str)
-    # Interactive re-auth completed off-thread -> GUI thread (Session or None).
     _reauth_done = Signal(object)
-    # Silent token refresh resolved off-thread -> GUI thread (new token or None).
     _silent_refresh_done = Signal(object)
-    # Window-first startup login resolved off-thread -> GUI thread (dict outcome).
     _login_resolved = Signal(object)
-    # BYO agent host notice (058), marshalled from a child-pump/timer thread ->
-    # GUI thread (text, level). The host must never touch a widget directly.
     _byo_notice = Signal(str, str)
 
     def __init__(self, url: str, token: str, session=None, login_params=None,
@@ -1849,18 +1486,12 @@ class MainWindow(QMainWindow):
         self._transient_chat_lines: list[str] = []
         self._url = url
         self._auth_session = session
-        # Login params (authority/client_id/bff) so an expired-and-unrefreshable
-        # session can run a fresh interactive login (FR-004) instead of dead-ending.
         self._login_params = login_params or {}
         self._reauth_tries = 0
-        # Guard so two auth_required frames don't fire two concurrent refreshes.
         self._silent_refresh_active = False
-        # Window-first startup login state (begin_login/cancel_login).
         self._login_active = False
         self._login_cancel: Optional[threading.Event] = None
         self._login_resolver = None
-        # False until a workspace is applied — the first-run folder picker is
-        # deferred to the first file-tool use so no dialog blocks first paint.
         self._workspace_ready = False
         self._agents: List[dict] = []
         self._operation_status_by_id: dict[str, OperationStatus] = {}
@@ -1871,31 +1502,18 @@ class MainWindow(QMainWindow):
         self._pending_submissions_by_id: dict[str, LocalOperationSubmission] = {}
         self._agents_dialog: Optional[AgentsDialog] = None
         self._history_dialog: Optional[HistoryDialog] = None
-        # Live-stream seq tracker (stream-key -> last seq) for the push
-        # streaming consumer; reset when the active conversation changes.
         self._stream_seq: Dict[str, int] = {}
-        # Bearer token for REST surfaces (audit log); kept current on reconnect.
         self._token = token
         self._audit_dialog: Optional[AuditDialog] = None
-        self._surface_dialog: Optional[SurfaceDialog] = None  # feature 043 (SDUI settings)
+        self._surface_dialog: Optional[SurfaceDialog] = None
         self._work_read = None
-        # Feature 044 turn/UI state.
         self._turn_active = False
-        # 066: True while the turn's OWN phase text (chat_status.message or a
-        # live chat_step) owns the status line, so the server's generic
-        # one-second "Working…" operation phase cannot overwrite it.
         self._turn_phase_active = False
         self._timeline_mode = False
         self._user_prefs: dict = {}
-        # Feature 044 (US4): staged chat attachments (chip records) for the turn.
         self._attachments: List[dict] = []
-        # Feature 055: tap-to-open target for a background-completion banner —
-        # a click loads this chat instead of just dismissing (None = dismiss).
         self._banner_chat: Optional[str] = None
         self._banner_kind: Optional[str] = None
-        # The request generation whose in-flight operation currently owns the
-        # banner. A successful terminal frame may clear only this banner, never
-        # a different operation or a persistent failure/notification.
         self._operation_banner_request_generation: Optional[str] = None
         self._operation_banner_operation_id: Optional[str] = None
         self._pending_voice_chat: Optional[dict[str, str]] = None
@@ -1948,8 +1566,6 @@ class MainWindow(QMainWindow):
                 deployment_profile.profile.agent_connection.byo_host.disposition
                 == "authenticated_ui_tunnel"
             )
-            # The legacy tools listener is a fixed local package topology, not a
-            # second deployment profile. Production disables it entirely.
             self._win_agent_host = "host.docker.internal"
             self._win_agent_port = 8771
         else:
@@ -1963,18 +1579,8 @@ class MainWindow(QMainWindow):
         self._win_agent_thread = None
         self._win_agent_profile = deployment_profile
         self._win_agent_refusal_notified = False
-        # The CONFIG intent (profile/env), kept separate from the runtime
-        # `_win_agent_enabled` so a failed start cannot make a later retry —
-        # e.g. after the deferred first-run dialog supplies the key —
-        # unreachable. The listener is started further down, once self._banner
-        # exists: a refusal has to be able to tell the user why tools are off.
         self._win_agent_wanted = self._win_agent_enabled
 
-        # Feature 058: this PC hosts the user's OWN agents as supervised child
-        # processes. Unlike the built-in tools agent above (an in-process server
-        # the orchestrator dials into), a BYO agent never holds a socket — its
-        # frames tunnel over THIS authenticated UI socket, and the client is a
-        # dumb pipe between the child's stdio and the server.
         self._byo = ByoAgentHost(
             send_event=lambda action, payload: self.client.send_event(action, payload),
             send_frame=lambda frame: self.client.send_host_frame(frame),
@@ -1982,19 +1588,10 @@ class MainWindow(QMainWindow):
             host_id=self._byo_host_id,
             deployment_profile_digest=self.deployment_profile_digest,
         )
-        # Teardown hangs off APPLICATION shutdown, not off closeEvent: sign-out
-        # calls QApplication.quit(), which leaves the event loop WITHOUT
-        # delivering a close event to any widget — so a closeEvent-only hook
-        # would orphan every child (LLM-written user code!) on the user's PC.
-        # aboutToQuit fires on every exit path; stop_all is idempotent, so the
-        # closeEvent call below stays harmless.
+        # aboutToQuit, not closeEvent — quit() skips closeEvent entirely
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._byo.stop_all)
-        # Feature 076: this desktop as a computer host the owner drives from
-        # their other devices. Consent lives in the client's own settings
-        # (announced at register_ui); requests are executed here; the banner is
-        # the local kill switch. Shutdown ends any live session (FR-007).
         self._remote = RemoteControlController(
             send_event=lambda action, payload: self.client.send_event(action, payload),
             notify=self._byo_notice.emit,
@@ -2006,10 +1603,9 @@ class MainWindow(QMainWindow):
         self.topbar = TopBar(
             _user_from_token(token),
             self._new_chat,
-            self._open_history,  # Recent chats
+            self._open_history,
             self._open_surface,
             self._sign_out,
-            # Feature 077: the person at the PC can see and stop what runs here.
             local_items=([("Agents on this PC", self._open_local_agents)]
                          if self._byo_enabled else []),
         )
@@ -2023,37 +1619,22 @@ class MainWindow(QMainWindow):
         self.canvas.ctx.chat_id = self.active_chat
         if self.active_chat is not None:
             self.canvas.show_skeleton()
-        # 055 US5: the canvas context menu opens export URLs against this origin.
         self.canvas.http_base = _http_base(url)
-        # 066 canvas-first parity: the canvas leads (left, stretching, on the
-        # open page floor — no header band, exactly like the web) and the
-        # conversation rail sits on the trailing edge as a raised translucent
-        # panel with the web's uppercase CONVERSATION rail head. The composer
-        # lives INSIDE the rail, matching the web split mode and the Android
-        # SplitShell — it used to span the whole window under both panels.
-        # The splitter is assembled after the composer widgets exist (below).
         self._input = QLineEdit()
         self._input.setPlaceholderText("Message AstralDeep…  (type / for commands)")
         self._input.returnPressed.connect(self._send)
-        # Feature 040 (US5): pop up the slash-command options as the user types "/".
         self._input.setCompleter(build_slash_completer(self._input))
         self._send_btn = QPushButton("Send")
         self._send_btn.setObjectName("primary")
         self._send_btn.clicked.connect(self._send)
         self._send_btn.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        # Feature 044 (US4): a paperclip → Upload files… / Choose from your files,
-        # and a chips strip (above the input) for staged attachments.
         self._attach_btn = QPushButton(_icons.GLYPH_FALLBACK["paperclip"])
         self._attach_btn.setToolTip("Attach files")
         self._attach_btn.setAccessibleName("Attach files")
-        # Same square icon-button treatment as the voice controls beside it and
-        # as web's `.astral-attach-btn` (066 style parity); SVG glyph like the
-        # top bar (emoji text renders badly on Windows), text as the fallback.
         self._attach_btn.setObjectName("iconGhost")
         _icons.apply(self._attach_btn, "paperclip", T.MUTED, T.TEXT)
         self._attach_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        # Menu chrome comes from the global QMenu rules in the theme QSS.
         attach_menu = QMenu(self._attach_btn)
         act_up = attach_menu.addAction("Upload files…")
         act_up.triggered.connect(self._pick_files)
@@ -2067,10 +1648,6 @@ class MainWindow(QMainWindow):
         self._chips_lay.setSpacing(6)
         self._chips_bar.setVisible(False)
 
-        # Composer — the web split-rail arrangement (.astral-chat-form): the
-        # input takes its own full-width line, with the icon controls + Send on
-        # the row beneath it (066 FR-004 — the input never degrades to a few
-        # characters inside the narrow rail).
         self._voice_widget = VoiceComposerWidget()
         composer = QWidget()
         _scoped(
@@ -2089,9 +1666,6 @@ class MainWindow(QMainWindow):
         controls.addWidget(self._send_btn)
         composer_lay.addLayout(controls)
 
-        # Conversation rail column: web .astral-chat-panel — translucent
-        # surface, left hairline, uppercase rail head, transcript, then the
-        # staged-attachment chips and the composer.
         rail_col = QWidget()
         _scoped(
             rail_col,
@@ -2116,9 +1690,9 @@ class MainWindow(QMainWindow):
         split.addWidget(self.canvas)
         split.addWidget(rail_col)
         split.setSizes([900, 380])
-        split.setStretchFactor(0, 1)  # canvas absorbs window growth
-        split.setStretchFactor(1, 0)  # rail keeps its width
-        split.setCollapsible(0, False)  # the canvas is never collapsible
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 0)
+        split.setCollapsible(0, False)
         split.setCollapsible(1, True)
 
         self._voice_controller = VoiceController(
@@ -2157,9 +1731,6 @@ class MainWindow(QMainWindow):
         if app is not None:
             app.aboutToQuit.connect(self._voice_controller.close)
 
-        # Feature 044 (FR-002/FR-003): a dismissible banner strip under the top
-        # bar for connection state + server errors + queue-drop notices. Hidden
-        # until there is something to say.
         self._banner = QPushButton("")
         self._banner.setObjectName("statusBanner")
         self._banner.setProperty("astralAccessibilityControl", "status-banner")
@@ -2173,13 +1744,8 @@ class MainWindow(QMainWindow):
             f"background:{T.SURFACE_2}; color:{T.TEXT}; border-bottom:1px solid {T.BORDER};"
             "padding:6px 14px; font-size:12px; text-align:left;"
         )
-        # Click to dismiss (errors/notices); the reconnect banner re-asserts
-        # itself; during a startup sign-in the click cancels the login instead.
         self._banner.clicked.connect(self._on_banner_clicked)
 
-        # Feature 039: this PC hosts the tools agent the orchestrator dials into.
-        # Started here rather than beside its config above because a refusal
-        # (no usable AGENT_API_KEY) reports itself through the banner.
         self.maybe_start_tools_agent()
 
         root = QWidget()
@@ -2189,27 +1755,17 @@ class MainWindow(QMainWindow):
         rl.setSpacing(0)
         rl.addWidget(self.topbar)
         rl.addWidget(self._banner)
-        rl.addWidget(split, 1)  # chips + composer live inside the rail column
+        rl.addWidget(split, 1)
         self.setCentralWidget(root)
-        self._input.setFocus()  # cursor ready in the message box on launch
+        self._input.setFocus()
 
-        # Attach the cross-thread confirmation bridge so the win_agent thread
-        # can ask the GUI thread to show a native Allow/Deny (or directory
-        # picker) modal. Must happen on the GUI thread, before any tool call.
         _confirm.BRIDGE.attach(self._show_confirm_dialog)
 
-        # Apply a persisted/env workspace silently; the first-run folder picker
-        # is deferred to the first file-tool use so it never blocks first paint.
         self._init_workspace()
 
         if connect:
             self.client.start()
 
-        # Launch-time integrity / update check (feature 039 B.5). Verifies the
-        # running build's SHA-256 + sigstore signature against the GitHub release
-        # before the binary is trusted — runs on a background thread so it never
-        # delays the GUI, and fails open (offline ⇒ keep running) so it can never
-        # block launch. The verdict is surfaced in the top-bar status line.
         self._integrity_notice.connect(self._on_integrity_notice)
         self._audit_loaded.connect(self._on_audit_loaded)
         self._download_done.connect(self._on_download_done)
@@ -2224,42 +1780,18 @@ class MainWindow(QMainWindow):
         self._start_integrity_check()
 
     def closeEvent(self, event) -> None:
-        """058: the user's agents die with the client — no orphaned child process
-        keeps running (and no agent looks 'live' to the server) after the window
-        is gone. The server sees the socket drop and takes them honestly offline.
-        """
         self._retire_work_read()
         try:
             self._byo.stop_all()
-        except Exception:  # noqa: BLE001 — never block the close
+        except Exception:  # noqa: BLE001
             logger.debug("byo stop_all failed on close", exc_info=True)
         try:
             self._voice_controller.close()
-        except Exception:  # noqa: BLE001 — never block the close
+        except Exception:  # noqa: BLE001
             logger.debug("voice stop failed on close", exc_info=True)
         super().closeEvent(event)
 
     def maybe_start_tools_agent(self) -> None:
-        """Start the client-hosted tools listener iff a usable key is configured.
-
-        The listener serves file-read/write and command-exec tools on a TCP
-        port, so it requires the shared ``AGENT_API_KEY`` inbound (see
-        ``win_agent.agent``) and refuses to exist without one. Two consequences
-        handled here:
-
-        * A refusal must turn the feature OFF, not just skip the start. The old
-          ``except Exception: pass`` left ``_win_agent_enabled`` True, so
-          ``_on_status`` would still tell the orchestrator to dial a port this
-          process does not own.
-        * The key can arrive AFTER ``__init__``: the deferred first-run dialog
-          resolves config once the window is already up. So this is idempotent
-          and is called again after that resolution.
-        """
-        # `_win_agent_wanted` is the CONFIG decision and is never cleared by a
-        # failed start; `_win_agent_enabled` is the runtime truth _on_status
-        # reads. Collapsing the two made the retry below dead code: the first
-        # refusal cleared the very flag this method guards on, so a key supplied
-        # by the deferred first-run dialog could never start the listener.
         if not self._win_agent_wanted or self._win_agent_thread is not None:
             return
         try:
@@ -2270,15 +1802,10 @@ class MainWindow(QMainWindow):
                 port=self._win_agent_port,
                 deployment_profile=self._win_agent_profile,
             )
-        except Exception:  # noqa: BLE001 — never block startup on the listener
+        except Exception:  # noqa: BLE001
             logger.debug("tools agent start failed", exc_info=True)
             self._win_agent_thread = None
         if self._win_agent_thread is None:
-            # Off, and say so: a listener that silently declines to exist is a
-            # support ticket, and the user asked for local tools. Deferred to
-            # the next event-loop turn because during __init__ the banner is not
-            # yet in a layout, and the startup sign-in status would overwrite it
-            # in the same turn anyway.
             self._win_agent_enabled = False
             if not self._win_agent_refusal_notified:
                 self._win_agent_refusal_notified = True
@@ -2287,10 +1814,8 @@ class MainWindow(QMainWindow):
             self._win_agent_enabled = True
 
     def _notify_tools_agent_refused(self) -> None:
-        """Tell the user the local tools are off and how to turn them on. Only
-        fires when nothing more urgent already owns the banner."""
         if self._win_agent_thread is not None:
-            return  # a later attempt succeeded; nothing to report
+            return
         self._show_banner(
             "Windows tools are off: set AGENT_API_KEY (16+ characters) to "
             "enable them.",
@@ -2298,15 +1823,6 @@ class MainWindow(QMainWindow):
         )
 
     def _apply_theme_pref(self, theme) -> None:
-        """Apply a stored/pushed/surface-emitted theme spec (feature 044 US5) —
-        the app's SINGLE theme-apply implementation. Boot (`user_preferences`),
-        the Theme surface's `theme_apply` component and the color picker (both
-        via ``RenderContext.apply_theme``) all route here. The palette mutation
-        is synchronous; the global restyle is DEFERRED to the next event-loop
-        turn because this can be reached from *inside* a render pass, where a
-        global re-polish is re-entrant and segfaults headless Qt (commit
-        7a3ea3e). In a unit test with no running event loop the deferred
-        restyle simply never fires — palette assertions still hold."""
         if not theme:
             return
         applier = getattr(T, "apply_theme", None)
@@ -2318,28 +1834,17 @@ class MainWindow(QMainWindow):
                 logger.debug("theme apply failed", exc_info=True)
 
     def _restyle_all(self) -> None:
-        """Re-apply the app stylesheet + re-render open surfaces after a theme
-        change (feature 044 US5). Extended alongside the dynamic palette."""
         app = QApplication.instance()
         if app is not None and hasattr(T, "build_stylesheet"):
             app.setStyleSheet(T.build_stylesheet() + getattr(T, "ROOT_BG_STYLE", ""))
-        # The SVG icon colour is baked into the pixmap: repaint in the new palette.
         topbar = getattr(self, "topbar", None)
         if topbar is not None and hasattr(topbar, "apply_icons"):
             topbar.apply_icons()
         attach = getattr(self, "_attach_btn", None)
         if attach is not None:
             _icons.apply(attach, "paperclip", T.MUTED, T.TEXT)
-        # setStyleSheet above restyles the QSS-driven widgets (buttons, inputs,
-        # tables), but the SDUI canvas content is styled INLINE from the palette
-        # at render time, so re-render it to pick up the new palette (US5).
         self.canvas.restyle()
-        # The chat-rail bubbles + top-bar chrome are also inline-styled and are
-        # not cheaply re-renderable, so they adopt the new palette on the NEXT
-        # message rather than retroactively — a deliberate, disclosed limitation
-        # (FR-019), not a silent no-op.
 
-    # --- banner (connection state / errors / notices) ------------------- #
     def _show_banner(
         self,
         text: str,
@@ -2349,8 +1854,6 @@ class MainWindow(QMainWindow):
         operation_request_generation: Optional[str] = None,
         operation_id: Optional[str] = None,
     ) -> None:
-        # Every banner (re)sets the tap-to-open target, so a plain notice can
-        # never inherit a stale chat link from an earlier task banner (055).
         self._banner_chat = chat_id
         self._banner_kind = kind
         self._operation_banner_request_generation = operation_request_generation
@@ -2377,8 +1880,6 @@ class MainWindow(QMainWindow):
         self._banner.setAccessibleDescription("")
 
     def _on_banner_clicked(self) -> None:
-        """Banner click: cancel an in-flight startup sign-in, open a linked
-        chat (055 background-task tap-to-open), else dismiss."""
         if self._login_active:
             self.cancel_login()
             self._hide_banner()
@@ -2389,8 +1890,6 @@ class MainWindow(QMainWindow):
             self._load_chat(chat)
 
     def _set_composer_enabled(self, enabled: bool) -> None:
-        """Enable/disable the message input + Send button (feature 044 FR-007 —
-        read-only enforcement while viewing workspace history)."""
         self._input.setEnabled(enabled)
         self._send_btn.setEnabled(enabled)
         self._voice_widget.set_composer_enabled(enabled)
@@ -2399,10 +1898,7 @@ class MainWindow(QMainWindow):
             else "Viewing workspace history — return to live to send messages"
         )
 
-    # --- chrome actions -------------------------------------------------- #
     def _set_active_chat(self, chat_id: Optional[str], *, persist: bool = True) -> None:
-        """Select and fence an active chat, persisting before presentation."""
-
         if chat_id is not None and _canonical_uuid4(chat_id) and persist:
             self._resume_store.set_active_chat(chat_id)
         self.active_chat = chat_id
@@ -2423,8 +1919,6 @@ class MainWindow(QMainWindow):
             voice.visible_chat_changed(chat_id)
 
     def _voice_chat_required(self, action: str, activation_id: str) -> None:
-        """Create and hydrate a chat before permitting no-chat voice activation."""
-
         if _canonical_uuid4(self.active_chat):
             self._voice_controller.continue_activation(
                 action, activation_id, self.active_chat
@@ -2536,8 +2030,6 @@ class MainWindow(QMainWindow):
         self.rail.clear_transient()
 
     def _sync_transport_scope(self) -> None:
-        """Adopt the transport's register/queued-work generations on the GUI thread."""
-
         connection = getattr(self.client, "connection_generation", None)
         generation = getattr(self.client, "request_generation", None)
         purpose = getattr(self.client, "request_purpose", None)
@@ -2585,8 +2077,6 @@ class MainWindow(QMainWindow):
         attachments: Optional[list] = None,
         request_generation: Optional[str] = None,
     ) -> None:
-        """Call the additive 060 transport API with bounded test compatibility."""
-
         sender = self.client.send_chat
         parameters = inspect.signature(sender).parameters.values()
         accepts_generation = any(
@@ -2622,15 +2112,11 @@ class MainWindow(QMainWindow):
                 on_verify_integrity=self._verify_integrity_now,
             )
         self._agents_dialog.set_agents(self._agents)
-        self.client.send_event("discover_agents", {})  # refresh
+        self.client.send_event("discover_agents", {})
         self._agents_dialog.show()
         self._agents_dialog.raise_()
 
     def _open_surface(self, surface: str, label: str) -> None:
-        """Route a settings-menu item (from the server-owned model) to its native
-        surface. Agents/Audit have native dialogs today; every other surface
-        (workspace_timeline included — its SDUI snapshot list/view/back-to-live
-        is server-driven) goes through the generic SDUI chrome_open round-trip."""
         s = (surface or "").strip()
         if s == "work":
             self._request_work_surface({})
@@ -2641,9 +2127,6 @@ class MainWindow(QMainWindow):
         elif s == "audit":
             self._open_audit()
         else:
-            # Feature 043: request the SDUI surface and render it natively when
-            # the chrome_surface frame arrives (replaces the placeholder).
-            # Feature 044 (T040): show an in-flight state + bound the wait.
             if self._surface_dialog is None:
                 self._surface_dialog = SurfaceDialog(
                     self, self._emit, self._download, on_retry=self._retry_surface,
@@ -2655,8 +2138,6 @@ class MainWindow(QMainWindow):
             self.client.send_event("chrome_open", {"surface": s, "params": {}})
 
     def _retry_surface(self, surface: str, params: dict) -> None:
-        """Feature 044 (T040): re-request a settings surface that failed to load
-        in time (the SurfaceDialog re-arms its in-flight state; we re-send)."""
         if surface == "work":
             self._request_work_surface(params or {})
             return
@@ -2706,7 +2187,6 @@ class MainWindow(QMainWindow):
             self._retire_work_read()
 
     def _open_local_agents(self) -> None:
-        """Feature 077: the client-local "Agents on this PC" window."""
         from .local_agents import LocalAgentsDialog
         dialog = getattr(self, "_local_agents_dialog", None)
         if dialog is None:
@@ -2730,22 +2210,9 @@ class MainWindow(QMainWindow):
             self._audit_dialog = AuditDialog(self, self._query_audit)
         self._audit_dialog.show()
         self._audit_dialog.raise_()
-        self._query_audit({}, True)  # initial page (no filters)
+        self._query_audit({}, True)
 
     def _on_chrome_surface(self, msg: dict) -> None:
-        """Feature 043 — render a pushed SDUI settings surface natively (open the
-        dialog if a re-render arrives for a surface the user opened). Feature 044
-        (T040): arrival cancels the load-timeout bound (via set_surface).
-
-        An empty ``surface_key`` + empty ``components`` is the server's CLOSE
-        instruction (shared/protocol.py: "Empty components clears/closes the
-        modal", sent after workspace-timeline view/live and chrome_close) —
-        close the dialog if one is open; never lazily create one just to show
-        a blank "Settings" page.
-
-        Feature 054 (T019): ``mode:"mandatory"`` (reserved field, previously
-        always "replace") pins the dialog as the undismissable first-run gate;
-        the blank close frame clears the pin before closing."""
         dialog = self._surface_dialog
         if (dialog is not None and dialog.isVisible() and dialog._surface == "work"
                 and msg.get("surface_key") != "work"):
@@ -2783,15 +2250,11 @@ class MainWindow(QMainWindow):
         self._surface_dialog.raise_()
 
     def _current_token(self) -> str:
-        """The freshest bearer token: the OIDC session's (refreshed) access
-        token when present, else the launch/dev token."""
         if self._auth_session is not None and getattr(self._auth_session, "access_token", ""):
             return self._auth_session.access_token
         return self._token
 
     def _query_audit(self, filters: dict, reset: bool) -> None:
-        """Fetch a page of /api/audit on a background thread and marshal the
-        result back to the GUI thread via the _audit_loaded signal."""
         if self._audit_dialog is not None:
             self._audit_dialog.begin_load(reset)
         url = rest.audit_url(
@@ -2808,15 +2271,12 @@ class MainWindow(QMainWindow):
                 data = rest.fetch_json(url, token)
                 rows, nxt = rest.parse_audit_response(data)
                 self._audit_loaded.emit({"rows": rows, "next_cursor": nxt, "error": None})
-            except Exception as exc:  # noqa: BLE001 — surfaced in the dialog
+            except Exception as exc:  # noqa: BLE001
                 self._audit_loaded.emit({"rows": [], "next_cursor": None, "error": str(exc)})
 
         threading.Thread(target=_work, daemon=True).start()
 
     def _download(self, url: str, filename: str) -> None:
-        """Download an authed backend file (``/api/download/...``) to disk: open a
-        native Save dialog, then fetch with the session token on a background
-        thread and marshal the outcome back via ``_download_done``."""
         fn = filename or "download"
         save_path, _ = QFileDialog.getSaveFileName(self, "Save file", fn)
         if not save_path:
@@ -2831,13 +2291,12 @@ class MainWindow(QMainWindow):
                 with open(save_path, "wb") as fh:
                     fh.write(data)
                 self._download_done.emit({"path": save_path, "error": None})
-            except Exception as exc:  # noqa: BLE001 — surfaced in the status bar
+            except Exception as exc:  # noqa: BLE001
                 self._download_done.emit({"path": None, "error": str(exc)})
 
         threading.Thread(target=_work, daemon=True).start()
 
     def _on_download_done(self, result: object) -> None:
-        """GUI-thread handler for a finished download."""
         if not isinstance(result, dict):
             return
         if result.get("error"):
@@ -2846,10 +2305,7 @@ class MainWindow(QMainWindow):
             self.topbar.set_status(
                 f"Saved {os.path.basename(str(result.get('path')))}", T.VARIANT_COLORS["success"][0])
 
-    # --- chat attachments (feature 044 US4) -------------------------------- #
     def _pick_files(self) -> None:
-        """Paperclip → Upload files…: multi-select up to 10 staged files total,
-        each uploaded on a worker thread (result marshalled back via signal)."""
         paths, _ = QFileDialog.getOpenFileNames(self, "Upload files", "", "All files (*)")
         if not paths:
             return
@@ -2863,7 +2319,6 @@ class MainWindow(QMainWindow):
             self._stage_upload(path)
 
     def _stage_upload(self, path: str) -> None:
-        """Stage a chip in the 'uploading' state and upload the file off-thread."""
         import uuid
 
         chip_id = uuid.uuid4().hex
@@ -2886,19 +2341,18 @@ class MainWindow(QMainWindow):
                 result = rest.upload_attachment(
                     http_base, token, os.path.basename(path), mime, data)
                 self._attachment_uploaded.emit({"chip_id": chip_id, "result": result, "error": None})
-            except Exception as exc:  # noqa: BLE001 — surfaced on the chip / banner
+            except Exception as exc:  # noqa: BLE001
                 self._attachment_uploaded.emit({"chip_id": chip_id, "result": None, "error": str(exc)})
 
         threading.Thread(target=_work, daemon=True).start()
 
     def _on_attachment_uploaded(self, payload: object) -> None:
-        """GUI-thread handler for a finished upload: flip the chip to staged/failed."""
         if not isinstance(payload, dict):
             return
         rec = next((c for c in self._attachments
                     if c.get("chip_id") == payload.get("chip_id")), None)
         if rec is None:
-            return  # the chip was removed before the upload finished
+            return
         result = payload.get("result")
         if payload.get("error") or not isinstance(result, dict):
             rec["status"] = "failed"
@@ -2914,13 +2368,11 @@ class MainWindow(QMainWindow):
         self._render_chips()
 
     def _stage_existing(self, payload: dict) -> None:
-        """Stage a chip for an already-uploaded file (the attachments surface
-        'Attach' button → `attach_existing`, intercepted client-side)."""
         aid = (payload or {}).get("attachment_id")
         if not aid:
             return
         if any(c.get("attachment_id") == aid for c in self._attachments):
-            return  # already staged
+            return
         if len(self._attachments) >= 10:
             self._show_banner("You can attach up to 10 files per message.", "warning")
             return
@@ -2944,16 +2396,12 @@ class MainWindow(QMainWindow):
         self._render_chips()
 
     def _clear_sent_attachments(self) -> None:
-        """After a send, drop the chips that went out (staged) and any failed
-        ones, but KEEP still-uploading chips so a late ``_on_attachment_uploaded``
-        for one isn't silently dropped — they stay staged for the next turn."""
         self._attachments = [
             c for c in self._attachments if c.get("status") == "uploading"
         ]
         self._render_chips()
 
     def _sendable_attachments(self) -> List[dict]:
-        """The staged (successfully uploaded) attachments to attach to a turn."""
         return [{"attachment_id": c["attachment_id"], "filename": c["filename"],
                  "category": c.get("category") or "file"}
                 for c in self._attachments
@@ -2961,7 +2409,6 @@ class MainWindow(QMainWindow):
 
     def _chip_widget(self, rec: dict) -> QWidget:
         chip = QFrame()
-        # Web .astral-chip: white/6 fill, white/10 hairline, rounded-lg.
         _scoped(chip, f"background:{T._rgba(T.TEXT, 0.06)};"
                       f"border:1px solid {T._rgba(T.TEXT, 0.10)}; border-radius:8px;")
         lay = QHBoxLayout(chip)
@@ -2997,7 +2444,6 @@ class MainWindow(QMainWindow):
         self._chips_bar.setVisible(bool(self._attachments))
 
     def _on_audit_loaded(self, result: object) -> None:
-        """GUI-thread handler for a loaded audit page."""
         if self._audit_dialog is None or not isinstance(result, dict):
             return
         if result.get("error"):
@@ -3008,7 +2454,6 @@ class MainWindow(QMainWindow):
     def _load_chat(self, chat_id: str) -> None:
         self._retire_work_read()
         if not _canonical_uuid4(chat_id):
-            # Bounded compatibility for pre-060/noncanonical test fixtures.
             self.rail.clear()
             self._stream_seq.clear()
             self.client.send_event("load_chat", {"chat_id": chat_id})
@@ -3041,10 +2486,6 @@ class MainWindow(QMainWindow):
         self._resume_store.clear("definitive_sign_out", old_chat)
         self._continuity.clear_chat(old_chat, all_accounts=True)
         self._clear_transient_conversation()
-        # Feature 044 (FR-005): server-revoking sign-out. Capture the refresh
-        # credential BEFORE tearing down, then revoke best-effort on a worker
-        # thread (backend → direct-Keycloak fallback → local-only) so the UI
-        # never blocks; the app quits when revocation resolves or times out.
         sess = self._auth_session
         refresh_token = getattr(sess, "refresh_token", None) if sess else None
         client_id = getattr(sess, "client_id", "astral-desktop") if sess else "astral-desktop"
@@ -3070,7 +2511,6 @@ class MainWindow(QMainWindow):
             self._signed_out.emit(outcome)
 
         threading.Thread(target=_revoke, daemon=True).start()
-        # Safety net: quit even if the network hangs past the request timeouts.
         QTimer.singleShot(12000, self._finish_sign_out)
 
     def _finish_sign_out(self, _outcome: str = "") -> None:
@@ -3085,25 +2525,13 @@ class MainWindow(QMainWindow):
             self._voice_controller.close()
         except Exception:
             pass
-        # 058: the user's agents die with the session. Explicit (not just via the
-        # aboutToQuit hook) because quit() outside a running event loop is a
-        # no-op, and an orphaned child process would outlive the sign-out.
         try:
             self._byo.stop_all()
-        except Exception:  # noqa: BLE001 — never block sign-out
+        except Exception:  # noqa: BLE001
             logger.debug("byo stop_all failed on sign-out", exc_info=True)
         QApplication.instance().quit()
 
-    # --- outbound -------------------------------------------------------- #
     def _project_local_submission(self, submission: object) -> bool:
-        """Render and retain one client-only state before transport I/O.
-
-        ``OrchestratorClient.submission`` is emitted synchronously before its
-        socket path runs. This projection therefore means only "the client is
-        submitting"; canonical server acceptance still arrives exclusively as
-        ``operation_status``.
-        """
-
         if not isinstance(submission, LocalOperationSubmission):
             return False
         try:
@@ -3161,8 +2589,6 @@ class MainWindow(QMainWindow):
     def _finish_local_submission_from_ack(
         self, frame: dict[str, Any]
     ) -> Optional[LocalOperationSubmission]:
-        """Settle one modern ACK only against its exact local projection."""
-
         required = {
             "type",
             "schema_version",
@@ -3208,8 +2634,6 @@ class MainWindow(QMainWindow):
         return self._finish_local_submission_by_id(submission.submission_id)
 
     def _discard_local_submission(self, submission: object) -> bool:
-        """Settle exactly one identity removed from the bounded queue."""
-
         if not isinstance(submission, LocalOperationSubmission):
             return False
         try:
@@ -3223,8 +2647,6 @@ class MainWindow(QMainWindow):
         preparation: object,
         acknowledgement: object,
     ) -> None:
-        """Install every reconnect fence before acknowledging socket send."""
-
         if not isinstance(acknowledgement, QueuedReplayAcknowledgement):
             return
         try:
@@ -3267,9 +2689,6 @@ class MainWindow(QMainWindow):
             if self.active_chat is None or _canonical_uuid4(self.active_chat)
             else None
         )
-        # A 060 turn is a disposable pending overlay until its one complete
-        # commit snapshot arrives. Legacy non-UUID sessions retain the prior
-        # direct-rail behavior during the bounded compatibility window.
         lines = [text] if text else []
         if atts:
             lines.append("📎 " + ", ".join(a["filename"] for a in atts))
@@ -3291,15 +2710,10 @@ class MainWindow(QMainWindow):
             attachments=atts or None,
             request_generation=generation,
         )
-        # Optimistic loading state until the turn's first canvas content — the
-        # typed path matches _emit's chat_message twin (feature 055 US1):
-        # retire the ephemeral welcome, then arm the skeleton.
         if not self._timeline_mode:
             self._set_turn_active(True)
             self.canvas.purge_welcome()
             self.canvas.show_skeleton()
-        # Clear only the chips that went out; keep still-uploading ones so a late
-        # upload result isn't lost (they remain staged for the next turn).
         self._clear_sent_attachments()
 
     def _emit(self, action: str, payload: dict) -> None:
@@ -3310,14 +2724,9 @@ class MainWindow(QMainWindow):
         if action in {"chrome_open", "chrome_close"}:
             self._retire_work_read()
         if action == "attach_existing":
-            # Feature 044 (US4): the attachments-surface 'Attach' button stages a
-            # chip locally — it is NOT forwarded to the server.
             self._stage_existing(payload or {})
             return
         if action == "computer_host_consent":
-            # Feature 076: the "Allow remote control" switch on the My computers
-            # surface is decided HERE (the owner's own desktop), persisted, and
-            # announced/withdrawn on the live socket — never forwarded as-is.
             self._remote.set_enabled(bool((payload or {}).get("enabled")))
             self._attach_remote_control()
             self.client.send_event("chrome_open", {"surface": "my_computers", "params": {}})
@@ -3339,9 +2748,6 @@ class MainWindow(QMainWindow):
                 self.active_chat,
                 request_generation=generation,
             )
-            # Optimistic loading state until the turn's first canvas content
-            # (parity with the Android twin's send-time skeleton); the welcome
-            # is retired BEFORE the skeleton arms (feature 055 US1).
             if not self._timeline_mode:
                 self._set_turn_active(True)
                 self.canvas.purge_welcome()
@@ -3350,9 +2756,6 @@ class MainWindow(QMainWindow):
             self.client.send_event(action, payload, session_id=self.active_chat)
 
     def _attach_remote_control(self) -> None:
-        """Feature 076: tell the transport what to announce at (re)register —
-        the descriptor while consent is on, and the capability that lets the
-        server offer the switch on this device."""
         remote = getattr(self, "_remote", None)
         client = getattr(self, "client", None)
         if remote is None or client is None:
@@ -3360,13 +2763,11 @@ class MainWindow(QMainWindow):
         client.computer_host_capable = bool(_REMOTE_CONTROL_PLATFORM_OK)
         try:
             client.computer_host = remote.descriptor()
-        except Exception:  # noqa: BLE001 — never block registration on a descriptor
+        except Exception:  # noqa: BLE001
             logger.debug("076: descriptor build failed", exc_info=True)
             client.computer_host = None
 
     def _refresh_my_computers_surface(self) -> None:
-        """Feature 076: presence/session changes re-request the surface if the
-        user is looking at it (the server re-renders; no client-side model)."""
         dialog = self._surface_dialog
         if dialog is None or not dialog.isVisible():
             return
@@ -3375,10 +2776,8 @@ class MainWindow(QMainWindow):
         self.client.send_event("chrome_open", {"surface": "my_computers", "params": {}})
 
     def _emit_chrome(self, action: str, payload: dict) -> None:
-        """Actions from native chrome dialogs (agents)."""
         self.client.send_event(action, payload, session_id=self.active_chat)
 
-    # --- inbound --------------------------------------------------------- #
     def _on_status(self, s: str) -> None:
         if s.startswith("work_read_failed:"):
             if self._work_read is not None and self._work_read[3] == s.partition(":")[2]:
@@ -3386,11 +2785,6 @@ class MainWindow(QMainWindow):
             return
         if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
             self._retire_work_read()
-        # Feature 044: the transport now owns reconnect + a bounded outbound
-        # queue, so its status vocabulary widened to connecting / connected /
-        # reconnecting:<n> / closed:<why> / auth_required:<reason> /
-        # send_dropped:<action>. The connection banner mirrors it; errors and
-        # drop notices reuse the same banner.
         remote = getattr(self, "_remote", None)
         if remote is not None:
             remote.on_transport_status(s)
@@ -3402,8 +2796,6 @@ class MainWindow(QMainWindow):
             return
         if s.startswith("send_rejected:"):
             action = s.split(":", 1)[1] or "message"
-            # Valid retained work restores its own projection before replay;
-            # malformed bytes cannot safely identify just one local attempt.
             self._clear_local_submissions()
             self._show_banner(
                 f"Couldn't send while offline: {action}. The queued identity "
@@ -3420,13 +2812,8 @@ class MainWindow(QMainWindow):
             )
             return
         if s == "agent_host_registered":
-            # The matching message frame drives the BYO host. Keep the visible
-            # transport status at Connected rather than flashing an internal
-            # handshake token in the top bar.
             return
         if s.startswith("agent_host_registration_refused:"):
-            # The exact refusal frame is also delivered to ByoAgentHost, whose
-            # notice is actionable and marshalled onto the GUI thread.
             return
 
         nice = {"connecting": "Connecting…", "connected": "Connected"}.get(s, s)
@@ -3444,9 +2831,6 @@ class MainWindow(QMainWindow):
             self._clear_local_submissions()
             self._pending_voice_chat = None
             self._voice_controller.on_connection_rotated(None)
-            # C-3: a dropped connection (e.g. orchestrator restart) must re-send
-            # register_external_agent on the next 'connected', or the win_agent
-            # stays unreachable to the orchestrator until the app is relaunched.
             self._win_agent_registered = False
             if self._byo_enabled:
                 self._byo.on_transport_disconnected()
@@ -3472,23 +2856,12 @@ class MainWindow(QMainWindow):
                 self._win_agent_registered = True
                 url = f"http://{self._win_agent_host}:{self._win_agent_port}"
                 self.client.send_event("register_external_agent", {"url": url})
-            # 058: same reason as the win_agent re-registration above — the server
-            # pops `agents[agent_id]` when the socket dies, so every still-running
-            # BYO child must re-send its register_agent or it stays unreachable.
             if self._byo_enabled:
                 self._byo.on_ui_connected()
-            # Pull chrome state so the native dialogs + CTA are accurate.
             self.client.send_event("discover_agents", {})
             self.client.send_event("get_history", {})
             if self.active_chat:
-                # 055: re-hydrate the chat that was open when the connection
-                # dropped, picking up narrative/canvas changes (and replayed
-                # background-task state) that landed while this device was
-                # away. Only a REconnect can get here with a chat open — the
-                # first connect precedes any chat.
                 if _canonical_uuid4(self.active_chat):
-                    # The locator was persisted before this transport opened;
-                    # register_ui.resume is the authoritative hydration request.
                     self.topbar.set_status("Restoring conversation…", T.MUTED)
                 else:
                     self._load_chat(self.active_chat)
@@ -3496,38 +2869,18 @@ class MainWindow(QMainWindow):
             self._begin_silent_refresh()
 
     def _reset_status_line(self) -> None:
-        """Set the top-bar mark back to 'Connected' (green) WITHOUT the full
-        reconnect re-sync. Used to clear a per-turn status line (chat_status:done,
-        stream_unsubscribed): unlike the real ``connected`` transition it does not
-        hide banners or re-send discover_agents/get_history/win-agent
-        registration, which on every turn completion would wipe task/error/
-        notification banners and cause redundant round-trips (feature 044 fix)."""
         self.topbar.set_status("Connected", T.VARIANT_COLORS["success"][0])
 
     def _set_turn_active(self, active: bool) -> None:
-        """Single write point for the per-turn flag; the canvas mirrors it so
-        an empty render mid-turn keeps the loading state instead of the idle
-        empty-state hint (feature 055 US1)."""
         self._turn_active = active
         self.canvas.turn_active = active
         if not active:
-            # The turn's phases are over — the generic operation label may own
-            # the line again (066).
             self._turn_phase_active = False
 
     def _begin_silent_refresh(self) -> None:
-        """FR-004: silently refresh the session token OFF the GUI thread — the
-        refresh does a blocking urlopen (up to 15 s) that would freeze the GUI if
-        run here (this is a slot on the transport `status` signal). The new token
-        is marshaled back via ``_silent_refresh_done``; on success we reconnect,
-        on failure we offer an explicit sign-in. Bounded to ``_reauth_tries < 2``
-        and guarded so two ``auth_required`` frames don't fire two concurrent
-        refreshes. With no refreshable session (dev-token) we prompt immediately."""
         if self._silent_refresh_active:
             return
         if not (self._auth_session and self._reauth_tries < 2):
-            # No session to refresh, or the retry bound is exhausted — never a
-            # dead session: offer an explicit sign-in (FR-004).
             self._prompt_reauth()
             return
         self._reauth_tries += 1
@@ -3537,21 +2890,17 @@ class MainWindow(QMainWindow):
         def _work() -> None:
             try:
                 token = sess.refresh()
-            except Exception:  # noqa: BLE001 — treated as a failed refresh
+            except Exception:  # noqa: BLE001
                 token = None
             self._silent_refresh_done.emit(token)
 
         threading.Thread(target=_work, name="astral-silent-refresh", daemon=True).start()
 
     def _on_silent_refresh_done(self, token: object) -> None:
-        """GUI-thread handler for a finished silent refresh (M1). Reconnect with
-        the new token, or fall through to the explicit sign-in prompt."""
         self._silent_refresh_active = False
         if isinstance(token, str) and token:
             self._reconnect(token)
         else:
-            # FR-004: never a dead session — offer an explicit sign-in instead of
-            # a frozen "Re-authenticating…" caption.
             self._prompt_reauth()
 
     def _reconnect(self, token: str) -> None:
@@ -3562,8 +2911,6 @@ class MainWindow(QMainWindow):
             self.client.stop()
         except Exception:
             pass
-        # Detach the dead client's signals before swapping it out, so a late
-        # queued frame from the old transport thread can't drive the new UI.
         try:
             self.client.message.disconnect(self._on_message)
             self.client.status.disconnect(self._on_status)
@@ -3585,8 +2932,6 @@ class MainWindow(QMainWindow):
                     self._continuity.activate_chat(self.active_chat)
                     self.canvas.show_skeleton()
         if self.active_chat and _canonical_uuid4(self.active_chat):
-            # Synchronous durability precedes construction/registration of the
-            # replacement transport.
             self._resume_store.set_active_chat(self.active_chat)
         self._token = token
         self._win_agent_registered = False
@@ -3604,8 +2949,6 @@ class MainWindow(QMainWindow):
             configure_resume(
                 self.active_chat if _canonical_uuid4(self.active_chat) else None
             )
-        # The rebuilt transport keeps registering with the open chat's id so
-        # the server resumes that chat's fan-out + task replay (055).
         self.client.session_id = self.active_chat or "win-client"
         self._attach_remote_control()
         self.client.message.connect(self._on_message)
@@ -3629,13 +2972,10 @@ class MainWindow(QMainWindow):
         self.client.start()
 
     def _prompt_reauth(self) -> None:
-        """FR-004: session expired and cannot silently refresh — offer an
-        explicit sign-in rather than a dead 'Re-authenticating…' caption."""
         self.topbar.set_status("Signed out", T.VARIANT_COLORS["error"][0])
         self._show_banner("Your session expired.", "error")
         authority = self._login_params.get("authority")
         if not authority:
-            # dev-token / no configured IdP — nothing to sign in against.
             self._show_banner(
                 "Your session expired. Restart the app to sign in again.", "error")
             return
@@ -3658,7 +2998,7 @@ class MainWindow(QMainWindow):
                     bff_base=bff_base,
                 )
                 self._reauth_done.emit(session)
-            except Exception:  # noqa: BLE001 — surfaced in the banner
+            except Exception:  # noqa: BLE001
                 logger.warning("interactive re-auth failed", exc_info=True)
                 self._reauth_done.emit(None)
 
@@ -3673,15 +3013,7 @@ class MainWindow(QMainWindow):
         self._reconnect(session.access_token)
         self._hide_banner()
 
-    # --- window-first startup sign-in ------------------------------------ #
     def begin_login(self, resolver) -> None:
-        """Resolve auth on a worker thread while the window stays interactive.
-
-        ``resolver(cancel_event)`` returns ``(token, session)`` (or raises
-        ``LoginCancelled``); the outcome is marshalled back to the GUI thread
-        via ``_login_resolved``. The top-bar shows sign-in progress and the
-        banner offers a click-to-cancel path for the loopback wait.
-        """
         if self._login_active:
             return
         self._login_active = True
@@ -3700,21 +3032,18 @@ class MainWindow(QMainWindow):
                 self._login_resolved.emit({"token": token, "session": session})
             except LoginCancelled:
                 self._login_resolved.emit({"cancelled": True})
-            except Exception as exc:  # noqa: BLE001 — surfaced via the retry prompt
+            except Exception as exc:  # noqa: BLE001
                 logger.warning("startup sign-in failed", exc_info=True)
                 self._login_resolved.emit({"error": str(exc)})
 
         threading.Thread(target=_work, name="astral-login", daemon=True).start()
 
     def cancel_login(self) -> None:
-        """Abort an in-flight startup sign-in (unblocks the loopback wait)."""
         if self._login_cancel is not None:
             self._login_cancel.set()
             self.topbar.set_status("Cancelling sign-in…", T.MUTED)
 
     def _on_login_resolved(self, result: object) -> None:
-        """GUI-thread handler for the startup sign-in outcome: adopt the token,
-        or offer a retry/quit choice on cancel/failure."""
         self._login_active = False
         result = result if isinstance(result, dict) else {}
         token = result.get("token")
@@ -3726,7 +3055,6 @@ class MainWindow(QMainWindow):
         self._login_retry_prompt("cancelled" if result.get("cancelled") else "failed")
 
     def _login_retry_prompt(self, verb: str) -> None:
-        """Modal retry/quit choice after a cancelled/failed startup sign-in."""
         box = QMessageBox(self)
         box.setWindowTitle("Sign in")
         box.setText(f"Sign-in {verb}. Retry, or quit?")
@@ -3739,25 +3067,17 @@ class MainWindow(QMainWindow):
             self.close()
 
     def _apply_login(self, token: str, session=None) -> None:
-        """Adopt a startup-resolved login: keep the refresh session, update the
-        top-bar identity, and connect via the existing rebuild-with-new-token
-        flow (no separate token-injection mechanism)."""
         self._auth_session = session
         self._reauth_tries = 0
         self.topbar.set_user(_user_from_token(token))
         self._reconnect(token)
 
     def _apply_conversation_snapshot(self) -> None:
-        """Atomically replace both native committed surfaces from reducer state."""
-
         snapshot = self._continuity.committed_snapshot
         if snapshot is None:
             return
         messages = decode_semantic_transcript(snapshot.transcript)
         components = snapshot.canvas["components"]
-        # Renderer construction is fail-soft, but pre-building every canvas
-        # widget ensures no unexpected Qt failure can occur after the transcript
-        # has changed. No prepared widget is attached to the live surface.
         prepared = [render(component, self.canvas.ctx, top_level=True) for component in components]
         for widget in prepared:
             widget.deleteLater()
@@ -3774,8 +3094,6 @@ class MainWindow(QMainWindow):
         return str(value) if value else None
 
     def _apply_transient_frame(self, msg: dict[str, Any]) -> None:
-        """Reduce an accepted scoped frame into disposable native overlays."""
-
         frame_type = msg.get("type")
         components = msg.get("components")
         if frame_type in {"ui_render", "ui_update"}:
@@ -3851,8 +3169,6 @@ class MainWindow(QMainWindow):
             for key in ("chat_id", "connection_generation", "request_generation")
         )
         if not scoped:
-            # Bounded legacy compatibility applies only before a UUID-scoped
-            # continuity conversation has opened.
             return not (
                 _canonical_uuid4(self.active_chat)
                 and self._continuity.request_generation is not None
@@ -3865,8 +3181,6 @@ class MainWindow(QMainWindow):
         )
 
     def _operation_status_in_scope(self, status: OperationStatus) -> bool:
-        """Whether a retained canonical operation still belongs to this view."""
-
         if status.connection_generation != self._continuity.connection_generation:
             return False
         pending = self._pending_submissions_by_generation.get(
@@ -3897,8 +3211,6 @@ class MainWindow(QMainWindow):
         )
 
     def _newest_active_operation_status(self) -> Optional[OperationStatus]:
-        """Return one remaining in-scope nonterminal operation, if any."""
-
         candidates = (
             status
             for status in self._operation_status_by_id.values()
@@ -3921,8 +3233,6 @@ class MainWindow(QMainWindow):
     def _newest_visible_local_submission(
         self,
     ) -> Optional[LocalOperationSubmission]:
-        """Return the newest still-submitting user-visible operation."""
-
         for submission in reversed(
             tuple(self._pending_submissions_by_generation.values())
         ):
@@ -3963,8 +3273,6 @@ class MainWindow(QMainWindow):
         )
 
     def _reduce_operation_status(self, msg: dict[str, Any]) -> bool:
-        """Retain and visibly render one newer canonical operation state."""
-
         try:
             status = OperationStatus.from_dict(msg)
         except (TypeError, WindowsProtocolError):
@@ -3993,10 +3301,6 @@ class MainWindow(QMainWindow):
                 status.request_generation
             )
         if status.state == "completed":
-            # A successful terminal projection is retained for reconciliation,
-            # but is not a persistent status message. It may clear only the
-            # progress banner it owns. If another operation is still active,
-            # restore that operation instead of leaving a false idle state.
             if owned_visible_progress:
                 active = self._newest_active_operation_status()
                 if active is not None:
@@ -4009,8 +3313,6 @@ class MainWindow(QMainWindow):
                         self._hide_banner()
                         self._reset_status_line()
         elif status.terminal:
-            # Failures/cancellations/retry guidance remain prominent, but are
-            # settled outcomes rather than animated activity.
             self.topbar.set_status(str(visible), T.VARIANT_COLORS["error"][0])
             self._show_banner(str(visible), "error")
             self._clear_transient_conversation()
@@ -4023,24 +3325,12 @@ class MainWindow(QMainWindow):
         return True
 
     def _generic_phase_would_clobber(self, status: Any) -> bool:
-        """066 (FR-016): keep a chat turn's own phase on the status line.
-
-        One second into EVERY accepted operation the server publishes a
-        generic progress phase labelled "Working…". The status line is
-        last-writer-wins, so that generic label used to overwrite the turn's
-        richer phase (``chat_status.message`` / a live ``chat_step``) — and
-        for a tool-less turn nothing re-asserted it, leaving the user on
-        "Working…" for the whole model call. Terminal/error projections are
-        untouched: they are the failure surface.
-        """
         return (
             getattr(status, "action", None) == "chat_message"
             and self._turn_phase_active
         )
 
     def _reduce_admission_refusal(self, msg: dict[str, Any]) -> bool:
-        """Settle only the client submission named by a pre-admission refusal."""
-
         try:
             refusal = AdmissionRefusal.from_dict(msg)
         except (TypeError, WindowsProtocolError):
@@ -4059,8 +3349,6 @@ class MainWindow(QMainWindow):
         return True
 
     def _reduce_agent_lifecycle(self, msg: dict[str, Any]) -> bool:
-        """Apply one lexicographically newer agent lifecycle projection."""
-
         try:
             lifecycle = AgentLifecycle.from_dict(msg)
         except (TypeError, WindowsProtocolError):
@@ -4205,10 +3493,6 @@ class MainWindow(QMainWindow):
         elif t == "ui_upsert":
             if not msg.get("chat_id") or msg.get("chat_id") == self.active_chat:
                 self.canvas.apply_ops(msg.get("ops") or [])
-        # 055 (US3, wire-contract §4): the eight workspace verb acks, promoted
-        # ignored → handled. The server's follow-up ui_upsert/ui_render
-        # reconcile stays authoritative; these give this socket immediate
-        # identity-keyed feedback without waiting on it.
         elif t == "component_deleted":
             cid = msg.get("component_id")
             if cid:
@@ -4245,8 +3529,6 @@ class MainWindow(QMainWindow):
             chat = msg.get("chat") or {}
             loaded_chat = chat.get("id") or self.active_chat
             if _canonical_uuid4(loaded_chat):
-                # Compatibility acknowledgement only; the atomic snapshot is
-                # the sole hydration completion and committed-state mutation.
                 if self.active_chat is None:
                     self._set_active_chat(loaded_chat)
                 if loaded_chat == self.active_chat:
@@ -4289,24 +3571,14 @@ class MainWindow(QMainWindow):
         elif t == "chrome_render":
             self._on_chrome_render(msg)
         elif t == "chrome_menu":
-            # Feature 042: (re)build the Settings dropdown from the server-owned
-            # menu model (pushed after register / on role/flag change).
             self.topbar.set_menu_model(msg.get("model") or {})
         elif t == "chrome_surface":
-            # Feature 043: a settings surface delivered as SDUI components.
             self._on_chrome_surface(msg)
         elif t == "operation_status":
             self._reduce_operation_status(msg)
         elif t == "agent_lifecycle":
             self._reduce_agent_lifecycle(msg)
         elif t == "chat_status":
-            # 066: the server emits chat_status as {type, status, message} with
-            # NO chat_id and NO generations (orchestrator._send_chat_status), so
-            # the bounded-legacy branch of _scoped_status_matches refused every
-            # frame once a canonical chat had an in-flight request — Windows
-            # showed no phase text at all. A frame that carries scope is still
-            # fenced; an unscoped one is accepted, exactly as the web client
-            # does for the same reason.
             st = msg.get("status")
             scoped_ok = self._scoped_status_matches(msg) if any(
                 key in msg
@@ -4317,21 +3589,15 @@ class MainWindow(QMainWindow):
             elif st in ("thinking", "executing", "fixing", "processing_async",
                         "combining", "condensing"):
                 self._set_turn_active(True)
-                # 066: the turn now owns the status line with its own phase
-                # text; the generic one-second "Working…" must not take it.
                 self._turn_phase_active = True
                 self.topbar.set_status(
                     msg.get("message") or st, T.VARIANT_COLORS["accent"][0]
                 )
             elif st == "done":
                 self._set_turn_active(False)
-                # A success snapshot remains the authoritative overlay clear.
                 self.canvas.resolve_loading()
                 self._reset_status_line()
         elif t == "error":
-            # A strict refusal precedes any durable operation and therefore has
-            # no conversation scope. Any other shape stays on the legacy error
-            # path and cannot settle a client-local submission.
             if self._reduce_admission_refusal(msg):
                 pass
             elif self._scoped_status_matches(msg):
@@ -4342,8 +3608,6 @@ class MainWindow(QMainWindow):
                         "This chat is no longer available.",
                     )
                 else:
-                    # FR-002/SC-006 — never silent; resolve any stuck turn and
-                    # discard only the request overlay, not committed state.
                     self._show_banner(normalize_error(msg), "error")
                     self._set_turn_active(False)
                     self._clear_transient_conversation()
@@ -4358,13 +3622,9 @@ class MainWindow(QMainWindow):
             kind = "error" if msg.get("level") == "error" else "info"
             chat = frame_chat_id(msg)
             if chat and chat == self.active_chat:
-                # 055: the notification targets the OPEN chat (e.g. a job that
-                # started on another device finished here) — reload it so the
-                # narrative + canvas refresh without user action.
                 self._show_banner(text, kind)
                 self._load_chat(chat)
             else:
-                # Another (or no) chat: the banner carries a tap-to-open link.
                 self._show_banner(text, kind, chat_id=chat)
         elif t == "user_message_acked":
             local_ack_claimed = self._voice_controller.owns_local_message_ack(msg)
@@ -4378,11 +3638,6 @@ class MainWindow(QMainWindow):
                 self._set_turn_active(True)
                 self.topbar.set_status("Working…", T.VARIANT_COLORS["accent"][0])
         elif t == "chat_step":
-            # 066: chat_step carries {type, chat_id, step} ONLY — it has no
-            # connection/request generation, so the continuity fence rejected
-            # EVERY step frame and the step trail never appeared. Scope it by
-            # chat id, matching the web client and the Android/Apple clients
-            # (which reduce it ungated).
             step_chat = msg.get("chat_id")
             if not step_chat or not self.active_chat or step_chat == self.active_chat:
                 step = msg.get("step") or {}
@@ -4402,9 +3657,6 @@ class MainWindow(QMainWindow):
         elif t == "task_started":
             chat = frame_chat_id(msg)
             if chat and chat != self.active_chat:
-                # 055: a task began in a DIFFERENT chat (e.g. on another
-                # device) — an unobtrusive status notice, never a banner over
-                # this conversation.
                 self.topbar.set_status(
                     "Background task running in another chat", T.MUTED)
             else:
@@ -4413,66 +3665,43 @@ class MainWindow(QMainWindow):
             self._set_turn_active(False)
             chat = frame_chat_id(msg)
             if chat and chat != self.active_chat:
-                # 055: finished elsewhere — tap-to-open toast, no canvas hijack.
                 self._show_banner(
                     "Background task finished in another chat — click to open.",
                     chat_id=chat)
             else:
                 self._show_banner("Background task finished.")
                 if chat:
-                    # 055: the finished task's chat is on screen — reload it so
-                    # the narrative + canvas refresh without user action.
                     self._load_chat(chat)
         elif t == "workspace_timeline_mode":
             self._timeline_mode = bool(msg.get("active") or msg.get("on"))
-            # The canvas mirrors the flag: refine is disabled in its context
-            # menu while a historical (read-only) view is active (055 US4).
             self.canvas.timeline_mode = self._timeline_mode
             if self._timeline_mode:
                 self.canvas.hide_skeleton()
-            # FR-007: a historical workspace view is strictly read-only — disable
-            # the mutating affordances (message input + Send) while active and
-            # restore them when the user returns to live. Component-action
-            # mutations are also refused server-side (`_ws_timeline_mode` guard).
             self._set_composer_enabled(not self._timeline_mode)
             if self._timeline_mode:
                 self._show_banner("Viewing workspace history (read-only).")
             else:
                 self._hide_banner()
         elif t == "user_preferences":
-            # Boot-time preferences; the theme lives under preferences.theme and
-            # is applied live by the theme surface (feature 044 US5). Retained
-            # so a restart honors the stored preset.
             self._user_prefs = msg.get("preferences") or {}
             self._apply_theme_pref(self._user_prefs.get("theme"))
         elif t in ("computer_request", "computer_session", "computer_host"):
-            # Feature 076: execute a verb / mirror the session banner / refresh
-            # an open "My computers" surface when presence changes.
             remote = getattr(self, "_remote", None)
             if remote is not None:
                 remote.handle_frame(msg)
                 if t != "computer_request":
                     self._refresh_my_computers_surface()
         elif t in HOST_FRAME_TYPES and self._byo_enabled:
-            # 060: acknowledgement/inventory plus fenced delivery/tunnel/stop
-            # for agents hosted by this installation.
             self._byo.handle_frame(msg)
         elif t == "agent_registered" and self._byo_enabled:
-            # 058: the only ack a BYO registration ever gets — a refusal is
-            # silence (contract §6), so the host reaps on its absence.
             self._byo.on_agent_registered(msg.get("agent_id") or "")
         else:
-            # Feature 044 (FR-002): classified-ignore is logged, not silent; a
-            # type that is neither handled nor classified is a drift signal.
             if is_classified(t) and not is_handled(t):
                 logger.info("ignored frame type=%s", t)
             elif not is_handled(t):
                 logger.warning("unhandled frame type=%s", t)
 
-    # --- live streaming (push) + native chrome ----------------------------- #
     def _on_stream_data(self, msg: dict) -> None:
-        """Render a ``ui_stream_data`` / legacy ``stream_data`` frame in place on
-        the canvas (structured ``components``, seq-deduped, chat-scoped)."""
         ops = stream_frame_to_ops(
             msg, active_chat=self.active_chat, seq_state=self._stream_seq
         )
@@ -4480,7 +3709,6 @@ class MainWindow(QMainWindow):
             self.canvas.apply_ops(ops)
 
     def _on_stream_control(self, msg: dict) -> None:
-        """Handle stream control frames (subscribe ack / error / teardown)."""
         t = msg.get("type")
         if t == "stream_subscribed":
             ops = subscribe_ack_ops(msg, existing_ids=self.canvas._by_id)
@@ -4499,27 +3727,14 @@ class MainWindow(QMainWindow):
                 text = payload.get("message") or msg.get("error") or "stream error"
                 self.topbar.set_status(f"Stream error: {text}", T.VARIANT_COLORS["error"][0])
         elif t == "stream_unsubscribed":
-            # Legacy teardown ack — clear the streaming status line only (a
-            # per-turn reset, not the full reconnect re-sync).
             self._reset_status_line()
-        # stream_list: no native surface yet.
 
     def _on_chrome_render(self, msg: dict) -> None:
-        """Server-pushed app-chrome is web-shell HTML; this native client renders
-        chrome as Qt (driven by data actions), so we acknowledge the frame rather
-        than silently dropping it — never injecting a web view."""
         notice = chrome_render_notice(msg)
         if notice:
             self.topbar.set_status(notice, T.MUTED)
 
     def _on_history_render(self, components: list) -> None:
-        """Feature 044 (T032) — a server-pushed SDUI history surface
-        (``ui_render target=history``, feature 037). The desktop shows recent
-        chats in a native Recent-chats dialog fed by ``history_list``; when that
-        dialog is open we refresh it from this surface's ``chat_history`` items so
-        the SDUI surface still drives the native surface. Never silently dropped
-        (was ``pass``): the render is logged with intent even when no dialog is
-        open, consistent with ``load_chat``/``history_list`` handling."""
         items: List[dict] = []
         for comp in components or []:
             if not isinstance(comp, dict):
@@ -4533,14 +3748,9 @@ class MainWindow(QMainWindow):
         logger.info("history surface rendered (%d chats)", len(items))
 
     def _refresh_saved_components(self, components: list) -> None:
-        """Feature 055 (US3): the ``saved_components_list`` ack. The desktop has
-        no native saved-components surface yet (workspace browsing rides the
-        server-driven chrome surfaces), so this is a logged refresh hook — never
-        a silent drop (FR-002 posture); a future surface consumes the list here."""
         logger.info("saved components list received (%d items)", len(components or []))
 
     def _replay_transcript(self, chat: dict) -> None:
-        """Repopulate the rail from a loaded chat's messages (best-effort)."""
         self.rail.clear()
         msgs = chat.get("messages") or chat.get("history") or []
         shown = False
@@ -4552,8 +3762,6 @@ class MainWindow(QMainWindow):
             if isinstance(content, str) and content.strip():
                 self.rail.add("user" if role == "user" else "assistant", content)
                 shown = True
-            # Feature 044 (US4): re-hydrate a turn's attachment chips as a small
-            # rail line (the server re-adds `attachments` on user messages).
             atts = m.get("attachments")
             if isinstance(atts, list) and atts:
                 names = ", ".join(
@@ -4564,15 +3772,7 @@ class MainWindow(QMainWindow):
         if not shown:
             self.rail.show_empty_hint()
 
-    # --- cross-thread confirmation + workspace (feature 039 UX) ------------- #
-
     def _show_confirm_dialog(self, req: dict) -> dict:
-        """GUI-thread callback for the confirm bridge. Shows the right native
-        modal for an ``action`` (Allow/Deny) or ``directory`` (folder pick)
-        request and returns ``{"accepted": bool, "choice": <str|None>}``.
-
-        Runs on the GUI thread (called from the QTimer poller), so Qt is safe.
-        """
         kind = req.get("kind")
         if kind == "directory":
             start = req.get("default") or ""
@@ -4582,18 +3782,11 @@ class MainWindow(QMainWindow):
             if not chosen:
                 return {"accepted": False, "choice": None}
             return {"accepted": True, "choice": os.path.realpath(chosen)}
-        # Lazy first-use workspace pick: a redirected pick denies the in-flight
-        # call (it was confined to the old default root) — retry runs under it.
         if not self._ensure_workspace_selected():
             return {"accepted": False, "choice": None}
         return self._action_dialog(req)
 
     def _action_dialog(self, req: dict) -> dict:
-        """A native Allow/Deny modal for a mutating/exec tool call.
-
-        Shows the tool, the workspace-relative target path / command, and a
-        scrollable preview of the content to write or the command to run.
-        """
         tool = req.get("tool", "tool")
         path = req.get("path") or ""
         command = req.get("command") or ""
@@ -4673,33 +3866,14 @@ class MainWindow(QMainWindow):
         accepted = dlg.exec() == 1
         return {"accepted": accepted, "choice": None}
 
-    # --- workspace directory (the coding agent's confinement root) --------- #
-
     def _settings(self) -> QSettings:
         return QSettings("AstralDeep", "WindowsClient")
 
     def _gui_pick_directory(self, title: str, default: str = "") -> Optional[str]:
-        """Pick a folder on the GUI thread directly (C-1 fix).
-
-        ``QFileDialog.getExistingDirectory`` spins its own modal loop, so it works
-        on the GUI thread even during ``__init__`` (before ``app.exec()``). The
-        cross-thread confirm **bridge** must NOT be used here: it is driven by a
-        ``QTimer`` poller that only ticks inside the running event loop, so calling
-        ``BRIDGE.request_confirm`` from the GUI thread blocks that same thread and
-        the poller can never service it — the first-launch workspace prompt would
-        hang until the confirm timeout. The bridge is for the win_agent thread only.
-        """
         chosen = QFileDialog.getExistingDirectory(self, title, default or "")
         return os.path.realpath(chosen) if chosen else None
 
     def _init_workspace(self) -> None:
-        """Apply a persisted/env workspace at startup — never prompts.
-
-        Precedence: persisted QSettings choice > ASTRAL_WORKSPACE_DIR env.
-        With neither, nothing is applied here: the folder picker is deferred to
-        the first file-tool use (``_ensure_workspace_selected`` via the confirm
-        bridge) so no modal dialog can block first paint.
-        """
         env_dir = os.getenv("ASTRAL_WORKSPACE_DIR", "").strip()
         persisted = self._settings().value("workspace_dir", "", type=str) or ""
         chosen = persisted or env_dir
@@ -4707,8 +3881,6 @@ class MainWindow(QMainWindow):
             self._activate_workspace(chosen)
 
     def _activate_workspace(self, chosen: str) -> None:
-        """Create + persist + apply a workspace folder (falls back to the
-        default ~/AstralWorkspace when the folder can't be created)."""
         chosen = os.path.realpath(chosen)
         try:
             os.makedirs(chosen, exist_ok=True)
@@ -4719,20 +3891,11 @@ class MainWindow(QMainWindow):
         self._apply_workspace(chosen)
 
     def _default_workspace(self) -> str:
-        """The launch-default confinement root the tools fall back to before
-        any workspace is applied (mirrors win_agent.tools.workspace_root)."""
         return os.path.realpath(
             os.path.expanduser(os.path.join("~", "AstralWorkspace"))
         )
 
     def _ensure_workspace_selected(self) -> bool:
-        """Lazily resolve the workspace on the first file-tool use.
-
-        Returns True when the in-flight tool call may proceed. When the
-        first-time pick lands somewhere OTHER than the default root the call
-        was already confined to, the call is denied (False) so it can be
-        retried under the newly chosen root — the pick still applies.
-        """
         if self._workspace_ready:
             return True
         default_root = self._default_workspace()
@@ -4747,7 +3910,6 @@ class MainWindow(QMainWindow):
         return os.path.realpath(chosen) == default_root
 
     def _apply_workspace(self, path: str) -> None:
-        """Push the chosen workspace into the tools + audit modules + env."""
         path = os.path.realpath(path)
         os.environ["ASTRAL_WORKSPACE_DIR"] = path
         try:
@@ -4760,7 +3922,6 @@ class MainWindow(QMainWindow):
         self.topbar.set_status(f"Workspace: {path}", T.MUTED)
 
     def _change_workspace(self) -> None:
-        """Reopen the directory picker; persist + apply the new choice live."""
         chosen = self._gui_pick_directory(
             "Choose a new workspace folder",
             self._settings().value("workspace_dir", "", type=str)
@@ -4780,18 +3941,7 @@ class MainWindow(QMainWindow):
         self._apply_workspace(chosen)
         QMessageBox.information(self, "Workspace", f"Workspace set to:\n{chosen}")
 
-    # --- launch-time integrity / update check (feature 039 B.5) ------------- #
-
     def _start_integrity_check(self) -> None:
-        """Verify the running build off the GUI thread (non-blocking, fail-open).
-
-        Packaged builds hash ``sys.executable`` and verify it against the signed
-        release manifest + sigstore bundle; the verdict is posted to the GUI
-        thread via ``_integrity_notice``. Any failure to *reach* GitHub leaves
-        the current build running (offline tolerance) — only a real signature
-        mismatch surfaces as an error. Never blocks or crashes launch.
-        """
-
         def _work() -> None:
             import shutil
             import tempfile
@@ -4803,7 +3953,7 @@ class MainWindow(QMainWindow):
                 notice = _integrity.check_at_launch(
                     _APP_VERSION, exe_path, frozen=frozen, workdir=workdir
                 )
-            except Exception:  # noqa: BLE001 — worker must never crash the app
+            except Exception:  # noqa: BLE001
                 notice = {"level": "muted", "message": ""}
             finally:
                 shutil.rmtree(workdir, ignore_errors=True)
@@ -4814,7 +3964,6 @@ class MainWindow(QMainWindow):
         threading.Thread(target=_work, name="astral-integrity", daemon=True).start()
 
     def _on_integrity_notice(self, level: str, message: str) -> None:
-        """GUI-thread slot: surface the integrity verdict in the top-bar status."""
         color = {
             "success": T.VARIANT_COLORS["success"][0],
             "warning": T.VARIANT_COLORS["warning"][0],
@@ -4823,7 +3972,6 @@ class MainWindow(QMainWindow):
         self.topbar.set_status(message, color)
 
     def _verify_integrity_now(self) -> None:
-        """Manual 'Verify integrity' action (Agents dialog) — re-runs the check."""
         self.topbar.set_status("Checking integrity…", T.MUTED)
         self._start_integrity_check()
 
@@ -4845,9 +3993,6 @@ def _flatten_text(components: list) -> str:
 
 
 def configure(app: QApplication) -> None:
-    """Apply the theme + a guaranteed-present UI font (Inter if installed, else
-    Segoe UI) so glyphs always render — the stylesheet family alone can fall back
-    to a glyph-less font under some platforms."""
     from PySide6.QtGui import QFont, QFontDatabase, QIcon
 
     families = set(QFontDatabase.families())
@@ -4858,31 +4003,21 @@ def configure(app: QApplication) -> None:
     app.setFont(QFont(family, 10))
     app.setStyleSheet(T.APP_STYLESHEET + T.ROOT_BG_STYLE)
 
-    # Windows groups taskbar buttons (and picks their icon) by AppUserModelID.
-    # Run from source, the host process is python.exe, so the shell shows the
-    # PYTHON icon no matter what setWindowIcon says — an explicit id detaches us
-    # from that group. No-op/absent off Windows, so the whole call is guarded.
     try:
         import ctypes
 
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
-    except Exception:  # noqa: BLE001 — cosmetic; never block startup
+    except Exception:  # noqa: BLE001
         pass
 
-    # Window/taskbar icon: assets/ sits next to the source tree in dev and is
-    # extracted to sys._MEIPASS in a frozen build. Regenerate from the shared
-    # brand master with Scripts/generate_win_icon.py — never hand-edit.
     ico = app_icon_path()
     if os.path.exists(ico):
         app.setWindowIcon(QIcon(ico))
     else:
-        # The AstralBody->AstralDeep rename hand-patched this filename in three
-        # places; `if exists` alone would make the next miss silent.
         logger.warning("app icon missing at %s — window/taskbar icon unset", ico)
 
 
 def _http_base(ws_url: str) -> str:
-    """ws://host:port/ws -> http://host:port (the orchestrator's HTTP origin)."""
     from urllib.parse import urlparse
 
     u = urlparse(ws_url)
@@ -4891,14 +4026,6 @@ def _http_base(ws_url: str) -> str:
 
 
 def resolve_auth(args, cancel_event=None):
-    """Return (token, session). An explicit --token/ASTRAL_TOKEN wins (use
-    'dev-token' for a mock-auth orchestrator). Otherwise, if a Keycloak authority
-    is configured, run the interactive OIDC desktop login — by default with the
-    dedicated public client (astral-desktop), exchanging the code DIRECTLY
-    against Keycloak; with --bff it reuses the web's astral-frontend via the
-    orchestrator's BFF proxy. Falls back to 'dev-token' on failure; a
-    user-cancelled login (``cancel_event``) re-raises ``LoginCancelled`` —
-    cancel is a choice, not a failure to paper over with a dev token."""
     if args.token:
         return args.token, None
     if args.authority:
@@ -4923,14 +4050,6 @@ def resolve_auth(args, cancel_event=None):
 
 
 def _prompt_config(authority: str = "", ws_url: str = "", agent_key: str = ""):
-    """First-run configuration dialog (C-6).
-
-    A bare exe downloaded from GitHub has no `KEYCLOAK_AUTHORITY`/`AGENT_API_KEY`
-    in its environment, so it used to silently fall back to a dev token the
-    real-auth orchestrator rejects — the app "did nothing". This captures the
-    deployment settings once (persisted to QSettings). Returns
-    ``(authority, ws_url, agent_key)`` or ``None`` if skipped.
-    """
     dlg = QDialog()
     dlg.setWindowTitle("Configure AstralDeep")
     dlg.setMinimumWidth(540)
@@ -4986,15 +4105,6 @@ def _prompt_config(authority: str = "", ws_url: str = "", agent_key: str = ""):
 
 
 def _resolve_config(args, *, settings, prompt) -> None:
-    """C-6: resolve deployment config with precedence env > QSettings > prompt.
-
-    Mutates ``args`` (authority/url) and ``os.environ['AGENT_API_KEY']`` so the
-    rest of startup (OIDC login + the win_agent registration) works for a bare
-    download. Prompts (once, persisting) only when there's no authority and no
-    explicit token; ``prompt=None`` resolves non-interactively (the window-first
-    launch defers the first-run dialog until after first paint).
-    ``settings``/``prompt`` are injected for testability.
-    """
     authority = (os.getenv("KEYCLOAK_AUTHORITY")
                  or settings.value("config/authority", "", type=str) or "")
     ws_url = (os.getenv("ASTRAL_WS_URL")
@@ -5037,8 +4147,6 @@ def main(
         default="roll exactly 6 six-sided dice",
     )
     ap.add_argument("--release-smoke-timeout", type=float, default=60.0)
-    # Dedicated public client (default): the desktop exchanges the auth code
-    # directly against Keycloak. See docs/keycloak-windows-client-setup.md.
     ap.add_argument(
         "--client-id",
         default=(
@@ -5051,8 +4159,6 @@ def main(
             )
         ),
     )
-    # Legacy: reuse the web's confidential astral-frontend client by proxying
-    # the token exchange through the orchestrator's BFF (POST /auth/token).
     ap.add_argument(
         "--bff",
         action="store_true",
@@ -5086,7 +4192,7 @@ def main(
     _win = _launch(
         args,
         effective_profile=effective_profile,
-    )  # keep the window referenced for the app's lifetime
+    )
     if args.release_smoke_report:
         _install_release_smoke(
             _win,
@@ -5110,8 +4216,6 @@ def _runtime_profile_checks(
     window: MainWindow,
     effective_profile: EffectiveDeploymentProfile,
 ) -> dict[str, bool]:
-    """Compare every packaged Windows runtime consumer without exporting URLs."""
-
     from win_agent.agent import build_card
 
     metadata = build_card(effective_profile)["metadata"]
@@ -5145,8 +4249,6 @@ def _install_release_smoke(
     prompt: str,
     timeout_seconds: float,
 ) -> None:
-    """Drive one real rendered turn through the frozen GUI for release proof."""
-
     state = {"sent": False, "complete": False}
     window._release_smoke_exit_code = 1
 
@@ -5179,12 +4281,6 @@ def _install_release_smoke(
             report["detail_code"] = "rendered_turn_complete" if passed else "incomplete_rendered_turn"
             window._release_smoke_exit_code = 0 if passed else 1
         else:
-            # `smoke_timeout` is one 60 s catch-all, so on its own it cannot say
-            # WHERE the turn died. Record how far the driver actually got — the
-            # offline smoke below already reports its own state this way, and
-            # without it a CI failure is indistinguishable between "never
-            # reached the deployment" and "connected fine, but the turn never
-            # committed" (e.g. the feature-054 provider gate holding the turn).
             report.update(
                 {
                     "status": "failed",
@@ -5221,8 +4317,6 @@ def _install_release_smoke(
 
     window.client.status.connect(_status)
     window.client.message.connect(_message)
-    # Retain callables explicitly for PySide builds where weakly held Python
-    # slots can otherwise be collected before a delayed frame arrives.
     window._release_smoke_probe = (_status, _message, _finish)
     QTimer.singleShot(0, _poll_connected)
     QTimer.singleShot(int(timeout_seconds * 1000), lambda: _finish(error="smoke_timeout"))
@@ -5235,8 +4329,6 @@ def _install_release_offline_smoke(
     report_path: str,
     timeout_seconds: float,
 ) -> None:
-    """Observe a real failed connection and retry without changing profile."""
-
     state = {"complete": False, "failure_seen": False, "retry_attempt": 0}
     window._release_smoke_exit_code = 1
 
@@ -5296,11 +4388,6 @@ def _launch(
     settings=None,
     effective_profile: Optional[EffectiveDeploymentProfile] = None,
 ) -> "MainWindow":
-    """Window-first startup: show the shell immediately, then resolve the
-    first-run config prompt and the (potentially slow) OIDC sign-in AFTER first
-    paint — auth runs on a worker thread and the token is adopted through the
-    existing rebuild-with-new-token flow. An explicit --token/ASTRAL_TOKEN
-    keeps the original synchronous path (it resolves instantly)."""
     settings = settings or QSettings("AstralDeep", "WindowsClient")
     if effective_profile is None:
         _resolve_config(args, settings=settings, prompt=None)
@@ -5343,8 +4430,6 @@ def _launch(
     win.topbar.set_status("Signing in…", T.MUTED)
 
     def _after_first_paint() -> None:
-        """Deferred startup tail: first-run config dialog (if still needed),
-        then the background sign-in."""
         if not args.authority and effective_profile is None:
             _resolve_config(args, settings=settings, prompt=_prompt_config)
             win._login_params.update(
@@ -5352,9 +4437,6 @@ def _launch(
                 client_id=getattr(args, "client_id", "astral-desktop"),
                 bff=bool(getattr(args, "bff", False)),
             )
-            # The dialog may have just supplied AGENT_API_KEY, which the window
-            # did not have when it was built. Idempotent — a no-op if the
-            # listener already started (or is off).
             win.maybe_start_tools_agent()
         win.begin_login(lambda cancel: resolve_auth(args, cancel_event=cancel))
 

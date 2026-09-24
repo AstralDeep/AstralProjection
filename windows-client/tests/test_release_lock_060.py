@@ -1,4 +1,7 @@
-"""Complete Windows/Python 3.11 release-lock reproducibility checks (T061)."""
+"""Tests for the Windows/Python 3.11 release-lock tooling: exact hashed lock
+completeness, manifest-to-lock binding, candidate-manifest identity/drift validation,
+environment-set comparison, and the lock CLI's command dispatch.
+"""
 
 from __future__ import annotations
 
@@ -86,7 +89,6 @@ def test_manifest_and_package_spec_bind_the_exact_lock_bytes():
 
 
 def test_two_clean_manifest_calculations_are_byte_identical(tmp_path):
-    """Two independent reads model the clean-build manifest identity boundary."""
     first = {
         "lock_sha256": _sha(LOCK),
         "packages": sorted(_locked_packages().items()),

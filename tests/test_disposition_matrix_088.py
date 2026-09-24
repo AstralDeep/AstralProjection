@@ -1,14 +1,6 @@
-"""Feature 088 T054 — the server-owned per-client disposition matrix (FR-023/FR-024).
-
-``presentation_contracts.disposition_matrix_088`` names, for every 088 destination
-and every client, exactly what the host delivers. These tests refuse a matrix that
-drifts from the code that actually decides: ``rote.adapter.ComponentAdapter``
-(``adapt_work_surface`` / ``adapt_guidance_surface`` per ``DeviceProfile``),
-``webrender.chrome.menu_model.project_watch_menu_model`` and the capability strings
-each client's registration source really advertises. A row that names an unknown
-surface, action or contract path is refused, and a Windows row may only say
-``read_only_handoff`` or ``omitted_by_server`` — the owner excluded the Windows
-redesign (T059).
+"""Tests binding the per-client disposition matrix to the code that actually decides
+delivery (backend/rote/adapter.py, backend/webrender/chrome/menu_model.py): refuses
+any row with an unresolvable surface, action, or capability.
 """
 
 import json
@@ -46,7 +38,6 @@ def _resolve(manifest, path):
 
 
 def validate(matrix, manifest):
-    """Refuse a matrix that is not a closed, resolvable, web-first table."""
     if matrix.get("version") != 1:
         raise ValueError("disposition_matrix_088 must be version 1")
     if matrix.get("clients") != CLIENTS:
@@ -203,8 +194,6 @@ def test_the_committed_matrix_is_a_closed_resolvable_web_first_table():
         "guidance_agents_088", "guidance_selection_088", "recurring_work_088",
         "saved_results_088", "connections_088", "chrome_menu", "workspace_088",
     }
-    # Completeness: no capability-gated 088 destination may exist without a row,
-    # so a new presentation contract cannot ship an undeclared disposition.
     gated = {
         name for name, contract in MANIFEST["presentation_contracts"].items()
         if isinstance(contract, dict) and contract.get("client_capability")
@@ -318,8 +307,6 @@ def test_work_reads_adapt_exactly_as_each_row_declares(destination):
         else:
             assert cell["disposition"] == "read_only_handoff"
             if client == "windows":
-                # Windows keeps every control: its handoff is the owner's T059
-                # exclusion of the redesign, not a rendering limit.
                 assert adapted == raw
                 assert "T059" in cell["handoff"]
             else:

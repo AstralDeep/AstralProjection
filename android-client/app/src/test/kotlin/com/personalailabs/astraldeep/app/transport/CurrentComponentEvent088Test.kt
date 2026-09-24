@@ -1,3 +1,6 @@
+// Tests for sending a component-scoped ui_event bound to the current connection, used for context-bound
+// component decisions.
+
 package com.personalailabs.astraldeep.app.transport
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi

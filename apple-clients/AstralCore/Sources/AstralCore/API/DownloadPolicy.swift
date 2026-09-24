@@ -1,7 +1,9 @@
+// Credential and origin policy for file downloads: authorization requires an exact scheme/host/port match,
+// and a per-task redirect delegate stops a bearer token from following an automatic cross-origin redirect.
+// Backs Rest.swift's downloadFile.
+
 import Foundation
 
-/// Download-only credential and filesystem boundary. Authorization requires an
-/// exact origin (scheme, host, effective port), never merely the same hostname.
 enum DownloadPolicy {
     static func resolve(_ raw: String, relativeTo base: URL) throws -> URL {
         guard let url = URL(string: raw, relativeTo: base)?.absoluteURL,
@@ -25,8 +27,7 @@ enum DownloadPolicy {
             let url = try? resolve(target.absoluteString, relativeTo: source)
         else { return nil }
         let authorization = original.value(forHTTPHeaderField: "Authorization")
-        // A credentialed export never follows an off-origin redirect. An
-        // unauthenticated public asset may follow HTTPS CDN redirects.
+        // Credentialed requests never follow a cross-origin redirect
         if authorization != nil, !sameOrigin(source, url) { return nil }
         var request = NoStoreHTTP.request(url: url)
         if let authorization { request.setValue(authorization, forHTTPHeaderField: "Authorization") }
@@ -47,8 +48,6 @@ enum DownloadPolicy {
     }
 }
 
-/// Per-task delegate so download redirects cannot inherit a bearer token from
-/// URLSession's automatic redirect handling. Other API requests are unchanged.
 final class DownloadRedirectDelegate: NSObject, URLSessionTaskDelegate {
     let original: URLRequest
 

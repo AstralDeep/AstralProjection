@@ -1,3 +1,6 @@
+// Tests for the theme model: hex parsing, folding a theme_apply spec onto the current palette, and building a
+// Material ColorScheme from it.
+
 package com.personalailabs.astraldeep.app.ui.theme
 
 import kotlinx.serialization.json.JsonObject
@@ -10,7 +13,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Feature 044 T050 — the pure theme model: hex parsing, spec folding, scheme build. */
 class ThemeTest {
     @Test
     fun hex_parses_valid_and_rejects_malformed() {
@@ -31,7 +33,7 @@ class ThemeTest {
         val start = THEME_PRESETS.getValue("midnight")
         val p = themePaletteForSpec(start, buildJsonObject { putJsonObject("colors") { put("primary", "#123456") } })
         assertEquals("#123456", p?.primary)
-        assertEquals(start.bg, p?.bg) // an untouched channel is preserved
+        assertEquals(start.bg, p?.bg)
     }
 
     @Test
@@ -49,8 +51,6 @@ class ThemeTest {
 
     @Test
     fun explicit_colors_win_over_an_unknown_preset_name() {
-        // The backend sends the fully-resolved channel map alongside the preset
-        // name — a preset the client doesn't know must still apply via `colors`.
         val p =
             themePaletteForSpec(
                 null,

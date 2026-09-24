@@ -1,12 +1,8 @@
+// Tests for AppModel's refine/export send paths: the Refine sheet posts a trimmed component_refine ui_event,
+// refine/restore are blocked while the timeline is read-only, and export URLs are chat-scoped or nil without
+// an active chat.
+
 import AstralCore
-// Feature 055 (US4/US5) — send-side tests for the refine affordance and the
-// export menu entries. The context menu's "Refine…" sheet lands in
-// `refineComponent` (trim + guard + `component_refine` ui_event, wire-contract
-// §3); refine/restore are timeline mutations (refused client-side while the
-// read-only timeline view is active, like component_action); the export
-// entries open URLs built by `exportComponentURL`/`exportCanvasURL`
-// (chat-scoped per contracts/rest-endpoints.md). Outbound frames are observed
-// via the model's `outboundTap` seam.
 import XCTest
 
 @testable import AstralDeep
@@ -27,13 +23,9 @@ final class AppModelRefineExportTests: XCTestCase {
     }
 
     override func tearDown() {
-        // serverBaseText persists via UserDefaults — never leak a test
-        // endpoint into other suites (or the simulator's app defaults).
         UserDefaults.standard.removeObject(forKey: "serverBase")
         super.tearDown()
     }
-
-    // MARK: component_refine send path
 
     func testRefineSendsComponentRefineUiEvent() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
@@ -74,13 +66,10 @@ final class AppModelRefineExportTests: XCTestCase {
                 "component_id": .string("wc_budget"), "version_no": .number(2),
             ]))
         XCTAssertTrue(log.frames.isEmpty)
-        // Leaving the timeline view unblocks the same call.
         model.handleFrame(InboundFrame.parse(#"{"type":"workspace_timeline_mode","active":false}"#)!)
         model.refineComponent("wc_budget", instruction: "sort it")
         XCTAssertEqual(log.frames.count, 1)
     }
-
-    // MARK: export URL builders
 
     func testExportComponentURLIsChatScoped() {
         let model = AppModel(tokenStore: InMemoryTokenStore())

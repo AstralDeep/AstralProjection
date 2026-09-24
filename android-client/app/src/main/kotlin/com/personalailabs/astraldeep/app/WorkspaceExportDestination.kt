@@ -1,3 +1,6 @@
+// Wraps one SAF CreateDocument result; ownership begins only once opened, guarding against deleting a file
+// this code didn't create. Used by WorkspaceActionController.
+
 package com.personalailabs.astraldeep.app
 
 import kotlinx.coroutines.Dispatchers
@@ -15,7 +18,6 @@ internal interface WorkspaceExportDestination {
     fun delete()
 }
 
-/** One exact CreateDocument result; ownership begins only after opening its empty destination. */
 internal class WorkspaceExportSave(private val destination: WorkspaceExportDestination) {
     private var opened = false
 
@@ -46,7 +48,7 @@ internal class WorkspaceExportSave(private val destination: WorkspaceExportDesti
 
     suspend fun cleanup() =
         withContext(NonCancellable + Dispatchers.IO) {
-            // Unknown/nonempty callbacks are never ours to delete. A partial copy is.
+            // Never delete a destination we didn't open or fill ourselves
             if (opened || destination.isEmpty()) destination.delete()
         }
 }

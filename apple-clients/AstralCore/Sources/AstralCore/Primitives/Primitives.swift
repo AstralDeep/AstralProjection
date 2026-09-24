@@ -1,46 +1,16 @@
-// AstralPrims — the Swift mirror of the first-party `astralprims` Python
-// package (github.com/AstralDeep/AstralPrimitives, mirrored at v0.3.0).
-//
-// Same philosophy as the original: JSON stays the wire format; these classes
-// are the AUTHORING layer. Every primitive serializes with `toDict()` to the
-// exact dict `astralprims.<X>(...).to_dict()` produces — pinned by the
-// known-answer fixtures in Tests/AstralCoreTests/Fixtures/ (generated from
-// the live Python package). The CONSUMING side of the wire stays
-// `AstralComponent` (the renderer model): AstralPrims authors, the server's
-// webrender/ROTE renders, AstralComponent reads — Constitution II unchanged.
-//
-// Serialization contract (mirrors astralprims.base.Primitive._serialize):
-//   • "type" always present.
-//   • Base fields css/id/class/tooltip only when set; an EMPTY css is omitted.
-//   • `className` serializes as "class" (Python's `class_name` alias).
-//   • A subclass's non-Optional fields are ALWAYS emitted (even empty lists /
-//     dicts / empty strings — e.g. Button emits `payload: {}`).
-//   • Optional fields are dropped when nil.
-//   • `attributes` merge LAST at the top level and may override anything —
-//     the same escape hatch as the Python package.
-//
-// Naming: types are namespaced under `AstralPrims` so `Text`, `Image`,
-// `Divider`, `Table`, `List`, `Button` never collide with SwiftUI. Python
-// names that dodge Python quirks keep their wire-truth here:
-// `List_` → `AstralPrims.List`, `CodeBlock` → type "code",
-// `ProgressBar` → "progress", `MetricCard` → "metric", `Grids` → "grid"
-// (with the same `Grid` alias the package exports).
+// Swift mirror of the astralprims Python authoring package: toDict() serializes to the same wire dict
+// astralprims.<X>(...).to_dict() produces, pinned by fixtures in AstralCoreTests/Fixtures. The consuming side
+// is AstralComponent.
+
 import Foundation
 
 public enum AstralPrims {
-
-    // MARK: - Base
-
-    /// Base class for all UI primitives (mirror of `astralprims.Primitive`).
     open class Primitive {
         public let type: String
         public var css: [String: String]?
         public var id: String?
-        /// Serialized as `"class"` (the Python `class_name` alias).
         public var className: String?
         public var tooltip: String?
-        /// Free-form extras merged into the output at the top level (escape
-        /// hatch; merged last so they can override or extend).
         public var attributes: [String: JSONValue]
 
         public init(type: String) {
@@ -48,10 +18,8 @@ public enum AstralPrims {
             self.attributes = [:]
         }
 
-        /// Subclass wire fields as (key, value) pairs; nil values are dropped.
         open var ownFields: [(String, JSONValue?)] { [] }
 
-        /// Serialize to the wire dict — the Swift `to_dict()`.
         public final func toDict() -> JSONValue {
             var out: [String: JSONValue] = ["type": .string(type)]
             if let css, !css.isEmpty {
@@ -67,14 +35,10 @@ public enum AstralPrims {
             return .object(out)
         }
 
-        /// Serialize to a JSON string — the Swift `to_json()`.
         public final func toJSONString() throws -> String {
             let data = try toDict().encoded()
             return String(decoding: data, as: UTF8.self)
         }
-
-        // Fluent styling modifiers (the Python base fields arrive as kwargs;
-        // Swift keeps the per-type inits tight and chains these instead).
 
         @discardableResult
         public func css(_ css: [String: String]) -> Self {
@@ -107,8 +71,6 @@ public enum AstralPrims {
         }
     }
 
-    /// Wrap primitives in the standard UI response envelope — the Swift
-    /// `create_ui_response()`.
     public static func createUIResponse(_ components: [Primitive]) -> JSONValue {
         .object([
             "_ui_components": .array(components.map { $0.toDict() }),
@@ -116,10 +78,6 @@ public enum AstralPrims {
         ])
     }
 
-    /// Every wire `type` this authoring layer can produce (the package's
-    /// registry). The manifest additionally lists renderer-origin types the
-    /// package deliberately does NOT author: download_card, generative,
-    /// skeleton — pinned by PrimitivesTests.
     public static let allTypes: Set<String> = [
         "alert", "audio", "badge", "bar_chart", "button", "card",
         "chat_history", "code", "collapsible", "color_picker", "container",
@@ -129,8 +87,6 @@ public enum AstralPrims {
         "text", "theme_apply", "timeline",
     ]
 
-    // MARK: - Serialization helpers
-
     static func strings(_ values: [String]) -> JSONValue {
         .array(values.map { .string($0) })
     }
@@ -139,12 +95,9 @@ public enum AstralPrims {
         .array(values.map { .number($0) })
     }
 
-    // MARK: - Layout
-
-    /// A layout container holding child primitives.
     public final class Container: Primitive {
         public var children: [Primitive]
-        public var direction: String?  // e.g. "row" | "column"
+        public var direction: String?
 
         public init(children: [Primitive] = [], direction: String? = nil) {
             self.children = children
@@ -152,7 +105,6 @@ public enum AstralPrims {
             super.init(type: "container")
         }
 
-        /// Append one or more children and return self (chainable).
         @discardableResult
         public func add(_ children: Primitive...) -> Container {
             self.children.append(contentsOf: children)
@@ -167,7 +119,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A titled card wrapping child primitives.
     public final class Card: Primitive {
         public var title: String
         public var content: [Primitive]
@@ -195,7 +146,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A grid layout with a fixed column count (wire type "grid").
     public final class Grid: Primitive {
         public var columns: Int
         public var children: [Primitive]
@@ -223,10 +173,8 @@ public enum AstralPrims {
         }
     }
 
-    /// Backwards-compatible alias (the package exports both Grid and Grids).
     public typealias Grids = Grid
 
-    /// A single tab. Not a primitive itself (no `type`); nested in `Tabs`.
     public struct TabItem {
         public var label: String
         public var content: [Primitive]
@@ -248,7 +196,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A tabbed container.
     public final class Tabs: Primitive {
         public var tabs: [TabItem]
         public var variant: String
@@ -267,7 +214,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A collapsible / accordion section.
     public final class Collapsible: Primitive {
         public var title: String
         public var content: [Primitive]
@@ -289,7 +235,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A horizontal rule / visual separator.
     public final class Divider: Primitive {
         public var variant: String
 
@@ -303,9 +248,6 @@ public enum AstralPrims {
         }
     }
 
-    // MARK: - Content & controls
-
-    /// A run of text. `variant` is one of h1, h2, h3, body, caption.
     public final class Text: Primitive {
         public var content: String
         public var variant: String
@@ -321,7 +263,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A clickable button dispatching an action with an optional payload.
     public final class Button: Primitive {
         public var label: String
         public var action: String
@@ -349,7 +290,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A single-line form input.
     public final class Input: Primitive {
         public var placeholder: String
         public var name: String
@@ -371,10 +311,6 @@ public enum AstralPrims {
         }
     }
 
-    /// Interactive parameter form. Each entry in `fields` is a dict:
-    /// `{"name","label","kind","default","options","help","step"}` — see the
-    /// Python docstring; `submit_message_template` supports `{field_name}`
-    /// and `{__values_json__}` placeholders.
     public final class ParamPicker: Primitive {
         public var title: String
         public var description: String
@@ -406,7 +342,6 @@ public enum AstralPrims {
         }
     }
 
-    /// An image.
     public final class Image: Primitive {
         public var url: String
         public var alt: String?
@@ -434,7 +369,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A syntax-highlighted code block (wire type "code").
     public final class CodeBlock: Primitive {
         public var code: String
         public var language: String
@@ -459,7 +393,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A callout / banner. `variant` is info, success, warning, or error.
     public final class Alert: Primitive {
         public var message: String
         public var variant: String
@@ -481,7 +414,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A progress bar (wire type "progress").
     public final class ProgressBar: Primitive {
         public var value: Double
         public var label: String?
@@ -509,7 +441,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A single KPI / metric tile (wire type "metric").
     public final class MetricCard: Primitive {
         public var title: String
         public var value: String
@@ -544,8 +475,6 @@ public enum AstralPrims {
         }
     }
 
-    /// An ordered or unordered list. Items are strings or dicts (the Python
-    /// `List_`; wire type "list").
     public final class List: Primitive {
         public var items: [JSONValue]
         public var ordered: Bool
@@ -561,7 +490,6 @@ public enum AstralPrims {
             super.init(type: "list")
         }
 
-        /// Convenience for the common all-strings case.
         public convenience init(
             items: [String], ordered: Bool = false,
             variant: String = "default"
@@ -578,7 +506,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A data table with optional pagination + tool re-invocation context.
     public final class Table: Primitive {
         public var headers: [String]
         public var rows: [[JSONValue]]
@@ -627,9 +554,6 @@ public enum AstralPrims {
         }
     }
 
-    // MARK: - Charts
-
-    /// A named series of values. Not a primitive itself.
     public struct ChartDataset {
         public var label: String
         public var data: [Double]
@@ -651,7 +575,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A bar chart.
     public final class BarChart: Primitive {
         public var title: String
         public var labels: [String]
@@ -680,7 +603,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A line chart.
     public final class LineChart: Primitive {
         public var title: String
         public var labels: [String]
@@ -709,7 +631,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A pie chart.
     public final class PieChart: Primitive {
         public var title: String
         public var labels: [String]
@@ -737,7 +658,6 @@ public enum AstralPrims {
         }
     }
 
-    /// An arbitrary Plotly figure (data + layout + config).
     public final class PlotlyChart: Primitive {
         public var title: String
         public var data: [JSONValue]
@@ -765,10 +685,6 @@ public enum AstralPrims {
         }
     }
 
-    // MARK: - Media & I/O
-
-    /// Audio player primitive (inline base64 data, URLs, speech, MIDI). NOTE:
-    /// this type's wire keys are camelCase in the package — mirrored exactly.
     public final class Audio: Primitive {
         public var src: String
         public var contentType: String?
@@ -807,7 +723,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A file upload control.
     public final class FileUpload: Primitive {
         public var label: String
         public var accept: String
@@ -829,7 +744,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A file download link/button.
     public final class FileDownload: Primitive {
         public var label: String
         public var url: String
@@ -851,10 +765,6 @@ public enum AstralPrims {
         }
     }
 
-    // MARK: - Dashboard & status
-
-    /// A small inline status chip. `variant`: default, success, warning,
-    /// error, info, or accent.
     public final class Badge: Primitive {
         public var label: String
         public var variant: String
@@ -876,8 +786,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A page-level header band: eyebrow, title, subtitle, optional badges.
-    /// `variant`: default, gradient, or subtle.
     public final class Hero: Primitive {
         public var title: String
         public var subtitle: String?
@@ -911,8 +819,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A compact label/value fact sheet (wire type "keyvalue"). Each entry in
-    /// `items`: `{"label","value","hint"}` — hint optional; `columns` 1–4.
     public final class KeyValue: Primitive {
         public var title: String?
         public var items: [JSONValue]
@@ -934,8 +840,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A vertical sequence of events/appointments/steps. Each entry in
-    /// `items`: `{"time","title","description","variant"}`.
     public final class Timeline: Primitive {
         public var title: String?
         public var items: [JSONValue]
@@ -957,7 +861,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A star-rating readout.
     public final class Rating: Primitive {
         public var value: Double
         public var maxValue: Int
@@ -988,9 +891,6 @@ public enum AstralPrims {
         }
     }
 
-    /// A scannable list of recent conversations. Each entry in `items`:
-    /// `{"chat_id","title","preview","time","icon","saved"}` — only chat_id
-    /// and title are required; selecting a row dispatches `load_chat`.
     public final class ChatHistory: Primitive {
         public var title: String?
         public var items: [JSONValue]
@@ -1009,9 +909,6 @@ public enum AstralPrims {
         }
     }
 
-    // MARK: - Theming
-
-    /// A color picker bound to a theme color key.
     public final class ColorPicker: Primitive {
         public var label: String
         public var colorKey: String
@@ -1033,7 +930,6 @@ public enum AstralPrims {
         }
     }
 
-    /// Applies a theme preset or individual color change.
     public final class ThemeApply: Primitive {
         public var preset: String?
         public var colors: [String: String]?

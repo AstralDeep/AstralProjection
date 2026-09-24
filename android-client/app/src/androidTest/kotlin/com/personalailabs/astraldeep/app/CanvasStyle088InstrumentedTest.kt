@@ -1,3 +1,6 @@
+// Instrumented UI test verifying canvas component styling (colors, sizing) via pixel-level capture against
+// the real Renderer registry.
+
 package com.personalailabs.astraldeep.app
 
 import android.graphics.Bitmap

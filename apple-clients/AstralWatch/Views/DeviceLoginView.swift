@@ -1,6 +1,7 @@
+// The signed-out watch screen: server-generated QR code, short code, and expiry countdown, with no credential
+// entry available on the watch itself.
+
 import AstralCore
-// Feature 051 US3 — the signed-out watch: backend-generated QR + short code
-// + expiry countdown; no credential entry exists on the watch (FR-020).
 import SwiftUI
 
 struct DeviceLoginView: View {
@@ -27,10 +28,6 @@ struct DeviceLoginView: View {
         VStack(spacing: 6) {
             if let login = model.login {
                 if let png = login.qrPNG, let image = UIImage(data: png) {
-                    // Sized well inside the screen edges so the whole code
-                    // (plus the short code under it) is on screen without
-                    // scrolling — a phone can't scan a half-visible QR. The
-                    // white card keeps a proper light quiet zone around it.
                     Image(uiImage: image)
                         .interpolation(.none)
                         .resizable()
@@ -76,7 +73,6 @@ struct DeviceLoginView: View {
     }
 }
 
-/// Advisory countdown only — expiry decisions are server-authoritative.
 struct CountdownLine: View {
     let until: Date
 

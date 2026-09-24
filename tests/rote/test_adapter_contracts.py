@@ -1,4 +1,6 @@
-"""Cross-device behavior contracts for less common ROTE adapter branches."""
+"""Tests for backend/rote/adapter.py's less common device-adaptation branches: voice,
+chart condensation, table bounding, and fallback substitution.
+"""
 
 from dataclasses import replace
 

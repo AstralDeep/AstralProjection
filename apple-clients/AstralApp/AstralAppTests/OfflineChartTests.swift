@@ -1,3 +1,7 @@
+// Tests for OfflineChartView: the bundled document uses a data-only envelope with bounded geometry, the
+// isolated WebKit renders mixed traces while denying network navigation, and malicious Plotly text/keys stay
+// inert.
+
 import AstralCore
 import SwiftUI
 import WebKit
@@ -137,8 +141,6 @@ final class OfflineChartTests: XCTestCase {
                         .environment(theme).environment(model)
                         .environment(\.astralViewportWidth, 1200))
             }
-            // Hidden windows exercise the real native hierarchy without taking
-            // focus from a signed-in client or presenting an authentication UI.
             window.contentView?.layoutSubtreeIfNeeded()
             return window
         }
@@ -166,9 +168,6 @@ final class OfflineChartTests: XCTestCase {
             let snapshot = try await view.takeSnapshot(configuration: nil)
             let image = try XCTUnwrap(snapshot.cgImage(forProposedRect: nil, context: nil, hints: nil))
             var pixel = [UInt8](repeating: 0, count: 4)
-            // Respect the snapshot's ICC profile. NSBitmapImageRep.colorAt
-            // returns a calibrated NSColor even for an sRGB image, which would
-            // incorrectly apply another color conversion to dark pixels.
             let context = try XCTUnwrap(
                 CGContext(
                     data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,

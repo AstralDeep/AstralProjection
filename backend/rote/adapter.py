@@ -1,21 +1,16 @@
+"""Stateless recursive component-tree adapter: degrades types down the capability
+fallback ladder, enforces host action limits, and resolves level-of-detail for a
+DeviceProfile; called by ROTE.adapt and orchestrator/ui_designer.py.
 """
-ROTE Adapter — Stateless component transformation engine.
 
-Takes a list of raw component dicts (as produced by the orchestrator)
-and a DeviceProfile, returns a new list adapted for that device.
-All transformation is rule-based and synchronous.
-"""
 from typing import AbstractSet, Any, Dict, List, Optional
 
 from rote import fallback, lod
 from rote.capabilities import DeviceProfile, DeviceType
 
 
-#: The profiles that actually draw the feature-089 types. Every other profile
-#: has had them substituted upstream, so these rules can never reach one.
 _WEB_PROFILES = frozenset({DeviceType.BROWSER, DeviceType.TABLET, DeviceType.MOBILE})
 
-#: The six additive types, in the order the contract lists them.
 _WEB_089_TYPES = frozenset({
     "action_group", "stat_group", "gauge", "pipeline_stepper",
     "donut_chart", "radar_chart",
@@ -23,17 +18,8 @@ _WEB_089_TYPES = frozenset({
 
 
 class ComponentAdapter:
-    """Stateless, recursive component transformer."""
-
     @staticmethod
     def adapt_guidance_surface(state: Dict, profile: DeviceProfile) -> List[Dict]:
-        """Keep the closed notes builder's complete controls on every device.
-
-        Generic wrist adaptation drops secondary buttons. Private note editing
-        instead requires the exact shared forms and navigation. Host limits or
-        unsupported primitives refuse the complete view, never a partial form.
-        Form submissions count toward the same host action budget as buttons.
-        """
         import json
         from astralprojection.chrome.guidance import build_notes_view
 
@@ -68,12 +54,6 @@ class ComponentAdapter:
 
     @classmethod
     def adapt_work_surface(cls, components: List[Dict], profile: DeviceProfile) -> List[Dict]:
-        """Preserve complete bounded Work reads using their explicit disposition.
-
-        Closed passive primitives and read-only navigation require no content
-        degradation on the wrist. Host interactivity/action limits still apply;
-        unsupported primitive capabilities refuse the entire surface.
-        """
         from rote.work import validate_work_components
 
         validated = validate_work_components(components, profile.supported_types)
@@ -81,30 +61,19 @@ class ComponentAdapter:
 
     @staticmethod
     def adapt_voice_capability(profile: DeviceProfile) -> Dict[str, object]:
-        """Project normalized client-local facts into a closed ROTE disposition."""
         return fallback.local_voice_disposition(profile.capabilities)
 
     @classmethod
     def adapt(cls, components: List[Dict], profile: DeviceProfile) -> List[Dict]:
-        """Adapt a top-level list of components for the given device profile."""
-        # Level-of-detail ladder (C-D10): when FF_LOD_LADDER is on, collapse any
-        # component that authored an L1/L2/L3 ``lod`` ladder down to the rung the
-        # surface warrants (watch/voice → L1, mobile → L2, browser/tablet/tv →
-        # L3) BEFORE the per-type adaptation runs, so the rest of the pipeline
-        # sees only the level-appropriate content. Default OFF → untouched.
         if lod.lod_enabled():
             try:
                 device = cls._lod_device(profile)
                 components = [cls._apply_lod(c, device) for c in components]
             except Exception:
-                # Fail-open: never let LOD resolution break adaptation.
+                # Fail-open: a bad LOD entry must not break adaptation
                 pass
 
-        # Feature 089. The six new types are degraded for non-web profiles
-        # BEFORE per-component adaptation, not after: _adapt_component does not
-        # recognise them, so by the time the substitution ran they would
-        # already have been dropped. Running first means a watch gets the
-        # progress bar and a speaker gets the sentence.
+        # Must run before per-component adapt or types get dropped
         components = [cls._degrade_089_for_non_web(c, profile) for c in components]
 
         result = []
@@ -112,20 +81,11 @@ class ComponentAdapter:
             adapted = cls._adapt_component(comp, profile)
             if adapted is not None:
                 result.append(adapted)
-        # Substitute any primitive the target can't render down the fallback
-        # ladder (timeline→list, chart→table→text, …). No-op when
-        # supported_types is None (full support).
         supported = getattr(profile, "supported_types", None)
         if supported:
             result = [cls._degrade_unsupported(c, supported) for c in result]
-        # Apply declarative host bounds last — strip interactivity on read-only
-        # surfaces and cap action-buttons. No-op under the default host-config
-        # (interactive, unlimited actions).
         return cls._enforce_host_limits(result, profile)
 
-    # Capability fallback ladder
-
-    #: Feature 089 introduced these, and only the web renderer draws them.
     _089_TYPES = frozenset({
         "action_group",
         "stat_group",
@@ -135,17 +95,10 @@ class ComponentAdapter:
         "radar_chart",
     })
 
-    #: The device types that render the new vocabulary.
     _089_WEB_DEVICES = frozenset({"browser", "tablet", "mobile"})
 
     @classmethod
     def _degrade_089_for_non_web(cls, comp: Dict, profile: DeviceProfile) -> Dict:
-        """Degrade only the 089 types, only for a non-web profile.
-
-        Every pre-089 type is returned untouched, so this cannot change what a
-        native client already receives. It recurses, because a gauge nested in
-        a card is just as undrawable as a gauge at the top level.
-        """
         if not isinstance(comp, dict):
             return comp
         device = getattr(getattr(profile, "device_type", None), "value", None)
@@ -159,8 +112,6 @@ class ComponentAdapter:
             return comp
         ctype = str(comp.get("type", "")).strip().lower()
         if ctype in cls._089_TYPES:
-            # The target's own vocabulary minus the 089 additions: everything
-            # it could render before this feature existed.
             legacy = cls._legacy_supported_types(profile)
             return cls._degrade_unsupported(comp, legacy)
         out = dict(comp)
@@ -191,7 +142,6 @@ class ComponentAdapter:
             ]
         return out
 
-    #: Candidate rungs a 089 ladder can land on.
     _089_CANDIDATE_RUNGS = (
         "text", "container", "card", "grid", "list", "metric", "progress",
         "timeline", "keyvalue", "badge", "alert", "hero", "button", "table",
@@ -200,18 +150,6 @@ class ComponentAdapter:
 
     @classmethod
     def _legacy_supported_types(cls, profile: DeviceProfile) -> AbstractSet[str]:
-        """What this target actually renders, probed rather than assumed.
-
-        The obvious implementation reads the profile's capability flags, and it
-        is wrong in a way that costs data: a voice surface drops ``progress``
-        outright even though no flag says so, so a gauge degraded to a progress
-        bar disappears on the way to a speaker. Instead each candidate rung is
-        run through the profile's own per-type adaptation, and a rung counts as
-        supported only when it survives with its type intact.
-
-        The answer depends only on the profile, so it is cached per profile
-        identity.
-        """
         cache = getattr(cls, "_089_rung_cache", None)
         if cache is None:
             cache = cls._089_rung_cache = {}
@@ -261,7 +199,7 @@ class ComponentAdapter:
                 result = None
             if isinstance(result, dict) and str(result.get("type", "")).lower() == name:
                 supported.add(name)
-        supported.add("text")  # the terminal is always assumed renderable
+        supported.add("text")
         supported -= cls._089_TYPES
         cache[key] = frozenset(supported)
         return cache[key]
@@ -269,18 +207,9 @@ class ComponentAdapter:
 
     @classmethod
     def _carry_identity(cls, src: Dict, out: Dict) -> Dict:
-        """Copy identity fields onto a rebuilt/substituted component (055 US1):
-        a degraded component must stay addressable — clients key canvases and
-        purge welcome content by ``component_id ?? id``, and upsert morphs
-        target the same identity. ``provenance`` is a preserved field too
-        (055 US4, wire-contract §6): a degrade/collapse must never strip the
-        server-stamped trust mark."""
         for key in ("id", "component_id", "provenance"):
             if comp_val := src.get(key):
                 out.setdefault(key, comp_val)
-        # 088: native start placement must survive capability adaptation
-        # (e.g. a watch's grid becomes a container). This is a presentation
-        # hint, never permission to extract a nested or identified result.
         identity = src.get("component_id", src.get("id"))
         role = src.get("data-welcome")
         if (isinstance(role, str)
@@ -292,20 +221,12 @@ class ComponentAdapter:
 
     @classmethod
     def _degrade_unsupported(cls, comp: Dict, supported) -> Dict:
-        """Render ``comp`` as a type the target supports, substituting down the
-        fallback ladder when its own type is unsupported. Recurses so a
-        supported container with an unsupported child still degrades. Pure.
-        Identity fields survive substitution (_carry_identity)."""
         if not isinstance(comp, dict):
             return comp
         ctype = str(comp.get("type", "")).strip().lower()
         target = fallback.first_supported(ctype, supported)
         if target == ctype:
             return cls._degrade_children(comp, supported)
-        # Feature 089: the composite readouts name their fields, so their
-        # mapping runs BEFORE every generic converter -- including the text
-        # terminal, whose extractor knows nothing about steps, axes or
-        # thresholds and would emit an empty node where the numbers were.
         converted = cls._degrade_089(comp, ctype, target, supported)
         if converted is not None:
             return cls._carry_identity(comp, converted)
@@ -328,7 +249,6 @@ class ComponentAdapter:
         return cls._carry_identity(
             comp, {"type": "text", "content": cls._extract_text(comp) or "", "variant": "body"})
 
-    #: Step status -> the timeline variant that means the same thing.
     _STEP_VARIANT = {
         "done": "success",
         "active": "info",
@@ -338,11 +258,6 @@ class ComponentAdapter:
 
     @classmethod
     def _degrade_089(cls, comp: Dict, ctype: str, target: str, supported):
-        """Map a 089 composite readout onto its ladder target, field by field.
-
-        Returns ``None`` when this pair is not a 089 substitution, so the
-        caller falls through to its own handling.
-        """
         if ctype == "gauge" and target == "progress":
             out: Dict[str, Any] = {
                 "type": "progress",
@@ -382,7 +297,6 @@ class ComponentAdapter:
                         for i in items
                     ],
                 }
-            # Each stat becomes a metric tile, which is what a grid holds.
             return cls._degrade_children(
                 {
                     "type": "grid",
@@ -420,7 +334,6 @@ class ComponentAdapter:
             }
 
         if ctype == "donut_chart" and target == "pie_chart":
-            # The same single series, drawn as a disc instead of a ring.
             return {
                 "type": "pie_chart",
                 "title": comp.get("title", ""),
@@ -469,11 +382,6 @@ class ComponentAdapter:
 
     @classmethod
     def _summarize_089(cls, comp: Dict, ctype: str) -> str:
-        """One sentence that still carries the numbers.
-
-        This is what a watch or a voice surface receives. "Humidity" alone
-        would be a worse answer than the unsupported placeholder it replaced.
-        """
         title = str(comp.get("title") or comp.get("label") or "").strip()
         if ctype == "gauge":
             reading = comp.get("display_value") or (
@@ -514,7 +422,6 @@ class ComponentAdapter:
                 )
                 parts.append(f"{dataset.get('label') or ''} {pairs}".strip())
             return "; ".join(p for p in ([title] if title else []) + parts if p)
-        # action_group
         labels = [
             str(b.get("label") or "")
             for b in (comp.get("buttons") or [])
@@ -524,7 +431,6 @@ class ComponentAdapter:
 
     @classmethod
     def _to_list_089(cls, comp: Dict, ctype: str) -> Dict:
-        """A last-resort list that still carries the numbers."""
         items = []
         if ctype == "donut_chart":
             labels = [str(x) for x in (comp.get("labels") or [])]
@@ -542,7 +448,7 @@ class ComponentAdapter:
                     for i in range(min(len(axes), len(values)))
                 )
                 items.append(f"{dataset.get('label') or ''}: {pairs}".strip(": "))
-        else:  # stat_group
+        else:
             for item in comp.get("items") or []:
                 if isinstance(item, dict):
                     items.append(
@@ -605,8 +511,6 @@ class ComponentAdapter:
     def _to_table(cls, comp: Dict, supported) -> Dict:
         ctype = str(comp.get("type", "")).strip().lower()
         if ctype == "plotly_chart" and isinstance(comp.get("data"), list):
-            # Plotly traces are columnar x/y (or labels/values) arrays. Never
-            # reduce a multi-day, multi-series chart to its first value.
             rows = []
             for index, trace in enumerate(comp["data"]):
                 if not isinstance(trace, dict):
@@ -628,8 +532,6 @@ class ComponentAdapter:
             if comp.get("title"):
                 out["title"] = comp["title"]
             return out
-        # Charts: only a recognizably-shaped {labels, series} degrades cleanly to
-        # a table; otherwise drop to the next rung (list/text).
         data = comp.get("data") if isinstance(comp.get("data"), dict) else comp
         labels = data.get("labels")
         series = data.get("series") or data.get("datasets")
@@ -651,14 +553,9 @@ class ComponentAdapter:
             return cls._to_list(comp)
         return {"type": "text", "content": cls._extract_text(comp) or "", "variant": "body"}
 
+    # Security bound: caps a compromised agent's action budget
     @classmethod
     def _enforce_host_limits(cls, components: List[Dict], profile: DeviceProfile) -> List[Dict]:
-        """Bound what a surface renders, per the declarative host-config. On a
-        non-interactive (read-only) surface every action-button is dropped;
-        otherwise, when ``max_actions`` is set, action-buttons past the budget
-        are dropped (deepest-tree order preserved). This is a security bound: a
-        compromised agent cannot exceed the host's action budget on a given
-        surface. Returns the components unchanged when nothing applies."""
         read_only = not getattr(profile, "supports_interactivity", True)
         max_actions = getattr(profile, "max_actions", 0) or 0
         if not read_only and max_actions <= 0:
@@ -691,43 +588,22 @@ class ComponentAdapter:
 
         return [w for w in (walk(c) for c in components) if w is not None]
 
-    # Level-of-detail ladder (C-D10)
-
-    #: Component types small enough that their primary text lives in ``content``
-    #: (so an authored ``lod`` rung overwrites ``content``). Everything else
-    #: writes the resolved rung to ``content`` too — a text node is the universal
-    #: carrier — and the LOD ladder is opt-in per component (only acts when an
-    #: ``lod`` dict is present), so non-text components are unaffected unless the
-    #: author explicitly attached a ladder.
     _LOD_CONTENT_KEY = "content"
 
     @classmethod
     def _lod_device(cls, profile: DeviceProfile) -> Dict[str, Any]:
-        """Bridge a :class:`DeviceProfile` to the plain device model the ``lod``
-        module reads (``{device_type, is_small}``). The small-screen surfaces
-        (watch, mobile) also set ``is_small`` so the ladder's ``is_small``
-        fallback / modality routing stays consistent for callers that omit an
-        explicit ``device_type``."""
         dt = profile.device_type.value if profile.device_type else "browser"
         is_small = profile.device_type in (DeviceType.WATCH, DeviceType.MOBILE)
         return {"device_type": dt, "is_small": is_small}
 
     @classmethod
     def _apply_lod(cls, comp: Any, device: Dict[str, Any]) -> Any:
-        """Recursively collapse any ``lod`` ladder on ``comp`` (or its
-        descendants) to the rung ``device`` warrants. A component without an
-        ``lod`` dict is returned structurally unchanged (children still
-        recursed). The resolved rung is written to ``content`` and the consumed
-        ``lod`` key is dropped so it never reaches the renderer. Pure."""
         if not isinstance(comp, dict):
             return comp
         out = dict(comp)
         if isinstance(out.get("lod"), dict):
             resolved = lod.pick_content(out, device)
             out.pop("lod", None)
-            # Only overwrite when the ladder produced something AND ``content``
-            # is not a child list (a container's children must survive). An
-            # empty resolution leaves the component's existing content intact.
             if resolved != "" and not isinstance(out.get(cls._LOD_CONTENT_KEY), list):
                 out[cls._LOD_CONTENT_KEY] = resolved
         for key in ("content", "children"):
@@ -744,17 +620,8 @@ class ComponentAdapter:
             out["tabs"] = new_tabs
         return out
 
-    # Internal helpers
-
     @classmethod
     def _adapt_component(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        """Adapt a single component dict. Returns None to remove the component.
-
-        Identity fields survive every per-type rebuild (055 US1): a chart
-        condensed to a metric, a collapsible flattened to a card, etc. must
-        stay addressable — clients key canvases (and purge wel_ welcome
-        components) by ``component_id ?? id`` and upsert morphs target it.
-        """
         result = cls._adapt_component_typed(comp, profile)
         if isinstance(result, dict) and result is not comp and isinstance(comp, dict):
             cls._carry_identity(comp, result)
@@ -767,20 +634,15 @@ class ComponentAdapter:
 
         comp_type = comp.get("type", "")
 
-        # ---- VOICE: collapse everything to text ----
         if profile.device_type == DeviceType.VOICE:
             text = cls._extract_text(comp)
             if text:
                 return {"type": "text", "content": text[:profile.max_text_chars] if profile.max_text_chars else text, "variant": "body"}
             return None
 
-        # ---- Dispatch by component type ----
         if comp_type in ("bar_chart", "line_chart", "pie_chart", "plotly_chart"):
             return cls._adapt_chart(comp, profile)
 
-        # Feature 089 types. Reaching here at all means the profile draws them
-        # (the non-web guard substitutes a ladder fallback upstream), so these
-        # rules only ever fit a drawn type to the width it is drawn at.
         if comp_type in _WEB_089_TYPES:
             return cls._adapt_089_web(comp, profile)
 
@@ -817,24 +679,13 @@ class ComponentAdapter:
         if comp_type == "download_card":
             return cls._adapt_download_card(comp, profile)
 
-        # Recurse into known container types
         if comp_type in ("container", "card"):
             return cls._adapt_container(comp, profile)
 
-        # Everything else passes through
         return comp
-
-    # Per-type adaptation
 
     @classmethod
     def _adapt_089_web(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        """Fit an 089 type to the web viewport it is being drawn at.
-
-        Per ``contracts/ui-primitives-089.md`` (Web-profile adaptation). Each
-        rule narrows presentation only: no value is dropped, and a component
-        that needs no change is returned as-is so identity carrying and the
-        adapter's no-op fast paths keep working.
-        """
         if profile.device_type not in _WEB_PROFILES:
             return comp
         comp_type = comp.get("type", "")
@@ -852,15 +703,11 @@ class ComponentAdapter:
             return {**comp, "columns": cap}
 
         if comp_type == "gauge":
-            # Below 480 the dial and its readout cannot both be legible at the
-            # size a phone gives them; the compact variant keeps the number.
             if 0 < width < 480 and comp.get("variant") != "compact":
                 return {**comp, "variant": "compact"}
             return comp
 
         if comp_type in ("donut_chart", "radar_chart"):
-            # The same 700px rule the other charts use: below it, a ring or a
-            # web of axes is decoration, and the numbers read better as rows.
             if 0 < width < 700:
                 return cls._089_as_table(comp)
             return comp
@@ -878,9 +725,6 @@ class ComponentAdapter:
             if profile.device_type == DeviceType.MOBILE:
                 updated["wrap"] = True
             if len(actions) > 3:
-                # Two in the bar, the rest behind one more — the same shape the
-                # composer uses, so a narrow row never becomes a second row of
-                # controls the reader has to hunt through.
                 updated["actions"] = list(actions[:2])
                 updated["overflow_actions"] = list(actions[2:])
             return updated if updated != comp else comp
@@ -889,7 +733,6 @@ class ComponentAdapter:
 
     @staticmethod
     def _089_as_table(comp: Dict) -> Dict:
-        """A donut or radar as the table form, with every value preserved."""
         identity = {k: comp[k] for k in ("id", "component_id") if k in comp}
         title = comp.get("title", "")
         if comp.get("type") == "donut_chart":
@@ -928,11 +771,9 @@ class ComponentAdapter:
                 return {**comp, "layout": layout}
             return comp
 
-        # Degrade chart → metric card
         comp.get("type", "chart")
         title = comp.get("title", "Result")
 
-        # Try to extract a single meaningful value
         value = cls._extract_chart_value(comp)
         return {
             "type": "metric",
@@ -943,7 +784,6 @@ class ComponentAdapter:
 
     @classmethod
     def _extract_chart_value(cls, comp: Dict) -> Any:
-        """Pull a representative single value from a chart component."""
         comp_type = comp.get("type", "")
         if comp_type == "pie_chart":
             data = comp.get("data", [])
@@ -952,7 +792,6 @@ class ComponentAdapter:
                 idx = data.index(max(data))
                 label = labels[idx] if idx < len(labels) else "value"
                 return f"{label}: {data[idx]}"
-        # bar/line/plotly — use first dataset first value
         datasets = comp.get("datasets", [])
         if datasets:
             first = datasets[0]
@@ -960,7 +799,6 @@ class ComponentAdapter:
             label = first.get("label", "")
             if data:
                 return f"{label}: {data[0]}" if label else data[0]
-        # plotly raw data
         plotly_data = comp.get("data", [])
         if plotly_data and isinstance(plotly_data, list):
             first = plotly_data[0]
@@ -972,7 +810,6 @@ class ComponentAdapter:
     @classmethod
     def _adapt_table(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
         if not profile.supports_tables:
-            # Degrade table → list of key items
             headers = comp.get("headers", [])
             rows = comp.get("rows", [])
             max_rows = profile.max_table_rows or len(rows)
@@ -988,13 +825,10 @@ class ComponentAdapter:
                         parts.append(str(cell))
                 items.append(" | ".join(parts))
             degraded = {"type": "list", "items": items, "ordered": False}
-            # Keep the table's name — an anonymous bulleted list gives the
-            # wearer no idea what the data is (parity with _to_list).
             if comp.get("title"):
                 degraded["title"] = comp["title"]
             return degraded
 
-        # Still supports tables — trim rows/cols if needed
         headers = comp.get("headers", [])
         rows = comp.get("rows", [])
 
@@ -1017,16 +851,12 @@ class ComponentAdapter:
             c for c in (cls._adapt_component(ch, profile) for ch in children) if c is not None
         ]
         if capped <= 1:
-            # Collapse to a container — identity survives (055 US1: the watch
-            # purges wel_ welcome components by id, and upsert morphs need the
-            # collapsed grid to stay addressable).
             return cls._carry_identity(comp, {"type": "container", "children": adapted_children})
         return {**comp, "columns": capped, "children": adapted_children}
 
     @classmethod
     def _adapt_collapsible(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        if not profile.supports_tabs:  # same "richness" gate as tabs
-            # Flatten: return children directly as a card
+        if not profile.supports_tabs:
             content = comp.get("content", [])
             adapted = [
                 c for c in (cls._adapt_component(ch, profile) for ch in content) if c is not None
@@ -1036,7 +866,6 @@ class ComponentAdapter:
                 "title": comp.get("title", ""),
                 "content": adapted,
             }
-        # Recurse into content
         content = comp.get("content", [])
         adapted = [
             c for c in (cls._adapt_component(ch, profile) for ch in content) if c is not None
@@ -1046,7 +875,6 @@ class ComponentAdapter:
     @classmethod
     def _adapt_tabs(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
         if not profile.supports_tabs:
-            # Keep only first tab, flatten to card
             tabs = comp.get("tabs", [])
             if not tabs:
                 return None
@@ -1093,16 +921,10 @@ class ComponentAdapter:
 
     @classmethod
     def _adapt_button(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        # TV and voice: remove interactive inputs
         if profile.device_type in (DeviceType.TV, DeviceType.VOICE):
             return None
-        # Watch: keep only primary buttons
         if profile.device_type == DeviceType.WATCH:
             if comp.get("variant", "primary") != "primary":
-                # 088's ordinary prompt shortcuts are secondary visually,
-                # but use the same authenticated chat submission as dictation.
-                # Keep only their declared, bounded interaction; this does not
-                # promote arbitrary secondary actions or bypass host limits.
                 identity = comp.get("component_id", comp.get("id"))
                 payload = comp.get("payload")
                 message = payload.get("message") if isinstance(payload, dict) else None
@@ -1116,9 +938,6 @@ class ComponentAdapter:
 
     @classmethod
     def _adapt_skeleton(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        """Cap the loading-skeleton's placeholder row count on small surfaces
-        so it fits a watch/phone (VOICE is handled earlier by text collapse).
-        Other targets pass through unchanged."""
         try:
             count = int(comp.get("count", 4))
         except (TypeError, ValueError):
@@ -1131,15 +950,6 @@ class ComponentAdapter:
 
     @classmethod
     def _adapt_chat_history(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        """Condense the recent-chats surface on small screens.
-
-        The full row (avatar + title + preview + time) is right for
-        browser/tablet/TV; a watch has no room for previews and few rows, and a
-        phone's history rail is short — so trim the item count and, on a watch,
-        drop the preview snippet. The web renderer already treats ``preview`` as
-        optional, so stripping it just yields a tighter row. VOICE is handled
-        earlier by text collapse; other targets pass through unchanged.
-        """
         items = [i for i in (comp.get("items") or []) if isinstance(i, dict)]
         caps = {DeviceType.WATCH: 4, DeviceType.MOBILE: 10}
         cap = caps.get(profile.device_type)
@@ -1152,14 +962,6 @@ class ComponentAdapter:
 
     @classmethod
     def _adapt_download_card(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        """Adapt the desktop-app download card per surface.
-
-        browser/tablet/TV — full card (button + integrity block).
-        mobile — compact card (button + version; drop the collapsible note +
-                 the SHA block — the link still carries the verified asset).
-        watch — collapse to a single text + link (version only).
-        VOICE is handled earlier by text collapse (``_extract_text``).
-        """
         if profile.device_type == DeviceType.MOBILE:
             trimmed = {k: v for k, v in comp.items()
                        if k not in ("description", "sha256", "sigstore_bundle_url")}
@@ -1174,25 +976,20 @@ class ComponentAdapter:
 
     @classmethod
     def _adapt_container(cls, comp: Dict, profile: DeviceProfile) -> Dict:
-        """Recurse into card.content or container.children."""
         if comp.get("type") == "card":
             content = comp.get("content", [])
             adapted = [
                 c for c in (cls._adapt_component(ch, profile) for ch in content) if c is not None
             ]
             return {**comp, "content": adapted}
-        # container
         children = comp.get("children", [])
         adapted = [
             c for c in (cls._adapt_component(ch, profile) for ch in children) if c is not None
         ]
         return {**comp, "children": adapted}
 
-    # Text extraction (for VOICE profile)
-
     @classmethod
     def _extract_text(cls, comp: Dict) -> str:
-        """Recursively extract all human-readable text from a component."""
         parts: List[str] = []
         comp_type = comp.get("type", "")
 
@@ -1211,8 +1008,6 @@ class ComponentAdapter:
             parts.append(f"{title}: {msg}" if title else msg)
 
         elif comp_type == "image":
-            # An image degraded to text must say SOMETHING — without this the
-            # watch receives {"type":"text","content":""} and draws nothing.
             alt = comp.get("alt") or comp.get("caption") or comp.get("title") or ""
             parts.append(f"Image: {alt}" if alt else "An image (view it on another device)")
 
@@ -1290,8 +1085,6 @@ class ComponentAdapter:
             parts.append(f"{label}: {value} out of {max_value} stars")
 
         elif comp_type == "chat_history":
-            # Voice surfaces speak the recent-chats list so the user hears which
-            # conversations they can reopen.
             parts.append(str(comp.get("title") or "Recent chats"))
             titles = [str(it.get("title")).strip()
                       for it in (comp.get("items") or [])
@@ -1302,15 +1095,11 @@ class ComponentAdapter:
                 parts.append(": no conversations yet")
 
         elif comp_type == "skeleton":
-            # Voice surfaces speak the loading state.
             parts.append(str(comp.get("label") or "Loading"))
 
         elif comp_type == "button":
-            # Speak actionable labels (e.g. chat-history items) so voice users
-            # hear what they can open.
             parts.append(comp.get("label", ""))
 
-        # Recurse into children/content/tabs
         for key in ("children", "content"):
             for child in comp.get(key, []):
                 if isinstance(child, dict):

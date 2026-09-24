@@ -1,3 +1,6 @@
+// CI coverage tool: validates that class-id probes match the pinned native AGP reporter before
+// Kover coverage is trusted, refusing stale probes. Run by android-client/gradle/coverage.gradle.
+
 import java.io.File;
 import java.io.InputStream;
 import java.nio.file.Files;
@@ -9,7 +12,6 @@ import org.jacoco.core.internal.data.CRC64;
 import org.jacoco.core.tools.ExecFileLoader;
 import org.objectweb.asm.ClassReader;
 
-/** Refuses stale probes before the pinned native AGP reporter consumes them. */
 public final class ValidateClassIds {
     private static void add(Map<String, Long> classes, byte[] bytes) {
         String name = new ClassReader(bytes).getClassName();
@@ -58,7 +60,6 @@ public final class ValidateClassIds {
             int matched = 0, probes = 0;
             for (ExecutionData data : loader.getExecutionDataStore().getContents()) {
                 Long expected = classes.get(data.getName());
-                // Test and dependency probes are not in AGP's app class domain.
                 if (expected == null) continue;
                 if (expected.longValue() != data.getId()) {
                     throw new IllegalStateException("class_id_mismatch");

@@ -1,4 +1,7 @@
-"""Spec 060 Windows deployment-profile contract tests (T058)."""
+"""Tests for astral_client/app.py, deployment.py, and win_agent/agent.py: the
+deployment-profile contract — field strictness, local-vs-production rules, precedence
+across managed/CLI/persisted/bundled sources, and cross-consumer agreement.
+"""
 
 from __future__ import annotations
 

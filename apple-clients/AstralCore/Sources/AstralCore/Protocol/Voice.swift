@@ -1,9 +1,7 @@
-// Feature 065 — strict conversational-voice wire models shared by every Apple client.
-//
-// Audio is never represented here.  This file validates only the content-free
-// control/manifest envelopes and builds the ordinary chat_message used for a
-// final transcript.  Bearers and transcript proofs remain memory-only and are
-// deliberately redacted from textual descriptions.
+// Strict, validated wire models for conversational-voice control and manifest envelopes shared by every Apple
+// client; builds the ordinary chat_message for final transcripts, while audio, bearers, and transcript proofs
+// stay memory-only.
+
 import Foundation
 
 public let voiceTranscriptTopic = "astraldeep.voice.transcript.v1"
@@ -55,10 +53,7 @@ private func voiceTimestampDate(_ value: String) -> Date? {
     return fractional.date(from: value)
 }
 
-/// 2^53 − 1, the largest exactly-representable JSON/JS integer — clamped to
-/// this platform's `Int` so the arm64_32 watch (32-bit `Int`) compiles. A wire
-/// value above `Int.max` cannot be represented there anyway, so the tighter
-/// bound refuses exactly the values integer extraction would refuse.
+// Largest exact JSON integer, clamped for 32-bit watch Int
 private let maximumSafeWireInteger = Int(clamping: 9_007_199_254_740_991 as Int64)
 
 private func voiceInteger(
@@ -329,7 +324,6 @@ public struct VoiceComposerModel: Sendable, Equatable {
     }
 }
 
-// Tiny wrappers keep explicit-null distinct from an absent optional key.
 private enum OptionalUUID {
     static func parse(_ object: [String: JSONValue], _ key: String) -> String?? {
         let parsed = voiceNullableUUID(object, key)
@@ -680,11 +674,6 @@ public struct VoiceSubmissionRejected: Sendable, Equatable {
     }
 }
 
-/// A durable, text-first explanation for the last terminal voice request.
-///
-/// The notice deliberately carries an explicit symbol-independent title. The
-/// clients may tint it with their theme, but color is never the only signal.
-/// `serverMessage` is a validated, bounded wire value and remains plain text.
 public struct VoiceTerminalNotice: Sendable, Equatable, Identifiable {
     public enum Kind: String, Sendable {
         case requestFailure = "request_failure"
@@ -725,11 +714,6 @@ public struct VoiceTerminalNotice: Sendable, Equatable, Identifiable {
     }
 }
 
-/// Applies terminal voice-request notices consistently on iOS, macOS, and
-/// watchOS. A notice survives ordinary session/composer churn and even a
-/// same-turn out-of-order lifecycle update. Only a different accepted,
-/// processing, or successful turn supersedes it; explicit session end/reset
-/// remains a client-controller responsibility.
 public enum VoiceTerminalNoticeReducer {
     private static let completedStates: Set<String> = [
         "failed", "refused", "cancelled", "abandoned",
@@ -799,9 +783,6 @@ public enum VoiceTerminalNoticeReducer {
         return submissionRejected(rejection)
     }
 
-    /// Whether a validated lifecycle event can supersede the visible notice.
-    /// Same-turn updates remain eligible so terminal detail can be refreshed;
-    /// a different turn must prove that it is not older than the notice.
     public static func canApply(
         current: VoiceTerminalNotice?, turnId: String, occurredAt: String
     ) -> Bool {
@@ -1313,7 +1294,6 @@ public enum VoiceMediaEnvelope: Sendable, Equatable {
     }
 }
 
-/// Enforces manifest sequence, result quantum order, and the 30-second result ceiling.
 public struct VoiceAnnouncementLedger: Sendable {
     private var lastSequence = 0
     private var resultSamples: [String: Int] = [:]
@@ -1476,9 +1456,6 @@ public struct VoicePlayoutEvent: Sendable, Equatable {
     }
 }
 
-/// A strictly validated voice frame whose identities and transcript proof are
-/// meaningful only on the currently established UI socket. These frames must
-/// never be retained by the ordinary offline-operation replay queue.
 public struct VoiceCurrentConnectionFrame: Sendable, Equatable {
     public enum Kind: String, Sendable, Equatable {
         case playoutEvent = "voice_playout_event"
@@ -1524,9 +1501,6 @@ public struct VoiceCurrentConnectionFrame: Sendable, Equatable {
         self.frameText = frameText
     }
 
-    /// True when a frame claims a voice-only current-connection shape, even
-    /// if its required fields are malformed. The replay parser uses this to
-    /// prevent malformed voice frames from degrading into generic UI events.
     static func claimsCurrentConnectionSemantics(frameText: String) -> Bool {
         guard let data = frameText.data(using: .utf8),
             let root = try? JSONValue.parse(data),
@@ -1639,10 +1613,6 @@ extension Outbound {
     }
 }
 
-// MARK: - Feature 075 client-local speech contract
-
-/// Closed UI outcomes for the client-local v2 transport. These values carry no
-/// engine, endpoint, credential, or authority selector.
 public enum VoiceLocalDisposition: String, Sendable, CaseIterable {
     case ready
     case typedFallback = "typed_fallback"
@@ -1761,8 +1731,6 @@ public struct VoiceLocalCapability: Sendable, Equatable {
     }
 }
 
-/// Strict v2 local control/frame model. It cannot construct a remote proof or
-/// select a backend; malformed/unknown input returns nil for typed fallback.
 public struct VoiceLocalFrame: Sendable, Equatable {
     public let type: String
     public let disposition: VoiceLocalDisposition
@@ -1859,8 +1827,6 @@ private func voiceLocalRuntime(_ object: [String: JSONValue]) -> Bool {
 }
 
 extension Outbound {
-    /// Returns only the already validated bounded local-final frame; it never
-    /// adds remote-worker authority, proof fields, audio, or endpoint data.
     public static func voiceLocalFinal(_ frame: VoiceLocalFrame) -> JSONValue? {
         frame.type == "voice_local_final" && frame.disposition == .final ? frame.payload : nil
     }

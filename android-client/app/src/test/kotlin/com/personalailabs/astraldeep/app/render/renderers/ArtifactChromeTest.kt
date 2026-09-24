@@ -1,3 +1,6 @@
+// Tests for ComponentChrome's pure rules: provenance badge mapping, overflow-menu entries (refine/export),
+// and the component_refine payload shape.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -8,16 +11,8 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/**
- * Feature 055 US4/US5 (T036/T040/T045) — the pure rules behind the shared
- * per-component chrome: provenance badge mapping (server-stamped field only,
- * absent = nothing), overflow-menu derivation (Refine target + export
- * entries with their exact REST URLs), and the `component_refine` payload.
- */
 class ArtifactChromeTest {
     private fun comp(json: String): Component = Component.fromJson(Json.parseToJsonElement(json) as JsonObject)
-
-    // --- provenance badge (T036, wire-contract §6) ---------------------------
 
     @Test
     fun the_three_canonical_stamps_map_to_their_badges() {

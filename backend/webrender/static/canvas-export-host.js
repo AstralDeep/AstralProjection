@@ -1,4 +1,6 @@
-/* Fixed bootstrap for the isolated, bundled export-only native document. */
+// Bootstraps the isolated, bundled document that canvas-export.js's snapshot() renders into for a
+// native export, sizing it to the host's already-inset content box.
+
 (function () {
   "use strict";
   var state = document.documentElement;
@@ -58,13 +60,9 @@
     });
     var canvas = document.getElementById("astral-canvas");
     canvas.style.width = input.viewport.width + "px";
-    // Capture width is the already-inset native content box. Shared mobile
-    // canvas CSS must not subtract a second set of gutters from its children.
     canvas.style.padding = "0";
     canvas.appendChild(template.content);
-    // The private native document is deliberately detached/hidden. WebKit
-    // suspends animation frames there, so settle the bundled Tailwind mutation
-    // observer through event-loop turns and force layout before awaiting fonts.
+    // WebKit pauses rAF in this hidden doc; await a turn before layout
     await new Promise(function (resolve) { setTimeout(resolve, 0); });
     canvas.getBoundingClientRect();
     await document.fonts.ready;

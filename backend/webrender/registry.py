@@ -1,9 +1,8 @@
-"""Renderer registry & client-target dispatch.
-
-This is the seam that makes new client targets additive: a new target registers
-a renderer here; primitive definitions (``astralprims``) and agent code never
-change.
+"""Registry mapping client render targets to their renderer callables, letting
+webrender/targets/* add a new target without changing astralprims or agent code; used
+by render_for_target().
 """
+
 from __future__ import annotations
 
 import logging
@@ -15,9 +14,6 @@ from .aom import render_aom
 
 logger = logging.getLogger("webrender")
 
-# Client target -> renderer callable(components, profile) -> target output.
-# The `voice` target renders structured SSML for TTS; the `aom` target renders a
-# navigable semantic role/name/state tree (not HTML) for assistive tech.
 TARGET_RENDERERS: Dict[str, Callable[[List[Dict[str, Any]], Any], Any]] = {
     "web": render_web,
     "voice": render_voice,
@@ -28,23 +24,14 @@ DEFAULT_TARGET = "web"
 
 
 def register_target(name: str, renderer: Callable[[List[Dict[str, Any]], Any], Any]) -> None:
-    """Register a renderer for a new client target. Adding a target requires
-    only this call + the renderer module — no change to astralprims or agents."""
     TARGET_RENDERERS[name] = renderer
 
 
 def get_renderer(type_name: str) -> Optional[Callable[[Dict[str, Any]], str]]:
-    """Return the web primitive renderer for a primitive ``type`` (or None)."""
     return PRIMITIVE_RENDERERS.get(type_name)
 
 
 def render_for_target(target: Optional[str], components: List[Dict[str, Any]], profile: Any = None) -> Any:
-    """Render the (ROTE-adapted) structured representation for a client target.
-
-    Unknown/unsupported targets are handled predictably: we log a non-silent
-    warning and fall back to the default (web) renderer rather than failing the
-    response.
-    """
     key = (target or DEFAULT_TARGET).lower()
     fn = TARGET_RENDERERS.get(key)
     if fn is None:
@@ -54,14 +41,6 @@ def render_for_target(target: Optional[str], components: List[Dict[str, Any]], p
 
 
 def target_for_profile(profile: Any) -> str:
-    """Pick the renderer target for a device profile.
-
-    Default is ``web``. When ``FF_NATIVE_TARGETS`` is enabled, a VOICE device is
-    routed to the structured ``voice`` (SSML) renderer, and an explicit
-    ``profile.render_target`` (e.g. ``aom`` for an accessibility-object-model
-    client) is honored when that target is registered. Off ⇒ always ``web``, so
-    the default product is unchanged.
-    """
     import os
     if os.getenv("FF_NATIVE_TARGETS", "false").strip().lower() not in ("1", "true", "yes", "on"):
         return DEFAULT_TARGET

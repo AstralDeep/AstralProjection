@@ -1,3 +1,7 @@
+// Tests for WorkSurfaceUpdate's reduce logic (Chrome/WorkSurface.swift): only the current response paints,
+// disconnects invalidate pending reads without replay, and admission refusals retire tickets without
+// queueing.
+
 import AstralCore
 import SwiftUI
 import XCTest

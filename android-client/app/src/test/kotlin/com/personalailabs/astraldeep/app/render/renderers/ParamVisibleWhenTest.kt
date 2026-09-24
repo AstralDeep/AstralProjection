@@ -1,3 +1,6 @@
+// Tests for ParamPicker's visible_when field-visibility rule: a field shows only while its named controller
+// field's current or default value matches, re-evaluated on every change.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import kotlinx.serialization.json.Json
@@ -8,20 +11,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/**
- * 063.1 — declarative `visible_when` on ParamPicker fields (parity with
- * `windows-client/tests/test_param_visible_when.py`). The server may mark a
- * field `visible_when: {field, equals, default}`; the renderer shows it only
- * while the named controller select's current value (typed-or-`default`)
- * matches, re-evaluating on every controller change. Fields without the
- * attribute — and whole payloads from servers that predate it — render exactly
- * as before, and hidden fields still submit their values (the server reads
- * only the inputs matching the controller, so a stale hidden value is inert).
- */
 class ParamVisibleWhenTest {
     private fun field(json: String): JsonObject = Json.parseToJsonElement(json) as JsonObject
 
-    /** The machine-add credential form from `remote_machines.components()`. */
     private val credType =
         field(
             """{"name":"cred_type","label":"Credential type","kind":"select",
@@ -56,7 +48,7 @@ class ParamVisibleWhenTest {
     @Test
     fun visibility_reacts_to_controller_change_both_ways() {
         val texts = initialTexts(form).toMutableMap()
-        texts["cred_type"] = "password" // what SelectField's onSelect writes
+        texts["cred_type"] = "password"
         assertFalse(fieldIsVisible(privateKey, texts), "key textarea hides for password auth")
         assertFalse(fieldIsVisible(passphrase, texts))
         assertTrue(fieldIsVisible(password, texts))
@@ -70,7 +62,7 @@ class ParamVisibleWhenTest {
     fun hidden_fields_still_submit_their_values() {
         val texts = initialTexts(form).toMutableMap()
         texts["private_key"] = "KEYDATA"
-        texts["cred_type"] = "password" // private_key is now hidden
+        texts["cred_type"] = "password"
         val payload = collectFields(form, texts, emptyMap(), emptyMap())
         val fields = payload["fields"] as JsonObject
         assertEquals(
@@ -90,8 +82,6 @@ class ParamVisibleWhenTest {
 
     @Test
     fun an_untouched_controller_resolves_via_the_embedded_default() {
-        // The marker embeds the controller's default so a client can resolve
-        // visibility even before any state exists for the controller field.
         assertTrue(fieldIsVisible(privateKey, emptyMap()))
         assertFalse(fieldIsVisible(password, emptyMap()))
     }

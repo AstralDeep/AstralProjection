@@ -1,25 +1,6 @@
-"""Integrity verifier for the Windows desktop client (feature 039).
-
-Before a freshly-downloaded ``AstralDeep.exe`` is ever executed, this module:
-
-  1. resolves the latest GitHub Release (api.github.com/repos/<repo>/releases/latest),
-  2. downloads the exe + ``SHA256SUMS`` + ``cosign.bundle`` assets,
-  3. verifies ``sha256(exe) ==`` the manifest entry for the exe,
-  4. verifies the sigstore ``cosign.bundle`` against the exe — asserting the
-     signing certificate's OIDC identity is one exact release channel allowed
-     by the source-pinned transition policy,
-  5. only then returns the verified exe path for the caller to launch/replace.
-
-**Fail-closed:** any mismatch or unverifiable signature ⇒ ``VerifyResult(ok=False)``
-and the downloaded binary is deleted. **Offline-tolerant:** an unreachable GitHub
-on an *update check* keeps the current already-verified binary (the caller never
-runs an unverified download); integrity is checked before every run of a
-freshly-downloaded binary, not just on first install.
-
-``sigstore`` is a CLIENT-ONLY dependency (frozen into the PyInstaller bundle) —
-it never enters the orchestrator image (Constitution V preserved). If ``sigstore``
-is unavailable, the verifier fail-closes (refuses) rather than skipping the
-signature check.
+"""Fail-closed release verifier for the Windows client: resolves the latest trusted
+GitHub release, checks its SHA-256 and sigstore signature against a pinned OIDC
+identity before returning a verified exe path to app.py and deployment.py.
 """
 
 from __future__ import annotations
@@ -39,15 +20,12 @@ logger = logging.getLogger("astral.integrity")
 _EXE_NAME = "AstralDeep.exe"
 _SHA_NAME = "SHA256SUMS"
 _BUNDLE_NAME = "cosign.bundle"
-# The OIDC identity the signing workflow MUST present (keyless sigstore).
 _EXPECTED_ISSUER = "https://token.actions.githubusercontent.com"
-_MAX_BYTES = 200 * 1024 * 1024  # 200 MB cap on the exe download
+_MAX_BYTES = 200 * 1024 * 1024
 
 
 @dataclass(frozen=True)
 class ReleaseChannel:
-    """One exact repository and keyless-signing workflow identity."""
-
     repository: str
     signing_workflow: str
 
@@ -65,24 +43,12 @@ _PROJECTION_CHANNEL = ReleaseChannel(
     ),
 )
 
-# Backward-compatible names used by the existing release-evidence harness.
-# They are constants, not environment-controlled trust inputs.
 _REPO = _LEGACY_CHANNEL.repository
 _SIGNING_WORKFLOW = _LEGACY_CHANNEL.signing_workflow
 
 
 @dataclass(frozen=True)
 class ReleaseTrustPolicy:
-    """Source-pinned bounds for a Windows release-identity transition.
-
-    ``legacy_only`` is intentionally active until a bridge version has been
-    selected and published by the already-trusted AstralDeep workflow. Runtime
-    environment variables cannot widen this policy. A bridge build changes
-    these source constants and is itself signed by the legacy workflow. Its
-    executable digest is external evidence because a binary cannot safely pin
-    its own digest; the two exact channels must report identical bridge bytes.
-    """
-
     state: str = "legacy_only"
     bridge_version: str = ""
     legacy_max_version: str = ""
@@ -125,8 +91,6 @@ _SEMVER_RE = re.compile(
 @total_ordering
 @dataclass(frozen=True)
 class SemVer:
-    """Strict Semantic Version 2.0 identity and precedence value."""
-
     major: int
     minor: int
     patch: int
@@ -174,13 +138,10 @@ class SemVer:
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SemVer):
             return False
-        # Build metadata does not participate in SemVer precedence/equality.
         return self._compare_precedence(other) == 0
 
 
 def parse_semver(value: str) -> SemVer:
-    """Parse exact SemVer without trimming, prefix removal, or line tolerance."""
-
     if not isinstance(value, str) or any(character.isspace() for character in value):
         raise ValueError("version must be strict SemVer without whitespace")
     match = _SEMVER_RE.fullmatch(value)
@@ -198,8 +159,6 @@ def parse_semver(value: str) -> SemVer:
 
 
 def is_newer_version(candidate: str, current: str) -> bool:
-    """Return whether ``candidate`` has greater strict SemVer precedence."""
-
     return parse_semver(candidate) > parse_semver(current)
 
 
@@ -225,8 +184,6 @@ def _validated_policy(policy: ReleaseTrustPolicy) -> ReleaseTrustPolicy:
     legacy_max = parse_semver(policy.legacy_max_version)
     if policy.bridge_version != policy.legacy_max_version:
         raise ValueError("legacy maximum must equal the immutable bridge version")
-    # Keep the parsed values live so malformed versions fail above; identity is
-    # raw canonical SemVer, not precedence equality (which ignores +build).
     if str(bridge) != policy.bridge_version or str(legacy_max) != policy.legacy_max_version:
         raise ValueError("bridge versions must use canonical strict SemVer")
     return policy
@@ -250,8 +207,6 @@ def _release_channel(release: ReleaseAssets) -> ReleaseChannel | None:
 
 
 def is_release_trusted(release: ReleaseAssets, *, policy: ReleaseTrustPolicy) -> bool:
-    """Check repository, workflow, and version bounds without network access."""
-
     try:
         allowed = _allowed_channels(policy)
         channel = _release_channel(release)
@@ -284,8 +239,6 @@ def bridge_artifacts_match(
     *,
     policy: ReleaseTrustPolicy,
 ) -> bool:
-    """Require the transition release to be byte-identical in both channels."""
-
     try:
         _validated_policy(policy)
     except ValueError:
@@ -315,8 +268,6 @@ def select_trusted_release(
     *,
     policy: ReleaseTrustPolicy,
 ) -> ReleaseAssets | None:
-    """Select the highest trusted release with deterministic channel priority."""
-
     _validated_policy(policy)
     trusted = [
         candidate for candidate in candidates if is_release_trusted(candidate, policy=policy)
@@ -364,8 +315,6 @@ def select_update_release(
     current_version: str,
     policy: ReleaseTrustPolicy,
 ) -> ReleaseAssets | None:
-    """Select a strictly newer trusted release; equal/older versions refuse."""
-
     current = parse_semver(current_version)
     newer: list[ReleaseAssets] = []
     for candidate in candidates:
@@ -417,11 +366,7 @@ def _latest_release_for_channel(
     except ValueError:
         logger.info("release tag is not v<strict-semver>")
         return None
-    # Publisher contract (spec 060, FR-048): the protected publisher names the
-    # release exactly its tag and only ever transitions a non-draft,
-    # non-prerelease release to public/latest. Enforce the same contract here
-    # fail-closed. The live GitHub API always carries ``name`` (null when
-    # unset — refused); the key-absent default only tolerates pre-060 fixtures.
+    # Release name must equal its tag; a mismatch fails closed
     if data.get("name", tag) != tag:
         logger.info("release name does not equal its tag")
         return None
@@ -478,8 +423,6 @@ def latest_trusted_release(
     *,
     policy: ReleaseTrustPolicy = _ACTIVE_RELEASE_TRUST,
 ) -> Optional[ReleaseAssets]:
-    """Resolve the highest release permitted by the source-pinned policy."""
-
     candidates = tuple(
         candidate
         for channel in _allowed_channels(policy)
@@ -489,8 +432,6 @@ def latest_trusted_release(
 
 
 def latest_release() -> Optional[ReleaseAssets]:
-    """Compatibility facade for the currently active exact trust policy."""
-
     return latest_trusted_release()
 
 
@@ -558,15 +499,6 @@ def _verify_sigstore(
     tag: str = "",
     signing_workflow: str = _SIGNING_WORKFLOW,
 ) -> tuple[bool, str]:
-    """Verify the cosign bundle against the exe; assert the OIDC identity.
-
-    Returns (ok, reason). Fail-closed if sigstore isn't importable.
-
-    The expected SAN is the signing workflow's OIDC subject, rebuilt from the
-    release tag so it exactly matches the cert GitHub issued for that tag
-    (sigstore's Identity policy is an exact match, not a prefix). Runtime
-    environment variables cannot widen the repository/workflow trust set.
-    """
     try:
         from sigstore.verify import Verifier
         from sigstore.verify.policy import Identity
@@ -595,11 +527,6 @@ def _verify_sigstore(
 
 
 def verify_latest(workdir: str, *, _release: ReleaseAssets | None = None) -> VerifyResult:
-    """Download + verify the latest released exe into ``workdir``.
-
-    Returns a :class:`VerifyResult`; on failure the downloaded files are
-    deleted. The caller launches ``exe_path`` only when ``ok`` is True.
-    """
     rel = _release or latest_release()
     if rel is None:
         return VerifyResult(ok=False, reason="Could not resolve the latest GitHub release.")
@@ -616,7 +543,6 @@ def verify_latest(workdir: str, *, _release: ReleaseAssets | None = None) -> Ver
         _cleanup(exe_path)
         return VerifyResult(ok=False, reason="Download of cosign.bundle failed.")
 
-    # 1. SHA-256
     expected = _extract_sha_for_exe(sha_text)
     if not expected:
         _cleanup(exe_path, bundle_path)
@@ -637,7 +563,6 @@ def verify_latest(workdir: str, *, _release: ReleaseAssets | None = None) -> Ver
             reason="Downloaded executable differs from the selected release asset digest.",
         )
 
-    # 2. sigstore
     ok, reason = _verify_sigstore(
         exe_path,
         bundle_path,
@@ -652,12 +577,6 @@ def verify_latest(workdir: str, *, _release: ReleaseAssets | None = None) -> Ver
 
 
 def verify_running_exe(exe_path: str, *, workdir: str, _release=None) -> VerifyResult:
-    """Verify an already-installed exe (e.g. ``sys.executable``) against the
-    latest release's ``SHA256SUMS`` + ``cosign.bundle`` — WITHOUT re-downloading
-    the 68 MB exe. The launch-time check uses this to confirm the binary the user
-    is *actually running* is the signed one. Only the tiny manifest + bundle are
-    fetched; the local exe is hashed in place. Fail-closed; never raises.
-    """
     if not exe_path or not os.path.exists(exe_path):
         return VerifyResult(ok=False, reason="running exe not found")
     release_source = _release or latest_release
@@ -710,19 +629,6 @@ def check_at_launch(
     _verify_running=None,
     _verify_latest=None,
 ) -> dict:
-    """Launch-time integrity + update check. **Never raises; offline-tolerant.**
-
-    Returns a notice dict ``{status, level, message, version}`` for a status
-    line. When the app is a packaged build (``frozen``), the running exe is
-    verified against the signed release manifest + sigstore bundle on *every*
-    launch — the honest realisation of the spec's "integrity checked before run"
-    (B.5). In a source/dev run there is no signed artifact on disk, so the check
-    is a benign no-op notice. A newer signed release surfaces as a verified
-    update notice; an unverifiable update is ignored (never offered).
-
-    All I/O is injectable (``_release``/``_verify_running``/``_verify_latest``)
-    so the decision logic is unit-testable without network or a real exe.
-    """
     release = _release or latest_release
     verify_running = _verify_running or verify_running_exe
     verify_latest_fn = _verify_latest or verify_latest
@@ -777,8 +683,6 @@ def check_at_launch(
                 "version": current_version,
                 "message": f"Astral {current_version}",
             }
-        # A strictly greater release exists.
-        # Verify that release's artifact before offering it as an update.
         res = verify_latest_fn(workdir, _release=rel)
         if res.ok:
             return {
@@ -793,7 +697,7 @@ def check_at_launch(
             "version": rel.version,
             "message": (f"Update {rel.version} found but its signature did not verify — ignored."),
         }
-    except Exception as exc:  # noqa: BLE001 — launch must never crash here
+    except Exception as exc:  # noqa: BLE001
         logger.info("launch integrity check failed: %s", exc)
         return {
             "status": "error",

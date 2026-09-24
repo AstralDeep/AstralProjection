@@ -1,4 +1,8 @@
-"""Welcome placement survives real capability fallback without losing actions."""
+"""Tests for welcome-slot adaptation (backend/rote/adapter.py,
+backend/rote/capabilities.py): identity, role, and actions survive capability
+fallback and watch narrowing without gaining unrelated actions.
+"""
+
 from copy import deepcopy
 
 import pytest
@@ -10,7 +14,6 @@ from rote.capabilities import DeviceProfile
 @pytest.mark.parametrize("identity", [None, "wel_examples"])
 @pytest.mark.parametrize("device", ["browser", "android", "ios", "watch"])
 def test_welcome_slots_keep_identity_role_and_exact_actions(device, identity):
-    """Narrow/watch transformations retain the server's selection and labels."""
     source = {"type": "grid", "data-welcome": "examples", "columns": 3,
               "children": [{"type": "button", "data-welcome": "example",
                             "label": "Research brief", "action": "chat_message",
@@ -28,7 +31,6 @@ def test_welcome_slots_keep_identity_role_and_exact_actions(device, identity):
 
 @pytest.mark.parametrize("role", ["intro", "permission", "examples", "example", "more"])
 def test_supported_type_fallback_retains_welcome_role(role):
-    """An unsupported native type remains addressable in the same slot."""
     profile = DeviceProfile.default()
     profile.supported_types = frozenset({"text"})
     source = {"type": "hero", "title": "How can I help?",

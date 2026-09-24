@@ -1,3 +1,6 @@
+// Tests for the LLM first-login flow: one client identity backs single-flight submission, phase ordering
+// keeps the first server terminal canonical, and the 10-second watchdog never invents a terminal.
+
 import AstralCore
 import XCTest
 
@@ -200,8 +203,6 @@ final class LLMFirstLoginOperationTests: XCTestCase {
         XCTAssertFalse(model.llmFirstLoginOperation?.isAuthoritativelyTerminal == true)
         XCTAssertTrue(model.llmFirstLoginOperation?.retryable == true)
 
-        // Save while acceptance is unknown is a status retry for the same
-        // submission, never a second credential write.
         XCTAssertFalse(
             model.submitParamPicker(
                 action: "chrome_llm_save",
@@ -209,8 +210,6 @@ final class LLMFirstLoginOperationTests: XCTestCase {
                 payload: [:]))
         XCTAssertEqual(log.frames.count, 1)
 
-        // The watchdog is only a local connectivity projection: the first
-        // durable server terminal must still converge this same attempt.
         model.handleFrame(
             status(
                 request: local.requestGeneration,

@@ -1,3 +1,6 @@
+// Tests for watch accessibility (Accessibility060): every changed interactive control carries a
+// role/name/state/focus contract, and operation status exposes stable, non-interactive live-region metadata.
+
 import XCTest
 
 @testable import AstralWatch

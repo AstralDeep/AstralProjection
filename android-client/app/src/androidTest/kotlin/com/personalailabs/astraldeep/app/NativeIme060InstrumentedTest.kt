@@ -1,3 +1,6 @@
+// Instrumented emulator test proving the shipping composer delegates keyboard dismissal to Android's native
+// IME rather than custom handling.
+
 package com.personalailabs.astraldeep.app
 
 import android.accessibilityservice.AccessibilityService
@@ -27,7 +30,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** Emulator proof that the shipping composer delegates dismissal to Android's native IME. */
 class NativeIme060InstrumentedTest {
     @get:Rule val rule = createAndroidComposeRule<ComponentActivity>()
 

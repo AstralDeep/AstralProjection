@@ -1,3 +1,6 @@
+// Tests that the image primitive decodes data:image/...;base64 URLs, the form used to carry screenshots of
+// the user's own remote computer.
+
 package com.personalailabs.astraldeep.app.render
 
 import com.personalailabs.astraldeep.app.render.renderers.dataUriBytes
@@ -6,11 +9,6 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertNull
 
-/**
- * Feature 076 — the `image` primitive accepts the `data:image/…;base64,…` URLs
- * that carry screenshots of the user's own computer (the same form the web and
- * Windows renderers already accept). Pure JVM: only the decoder is exercised.
- */
 class DataUriImageTest {
     @Test
     fun base64_image_data_url_decodes_to_its_bytes() {

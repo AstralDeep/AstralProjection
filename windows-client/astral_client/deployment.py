@@ -1,9 +1,6 @@
-"""Strict, immutable Windows deployment-profile resolution for Spec 060.
-
-This module is deliberately standard-library-only so ``windows-client/main.py``
-can resolve and validate the complete deployment before importing Qt, auth,
-transport, or either hosted-agent implementation. Resolution is whole-profile:
-no field from one source is ever overlaid onto another source.
+"""Standard-library-only resolution of the immutable Windows deployment profile, used by
+main.py before importing Qt, auth, or transport; resolves whole-profile precedence
+across sources without merging individual fields.
 """
 
 from __future__ import annotations
@@ -70,7 +67,7 @@ _RUNTIME_MANIFEST_FIELDS = {
 
 
 class DeploymentProfileError(ValueError):
-    """A deployment input or packaged metadata value failed closed."""
+    pass
 
 
 def _exact_fields(value: object, expected: set[str], label: str) -> dict[str, Any]:
@@ -117,7 +114,7 @@ def _uri(value: object, label: str, *, websocket: bool) -> tuple[str, bool]:
     result = _string(value, label)
     try:
         parsed = urlsplit(result)
-        # Accessing port performs range and syntax validation.
+        # Accessing .port is the validation — not dead code
         parsed.port
     except ValueError as exc:
         raise DeploymentProfileError(f"{label} is not a valid URI") from exc
@@ -213,16 +210,12 @@ class DeploymentProfile:
 
 @dataclass(frozen=True)
 class EffectiveDeploymentProfile:
-    """One frozen source selection shared by every Windows runtime component."""
-
     profile: DeploymentProfile
     source: str
     digest: str
     managed_agent_api_key: Optional[str] = field(default=None, repr=False)
 
     def redacted_report(self) -> dict[str, Any]:
-        """Return deployment identity and dispositions without connection values."""
-
         return {
             "schema_version": PROFILE_SCHEMA_VERSION,
             "profile_id": self.profile.profile_id,
@@ -274,8 +267,6 @@ def _load_json_file(path: os.PathLike[str] | str, label: str) -> dict[str, Any]:
 def parse_profile(
     value: Mapping[str, Any], *, expected_client_version: Optional[str] = None
 ) -> DeploymentProfile:
-    """Validate an exact profile mapping and materialize immutable values."""
-
     data = _exact_fields(dict(value), _PROFILE_FIELDS, "deployment profile")
     if data["schema_version"] != PROFILE_SCHEMA_VERSION:
         raise DeploymentProfileError("deployment profile schema_version is unsupported")
@@ -368,8 +359,6 @@ def parse_profile(
 
 
 def canonical_profile_digest(value: Mapping[str, Any] | DeploymentProfile) -> str:
-    """Return SHA-256 over canonical UTF-8 JSON for one complete profile."""
-
     mapping = value.as_dict() if isinstance(value, DeploymentProfile) else dict(value)
     canonical = json.dumps(
         mapping, sort_keys=True, separators=(",", ":"), ensure_ascii=False
@@ -406,15 +395,9 @@ def _development_profile() -> DeploymentProfile:
 
 
 def read_persisted_profile() -> Optional[str]:
-    """Read the atomically persisted whole profile from the Windows QSettings key.
-
-    Importing ``winreg`` instead of Qt keeps resolution before all Qt imports.
-    Both layouts cover QSettings' native nested-group and slash-key encodings.
-    """
-
     if os.name != "nt":
         return None
-    try:  # pragma: no cover - exercised on the Windows candidate runner
+    try:  # pragma: no cover
         import winreg
     except ImportError:
         return None
@@ -447,8 +430,6 @@ def resolve_effective_profile(
     frozen: bool = False,
     environment: Optional[Mapping[str, str]] = None,
 ) -> EffectiveDeploymentProfile:
-    """Resolve exactly one immutable profile with deterministic whole-source precedence."""
-
     try:
         parse_semver(expected_client_version)
     except ValueError as exc:
@@ -534,8 +515,6 @@ def validate_packaged_deployment(
     requirements_input_path: os.PathLike[str] | str,
     expected_client_version: str,
 ) -> dict[str, Any]:
-    """Validate bundled profile/runtime identities and return a redacted report."""
-
     manifest = _exact_fields(
         _load_json_file(runtime_manifest_path, "packaged runtime manifest"),
         _RUNTIME_MANIFEST_FIELDS,
@@ -592,8 +571,6 @@ def validate_packaged_deployment(
 
 
 def write_redacted_report(path: os.PathLike[str] | str, report: Mapping[str, Any]) -> None:
-    """Atomically write a bounded validation report with no credential fields."""
-
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(dict(report), sort_keys=True, indent=2) + "\n"
@@ -628,8 +605,6 @@ def resolve_startup(
     environment: Optional[Mapping[str, str]] = None,
     persisted_profile_json: Optional[str] = None,
 ) -> StartupResolution:
-    """Resolve pre-Qt CLI/profile state and optionally validate the package."""
-
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--deployment-profile")
     parser.add_argument("--validate-deployment", action="store_true")

@@ -1,4 +1,7 @@
-"""Workspace topbar controls share one flag-resolved inventory across clients."""
+"""Tests for backend/webrender/chrome/menu_model.py and topbar.py: workspace action
+inventory ordering and flag resolution shared across clients.
+"""
+
 import json
 from html.parser import HTMLParser
 
@@ -53,9 +56,6 @@ def test_flag_resolved_inventory_and_web_hooks_have_identical_order(export, shar
             assert "astral-page-action" in button["class"].split()
             assert button["aria-label"] == f"{key.title()} page"
             assert "data-ui-action" not in button
-            # The page actions sit between the chat controls and the gear.
-            # (They used to be bounded above by the Pulse icon, which is a
-            # rail entry now, so the gear is the row's last control.)
             assert (ids.index("astral-chats-btn") < ids.index(identity)
                     < ids.index("astral-settings-btn"))
     if export and share:

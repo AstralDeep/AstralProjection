@@ -1,17 +1,8 @@
-"""Self-contained A2A agent server for the Windows tools.
-
-Speaks exactly the handshake the orchestrator's `discover_agent` expects:
-  GET /.well-known/agent-card.json  -> the AgentCard
-  WS  /agent                        -> sends RegisterAgent, then answers
-                                       MCPRequest (tools/list, tools/call)
-                                       with MCPResponse.
-
-Binds 0.0.0.0 so a Dockerized orchestrator can reach it on the host via
-host.docker.internal. Runs on the user's Windows machine, so the tools execute
-locally. No dependency on the backend package.
-
-Run standalone:  python -m win_agent.agent --port 8771
+"""Self-contained A2A server for the Windows tools: serves the agent card and /agent
+WebSocket the orchestrator's discover_agent expects, dispatching MCPRequest via
+win_agent/tools.py behind a shared AGENT_API_KEY gate.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -57,8 +48,6 @@ _protected_executor_lock = threading.Lock()
 
 
 def _get_protected_executor() -> ProtectedExecutorRuntime:
-    """Load the process-lifetime verifier once from operator-owned state."""
-
     global _protected_executor
     with _protected_executor_lock:
         if _protected_executor is None:
@@ -67,8 +56,6 @@ def _get_protected_executor() -> ProtectedExecutorRuntime:
 
 
 def _reset_protected_executor_for_tests() -> None:
-    """Release persistent authority handles before a test changes its env."""
-
     global _protected_executor
     with _protected_executor_lock:
         if _protected_executor is not None:
@@ -81,13 +68,6 @@ def _bypass_enabled() -> bool:
 
 
 def _advertised_tools() -> Dict[str, dict]:
-    """The tool registry, minus the dangerous bypass when it isn't enabled.
-
-    ``run_shell`` (full shell) is only advertised — and thus only routable by the
-    orchestrator — when the local ``ASTRAL_DANGEROUS_BYPASS`` flag is set. The
-    tool also re-checks the flag at call time (defense-in-depth), so a stale
-    card can never grant shell access the user hasn't opted into.
-    """
     if _bypass_enabled():
         return TOOL_REGISTRY
     return {k: v for k, v in TOOL_REGISTRY.items() if k != "run_shell"}
@@ -127,61 +107,26 @@ def build_card(
     }
 
 
-# --------------------------------------------------------------------------- #
-# Inbound authentication.
-#
-# This process listens on a TCP port and its tools read/write files and run
-# commands on the user's PC. Until now anything that could reach the port could
-# drive them: `_agent_ws` called `ws.prepare()` as its first statement and then
-# pushed the register frame — which CONTAINS the shared key — to whoever
-# connected, before reading a byte.
-#
-# The orchestrator now presents the same shared `AGENT_API_KEY` it already holds
-# as `X-Astral-Agent-Key` on its outbound connections (see
-# backend/orchestrator/agent_peer_auth.py), and every request here must carry a
-# matching value. There is deliberately NO development carve-out: the backend's
-# ASTRAL_ENV allowance is nested inside "no key configured", and our answer to
-# that case is strictly safer — refuse to listen at all (`make_app`).
-# --------------------------------------------------------------------------- #
-
-#: Request header carrying the shared agent key. Not ``Authorization``: that is
-#: the per-call delegation token on the A2A path, a different credential.
 AGENT_KEY_HEADER = "X-Astral-Agent-Key"
 
-#: Minimum key length, mirroring the orchestrator's own boot gate
-#: (backend/orchestrator/session_store.py refuses a short or placeholder key).
+# Mirrors backend/orchestrator/session_store.py's key gate
 MIN_KEY_LENGTH = 16
 
-#: Shipped placeholders that must never function as a credential (same list the
-#: orchestrator's boot gate refuses).
 _PLACEHOLDER_KEYS = frozenset(
     {"change-me", "changeme", "dev-audit-hmac-secret-change-me-in-prod"}
 )
 
-#: At most one refusal log line per peer per this many seconds, so a port
-#: scanner cannot fill the user's log.
 _REFUSAL_LOG_INTERVAL_S = 10.0
 
-#: Bound on the rate-limiter's peer table. Without it, one entry per distinct
-#: source address accumulates for the life of a long-running desktop process
-#: (a local process can source all of 127.0.0.0/8). Oldest entries are evicted;
-#: the worst case is an extra log line from a peer that aged out, never a
-#: missed refusal — the gate itself does not consult this table.
 _REFUSAL_LOG_MAX_PEERS = 512
 _last_refusal_log: "OrderedDict[str, float]" = OrderedDict()
 
-#: How long start_agent_thread waits for the worker thread to actually bind.
 BIND_TIMEOUT_S = 5.0
 
 
 def configured_key(
     deployment_profile: Optional["EffectiveDeploymentProfile"] = None,
 ) -> Optional[str]:
-    """The shared agent key: the managed profile credential, else the env var.
-
-    One resolver for BOTH the outbound register frame and the inbound gate, so
-    the two can never disagree about what the key is.
-    """
     key = (
         deployment_profile.managed_agent_api_key
         if deployment_profile is not None
@@ -194,12 +139,6 @@ def configured_key(
 
 
 def key_rejection_reason(key: Optional[str]) -> Optional[str]:
-    """Why ``key`` is unusable as a credential, or ``None`` when it is fine.
-
-    A weak key is refused rather than accepted with a warning: a 4-character
-    value from the first-run dialog would otherwise install a trivially
-    guessable gate in front of file-write and command-exec.
-    """
     if not key:
         return "AGENT_API_KEY is not configured"
     if not key.isascii():
@@ -212,31 +151,19 @@ def key_rejection_reason(key: Optional[str]) -> Optional[str]:
 
 
 def _authorized(request) -> bool:
-    """True iff the request carries exactly one matching key header."""
     expected = request.app.get("inbound_key")
     if not expected:
-        # Unreachable in practice: make_app refuses to build without a key.
         return False
-    # `getall`, not `get`: duplicate headers survive to the handler and `.get()`
-    # returns only the FIRST of them (and `getone()` does not raise on
-    # duplicates either), so a caller could pair a wrong value with the real one
-    # and have the gate read whichever it prefers. Exactly one value, or no.
     values = request.headers.getall(AGENT_KEY_HEADER, [])
     if len(values) != 1:
         return False
     presented = values[0]
-    # compare_digest raises TypeError on non-ASCII str, and this value is fully
-    # attacker-controlled — inside a handler that is a 500, not a refusal.
     if not presented or not presented.isascii():
         return False
     return hmac.compare_digest(presented.encode("ascii"), expected.encode("ascii"))
 
 
 def _log_refusal(request, route: str) -> None:
-    """Rate-limited refusal log. NEVER records the configured key, the presented
-    value, or any length/prefix/hash of either — the key can be low-entropy
-    (it may come from the first-run dialog), so even a digest is brute-forceable
-    offline."""
     peer = str(getattr(request, "remote", "") or "unknown")
     now = time.monotonic()
     last = _last_refusal_log.get(peer)
@@ -250,28 +177,16 @@ def _log_refusal(request, route: str) -> None:
 
 
 def _print_console(text: str) -> None:
-    """Write to stderr when a console exists.
-
-    In a windowed frozen build ``sys.stderr`` is ``None`` (and can be a closed
-    handle), so an unguarded ``print(..., file=sys.stderr)`` raises. Everything
-    important is already on the logger; this is only the courtesy copy for
-    someone running the module from a terminal.
-    """
     stream = getattr(sys, "stderr", None)
     if stream is None:
         return
     try:
         print(text, file=stream)
-    except (AttributeError, ValueError, OSError):  # closed/detached handle
+    except (AttributeError, ValueError, OSError):
         pass
 
 
 def _log_bind(host: str, port: int) -> None:
-    """Announce the bind. A non-loopback bind says plainly that the open port is
-    guarded, so nobody reads it as unauthenticated. ``0.0.0.0`` remains the
-    default because a containerized orchestrator reaches the desktop at
-    ``host.docker.internal``, which resolves to the bridge address and can never
-    reach a loopback bind."""
     if host in ("127.0.0.1", "::1", "localhost"):
         logger.info("Windows tools agent listening on %s:%d", host, port)
         return
@@ -283,11 +198,6 @@ def _log_bind(host: str, port: int) -> None:
 
 
 def _unauthorized() -> web.HTTPUnauthorized:
-    """A 401 that says nothing about the key or the configuration state — the
-    body is identical whether the key was absent, wrong, duplicated or
-    non-ASCII. The scheme is deliberately not ``Bearer``: we do not read
-    ``Authorization`` at all, and advertising Bearer would invite callers to put
-    the credential where nothing reads it."""
     return web.HTTPUnauthorized(
         text=json.dumps({"error": "agent_auth_required"}),
         content_type="application/json",
@@ -306,23 +216,15 @@ def _register_message(
 
 
 def _actor_from_req(req: Dict[str, Any]) -> str:
-    """Best-effort actor identity for the audit trail.
-
-    The MCPRequest carries ``request_id`` (correlation) and an optional ``meta``
-    map the orchestrator may forward (user_id / sub). Falls back to the local
-    USERNAME so every action is attributable even when no user is forwarded.
-    """
     meta = req.get("meta") or {}
     return (meta.get("user_id") or meta.get("sub")
             or os.getenv("USERNAME") or "unknown")
 
 
-# One audit logger per process; the actor is refined per-dispatch via context.
 _AUDIT = AuditLogger(actor=os.getenv("USERNAME") or "unknown")
 
 
 def dispatch(req: Dict[str, Any]) -> Dict[str, Any]:
-    """Process one MCPRequest dict -> MCPResponse dict (mirrors the backend MCPServer)."""
     rid = req.get("request_id", "")
     method = req.get("method", "")
     set_context(actor=_actor_from_req(req), correlation_id=str(rid), audit=_AUDIT)
@@ -343,7 +245,6 @@ def dispatch(req: Dict[str, Any]) -> Dict[str, Any]:
         args = params.get("arguments", {}) or {}
         info = tools.get(name)
         if not info:
-            # run_shell with bypass off lands here — audit the refused attempt.
             if name == "run_shell":
                 _AUDIT.record(tool="run_shell", args=args, outcome="refused",
                               correlation_id=str(rid), event_class="dangerous_bypass",
@@ -396,9 +297,6 @@ def dispatch(req: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def _card(request):
-    # Gated too: the card publishes every advertised tool with its full input
-    # schema, the dangerous_bypass flag state, and the deployment digests.
-    # Gating /agent alone would leave that disclosure open to any LAN scanner.
     if not _authorized(request):
         _log_refusal(request, "card")
         raise _unauthorized()
@@ -406,15 +304,11 @@ async def _card(request):
 
 
 async def _health(request):
-    # Deliberately ungated and deliberately content-free: a liveness probe must
-    # work without a credential, so this must never grow a disclosure surface.
     return web.Response(text="ok")
 
 
 async def _agent_ws(request):
-    # The check MUST precede ws.prepare(): the register frame sent immediately
-    # after the upgrade carries the shared key, so a gate that ran after prepare
-    # would hand the credential to the very caller it then rejected.
+    # Must precede ws.prepare(): the frame right after carries the key
     if not _authorized(request):
         _log_refusal(request, "agent")
         raise _unauthorized()
@@ -434,14 +328,7 @@ async def _agent_ws(request):
 
 
 class AgentKeyUnavailable(RuntimeError):
-    """No usable ``AGENT_API_KEY`` — the listener must not exist.
-
-    Refusing to serve is the fail-closed answer to a missing key: an
-    unauthenticated file-write / command-exec listener should not be reachable
-    at all, and this is the single choke point covering every caller
-    (``python -m win_agent.agent``, the GUI, and the screenshot/verify
-    harnesses, none of which can conjure a key).
-    """
+    pass
 
 
 def make_app(
@@ -476,24 +363,15 @@ def start_agent_thread(
     *,
     deployment_profile: Optional["EffectiveDeploymentProfile"] = None,
 ):
-    """Run the agent server in a daemon thread (so the desktop GUI can host it
-    in-process). Returns the thread, or None on failure — including the
-    deliberate refusal when no usable key is configured."""
     import asyncio
     import threading
 
     try:
         app = make_app(deployment_profile)
     except AgentKeyUnavailable as exc:
-        # Build the app on THIS thread so the refusal is synchronous and the
-        # caller can react (the GUI turns off the feature and tells the user).
         logger.error("Windows tools agent not started: %s", exc)
         return None
 
-    # The bind happens on the worker thread, so a failure there (port in use,
-    # permission denied) would surface AFTER this function already returned a
-    # live thread — leaving the caller convinced a listener exists. Wait for the
-    # bind to actually succeed or fail before reporting.
     bound = threading.Event()
     outcome = {}
 
@@ -505,7 +383,7 @@ def start_agent_thread(
         try:
             loop.run_until_complete(runner.setup())
             loop.run_until_complete(web.TCPSite(runner, host, port).start())
-        except Exception as exc:  # noqa: BLE001 — reported to the caller below
+        except Exception as exc:  # noqa: BLE001
             outcome["error"] = exc
             bound.set()
             return
@@ -514,9 +392,6 @@ def start_agent_thread(
         try:
             loop.run_forever()
         finally:
-            # Reachable when a caller stops the loop (tests do; the desktop app
-            # runs it for the process lifetime). Release the port rather than
-            # leaving a bound socket behind.
             try:
                 loop.run_until_complete(runner.cleanup())
             except Exception:  # noqa: BLE001
@@ -537,8 +412,6 @@ def start_agent_thread(
         logger.error("Windows tools agent could not bind %s:%d: %s",
                      host, port, outcome["error"])
         return None
-    # Expose the loop so a caller can shut the listener down deterministically
-    # (tests need the port released; the app runs it for the process lifetime).
     t._astral_loop = outcome.get("loop")
     return t
 
@@ -552,18 +425,11 @@ def main() -> int:
     try:
         app = make_app()
     except AgentKeyUnavailable as exc:
-        # A windowed PyInstaller build has NO console: sys.stderr is None, and
-        # print(file=None) raises AttributeError — turning a clean exit 78 into
-        # a crash on the one path that is supposed to fail politely. Log first
-        # (that always works), then write to the console only if there is one.
         logger.error("%s", exc)
         _print_console(f"AstralDeep Windows tools agent: {exc}")
         return 78
     logger.info("Windows tools agent on %s:%d (tools: %s)",
                 args.host, args.port, ", ".join(TOOL_REGISTRY))
-    # The standalone path binds through run_app, not start_agent_thread, so it
-    # must announce the bind itself or an operator running `python -m
-    # win_agent.agent` never sees the non-loopback warning.
     _log_bind(args.host, args.port)
     web.run_app(app, host=args.host, port=args.port, print=None)
     return 0

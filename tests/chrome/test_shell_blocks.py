@@ -1,3 +1,7 @@
+"""Tests for backend/webrender/chrome/__init__.py: the composer, modal shell, and
+error/notice block markup.
+"""
+
 from __future__ import annotations
 
 from html.parser import HTMLParser
@@ -21,9 +25,6 @@ def test_composer_has_an_accessible_name_and_retains_existing_controls() -> None
     parser.feed(template_path("shell.html").read_text(encoding="utf-8"))
     by_id = {attrs["id"]: (tag, attrs) for tag, attrs in parser.elements if "id" in attrs}
     tag, composer = by_id["astral-input"]
-    # Feature 089: the composer bar is one wide field with the controls beside
-    # it, so the textarea starts at a single row and grows; two rows would put
-    # an empty line under every draft.
     assert tag == "textarea" and composer["rows"] == "1"
     assert composer.get("aria-label") == "Message"
     assert composer["autocomplete"] == "off"
@@ -34,9 +35,6 @@ def test_composer_has_an_accessible_name_and_retains_existing_controls() -> None
         assert by_id[control][1].get("aria-label")
     assert by_id["astral-attach-input"][1]["accept"] == "%%ASTRAL_ACCEPT%%"
     assert by_id["astral-voice-controls"][1]["role"] == "group"
-    # Feature 089: reading and keyboard order follow the a8p console — the
-    # sidebar, then the landing (whose slots still host the server-rendered
-    # welcome), then the feed, then the permanently mounted composer.
     ids = [attrs["id"] for _, attrs in parser.elements if "id" in attrs]
     assert ids.index("astral-sidebar") < ids.index("astral-main")
     assert ids.index("astral-landing") < ids.index("astral-chat")
@@ -48,7 +46,6 @@ def test_composer_has_an_accessible_name_and_retains_existing_controls() -> None
     for status in ("astral-conn-text", "astral-turn-status", "astral-voice-status"):
         assert by_id[status][1]["role"] == "status"
     assert {"astral-history", "astral-chat", "astral-canvas", "astral-modal"} <= by_id.keys()
-    # The 089 regions the layout and its harness address by id.
     assert {"astral-sidebar", "astral-main", "astral-landing", "astral-composer",
             "astral-agent-list", "astral-agent-search", "astral-agent-count",
             "astral-recent-work", "astral-profile", "astral-brand",

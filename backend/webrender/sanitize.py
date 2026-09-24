@@ -1,11 +1,8 @@
-"""Feature 026 — the narrow, sanitized rich-text opt-in (FR-017 / SC-008).
-
-Everything here is **escape-first**: input is HTML-escaped before any markdown
-transform, so untrusted text can never inject markup. Only a small, fixed set of
-safe inline/block markdown constructs is then re-introduced as known-safe tags.
-This is the ONLY path in the renderer that emits formatting from text content;
-all other text goes through ``html.escape`` directly.
+"""The renderer's only formatting path: escapes text first, then re-introduces a small
+fixed subset of GFM markdown (code, links, emphasis, tables) as known-safe tags; used
+by renderer.py and history.py.
 """
+
 from __future__ import annotations
 
 import html
@@ -27,7 +24,6 @@ def _safe_url(url: str) -> str:
     return s if _ALLOWED_URL.match(s) else "#"
 
 
-# Inline patterns operate on ALREADY-ESCAPED text (so markup chars are inert).
 _CODE = re.compile(r"`([^`]+)`")
 _LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 _BOLD = re.compile(r"\*\*([^*]+)\*\*|__([^_]+)__")
@@ -35,31 +31,19 @@ _STRIKE = re.compile(r"~~([^~]+)~~")
 _EM = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)")
 _INLINE_TOKEN = re.compile(rf"{_CODE.pattern}|{_LINK.pattern}")
 
-# Block patterns (GFM subset).
 _HR = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
 _TABLE_SEP_CELL = re.compile(r"^:?-+:?$")
 _LIST_START = re.compile(r"^(?:[-*]|\d+\.)\s+")
-# A table body ends where any other block construct begins (GFM: tables break
-# at the start of another block-level structure).
 _TABLE_BODY_BREAK = re.compile(r"^(?:#{1,6}\s|>|```|(?:[-*]|\d+\.)\s)")
-# GFM's only mechanism for a literal "|" inside a cell is "\|".
 _UNESCAPED_PIPE = re.compile(r"(?<!\\)\|")
 
 
 def inline_md(text: Any) -> str:
-    """Render a small set of inline markdown on escaped text:
-    `code`, [text](url), **bold**/__bold__, ~~strike~~, *em*/_em_."""
     return _inline_escaped(_esc(text))
 
 
+# Emphasis must skip generated HTML: could corrupt an href's _blank
 def _inline_escaped(s: str, *, links: bool = True) -> str:
-    """Format escaped prose while keeping code and link destinations opaque.
-
-    Never run emphasis substitutions over generated HTML: even ``_blank``
-    can pair with an underscore in an href and corrupt the destination.
-    The marker cannot occur in the input, so user text cannot forge a token.
-    Link labels allow emphasis and code, but cannot introduce nested anchors.
-    """
     marker = f"\x00md{secrets.token_hex(16)}:"
     while marker in s:
         marker = f"\x00md{secrets.token_hex(16)}:"
@@ -73,7 +57,7 @@ def _inline_escaped(s: str, *, links: bool = True) -> str:
             )
         else:
             label = _inline_escaped(m.group(2), links=False)
-            url = _safe_url(m.group(3))  # already escaped for an HTML attribute
+            url = _safe_url(m.group(3))
             fragment = (
                 f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
                 'class="text-astral-primary hover:text-astral-secondary hover:underline">'
@@ -95,7 +79,6 @@ def _inline_escaped(s: str, *, links: bool = True) -> str:
 
 
 def _split_table_row(line: str) -> list[str]:
-    """Split a GFM pipe-table row into trimmed cell strings (honoring \\|)."""
     s = line.strip()
     if s.startswith("|"):
         s = s[1:]
@@ -105,14 +88,6 @@ def _split_table_row(line: str) -> list[str]:
 
 
 def _table_aligns(sep_line: str, n_cols: int):
-    """Parse a GFM table delimiter row into per-column alignments.
-
-    Returns a list like ``["left", "center", "right"]`` when ``sep_line`` is a
-    valid delimiter row with exactly ``n_cols`` cells, else None (the caller
-    falls back to paragraph handling). A delimiter row must contain a pipe —
-    a bare dashes line is a thematic break (or setext underline), never a
-    table delimiter.
-    """
     if "|" not in sep_line:
         return None
     cells = _split_table_row(sep_line)
@@ -132,10 +107,7 @@ def _table_aligns(sep_line: str, n_cols: int):
 
 
 def _render_md_table(headers: list[str], aligns: list[str], rows: list[list[str]]) -> str:
-    """Emit a styled table; every cell goes through ``inline_md`` (escaped)."""
     align_cls = {"left": "text-left", "center": "text-center", "right": "text-right"}
-    # a11y (feature 030): GFM tables only have a column-header row, so every
-    # <th> carries scope="col".
     ths = "".join(
         f'<th scope="col" class="px-3 py-2 {align_cls[a]} text-xs font-semibold uppercase '
         f'tracking-wider text-astral-muted whitespace-nowrap">{inline_md(h)}</th>'
@@ -157,10 +129,6 @@ def _render_md_table(headers: list[str], aligns: list[str], rows: list[list[str]
 
 
 def block_md(text: Any) -> str:
-    """Render a compact, safe subset of block markdown: fenced code blocks,
-    ATX headings, unordered/ordered lists, blockquotes, pipe tables,
-    horizontal rules, and paragraphs with inline markdown.
-    Escape-by-default throughout."""
     if text is None or text == "":
         return ""
     src = str(text).replace("\r\n", "\n").replace("\r", "\n")
@@ -180,7 +148,6 @@ def block_md(text: Any) -> str:
         line = lines[i]
         stripped = line.strip()
 
-        # fenced code block
         if stripped.startswith("```"):
             flush_para(para)
             lang = stripped[3:].strip()
@@ -189,7 +156,7 @@ def block_md(text: Any) -> str:
             while i < n and not lines[i].strip().startswith("```"):
                 code_lines.append(lines[i])
                 i += 1
-            i += 1  # skip closing fence
+            i += 1
             lang_html = (f'<div class="px-4 py-2 border-b border-white/5 text-xs text-astral-muted">{_esc(lang)}</div>'
                          if lang else "")
             code = _esc("\n".join(code_lines))
@@ -197,7 +164,6 @@ def block_md(text: Any) -> str:
                        f'<pre class="p-4 text-sm overflow-x-auto"><code class="text-green-400">{code}</code></pre></div>')
             continue
 
-        # headings (ATX, all six levels)
         m = re.match(r"^(#{1,6})\s+(.*)$", stripped)
         if m:
             flush_para(para)
@@ -212,7 +178,6 @@ def block_md(text: Any) -> str:
             i += 1
             continue
 
-        # blockquote
         if stripped.startswith(">"):
             flush_para(para)
             quote_lines = []
@@ -223,10 +188,6 @@ def block_md(text: Any) -> str:
             out.append(f'<blockquote class="border-l-2 border-astral-primary/40 pl-3 text-astral-text/80 my-2">{inner}</blockquote>')
             continue
 
-        # pipe table: header row + delimiter row (|---|:--:|...) with the
-        # same cell count, then body rows until a blank line, a pipe-less
-        # line, or the start of another block construct. A list-marker line
-        # can never open a table (the list wins, as in GFM).
         if "|" in stripped and i + 1 < n and not _LIST_START.match(stripped):
             headers = _split_table_row(stripped)
             aligns = _table_aligns(lines[i + 1].strip(), len(headers))
@@ -241,14 +202,12 @@ def block_md(text: Any) -> str:
                 out.append(_render_md_table(headers, aligns, rows))
                 continue
 
-        # horizontal rule
         if _HR.match(stripped):
             flush_para(para)
             out.append('<hr class="border-white/10 my-3">')
             i += 1
             continue
 
-        # lists
         if re.match(r"^[-*]\s+", stripped) or re.match(r"^\d+\.\s+", stripped):
             flush_para(para)
             ordered = bool(re.match(r"^\d+\.\s+", stripped))
@@ -265,7 +224,6 @@ def block_md(text: Any) -> str:
             out.append(f'<{tag} class="space-y-1 text-sm {lcls} list-inside text-astral-text my-2">{"".join(items)}</{tag}>')
             continue
 
-        # blank line ends a paragraph
         if stripped == "":
             flush_para(para)
             i += 1
@@ -279,16 +237,6 @@ def block_md(text: Any) -> str:
 
 
 def plain_md(text: Any) -> str:
-    """Strip the markdown constructs :func:`block_md` / :func:`inline_md`
-    recognize, returning RAW plain text (feature 066).
-
-    The inverse of the renderers, for contexts that show a short excerpt of
-    assistant prose as text — chat-list previews — where the markup itself
-    was leaking to the user as literal ``**asterisks**``. It reuses the same
-    patterns as the renderers so the two cannot drift, and deliberately does
-    NOT escape: every consumer escapes at render time (escape-first is
-    preserved end to end).
-    """
     if text is None or text == "":
         return ""
     s = str(text).replace("\r\n", "\n").replace("\r", "\n")
@@ -303,16 +251,16 @@ def plain_md(text: Any) -> str:
             continue
         if _HR.match(stripped):
             continue
-        stripped = re.sub(r"^#{1,6}\s*", "", stripped)   # ATX headings
-        stripped = re.sub(r"^>\s?", "", stripped)         # blockquote
-        stripped = _LIST_START.sub("", stripped)          # list markers
+        stripped = re.sub(r"^#{1,6}\s*", "", stripped)
+        stripped = re.sub(r"^>\s?", "", stripped)
+        stripped = _LIST_START.sub("", stripped)
         if stripped and all(
             _TABLE_SEP_CELL.match(cell.strip())
             for cell in _UNESCAPED_PIPE.split(stripped)
             if cell.strip()
         ):
-            continue  # a table's ---|--- separator row
-        stripped = _UNESCAPED_PIPE.sub(" ", stripped)     # table cell pipes
+            continue
+        stripped = _UNESCAPED_PIPE.sub(" ", stripped)
         if stripped:
             kept.append(stripped)
     out = " ".join(kept)

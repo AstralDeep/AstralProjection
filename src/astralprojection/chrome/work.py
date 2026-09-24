@@ -1,43 +1,6 @@
-"""Pure Work list, detail and retained-result presentation (088 T010 subset).
-
-The host authorizes every snapshot. ``build_work_view`` accepts ``mode``
-(list/detail/result), ``status`` (ready/loading/unavailable), ``page`` containing
-the WorkService.list envelope, ``operation`` containing its public metadata, and
-``result`` containing WorkService.result's identity/revision/result envelope.
-No raw assignment, checkpoint, claims, credential or diagnostic is forwarded.
-
-Buttons emit ``chrome_open`` for surface ``work`` with closed params ``mode``,
-optional ``operation_id`` or ``after_id``. They neither submit nor control work.
-The host must register and authorize those reads, discard stale owner deliveries
-and supply a matching operation/result revision. All layouts preserve the same
-evidence. Watch delivery/consumption remains a separate host and client
-integration; this pure builder does not establish that connection.
-
-Feature 088 T043 adds the one closed non-navigation action, ``chrome_work_result_save``.
-A result view whose host supplies ``save`` (server-issued propose bindings:
-``submission_id``, ``publication_id``, ``expected_revision``, ``conversation_id``,
-``conversation_title``, ``expected_workspace_revision``,
-``expected_workspace_publication_id``) renders a **Save result** button that
-carries exactly those bindings as the ``propose`` step. Mode ``review`` renders
-Deep's review body (``review``: the exact ``result_publication`` proposal and the
-complete component to be saved) with a destination, expiry and, when the host
-supplies ``approve`` (``submission_id``, ``expired``), the ``save`` step bound to
-the proposal digest. Viewing never saves; the client invents no authority and
-Deep re-verifies every binding before any publication.
-
-Feature 088 T052 adds the owner's measurement and charge-basis disclosure. The
-detail mode renders ``usage.basis`` (per usage dimension: observed/estimated/
-uncertain/none) as explicit badges, quotes ``usage.currency`` when the host
-reports one instead of claiming the currency is unavailable, and renders the
-host's optional ``measurements`` read model (logical task attempts vs physical
-claims, observed interval sums vs elapsed, ``incomplete``/``cutoff``). Every one
-of those fields is optional and additive: a snapshot without them renders exactly
-as before. A missing amount is "Unknown" and is never shown as zero, no attempt
-count is synthesized when the host supplies none, and an unrecognized basis token
-makes the view unavailable rather than rendering an unknown basis as a known one.
-
-The host has already verified retained receipts; structural checks here do not
-authenticate provenance. URLs are escaped source text, not navigation actions.
+"""Pure view builders for the Work list, detail and result surfaces over host-authorized
+public snapshots; buttons only request reads via chrome_open and never submit or
+control work themselves.
 """
 
 from __future__ import annotations
@@ -68,8 +31,6 @@ _PROPOSAL_KEYS = {
 _COMPONENT_KEYS = {"component_id", "component_type", "title", "position", "payload"}
 _APPROVE_KEYS = {"submission_id", "expired"}
 _COMPONENT_PREFIX = "au_work_result_"
-# Deep's result_component is one astralprims Card of the proven public excerpt:
-# text passages/captions plus one source KeyValue. Anything else is not reviewable.
 _REVIEW_BYTES = 16384
 
 _STATES = {
@@ -118,9 +79,7 @@ _METRICS = {
     "elapsed_ms": "Elapsed time (ms)",
     "spend_micro_units": "Monetary cost",
 }
-# Feature 088 T052: the closed charge-basis vocabulary shared with Plane's
-# additive usage annotation. "none" means the dimension is not charged at all --
-# it is not a zero amount, and neither is a missing amount.
+# 'none' means never charged — distinct from a zero or missing amount
 _BASIS = {
     "observed": ("Observed", "success"),
     "estimated": ("Estimated", "info"),
@@ -138,8 +97,6 @@ _MEASUREMENT_KEYS = {
 }
 _CURRENCY = re.compile(r"[A-Z][A-Z0-9]{2,7}")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-# The closed one_page_excerpts v1 producer's canonical UTF-8 result budget.
-# Presentation framing is additional and must not be charged to this input cap.
 _RESULT_BYTES = 8192
 
 
@@ -184,8 +141,6 @@ def _time(value, *, optional=False):
 
 
 def _url(value):
-    # Reuse renderer scheme sanitization. These additional shape checks describe
-    # absolute source metadata, not a second public-egress or fetch policy.
     value = _string(value, 8192)
     _require(safe_url(value) == value and not any(char.isspace() for char in value))
     parsed = urlsplit(value)
@@ -200,7 +155,6 @@ def _url(value):
 
 
 def _operation(value):
-    """Select only the public read model; private extension fields stay opaque."""
     _require(isinstance(value, Mapping))
     result = {
         "id": _identity(value.get("id")),
@@ -237,7 +191,6 @@ def _operation(value):
 
 
 def _basis(value):
-    """Keep only known dimensions; an unknown basis token is not displayable."""
     if value is None:
         return {}
     _require(isinstance(value, Mapping))
@@ -251,7 +204,6 @@ def _basis(value):
 
 
 def _currency(value):
-    """Quote the host's reported currency; absence stays honestly unavailable."""
     if value is None:
         return None
     _require(_CURRENCY.fullmatch(_string(value, 8)) is not None)
@@ -263,7 +215,6 @@ def _open(label, mode, **params):
 
 
 def _list(page):
-    """Keep the exact stable continuation and distinguish bad pages from empty."""
     _keys(page, {"operations", "next_cursor", "page_full"})
     values = page["operations"]
     _require(
@@ -296,7 +247,6 @@ def _list(page):
 
 
 def _measurements(value):
-    """Disclose recorded timing exactly; nothing is inferred for an old task."""
     _keys(value, _MEASUREMENT_KEYS)
     _require(type(value["version"]) is int and value["version"] == 1)
     logical = _integer(value["logical_attempts"], 0)
@@ -348,7 +298,6 @@ def _measurements(value):
 
 
 def _basis_disclosure(basis):
-    """Name how each shown amount was arrived at; never imply a measured charge."""
     return [
         card(
             "Charge basis",
@@ -368,7 +317,6 @@ def _basis_disclosure(basis):
 
 
 def _detail(row, measurements=None):
-    """Show public lifecycle/usage facts without synthesizing effect controls."""
     components = [
         badge(_STATES[row["disposition"]]),
         _open("View result", "result", operation_id=row["id"]),
@@ -409,7 +357,6 @@ def _detail(row, measurements=None):
 
 
 def _content(value):
-    """Validate the full bounded excerpt envelope before rendering any passage."""
     _keys(value, {"version", "scope", "disposition", "source", "passages"})
     _require(
         type(value["version"]) is int
@@ -478,7 +425,6 @@ def _destination(value):
 
 
 def _head(revision, head):
-    """A destination head is revision 0 with no publication, or both present."""
     _integer(revision, 0)
     _require(revision <= 2**53 - 1)
     if revision == 0:
@@ -488,7 +434,6 @@ def _head(revision, head):
 
 
 def _save(value, row, available):
-    """Validate server-issued propose bindings against the displayed result."""
     _keys(value, _SAVE_KEYS)
     _require(available is True)
     for name in ("submission_id", "publication_id"):
@@ -517,7 +462,6 @@ def _save(value, row, available):
 
 
 def _reviewed_card(payload, title):
-    """Re-emit the exact reviewed card; an unknown shape is not partially shown."""
     _keys(payload, {"type", "title", "content", "variant"})
     _require(payload["type"] == "card" and payload["variant"] == "default")
     _require(_string(payload["title"], 4096) == title)
@@ -548,7 +492,6 @@ def _reviewed_card(payload, title):
 
 
 def _review(value, row, approve, conversation_title):
-    """Render Deep's exact review body; the approval carries only server bindings."""
     _keys(value, _REVIEW_KEYS)
     _require(type(value["version"]) is int and value["version"] == 1)
     _require(value["status"] == "review_required" and type(value["created"]) is bool)
@@ -621,7 +564,6 @@ def _review(value, row, approve, conversation_title):
 
 
 def _result(envelope, row, save=None):
-    """Bind displayed content to its public task revision before any rendering."""
     _keys(envelope, {"id", "revision", "result"})
     _require(
         _identity(envelope["id"]) == row["id"] and _integer(envelope["revision"]) == row["revision"]
@@ -713,11 +655,6 @@ def build_work_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Render authorized public Work snapshots; malformed content is unavailable.
-
-    No partial oversized result is displayed and no client-layout mode shortens
-    selected evidence. Unknown host fields are never serialized or displayed.
-    """
     title = "Recent work"
     try:
         _require(isinstance(state, Mapping))

@@ -1,9 +1,6 @@
-"""066 T032 parity pins: Windows renders honest refusal lines, not raw codes.
-
-The web and Apple clients render a human sentence for every server refusal
-reason; Windows used to surface the raw code (``worker_unavailable``) on the
-capability-not-ready and session-create failure paths. These pins hold the
-mapping and its unmapped-code fallback (verbatim code, never a generic line).
+"""Tests for windows-client voice refusal rendering (astral_client/voice.py):
+human-readable refusal text for known codes, a verbatim fallback for unmapped codes,
+and wording parity with the web client.
 """
 
 from __future__ import annotations
@@ -16,13 +13,10 @@ def test_known_refusal_reasons_render_human_lines() -> None:
         rendered = _refusal_line(code)
         assert rendered == line
         assert rendered != code
-        assert " " in rendered  # a sentence, not a code
+        assert " " in rendered
 
 
 def test_fr033_refusal_classes_are_covered() -> None:
-    # FR-033 names four refusal classes: worker, speech service, permission,
-    # capacity. Permission is handled before the REST call on Windows; the
-    # other three must map here.
     for code in (
         "worker_unavailable",
         "asr_unavailable",
@@ -39,7 +33,6 @@ def test_unmapped_code_falls_back_to_the_verbatim_code() -> None:
 
 
 def test_wording_matches_the_web_reference() -> None:
-    # Cross-client copy parity with web's VOICE_REASON_TEXT (T032).
     assert (
         _refusal_line("capacity_exhausted")
         == "Voice is at capacity right now. Try again shortly."

@@ -1,3 +1,7 @@
+// Tests for VoiceSessionController (Voice/VoiceSessionController.swift): permission and activation ordering,
+// transcript retry and correlation, manifest-matcher pairing bounds, lease renewal and recovery, and
+// takeover/end race guards.
+
 import AstralCore
 import Foundation
 import XCTest

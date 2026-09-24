@@ -1,4 +1,6 @@
-// Real bundled browser export; synthetic data only, no runtime/user credentials.
+// Browser tests for the bundled native export path against synthetic data, with no runtime or user
+// credentials involved.
+
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";

@@ -1,12 +1,8 @@
-"""Feature 044 (US4, T043–T046) — Windows chat attachments.
-
-Covers the stdlib multipart upload helper, the parser-status → chip-glyph
-mapping, staging a chip via `attach_existing`, the upload-result signal handler,
-mapping ready chips into the chat payload on send, and transcript rehydration.
-
-Uses the `win` fixture pattern from test_message_routing (stub OrchestratorClient
-+ _start_integrity_check + _init_workspace) so no socket/thread/workspace runs.
+"""Tests for astral_client/app.py and rest.py: chat attachments — the multipart upload
+helper, parser-status-to-chip-glyph mapping, staging via attach_existing, mapping
+ready chips into the send payload, and transcript rehydration.
 """
+
 import os
 import urllib.error
 
@@ -15,7 +11,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ["ASTRAL_WIN_AGENT"] = "0"  # don't spawn the client-hosted tools agent
+os.environ["ASTRAL_WIN_AGENT"] = "0"
 
 from astral_client import app as appmod  # noqa: E402
 from astral_client.app import MainWindow, parser_status_glyph  # noqa: E402
@@ -37,8 +33,6 @@ class _FakeResp:
 
 
 class _RecordingClient:
-    """Stands in for OrchestratorClient — records send_event / send_chat."""
-
     def __init__(self, *a, **k):
         self.events = []
         self.chats = []
@@ -73,8 +67,6 @@ def win(qapp, monkeypatch):
     w.close()
 
 
-# --- T043: upload_attachment (stdlib multipart, injected opener) ------------
-
 def test_upload_attachment_multipart_and_parse():
     seen = {}
 
@@ -108,8 +100,6 @@ def test_upload_attachment_error_raises():
     assert ei.value.status == 415
 
 
-# --- T044: parser_status → chip glyph mapping -------------------------------
-
 def test_parser_status_glyph_mapping():
     assert parser_status_glyph("covered") == ("✓", "ready")
     assert parser_status_glyph("preparing")[0] == "⏳"
@@ -119,16 +109,13 @@ def test_parser_status_glyph_mapping():
     assert parser_status_glyph(None) == ("•", "staged")
 
 
-# --- T045: attach_existing stages a chip locally (never forwarded) ----------
-
 def test_attach_existing_stages_chip_locally(win):
     win._emit("attach_existing",
               {"attachment_id": "att-9", "filename": "notes.txt", "category": "text"})
     assert len(win._attachments) == 1
     rec = win._attachments[0]
     assert rec["attachment_id"] == "att-9" and rec["status"] == "staged"
-    assert not win._chips_bar.isHidden()          # strip is shown when non-empty
-    # It is a client-side stage — NOT sent to the server.
+    assert not win._chips_bar.isHidden()
     assert all(e[0] != "attach_existing" for e in win.client.events)
 
 
@@ -144,10 +131,8 @@ def test_remove_chip(win):
     cid = win._attachments[0]["chip_id"]
     win._remove_chip(cid)
     assert win._attachments == []
-    assert win._chips_bar.isHidden()              # strip hidden when empty
+    assert win._chips_bar.isHidden()
 
-
-# --- upload-result signal handler flips the chip staged / failed ------------
 
 def test_upload_result_marks_chip_staged(win):
     win._attachments = [{"chip_id": "k1", "attachment_id": None, "filename": "a.csv",
@@ -167,8 +152,6 @@ def test_upload_failure_marks_chip_failed(win):
     assert win._attachments[0]["status"] == "failed"
 
 
-# --- T046 / send: ready chips flow into the chat payload --------------------
-
 def test_send_maps_ready_chips_into_payload(win):
     win._attachments = [
         {"chip_id": "k1", "attachment_id": "att-1", "filename": "a.csv",
@@ -181,18 +164,13 @@ def test_send_maps_ready_chips_into_payload(win):
     assert win.client.chats, "no chat was sent"
     sent = win.client.chats[-1]
     assert sent["message"] == "read this"
-    # only the staged chip flows through; the still-uploading one is excluded
     assert sent["attachments"] == [
         {"attachment_id": "att-1", "filename": "a.csv", "category": "data"}]
-    # The sent (staged) chip is dropped, but the still-uploading chip is KEPT so
-    # a late _on_attachment_uploaded for it isn't silently dropped (minor fix).
     assert [c["chip_id"] for c in win._attachments] == ["k2"]
     assert win._attachments[0]["status"] == "uploading"
 
 
 def test_send_keeps_in_flight_upload_and_late_result_lands(win):
-    """A still-uploading chip survives a send, and its late upload result flips
-    it to staged (rather than being dropped because the chip vanished)."""
     win._attachments = [
         {"chip_id": "s1", "attachment_id": "att-1", "filename": "a.csv",
          "category": "data", "parser_status": "covered", "status": "staged"},
@@ -202,7 +180,6 @@ def test_send_keeps_in_flight_upload_and_late_result_lands(win):
     win._input.setText("go")
     win._send()
     assert [c["chip_id"] for c in win._attachments] == ["u1"]
-    # the late upload result for the still-staged chip lands (not dropped)
     win._on_attachment_uploaded({"chip_id": "u1", "error": None, "result": {
         "attachment_id": "att-2", "filename": "b.csv",
         "category": "data", "parser_status": "covered"}})
@@ -226,10 +203,8 @@ def test_send_noop_without_text_or_ready_chips(win):
                          "category": "file", "parser_status": None, "status": "uploading"}]
     win._input.setText("")
     win._send()
-    assert win.client.chats == []                 # nothing sendable
+    assert win.client.chats == []
 
-
-# --- T046: transcript rehydration shows an attachment note ------------------
 
 def test_replay_transcript_shows_attachment_note(win):
     from PySide6.QtWidgets import QLabel

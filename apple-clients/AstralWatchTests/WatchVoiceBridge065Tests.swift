@@ -1,3 +1,6 @@
+// Tests for WatchVoiceBridge: the header-then-manifest ready handshake gating half-duplex playback, and
+// rejection of an unexpected ticket-bound worker before any audio plays.
+
 import AstralCore
 import Foundation
 import XCTest

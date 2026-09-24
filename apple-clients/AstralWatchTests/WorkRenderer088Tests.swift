@@ -1,3 +1,6 @@
+// Tests for the watch Work-surface renderer: maximum-excerpt text renders every character literally, nested
+// evidence read buttons render correctly, and reconnect leaves Work unavailable until explicit retry.
+
 import AstralCore
 import SwiftUI
 import XCTest

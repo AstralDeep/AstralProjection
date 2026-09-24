@@ -1,4 +1,8 @@
-"""Native-domain exporter integration with real Git sources and fake tool bytes."""
+"""Tests for the native-domain xccov exporter (scripts/native_xccov_domain.py) against
+real Git sources and stubbed tool bytes: raw counters and source identities survive
+the CLI, and denials leave no output.
+"""
+
 from __future__ import annotations
 
 import json

@@ -1,3 +1,6 @@
+// Tests for AppViewModel's cross-device background-task continuity: a task frame folds only into its own
+// chat's state, and continuityReloadTarget picks which chat to refresh.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -9,15 +12,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/**
- * Cross-device background-task continuity (audit item 12) — chat-scoped task
- * frame folding plus the pure "which chat to reload" rule the collect loop
- * drives load_chat from.
- */
 class BackgroundContinuityTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 
-    /** A turn in flight in chat c1 — the state a FOREIGN task frame must not disturb. */
     private val midTurnC1 =
         UiState(
             activeChatId = "c1",
@@ -38,7 +35,6 @@ class BackgroundContinuityTest {
         val s = vm.reduce(midTurnC1, Inbound.TaskStarted("t1", "c2"))
         assertEquals("Background task started in another chat", s.banner)
         assertEquals("info", s.bannerKind)
-        // This chat's in-flight turn is untouched.
         assertTrue(s.turnActive)
         assertFalse(s.asyncDetached)
         assertEquals("Thinking…", s.statusText)
@@ -64,7 +60,6 @@ class BackgroundContinuityTest {
 
     @Test
     fun task_frames_without_a_chat_id_count_as_the_open_chat() {
-        // Legacy flat frames carry no chat_id — behave exactly as before.
         val started = vm.reduce(midTurnC1, Inbound.TaskStarted("t1"))
         assertTrue(started.asyncDetached)
         val done = vm.reduce(midTurnC1, Inbound.TaskCompleted("t1", null))
@@ -73,7 +68,6 @@ class BackgroundContinuityTest {
 
     @Test
     fun task_frames_before_the_chat_is_acked_count_as_the_open_chat() {
-        // First turn: activeChatId may not be set yet (mirrors the UiUpsert guard).
         val s = vm.reduce(midTurnC1.copy(activeChatId = null), Inbound.TaskCompleted("t1", "c1"))
         assertFalse(s.turnActive)
         assertEquals("Background task finished", s.banner)

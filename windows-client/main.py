@@ -1,12 +1,8 @@
-"""Pre-Qt PyInstaller/run entry point for the AstralDeep Windows client.
-
-The `--byo-worker` branch must come BEFORE `astral_client.app` (and therefore Qt)
-is imported: the BYO agent host re-invokes `sys.executable` to run a delivered
-agent in a child process, and under PyInstaller onefile `sys.executable` IS
-AstralDeep.exe — so without this branch every user agent would raise a second,
-invisible GUI (`console=False`) instead of a stdio worker.
-See specs/058-byo-agents-runtime/contracts/host-bundle.md §4.
+"""Entry point for the Windows client exe; picks between the BYO worker stdio loop and
+astral_client/app.py's Qt GUI. Handles --byo-worker before importing app.py so a
+frozen re-invocation runs as a worker, not a second GUI.
 """
+
 from __future__ import annotations
 
 import io
@@ -17,14 +13,6 @@ import sys
 
 
 def _restore_frozen_standard_streams() -> bool:
-    """Rebuild redirected pipe streams hidden by PyInstaller windowed mode.
-
-    ``console=False`` deliberately gives an ordinary GUI launch no console and
-    sets Python's standard streams to ``None``. A frozen BYO worker is different:
-    its supervising parent supplies real anonymous-pipe Windows handles. Duplicate
-    and wrap only those inherited handles before importing the worker module.
-    """
-
     if not getattr(sys, "frozen", False) or sys.platform != "win32":
         return True
     if all(stream is not None for stream in (sys.stdin, sys.stdout, sys.stderr)):
@@ -65,7 +53,7 @@ def _restore_frozen_standard_streams() -> bool:
             ctypes.byref(duplicate),
             0,
             False,
-            0x00000002,  # DUPLICATE_SAME_ACCESS
+            0x00000002,
         ):
             return None
         flags = os.O_BINARY | (os.O_RDONLY if reading else os.O_WRONLY)
@@ -84,7 +72,7 @@ def _restore_frozen_standard_streams() -> bool:
                 line_buffering=not reading,
                 write_through=not reading,
             )
-        except Exception:  # noqa: BLE001 - startup must fail closed below
+        except Exception:  # noqa: BLE001
             kernel32.CloseHandle(duplicate)
             return None
 
@@ -98,14 +86,10 @@ def _restore_frozen_standard_streams() -> bool:
 
 
 def _resource_root() -> Path:
-    """Return the PyInstaller extraction root or the source client directory."""
-
     return Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
 
 
 def main(argv=None) -> int:
-    """Resolve one deployment, validate if requested, then import/start Qt."""
-
     arguments = list(sys.argv[1:] if argv is None else argv)
     if (
         "--byo-worker" in arguments
@@ -125,10 +109,6 @@ def main(argv=None) -> int:
 
         return worker_main([sys.argv[0], *arguments])
 
-    # Diagnostics: ASTRAL_CLIENT_LOG_LEVEL=INFO (or DEBUG) routes the client's
-    # logging to stderr at that level. Without it Python's last-resort handler
-    # shows WARNING and above only — a request the host forwards or relays is
-    # logged at INFO, so a live "why did my agent time out" needs this.
     import logging as _logging
     import os as _os
 
@@ -158,7 +138,7 @@ def main(argv=None) -> int:
         print(json.dumps(startup.validation_report, sort_keys=True))
         return 0
 
-    # Deliberately imported only after the immutable profile has resolved.
+    # Must follow the byo-worker branch (frozen exe reentry)
     from astral_client.app import main as app_main
 
     return app_main(

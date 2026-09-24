@@ -1,10 +1,7 @@
-"""ATX headings h1-h6 in ``block_md`` (escape-by-default).
-
-Chat narratives frequently use deep headings (e.g. ``#### 1. Differences in
-Methodology``); levels 4-6 previously fell through to paragraph handling and
-rendered as literal ``#### `` text. Same structural/behavioral style as
-test_markdown_blocks.py.
+"""Tests for ATX heading levels 4-6 in block_md (backend/webrender/sanitize.py): heading
+elements, escaping, inline markdown, and where headings stop being recognized.
 """
+
 from webrender.sanitize import block_md
 
 XSS = '<script>alert(1)</script><img src=x onerror=alert(2)>'
@@ -53,9 +50,8 @@ def test_deep_heading_content_runs_inline_md():
 
 
 def test_seven_hashes_is_not_a_heading():
-    # CommonMark: ATX headings stop at six #'s; more stays plain text.
     out = block_md("####### nope")
-    assert "<h" not in out.replace("<hr", "")  # no heading element
+    assert "<h" not in out.replace("<hr", "")
     assert "<p" in out and "####### nope" in out
 
 
@@ -73,5 +69,5 @@ def test_deep_heading_flushes_preceding_paragraph():
 
 def test_table_body_stops_at_deep_heading():
     out = block_md("| a | b |\n|---|---|\n| 1 | 2 |\n#### Section | details")
-    assert out.count("<tr") == 2  # header + one data row only
+    assert out.count("<tr") == 2
     assert "<h4" in out and "Section | details" in out

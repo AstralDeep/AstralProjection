@@ -1,15 +1,6 @@
-"""Pure remote-machine, feature-flag, workspace, history, timeline and saved-results builders.
-
-``build_saved_results_view`` (feature 088 T044) lists and details result-publication
-receipts the owner already approved. State: ``mode`` (list/detail), ``receipts`` or one
-``receipt``, ``next_cursor``. A receipt carries publication_id, action_id, operation_id
-(UUID4), operation_title, conversation_id, conversation_title, component_id,
-committed_render_revision, committed_at and ``provenance`` (source_title, requested_url,
-final_url, retrieved_at, result_digest, content_digest, stage_digest). Actions bind only
-to existing surfaces: ``load_chat`` opens the destination conversation, ``chrome_open``
-reaches the workspace timeline, and an optional host-issued ``export`` ({url, filename})
-renders the existing authenticated ``file_download`` for that committed revision. Viewing
-a saved result never proposes or saves anything; no save action exists on this surface.
+"""Pure view builders for remote machines, feature flags, workspace/history/timeline
+navigation, and saved result-publication receipts, all over host-authorized
+snapshots.
 """
 
 from __future__ import annotations
@@ -95,7 +86,6 @@ def build_remote_machines_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build owner-scoped remote-machine inventory without receiving secrets."""
     if denied:
         return denied_view("remote_machines", "Remote machines", "Remote-machine access denied.")
     if not enabled:
@@ -209,7 +199,6 @@ def build_feature_flags_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build a read-only feature-policy explanation; Deep retains mutation."""
     if denied:
         return denied_view("feature_flags", "Feature flags", "Feature-flag access denied.")
     if error:
@@ -249,7 +238,6 @@ def build_workspace_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build a workspace surface from host-supplied component dictionaries."""
     if denied:
         return denied_view("workspace", "Workspace", "Workspace access denied.")
     if error:
@@ -292,7 +280,6 @@ def build_history_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build conversation history; loading remains an authorized host action."""
     if error:
         return unavailable_view("history", "Conversation history", error)
     components: list[ComponentView] = []
@@ -324,7 +311,6 @@ def build_timeline_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build timeline navigation or a read-only historical workspace snapshot."""
     if error:
         return unavailable_view("workspace_timeline", "Workspace timeline", error)
     safe_chat_id = clean_text(chat_id)
@@ -457,7 +443,6 @@ def _uuid4(value: object) -> str:
 
 
 def _scalar(value: object, default: str = "") -> str:
-    # Only a deliberate scalar projection is displayable, never repr(raw records).
     if isinstance(value, bool) or not isinstance(value, (str, int, float)):
         return default
     return clean_text(value) or default
@@ -468,7 +453,6 @@ def _digest_text(value: object) -> str:
 
 
 def _export(value: object) -> ComponentView | None:
-    """Only a host-issued root-relative export path becomes the existing download."""
     if not isinstance(value, Mapping):
         return None
     url = value.get("url")
@@ -531,7 +515,6 @@ def build_saved_results_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the owner's saved results; viewing is never saving."""
     if denied:
         return denied_view(_SAVED_SURFACE, _SAVED_TITLE, "Saved-results access denied.")
     if error:

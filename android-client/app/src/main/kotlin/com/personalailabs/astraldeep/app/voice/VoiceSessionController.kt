@@ -1,3 +1,7 @@
+// Serialized owner of one Android voice session: the LiveKit media client, REST voice-control calls, and the
+// strict terminal-notice/turn-state reducers. Bearer tokens and audio stay memory-only; driven by
+// AppViewModel and MainActivity.
+
 package com.personalailabs.astraldeep.app.voice
 
 import android.content.Context
@@ -69,13 +73,11 @@ import android.media.AudioTrack as AndroidAudioTrack
 const val VOICE_TRANSCRIPT_TOPIC = "astraldeep.voice.transcript.v1"
 const val VOICE_ANNOUNCEMENT_TOPIC = "astraldeep.voice.announcement.v1"
 
-/** Bounded class-only failure context; exception messages may contain credentialed URLs. */
 internal fun redactedMediaFailureType(error: Throwable): String =
     generateSequence(error) { current -> current.cause }
         .take(4)
         .joinToString(" <- ") { current -> current.javaClass.name.substringAfterLast('.') }
 
-/** Convert a decoded RTC frame into the exact remaining 24-kHz manifest budget. */
 internal fun boundedPcmFrameCount(
     remainingSamples24k: Int,
     sampleRateHz: Int,
@@ -99,7 +101,6 @@ internal enum class VoicePublicationDiscovery {
     ALREADY_REMEMBERED,
 }
 
-/** Keep repeated event/snapshot discovery idempotent without weakening worker/audio checks. */
 internal fun voicePublicationDiscovery(
     expectedWorkerIdentity: String,
     participantIdentity: String,
@@ -112,7 +113,6 @@ internal fun voicePublicationDiscovery(
         else -> VoicePublicationDiscovery.REMEMBER
     }
 
-/** Runtime facts checked at the exact user activation gesture. */
 data class VoiceMediaCapability(
     val hasMicrophone: Boolean,
     val hasAudioOutput: Boolean,
@@ -120,7 +120,6 @@ data class VoiceMediaCapability(
     val fullDuplex: Boolean,
 )
 
-/** Non-secret owner metadata shown only for an explicit takeover decision. */
 data class VoiceTakeoverTarget(
     val sessionId: String,
     val deviceKind: String,
@@ -135,11 +134,6 @@ enum class VoiceTerminalNoticeKind {
     TEXT_RESULT_AVAILABLE,
 }
 
-/**
- * A terminal voice-turn projection that remains explicit without depending on
- * color or synthesized audio. [serverMessage] is already bounded and
- * content-safe at the wire boundary and is retained verbatim.
- */
 data class VoiceTerminalNotice(
     val kind: VoiceTerminalNoticeKind,
     val title: String,
@@ -218,7 +212,6 @@ internal fun terminalNoticeFor(value: VoiceTurnState): VoiceTerminalNotice? =
         else -> null
     }
 
-/** A current notice may move only to a distinct turn whose server timestamp is not older. */
 internal fun terminalNoticeCanMoveTo(
     current: VoiceTerminalNotice?,
     turnId: String,
@@ -277,7 +270,6 @@ internal fun reduceTerminalNotice(
         requireNotNull(current)
     }
 
-/** Current UI projection. Controls themselves always come from the server composer model. */
 data class VoiceUiState(
     val composer: VoiceComposerModel? = null,
     val phase: String = "off",
@@ -298,7 +290,6 @@ data class VoiceUiState(
     }
 }
 
-/** Ephemeral UI binding. Its bearer and the user token are redacted from diagnostics. */
 class VoiceUiBinding(
     val token: String,
     val deviceId: String,
@@ -328,7 +319,6 @@ data class VoiceRestSession(
     val microphoneEnabled: Boolean,
 )
 
-/** Short-lived no-store LiveKit credential; never persisted or included in toString(). */
 class LiveKitVoiceGrant(
     val grantId: String,
     val sessionId: String,
@@ -396,14 +386,12 @@ sealed interface VoiceMediaEvent {
 
     data class Disconnected(val unexpected: Boolean) : VoiceMediaEvent
 
-    /** One phase derived from the locally matched PCM render pipeline. */
     data class Playout(
         val announcementId: String,
         val announcementSequence: Int,
         val phase: String,
     ) : VoiceMediaEvent
 
-    /** A manifest/track pair failed before any local sample rendered. */
     data class AnnouncementDropped(
         val announcementId: String,
         val announcementSequence: Int,
@@ -419,19 +407,13 @@ interface VoiceMediaClient {
 
     suspend fun setMicrophoneEnabled(enabled: Boolean)
 
-    /** Queue one already-validated manifest for exact worker-track matching. */
     suspend fun queueAnnouncement(value: VoiceAnnouncementMedia): Boolean
 
-    /** Stop local speech immediately; accepted agent work is unaffected. */
     fun interruptPlayout()
 
     fun disconnect()
 }
 
-/**
- * Official direct-RTC LiveKit Android adapter. It publishes only the microphone;
- * there is intentionally no data-publication method on this client surface.
- */
 class LiveKitVoiceMediaClient(
     context: Context,
     private val scope: CoroutineScope,
@@ -476,8 +458,7 @@ class LiveKitVoiceMediaClient(
     override suspend fun connect(grant: LiveKitVoiceGrant) {
         disconnect()
         currentGrant = grant
-        // The SDK's INFO diagnostics can include credentialed signaling/SDP.
-        // AstralDeep reports only its own bounded, redacted media failures.
+        // INFO level can log credentialed signaling/SDP data
         LiveKit.loggingLevel = LoggingLevel.OFF
         LiveKit.enableWebRTCLogging = false
         val next = LiveKit.create(applicationContext)
@@ -511,14 +492,9 @@ class LiveKitVoiceMediaClient(
             next.connect(
                 grant.url,
                 grant.joinToken,
-                // Assistant tracks are subscribed only after their strict
-                // manifest is matched; this prevents audio-before-manifest.
                 ConnectOptions(autoSubscribe = false, audio = true, video = false),
             )
-            // A publication included in the join snapshot can predate the
-            // subscriber transport and therefore have no observable
-            // TrackPublished event. connect() returning is the initial
-            // reconciliation seam documented by the media contract.
+            // A join snapshot can predate this publication's TrackPublished event
             reconcileExistingPublications(next)
             _events.emit(VoiceMediaEvent.Connected)
         } catch (error: Exception) {
@@ -553,9 +529,6 @@ class LiveKitVoiceMediaClient(
             delay(MANIFEST_MATCH_TIMEOUT_MILLIS)
             expireUnmatchedAnnouncement(value.announcementId)
         }
-        // Re-scan on manifest arrival as a second bounded reconciliation seam.
-        // This remains fail closed: every discovered publication is left
-        // unsubscribed until its exact content-free manifest matches.
         room?.let(::reconcileExistingPublications) ?: reconcilePlayout()
         return true
     }
@@ -631,9 +604,7 @@ class LiveKitVoiceMediaClient(
                 publication.setSubscribed(false)
                 return
             }
-            // Event delivery and snapshot reconciliation may discover the same
-            // object. Do not mutate it here: it may already be the subscribed,
-            // manifest-matched active playout.
+            // May already be the subscribed, matched playout — do not mutate
             VoicePublicationDiscovery.ALREADY_REMEMBERED -> return
             VoicePublicationDiscovery.REMEMBER -> Unit
         }
@@ -660,8 +631,7 @@ class LiveKitVoiceMediaClient(
             return
         }
         if (active.track != null) return
-        // Mute LiveKit's automatic output before attaching the bounded PCM
-        // sink. AndroidAudioTrack below is the only render path.
+        // Mutes LiveKit's own output; the PCM sink below is the only render path
         audioTrack.setVolume(0.0)
         val sink =
             AudioTrackSink { audioData, bitsPerSample, sampleRate, channels, frames, _ ->
@@ -942,11 +912,6 @@ class LiveKitVoiceMediaClient(
     }
 }
 
-/**
- * Serialized owner of one Android voice session. Audio and bearer material stay
- * memory-only. Final transcripts are bounded and retried with immutable IDs
- * until an exact normal-chat acknowledgement or rejection arrives.
- */
 class VoiceSessionController(
     private val api: VoiceControlApi,
     private val media: VoiceMediaClient,
@@ -1024,7 +989,6 @@ class VoiceSessionController(
         playoutReporter = value
     }
 
-    /** A new socket generation invalidates the old short-lived binding immediately. */
     fun installUiConnection(
         token: String,
         deviceId: String,
@@ -1394,7 +1358,6 @@ class VoiceSessionController(
         }
     }
 
-    /** Synchronous local cleanup first; accepted ordinary tasks remain server-owned. */
     fun logout() {
         invalidateLifecycle()
         stopLeaseRenewal()
@@ -1434,10 +1397,6 @@ class VoiceSessionController(
         }
     }
 
-    /**
-     * Bind the renewable server lease to the Activity foreground without
-     * manufacturing a user interaction or extending the true-idle deadline.
-     */
     fun appForegroundChanged(
         active: Boolean,
         reason: String = if (active) "foreground" else "backgrounded",
@@ -2026,7 +1985,6 @@ class VoiceSessionController(
         _state.update { it.copy(mediaConnected = false) }
     }
 
-    /** Drop transient client feedback while preserving the latest server-owned controls. */
     private fun restoreServerProjectionWithoutSession() {
         _state.update { current ->
             if (!current.staleWithoutSession()) return@update current
@@ -2125,8 +2083,6 @@ class VoiceSessionController(
             return parsed?.version() == 4 && parsed.toString() == value
         }
 
-        // Like the web composer, off has no visible feedback unless the server
-        // supplied a message. Local errors and terminal notices retain feedback.
         private fun composerMessage(composer: VoiceComposerModel): String? =
             composer.message ?: if (composer.state == "off") null else messageFor(composer.state, composer.reason)
 
@@ -2168,7 +2124,6 @@ class VoiceSessionController(
     }
 }
 
-/** Strict no-store HTTP implementation of the voice control REST contract. */
 class OkHttpVoiceControlApi(
     private val baseUrl: String,
     private val client: OkHttpClient =

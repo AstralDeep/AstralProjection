@@ -1,18 +1,12 @@
-// AstralPrims mirror-fidelity tests. The known-answer fixtures in
-// Fixtures/astralprims-fixtures.json were generated from the LIVE Python
-// package (astralprims 0.3.0) inside the astraldeep container — every Swift
-// construction below mirrors the Python construction that produced its
-// fixture, and the serialized dicts must be EQUAL. Regenerate the fixtures
-// from the container (see the file header in the generator notes in
-// specs/051) whenever the pip package version bumps.
+// Tests for AstralCore's Swift mirror of the astralprims Python package: every component constructor's
+// serialized dict equals its Python-generated fixture, and every authored type appears in the shared
+// manifest.
+
 import XCTest
 
 @testable import AstralCore
 
 final class PrimitivesTests: XCTestCase {
-
-    // MARK: fixture plumbing
-
     static var fixtures: [String: JSONValue] = [:]
     static var fixtureVersion = ""
 
@@ -55,8 +49,6 @@ final class PrimitivesTests: XCTestCase {
             "fixtures generated from a different astralprims version — re-check the mirror")
         XCTAssertEqual(Self.fixtures.count, 33)
     }
-
-    // MARK: layout
 
     func testContainerNested() {
         assertMirrors(
@@ -128,10 +120,7 @@ final class PrimitivesTests: XCTestCase {
         assertMirrors(AstralPrims.Divider(variant: "dashed"), fixture: "divider")
     }
 
-    // MARK: content & controls
-
     func testButtonDoctest() {
-        // The package README doctest, byte-for-byte.
         assertMirrors(
             AstralPrims.Button(label: "Click me", action: "open")
                 .css(["background-color": "white", "color": "#000000"]),
@@ -187,7 +176,6 @@ final class PrimitivesTests: XCTestCase {
     }
 
     func testMetricMinimalEmitsDefaults() {
-        // Non-optional defaults are EMITTED (title/value/variant); optionals dropped.
         assertMirrors(AstralPrims.MetricCard(), fixture: "metric_minimal")
     }
 
@@ -212,8 +200,6 @@ final class PrimitivesTests: XCTestCase {
                 sourceParams: ["country": .string("US")]),
             fixture: "table_paginated")
     }
-
-    // MARK: charts
 
     func testBarChartWithDataset() {
         assertMirrors(
@@ -263,8 +249,6 @@ final class PrimitivesTests: XCTestCase {
             fixture: "plotly_chart")
     }
 
-    // MARK: media & I/O
-
     func testAudioCamelCaseKeys() {
         assertMirrors(
             AstralPrims.Audio(
@@ -285,8 +269,6 @@ final class PrimitivesTests: XCTestCase {
             AstralPrims.FileDownload(label: "Get", url: "/f.txt", filename: "f.txt"),
             fixture: "file_download")
     }
-
-    // MARK: dashboard & status
 
     func testBadge() {
         assertMirrors(
@@ -351,8 +333,6 @@ final class PrimitivesTests: XCTestCase {
             fixture: "chat_history")
     }
 
-    // MARK: theming
-
     func testColorPicker() {
         assertMirrors(
             AstralPrims.ColorPicker(
@@ -367,10 +347,7 @@ final class PrimitivesTests: XCTestCase {
             fixture: "theme_apply")
     }
 
-    // MARK: base semantics
-
     func testAttributesMergeLastAndOverride() {
-        // attributes override declared fields — the package's escape hatch.
         assertMirrors(
             AstralPrims.Text(content: "x")
                 .attributes(["variant": .string("h1"), "data-test": .string("1")]),
@@ -395,8 +372,6 @@ final class PrimitivesTests: XCTestCase {
     }
 
     func testAuthoredDictsParseAsAstralComponents() {
-        // The authoring layer's output must be readable by the consuming model
-        // (AstralComponent) — the same dict round-trips both roles.
         let dict = AstralPrims.Card(
             title: "Welcome",
             content: [AstralPrims.Button(label: "Go", action: "go")]
@@ -408,11 +383,7 @@ final class PrimitivesTests: XCTestCase {
         XCTAssertEqual(component?.children.first?.type, "button")
     }
 
-    // MARK: vocabulary tie-in (manifest drift)
-
     func testEveryFixtureTypeIsAuthored() throws {
-        // Collect component types RECURSIVELY (nested children/content/tabs
-        // count — e.g. "code" lives inside the collapsible fixture).
         var seen: Set<String> = []
         func walk(_ value: JSONValue) {
             switch value {
@@ -428,7 +399,6 @@ final class PrimitivesTests: XCTestCase {
         for (name, fixture) in Self.fixtures where name != "envelope" {
             walk(fixture)
         }
-        // "scatter" is a plotly trace kind, not a component type.
         seen.remove("scatter")
         XCTAssertEqual(
             seen, AstralPrims.allTypes,
@@ -436,8 +406,6 @@ final class PrimitivesTests: XCTestCase {
     }
 
     func testAuthoredTypesMatchManifest() throws {
-        // Every authored type exists in the committed manifest, and the delta
-        // is EXACTLY the renderer-origin types the package does not define.
         let data = try Data(contentsOf: try ManifestDriftTests.manifestURL())
         let manifest = try JSONDecoder().decode(ManifestDriftTests.Manifest.self, from: data)
         let manifestTypes = Set(manifest.componentTypes)

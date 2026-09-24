@@ -1,5 +1,6 @@
-// Feature 051 — agent + audit models for the native settings screens, ports of
-// the Android `agentsFromJson` (Wire.kt) and `parseAudit` (AstralRest.kt).
+// Agent permission and audit-event models for the native settings screens, ports of Android's agentsFromJson
+// (Wire.kt) and parseAudit (AstralRest.kt). Rendered by Screens' AgentsView and AuditView.
+
 import Foundation
 
 public struct Agent: Equatable, Sendable, Identifiable {
@@ -10,9 +11,7 @@ public struct Agent: Equatable, Sendable, Identifiable {
     public let scopes: [String: Bool]
     public let tools: [String]
     public let toolDescriptions: [String: String]
-    /// Effective per-tool enabled state (server-computed from scopes + overrides).
     public var permissions: [String: Bool]
-    /// Each tool's required permission kind (e.g. "tools:read"), for toggling.
     public let toolScopeMap: [String: String]
 
     public init?(json: JSONValue) {
@@ -24,7 +23,6 @@ public struct Agent: Equatable, Sendable, Identifiable {
         self.scopes = Agent.boolMap(json["scopes"])
         let permissions = Agent.boolMap(json["permissions"])
         self.permissions = permissions
-        // `tools` is a list of {name, description} OR plain strings; fall back to keys.
         let toolObjs = (json["tools"]?.arrayValue ?? []).filter { $0.objectValue != nil }
         if !toolObjs.isEmpty {
             self.tools = toolObjs.compactMap { $0["name"]?.stringValue }
@@ -88,7 +86,6 @@ public struct AuditEvent: Equatable, Sendable {
     public let outcomeDetail: String?
     public let detail: String?
 
-    /// A stable key for list rendering (server id, else a synthetic fallback).
     public var identity: String { id ?? "\(eventClass ?? "")-\(action ?? "")-\(recordedAt ?? "")" }
 
     public init(
@@ -104,7 +101,6 @@ public struct AuditEvent: Equatable, Sendable {
         self.detail = detail
     }
 
-    /// Tolerant shaping of the `/api/audit` body (top-level array or {events|items|data}).
     public static func parse(_ data: Data) -> [AuditEvent] {
         guard let root = try? JSONValue.parse(data) else { return [] }
         let arr: [JSONValue]

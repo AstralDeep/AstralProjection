@@ -1,7 +1,7 @@
-// Feature 051 — the client model of the server-owned chrome (top bar + settings
-// menu), a 1:1 port of the Android `ChromeMenu.kt` (Constitution XII: one
-// server-owned definition, every client is a thin consumer). Decoded from the
-// `chrome_menu` WS frame; tolerant of unknown fields.
+// Client model of the server-owned top-bar and settings chrome, decoded from the chrome_menu frame and
+// tolerant of unknown fields; a 1:1 port of Android's ChromeMenu.kt. Rendered by RootView and read by
+// AppModel.
+
 import Foundation
 
 public struct SurfaceRef: Equatable, Sendable {
@@ -13,14 +13,11 @@ public struct SurfaceRef: Equatable, Sendable {
     }
 }
 
-/// Closed workspace verbs from the server's chrome model. These never dispatch
-/// chrome_open, and their presence does not authorize the associated HTTP call.
 public enum WorkspaceAction: String, Equatable, Sendable {
     case exportCanvas = "export_canvas"
     case shareCanvas = "share_canvas"
 }
 
-/// One top-bar control. Unknown kinds remain non-interactive.
 public struct TopBarControl: Equatable, Sendable, Identifiable {
     public let key: String
     public let kind: String
@@ -31,7 +28,6 @@ public struct TopBarControl: Equatable, Sendable, Identifiable {
     public var id: String { key }
 }
 
-/// One selectable Settings entry.
 public struct ChromeMenuItem: Equatable, Sendable, Identifiable {
     public let key: String
     public let label: String
@@ -41,7 +37,6 @@ public struct ChromeMenuItem: Equatable, Sendable, Identifiable {
     public var id: String { key }
 }
 
-/// A labeled, ordered group of items (ACCOUNT / HELP / ADMIN TOOLS).
 public struct ChromeMenuGroup: Equatable, Sendable, Identifiable {
     public let key: String
     public let label: String
@@ -50,7 +45,6 @@ public struct ChromeMenuGroup: Equatable, Sendable, Identifiable {
     public var id: String { key }
 }
 
-/// The always-last, visually-distinct (red) sign-out entry.
 public struct SignOutItem: Equatable, Sendable {
     public let key: String
     public let label: String
@@ -67,23 +61,18 @@ public struct SignOutItem: Equatable, Sendable {
     }
 }
 
-/// The complete chrome description a client renders.
 public struct ChromeMenuModel: Equatable, Sendable {
     public let version: Int
     public let topbar: [TopBarControl]
     public let menu: [ChromeMenuGroup]
     public let signout: SignOutItem
 
-    /// Valid interactive controls in the server's canonical order.
     public var topbarActions: [TopBarControl] {
         topbar.filter { $0.kind == "action" || $0.workspaceAction != nil }
     }
-    /// The Settings gear control, if present.
     public var settingsControl: TopBarControl? { topbar.first { $0.kind == "menu" } }
-    /// Every menu item flattened, in order.
     public var allItems: [ChromeMenuItem] { menu.flatMap(\.items) }
 
-    /// Decode from the `model` object of a `chrome_menu` frame (or the REST body).
     public static func fromJSON(_ root: JSONValue?) -> ChromeMenuModel? {
         guard let root else { return nil }
         let topbar: [TopBarControl] = (root["topbar"]?.arrayValue ?? []).compactMap { el in
@@ -142,14 +131,12 @@ public struct ChromeMenuModel: Equatable, Sendable {
 }
 
 extension ChromeMenuItem {
-    /// The `chrome_open` payload ({surface, params}).
     public var chromeOpenPayload: [String: JSONValue] {
         ["surface": .string(surface), "params": params]
     }
 }
 
 extension TopBarControl {
-    /// The `chrome_open` payload ({surface, params}) for an interactive control.
     public var chromeOpenPayload: [String: JSONValue] {
         ["surface": .string(action?.surface ?? ""), "params": action?.params ?? .object([:])]
     }

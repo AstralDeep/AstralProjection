@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-/** Launch the feature-060 browser proof only inside the pinned Playwright image. */
+// Launches the feature's browser release proof only inside the pinned Playwright image, validating
+// its URL and output-path arguments before handing off to the coverage pipeline.
 
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -127,8 +128,6 @@ const coverageOutput = validateOutputPath(
   required(args["coverage-output"], "coverage-output"),
   "coverage-output",
 );
-// The lock-pinned V8→Istanbul conversion output rides beside the raw V8 file
-// unless the producer names it explicitly.
 const coverageIstanbulOutput = validateOutputPath(
   args["coverage-istanbul-output"]
     ?? process.env.ASTRAL_RELEASE_COVERAGE_ISTANBUL_OUTPUT

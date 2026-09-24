@@ -1,6 +1,9 @@
+// Client model and reducer for the server-owned notes surface: request/form decode, per-connection
+// correlation, and atomic acceptance of surface updates. Read by AppModel and rendered by Screens and
+// WatchGuidanceSurfaceView.
+
 import Foundation
 
-/// Closed server-owned notes commands. Values exist only in the current send/form lifetime.
 public struct GuidanceRequest: Equatable, Sendable {
     public let action: String
     public let payload: JSONValue
@@ -109,7 +112,6 @@ public struct GuidanceRequest: Equatable, Sendable {
         self.init(action: replay.action, payload: .object(payload))
     }
 
-    /// Reject even malformed/private commands before the ordinary reconnect queue.
     public static func claimsCurrentConnectionSemantics(frameText: String) -> Bool {
         guard let frame = InboundFrame.parse(frameText), frame.name == "ui_event",
             let action = frame.payload["action"]?.stringValue
@@ -127,7 +129,6 @@ public struct GuidanceRequest: Equatable, Sendable {
     }
 }
 
-/// Exact supported param_picker fields, rendered identically on each Apple form factor.
 public struct GuidanceForm: Equatable, Sendable {
     public let component: AstralComponent
     public let fields: [JSONValue]
@@ -223,7 +224,6 @@ public struct GuidanceForm: Equatable, Sendable {
     }
 }
 
-/// Refuse the whole frame before displaying any private field or binding any command.
 public struct GuidanceSurfaceUpdate: Equatable, Sendable {
     public let generation: String
     public let title: String
@@ -297,7 +297,6 @@ public struct GuidanceSurfaceUpdate: Equatable, Sendable {
     }
 }
 
-/// Pending metadata only: no form values are retained for uncertain-delivery retry.
 public struct GuidanceRequestState: Equatable, Sendable {
     public private(set) var generation: String?
     public private(set) var action: String?

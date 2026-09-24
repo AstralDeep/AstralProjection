@@ -1,3 +1,7 @@
+// UI tests for LLM first-login: immediate feedback and phase responsiveness, invalid-credential and
+// provider-unavailable terminals stay editable and retryable, and the 10-second watchdog never invents a
+// server terminal.
+
 import XCTest
 
 final class LLMFirstLoginUITests: XCTestCase {
@@ -34,8 +38,6 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertFalse(save.isEnabled, "only the duplicate Save control is single-flight disabled")
         XCTAssertEqual(save.value as? String, "Submitting")
         XCTAssertTrue(apiKey.isEnabled)
-        // Completion is held by the runner while actual field editing and
-        // phase accessibility are observed. No production timer is changed.
         focusAndType(apiKey, "x")
         XCTAssertTrue(
             waitForStatus(
@@ -104,10 +106,6 @@ final class LLMFirstLoginUITests: XCTestCase {
         save.tap()
         XCTAssertTrue(status.waitForExistence(timeout: 0.25))
         let acknowledgedAt = Date()
-        // The background/foreground round-trip is part of the responsiveness
-        // contract, not the watchdog's: on a hosted CI VM it alone can cost
-        // seconds (and may briefly suspend the app's timers), so its measured
-        // duration is deducted — the 10 s watchdog keeps its 1.5 s margin.
         let sceneExerciseStarted = Date()
         exerciseSceneOrWindowResponsiveness()
         let sceneOverhead = Date().timeIntervalSince(sceneExerciseStarted)
@@ -121,8 +119,6 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(save.isEnabled)
         XCTAssertEqual(save.value as? String, "Ready")
 
-        // Explicit status retry reconciles the same identity; it must not
-        // create another local submitting operation or restart the spinner.
         save.tap()
         XCTAssertTrue(save.isEnabled)
         let retainedStatus = app.staticTexts["llm-save-status"]
@@ -139,9 +135,6 @@ final class LLMFirstLoginUITests: XCTestCase {
         app.launch()
     }
 
-    /// Tap until the field actually owns keyboard focus, then type. Hosted CI
-    /// VMs can drop the focus a tap requested; typing without focus hard-fails
-    /// with "Neither element nor any descendant has keyboard focus".
     private func focusAndType(_ field: XCUIElement, _ text: String) {
         for attempt in 0..<5 {
             if attempt > 0 { Thread.sleep(forTimeInterval: 0.4) }
@@ -158,9 +151,6 @@ final class LLMFirstLoginUITests: XCTestCase {
 
     private func fieldHasFocus(_ field: XCUIElement) -> Bool {
         #if os(macOS)
-            // XCUIElement exposes no focus attribute on macOS, and the macOS
-            // lane has never shown the tap-without-focus flake — one tap is
-            // authoritative there.
             return true
         #else
             return (field.value(forKey: "hasKeyboardFocus") as? Bool) ?? false

@@ -1,7 +1,8 @@
-"""Feature 026 — T031/T032: graceful handling of unknown targets and
-unsupported primitive types (FR-013 / FR-014). A bad component must never crash
-a whole response.
+"""Tests confirming backend/webrender/__init__.py degrades unknown targets and malformed
+or unsupported primitives to a placeholder instead of raising, without breaking
+sibling components.
 """
+
 import astralprims as ap
 import webrender
 from webrender import render_for_target
@@ -20,15 +21,14 @@ def test_unsupported_primitive_does_not_break_siblings():
 
 
 def test_renderer_swallows_malformed_component():
-    # a component whose fields are the wrong shape must degrade, not raise
     html = webrender.render_one({"type": "table", "rows": "not-a-list"})
-    assert isinstance(html, str)  # no exception escaped
+    assert isinstance(html, str)
 
 
 def test_unknown_target_falls_back_to_web():
     comps = [ap.Text(content="x").to_dict()]
     out = render_for_target("nonexistent-device", comps, None)
-    assert isinstance(out, str) and "dynamic-renderer" in out  # defined fallback = web
+    assert isinstance(out, str) and "dynamic-renderer" in out
 
 
 def test_known_web_target():

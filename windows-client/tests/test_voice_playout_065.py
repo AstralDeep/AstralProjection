@@ -1,4 +1,7 @@
-"""Feature 065 Windows manifest-led direct-RTC playout behavior."""
+"""Tests for windows-client direct-RTC voice playout (astral_client/voice.py):
+manifest-authorized worker binding, result-quantum reservation, playout audio
+buffering/ordering, and interruption handling.
+"""
 
 from __future__ import annotations
 

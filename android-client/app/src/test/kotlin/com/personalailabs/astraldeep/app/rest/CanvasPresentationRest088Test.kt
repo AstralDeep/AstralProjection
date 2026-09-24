@@ -1,3 +1,6 @@
+// Tests for the REST call that fetches a chat's frozen canvas presentation (export snapshot) over a loopback
+// MockWebServer.
+
 package com.personalailabs.astraldeep.app.rest
 
 import kotlinx.coroutines.async
@@ -116,9 +119,4 @@ class CanvasPresentationRest088Test {
         }
 }
 
-/**
- * MockWebServer's own `url()` builds on the machine's reverse-DNS host name, which is not
- * always a loopback literal, so the product's local-HTTP allowance would reject it. Pin the
- * explicit loopback host the way ServerSession088Test does.
- */
 private fun MockWebServer.localUrl(path: String): HttpUrl = url(path).newBuilder().host("localhost").build()

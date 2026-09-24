@@ -450,8 +450,8 @@
 
   function clearCommittedConversationView(reason, chatId) {
     if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
-    if (chat) chat.replaceChildren();
-    if (canvas) { canvas.replaceChildren(); showCanvasEmpty(); }
+    resetFeed();
+    showCanvasEmpty();
     setWorkspaceView("start");
     closeHistoryOverlay();
     document.body.classList.remove("astral-chat-open", "astral-msgs-open");
@@ -623,70 +623,210 @@
   var liveTurn = null;
   var canvas = null;
   var turnCounter = 0;
+  var dashboardRequested = false;
+  var pageActionNodes = Array.from(document.querySelectorAll(".astral-page-action"));
+
+  function updateTopTurnsChip(count) {
+    var chip = document.getElementById("astral-turns-chip");
+    if (!chip) return;
+    var n = typeof count === "number" ? count : (turnCounter || 0);
+    chip.textContent = "(" + n + " " + (n === 1 ? "turn" : "turns") + ")";
+    chip.disabled = n === 0;
+    if (n > 0) {
+      chip.style.cursor = "pointer";
+      chip.title = "View active conversation";
+    } else {
+      chip.style.cursor = "default";
+      chip.title = "";
+    }
+  }
+  var topTurnsChipEl = document.getElementById("astral-turns-chip");
+  if (topTurnsChipEl) {
+    topTurnsChipEl.addEventListener("click", function () {
+      if (turnCounter > 0) setWorkspaceView("work");
+    });
+  }
 
   function turnClock() {
     var now = new Date();
     return ("0" + now.getHours()).slice(-2) + ":" + ("0" + now.getMinutes()).slice(-2);
   }
 
-  /** One assistant turn: a bordered, elevated card with a meta header, a body
-   * that carries the rendered components, and an expand chip that opens the
-   * full-screen view. */
+  var bodyResizeObserver = typeof window.ResizeObserver !== "undefined"
+    ? new ResizeObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+          checkBodyOverflow(entries[i].target);
+        }
+      })
+    : null;
+  var bodyMutationObserver = typeof window.MutationObserver !== "undefined"
+    ? new MutationObserver(function (entries) {
+        entries.forEach(function (entry) {
+          var target = entry.target.nodeType === 1 ? entry.target : entry.target.parentElement;
+          checkBodyOverflow(target && target.closest(".sdui-widget-body"));
+        });
+      })
+    : null;
+
+  function checkBodyOverflow(bodyEl) {
+    if (!bodyEl) return;
+    var isOver = bodyEl.clientHeight > 0 && bodyEl.scrollHeight > (bodyEl.clientHeight + 1);
+    bodyEl.classList.toggle("has-overflow", isOver);
+  }
+
+  /** One assistant turn: structured after a8p with an agent meta bar, a macOS-style
+   * SDUI container with colored window dots, title, interactive canvas chip, full-screen
+   * expand button, collapse toggle button, and bottom overlay chip. */
   function buildAssistantTurn() {
-    // A result card answers a turn; it is not a turn of its own. It carries
-    // the number of the message it is answering, which is why this reads the
-    // counter instead of advancing it.
     var turn = document.createElement("div");
     turn.className = "astral-turn astral-turn-assistant";
     turn.setAttribute("data-turn", String(turnCounter || 1));
 
+    // 1. Assistant Meta Bar (agent called)
+    var metaBar = document.createElement("div");
+    metaBar.className = "chat-assistant-meta-bar";
+    var agentInfo = document.createElement("div");
+    agentInfo.className = "chat-agent-info";
+    var iconBadge = document.createElement("div");
+    iconBadge.className = "chat-agent-icon-badge";
+    iconBadge.textContent = "\u2726";
+    var agentTextCol = document.createElement("div");
+    var name = document.createElement("div");
+    name.className = "chat-agent-name-text";
+    name.textContent = "AstralDeep Specialist";
+    var sub = document.createElement("div");
+    sub.className = "chat-agent-sub-text";
+    sub.textContent = "Specialist Agent";
+    agentTextCol.appendChild(name);
+    agentTextCol.appendChild(sub);
+    agentInfo.appendChild(iconBadge);
+    agentInfo.appendChild(agentTextCol);
+    metaBar.appendChild(agentInfo);
+    turn.appendChild(metaBar);
+
+    // 2. SDUI Component Container (a8p style)
     var card = document.createElement("div");
-    card.className = "astral-response-card";
+    card.className = "astral-response-card sdui-widget-container";
 
     var head = document.createElement("div");
-    head.className = "astral-card-head";
+    head.className = "sdui-widget-header astral-card-head";
+
     var left = document.createElement("div");
-    left.className = "astral-card-head-left";
-    var icon = document.createElement("span");
-    icon.className = "astral-card-agent-icon";
-    icon.setAttribute("aria-hidden", "true");
-    icon.textContent = "\u2726";
-    var names = document.createElement("div");
-    var name = document.createElement("div");
-    name.className = "astral-card-agent-name";
-    name.textContent = "AstralDeep";
-    var sub = document.createElement("div");
-    sub.className = "astral-card-agent-sub";
-    sub.textContent = "Result";
-    names.appendChild(name);
-    names.appendChild(sub);
-    left.appendChild(icon);
-    left.appendChild(names);
+    left.className = "sdui-widget-header-left astral-card-head-left";
+
+    // Title
+    var widgetTitle = document.createElement("span");
+    widgetTitle.className = "sdui-widget-title";
+    widgetTitle.textContent = "AstralDeep Interface";
+    left.appendChild(widgetTitle);
+
+    // Chip: Interactive SDUI Canvas
+    var widgetChip = document.createElement("span");
+    widgetChip.className = "sdui-widget-chip";
+    widgetChip.textContent = "Interactive SDUI Canvas";
+    left.appendChild(widgetChip);
+    head.appendChild(left);
 
     var right = document.createElement("div");
-    right.className = "astral-card-head-right";
-    var chip = document.createElement("span");
-    chip.className = "astral-meta-chip";
-    chip.textContent = "Turn " + (turnCounter || 1);
-    right.appendChild(chip);
-    head.appendChild(left);
-    head.appendChild(right);
+    right.className = "astral-card-head-right sdui-widget-header-right";
 
-    var body = document.createElement("div");
-    body.className = "astral-card-body";
+    // Collapse toggle button
+    var collapseBtn = document.createElement("button");
+    collapseBtn.type = "button";
+    collapseBtn.className = "btn-sdui-collapse";
+    collapseBtn.title = "Collapse container";
+    collapseBtn.setAttribute("aria-label", "Collapse container");
+    collapseBtn.setAttribute("aria-expanded", "true");
+    collapseBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
+    // Full screen button
     var expand = document.createElement("button");
     expand.type = "button";
-    expand.className = "astral-expand-chip";
+    expand.className = "btn-sdui-expand astral-expand-chip";
+    expand.title = "Open Full Screen Workspace (Esc to exit)";
     expand.setAttribute("aria-label", "Open this result in full screen");
-    expand.textContent = "Open full screen";
+    expand.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 3 21 3 21 9"></polyline><polyline points="9 21 3 21 3 15"></polyline><line x1="21" y1="3" x2="14" y2="10"></line><line x1="3" y1="21" x2="10" y2="14"></line></svg><span>Full Screen</span>';
 
-    card.appendChild(head);
-    card.appendChild(body);
+    right.appendChild(collapseBtn);
     right.appendChild(expand);
+    head.appendChild(right);
+    card.appendChild(head);
+
+    // Card Body
+    var body = document.createElement("div");
+    body.className = "sdui-widget-body astral-card-body";
+
+    // Bottom overlay with expand chip
+    var overlay = document.createElement("div");
+    overlay.className = "sdui-widget-overlay";
+    overlay.title = "Click to open interactive full screen";
+    var bottomChip = document.createElement("button");
+    bottomChip.type = "button";
+    bottomChip.className = "sdui-widget-expand-chip";
+    bottomChip.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg><span>Click to interact in Full Screen</span>';
+    overlay.appendChild(bottomChip);
+    body.appendChild(overlay);
+
+    card.appendChild(body);
     turn.appendChild(card);
-    return { turn: turn, card: card, head: head, name: name, sub: sub,
-             meta: right, body: body, expand: expand, chip: chip };
+
+    function toggleCollapse(e) {
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      var isCollapsed = card.classList.toggle("is-collapsed");
+      collapseBtn.classList.toggle("collapsed", isCollapsed);
+      collapseBtn.setAttribute("aria-label", isCollapsed ? "Expand container" : "Collapse container");
+      collapseBtn.setAttribute("aria-expanded", String(!isCollapsed));
+      collapseBtn.title = isCollapsed ? "Expand container" : "Collapse container";
+      checkBodyOverflow(body);
+    }
+
+    collapseBtn.addEventListener("click", toggleCollapse);
+    expand.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      openFullscreen(card);
+    });
+    overlay.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      openFullscreen(card);
+    });
+
+    if (bodyResizeObserver) {
+      bodyResizeObserver.observe(body);
+    }
+    if (bodyMutationObserver) bodyMutationObserver.observe(body, { childList: true, subtree: true, characterData: true });
+    body.addEventListener("load", function () { checkBodyOverflow(body); }, true);
+    body.addEventListener("focusin", function (event) {
+      if (!body.classList.contains("has-overflow") || (fsRoot && !fsRoot.hidden)
+          || overlay.contains(event.target)) return;
+      var bounds = body.getBoundingClientRect();
+      var focused = event.target.getBoundingClientRect();
+      if (focused.bottom > bounds.bottom - overlay.offsetHeight || focused.top < bounds.top) {
+        openFullscreen(card);
+        fsReturnFocus = expand;
+        event.target.focus();
+      }
+    });
+
+    return {
+      turn: turn,
+      card: card,
+      head: head,
+      name: name,
+      sub: sub,
+      widgetTitle: widgetTitle,
+      meta: right,
+      body: body,
+      collapseBtn: collapseBtn,
+      expand: expand,
+      overlay: overlay,
+      bottomChip: bottomChip,
+      chip: widgetChip,
+    };
   }
 
   /** Point `canvas` at a fresh live card, creating it if there is not one. */
@@ -697,24 +837,22 @@
     liveTurn.turn.hidden = true; // nothing to show until content arrives
     chat.appendChild(liveTurn.turn);
     canvas = liveTurn.body;
-    // The page actions follow the live canvas from card to card; they act on
-    // whatever the newest turn rendered, so they belong in its header.
     if (typeof placePageActions === "function") placePageActions();
     return canvas;
   }
 
-  /** Empty the feed and give it a fresh live card.
-   *
-   * `canvas` is a node INSIDE the feed, so anything that clears the feed
-   * orphans it. Every caller that empties `#astral-chat` has to come through
-   * here, or it keeps rendering into a node that is no longer in the page —
-   * which is exactly how a turn's components stopped appearing. */
+  /** Empty the feed and give it a fresh live card. */
   function resetFeed() {
+    dashboardRequested = false;
+    closeFullscreen(false);
+    if (bodyResizeObserver) bodyResizeObserver.disconnect();
+    if (bodyMutationObserver) bodyMutationObserver.disconnect();
     chat.replaceChildren();
     turnCounter = 0;
+    updateTopTurnsChip(0);
     liveTurn = null;
     ensureLiveTurn();
-    canvas.replaceChildren();
+    syncChatActiveState();
   }
 
   /** Freeze the current card so the next turn gets its own. A card with no
@@ -730,7 +868,12 @@
   /** The meta a card shows once the turn has an agent and a routing note. */
   function describeLiveTurn(agentName, note) {
     ensureLiveTurn();
-    if (agentName) liveTurn.name.textContent = agentName;
+    if (agentName) {
+      liveTurn.name.textContent = agentName;
+      if (liveTurn.widgetTitle) {
+        liveTurn.widgetTitle.textContent = agentName + " Interface";
+      }
+    }
     if (note) liveTurn.sub.textContent = note;
   }
 
@@ -749,9 +892,26 @@
     liveTurn.turn.setAttribute("data-turn", n);
     if (liveTurn.chip) liveTurn.chip.textContent = "Turn " + n;
   }
+  function liveTurnHasContent() {
+    if (!liveTurn || !liveTurn.body) return false;
+    for (var i = 0; i < liveTurn.body.childNodes.length; i++) {
+      var child = liveTurn.body.childNodes[i];
+      if (child && child.nodeType === 1 && !child.classList.contains("sdui-widget-overlay")) {
+        return true;
+      }
+    }
+    return false;
+  }
   function showCanvasEmpty() {
-    if (liveTurn && !liveTurn.body.childNodes.length) liveTurn.turn.hidden = true;
-    if (canvasEmpty) canvasEmpty.hidden = false;
+    if (liveTurn && !liveTurnHasContent()) liveTurn.turn.hidden = true;
+    var hasMessages = Boolean(
+      (turnCounter && turnCounter > 0) ||
+      (chat && (chat.querySelector(".astral-turn-user, .astral-turn-assistant, .astral-user-bubble, .astral-chat-bubble, [data-astral-user-turn]") ||
+       chat.children.length > (liveTurn && liveTurn.turn && liveTurn.turn.parentNode === chat ? 1 : 0)))
+    );
+    if (canvasEmpty) {
+      canvasEmpty.hidden = hasMessages;
+    }
   }
 
   // Start and work are local arrangements of the same mounted regions. A
@@ -769,9 +929,30 @@
       if (host) host.replaceChildren();
     });
   }
-  function setWorkspaceView(view) {
+  function isChatActive() {
+    if (document.body.getAttribute("data-astral-view") === "start") return false;
+    if (turnCounter > 0) return true;
+    if (chat && chat.children.length > 0) {
+      var bubbles = chat.querySelectorAll(".astral-turn, .astral-chat-bubble, .astral-turn-card, .astral-bubble-user, .astral-turn-assistant");
+      for (var i = 0; i < bubbles.length; i++) {
+        var b = bubbles[i];
+        if (b.hasAttribute("data-astral-live-turn") && b.hidden) continue;
+        if (b.childNodes.length > 0) return true;
+      }
+    }
+    return false;
+  }
+  function syncChatActiveState() {
+    var active = isChatActive();
+    document.body.classList.toggle("astral-chat-active", active);
+    updateTopTurnsChip(turnCounter);
+  }
+  function setWorkspaceView(view, requested) {
     clearWelcomeSlots();
+    if (view === "work") dashboardRequested = false;
+    else if (requested) dashboardRequested = true;
     document.body.setAttribute("data-astral-view", view);
+    syncChatActiveState();
   }
   function welcomePlacementRole(node) {
     if (!node || node.nodeType !== 1) return null;
@@ -846,7 +1027,8 @@
     // not the turn's content. Counting them made an empty-but-revealed card
     // look like a workspace, which then discarded the welcome instead of
     // placing it.
-    if (node.matches(".astral-card-head, .astral-expand-chip")) return false;
+    if (node.matches(".astral-card-head, .astral-expand-chip, .chat-assistant-meta-bar, .sdui-widget-overlay, #astral-response-top-nav, #astral-response-top-nav *")) return false;
+    if (node.id === "astral-response-top-nav" || (node.closest && node.closest("#astral-response-top-nav"))) return false;
     if (node.hasAttribute("data-component-id")
         || node.matches("img, svg, canvas, video, audio, iframe, input, textarea, button")) return true;
     return Array.prototype.some.call(node.childNodes, hasWorkspaceContent);
@@ -858,7 +1040,8 @@
   }
   function syncWorkspaceView() {
     placeWelcomeContent();
-    if (document.body.getAttribute("data-astral-view") === "work") return;
+    syncChatActiveState();
+    if (document.body.getAttribute("data-astral-view") === "work" || dashboardRequested) return;
     // A resumed conversation selects work BEFORE its first registration so the
     // landing never flashes on the way to restored content (feature 060's
     // continuity contract). That anticipation has to expire once the snapshot
@@ -6042,7 +6225,13 @@
   }
 
   // ---- render server HTML into a region ----
-  function setHTML(region, htmlStr) { region.innerHTML = htmlStr || ""; processSideEffects(region); }
+  function setHTML(region, htmlStr) {
+    var overlay = region.querySelector(":scope > .sdui-widget-overlay");
+    region.innerHTML = htmlStr || "";
+    if (overlay) region.appendChild(overlay);
+    processSideEffects(region);
+    if (region.classList.contains("sdui-widget-body")) checkBodyOverflow(region);
+  }
   function appendHTML(region, htmlStr) {
     var d = document.createElement("div"); d.innerHTML = htmlStr || "";
     if (region === canvas) d.setAttribute("data-astral-render-batch", "append");
@@ -6052,10 +6241,7 @@
     canvasPanel.scrollTop = canvasPanel.scrollHeight;
   }
   function appendChatBubble(role, htmlStr) {
-    var built = createChatBubbleNode(role);
-    built.bubble.innerHTML = htmlStr || "";
-    chat.appendChild(built.wrap);
-    processSideEffects(built.bubble);
+    appendChatBubbleTo(chat, role, htmlStr);
     canvasPanel.scrollTop = canvasPanel.scrollHeight;
     if (role !== "user") noteAssistantActivity();
   }
@@ -6142,18 +6328,20 @@
   function showSkeleton() {
     if (timelineMode || document.getElementById("astral-canvas-skeleton")) return;
     setWorkspaceView("work");
-    hideCanvasEmpty(); // the welcome placeholder never coexists with the loading skeleton
+    hideCanvasEmpty();
     var d = document.createElement("div");
     d.id = "astral-canvas-skeleton";
-    d.className = "astral-skeleton";
+    d.className = "eval-loading-turn";
     d.setAttribute("role", "status");
     d.setAttribute("aria-busy", "true");
     d.setAttribute("aria-live", "polite");
-    d.innerHTML = '<span class="sr-only">Loading…</span>'
-      + '<div class="astral-skeleton-line h-3 w-1/3 mb-3"></div>'
-      + '<div class="astral-skeleton-line h-20 w-full mb-3"></div>'
-      + '<div class="astral-skeleton-line h-20 w-full mb-3"></div>'
-      + '<div class="astral-skeleton-line h-3 w-1/2 mb-2"></div>';
+    d.innerHTML = '<div class="eval-loading-msg">'
+      + '<span class="eval-loading-spinner"></span>'
+      + '<div>'
+      + '<div class="astral-pending-title">AstralDeep</div>'
+      + '<div class="astral-pending-sub">Working on your request…</div>'
+      + '</div>'
+      + '</div>';
     var host = requestState ? ensureTransientOverlay().canvas : canvas;
     host.appendChild(d);
     canvasPanel.scrollTop = canvasPanel.scrollHeight;
@@ -6194,8 +6382,16 @@
     if (!renderer) {
       renderer = document.createElement("div");
       renderer.className = "dynamic-renderer space-y-3";
-      canvas.innerHTML = "";
-      canvas.appendChild(renderer);
+      var overlay = canvas.querySelector(".sdui-widget-overlay");
+      var kids = Array.from(canvas.childNodes);
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i] !== overlay) kids[i].remove();
+      }
+      if (overlay) {
+        canvas.insertBefore(renderer, overlay);
+      } else {
+        canvas.appendChild(renderer);
+      }
     }
     return renderer;
   }
@@ -6232,6 +6428,7 @@
       processSideEffects(fresh);
     }
     syncCanvasToolbar(); // last-known flags (full renders refresh them)
+    if (liveTurn && liveTurn.body) checkBodyOverflow(liveTurn.body);
   }
 
   // Plotly keeps per-node state and handlers; purge a node's charts before it
@@ -6297,6 +6494,7 @@
     if (node) node.replaceWith(fresh);
     else { hideCanvasEmpty(); ensureRenderer().appendChild(fresh); }
     processSideEffects(fresh);
+    if (liveTurn && liveTurn.body) checkBodyOverflow(liveTurn.body);
   }
 
   // ---- feature 060: atomic conversation snapshot + transient overlay ----
@@ -6388,18 +6586,13 @@
   }
 
   function createChatBubbleNode(role, turnNo) {
-    // Feature 089: a user turn is a right-aligned bubble under a small header
-    // carrying the turn number and the time; an assistant text turn is a
-    // full-width card body, so a text-only answer sits in the feed the same
-    // way a rendered result does.
-    // `turnNo`, when given, numbers a bubble being rebuilt from a committed
-    // transcript; the counter itself is only advanced by live sends, so a
-    // re-decoded transcript cannot inflate the numbers people read.
     var wrap = document.createElement("div");
     wrap.className = "astral-turn " + (role === "user"
       ? "astral-turn-user" : "astral-turn-assistant");
     if (role === "user") {
       var number = turnNo == null ? (turnCounter += 1) : turnNo;
+      updateTopTurnsChip(turnCounter);
+      syncChatActiveState();
       var head = document.createElement("div");
       head.className = "astral-user-head";
       var pill = document.createElement("span");
@@ -6416,13 +6609,10 @@
       wrap.appendChild(bubble);
       return { wrap: wrap, bubble: bubble };
     }
-    var card = document.createElement("div");
-    card.className = "astral-response-card";
-    var body = document.createElement("div");
-    body.className = "astral-card-body";
-    card.appendChild(body);
-    wrap.appendChild(card);
-    return { wrap: wrap, bubble: body };
+    var summary = document.createElement("div");
+    summary.className = "chat-text-summary";
+    wrap.appendChild(summary);
+    return { wrap: wrap, bubble: summary };
   }
 
   /** Decode one validated semantic message into a detached visible bubble. */
@@ -6493,7 +6683,8 @@
       fallback.textContent = "A saved response could not be displayed.";
       built.bubble.appendChild(fallback);
     }
-    return { node: built.wrap, presentations: presentations };
+    var reasoning = separateReasoning(built, message.role);
+    return { node: built.wrap, reasoning: reasoning, presentations: presentations };
   }
 
   function validateSnapshotShape(frame) {
@@ -6551,20 +6742,35 @@
         || frame.canvas.target !== "canvas" || !Array.isArray(frame.canvas.components)) throw new Error("snapshot_canvas");
   }
 
+  function resolveAgentDisplayName(agentId) {
+    if (!agentId) return "AstralDeep Specialist";
+    if (typeof LANDING === "object" && Array.isArray(LANDING.agents)) {
+      var match = LANDING.agents.find(function (a) { return a.id === agentId; });
+      if (match && match.name) return match.name;
+    }
+    return agentId.replace(/[-_]/g, " ").replace(/\b\w/g, function (l) { return l.toUpperCase(); });
+  }
+
   function prepareSnapshotCandidate(frame) {
     var transcriptFragment = document.createDocumentFragment();
+    var reasoningFragment = document.createDocumentFragment();
     var transcriptPresentations = [];
     // A turn is one thing the person asked for, so the transcript's own user
     // messages number it. Preparing a candidate that is later rejected must
     // leave the live counter alone, which is why this counts locally.
     var turns = 0;
     frame.transcript.forEach(function (message) {
-      if (message.role === "user") turns += 1;
+      if (message.role === "user") {
+        transcriptFragment.appendChild(reasoningFragment);
+        turns += 1;
+      }
       var decoded = decodeSemanticMessage(message, message.role === "user" ? turns : null);
-      transcriptFragment.appendChild(decoded.node);
+      if (decoded.node) transcriptFragment.appendChild(decoded.node);
+      if (decoded.reasoning) reasoningFragment.appendChild(decoded.reasoning);
       transcriptPresentations = transcriptPresentations.concat(decoded.presentations);
     });
-    var canvasPresentation = prepareWebPresentation(frame.canvas.components);
+    var components = frame.canvas.components;
+    var canvasPresentation = prepareWebPresentation(components);
     var canvasRoot = null;
     if (canvasPresentation.nodes.length) {
       canvasRoot = document.createElement("div");
@@ -6573,11 +6779,23 @@
       if (canvasPresentation.workspace.share) canvasRoot.setAttribute("data-astral-share", "true");
       canvasPresentation.nodes.forEach(function (node) { canvasRoot.appendChild(node); });
     }
+    var latestAgentId = null;
+    if (components.length) {
+      for (var ci = components.length - 1; ci >= 0; ci--) {
+        var aId = components[ci] && (components[ci].source_agent || components[ci]._source_agent || components[ci].agent_id || components[ci].agent);
+        if (typeof aId === "string" && aId.trim()) {
+          latestAgentId = aId;
+          break;
+        }
+      }
+    }
     return {
       chatFragment: transcriptFragment,
+      reasoningFragment: reasoningFragment,
       canvasRoot: canvasRoot,
       turnCount: turns,
       emptyCanvas: !canvasPresentation.nodes.length,
+      latestAgentId: latestAgentId,
       semanticCanonical: stableStringify(semanticClone(frame)),
       presentationCanonical: stableStringify({
         transcript: transcriptPresentations,
@@ -6591,33 +6809,43 @@
     committedRevisionByChat[frame.chat_id] = frame.render_revision;
     lastSnapshotIdByChat[frame.chat_id] = frame.snapshot_id;
     transientOverlay = null;
+    var wasFullscreen = fsRoot && !fsRoot.hidden;
+    closeFullscreen(false);
+    if (bodyResizeObserver) bodyResizeObserver.disconnect();
+    if (bodyMutationObserver) bodyMutationObserver.disconnect();
     chat.replaceChildren(candidate.chatFragment);
-    // 089: `canvas` is the newest response card's BODY, and that card lives
-    // inside the feed — so replacing the transcript above just detached it.
-    // Rebuild the live card against the fresh transcript before the committed
-    // workspace is placed; appending it to the orphaned node instead is why a
-    // turn's components stopped appearing at all. Turn numbering restarts from
-    // what the transcript actually contains.
     turnCounter = candidate.turnCount;
+    updateTopTurnsChip(turnCounter);
+    syncChatActiveState();
     liveTurn = null;
     ensureLiveTurn();
-    canvas.replaceChildren();
+    if (candidate.latestAgentId) {
+      describeLiveTurn(resolveAgentDisplayName(candidate.latestAgentId), "Active Specialist");
+    }
+    var overlay = liveTurn.body.querySelector(".sdui-widget-overlay");
+    var toRemove = [];
+    for (var k = 0; k < liveTurn.body.childNodes.length; k++) {
+      if (liveTurn.body.childNodes[k] !== overlay) toRemove.push(liveTurn.body.childNodes[k]);
+    }
+    toRemove.forEach(function (node) { node.remove(); });
     if (candidate.emptyCanvas) showCanvasEmpty();
     else {
-      canvas.appendChild(candidate.canvasRoot);
+      if (overlay) liveTurn.body.insertBefore(candidate.canvasRoot, overlay);
+      else liveTurn.body.appendChild(candidate.canvasRoot);
       processSideEffects(candidate.canvasRoot);
       hideCanvasEmpty();
+      checkBodyOverflow(liveTurn.body);
     }
     hideSkeleton();
+    chat.appendChild(candidate.reasoningFragment);
     timelineMode = false;
-    // The committed snapshot is content, not an operation terminal. Keep the
-    // correlated progress owner until its canonical terminal frame arrives;
-    // otherwise a snapshot from one turn can also erase another active task.
     readCanvasFlags();
     syncCanvasToolbar();
-    // Keep the named revision read in this atomic commit seam for audit/source
-    // guards and to make clear that overlays never own it.
     lastCommittedRenderRevision();
+    if (wasFullscreen && !candidate.emptyCanvas) {
+      openFullscreen(liveTurn.card);
+      fsReturnFocus = liveTurn.expand;
+    }
   }
 
   function continuityDisposition(code) {
@@ -6668,7 +6896,9 @@
     }
     var candidate;
     try { candidate = prepareSnapshotCandidate(frame); }
-    catch (e) { return continuityDisposition("invalid_snapshot"); }
+    catch (e) {
+      return continuityDisposition("invalid_snapshot");
+    }
     if (frame.render_revision === committed && requestState.hydrationApplied) {
       if (frame.snapshot_id === requestState.acceptedSnapshotId
           && candidate.semanticCanonical === requestState.acceptedSemantic
@@ -6735,11 +6965,38 @@
     return true;
   }
 
+  function separateReasoning(built, role) {
+    if (role !== "assistant") return null;
+    var disclosures = built.bubble.querySelectorAll(".astral-reasoning");
+    if (!disclosures.length) return null;
+    var reasoning = document.createElement("div");
+    reasoning.className = "astral-turn astral-turn-assistant astral-reasoning-turn";
+    disclosures.forEach(function (disclosure) {
+      var component = disclosure.parentElement;
+      var node = component.classList.contains("astral-component") ? component : disclosure;
+      var parent = node.parentElement;
+      reasoning.appendChild(node);
+      while (parent !== built.bubble && !parent.children.length && !parent.textContent.trim()) {
+        var next = parent.parentElement;
+        parent.remove();
+        parent = next;
+      }
+    });
+    if (!built.bubble.children.length && !built.bubble.textContent.trim()) built.wrap = null;
+    return reasoning;
+  }
+
   function appendChatBubbleTo(region, role, htmlStr) {
     var built = createChatBubbleNode(role);
     built.bubble.innerHTML = htmlStr || "";
-    region.appendChild(built.wrap);
+    var reasoning = separateReasoning(built, role);
+    if (built.wrap) {
+      var tail = region === chat ? null : region.querySelector(".astral-reasoning-turn");
+      region.insertBefore(built.wrap, tail);
+    }
+    if (reasoning) region.appendChild(reasoning);
     processSideEffects(built.bubble);
+    if (reasoning) processSideEffects(reasoning);
   }
 
   function applyOverlayUpsert(region, frame) {
@@ -7530,7 +7787,6 @@
       + escapeText(names) + "</span></div>";
   }
 
-  var stepEls = {};
   // 066: agent identity for step labels, DERIVED from the agent_list the
   // server already sends — never guessed. A tool name that maps to exactly
   // one agent gets the agent's name appended; an ambiguous or unknown name
@@ -7569,24 +7825,21 @@
   var turnPhaseActive = false;
   function renderStep(step) {
     if (!step) return;
-    var el = stepEls[step.id];
-    if (!el) {
-      el = document.createElement("div");
-      el.className = "text-xs text-astral-muted/70 px-2 py-1";
-      var stepHost = requestState ? ensureTransientOverlay().chat : chat;
-      stepHost.appendChild(el); stepEls[step.id] = el;
+    var raw = step.name || step.kind || "step";
+    var agent = step.agent_id ? agentNameById[step.agent_id] : (toolToAgentName[raw] || null);
+    if (!agent) {
+      var qualified = String(raw).split("__");
+      if (qualified.length === 2 && agentNameById[qualified[0]]) {
+        agent = agentNameById[qualified[0]];
+      }
     }
-    var icon = step.status === "completed" ? "✓" : step.status === "errored" ? "✗" : "•";
-    // Chat shows only the tool/step name; result summaries stay in the
-    // persisted step record (chat-steps API / audit), not the transcript.
-    var label = stepLabel(step);
-    el.textContent = icon + " " + label;
-    // 066 (FR-016): the live step also drives the status line beside the
-    // composer, so the phase reads "web_search — Web Research" instead of a
-    // bare "Working…". A terminal step falls back to the last phase text.
+    if (agent) {
+      describeLiveTurn(agent, "Active Specialist");
+    }
+    // a8p clean turn: suppress appending individual tool execution steps into the transcript feed.
     if (step.status === "in_progress" || step.status === "started") {
       turnPhaseActive = true;
-      setStatus(label, true, "chat-status");
+      setStatus(agent ? (agent + " working…") : stepLabel(step), true, "chat-status");
     } else if (lastChatStatusText) {
       setStatus(lastChatStatusText, true, "chat-status");
     }
@@ -7788,13 +8041,14 @@
     timelineMode = false;
     streamSeq = {};
     streamChartPlot = {};
-    stepEls = {};
     hideSkeleton();
     resetFeed();
     showCanvasEmpty();
     setStatus("");
     action("new_chat", {});
     closeHistoryOverlay();
+    setWorkspaceView("start");
+    syncChatActiveState();
     if (input) { try { input.focus(); } catch (e) {} }
   });
 
@@ -8133,6 +8387,7 @@
   function mintShare(scope, componentId) {
     if (!activeChatId) { showToast("Open a chat first — nothing to share yet.", "error"); return; }
     var ownerEpoch = accountPrivacyEpoch;
+    var shareChatId = activeChatId;
     var body = { chat_id: activeChatId, scope: scope };
     if (componentId) body.component_id = componentId;
     fetch(API_URL + "/api/share", {
@@ -8145,7 +8400,7 @@
         return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
       })
       .then(function (res) {
-        if (ownerEpoch !== accountPrivacyEpoch) return;
+        if (ownerEpoch !== accountPrivacyEpoch || shareChatId !== activeChatId) return;
         if (!res.ok) {
           var msg = res.body && res.body.error === "phi_blocked"
             ? "Sharing refused: the content matched the PHI gate."
@@ -8155,21 +8410,54 @@
         }
         var shareUrl = res.body && res.body.share_url;
         if (!shareUrl) { showToast("Share failed: no link returned.", "error"); return; }
-        var abs = shareUrl.indexOf("http") === 0 ? shareUrl : API_URL + shareUrl;
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(abs).then(
-            function () {
-              if (ownerEpoch !== accountPrivacyEpoch) return;
-              showToast("Share link copied to clipboard.", "info");
-            },
-            function () {
-              if (ownerEpoch !== accountPrivacyEpoch) return;
-              showToast("Share link: " + abs, "info");
-            });
-        } else { showToast("Share link: " + abs, "info"); }
+        var abs = new URL(shareUrl, API_URL || location.origin).href;
+        setModal(modalShellHtml(
+          '<h2 id="astral-share-title" class="text-lg font-semibold">Share link ready</h2>'
+          + '<label class="block text-sm" for="astral-share-link">Anyone with this link can view this snapshot.</label>'
+          + '<input id="astral-share-link" type="text" readonly class="w-full min-w-0 rounded-lg border border-white/10 bg-white/5 p-3 text-sm" style="box-sizing:border-box;width:100%;color:inherit">'
+          + '<p id="astral-share-status" role="status" class="text-sm">Select the link to copy it manually, or use Copy link.</p>'
+          + '<div class="flex flex-wrap gap-2"><button id="astral-share-copy" type="button" class="astral-btn astral-btn-primary">Copy link</button>'
+          + '<button type="button" class="astral-modal-close astral-btn">Close</button></div>'
+        ));
+        var link = document.getElementById("astral-share-link");
+        if (!link) { showToast("Share link: " + abs, "info"); return; }
+        var dialog = link.closest('[role="dialog"]');
+        dialog.setAttribute("aria-labelledby", "astral-share-title");
+        var status = document.getElementById("astral-share-status");
+        var copy = document.getElementById("astral-share-copy");
+        link.value = abs;
+        link.focus();
+        link.select();
+        function isCurrent() {
+          return ownerEpoch === accountPrivacyEpoch && shareChatId === activeChatId && link.isConnected;
+        }
+        function manualCopy() {
+          if (!isCurrent()) return;
+          status.textContent = "Select the link and copy it manually. Clipboard access is unavailable.";
+          link.focus();
+          link.select();
+        }
+        function copyLink() {
+          if (!isCurrent()) return;
+          try {
+            if (!navigator.clipboard || !navigator.clipboard.writeText) { manualCopy(); return; }
+            Promise.resolve(navigator.clipboard.writeText(abs)).then(function () {
+              if (!isCurrent()) return;
+              status.textContent = "Share link copied to clipboard.";
+            }, manualCopy);
+          } catch (_) { manualCopy(); }
+        }
+        copy.addEventListener("click", copyLink);
+        dialog.addEventListener("keydown", function (event) {
+          if (event.key !== "Tab") return;
+          var close = dialog.querySelector(".astral-modal-close");
+          if (event.shiftKey && document.activeElement === link) { event.preventDefault(); close.focus(); }
+          else if (!event.shiftKey && document.activeElement === close) { event.preventDefault(); link.focus(); }
+        });
+        copyLink();
       })
       .catch(function () {
-        if (ownerEpoch !== accountPrivacyEpoch) return;
+        if (ownerEpoch !== accountPrivacyEpoch || shareChatId !== activeChatId) return;
         showToast("Couldn't create the share link.", "error");
       });
   }
@@ -8855,8 +9143,12 @@
       }
       return;
     }
-    // Running an example from a dialog should leave the dialog: the answer
-    // lands on the canvas behind it.
+    if (act === "chat_message" && el.closest(".astral-agent-example")) {
+      e.preventDefault();
+      closeModal();
+      runExamplePrompt(payload.message);
+      return;
+    }
     if (act === "chat_message" && modalRoot && modalRoot.contains(el)) closeModal();
     if (act === "chrome_open") { setMenu(false, false); showModalSkeleton(act, payload); }
     if (act === "chrome_turn_selection_set") {
@@ -9262,6 +9554,15 @@
   var gridEl = document.getElementById("astral-scenario-grid");
   var activeCategory = "All";
 
+  function runExamplePrompt(message) {
+    if (typeof message !== "string" || !message.trim()) return;
+    if (input) {
+      input.value = message;
+      input.focus();
+    }
+    sendChat(message);
+  }
+
   function buildScenarioCard(scenario) {
     var card = el("div", "astral-scenario-card");
     card.setAttribute("data-category", scenario.category || "");
@@ -9277,7 +9578,7 @@
     var run = el("button", "astral-scenario-run", "Run");
     run.type = "button";
     run.setAttribute("aria-label", "Run: " + (scenario.title || ""));
-    run.addEventListener("click", function () { sendChat(scenario.prompt || ""); });
+    run.addEventListener("click", function () { runExamplePrompt(scenario.prompt); });
     var load = el("button", "astral-scenario-load", "Load prompt");
     load.type = "button";
     load.setAttribute("aria-label", "Load the prompt for: " + (scenario.title || ""));
@@ -9341,7 +9642,7 @@
   /** Move the canvas page actions into the newest card's header. */
   function placePageActions() {
     if (!liveTurn) return;
-    var actions = document.querySelectorAll(".astral-page-action");
+    var actions = pageActionNodes;
     for (var i = 0; i < actions.length; i++) liveTurn.meta.appendChild(actions[i]);
   }
   placePageActions();
@@ -9349,8 +9650,17 @@
   // ---- the brand returns to the landing ----------------------------------
   var brandBtn = document.getElementById("astral-brand");
   if (brandBtn) brandBtn.addEventListener("click", function () {
-    document.body.setAttribute("data-astral-view", "start");
+    setWorkspaceView("start", true);
     if (canvasPanel) canvasPanel.scrollTop = 0;
+  });
+  var backDashBtn = document.getElementById("astral-back-dash-btn");
+  if (backDashBtn) backDashBtn.addEventListener("click", function () {
+    setWorkspaceView("start", true);
+    if (canvasPanel) canvasPanel.scrollTop = 0;
+  });
+  var topNewChatBtn = document.getElementById("astral-top-newchat-btn");
+  if (topNewChatBtn) topNewChatBtn.addEventListener("click", function () {
+    if (newChatBtn) newChatBtn.click();
   });
 
   // ---- recent work: collapsible ------------------------------------------
@@ -9373,51 +9683,96 @@
   var fsSource = null;      // the card body whose content is on screen
   var fsReturnFocus = null;
 
+  var fsSourceHost = null;
+  var fsBackground = [];
+
+  function resizeWorkspaceCharts(root) {
+    if (!root || typeof Plotly === "undefined" || !Plotly.Plots) return;
+    requestAnimationFrame(function () {
+      root.querySelectorAll(".js-plotly-plot").forEach(function (node) {
+        if (node.isConnected) Plotly.Plots.resize(node);
+      });
+    });
+  }
+
   function openFullscreen(card) {
-    if (!fsRoot || !fsCanvas || !card) return;
-    var body = card.querySelector(".astral-card-body");
+    if (!fsRoot || !fsCanvas || !card || !card.isConnected) return;
+    var body = card.querySelector(".astral-card-body, .sdui-widget-body");
     if (!body) return;
+    closeFullscreen(false);
     fsSource = body;
+    fsSourceHost = body.parentNode;
     fsReturnFocus = document.activeElement;
-    // The nodes are MOVED, not copied: a chart or a live component would
-    // otherwise exist twice, and the second copy would not be the one the
-    // server addresses by component id.
-    fsCanvas.replaceChildren();
-    while (body.firstChild) fsCanvas.appendChild(body.firstChild);
-    var head = card.querySelector(".astral-card-agent-name");
-    var sub = card.querySelector(".astral-card-agent-sub");
-    if (fsTitle) fsTitle.textContent = (head ? head.textContent : "Workspace");
-    if (fsSub) fsSub.textContent = (sub ? sub.textContent : "") + " • press Esc to return";
+    fsCanvas.replaceChildren(body);
+    var fsActions = document.getElementById("astral-fs-actions");
+    if (fsActions) pageActionNodes.forEach(function (node) { fsActions.appendChild(node); });
+    var head = card.querySelector(".sdui-widget-title, .astral-card-agent-name");
+    var turn = card.closest(".astral-turn");
+    var sub = turn && turn.querySelector(".chat-agent-sub-text, .astral-card-agent-sub");
+    if (fsTitle) fsTitle.textContent = head ? head.textContent : "AstralDeep Workspace";
+    if (fsSub) fsSub.textContent = sub ? sub.textContent : "Interactive workspace";
     fsRoot.hidden = false;
     fsRoot.classList.add("is-open");
     document.body.classList.add("astral-fullscreen-open");
+    fsBackground = Array.from(document.querySelectorAll(".astral-app, #astral-drawer-toggle, #astral-drawer-backdrop"))
+      .filter(function (node) { return !node.inert; });
+    fsBackground.forEach(function (node) { node.inert = true; });
     if (fsExit) fsExit.focus();
+    resizeWorkspaceCharts(body);
   }
 
-  function closeFullscreen() {
+  function closeFullscreen(restoreFocus) {
     if (!fsRoot || fsRoot.hidden) return;
-    if (fsSource) {
-      while (fsCanvas.firstChild) fsSource.appendChild(fsCanvas.firstChild);
-      fsSource = null;
+    if (fsSource && fsSourceHost && fsSourceHost.isConnected) {
+      fsSourceHost.appendChild(fsSource);
+      checkBodyOverflow(fsSource);
+      resizeWorkspaceCharts(fsSource);
     }
+    fsCanvas.replaceChildren();
+    fsSource = null;
+    fsSourceHost = null;
+    placePageActions();
     fsRoot.hidden = true;
     fsRoot.classList.remove("is-open");
     document.body.classList.remove("astral-fullscreen-open");
-    if (fsReturnFocus && fsReturnFocus.focus) { try { fsReturnFocus.focus(); } catch (e) {} }
+    fsBackground.forEach(function (node) { node.inert = false; });
+    fsBackground = [];
+    if (restoreFocus !== false && fsReturnFocus && fsReturnFocus.isConnected) fsReturnFocus.focus();
     fsReturnFocus = null;
   }
 
   if (fsExit) fsExit.addEventListener("click", closeFullscreen);
   document.addEventListener("click", function (e) {
-    var chip = e.target && e.target.closest ? e.target.closest(".astral-expand-chip") : null;
-    if (!chip) return;
+    var trigger = e.target && e.target.closest
+      ? e.target.closest(".astral-expand-chip, .btn-sdui-expand, .sdui-widget-expand-chip, .sdui-widget-overlay")
+      : null;
+    if (!trigger) return;
+    if (e.target.closest("button, input, select, textarea, a")
+        && !e.target.closest(".astral-expand-chip, .btn-sdui-expand, .sdui-widget-expand-chip")) {
+      return;
+    }
     e.preventDefault();
-    openFullscreen(chip.closest(".astral-response-card"));
+    openFullscreen(trigger.closest(".astral-response-card, .sdui-widget-container"));
   });
   document.addEventListener("keydown", function (e) {
-    if (e.key !== "Escape" || fsRoot.hidden) return;
-    e.stopPropagation();
-    closeFullscreen();
+    if (!fsRoot || fsRoot.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeFullscreen();
+    } else if (e.key === "Tab") {
+      var items = focusablesIn(fsRoot);
+      var first = items[0];
+      var last = items[items.length - 1];
+      if (!first) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
   }, true);
 
   // ---- the settings dialog's section tabs --------------------------------
@@ -9560,12 +9915,10 @@
       closeFullscreen();
       if (typeof setModal === "function") setModal("");
       setDrawer(false);
-      chat.replaceChildren();
-      liveTurn = null;
-      turnCounter = 0;
-      ensureLiveTurn();
+      resetFeed();
       showCanvasEmpty();
-      document.body.setAttribute("data-astral-view", "start");
+      setWorkspaceView("start");
+      syncChatActiveState();
       if (agentSearchEl) { agentSearchEl.value = ""; filterAgentDirectory(); }
       activeCategory = "All";
       renderFilterTabs();

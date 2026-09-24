@@ -1,26 +1,8 @@
-"""Live REAL-AUTH end-to-end verification of the native Windows client.
-
-Proves the production chain against a running orchestrator with
-USE_MOCK_AUTH=false:
-
-  real OIDC desktop login (dedicated public client, azp=astral-desktop)
-    -> register_ui (device_type=windows, native supported_types)
-    -> chat_message -> ReAct loop -> astralprims -> ROTE(windows)
-    -> ui_render/ui_upsert(components) -> native PySide6 widgets
-    -> client-hosted Windows tools agent (register + tool call)
-
-It connects with the EXACT device caps + native render vocabulary the GUI sends,
-so it is a faithful headless stand-in for AstralDeep.exe at the wire level.
-
-Not a pytest test (needs a live server + an interactive browser login the first
-time). Usage:
-
-    python tests/verify_live.py --authority https://iam.ai.uky.edu/realms/Astral \
-        --prompt "roll 3 dice and show the results"
-
-The obtained token is cached to --token-file (default .astral_token.json) so
-re-runs and the GUI (`AstralDeep.exe --token ...`) can reuse it within its TTL.
+"""Manual live end-to-end check of the native Windows client against a running
+orchestrator: OIDC login, register_ui, chat_message, and the client-hosted win_agent
+tools agent, run by an operator rather than CI.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -81,16 +63,11 @@ async def run(args) -> int:
     print(f"[auth] user={claims.get('preferred_username', claims.get('sub', '?'))} "
           f"azp={claims.get('azp', '(none)')} roles={claims.get('realm_access', {}).get('roles', [])}")
 
-    # Host the Windows tools agent exactly like the GUI does, so we can prove the
-    # client-hosted A2A path too.
     agent_host = os.getenv("ASTRAL_AGENT_HOST", "host.docker.internal")
     agent_port = int(os.getenv("WIN_AGENT_PORT", "8771"))
     if not args.no_agent:
         try:
             import win_agent.agent as wa
-            # The listener now requires a usable AGENT_API_KEY inbound and
-            # refuses to start without one. Say so explicitly rather than
-            # letting the run appear to prove a path it never exercised.
             thread = wa.start_agent_thread(port=agent_port)
             if thread is None:
                 print("[win-agent] listener REFUSED: no usable AGENT_API_KEY "
@@ -112,7 +89,6 @@ async def run(args) -> int:
             "type": "register_ui", "token": token, "capabilities": ["render", "stream"],
             "session_id": "win-verify", "device": caps, "resumed": False}))
 
-        # register the client-hosted Windows tools agent (as the GUI does on connect)
         if not args.no_agent:
             await ws.send(json.dumps({"type": "ui_event", "action": "register_external_agent",
                                       "payload": {"url": f"http://{agent_host}:{agent_port}"}}))
@@ -161,7 +137,6 @@ async def run(args) -> int:
             if t in ("ui_render", "ui_upsert"):
                 captured.append(msg)
 
-    # Flatten every structured component from the real payloads and render natively.
     components = []
     for m in captured:
         if m.get("type") == "ui_render":

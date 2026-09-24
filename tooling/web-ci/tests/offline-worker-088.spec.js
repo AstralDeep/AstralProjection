@@ -1,4 +1,6 @@
-// Real Chromium worker/cache/navigation checks on an isolated synthetic HTTP origin.
+// Browser tests for the offline service worker's cache/navigation behavior against Chromium on an
+// isolated synthetic HTTP origin.
+
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { createConnection } from "node:net";
@@ -9,11 +11,7 @@ import { expect, test } from "@playwright/test";
 const STATIC = resolve(import.meta.dirname, "../../../backend/webrender/static");
 const worker = await readFile(resolve(STATIC, "service-worker.js"), "utf8");
 const assets = JSON.parse(worker.match(/const PUBLIC_ASSETS = (\[[\s\S]*?\]);/)[1]);
-// The worker's digests are over LF bytes, because .gitattributes stores this
-// tree with LF and the image that serves these files is Linux. A Windows
-// checkout materialises CRLF, so serve what a real deployment would serve or
-// the worker refuses its own assets and never takes control -- on that host
-// alone, which is the sort of failure that gets read as flake.
+// Serve as LF; a CRLF checkout breaks digests
 const TEXT_ASSET = /\.(html|css|js|webmanifest)$/u;
 const normalise = (path, body) => (TEXT_ASSET.test(path)
   ? Buffer.from(body.toString("binary").replaceAll("\r\n", "\n"), "binary")
@@ -60,7 +58,6 @@ async function serverForTest() {
     setRootStatus(value) { rootStatus = value; },
     close: () => new Promise(resolve => {
       server.close(resolve);
-      // Browser preconnects can stay idle until the later page/context teardown.
       server.closeAllConnections();
     }),
   };

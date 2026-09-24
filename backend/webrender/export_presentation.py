@@ -1,9 +1,8 @@
-"""Bounded, pure rendering of an untrusted client-visible canvas capture.
-
-No authorization, persistence, logging, dispatch, ref resolution or URL fetching
-occurs here. The HTTP host owns identity/revision checks; native isolated browser
-hosts own the final script-free snapshot and account-safe file lifetime.
+"""Pure, bounded rendering of an untrusted client-captured canvas snapshot into inert
+export markup; the HTTP host handles authorization and the isolated browser handles
+the final script-free capture.
 """
+
 from __future__ import annotations
 
 import base64
@@ -45,7 +44,7 @@ _VOID = frozenset("area base br col embed hr img input link meta param source tr
 
 
 class PresentationError(ValueError):
-    """Closed, data-free failure suitable for an authenticated host response."""
+    pass
 
 
 def _fail(code: str) -> None:
@@ -102,9 +101,6 @@ def _png(value: Any) -> str:
     width, height = struct.unpack(">II", raw[16:24])
     if not 1 <= width <= 4096 or not 1 <= height <= 4096:
         _fail("image_dimension_limit")
-    # A few browser decoders tolerate damaged ancillary chunks. Refuse corrupt
-    # captures deterministically before returning them; the isolated browser
-    # additionally decodes the pixels, including their compressed image data.
     offset, image_data = 8, False
     while offset + 12 <= len(raw):
         size = struct.unpack(">I", raw[offset:offset + 4])[0]
@@ -125,16 +121,12 @@ def _png(value: Any) -> str:
 
 
 def _clean(value: Any) -> Any:
-    # Component metadata is separate from visible cell/list data. Do not walk
-    # arbitrary data dictionaries and erase literal fields such as "source" or
-    # "action" from a displayed table cell. Child components are cleaned by the
-    # structural walker; all emitted attributes pass through _InertMarkup.
+    # Strips only chrome keys; a cell's own 'source'/'action' text must survive
     return {key: child for key, child in value.items()
             if key.lower() not in _STRIPPED and not key.startswith(("data-", "_"))}
 
 
 class _InertMarkup(HTMLParser):
-    """Strip renderer dispatch metadata/URLs; apply only validated tab state."""
     def __init__(self, tabs: dict[str, list[int]]):
         super().__init__(convert_charrefs=True)
         self.tabs = tabs
@@ -195,20 +187,11 @@ class _InertMarkup(HTMLParser):
 
 
 def render_presentation(payload: bytes) -> dict[str, Any]:
-    """Return bounded inert markup for a visible capture, or a data-free error.
-
-    Args:
-        payload: Exact closed UTF-8 JSON display capture, at most 8 MiB.
-
-    Raises:
-        PresentationError: Invalid, oversized, unsupported or unavailable input.
-    """
     if not isinstance(payload, bytes) or len(payload) > MAX_INPUT_BYTES:
         _fail("input_limit")
     try:
         source = json.loads(payload.decode("utf-8"), object_pairs_hook=_pairs)
         _bound_tree(source)
-        # Refuse unpaired surrogate escapes before they reach renderer output.
         json.dumps(source, ensure_ascii=False, allow_nan=False).encode("utf-8")
     except PresentationError:
         raise
@@ -271,9 +254,6 @@ def render_presentation(payload: bytes) -> dict[str, Any]:
             _fail("invalid_identity")
         if "component_id" in item and "id" in item and item["component_id"] != item["id"]:
             _fail("invalid_identity")
-        # Pixels are captured from the existing ready chart, preserving zoom,
-        # pan and legend selection. Raw chart data/config is never replayed or
-        # serialized into the response, and cannot become another authority.
         cleaned = ({"type": kind, "title": item.get("title")} if kind in CHARTS else _clean(item))
         if kind in {"collapsible", "tabs", "image"} | CHARTS:
             record = records.pop(path, None)

@@ -1,3 +1,6 @@
+// Tests for coverage-union.mjs: unioning the four coverage lanes into one canonical, validated
+// envelope.
+
 import assert from "node:assert/strict";
 import {
   mkdirSync,

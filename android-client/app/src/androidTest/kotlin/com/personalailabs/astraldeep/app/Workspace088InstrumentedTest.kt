@@ -1,3 +1,6 @@
+// Instrumented workspace UI test covering canvas paint/semantics timing, prefetched chart views outside the
+// viewport, and CI-fixed display density for deterministic phone-width layout.
+
 package com.personalailabs.astraldeep.app
 
 import android.graphics.Bitmap
@@ -75,7 +78,6 @@ class Workspace088InstrumentedTest {
     }
 
     private fun capture(name: String) {
-        // Semantics may be ready before the display compositor has presented them.
         val painted = java.util.concurrent.CountDownLatch(1)
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
             android.view.Choreographer.getInstance().postFrameCallback {
@@ -189,8 +191,6 @@ class Workspace088InstrumentedTest {
         rule.onNodeWithTag("fixture-canvas").performTouchInput {
             swipe(Offset(center.x, center.y + 30), Offset(center.x, center.y), durationMillis = 400)
         }
-        // A prefetched AndroidView can remain outside the viewport longer than
-        // the host's chart initialization deadline before the user scrolls.
         Thread.sleep(12000)
         rule.onNode(hasScrollAction() and hasAnyAncestor(hasTestTag("fixture-canvas"))).performScrollToIndex(1)
         rule.waitUntil(15000) { inspectChart("document.documentElement.dataset.chartState") == "\"ready\"" }
@@ -315,8 +315,6 @@ class Workspace088InstrumentedTest {
         val renderer = Renderer(Emit { _, _ -> }).registerAllRenderers()
         val width = mutableStateOf(320)
         rule.setContent {
-            // Both real logical phone widths fit the CI emulator's 320px viewport.
-            // Keep the font scale fixed so host density cannot select a different layout.
             CompositionLocalProvider(LocalDensity provides Density(0.75f, fontScale = 1f)) {
                 FixtureTheme {
                     Box(Modifier.width(width.value.dp).testTag("welcome-example-box")) { renderer.render(adapted) }

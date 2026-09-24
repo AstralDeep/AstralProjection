@@ -1,7 +1,10 @@
+// Watch-owned durable store for the active conversation id, independent of the phone's endpoint-override
+// channel so a watch can resume on its own; ConversationResumeClearReason enumerates the only events allowed
+// to erase it.
+
 import AstralCore
 import Foundation
 
-/// The only events allowed to erase a durable conversation locator.
 enum ConversationResumeClearReason: Sendable {
     case newChat
     case signOut
@@ -9,8 +12,6 @@ enum ConversationResumeClearReason: Sendable {
     case confirmedDeletion
 }
 
-/// Watch-owned active-chat persistence. This deliberately does not share the
-/// phone endpoint-override channel: a watch can launch and resume on its own.
 final class ConversationResumeStore: @unchecked Sendable {
     private let defaults: UserDefaults
     private let now: @Sendable () -> Date
@@ -51,8 +52,6 @@ final class ConversationResumeStore: @unchecked Sendable {
         return ConversationResumeLocator(chatId: chatId, updatedAt: updatedAt)
     }
 
-    /// Unknown or malformed schemas are retained for forward compatibility.
-    /// Confirmed deletion is additionally fenced to the stored chat id.
     @discardableResult
     func clear(
         _ reason: ConversationResumeClearReason,

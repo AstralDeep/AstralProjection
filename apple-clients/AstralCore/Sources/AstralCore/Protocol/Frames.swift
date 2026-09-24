@@ -1,7 +1,7 @@
-// Feature 051 — WS frame parsing (inbound) and builders (outbound).
-// Inbound frames are decoded leniently: every frame becomes an InboundFrame
-// (name + JSONValue payload) plus typed accessors for the handled set, so an
-// unknown or future frame can never crash a client (FR-003).
+// Inbound WS frame decoding, lenient so unknown fields never crash a client, and outbound frame builders for
+// register_ui/ui_event, plus canonical continuity reliability frames. Parsed by AppModel and
+// VoiceSessionController.
+
 import Foundation
 
 public struct InboundFrame: Sendable, Equatable {
@@ -21,9 +21,6 @@ public struct InboundFrame: Sendable, Equatable {
         return InboundFrame(name: type, payload: json)
     }
 
-    // MARK: typed accessors (handled set)
-
-    /// ui_render — components already ROTE-adapted for THIS socket.
     public var renderComponents: [AstralComponent] {
         AstralComponent.list(from: payload["components"])
     }
@@ -32,10 +29,8 @@ public struct InboundFrame: Sendable, Equatable {
         payload["target"]?.stringValue ?? "canvas"
     }
 
-    /// 051: spoken rendition (watch sockets only; absent elsewhere).
     public var speech: Speech? { Speech(json: payload["speech"]) }
 
-    /// ui_upsert ops.
     public var upsertOps: [UpsertOp] {
         payload["ops"]?.arrayValue?.compactMap { UpsertOp(json: $0) } ?? []
     }
@@ -44,7 +39,6 @@ public struct InboundFrame: Sendable, Equatable {
         payload["chat_id"]?.stringValue ?? payload["chatId"]?.stringValue
     }
 
-    /// ui_stream_data — incremental narrative components.
     public var streamComponents: [AstralComponent] {
         AstralComponent.list(from: payload["components"])
     }
@@ -53,7 +47,6 @@ public struct InboundFrame: Sendable, Equatable {
         payload["terminal"]?.boolValue ?? false
     }
 
-    /// error / stream_error — normalized human message (044 contract).
     public var errorMessage: String {
         payload["message"]?.stringValue
             ?? payload["payload"]?["message"]?.stringValue
@@ -61,25 +54,14 @@ public struct InboundFrame: Sendable, Equatable {
             ?? "Something went wrong."
     }
 
-    /// auth_required — reason: expired | invalid | hard_cap.
     public var authReason: String {
         payload["reason"]?.stringValue ?? "expired"
     }
 
-    /// chrome_surface — presentation mode (054 first-run gate). "mandatory"
-    /// means: accept the surface even though unsolicited and suppress every
-    /// dismissal affordance until the server replaces or closes it. Additive
-    /// field on an EXISTING frame type (no manifest change); absent on
-    /// pre-054 servers ⇒ "replace".
     public var surfaceMode: String {
         payload["mode"]?.stringValue ?? "replace"
     }
 
-    /// chat_status / chat_step progress text. The wire `status` is a MACHINE
-    /// code ("thinking"/"executing"/"done"/…) and `message` carries the human
-    /// text; `step` is an object on chat_step. Terminal codes resolve to nil
-    /// so a finished turn clears the status line instead of sticking on a
-    /// literal "done" (parity with the web client's status map).
     public var statusText: String? {
         let status = payload["status"]?.stringValue
         if status == "done" || status == "idle" { return nil }
@@ -100,8 +82,6 @@ public struct InboundFrame: Sendable, Equatable {
     }
 }
 
-// MARK: - Feature 060 canonical reliability frames
-
 private let maximumExactJSONInteger = UInt64(9_007_199_254_740_991)
 
 private func canonicalUUID(_ value: JSONValue?) -> String? {
@@ -119,8 +99,7 @@ private func unsignedInteger(_ value: JSONValue?) -> UInt64? {
 private func isRFC3339UTC(_ value: String) -> Bool {
     guard value.hasSuffix("Z") else { return false }
     if ISO8601DateFormatter().date(from: value) != nil { return true }
-    // A plain ISO8601DateFormatter rejects fractional seconds, which valid
-    // RFC 3339 producers may emit — accept them rather than dropping the frame.
+    // ISO8601DateFormatter rejects fractional seconds RFC 3339 allows
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return fractional.date(from: value) != nil
@@ -559,7 +538,7 @@ public struct CandidateCapabilityMap: Sendable, Equatable {
 }
 
 public struct UpsertOp: Sendable, Equatable {
-    public let op: String  // "upsert" | "remove"
+    public let op: String
     public let componentId: String?
     public let component: AstralComponent?
 
@@ -577,15 +556,7 @@ public struct UpsertOp: Sendable, Equatable {
     }
 }
 
-// MARK: - Outbound
-
-/// Device identity reported in register_ui — drives the server-side ROTE
-/// profile (FR-002). `supportedTypes` is the capability negotiation set: the
-/// component types this client renders natively (everything else is
-/// substituted server-side).
 public struct DeviceDescriptor: Sendable {
-    /// Stable, non-secret installation UUID. The live socket binding remains
-    /// the authority for every voice control mutation.
     public var deviceId: String?
     public var deviceType: String
     public var viewportWidth: Int
@@ -599,8 +570,6 @@ public struct DeviceDescriptor: Sendable {
     public var voiceTransport: String
     public var supportedTypes: [String]
     public var userAgent: String
-    /// 066 capability-envelope fields. Additive on the wire — older servers
-    /// ignore unknown device keys, so sending them is always safe.
     public var reducedMotion: Bool
     public var pointerType: String
 
@@ -720,9 +689,6 @@ public enum Outbound {
         workReadSupported: Bool = false,
         guidanceNotesSupported: Bool = false
     ) -> String {
-        // Feature 060: every shipping Apple target is explicitly author-only.
-        // Do not add `agent_host` or its capability here; feature 059 alone
-        // may enable macOS by supplying the structured model above.
         guard continuityUUID4(connectionGeneration) != nil else { return "{}" }
         let voiceCapable =
             device.hasMicrophone && device.hasAudioOutput
@@ -800,8 +766,7 @@ public enum Outbound {
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String {
-        // The orchestrator reads payload["device"] (orchestrator.py update_device
-        // handler) — the descriptor must be NESTED, not spread into the payload.
+        // Server reads the descriptor nested under device, not spread
         uiEvent(
             action: "update_device", sessionId: sessionId,
             payload: .object(["device": device.json]),

@@ -1,3 +1,6 @@
+// Tests for coverage-union-cli.mjs: CLI invocation, duplicate-key rejection, and output-writing
+// behavior.
+
 import assert from "node:assert/strict";
 import {
   mkdirSync,

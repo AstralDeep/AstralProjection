@@ -1,3 +1,6 @@
+// Registers the basic primitive renderers (text, card, container, alert, button): honors direction:row and
+// the minimal css subset so swatch strips render as colored boxes, matching the web and Windows twins.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import androidx.compose.foundation.BorderStroke
@@ -46,10 +49,6 @@ import com.personalailabs.astraldeep.app.ui.theme.hexToColor
 import com.personalailabs.astraldeep.app.ui.welcomePlacementRole
 import com.personalailabs.astraldeep.core.sdui.Component
 
-/**
- * Register the basic primitive renderers (US1 MVP): text, card, container, alert,
- * button. The remaining vocabulary (tables, charts, lists, …) lands in US2.
- */
 fun Renderer.registerBasicRenderers(): Renderer =
     apply {
         register("text") { c -> TextPrimitive(c) }
@@ -110,21 +109,12 @@ private fun CardPrimitive(
     }
 }
 
-/**
- * A layout container. Honors `direction:"row"` (the web flex row) and the
- * minimal `css` subset (background/height/flex) so css-styled leaves — e.g.
- * the Theme surface's preset swatch strips — render as colored boxes instead
- * of blank space, matching the web and the Windows twin ([containerMode] is
- * the pure, unit-tested rule).
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ContainerPrimitive(
     c: Component,
     renderChild: @Composable (Component) -> Unit,
 ) {
-    // ROTE keeps trusted welcome placement when it adapts a phone grid to a
-    // container. Preserve the same wrapping presentation for both envelopes.
     if (welcomePlacementRole(c) == "examples") {
         FlowRow(
             Modifier.fillMaxWidth(),
@@ -159,7 +149,6 @@ private fun ContainerPrimitive(
     }
 }
 
-/** A css-styled colored box (swatch cell); bad hex falls back to surfaceVariant. */
 @Composable
 private fun SwatchBox(
     c: Component,
@@ -193,13 +182,6 @@ private fun AlertPrimitive(c: Component) {
     }
 }
 
-/**
- * A server button. Honors `variant` like the web/Windows renderers: `primary`
- * gradient-filled, `secondary` tonal, `danger` solid red. Rendering every variant as
- * an identical filled button hid all selected-state feedback — the active
- * guide section / personalization tab / applied theme preset were visually
- * indistinguishable, which read as "the buttons do nothing".
- */
 @Composable
 private fun ButtonPrimitive(
     c: Component,
@@ -232,9 +214,6 @@ private fun ButtonPrimitive(
                     ),
             ) { Text(label) }
         else -> {
-            // Brand treatment: the primary button carries the signature
-            // indigo→purple gradient (web `.astral-btn-primary`) — a transparent
-            // M3 Button (keeps the ripple) over a gradient-filled shape.
             val shape = ButtonDefaults.shape
             Button(
                 onClick = onClick,

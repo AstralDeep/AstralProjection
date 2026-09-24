@@ -1,29 +1,21 @@
+// Ephemeral, no-store URLSession for every authenticated or credential-bearing request, since
+// URLSession.shared can persist bodies and auth headers to disk via CFNetwork's cache; used throughout
+// AstralCore's API, auth, and transport layers.
+
 import Foundation
 
-/// HTTP transport for authenticated and credential-bearing requests.
-///
-/// `URLSession.shared` uses the process-wide URL cache. Some Apple platforms
-/// persist that cache to disk, including request bodies and authorization
-/// headers. AstralCore must keep those values in the keychain or in memory,
-/// never in CFNetwork's response cache.
 public enum NoStoreHTTP {
     public static let session: URLSession = {
         prepareForLaunch()
         return URLSession(configuration: configuration())
     }()
 
-    /// Fail closed if an older client left credential-bearing CFNetwork cache
-    /// artifacts that this process cannot remove from its own sandbox.
     public static func prepareForLaunch() {
         guard purgeLegacyPersistentURLCache() else {
             fatalError("Unable to clear AstralDeep's legacy network cache")
         }
     }
 
-    /// Remove credential-bearing response-cache files produced by older
-    /// clients before every authenticated request moved to an ephemeral
-    /// session. This is intentionally limited to CFNetwork's bundle-scoped
-    /// cache database; unrelated application caches are left untouched.
     static func purgeLegacyPersistentURLCache(
         cacheRoot: URL? = nil,
         bundleIdentifier: String? = Bundle.main.bundleIdentifier,

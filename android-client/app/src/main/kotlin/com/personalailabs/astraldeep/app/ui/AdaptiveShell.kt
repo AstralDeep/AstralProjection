@@ -1,3 +1,7 @@
+// The main adaptive Compose shell: welcome/canvas/timeline chrome, the collapsible messages panel, and the
+// input bar with attachments and voice controls; composes CanvasHost and the Renderer registry into the app's
+// primary screen.
+
 package com.personalailabs.astraldeep.app.ui
 
 import android.Manifest
@@ -213,10 +217,6 @@ private fun WelcomeSlot(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Canvas area: skeleton / empty-state / live canvas + working + timeline chrome
-// ---------------------------------------------------------------------------
-
 @Composable
 private fun CanvasArea(
     state: UiState,
@@ -227,10 +227,6 @@ private fun CanvasArea(
 ) {
     var showTimeline by remember { mutableStateOf(false) }
     Column(modifier = modifier.background(MaterialTheme.colorScheme.background)) {
-        // A read-only banner (history), else a thin progress line for any
-        // non-skeleton stretch of a turn: in-place turns, and a replacing query
-        // once its first live content lands (055 — the skeleton is only the
-        // loading state until then). Status text lives only in the Messages bar.
         if (state.isViewingHistory) {
             ReadOnlyBanner(
                 label = state.canvasHistory.getOrNull(state.viewingIndex ?: -1)?.label,
@@ -250,8 +246,6 @@ private fun CanvasArea(
                         loading = state.showSkeleton,
                         renderer = renderer,
                         modifier = Modifier.fillMaxSize(),
-                        // Refine pauses on ANY read-only view — the server timeline
-                        // (mutationsLocked) and the client-side canvas snapshots.
                         chrome =
                             CanvasChrome(
                                 chatId = state.activeChatId,
@@ -260,7 +254,6 @@ private fun CanvasArea(
                     )
             }
 
-            // Timeline entry point — only when previous canvases exist and we're live.
             if (state.canvasHistory.isNotEmpty() && !state.isViewingHistory) {
                 TimelinePill(
                     count = state.canvasHistory.size,
@@ -283,7 +276,6 @@ private fun CanvasArea(
     }
 }
 
-/** A slim, text-free activity line for in-place turns (component actions). */
 @Composable
 private fun WorkingBar() {
     LinearProgressIndicator(
@@ -371,7 +363,6 @@ private fun TimelinePill(
     }
 }
 
-/** A scrim + card listing prior turns' canvases; tapping opens one read-only. */
 @Composable
 private fun CanvasTimelineOverlay(
     history: List<CanvasSnapshot>,
@@ -405,7 +396,6 @@ private fun CanvasTimelineOverlay(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 340.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    // Most-recent first.
                     val indexed = history.indices.reversed().toList()
                     items(indexed) { idx ->
                         val snap = history[idx]
@@ -464,15 +454,6 @@ private fun EmptyCanvasHint(modifier: Modifier = Modifier) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Messages panel (stacked): collapsible bar stickied above the input
-// ---------------------------------------------------------------------------
-
-/**
- * The text-only conversation, collapsed by default to a single "Messages" bar
- * that sits right on top of the input bar. It appears as soon as the chat has
- * any content; tapping the bar expands the transcript up over the canvas.
- */
 @Composable
 private fun MessagesPanel(
     turns: List<ChatTurn>,
@@ -482,8 +463,6 @@ private fun MessagesPanel(
 ) {
     val visible = turns.filter { it.hasVisibleContent }
     if (visible.isEmpty()) return
-    // Appears expanded when the chat first has content; the user can collapse it
-    // "down to just a bar" to give the canvas the full screen.
     var expanded by rememberSaveable { mutableStateOf(true) }
     Column(Modifier.fillMaxWidth()) {
         if (expanded) {
@@ -529,10 +508,6 @@ private fun MessagesPanel(
     }
 }
 
-/**
- * The running turn's execution trail (chat_step/tool_progress) — a few small
- * muted lines by the status indicator while the orchestrator works (T021).
- */
 @Composable
 private fun StepTrail(lines: List<String>) {
     if (lines.isEmpty()) return
@@ -591,8 +566,6 @@ private fun ChatBubble(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
     ) {
-        // User bubbles follow the shared tinted convention (web `.msg-user`,
-        // Apple clients): a translucent primary fill + hairline primary border.
         Surface(
             color =
                 if (isUser) {
@@ -642,11 +615,6 @@ private fun ChatBubble(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Input bar: server-owned conversation controls + typed fallback + attachments
-// ---------------------------------------------------------------------------
-
-/** Model reasoning shown in the chat window as a collapsed, expandable snippet. */
 @Composable
 private fun ReasoningSnippet(text: String) {
     var expanded by remember { mutableStateOf(false) }
@@ -741,7 +709,6 @@ internal fun InputBar(
 
     Surface(color = Color.Transparent) {
         Column(modifier = Modifier.fillMaxWidth().padding(if (startView) 0.dp else 10.dp)) {
-            // Viewing the read-only timeline pauses composing (T041).
             if (readOnly) {
                 Text(
                     "Viewing history — messaging is paused. Return to the live view to continue.",
@@ -1088,7 +1055,6 @@ private fun AttachmentChips(
     }
 }
 
-/** Read a picked file's display name + bytes off the ContentResolver (IO thread). */
 private fun readPickedFile(
     context: Context,
     uri: Uri,

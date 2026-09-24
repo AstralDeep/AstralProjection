@@ -1,3 +1,6 @@
+// Builds the DeviceCapabilities reported in register_ui from real screen metrics and the renderer registry's
+// supported types; consumed by OrchestratorClient's registration.
+
 package com.personalailabs.astraldeep.app.transport
 
 import android.Manifest
@@ -16,12 +19,6 @@ data class RuntimeVoiceCapability(
     val fullDuplex: Boolean,
 )
 
-/**
- * Build the [DeviceCapabilities] reported in `register_ui`. Pure (takes raw
- * metrics) so it is JVM-unit-testable; the Activity supplies real screen metrics
- * and the renderer registry supplies [supportedTypes] (the natively-renderable
- * primitive set ROTE negotiates against). `device_type` is always "android".
- */
 fun deviceCapabilities(
     widthPx: Int,
     heightPx: Int,
@@ -36,8 +33,6 @@ fun deviceCapabilities(
     return DeviceCapabilities(
         screenWidth = widthPx,
         screenHeight = heightPx,
-        // ROTE breakpoints use logical viewport pixels, like browser CSS pixels.
-        // Keep physical screen dimensions and density as separate device facts.
         viewportWidth = (widthPx / pixelRatio).roundToInt().coerceAtLeast(1),
         viewportHeight = (heightPx / pixelRatio).roundToInt().coerceAtLeast(1),
         pixelRatio = pixelRatio,
@@ -53,7 +48,6 @@ fun deviceCapabilities(
     )
 }
 
-/** Stable non-secret installation identity used only with a live server binding. */
 fun voiceDeviceId(context: Context): String {
     val preferences = context.getSharedPreferences(VOICE_PREFERENCES, Context.MODE_PRIVATE)
     val existing = preferences.getString(DEVICE_ID, null)
@@ -63,7 +57,6 @@ fun voiceDeviceId(context: Context): String {
     return generated
 }
 
-/** Record an actual runtime prompt so a later denial is not reported as unasked. */
 fun markMicrophonePermissionRequested(context: Context) {
     context.getSharedPreferences(VOICE_PREFERENCES, Context.MODE_PRIVATE)
         .edit()
@@ -71,7 +64,6 @@ fun markMicrophonePermissionRequested(context: Context) {
         .apply()
 }
 
-/** Runtime capture/playback facts; no camera/Bluetooth/location permission is inferred. */
 fun runtimeVoiceCapability(context: Context): RuntimeVoiceCapability {
     val hasMicrophone = context.packageManager.hasSystemFeature(PackageManager.FEATURE_MICROPHONE)
     val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager

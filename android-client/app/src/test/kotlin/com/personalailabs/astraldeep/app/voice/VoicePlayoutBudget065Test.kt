@@ -1,3 +1,5 @@
+// Tests for boundedPcmFrameCount: converting a decoded RTC audio frame into the remaining playout budget.
+
 package com.personalailabs.astraldeep.app.voice
 
 import kotlin.test.Test

@@ -1,3 +1,6 @@
+// Tests for the sign-out ladder's first rung: the backend logout REST call, swallowing failures by returning
+// false rather than throwing.
+
 package com.personalailabs.astraldeep.app.rest
 
 import kotlinx.coroutines.test.runTest
@@ -11,7 +14,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Feature 044 T019 — sign-out ladder rung 1: the backend logout endpoint call. */
 class LogoutRestTest {
     @Test
     fun logout_posts_bearer_and_body_and_is_true_on_2xx() =
@@ -44,7 +46,6 @@ class LogoutRestTest {
     @Test
     fun logout_is_false_when_unreachable_not_thrown() =
         runTest {
-            // Nothing listens here — the ladder rung must swallow and report false.
             assertFalse(AstralRest("http://127.0.0.1:59993").logout("tok", "refr", "astral-mobile"))
         }
 }

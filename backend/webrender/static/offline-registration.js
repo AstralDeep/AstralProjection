@@ -1,4 +1,6 @@
-/* Optional public disconnected page; never changes the authenticated bootstrap. */
+// Registers the optional public offline page's service worker without touching the authenticated
+// app bootstrap.
+
 (function () {
   "use strict";
   if (!window.isSecureContext || !("serviceWorker" in navigator)) return;
@@ -6,7 +8,6 @@
     scope: "/",
     updateViaCache: "none",
   }).catch(function () {
-    // No request URLs, credentials, or user state enter this diagnostic.
     console.warn("AstralDeep offline page could not be enabled.");
   });
 }());

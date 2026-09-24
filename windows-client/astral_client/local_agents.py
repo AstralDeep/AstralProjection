@@ -1,17 +1,6 @@
-"""Feature 077 — "Agents on this PC": the client-local view of the personal
-agents this desktop hosts.
-
-The server's *My agents & skills* surface knows an agent is *running* only as
-socket presence; the PC is where the child processes actually live, and until
-now the person at it had no list, no status and no Stop — just a transient
-banner. This dialog reads :meth:`ByoAgentHost.inventory` (derived, read-only),
-refreshes every ``REFRESH_MS`` while open, and offers exactly two acts: **Stop**
-(``ByoAgentHost.stop`` — the same kill the server commands) and **Open folder**
-(the bundle directory in Explorer, so the LLM-written code is never a mystery).
-
-It is a client-local window, not a server surface: it is reached from a
-client-local entry the Settings menu appends after the server-owned groups, and
-it exists only when the deployment profile hosts personal agents.
+"""Client-local 'Agents on this PC' dialog listing the desktop's hosted personal agents
+via ByoAgentHost.inventory, with Stop and Open-folder actions; reached from a
+Settings-menu entry app.py appends after the server-owned groups.
 """
 
 from __future__ import annotations
@@ -42,15 +31,13 @@ _STATUS_COLOR = {"online": "#22C55E", "starting": "#EAB308", "offline": None}
 
 
 def open_folder(path: str, opener: Optional[Callable[[str], None]] = None) -> bool:
-    """Reveal ``path`` in the platform file manager. Returns False when the
-    directory does not exist (never raises into the UI)."""
     if not path or not os.path.isdir(path):
         return False
     try:
         if opener is not None:
             opener(path)
         elif sys.platform == "win32":
-            os.startfile(path)  # noqa: S606 — a directory this client wrote
+            os.startfile(path)  # noqa: S606
         elif sys.platform == "darwin":
             subprocess.Popen(["open", path])
         else:
@@ -61,8 +48,6 @@ def open_folder(path: str, opener: Optional[Callable[[str], None]] = None) -> bo
 
 
 class LocalAgentsDialog(QDialog):
-    """A live table of the hosted agents with Stop / Open folder."""
-
     def __init__(self, host, parent=None, *, opener: Optional[Callable[[str], None]] = None) -> None:
         super().__init__(parent)
         self._host = host
@@ -122,15 +107,13 @@ class LocalAgentsDialog(QDialog):
         self._timer.timeout.connect(self.refresh)
         self.refresh()
 
-    # ── data ─────────────────────────────────────────────────────────────
-
     def rows(self) -> List[Dict[str, Any]]:
         return list(self._rows)
 
     def refresh(self) -> None:
         try:
             rows = list(self._host.inventory()) if self._host is not None else []
-        except Exception:  # noqa: BLE001 — a listing failure is shown, not raised
+        except Exception:  # noqa: BLE001
             rows = []
             self.status.setText("Couldn't read the agent list.")
         selected = self.selected_agent_id()
@@ -176,8 +159,6 @@ class LocalAgentsDialog(QDialog):
         self.stop_btn.setEnabled(bool(entry) and entry.get("status") in ("online", "starting"))
         self.folder_btn.setEnabled(bool(entry) and bool(entry.get("directory")))
 
-    # ── acts ─────────────────────────────────────────────────────────────
-
     def _stop_selected(self) -> None:
         entry = self._selected_entry()
         if entry is None:
@@ -198,13 +179,11 @@ class LocalAgentsDialog(QDialog):
         if not open_folder(str(entry.get("directory") or ""), self._opener):
             self.status.setText("That folder is not there any more.")
 
-    # ── lifecycle ────────────────────────────────────────────────────────
-
-    def showEvent(self, event) -> None:  # noqa: N802 — Qt override
+    def showEvent(self, event) -> None:  # noqa: N802
         super().showEvent(event)
         self.refresh()
         self._timer.start()
 
-    def hideEvent(self, event) -> None:  # noqa: N802 — Qt override
+    def hideEvent(self, event) -> None:  # noqa: N802
         self._timer.stop()
         super().hideEvent(event)

@@ -1,16 +1,7 @@
+// Tests for AppModel's text-only-turn and surface-dismissal reduce logic: a text-only answer still clears the
+// canvas skeleton, and closing a settings surface is refused while the mandatory gate is pinned.
+
 import AstralCore
-// Regression cover for two ways a native client could strand the user on a
-// screen it has no way to leave:
-//
-//  1. The canvas skeleton (`pendingReplace && !liveOpsThisTurn`) is armed at
-//     turn start and, in CONTINUITY mode, was released only by a committed
-//     `conversation_snapshot`. A text-only answer ("hello") produces no canvas
-//     ops and no snapshot, so the shimmer latched forever over a canvas that
-//     was already correct. `chat_status done` now releases it — safe because
-//     the server publishes any snapshot BEFORE the terminal status.
-//  2. `SurfaceView` is a full screen with no ✕ (web's modal shell) and no
-//     system Back (Android), so `closeSurface()` is its only dismissal — and,
-//     like web's `data-mandatory` card, it must refuse while the 054 pin is set.
 import XCTest
 
 @testable import AstralDeep
@@ -43,7 +34,6 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
         model.handleFrame(InboundFrame.parse(json)!)
     }
 
-    /// A model in continuity mode (the `FF_BG_CONTINUITY` posture).
     private func continuityModel() -> AppModel {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         XCTAssertTrue(
@@ -51,19 +41,16 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
         return model
     }
 
-    // MARK: text-only turn releases the skeleton
-
     func testTextOnlyTurnInContinuityModeKeepsTheWelcomeAndClearsTheSkeleton() {
         let model = continuityModel()
         model.canvas = [welcomeExamples]
         model.sendChat("hello")
-        XCTAssertTrue(model.showSkeleton)  // armed while the turn runs
+        XCTAssertTrue(model.showSkeleton)
 
-        reduce(model, doneStatus)  // text-only: no ops, no snapshot
+        reduce(model, doneStatus)
 
         XCTAssertFalse(model.showSkeleton, "the shimmer must not latch forever")
         XCTAssertFalse(model.turnActive)
-        // Nothing replaced the canvas, so the run-examples screen stays put.
         XCTAssertEqual(model.canvas.map(\.componentId), ["wel_examples"])
     }
 
@@ -78,8 +65,6 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc123"])
     }
 
-    /// Legacy mode still commits through `commitTurn` untouched: a live op
-    /// retires the welcome and the committed canvas is the turn's output.
     func testLegacyComponentTurnStillCommitsItsComponents() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [welcomeExamples]
@@ -90,8 +75,6 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
         XCTAssertFalse(model.showSkeleton)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_result"])
     }
-
-    // MARK: surface dismissal
 
     func testCloseSurfaceDismissesASettingsSurface() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
@@ -117,13 +100,10 @@ final class AppModelTextOnlyCanvasTests: XCTestCase {
 
         model.closeSurface()
 
-        // 054 FR-013: the pin is server-owned; sign-out is the one escape.
         XCTAssertEqual(model.screen, .surface)
         XCTAssertNotNil(model.pendingSurface)
     }
 
-    /// The server's blank close instruction (a settings-path save now sends it
-    /// to natives, and the 054 unlock always did) lands on the chat.
     func testBlankChromeSurfaceClosesTheSurfaceAndLiftsThePin() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.screen = .surface

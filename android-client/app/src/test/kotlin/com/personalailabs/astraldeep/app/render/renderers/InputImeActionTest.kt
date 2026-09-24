@@ -1,3 +1,6 @@
+// Tests that the input primitive's IME Done action emits its configured event while Compose still dismisses
+// the keyboard natively.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import com.personalailabs.astraldeep.app.render.Emit
@@ -6,7 +9,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 
-/** The primitive may emit work on Done, but Compose retains native IME dismissal. */
 class InputImeActionTest {
     @Test
     fun done_emits_the_action_before_invoking_the_native_keyboard_action() {

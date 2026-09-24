@@ -1,26 +1,12 @@
-"""Top-bar icons for the Windows client, drawn from the SAME SVG paths the web
-top bar uses (``backend/webrender/chrome/topbar.py`` ``_ICON_SVG`` vocabulary).
-
-Why not text glyphs: the bar used to draw ``💬`` / ``✨`` / ``🕓`` / ``⚙`` as
-emoji characters. Qt on Windows resolves those to Segoe UI Emoji, a colour
-font it only half-renders — the Pulse "✨" came out as a smeared, partly
-yellow star beside monochrome neighbours (reported live 2026-09-02). A
-stroked SVG painted at the device pixel ratio is crisp at any scale, takes
-the theme's muted/text colours exactly like the web ``currentColor`` does,
-and looks identical across the two clients.
-
-``icon(name)`` returns a :class:`QIcon` with a Normal (muted) and an Active
-(hover, text-colour) pixmap, or ``None`` when Qt SVG support is unavailable so
-the caller keeps its text fallback — a missing plugin never leaves a blank
-button.
+"""SVG top-bar icon glyphs for the Windows client, drawn from the same stroked paths as
+the web top bar (webrender/chrome/topbar.py) so both clients render identically
+instead of via emoji fonts; used by app.py's TopBar.
 """
 
 from __future__ import annotations
 
 from typing import Dict, Optional
 
-# Feather-style 24×24 line glyphs. Keep these byte-for-byte in step with the
-# web renderer's ``_*_SVG`` constants; ``currentColor`` is substituted below.
 _PATHS: Dict[str, str] = {
     "chats": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     "sparkle": (
@@ -48,15 +34,12 @@ _PATHS: Dict[str, str] = {
     ),
 }
 
-#: Server top-bar action icon names (``menu_model.py``) → glyph key here.
-#: ``pulse``/``activity``/``clock`` are tolerant aliases the server never sends.
 ACTION_ICON_NAMES: Dict[str, str] = {
     "sparkle": "sparkle", "pulse": "sparkle", "activity": "sparkle",
     "history": "history", "clock": "history",
     "gear": "gear",
 }
 
-#: Text fallbacks, used only when Qt SVG rendering is unavailable.
 GLYPH_FALLBACK: Dict[str, str] = {
     "chats": "💬", "sparkle": "✦", "history": "🕓", "gear": "⚙", "paperclip": "📎",
 }
@@ -65,7 +48,6 @@ _CACHE: Dict[tuple, object] = {}
 
 
 def svg_markup(name: str, color: str, size: int = 18) -> str:
-    """The stroked SVG document for ``name`` with ``currentColor`` resolved."""
     body = _PATHS[name]
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" viewBox="0 0 24 24" '
@@ -96,8 +78,6 @@ def _render(name: str, color: str, size: int, ratio: float):
 
 
 def icon(name: str, muted: str, text: str, size: int = 18, ratio: float = 2.0):
-    """A themed :class:`QIcon` for ``name`` (Normal = ``muted``, Active/hover
-    = ``text``), or ``None`` when SVG rendering is unavailable."""
     if name not in _PATHS:
         return None
     key = (name, muted, text, size, ratio)
@@ -108,7 +88,7 @@ def icon(name: str, muted: str, text: str, size: int = 18, ratio: float = 2.0):
         from PySide6.QtGui import QIcon
         normal = _render(name, muted, size, ratio)
         active = _render(name, text, size, ratio)
-    except Exception:  # noqa: BLE001 — no QtSvg (or no GUI): keep the text glyph
+    except Exception:  # noqa: BLE001
         return None
     if normal is None or active is None:
         return None
@@ -121,8 +101,6 @@ def icon(name: str, muted: str, text: str, size: int = 18, ratio: float = 2.0):
 
 
 def apply(button, name: str, muted: str, text: str, size: int = 18) -> bool:
-    """Put the SVG icon on ``button`` (clearing its text); False ⇒ the caller's
-    text glyph stays. ``button`` is a QPushButton or QToolButton."""
     ratio = 2.0
     try:
         screen = button.screen() if hasattr(button, "screen") else None

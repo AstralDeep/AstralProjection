@@ -1,4 +1,8 @@
-"""Feature 033 (C-N2) — gated generative primitives: grammar validator + safe render."""
+"""Tests for backend/webrender/generative.py: the gated generative-primitive grammar
+validator (allowed types, variants, depth/count bounds) and its escape-by-default,
+clamped rendering.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -12,16 +16,12 @@ if str(BACKEND_DIR) not in sys.path:
 from webrender import generative as gen  # noqa: E402
 
 
-# ───────────────────────── flag ──────────────────────────────────────────────
-
 def test_flag_default_off(monkeypatch):
     monkeypatch.delenv("FF_GENERATIVE_PRIMITIVES", raising=False)
     assert gen.generative_enabled() is False
     monkeypatch.setenv("FF_GENERATIVE_PRIMITIVES", "on")
     assert gen.generative_enabled() is True
 
-
-# ───────────────────────── validate ──────────────────────────────────────────
 
 def test_valid_composition():
     spec = {"t": "col", "children": [
@@ -46,7 +46,7 @@ def test_container_requires_children_list():
 def test_bar_value_must_be_unit_interval():
     assert gen.validate({"t": "bar", "value": 1.5})[0] is False
     assert gen.validate({"t": "bar", "value": "x"})[0] is False
-    assert gen.validate({"t": "bar", "value": True})[0] is False  # bool excluded
+    assert gen.validate({"t": "bar", "value": True})[0] is False
     assert gen.validate({"t": "bar", "value": 0.5})[0] is True
 
 
@@ -80,8 +80,6 @@ def test_non_dict_node_rejected():
     assert gen.validate({"t": "row", "children": ["x"]})[0] is False
 
 
-# ───────────────────────── render (escape-by-default) ────────────────────────
-
 def test_render_valid_wraps_and_classes():
     out = gen.render({"t": "col", "children": [{"t": "label", "text": "Hi"}]})
     assert out.startswith('<div class="astral-generative">')
@@ -105,6 +103,5 @@ def test_render_invalid_is_failsafe_notice():
 
 
 def test_render_clamps_bar_and_no_inline_injection():
-    # even a wild value renders bounded; model cannot inject style/script
     out = gen.render({"t": "col", "children": [{"t": "bar", "value": 1.0}]})
     assert "width:100.0%" in out and "<script" not in out

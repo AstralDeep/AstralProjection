@@ -1,9 +1,8 @@
-"""Server-owned component action presentation; descriptors never grant authority.
-
-Build from the original canonical component before device fallback changes its
-type, then stamp an outbound copy after adaptation. Never persist this receiver-
-specific field or accept an agent's proposed action inventory as host policy.
+"""Builds and stamps an owned canvas component's fixed action inventory from its
+pre-fallback identity; renderer.py and orchestrator/history.py consume it so device
+adaptation and agents can only narrow actions, never add new ones.
 """
+
 from __future__ import annotations
 
 import os
@@ -31,7 +30,6 @@ def _enabled(name: str) -> bool:
 
 
 def component_versions(component: Mapping[str, Any]) -> list[dict[str, Any]]:
-    """Retain at most five metadata rows; no archived body or arbitrary keys."""
     raw = component.get("versions")
     if not isinstance(raw, list):
         return []
@@ -42,7 +40,7 @@ def component_versions(component: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(value, dict):
             continue
         number = value.get("version_no")
-        # JSON consumers must address the same exact version number.
+        # Bound is JS Number.MAX_SAFE_INTEGER, so all JSON clients agree
         if (type(number) not in (int, float) or not 1 <= number <= 9007199254740991
                 or int(number) != number):
             continue
@@ -65,7 +63,6 @@ def build_component_chrome(
     component: Mapping[str, Any], profile: Any, *,
     enabled: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
-    """One fixed inventory for web and native consumers of an owned component."""
     empty: dict[str, Any] = {"version": 1, "actions": []}
     dtype = getattr(getattr(profile, "device_type", None), "value", "")
     cid = component.get("component_id")
@@ -73,7 +70,8 @@ def build_component_chrome(
     if (profile is None or not getattr(profile, "supports_interactivity", True)
             or dtype in ("watch", "voice") or not isinstance(cid, str) or not cid
             or cid.startswith(("dg_", "ly_", "wel_"))
-            or ctype in ("divider", "skeleton")):
+            or ctype in ("divider", "skeleton")
+            or (ctype == "collapsible" and str(component.get("title") or "").strip().casefold() == "reasoning")):
         return empty
     resolve = enabled or _enabled
 
@@ -92,7 +90,6 @@ def build_component_chrome(
 
 
 def component_action_descriptors(value: object) -> list[dict[str, str]]:
-    """Parse the bounded additive wire field. Ignore unsupported entries safely."""
     if (not isinstance(value, dict) or set(value) != {"version", "actions"}
             or type(value.get("version")) not in (int, float) or value["version"] != 1
             or not isinstance(value.get("actions"), list) or len(value["actions"]) > 16):
@@ -122,12 +119,6 @@ def renderer_component_actions(
     component: Mapping[str, Any], profile: Any, *,
     canonical: Mapping[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    """Render host flags plus an optional restrictive stamped inventory.
-
-    Direct legacy renderer callers lack the new field. A supplied field can
-    only remove actions allowed by current host policy, never enable one. Deep
-    overwrites it using original canonical facts, including pre-fallback type.
-    """
     source = component if canonical is None else canonical
     if source.get("component_id") != component.get("component_id"):
         return []
@@ -142,7 +133,6 @@ def stamp_component_chrome(
     original: Mapping[str, Any] | None, adapted: dict[str, Any], profile: Any, *,
     enabled: Callable[[str], bool] | None = None,
 ) -> dict[str, Any]:
-    """Return an outbound copy; remove spoofed metadata even when identity fails."""
     output = dict(adapted)
     output.pop("component_chrome", None)
     output.pop("versions", None)
@@ -163,7 +153,6 @@ def stamp_canvas_component_chrome(
     originals: list[dict[str, Any]], adapted: list[dict[str, Any]], profile: Any, *,
     enabled: Callable[[str], bool] | None = None,
 ) -> list[dict[str, Any]]:
-    """Match by unambiguous canonical identity, never by adaptation list position."""
     by_id = canonical_components_by_id(originals)
     result = []
     for component in adapted:
@@ -179,7 +168,6 @@ def stamp_canvas_component_chrome(
 def canonical_components_by_id(
     originals: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any] | None]:
-    """Duplicate IDs have no unambiguous original and cannot acquire actions."""
     by_id: dict[str, dict[str, Any] | None] = {}
     for original in originals:
         if not isinstance(original, dict):

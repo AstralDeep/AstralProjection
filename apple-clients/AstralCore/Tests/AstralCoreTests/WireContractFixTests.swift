@@ -1,8 +1,6 @@
-// Feature 053 — regression pins for the wire-contract fixes found in the
-// pre-release cross-check: keyvalue reads `items[]` (the only key the server
-// emits), detailed list items compose readable lines, chat_status machine
-// codes map to human text (and terminal codes CLEAR the line), and the block
-// markdown segmenter handles the shapes the backend actually produces.
+// Tests for wire-contract regression fixes: keyvalue items[] reading, detailed-list line composition,
+// chat_status code-to-text mapping with terminal clearing, and the block-markdown segmenter.
+
 import XCTest
 
 @testable import AstralCore
@@ -13,8 +11,6 @@ final class WireContractFixTests: XCTestCase {
         let value = try! JSONValue.parse(json.data(using: .utf8)!)
         return AstralComponent(json: value)!
     }
-
-    // MARK: keyvalue
 
     func testKeyValueReadsWireItemsShape() {
         let c = component(
@@ -28,8 +24,6 @@ final class WireContractFixTests: XCTestCase {
         XCTAssertEqual(c.keyValuePairs.count, 1)
         XCTAssertEqual(c.keyValuePairs[0].0, "A")
     }
-
-    // MARK: detailed list items
 
     func testDetailedListItemsComposeTitleAndSubtitle() {
         let c = component(
@@ -47,8 +41,6 @@ final class WireContractFixTests: XCTestCase {
         let c = component(#"{"type":"list","items":["plain",{"text":"texted"},{"label":"labeled"}]}"#)
         XCTAssertEqual(c.listItems, ["plain", "texted", "labeled"])
     }
-
-    // MARK: chat_status / chat_step statusText
 
     private func frame(_ json: String) -> InboundFrame {
         InboundFrame.parse(json)!
@@ -75,8 +67,6 @@ final class WireContractFixTests: XCTestCase {
             frame(#"{"type":"chat_step","step":{"name":"web_search","status":"running"}}"#).statusText,
             "web_search")
     }
-
-    // MARK: MarkdownBlocks
 
     func testBlocksSplitHeadingParagraphAndFence() {
         let blocks = MarkdownBlocks.parse("## Findings\n\nBody text here.\n\n```\nlet x = 1\n```")
@@ -142,7 +132,6 @@ final class WireContractFixTests: XCTestCase {
     }
 
     func testPipePrefixedProseIsNotATable() {
-        // Not pipe-wrapped → prose, verbatim (never restructure prose).
         XCTAssertEqual(
             MarkdownBlocks.parse("|x - 3| < 5 holds"),
             [.paragraph("|x - 3| < 5 holds")])

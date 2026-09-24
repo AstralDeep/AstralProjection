@@ -1,4 +1,6 @@
-"""Spec 060 role/name/state/focus contracts for changed Windows controls."""
+"""Tests for astral_client/app.py: accessible role, name, state, and keyboard focus
+contracts for the status banner and agent-authoring controls.
+"""
 
 from __future__ import annotations
 

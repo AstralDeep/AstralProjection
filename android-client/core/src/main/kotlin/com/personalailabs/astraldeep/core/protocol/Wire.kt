@@ -1,3 +1,7 @@
+// The wire codec: tolerant JSON decode of every inbound frame into Inbound variants, plus encoders for
+// outbound register_ui/ui_event/voice frames. Pure JVM, feeding AppViewModel.reduce(); Messages.kt defines
+// the decoded shapes.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import com.personalailabs.astraldeep.core.sdui.CanvasOp
@@ -18,11 +22,6 @@ import kotlinx.serialization.json.putJsonObject
 import java.time.Instant
 import java.util.UUID
 
-/**
- * The wire codec. Tolerant decode (ignore-unknown-keys / lenient) of inbound
- * frames into [Inbound] variants, and encoders for the outbound frames
- * (`register_ui`, `ui_event` + helpers). Pure — no Android, JVM-unit-tested.
- */
 object Wire {
     private val json =
         Json {
@@ -46,7 +45,6 @@ object Wire {
         when (val type = root.str("type").orEmpty()) {
             "ui_render" -> uiRenderFromJson(root, type)
             "ui_upsert" -> uiUpsertFromJson(root, type)
-            // The modern push system and the legacy poll system share the frame shape.
             "ui_stream_data", "stream_data" -> uiStreamDataFromJson(root, type)
             "stream_subscribed" ->
                 Inbound.StreamSubscribed(root.str("stream_id"), root.str("tool_name"), root.str("component_id"))
@@ -106,16 +104,12 @@ object Wire {
                         surfaceKey = key,
                         title = root.str("title").orEmpty(),
                         components = Component.listFromJson(root.arr("components")),
-                        // Reserved delivery field (054): absent == "replace" (today's
-                        // behavior); "mandatory" == the first-run LLM-setup gate.
                         mode = root.str("mode") ?: "replace",
                         requestGeneration = request,
                     )
                 }
             }
             "auth_required" -> Inbound.AuthRequired(root.str("reason"))
-            // Server error replies arrive in three shapes: {code,message},
-            // {payload:{message}}, {message} — normalize; never silent (FR-002).
             "error" ->
                 admissionRefusalFromJson(root)
                     ?: Inbound.ErrorFrame(
@@ -137,13 +131,10 @@ object Wire {
                 )
             }
             "tool_progress" -> {
-                // Compose a short human label from whatever fields arrived (all
-                // optional): "tool: message (pct%)".
                 val head = listOfNotNull(root.str("tool_name"), root.str("message")).joinToString(": ")
                 val pct = root.str("percentage")?.let { " ($it%)" }.orEmpty()
                 Inbound.ToolProgress(label = (head + pct).ifBlank { "Working…" })
             }
-            // Task frames nest their fields under `payload` (older emitters were flat).
             "task_started" ->
                 Inbound.TaskStarted(
                     taskId = root.obj("payload")?.str("task_id") ?: root.str("task_id"),
@@ -163,13 +154,9 @@ object Wire {
                     level = root.str("level"),
                     chatId = root.str("chat_id"),
                 )
-            // Stored preferences at boot ({preferences:{theme:{…}}}); the app folds
-            // `theme` into the live palette (US5 restyle).
             "user_preferences" -> Inbound.UserPreferences(theme = root.obj("preferences")?.obj("theme"))
-            // Read-only workspace timeline toggle ({active}); `on` is tolerated.
             "workspace_timeline_mode" ->
                 Inbound.WorkspaceTimelineMode(active = root.bool("active") ?: root.bool("on") ?: false)
-            // Workspace verb acks (055 US3, wire-contract §4).
             "component_saved" -> Inbound.ComponentSaved(title = root.obj("component")?.str("title"))
             "component_save_error" -> Inbound.ComponentSaveError(root.str("error"))
             "component_deleted" -> Inbound.ComponentDeleted(root.str("component_id"))
@@ -184,18 +171,13 @@ object Wire {
             else -> Inbound.Unknown(type)
         }
 
-    /** Validate the shared structured-v2 host advertisement without emitting it. */
     fun decodeAgentHostRegistration(raw: String): AgentHostRegistration? = parseObject(raw)?.let(::agentHostRegistrationFromJson)
 
-    /** Validate the host acknowledgement that author-only Android deliberately ignores. */
     fun decodeAgentHostRegistered(raw: String): AgentHostRegistered? = parseObject(raw)?.let(::agentHostRegisteredFromJson)
 
-    /** Parse the immutable candidate capability map; malformed/missing data stays unknown. */
     fun decodeCandidateCapabilityMap(raw: String): CandidateCapabilityMap? = parseObject(raw)?.let(::candidateCapabilityMapFromJson)
 
     fun decodeCandidateCapabilityMap(root: JsonObject): CandidateCapabilityMap? = candidateCapabilityMapFromJson(root)
-
-    // ---- outbound encoders ----
 
     fun encodeRegisterUi(
         token: String,
@@ -319,10 +301,6 @@ object Wire {
             submissionId = submissionId,
         )
 
-    /**
-     * Build the ordinary `chat_message` used for a final voice transcript.
-     * The proof-bearing origin is copied verbatim; no voice-only dispatch exists.
-     */
     fun encodeVoiceChatMessage(
         transcript: VoiceTranscript,
         connectionGeneration: String,
@@ -362,7 +340,6 @@ object Wire {
         }.toString()
     }
 
-    /** Strict correlated new-chat handshake used only to bootstrap explicit voice activation. */
     fun encodeCorrelatedVoiceNewChat(
         connectionGeneration: String,
         submissionId: String,
@@ -387,7 +364,6 @@ object Wire {
         }.toString()
     }
 
-    /** Encode one content-free observation from the matched local audio renderer. */
     fun encodeVoicePlayoutEvent(value: VoicePlayoutEvent): String {
         require(canonicalUuid4(value.deviceId) != null)
         require(canonicalUuid4(value.connectionGeneration) != null)
@@ -438,13 +414,10 @@ object Wire {
         }.toString()
     }
 
-    /** Emits a validated local final only; it never manufactures remote proof or authority. */
     fun encodeVoiceLocalFinal(value: LocalVoiceFrame): String {
         require(value.type == "voice_local_final" && value.disposition == LocalVoiceDisposition.FINAL)
         return value.payload.toString()
     }
-
-    // ---- feature 060 strict wire models ----
 
     private data class ScopeDecode(
         val valid: Boolean,
@@ -464,7 +437,6 @@ object Wire {
     private val VOICE_QUANTUM_ROLES = setOf("single", "result_opening", "result_continuation")
     private val VOICE_PLAYOUT_PHASES = setOf("started", "finished", "interrupted")
 
-    // 066 T023: bounded canonical text-part variants (backend CANONICAL_TEXT_PART_VARIANTS twin).
     private val CANONICAL_TEXT_PART_VARIANTS = setOf("caption")
 
     private val snakeCase = Regex("^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$")
@@ -777,8 +749,6 @@ object Wire {
         return parts.all { part -> (part as? JsonObject)?.let(::canonicalTranscriptPart) == true }
     }
 
-    // 066 T023: the bounded caption shape a text part may additionally take
-    // (mirrors backend CANONICAL_TEXT_PART_VARIANTS).
     private fun boundedTextVariantShape(part: JsonObject): Boolean =
         part.hasExactKeys("type", "text", "variant") &&
             part.strictString("variant") in CANONICAL_TEXT_PART_VARIANTS
@@ -803,7 +773,7 @@ object Wire {
             else -> false
         }
 
-    /** Native semantic snapshots never accept web-only presentation authority. */
+    // Native snapshots must reject web-only presentation authority
     private fun canonicalNativeComponents(components: JsonArray): Boolean =
         components.all { element ->
             val component = element as? JsonObject ?: return@all false
@@ -1043,8 +1013,6 @@ object Wire {
                 ),
         )
     }
-
-    // ---- feature 065 conversational-voice contract ----
 
     private fun chatCreatedFromJson(root: JsonObject): Inbound.ChatCreated? {
         if (root["schema_version"] == null) {
@@ -1604,8 +1572,6 @@ object Wire {
 
     private fun isOpaqueId(value: String): Boolean = value.length in 1..128 && opaqueId.matches(value)
 
-    // ---- legacy-compatible helpers ----
-
     private fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
 
     private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
@@ -1638,10 +1604,6 @@ object Wire {
             )
         } ?: emptyList()
 
-    // components_combined/condensed results are saved-row shapes ({id,
-    // component_data, …}); the primitive dict rides in `component_data` and may
-    // not carry a workspace identity yet (the reconcile ui_render that follows
-    // stamps it), so identity falls back to the fresh row id.
     private fun replacementsFromJson(arr: JsonArray?): List<Component> =
         arr?.mapIndexedNotNull { i, el ->
             val row = el as? JsonObject ?: return@mapIndexedNotNull null
@@ -1665,8 +1627,6 @@ object Wire {
             val o = el as? JsonObject ?: return@mapNotNull null
             val id = o.str("id") ?: return@mapNotNull null
             val permissions = o.boolMap("permissions")
-            // `tools` is a list of {name, description} (send_agent_list) OR plain
-            // strings (dashboard); fall back to the permission keys.
             val toolObjs = (o["tools"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
             val tools: List<String>
             val toolDescriptions: Map<String, String>

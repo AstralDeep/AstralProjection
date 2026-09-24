@@ -1,4 +1,6 @@
-"""The owner's framework-credential views disclose a secret once and never again."""
+"""Tests for src/astralprojection/chrome/connections.py: credential row states, the
+issue form, and one-time secret disclosure.
+"""
 
 from __future__ import annotations
 
@@ -263,10 +265,10 @@ def test_returning_from_the_issued_view_lands_on_a_listing_that_cannot_show_it()
 @pytest.mark.parametrize(
     "secret",
     [
-        "afk_9f3cQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",  # belongs to a different record
-        "afk_5e6f",  # too short to be a key
-        "afk_5e6f Q2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",  # whitespace
-        "afk_5e6féQ2p7X1mK8sT4vB0nL6rJ9wZ3yH",  # non-portable character
+        "afk_9f3cQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",
+        "afk_5e6f",
+        "afk_5e6f Q2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",
+        "afk_5e6féQ2p7X1mK8sT4vB0nL6rJ9wZ3yH",
         None,
         b"afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",
     ],

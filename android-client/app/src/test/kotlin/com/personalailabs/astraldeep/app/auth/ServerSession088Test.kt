@@ -1,3 +1,6 @@
+// Tests for Android's WS session bootstrap over TLS: a per-run self-signed loopback certificate proves
+// registration is refused on a retired connection ticket before the bearer token is written.
+
 package com.personalailabs.astraldeep.app.auth
 
 import com.personalailabs.astraldeep.app.transport.ConnectionState
@@ -54,7 +57,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** All credentials and the per-run TLS identity are synthetic, loopback-only test data. */
 class ServerSession088Test {
     private val now = Instant.parse("2026-09-13T00:00:00Z")
     private val issuer = "https://iam.example/realms/Astral"
@@ -209,19 +211,11 @@ class ServerSession088Test {
         }
     }
 
-    /**
-     * Loopback TLS identity minted at test time with JDK-only APIs (no binary
-     * keystore in git — `*.p12` is gitignored — and no extra test dependency:
-     * the app lockfile and version catalog are pinned as immutable manifests).
-     * The self-signed certificate carries SAN `localhost`/`127.0.0.1`/`::1`, so
-     * OkHttp's hostname verifier accepts it only for the loopback origin the
-     * fixture publishes; the key never leaves this JVM.
-     */
     private class Fixture : AutoCloseable {
         val server = MockWebServer()
         val client: OkHttpClient
 
-        /** Explicit loopback origin: MockWebServer's own `url()` uses the reverse-DNS host name, which differs per machine. */
+        // MockWebServer's own url() uses a reverse-DNS host, not loopback
         val origin: String get() = "https://localhost:${server.port}/"
 
         val socketOrigin: String get() = "wss://localhost:${server.port}/"
@@ -247,7 +241,6 @@ class ServerSession088Test {
         }
     }
 
-    /** Minimal DER writer for one X.509 v3 self-signed leaf; the JDK offers no public certificate builder. */
     private object LoopbackCertificate {
         private const val SHA256_WITH_RSA = "1.2.840.113549.1.1.11"
         private const val COMMON_NAME = "2.5.4.3"
@@ -325,15 +318,6 @@ class ServerSession088Test {
         }
     }
 
-    /**
-     * The custody fence is `withCurrent`: socket creation runs under the coordinator gate, and a
-     * ticket retired between creation and `onOpen` makes the client cancel the socket before
-     * `register_ui` (the bearer token) is written. Once the upgrade request is enqueued OkHttp owns
-     * its bytes — no client code can recall the cookie it already carries — so the pinned guarantee
-     * is "no registration on a retired socket", not "no upgrade request". The connection is held at
-     * the `Dns` hook because `RealWebSocket.connect` replaces the client's `EventListener`, so a
-     * `connectionAcquired` hook would never run for a WebSocket call.
-     */
     @Test fun retirement_during_actual_tls_connection_prevents_registration_on_the_opened_socket() =
         runBlocking<Unit> {
             Fixture().use { f ->

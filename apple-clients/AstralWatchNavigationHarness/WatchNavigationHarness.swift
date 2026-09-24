@@ -1,4 +1,7 @@
-// Test-target-only application. No shipped target compiles this file.
+// Test-only navigation harness app, compiled by no shipped target, that drives WatchHomeView and
+// WatchGuidanceSurfaceView UI tests against a scripted loopback peer instead of WatchModel's real login and
+// token store.
+
 import AstralCore
 import SwiftUI
 
@@ -31,8 +34,6 @@ private final class WatchNavigationSession {
     private let suite: String
 
     init() {
-        // This target accepts only its ephemeral loopback peer. It never calls
-        // WatchModel.bootstrap, device login, refresh, voice or a token store.
         let raw = ProcessInfo.processInfo.environment["ASTRAL_WATCH_NAVIGATION_PEER"] ?? ""
         guard let url = URL(string: raw), url.scheme == "ws", url.host == "127.0.0.1",
             let port = url.port, (1...65535).contains(port), url.path == "/watch-navigation",
@@ -64,8 +65,6 @@ private final class WatchNavigationSession {
         for await event in events {
             if Task.isCancelled { break }
             await model.handle(event)
-            // The real history frame suppresses REST fallback before the real
-            // Home List mounts. Menu and all Work responses arrive over WS.
             if case .frame(let frame) = event,
                 case .content = WatchHistoryUpdate(frame: frame), !model.workControls.isEmpty
             {

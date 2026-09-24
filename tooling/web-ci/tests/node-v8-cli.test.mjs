@@ -1,3 +1,7 @@
+// Tests for coverage-conversion-cli.mjs's Node V8 directory conversion: isolation from parent
+// test-runner coverage, multi-run accumulation, and behavior while the source file is still being
+// written.
+
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -33,7 +37,6 @@ test("two-pass Node coverage maps the converter and its CLI", () => {
     ...process.env,
     NODE_V8_COVERAGE: directory,
   };
-  // A nested test runner must not inherit its parent's private child marker.
   delete coverageEnvironment.NODE_TEST_CONTEXT;
 
   run(["--test", "tests/coverage-conversion.test.mjs"], {
@@ -43,7 +46,6 @@ test("two-pass Node coverage maps the converter and its CLI", () => {
     readdirSync(directory).some((name) => name.startsWith("coverage-")),
     `NODE_V8_COVERAGE did not emit a report: ${readdirSync(directory).join(", ")}`,
   );
-  // This first conversion flushes coverage for the CLI itself on process exit.
   run(
     [
       CLI,
@@ -56,7 +58,6 @@ test("two-pass Node coverage maps the converter and its CLI", () => {
     ],
     { env: coverageEnvironment },
   );
-  // The second conversion sees both the tests' and the first CLI run's reports.
   run([
     CLI,
     "--node-v8-directory",
@@ -146,7 +147,6 @@ test("per-observation conversion still rejects malformed real V8 counts", async 
 test("source replacement between awaited observations fails closed", async () => {
   const { root, file, source, directory } = observedDecisionFixture();
   const converting = convertNodeV8Directory({ directory, repoRoot: root });
-  // The pinned converter yields while loading its exact source observation.
   queueMicrotask(() => writeFileSync(file, source + "process.stdout.write('changed');\n"));
   await assert.rejects(converting, /source changed between reports/u);
 });

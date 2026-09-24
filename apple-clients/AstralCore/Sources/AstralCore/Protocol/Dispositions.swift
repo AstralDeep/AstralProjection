@@ -1,23 +1,16 @@
-// Feature 051 — per-client protocol dispositions (the parity matrix, as code).
-//
-// Every push frame type and component type in the committed manifest
-// (contracts/ui_protocol.json) MUST have an explicit disposition here
-// for each Apple client (FR-003/FR-004/FR-037). The drift-guard test fails
-// whenever the manifest gains/loses a name that this table does not account
-// for — the same contract as the Windows and Android guards (FR-038).
-//
-// `.ignored` is a DELIBERATE, documented channel decision (044 precedent:
-// admin tools, HTML-only chrome, web-only media stay web-only).
+// The parity matrix as code: an explicit handled, fallback, or ignored disposition for every push-frame and
+// component type, per Apple client, checked against the wire manifest by a drift-guard test.
+
 import Foundation
 
 public enum FrameDisposition: Equatable, Sendable {
     case handled
-    case ignored(String)  // reason — documentation, not dead weight
+    case ignored(String)
 }
 
 public enum ComponentDisposition: Equatable, Sendable {
     case native
-    case fallback(String)  // rendered via the readable-text fallback; reason
+    case fallback(String)
 }
 
 public struct ClientDispositions: Sendable {
@@ -33,13 +26,6 @@ public struct ClientDispositions: Sendable {
         }.sorted()
     }
 
-    // MARK: shared vocabulary baselines
-
-    /// Frames every Apple client handles the same way (the watch's reduce is
-    /// the common core; iOS/macOS add the full-screen surfaces below). These
-    /// tables mirror the ACTUAL reduce switch cases — a disposition claiming
-    /// `handled` for a frame the code lets fall through `default:` is a lie
-    /// the parity matrix would inherit.
     private static let commonHandled: [String] = [
         "agent_lifecycle",
         "auth_required", "chat_created", "chat_deleted", "chat_loaded", "chat_status",
@@ -52,8 +38,6 @@ public struct ClientDispositions: Sendable {
         "voice_local_turn_bound", "voice_submission_rejected", "voice_transcript", "voice_turn_state",
     ]
 
-    /// Deliberately ignored on every Apple client (044 channel decisions —
-    /// same dispositions as the Android ProtocolManifest).
     private static let commonIgnored: [String: String] = [
         "agent_permissions": "acks for web workspace verbs; natives re-discover",
         "agent_permissions_updated": "acks for web workspace verbs; natives re-discover",
@@ -61,9 +45,6 @@ public struct ClientDispositions: Sendable {
         "agent_host_inventory_reconciled": "host-only inventory result; author-only clients ignore",
         "agent_host_registered": "structured host acknowledgement; Apple targets are author-only until feature 059",
         "agent_host_registration_refused": "host-only registration refusal; author-only clients ignore",
-        // Feature 058 BYO host frames — only a HOSTING desktop acts on these; the
-        // Apple clients are author-only (macOS hosting is deferred to feature 059),
-        // so they ignore them, exactly as the Android ProtocolManifest does.
         "agent_bundle_deliver":
             "BYO code delivery — only a hosting desktop receives it; author-only clients ignore (matches Android)",
         "agent_offline": "BYO host-liveness signal — no native host surface; author-only (matches Android)",
@@ -71,12 +52,6 @@ public struct ClientDispositions: Sendable {
         "agent_tunnel":
             "BYO agent frames — relayed only by a hosting desktop; author-only clients ignore (matches Android)",
         "audit_append": "admin audit surface is web-only (044); natives fetch audit via REST",
-        // Feature 076 remote computer control — an Apple client is a CONTROLLER,
-        // never a host: computer_request is addressed to the desktop only. The
-        // presence/session pushes are ignored in this feature (the surface, the
-        // live image and the approval card all ride the generic SDUI path);
-        // the Mac-side follow-up promotes them to a surface refresh (matches
-        // Android's HANDLED refresh) once it can be built and verified on macOS.
         "computer_host":
             "076 presence of another of the owner's computers — surface refresh pending the Apple follow-up",
         "computer_request":
@@ -104,8 +79,6 @@ public struct ClientDispositions: Sendable {
         return table
     }
 
-    // MARK: iOS (twin of Android — 041/044 dispositions)
-
     public static let ios = ClientDispositions(
         client: "ios",
         frames: frames(
@@ -127,26 +100,18 @@ public struct ClientDispositions: Sendable {
         ]),
         voiceActions: Set(allVoiceControlActions))
 
-    // MARK: macOS (twin of Windows — 044 dispositions)
-
     public static let macos = ClientDispositions(
         client: "macos",
-        frames: ios.frames,  // identical frame surface to iOS by design
+        frames: ios.frames,
         components: fullComponentSet(fallbacks: [
             "audio": "web-only media, server degrade ladder (044 channel decision)",
             "generative": "web-only media (044 channel decision)",
         ]),
         voiceActions: Set(allVoiceControlActions))
 
-    // MARK: watch (server pre-degrades via the `watch` ROTE profile)
-
     public static let watch = ClientDispositions(
         client: "watch",
         frames: frames(
-            // 055 background-task continuity: a completion notification
-            // reaches the wrist as a brief status line + spoken rendition.
-            // Chrome handling is restricted to negotiated Work reads. Other
-            // surfaces and artifact workspace verbs retain their omission.
             extraHandled: ["notification", "chrome_menu", "chrome_surface"],
             extraIgnored: [
                 "agent_creation_progress": "no drafting UX on the wrist",
@@ -171,12 +136,6 @@ public struct ClientDispositions: Sendable {
         components: watchComponentSet(),
         voiceActions: Set(allVoiceControlActions))
 
-    // MARK: component tables
-
-    /// The full 35-type vocabulary. iOS/macOS render everything natively
-    /// except the listed fallbacks (renderer subset grows during US1/US2 —
-    /// a type flips to .native only when its renderer lands and the parity
-    /// row is verified).
     private static func fullComponentSet(fallbacks: [String: String]) -> [String: ComponentDisposition] {
         var table: [String: ComponentDisposition] = [:]
         for name in allComponentTypes { table[name] = .native }
@@ -184,9 +143,6 @@ public struct ClientDispositions: Sendable {
         return table
     }
 
-    /// Watch: the server has already degraded the payload (watch ROTE
-    /// profile); the client natively renders the compact set the profile can
-    /// emit and text-falls-back for anything else (FR-032/033).
     private static func watchComponentSet() -> [String: ComponentDisposition] {
         let native: Set<String> = [
             "alert", "badge", "button", "card", "chat_history", "container", "divider", "keyvalue",
@@ -203,9 +159,6 @@ public struct ClientDispositions: Sendable {
         return table
     }
 
-    /// Mirror of the committed manifest vocabulary; the drift-guard test
-    /// asserts this list — and every per-client table — matches
-    /// contracts/ui_protocol.json exactly.
     public static let allComponentTypes: [String] = [
         "alert", "audio", "badge", "bar_chart", "button", "card",
         "chat_history", "code", "collapsible", "color_picker", "container",
@@ -241,9 +194,6 @@ public struct ClientDispositions: Sendable {
         "voice_transcript", "voice_turn_state", "workspace_timeline_mode",
     ]
 
-    /// Feature 065 server-owned composer actions. Each Apple surface handles
-    /// this exact vocabulary; controls that are not currently applicable are
-    /// omitted or disabled by `composer_state`, never renamed by the client.
     public static let allVoiceControlActions: [String] = [
         "voice_microphone_set", "voice_sensitive_recap_request", "voice_session_end",
         "voice_session_start", "voice_session_takeover", "voice_speech_mute_set",

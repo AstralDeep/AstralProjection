@@ -1,3 +1,7 @@
+// Captures the rendered canvas tree, including hidden panes, into exportable images and HTML, keyed by
+// structural path so lenient SDUI rendering can't misattribute retained state; used by AppModel's
+// export/share/download actions.
+
 import AstralCore
 import SwiftUI
 
@@ -7,7 +11,6 @@ import SwiftUI
     import UIKit
 #endif
 
-/// A local presentation lease, never a server authorization or provenance claim.
 struct CanvasCaptureScope: Equatable {
     let owner: AppModel.DownloadOwner
     let server: URL
@@ -40,8 +43,6 @@ extension EnvironmentValues {
     }
 }
 
-/// Raw indices survive lenient rendering: an invalid child must never move a
-/// later child's captured state onto another structural path.
 enum CanvasCaptureChildren {
     static func key(_ raw: JSONValue) -> String {
         raw["content"]?.arrayValue != nil ? "content" : "children"
@@ -194,8 +195,6 @@ final class CanvasCaptureRegistry {
         return result
     }
 
-    /// Keep the whole displayed tree, including hidden panes and offscreen
-    /// rows. Only exact removed/replaced paths release their retained media.
     private func reconcile() {
         guard let currentComponents else { return }
         let components = currentComponents()
@@ -278,8 +277,6 @@ final class CanvasCaptureRegistry {
 
     private func entry(_ node: CanvasCaptureNode) -> Entry? {
         guard accepts(node) else { return nil }
-        // Drop data from a prior account/chat as soon as any new presentation
-        // is observed; resetChatState also clears synchronously.
         entries = entries.filter { $0.value.node.scope == node.scope }
         if let existing = entries[node.path], existing.node == node { return existing }
         guard entries[node.path] != nil || entries.count < Self.maximumEntries else { return nil }
@@ -352,8 +349,6 @@ final class CanvasCaptureRegistry {
             guard depth <= 32, count <= Self.maximumEntries, var object = raw.objectValue,
                 let type = raw["type"]?.stringValue
             else { throw CanvasCaptureError.unavailable }
-            // Refuse unsupported authored styling before any captured data is
-            // posted. Metadata in unused scalar fields never becomes display.
             for key in ["css", "style"] {
                 if let authored = raw[key], ![JSONValue.null, .string(""), .object([:])].contains(authored) {
                     throw CanvasCaptureError.unavailable
@@ -522,8 +517,7 @@ extension AstralPalette {
     }
 }
 
-/// Render only the Image already returned by AsyncImage. No URLSession,
-/// authenticated URL, file access or image refetch participates in capture.
+// No refetch here — an authenticated URL must never re-hit the network
 struct CanvasLoadedImage: View {
     let image: Image
     let node: CanvasCaptureNode?

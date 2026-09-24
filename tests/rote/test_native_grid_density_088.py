@@ -1,4 +1,7 @@
-"""Equivalent viewports share grid arrangement without losing native capabilities."""
+"""Tests for ROTE grid density adaptation (backend/rote/adapter.py,
+backend/rote/capabilities.py): equivalent web/native viewports share grid arrangement
+without native profiles losing capabilities.
+"""
 
 import json
 

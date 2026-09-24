@@ -1,4 +1,8 @@
-"""Browser contract fixtures rendered by the actual shared Projection builder."""
+"""Browser contract fixtures for the persistent-agents spec, rendered by the shared
+Projection builder (src/astralprojection/chrome/assignments.py) rather than
+hand-authored HTML.
+"""
+
 import json
 import sys
 from pathlib import Path

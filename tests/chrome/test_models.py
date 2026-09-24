@@ -1,3 +1,7 @@
+"""Tests for src/astralprojection/models.py: immutability, validation and
+device-adaptation of the shared presentation records.
+"""
+
 from __future__ import annotations
 
 from types import MappingProxyType

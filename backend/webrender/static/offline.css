@@ -1,4 +1,8 @@
-/* Public disconnected document: the shared stylesheet supplies theme and type. */
+/*
+ * Stylesheet for the public disconnected page (offline.html), sharing the app's theme and
+ * typography.
+ */
+
 body {
   margin: 0;
   background: rgb(var(--astral-bg));

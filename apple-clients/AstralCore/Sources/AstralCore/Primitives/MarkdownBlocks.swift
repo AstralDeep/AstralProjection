@@ -1,24 +1,14 @@
-// Feature 053 — block-level markdown segmentation for the Apple clients.
-// The web renders `variant="markdown"` text (and narrative doc cards) with a
-// full block parser; AttributedString(markdown:) is inline-only, so the native
-// clients need their own block pass or headings/fences/lists/tables show as
-// literal syntax. This splits a markdown source into coarse blocks — the view
-// layer styles each block and runs InlineMarkdown on the text-bearing ones.
-// Deliberately conservative: anything unrecognized is a paragraph, and a
-// structure is only committed when the syntax is unambiguous (a lone pipe-
-// prefixed line is prose, not a table) — no input can render blank and prose
-// is never restructured.
+// Splits markdown source into coarse blocks (headings, fences, lists, tables) for markdown-variant text and
+// narrative doc cards, defaulting to paragraph when structure is ambiguous. Styled per block by
+// MarkdownBlockView.
+
 import Foundation
 
 public enum MarkdownBlock: Equatable, Sendable {
     case heading(level: Int, text: String)
     case paragraph(String)
     case code(String)
-    /// `start` is the first item's authored ordinal (ordered lists keep their
-    /// numbering: "3. a / 4. b" renders 3. and 4., not 1. and 2.).
     case bullets(items: [String], ordered: Bool, start: Int)
-    /// Pipe-table rows of trimmed cells; the first row is the header when the
-    /// source carried a `---|---` separator (the separator row is dropped).
     case table(rows: [[String]], hasHeader: Bool)
     case divider
 }
@@ -61,8 +51,6 @@ public enum MarkdownBlocks {
                 tableHasHeader = false
             }
             guard !tableRows.isEmpty else { return }
-            // Commit only unambiguous tables (a separator row, or several
-            // rows). A single stray pipe-wrapped line stays verbatim prose.
             if tableHasHeader || tableRows.count >= 2 {
                 blocks.append(.table(rows: tableRows, hasHeader: tableHasHeader))
             } else {
@@ -79,9 +67,6 @@ public enum MarkdownBlocks {
             var line = rawLine.trimmingCharacters(in: .whitespaces)
             let indent = rawLine.prefix(while: { $0 == " " }).count
 
-            // Blockquote marker: strip BEFORE the fence checks so a quoted
-            // fence ("> ```") opens — and closes — a code block. Inside an
-            // UNQUOTED fence the marker is content and must survive.
             var quoted = false
             if !inCode || codeQuoted {
                 while line.hasPrefix("> ") || line == ">" {
@@ -115,8 +100,6 @@ public enum MarkdownBlocks {
                 continue
             }
 
-            // Pipe-table row: must be pipe-WRAPPED ("|…|"), not merely
-            // pipe-prefixed — "|x - 3| < 5 holds" is prose.
             if line.hasPrefix("|"), line.hasSuffix("|"), line.count >= 2,
                 line.dropFirst().contains("|")
             {
@@ -148,8 +131,6 @@ public enum MarkdownBlocks {
             if let item = bulletLine(line) {
                 flushParagraph()
                 if !bullets.isEmpty && indent >= 2 {
-                    // An indented sub-item belongs to the open item — never
-                    // split the list (which would also renumber it).
                     bullets[bullets.count - 1] += "\n◦ " + item.text
                     continue
                 }
@@ -163,7 +144,6 @@ public enum MarkdownBlocks {
             }
 
             if !bullets.isEmpty && indent >= 2 {
-                // Indented continuation line of the open list item.
                 bullets[bullets.count - 1] += " " + line
                 continue
             }
@@ -172,15 +152,11 @@ public enum MarkdownBlocks {
             paragraph.append(line)
         }
 
-        // An unterminated fence still renders as code, not lost text.
         if inCode { blocks.append(.code(codeLines.joined(separator: "\n"))) }
         flushAll()
         return blocks
     }
 
-    /// Flatten to speakable/wrist-sized plain text: markdown structure becomes
-    /// simple lines ("• item", header text bare, table rows dot-separated) so
-    /// small surfaces show content, never syntax.
     public static func plainText(_ source: String) -> String {
         parse(source).compactMap { block -> String? in
             switch block {
@@ -197,8 +173,6 @@ public enum MarkdownBlocks {
             }
         }.joined(separator: "\n")
     }
-
-    // MARK: line classifiers
 
     private static func headingLine(_ line: String) -> (Int, String)? {
         guard line.hasPrefix("#") else { return nil }

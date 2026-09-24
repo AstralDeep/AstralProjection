@@ -1,4 +1,7 @@
-"""Pure LLM, personalization, dreaming, pulse, scheduler, and theme builders."""
+"""Pure view builders for LLM, profile, memory, skills, scheduler, dreaming, pulse and
+theme settings tabs, composed by build_personalization_view() around a shared tab
+shell.
+"""
 
 from __future__ import annotations
 
@@ -96,7 +99,6 @@ def build_llm_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build a user or deployment-wide LLM configuration form without secrets."""
     surface = "llm_system" if system else "llm"
     title = (
         "System LLM"
@@ -306,7 +308,6 @@ def build_scheduler_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build scheduled-job controls; run-now requires a host-supplied idempotency id."""
     if error:
         return unavailable_view("personalization", "Personalization", error)
     components: list[ComponentView] = [
@@ -485,7 +486,6 @@ def build_theme_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build theme presets and color controls from a resolved host snapshot."""
     active = clean_text(current.get("preset"))
     supplied_colors = current.get("colors") if isinstance(current.get("colors"), Mapping) else {}
     colors = dict(THEME_PRESETS[active] if active in THEME_PRESETS else THEME_PRESETS["midnight"])
@@ -551,7 +551,6 @@ def build_personalization_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the shared tab shell around one personalization subview."""
     valid_tabs = {key for key, _label in _PERSONALIZATION_TABS}
     active = tab if tab in valid_tabs else "soul"
     if active == "schedule" and assignment_state is not None and layout and layout.mode == "watch":

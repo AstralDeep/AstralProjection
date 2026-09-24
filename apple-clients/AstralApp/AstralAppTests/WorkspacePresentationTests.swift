@@ -1,3 +1,7 @@
+// Tests for workspace presentation reduce logic: history updates stay scoped to the active conversation,
+// commit fences release only for correlated terminal outcomes, and welcome/background-arm state is owner- and
+// reconnect-scoped.
+
 import AstralCore
 import XCTest
 
@@ -178,8 +182,6 @@ final class WorkspacePresentationTests: XCTestCase {
         model.handleFrame(welcomeFrame)
         XCTAssertEqual(model.visibleCanvas, welcomeFrame.renderComponents)
         XCTAssertFalse(model.workspaceStarted)
-        // chat_created binds the fresh locator; it must not turn welcome into
-        // a committed preview or prevent a subsequent welcome re-adaptation.
         model.handleFrame(InboundFrame.parse("{\"type\":\"chat_created\",\"payload\":{\"chat_id\":\"\(chat)\"}}")!)
         var updated = welcomeFrame.payload.objectValue!
         updated["type"] = .string("ui_update")

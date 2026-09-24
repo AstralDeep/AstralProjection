@@ -1,3 +1,6 @@
+// Tests for AppViewModel's workspace verb-ack reducer: save/delete/combine/condense acks reconcile the canvas
+// by identity and surface status or banner text.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -9,12 +12,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/**
- * Feature 055 US3 (T030) — the eight workspace verb acks, promoted from ignored
- * to handled (wire-contract §4): deletion/combine/condense results reconcile the
- * canvas by identity, save/combine acks surface as status/banner, and
- * `saved_components_list` is an accepted no-op (no native surface consumes it).
- */
 class WorkspaceVerbReducerTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 
@@ -92,9 +89,6 @@ class WorkspaceVerbReducerTest {
 
     @Test
     fun mid_turn_verb_acks_apply_to_the_live_canvas() {
-        // A verb ack landing mid replacing-turn reconciles the LIVE canvas —
-        // the same 055 live routing as every identity-keyed op — never the
-        // buffered full render awaiting commit.
         val s0 =
             UiState(
                 turnActive = true,

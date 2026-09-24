@@ -1,9 +1,6 @@
-"""Strictly load and materialize the shared Feature 065 fixture.
-
-This module is deliberately stdlib-only and independent of AstralDeep's
-contract-validation toolchain. It implements only the fixture operations that
-native client conformance tests need; schema and OpenAPI validation remain a
-separate contract-CI responsibility.
+"""Loads and materializes the shared voice conformance fixture (base + mutation vectors)
+for native client tests, independent of the backend's contract-validation toolchain.
+Used by tests/e2e_voice_065.py and tests/test_voice_fixture_065.py.
 """
 
 from __future__ import annotations
@@ -17,7 +14,7 @@ MAX_FIXTURE_BYTES = 2 * 1024 * 1024
 
 
 class VoiceFixtureError(ValueError):
-    """Raised when a shared voice fixture cannot be loaded or materialized."""
+    pass
 
 
 def _reject_duplicate_pairs(pairs: list[tuple[Any, Any]]) -> dict[Any, Any]:
@@ -34,8 +31,6 @@ def _reject_nonfinite(value: str) -> None:
 
 
 def strict_load_json(path: Path) -> dict[str, Any]:
-    """Load one bounded UTF-8 JSON object with strict key/number handling."""
-
     try:
         size = path.stat().st_size
     except OSError as exc:
@@ -130,8 +125,6 @@ def _apply_mutation(target: Any, mutation: Mapping[str, Any]) -> None:
 
 
 def index_fixture_vectors(document: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Index every non-aggregate fixture vector and reject duplicate IDs."""
-
     cases = document.get("cases", [])
     if not isinstance(cases, list):
         raise VoiceFixtureError("fixture cases must be an array")
@@ -171,8 +164,6 @@ def materialize_vector(
     *,
     _stack: tuple[str, ...] = (),
 ) -> dict[str, Any]:
-    """Expand one base/mutation vector without mutating the shared fixture."""
-
     vector_id = vector.get("id")
     if not isinstance(vector_id, str):
         raise VoiceFixtureError("fixture vector has no string id")

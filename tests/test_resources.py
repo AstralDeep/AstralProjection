@@ -1,4 +1,7 @@
-"""Public package and resource contracts for AstralProjection."""
+"""Tests for src/astralprojection/resources.py (with scripts/build_offline_assets.py):
+resource presence/digests, traversal-safe accessors, wheel-install contents, and the
+script-free offline cache document.
+"""
 
 from __future__ import annotations
 
@@ -283,6 +286,5 @@ def test_offline_hash_builder_checks_and_updates_only_its_generated_block(
     assert updated != original
     assert updated.split(module.END)[1] == original.split(module.END)[1]
     monkeypatch.setattr(sys, "argv", [str(script), "--check"])
-    # Exercise the real command entry point against the actual packaged inputs.
     with pytest.raises(SystemExit, match="0"):
         runpy.run_path(str(script), run_name="__main__")

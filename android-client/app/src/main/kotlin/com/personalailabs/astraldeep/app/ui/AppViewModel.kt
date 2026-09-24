@@ -1,3 +1,7 @@
+// Android's central view model: owns the WebSocket connection, folds each Wire-decoded Inbound frame into
+// UiState via reduce(), and dispatches chat/component/theme events. Read by RootScaffold, Screens, and the
+// render layer.
+
 package com.personalailabs.astraldeep.app.ui
 
 import android.util.Log
@@ -60,7 +64,6 @@ import kotlinx.serialization.json.putJsonObject
 /** Canonical transcript part disposition used by the native message renderer. */
 enum class ChatSegmentKind { TEXT, COMPONENTS, STRUCTURED, RECOVERY }
 
-/** One ordered, semantically retained transcript part. */
 @Immutable
 data class ChatSegment(
     val kind: ChatSegmentKind,
@@ -69,7 +72,6 @@ data class ChatSegment(
     val structuredValue: JsonElement? = null,
 )
 
-/** Visible transcript turn with ordered semantic parts and retained attachments. */
 @Immutable
 data class ChatTurn(
     val role: String,
@@ -91,19 +93,16 @@ data class ChatTurn(
  */
 enum class Screen { Chat, Agents, History, Audit, Surface }
 
-/** A paperclip-staged upload chip (feature 031). */
 @Immutable
 data class StagedAttachment(
     val uid: Long,
     val filename: String,
     val category: String,
     val attachmentId: String?,
-    /** "uploading" | "ready" | "failed" */
     val state: String,
     val note: String? = null,
 )
 
-/** A read-only snapshot of a past turn's finished canvas (client-side timeline). */
 @Immutable
 data class CanvasSnapshot(val label: String, val components: List<Component>)
 
@@ -114,15 +113,10 @@ data class UiState(
     val connection: ConnectionState = ConnectionState.Disconnected,
     val screen: Screen = Screen.Chat,
     val activeChatId: String? = null,
-    /** Last complete server-owned transcript. Pending turns live separately. */
     val turns: List<ChatTurn> = emptyList(),
     val pendingTurns: List<ChatTurn> = emptyList(),
-    // canvas lifecycle: identity-keyed ops morph the live canvas as they arrive
-    // (even mid-turn — 055 live-op rule); only in-turn FULL renders buffer.
     val canvas: List<Component> = emptyList(),
-    /** Disposable request-scoped preview. Null means show committed [canvas]. */
     val transientCanvas: List<Component>? = null,
-    /** Spec 060 equality fence and per-chat committed revision. */
     val connectionGeneration: String? = null,
     val requestGeneration: String? = null,
     val requestChatId: String? = null,
@@ -134,96 +128,53 @@ data class UiState(
     val hydrationApplied: Boolean = false,
     val acceptedSnapshotId: String? = null,
     val acceptedSnapshot: Inbound.ConversationSnapshot? = null,
-    /** Buffer built from a replacing turn's full renders; committed on `done`. */
     val pendingCanvas: List<Component> = emptyList(),
-    /** Orchestrator is working this turn (drives the thin progress indicator). */
     val turnActive: Boolean = false,
-    /** This turn will REPLACE the canvas on completion (a user chat turn). */
     val pendingReplace: Boolean = false,
-    /**
-     * Snapshot of the committed canvas at turn arming — the timeline archives
-     * THIS at commit, since in-turn ops now morph [canvas] itself.
-     */
     val preTurnCanvas: List<Component> = emptyList(),
-    /**
-     * An in-turn op has landed on the live canvas: clears the query skeleton
-     * (first canvas content, matching the web) and makes the live canvas the
-     * committed state when no full render was buffered.
-     */
     val turnOpsApplied: Boolean = false,
-    /** Label describing the current committed canvas (the prompt that made it). */
     val canvasLabel: String = "",
-    /** Label for the in-flight replacing turn. */
     val pendingLabel: String = "",
-    /** Previous turns' finished canvases, oldest→newest (read-only timeline). */
     val canvasHistory: List<CanvasSnapshot> = emptyList(),
-    /** When non-null, the canvas area shows this history entry read-only. */
     val viewingIndex: Int? = null,
-    // --- input / chrome ---
     val staged: List<StagedAttachment> = emptyList(),
-    /** Memory-only input follows the verified owner across layout and socket changes. */
     val composerDraft: String = "",
     val backgroundNextSend: Boolean = false,
     val backgroundRequested: Boolean = false,
     val workspaceStarted: Boolean = false,
     val statusText: String? = null,
-    /** Transient dismissible banner (server errors, offline drops, notifications). */
     val banner: String? = null,
-    /** Banner severity — "error" | "info" — drives the bar's styling. */
     val bannerKind: String = "error",
-    /** The running turn's execution trail (chat_step/tool_progress lines), capped. */
     val stepTrail: List<String> = emptyList(),
-    /** The turn detached into a background task (task_started) — UI can relax. */
     val asyncDetached: Boolean = false,
-    /** True once this session has connected — gates the "Reconnecting…" strip. */
     val everConnected: Boolean = false,
     val agents: List<Agent> = emptyList(),
-    /** Local-only `submitting` attempts, keyed by their request generation. */
     val pendingSubmissions: Map<String, LocalSubmission> = emptyMap(),
-    /** Highest canonical projection retained for each durable operation. */
     val operationStatuses: Map<String, Inbound.OperationStatus> = emptyMap(),
-    /** Highest `(lifecycleGeneration, stateRevision)` retained per agent. */
     val agentLifecycles: Map<String, Inbound.AgentLifecycle> = emptyMap(),
     val history: List<ChatSummary> = emptyList(),
     val historyTitle: String = "Recent chats",
     val audit: List<AuditEvent> = emptyList(),
-    // Per-surface "fetching its data" flags → skeletons on the list screens.
     val agentsLoading: Boolean = false,
     val historyLoading: Boolean = false,
     val auditLoading: Boolean = false,
-    // The server-owned chrome model (top bar + settings menu). Rendered verbatim
-    // (already role-filtered by the server) — the client never hard-codes the menu.
     val chromeMenu: ChromeMenuModel? = null,
-    /** The surface key the client asked to open — used to retry a stalled surface (T039). */
     val pendingSurfaceKey: String = "",
-    /** The params the surface was opened with — retried verbatim so a stalled
-     *  surface reopens in the same state (e.g. a specific tab), not its default. */
     val pendingSurfaceParams: JsonObject = JsonObject(emptyMap()),
-    /** Feature 043 — the SDUI settings surface currently delivered (native render). */
     val pendingSurface: Inbound.ChromeSurface? = null,
     val privateSurfaceRequest: PrivateSurfaceRequest? = null,
     val privateSurfaceFailed: Boolean = false,
-    /** Live theme palette (feature 044 US5); null = the default brand dark scheme. */
     val themePalette: ThemePalette? = null,
-    /** Feature 028/044 — the read-only workspace timeline is being viewed (mutations paused). */
     val timelineReadOnly: Boolean = false,
-    /**
-     * Feature 054 — a `mode:"mandatory"` chrome surface (the first-run LLM-setup
-     * gate) is pinned: navigation and system Back are suppressed until the
-     * server's blank-key close frame clears it. Sign-out stays enabled (FR-013).
-     */
     val mandatorySurface: Boolean = false,
 ) {
-    /** What the canvas area actually renders (a history entry, or the live canvas). */
     val visibleCanvas: List<Component>
         get() = viewingIndex?.let { canvasHistory.getOrNull(it)?.components } ?: (transientCanvas ?: canvas)
 
-    /** Pending user/preview turns are overlays and never mutate committed transcript. */
     val visibleTurns: List<ChatTurn> get() = turns + pendingTurns
 
     val isViewingHistory: Boolean get() = viewingIndex != null
 
-    /** Canonical work still active on this connection, newest update first. */
     val activeOperationStatus: Inbound.OperationStatus?
         get() =
             operationStatuses.values
@@ -235,12 +186,6 @@ data class UiState(
                 }
                 .maxWithOrNull(compareBy<Inbound.OperationStatus> { it.updatedAt }.thenBy { it.operationId })
 
-    /**
-     * Status copy belongs to active work, not to the settled chat. A local
-     * submission remains visible until admission; afterward the canonical
-     * non-terminal operation label wins. Retained terminals are reconciliation
-     * evidence only and never revive idle chrome.
-     */
     val hasActiveWork: Boolean
         get() = turnActive || pendingSubmissions.isNotEmpty() || activeOperationStatus != null
 
@@ -250,33 +195,14 @@ data class UiState(
                 ?: statusText?.takeIf { turnActive }
                 ?: "Submitting…".takeIf { pendingSubmissions.isNotEmpty() }
 
-    /**
-     * Skeletons show from send until the turn's FIRST live canvas content lands
-     * (identity-keyed ops apply immediately — 055 live rule, matching the web's
-     * hide-on-first-content) or, for a turn with none, until `done` commits.
-     */
     val showSkeleton: Boolean
         get() = pendingReplace && !turnOpsApplied && viewingIndex == null
 
-    /**
-     * Mutating affordances are locked while the read-only workspace timeline is
-     * being viewed (T041) — the composer/send and component re-execution are
-     * disabled until the live view is restored.
-     */
     val mutationsLocked: Boolean get() = timelineReadOnly
 }
 
-/**
- * The `ui_event` actions refused while the read-only workspace-timeline snapshot
- * is active (T041). Covers the real mutation entry points reachable from rendered
- * components — chat send, component actions (incl. the 055 refine/restore verbs),
- * table pagination, and theme saves.
- * Navigation (chrome_open, load_chat, discover_agents, …) and the timeline-exit
- * action stay allowed so the user is never trapped. Pure → unit-tested.
- */
 internal fun isTimelineMutation(action: String): Boolean = action in TIMELINE_MUTATIONS
 
-/** A delayed or foreign no-chat voice response must never switch the visible conversation. */
 internal fun isExpectedVoiceChatCreation(
     state: UiState,
     pending: LocalSubmission,
@@ -289,21 +215,11 @@ internal fun isExpectedVoiceChatCreation(
         message.submissionId == pending.submissionId &&
         message.requestGeneration == pending.requestGeneration
 
-/** Only session acquisition needs a chat-binding preflight before its REST action. */
 internal fun voiceControlNeedsChatPreflight(action: String): Boolean = action == "voice_session_start" || action == "voice_session_takeover"
 
 private val TIMELINE_MUTATIONS =
     setOf("chat_message", "component_action", "component_refine", "component_restore", "table_paginate", "save_theme")
 
-/**
- * Owns the connection + derived UI state. Folds each [Inbound] into [state] and
- * sends chat/events out. Identity-keyed canvas ops (`ui_upsert`, streaming)
- * apply to the LIVE canvas immediately — even mid-turn — so the originating
- * Spec 060 conversation frames keep server snapshots as the sole committed
- * transcript/canvas publication. Scoped render/upsert/stream frames update only
- * a disposable preview; stale generations never cross the equality fence. The
- * legacy reducer remains available for a no-generation compatibility session.
- */
 class AppViewModel(
     private val client: OrchestratorClient,
     private val rest: AstralRest,
@@ -361,7 +277,6 @@ class AppViewModel(
         voiceController?.setPlayoutReporter(client::sendVoicePlayoutEvent)
     }
 
-    /** Begin (or restart) the session with a bearer token + device caps. */
     fun start(
         token: String,
         device: DeviceCapabilities,
@@ -435,14 +350,7 @@ class AppViewModel(
                                     snapshotTimeout?.cancel()
                                 }
                             }
-                            // Cross-device continuity (audit item 12): a background
-                            // result landing in the OPEN chat re-issues load_chat so
-                            // narrative + canvas refresh without a manual reopen.
                             continuityReloadTarget(before, msg)?.let(::requestChatRefresh)
-                            // Feature 076: a presence/session change for one of the
-                            // owner's computers re-requests an open "My computers"
-                            // surface — the server re-renders it; the phone keeps
-                            // no model of hosts or sessions.
                             if (msg is Inbound.ComputerPresence &&
                                 after.screen == Screen.Surface &&
                                 after.pendingSurfaceKey == "my_computers"
@@ -461,8 +369,6 @@ class AppViewModel(
                     }
                 }
                 launch {
-                    // A frame dropped from the full offline queue is never silent
-                    // (T014): tell the user which action was lost.
                     client.dropped.collect { action ->
                         _state.value =
                             _state.value.copy(
@@ -479,7 +385,6 @@ class AppViewModel(
             }
     }
 
-    /** Dismiss the transient banner (the ✕ on the banner bar). */
     fun dismissBanner() {
         _state.value = _state.value.copy(banner = null)
     }
@@ -494,7 +399,6 @@ class AppViewModel(
 
     fun sendChat(text: String) {
         val s = _state.value
-        // Viewing the read-only timeline: refuse a new turn (mutations paused, T041).
         if (s.timelineReadOnly) return
         val ready = s.staged.filter { it.state == "ready" && it.attachmentId != null }
         if (text.isBlank() && ready.isEmpty()) return
@@ -518,7 +422,6 @@ class AppViewModel(
         }
     }
 
-    /** Execute only a visible, enabled server-owned voice composer control. */
     fun invokeVoiceControl(
         control: VoiceControl,
         capability: VoiceMediaCapability,
@@ -558,7 +461,6 @@ class AppViewModel(
         }
     }
 
-    /** Permission/no-device failures still use the same controller feedback surface. */
     fun reportVoiceCapability(capability: VoiceMediaCapability) {
         val controller = voiceController ?: return
         viewModelScope.launch { controller.activate(capability) }
@@ -603,7 +505,6 @@ class AppViewModel(
         }
     }
 
-    /** Context-bound component decisions use ordinary wire/authority without offline replay. */
     internal fun sendComponentEvent(
         context: ComponentActionContext,
         action: String,
@@ -637,7 +538,6 @@ class AppViewModel(
         if (isGuidanceNoteAction(action)) {
             val current = _state.value
             if (current.screen == Screen.Surface && current.pendingSurfaceKey == "guidance") {
-                // A failed/unknown write is recovered by a fresh read, never by replaying its body.
                 requestPrivateSurface("guidance", JsonObject(emptyMap()), action, payload)
             }
             return
@@ -649,16 +549,8 @@ class AppViewModel(
             return
         }
         if (action == "chrome_open" || action == "chrome_close") _state.update { retirePrivateSurface(it) }
-        // `attach_existing` is a CLIENT-LOCAL action (ui_protocol.json
-        // client_local_actions): the attachments library's "Attach" button stages
-        // the already-uploaded file as a chip HERE — it is never forwarded to the
-        // server (mirrors the web paperclip "Choose from your files", T047).
         if (action == "attach_existing") {
             if (stageExistingAttachment(payload)) {
-                // The web modal CLOSES on Attach; the native twin returns to the
-                // chat so the staged chip is immediately visible in the composer.
-                // Staying on the surface gave no feedback at all — the button
-                // read as dead, and backing out via "+ New" wiped the chip.
                 val filename = (payload["filename"] as? JsonPrimitive)?.contentOrNull ?: "file"
                 _state.value =
                     retirePrivateSurface(_state.value).copy(
@@ -669,8 +561,6 @@ class AppViewModel(
             }
             return
         }
-        // Viewing the read-only timeline: refuse mutating events (T041); navigation
-        // and the timeline-exit action still flow so the user is never trapped.
         if (_state.value.timelineReadOnly && isTimelineMutation(action)) return
         if (action == "chat_message") {
             val message = (payload["message"] as? JsonPrimitive)?.contentOrNull ?: return
@@ -682,7 +572,6 @@ class AppViewModel(
         }
     }
 
-    /** Install the local-only status before any authoritative operation frame is reduced. */
     internal fun projectLocalSubmission(
         s: UiState,
         submission: LocalSubmission,
@@ -692,12 +581,10 @@ class AppViewModel(
             statusText = "Submitting…",
         )
 
-    /** Restore an exact queued projection before the transport replays it. */
     private fun installQueuedSubmission(submission: LocalSubmission) {
         _state.update { current -> projectLocalSubmission(current, submission) }
     }
 
-    /** Settle only the projection whose queued bytes were visibly discarded. */
     internal fun reduceQueuedFailure(
         s: UiState,
         failure: QueuedSubmissionFailure,
@@ -741,13 +628,6 @@ class AppViewModel(
         return if (ownsCurrentChatTurn) retireCurrentCommit(settled, failure.submission.requestGeneration) else settled
     }
 
-    /**
-     * Optimistic turn-start arming shared by [sendChat] and the rendered-control
-     * `chat_message` path: purge the turn-scoped welcome components from the
-     * committed canvas (feature 055 uniform rule — see [dropWelcome]) and
-     * snapshot it as [UiState.preTurnCanvas] for the timeline, since in-turn ops
-     * now morph the live canvas. `internal` so the JVM unit test can drive it.
-     */
     internal fun armTurn(
         s: UiState,
         background: Boolean = false,
@@ -769,7 +649,6 @@ class AppViewModel(
         )
     }
 
-    /** Start a fresh conversation (clears the canvas, timeline, and transcript). */
     fun newChat() {
         _state.update { retirePrivateSurface(it) }
         workspaceEpoch++
@@ -821,9 +700,6 @@ class AppViewModel(
         sendEvent("new_chat")
     }
 
-    // --- attachments (paperclip, feature 031) -------------------------------
-
-    /** Stage + upload a picked file; the chip flips uploading→ready/failed. */
     fun stageAttachment(
         filename: String,
         mimeType: String?,
@@ -861,8 +737,6 @@ class AppViewModel(
         _state.value = _state.value.copy(staged = _state.value.staged.filterNot { it.uid == uid })
     }
 
-    // --- read-only canvas timeline (US "previous canvases") -----------------
-
     fun viewCanvasSnapshot(index: Int) {
         if (index in _state.value.canvasHistory.indices) {
             _state.value = _state.value.copy(viewingIndex = index)
@@ -873,9 +747,6 @@ class AppViewModel(
         _state.value = _state.value.copy(viewingIndex = null)
     }
 
-    // --- US4 surfaces -------------------------------------------------------
-
-    /** Switch surface and lazily fetch its data (flagging it loading for a skeleton). */
     fun goTo(screen: Screen) {
         if (screen != Screen.Surface) _state.update { retirePrivateSurface(it) }
         _state.value =
@@ -894,13 +765,8 @@ class AppViewModel(
         }
     }
 
-    /**
-     * Route a settings-menu item (from the server-owned model) to its surface.
-     * The menu structure itself always matches the web exactly.
-     */
     fun openMenuItem(item: MenuItem) = openSurface(item.surface, item.params)
 
-    /** Request the single server-owned surface and retain its filter parameters. */
     fun openSurface(
         surface: String,
         params: JsonObject = JsonObject(emptyMap()),
@@ -927,7 +793,6 @@ class AppViewModel(
             )
     }
 
-    /** Re-request the pending SDUI surface after a load timeout (T039 retry). */
     fun retryPendingSurface() {
         val st = _state.value
         if (isPrivateChromeSurface(st.pendingSurfaceKey)) {
@@ -1003,15 +868,6 @@ class AppViewModel(
             privateSurfaceFailed = isPrivateChromeSurface(s.pendingSurfaceKey),
         )
 
-    /**
-     * Stage an already-uploaded attachment as a ready chip (feature 031, T047) from
-     * the attachments library's `attach_existing {attachment_id, filename,
-     * category}` — no re-upload, no server frame. Returns whether the chip is
-     * staged after the call: `true` for newly staged AND for an already-staged
-     * duplicate (the user's intent — "use this file" — is satisfied either way,
-     * so the caller still navigates back to the composer); `false` only for a
-     * malformed payload (blank id), which stages nothing.
-     */
     private fun stageExistingAttachment(payload: JsonObject): Boolean {
         val id = (payload["attachment_id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return false
         if (_state.value.staged.any { it.attachmentId == id }) return true
@@ -1024,12 +880,6 @@ class AppViewModel(
         return true
     }
 
-    /**
-     * Apply a theme spec locally (feature 044 US5) — from a `theme_apply` component,
-     * an interactive `color_picker`, or the local echo of `save_theme`.
-     * Recomposition restyles the whole app; the server persists it in parallel, so
-     * this is a pure UI mirror (fail-safe: a bad hex leaves the palette unchanged).
-     */
     fun applyTheme(spec: JsonObject) {
         _state.value = _state.value.copy(themePalette = themePaletteForSpec(_state.value.themePalette, spec))
     }
@@ -1061,7 +911,6 @@ class AppViewModel(
         requestChatRefresh(chatId, locatorAlreadyPersisted = true)
     }
 
-    /** Re-issue load_chat under a fresh hydration UUID4 after persisting its locator. */
     private fun requestChatRefresh(
         chatId: String,
         locatorAlreadyPersisted: Boolean = false,
@@ -1077,13 +926,12 @@ class AppViewModel(
         sendEvent("load_chat", buildJsonObject { put("chat_id", chatId) })
     }
 
-    /** Enable/disable a single tool of an agent (REST per-(tool,kind) write), then refresh. */
     fun setToolEnabled(
         agent: Agent,
         tool: String,
         enabled: Boolean,
     ) {
-        patchAgent(agent.id) { it.copy(permissions = it.permissions + (tool to enabled)) } // optimistic
+        patchAgent(agent.id) { it.copy(permissions = it.permissions + (tool to enabled)) }
         val t = token ?: return
         val kind = agent.toolScopeMap[tool] ?: "tools:read"
         viewModelScope.launch {
@@ -1092,12 +940,11 @@ class AppViewModel(
         }
     }
 
-    /** Master toggle: enable/disable all of an agent's tools at once (WS scopes + overrides). */
     fun setAgentEnabled(
         agent: Agent,
         enabled: Boolean,
     ) {
-        patchAgent(agent.id) { a -> a.copy(permissions = a.tools.associateWith { enabled }) } // optimistic
+        patchAgent(agent.id) { a -> a.copy(permissions = a.tools.associateWith { enabled }) }
         val kinds = agent.toolScopeMap.values.toSet().ifEmpty { agent.scopes.keys }
         sendEvent(
             "set_agent_permissions",
@@ -1110,10 +957,6 @@ class AppViewModel(
         sendEvent("discover_agents")
     }
 
-    /**
-     * Optimistically update one agent so a toggle responds instantly; the
-     * subsequent discover_agents refresh reconciles with the server truth.
-     */
     private fun patchAgent(
         agentId: String,
         transform: (Agent) -> Agent,
@@ -1141,12 +984,6 @@ class AppViewModel(
         }
     }
 
-    // --- reducer ------------------------------------------------------------
-
-    /**
-     * Fold transport state without letting a dead socket leave either a turn
-     * skeleton or a client-only submission projection running indefinitely.
-     */
     internal fun reduceConnectionState(
         s: UiState,
         connection: ConnectionState,
@@ -1183,7 +1020,6 @@ class AppViewModel(
             else -> s.copy(connection = connection)
         }
 
-    /** Fold one inbound frame into state. `internal` so the JVM unit test can drive it. */
     internal fun reduce(
         s: UiState,
         msg: Inbound,
@@ -1200,10 +1036,6 @@ class AppViewModel(
                 }
             }
             is Inbound.UserMessageAcked ->
-                // The origin's optimistic arm normally ran already (sendChat / the
-                // chat_message ui_event); arming here too covers an acked turn that
-                // skipped it, without resetting an armed turn's pre-turn snapshot
-                // or already-applied live ops.
                 if (msg.chatId != null && s.requestChatId != null && msg.chatId != s.requestChatId) {
                     s
                 } else {
@@ -1249,11 +1081,6 @@ class AppViewModel(
                             finishPrivateSurface(s).copy(pendingSurface = msg, privateSurfaceFailed = false)
                         }
                     }
-                    // The documented CLOSE instruction (chrome_close, workspace-
-                    // timeline view/live, the 054 gate unlock): a blank key with no
-                    // components pops the surface screen back to the chat it was
-                    // opened over, so the user is never stuck on a stale surface
-                    // hiding the canvas — and always releases the mandatory pin.
                     msg.surfaceKey.isBlank() && msg.components.isEmpty() ->
                         if (s.screen == Screen.Surface) {
                             finishPrivateSurface(s).copy(
@@ -1268,10 +1095,6 @@ class AppViewModel(
                         } else {
                             s.copy(mandatorySurface = false)
                         }
-                    // A mandatory surface (the 054 first-run LLM-setup gate) is
-                    // ACCEPTED even though unsolicited: show it and pin it — the
-                    // scaffold suppresses navigation/Back until the server's blank
-                    // close frame (above) clears the pin. Sign-out stays enabled.
                     msg.mode == "mandatory" ->
                         retirePrivateSurface(s).copy(
                             screen = Screen.Surface,
@@ -1280,14 +1103,8 @@ class AppViewModel(
                             pendingSurfaceParams = JsonObject(emptyMap()),
                             mandatorySurface = true,
                         )
-                    // The surface the user is currently awaiting.
                     s.screen == Screen.Surface && s.pendingSurfaceKey == msg.surfaceKey ->
                         s.copy(pendingSurface = msg)
-                    // A mismatched key (chrome error notices arrive keyed "error":
-                    // unknown action, admin-denied, handler failures) must not yank
-                    // the user to Screen.Surface with the wrong content — but it is
-                    // never a SILENT drop either (FR-002): surface its alert text
-                    // through the banner, mirroring Inbound.ErrorFrame.
                     else -> {
                         val text =
                             listOf(msg.title, noticeText(msg.components))
@@ -1296,13 +1113,8 @@ class AppViewModel(
                         if (text.isBlank()) s else s.copy(banner = text, bannerKind = "error")
                     }
                 }
-            // Stored preferences at boot: fold `theme` into the live palette so the
-            // app opens in the user's saved theme (US5 restyle).
             is Inbound.UserPreferences -> s.copy(themePalette = themePaletteForSpec(s.themePalette, msg.theme))
-            // Read-only workspace timeline toggled: lock/unlock mutations (T041).
             is Inbound.WorkspaceTimelineMode -> s.copy(timelineReadOnly = msg.active)
-            // A server error reply is never silent (FR-002). Only the strict
-            // refusal variant can settle the exact local submission it names.
             is Inbound.AdmissionRefusal -> reduceAdmissionRefusal(s, msg)
             is Inbound.ErrorFrame -> reduceErrorFrame(s, msg)
             is Inbound.ChatStep ->
@@ -1311,11 +1123,6 @@ class AppViewModel(
                 s.copy(stepTrail = trailUpsert(s.stepTrail, "• ${msg.label}"))
             is Inbound.OperationStatus -> reduceOperationStatus(s, msg)
             is Inbound.AgentLifecycle -> reduceAgentLifecycle(s, msg)
-            // The turn detached into a background task: keep the turn alive but let
-            // the UI relax — results will arrive when the task completes. A task in
-            // ANOTHER chat (started on another device, audit item 12) must not touch
-            // this chat's turn state — unobtrusive banner only. A null chat_id
-            // (legacy flat frame) is treated as the open chat, as before.
             is Inbound.TaskStarted ->
                 if (forOpenChat(msg.chatId, s)) {
                     s.copy(statusText = "Working in the background…", asyncDetached = true)
@@ -1332,7 +1139,6 @@ class AppViewModel(
                         }
                     settled.copy(banner = "Background task finished", bannerKind = "info")
                 } else {
-                    // The banner layer has no tap action — point at History instead.
                     s.copy(banner = "Background task finished in another chat — open it from History", bannerKind = "info")
                 }
             is Inbound.Notification -> {
@@ -1347,10 +1153,6 @@ class AppViewModel(
                     s.copy(banner = text, bannerKind = if (msg.level == "error") "error" else "info")
                 }
             }
-            // 055 (US3): the eight workspace verb acks, promoted ignored → handled
-            // (wire-contract §4). The server's follow-up ui_upsert/ui_render
-            // fan-outs stay authoritative; these give the issuing socket immediate
-            // identity-keyed reconcile + feedback without waiting on them.
             is Inbound.ComponentSaved ->
                 s.copy(
                     banner = msg.title?.takeIf { it.isNotBlank() }?.let { "Saved $it" } ?: "Component saved",
@@ -1379,15 +1181,10 @@ class AppViewModel(
                 }
             }
             is Inbound.SavedComponentsList -> {
-                // Accepted ack; no native saved-components surface exists to
-                // refresh (browsing rides the server-driven chrome surfaces) —
-                // logged so it is never a silent drop (FR-002).
                 Log.i(TAG, "saved_components_list acked (${msg.count} components)")
                 s
             }
             is Inbound.Unknown -> {
-                // A deliberately-ignored frame (parity matrix) is a quiet drop; a
-                // truly unclassified type warns so drift is visible (FR-001).
                 if (ProtocolManifest.isClassified(msg.type)) {
                     Log.i(TAG, "ignored frame type=${msg.type}")
                 } else {
@@ -1398,7 +1195,6 @@ class AppViewModel(
             else -> s
         }
 
-    /** Install a connection/request equality fence without changing committed surfaces. */
     internal fun bindConversationGeneration(
         s: UiState,
         binding: ConversationGenerationBinding,
@@ -1426,7 +1222,6 @@ class AppViewModel(
         )
     }
 
-    /** Install a fence and arm the bounded hydration wait before bytes are sent. */
     private fun installConversationGeneration(binding: ConversationGenerationBinding) {
         _state.update { current -> bindConversationGeneration(current, binding) }
         val currentToken = token
@@ -1446,10 +1241,6 @@ class AppViewModel(
         }
     }
 
-    /**
-     * Preserve the last committed surfaces when one complete snapshot does not
-     * arrive in time, then retry this exact chat under a newly generated fence.
-     */
     private fun scheduleSnapshotTimeout(
         binding: ConversationGenerationBinding,
         expectedCommitRevision: ULong? = null,
@@ -1480,7 +1271,6 @@ class AppViewModel(
             }
     }
 
-    /** Exact-scope retry classification; foreign/stale errors are inert. */
     internal fun snapshotRetryTarget(
         s: UiState,
         msg: Inbound,
@@ -1497,10 +1287,6 @@ class AppViewModel(
         }
     }
 
-    /**
-     * Persist newly acknowledged chat identity before exposing it and clear a
-     * locator only for an owner-scoped, generation-matching definitive miss.
-     */
     internal fun reduceWithPersistence(
         s: UiState,
         msg: Inbound,
@@ -1518,8 +1304,6 @@ class AppViewModel(
             )
         }
 
-        // Reduction is pure: validate every scope/revision first, then commit the
-        // locator synchronously before the candidate state becomes observable.
         val candidate = reduce(s, msg)
         val acknowledgedChat =
             when (msg) {
@@ -1556,14 +1340,12 @@ class AppViewModel(
         return store.clear(owner, reason)
     }
 
-    /** The production logout path erases owner state before removing credentials. */
     fun signOut(clearCredentials: () -> Unit): Boolean {
         val cleared = clearConversationForSignOut()
         clearCredentials()
         return cleared
     }
 
-    /** Synchronous explicit-sign-out hook; no owner data survives same-account login. */
     fun clearConversationForSignOut(): Boolean {
         workspaceEpoch++
         voiceController?.logout()
@@ -1646,7 +1428,6 @@ class AppViewModel(
         )
     }
 
-    /** Open a supplied commit fence only for a future revision on this socket/chat. */
     private fun reduceConversationCommitReady(
         s: UiState,
         ready: Inbound.ConversationCommitReady,
@@ -1679,7 +1460,6 @@ class AppViewModel(
         )
     }
 
-    /** Purpose-aware, all-or-nothing committed snapshot reducer. */
     private fun reduceConversationSnapshot(
         s: UiState,
         snapshot: Inbound.ConversationSnapshot,
@@ -1701,9 +1481,6 @@ class AppViewModel(
             Log.i(TAG, "conversation snapshot ignored: wrong scope or purpose")
             return s
         }
-        // A foreground request opens its own commit fence before sending. Only
-        // server-originated work needs the prelude's promised revision; neither
-        // kind of snapshot can create a request fence in the scope check above.
         if (
             s.expectedCommitRenderRevision != null &&
             snapshot.renderRevision != s.expectedCommitRenderRevision
@@ -1954,10 +1731,7 @@ class AppViewModel(
             }
         val chatOperation = status.action == "chat_message"
         val ownsCurrentChatTurn = chatOperation && status.requestGeneration == s.requestGeneration
-        // Completion can race ahead of the authoritative conversation snapshot.
-        // Keep the disposable answer/canvas overlay visible across that ordering;
-        // the snapshot remains the only event allowed to replace it atomically.
-        // Failed/cancelled/retryable terminals still discard the optimistic turn.
+        // Completion can race ahead of the snapshot; overlay stays until it lands
         val discardsCurrentChatPreview = ownsCurrentChatTurn && status.state != "completed"
         return if (status.terminal) {
             val errorNotice =
@@ -1968,9 +1742,6 @@ class AppViewModel(
                 s.copy(
                     operationStatuses = retained,
                     pendingSubmissions = pending,
-                    // A successful terminal is retained canonically above, but it
-                    // is not ongoing work and must not leave an idle "Completed"
-                    // row behind. Non-success terminals use the prominent banner.
                     statusText =
                         when {
                             !ownsCurrentChatTurn && s.turnActive -> s.statusText
@@ -1980,9 +1751,6 @@ class AppViewModel(
                     banner = errorNotice ?: s.banner,
                     bannerKind = if (errorNotice != null) "error" else s.bannerKind,
                     turnActive = if (ownsCurrentChatTurn) false else s.turnActive,
-                    // The operation is no longer busy, so retire the loading
-                    // skeleton even while its already-rendered overlay awaits the
-                    // authoritative snapshot.
                     pendingReplace = if (ownsCurrentChatTurn) false else s.pendingReplace,
                     pendingCanvas = if (discardsCurrentChatPreview) emptyList() else s.pendingCanvas,
                     preTurnCanvas = if (discardsCurrentChatPreview) emptyList() else s.preTurnCanvas,
@@ -2045,7 +1813,6 @@ class AppViewModel(
         s: UiState,
         msg: Inbound.UiRender,
     ): UiState {
-        // History is an owner surface, never a conversation preview or canvas.
         if (msg.target == "history") {
             if (msg.scope != null) return s
             val history = msg.components.firstOrNull { it.type == "chat_history" }
@@ -2083,8 +1850,6 @@ class AppViewModel(
                 turnOpsApplied = s.turnOpsApplied || s.pendingReplace,
             )
         }
-        // An active 060 conversation never lets an unscoped compatibility frame
-        // mutate committed surfaces. A no-chat welcome remains a valid global UI.
         if (s.connectionGeneration != null && s.activeChatId != null &&
             !(
                 s.acceptsStartWelcome && msg.target != "chat" && msg.components.isNotEmpty() &&
@@ -2206,24 +1971,11 @@ class AppViewModel(
             asyncDetached = false,
         )
 
-    /**
-     * A task frame targets the open chat. Foreign only when BOTH ids are known
-     * and differ — a null frame chat_id (legacy flat shape) and a not-yet-acked
-     * `activeChatId` (first turn) both count as ours, mirroring the UiUpsert
-     * drop guard.
-     */
     private fun forOpenChat(
         chatId: String?,
         s: UiState,
     ): Boolean = chatId == null || s.activeChatId == null || chatId == s.activeChatId
 
-    /**
-     * The chat to re-issue load_chat for after folding [msg] — a background task
-     * or scheduler notification that landed in the OPEN chat refreshes it in
-     * place (cross-device continuity, audit item 12); anything else (a different
-     * chat, or no chat named) reloads nothing. Pure → unit-tested; the send
-     * itself happens in [start]'s collect loop.
-     */
     internal fun continuityReloadTarget(
         s: UiState,
         msg: Inbound,
@@ -2234,7 +1986,6 @@ class AppViewModel(
             else -> null
         }
 
-    /** Web-parity step line: ✓ completed · ✗ errored · • otherwise, then the name. */
     private fun stepLine(step: Inbound.ChatStep): String {
         val icon =
             when (step.status) {
@@ -2245,13 +1996,8 @@ class AppViewModel(
         return "$icon ${step.name ?: "step"}"
     }
 
-    /** The trail-line identity: the text sans glyph and sans a trailing percent. */
     private fun trailKey(line: String): String = line.substringAfter(" ").replace(TRAIL_PCT, "")
 
-    /**
-     * Append a trail line, updating in place when the same step/tool advances
-     * (mirrors the web's per-step element update); bounded to [MAX_TRAIL].
-     */
     private fun trailUpsert(
         trail: List<String>,
         line: String,
@@ -2262,20 +2008,8 @@ class AppViewModel(
         return next.takeLast(MAX_TRAIL)
     }
 
-    /**
-     * Ids already on the LIVE canvas — the list [applyCanvasOps] targets, i.e.
-     * what the user sees — the subscribe-ack placeholder guard, so a device
-     * joining mid-stream never blanks retained content under the same identity
-     * (055).
-     */
     private fun canvasIds(s: UiState): Set<String> = s.canvas.mapNotNullTo(HashSet()) { it.id }
 
-    /**
-     * Apply identity-keyed ops (ui_upsert, streaming, workspace verb acks) to
-     * the LIVE canvas — even while a replacing turn is armed (055 live-op rule):
-     * the origin morphs in place exactly like co-viewing devices, and the first
-     * in-turn op clears the query skeleton. Only full renders buffer mid-turn.
-     */
     private fun applyCanvasOps(
         s: UiState,
         ops: List<CanvasOp>,
@@ -2287,13 +2021,6 @@ class AppViewModel(
         )
     }
 
-    /**
-     * Convert a bare `ui_render` component list into in-place upsert ops. A
-     * component keeps its own id; an id-less overlay (the reasoning collapsible)
-     * gets a STABLE synthetic id by type+position so repeated pushes update it in
-     * place instead of duplicating — and it never collides with the round's
-     * real component ids.
-     */
     private fun renderToOps(components: List<Component>): List<CanvasOp> =
         components.mapIndexed { i, c ->
             val id = c.id ?: "xr-${c.type}-$i"
@@ -2310,8 +2037,6 @@ class AppViewModel(
                 if (s.connectionGeneration == null) {
                     commitTurn(s)
                 } else {
-                    // The following conversation_snapshot is the sole committed
-                    // publication. Status completion cannot advance either surface.
                     s.copy(turnActive = false, backgroundRequested = false, statusText = null, stepTrail = emptyList())
                 }
             "thinking", "executing", "fixing", "processing_async" ->
@@ -2326,21 +2051,10 @@ class AppViewModel(
                         )
                     }
                     ?: s
-            // Unknown states cannot assert that work is active. They also must
-            // not erase the latest valid progress for a turn that is still live.
             else -> if (s.hasActiveWork) s else s.copy(statusText = null)
         }
     }
 
-    /**
-     * A turn finished (`chat_status done`). For a replacing turn that produced
-     * canvas content, the committed state is what the user is looking at — the
-     * live canvas (in-turn ops applied as they arrived, 055 live rule) with the
-     * buffered full render, when one arrived, winning per identity on top — and
-     * the pre-turn snapshot goes onto the timeline. A text-only turn leaves the
-     * canvas untouched (never blank it) apart from the welcome purge (see
-     * [dropWelcome]).
-     */
     private fun commitTurn(s: UiState): UiState {
         if (!s.pendingReplace) {
             return s.copy(
@@ -2352,8 +2066,6 @@ class AppViewModel(
             )
         }
         if (s.pendingCanvas.isEmpty() && !s.turnOpsApplied) {
-            // Text-only turn: keep the canvas — minus welcome (belt-and-braces;
-            // the arming purge already dropped it).
             return s.copy(
                 canvas = s.canvas.dropWelcome(),
                 preTurnCanvas = emptyList(),
@@ -2365,13 +2077,9 @@ class AppViewModel(
                 asyncDetached = false,
             )
         }
-        // The buffered render merges ONTO the live canvas (render wins per
-        // identity, live-only components survive) — a partial overlay render
-        // must never drop the round's already-applied upserts.
+        // Buffered render merges onto live canvas; must not drop applied upserts
         val live = s.canvas.dropWelcome()
         val committed = if (s.pendingCanvas.isEmpty()) live else Canvas.apply(live, renderToOps(s.pendingCanvas))
-        // Welcome components never enter the timeline; a welcome-only pre-turn
-        // canvas archives nothing (the "Canvas 1" leak regression).
         val archived = s.preTurnCanvas.dropWelcome()
         val newHistory =
             if (archived.isNotEmpty()) {
@@ -2399,16 +2107,13 @@ class AppViewModel(
         )
     }
 
-    /** A model "Reasoning" collapsible (routed to the chat, not the canvas). */
     private fun isReasoning(c: Component): Boolean =
         c.type.equals("collapsible", ignoreCase = true) &&
             ((c.attributes["title"] as? JsonPrimitive)?.contentOrNull ?: "")
                 .equals("Reasoning", ignoreCase = true)
 
-    /** The narrative doc card the server promotes long answers into (id "doc_…"). */
     private fun isDocCard(id: String?): Boolean = id != null && id.startsWith("doc_")
 
-    /** A `skeleton` loading placeholder — stray in a finished canvas, so dropped. */
     private fun isSkeleton(c: Component?): Boolean = c != null && c.type.equals("skeleton", ignoreCase = true)
 
     private fun List<Component>.dropWelcome(): List<Component> =
@@ -2423,7 +2128,6 @@ class AppViewModel(
             (own + "\n" + flattenText(c.children)).trim()
         }.trim()
 
-    /** Notice text from a chrome_surface's components — Alerts carry `message`. */
     private fun noticeText(components: List<Component>): String =
         components.joinToString("\n") { c ->
             val own =
@@ -2452,15 +2156,11 @@ class AppViewModel(
         private val SEMANTIC_TEXT_KEYS =
             listOf("content", "text", "message", "label", "title", "value", "caption")
 
-        /** The step trail is a live glance, not a log — keep only the tail. */
         private const val MAX_TRAIL = 20
 
-        /** A trailing " (40%)"/" (40.5%)" progress suffix (stripped for trail identity). */
         private val TRAIL_PCT = Regex("""\s*\(\d+(\.\d+)?%\)$""")
 
-        // The server pairs a canvas doc card with a "…full write-up is on the
-        // canvas" lead in the chat. On mobile we route the full answer to the chat
-        // instead, so that paired lead is suppressed to avoid duplication.
+        // Suppresses the doc-card's chat lead; mobile shows the full answer in chat
         private const val DOC_ON_CANVAS_MARKER = "full write-up is on the canvas"
 
         fun factory(

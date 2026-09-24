@@ -1,3 +1,5 @@
+// Tests for parsing the audit-log REST response into the rows the native Audit screen renders.
+
 package com.personalailabs.astraldeep.app.rest
 
 import kotlin.test.Test

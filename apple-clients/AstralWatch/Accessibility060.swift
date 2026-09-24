@@ -1,4 +1,6 @@
-/// Deterministic accessibility metadata shared by the Watch view and its tests.
+// Deterministic accessibility metadata (roles, labels, states) shared by WatchChatView and WatchHomeView and
+// asserted by their instrumented tests, keeping Android and iOS accessibility contracts in parity.
+
 struct WatchAccessibilityControl: Equatable {
     enum Role: String {
         case button

@@ -1,4 +1,6 @@
-"""Behavioral contracts for the native SDUI construction helpers."""
+"""Tests for backend/webrender/chrome/surfaces/_sdui.py: native SDUI component-dict
+construction contracts.
+"""
 
 from webrender.chrome.surfaces import _sdui
 

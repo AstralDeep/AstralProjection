@@ -1,9 +1,8 @@
-"""Feature 026 — the orchestrator's server-side render layer.
-
-astralprims defines primitives + the structured representation; this package
-renders them into a client target's output (web HTML now); ROTE adapts per
-device upstream. New targets are added via :func:`register_target`.
+"""The orchestrator's server-side render layer: turns astralprims component dicts,
+already ROTE-adapted per device, into a client target's output, web HTML by default;
+new targets register via register_target() in webrender.registry.
 """
+
 from .renderer import (  # noqa: F401
     allowed_primitive_types,
     render,

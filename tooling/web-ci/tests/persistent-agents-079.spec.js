@@ -1,5 +1,6 @@
-// Contract evidence for the actual shared Python view + shipped classic client.
-// Controlled socket/DOM fixture; not live backend or release qualification.
+// Browser tests for persistent agents against the shared Python view and shipped classic client,
+// using a controlled socket/DOM fixture rather than a live backend.
+
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";

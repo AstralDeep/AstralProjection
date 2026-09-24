@@ -1,3 +1,5 @@
+// Browser-run tests for coverage-conversion.mjs's Playwright V8 conversion path.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 

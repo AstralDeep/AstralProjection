@@ -1,3 +1,7 @@
+// Instrumented UI test for per-component artifact chrome: grounded badges stay hidden while
+// estimated/generated warnings render, the Refine action sends component_refine, and export hits the download
+// path.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.foundation.layout.Box
@@ -33,12 +37,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/**
- * Feature 055 US4/US5 (T036/T040/T045) — the per-component chrome end to end:
- * ordinary grounded badges stay hidden while estimated/generated warnings
- * render from the stamped field, the inline Refine
- * action sends `component_refine`, and an export entry hits the download path.
- */
 class ArtifactChromeUiTest {
     @get:Rule val rule = createComposeRule()
 

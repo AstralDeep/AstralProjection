@@ -1,4 +1,7 @@
-"""Runtime and frozen-archive integrity contracts for the speech helper."""
+"""Tests for astral_client/helper_integrity.py: the speech helper's
+digest-then-signature verification chain, platform gating,
+Authenticode/WinVerifyTrust handling, and the PyInstaller spec's digest generation.
+"""
 
 from __future__ import annotations
 
@@ -328,8 +331,6 @@ def test_spec_generates_digest_module_for_pyz_not_data_files():
 
 
 def test_unsigned_candidate_embeds_exact_digest_and_remains_unavailable(tmp_path):
-    """The unprivileged active CI candidate has no helper signing identity."""
-
     if sys.platform != "win32":
         pytest.skip("WinVerifyTrust is a Windows qualification")
     helper_bytes, expected = _embedded_helper_and_digest()

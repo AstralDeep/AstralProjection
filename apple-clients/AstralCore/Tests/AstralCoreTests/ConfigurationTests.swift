@@ -1,17 +1,12 @@
-// Feature 053 — the endpoint resolution ladder (override > Info.plist > fallback).
-//
-// The ladder is the only place the client decides *which backend it talks to*, and
-// it is exercised in three states the app really hits: a healthy build, a build
-// whose xcconfig was never wired, and a watch with no companion to push it an
-// override. It is isolated from `Bundle` so these run headlessly.
+// Tests for AstralConfig's endpoint resolution ladder (override, then Info.plist, then build fallback):
+// watch-without-companion and headless paths, malformed-override rejection, and OAuth client identities.
+
 import XCTest
 
 @testable import AstralCore
 
 final class ConfigurationResolutionTests: XCTestCase {
     private let plistValue = "https://sandbox.ai.uky.edu"
-
-    // MARK: - the ladder
 
     func testOverrideWinsOverInfoPlist() {
         XCTAssertEqual(
@@ -31,8 +26,6 @@ final class ConfigurationResolutionTests: XCTestCase {
             plistValue)
     }
 
-    /// A watch with no paired companion gets no override; AstralCore's own unit
-    /// tests get no bundle. Both land here, and both must stay usable.
     func testFallbackWhenNeitherOverrideNorInfoPlistResolves() {
         XCTAssertEqual(
             AstralConfig.resolve(
@@ -40,8 +33,6 @@ final class ConfigurationResolutionTests: XCTestCase {
                 fallback: AstralConfig.fallbackServerBaseURL),
             AstralConfig.fallbackServerBaseURL)
     }
-
-    // MARK: - a bad override must never strand the app
 
     func testBlankAndEmptyOverridesAreIgnored() {
         for bad in ["", "   ", "\n\t"] {
@@ -54,7 +45,6 @@ final class ConfigurationResolutionTests: XCTestCase {
     }
 
     func testNonHTTPOverridesAreIgnored() {
-        // A scheme we cannot talk to, a relative path, and a host-less URL.
         for bad in ["ftp://example.edu", "sandbox.ai.uky.edu", "/relative/path", "https://"] {
             XCTAssertEqual(
                 AstralConfig.resolve(
@@ -64,9 +54,6 @@ final class ConfigurationResolutionTests: XCTestCase {
         }
     }
 
-    /// The failure this guard exists for: a project that forgot to wire the
-    /// xcconfig leaves the literal build setting in Info.plist. Treating that as
-    /// an endpoint would point the app at a nonsense host instead of production.
     func testUnsubstitutedBuildSettingIsRejected() {
         XCTAssertEqual(
             AstralConfig.resolve(
@@ -91,8 +78,6 @@ final class ConfigurationResolutionTests: XCTestCase {
             "http://localhost:8001")
     }
 
-    // MARK: - realm resolves through the same ladder
-
     func testAuthorityFallsBackToTheProductionRealm() {
         XCTAssertEqual(
             AstralConfig.resolve(
@@ -101,11 +86,9 @@ final class ConfigurationResolutionTests: XCTestCase {
             "https://iam.ai.uky.edu/realms/Astral")
     }
 
-    // MARK: - identities are backend contracts
-
     func testOAuthClientIdsMatchTheBackendContract() {
-        XCTAssertEqual(AstralConfig.iosClientId, "astral-mobile")  // shared with Android
-        XCTAssertEqual(AstralConfig.macosClientId, "astral-desktop")  // shared with Windows
+        XCTAssertEqual(AstralConfig.iosClientId, "astral-mobile")
+        XCTAssertEqual(AstralConfig.macosClientId, "astral-desktop")
         XCTAssertEqual(AstralConfig.watchClientId, "astral-watch")
         XCTAssertEqual(AstralConfig.redirectURI, "com.personalailabs.astraldeep:/oauth2redirect")
     }

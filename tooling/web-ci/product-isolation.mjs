@@ -1,3 +1,6 @@
+// Checks that a product's package discovery and Dockerfile stay isolated from sibling products;
+// used by coverage-union.mjs's tests and product-isolation.test.mjs.
+
 import { readFile, readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";

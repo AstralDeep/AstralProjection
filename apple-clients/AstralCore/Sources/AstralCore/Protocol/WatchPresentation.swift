@@ -1,6 +1,8 @@
+// Watch-only presentation types: WatchHistoryUpdate for owner-scoped history intercepted before conversation
+// continuity or speech, and WatchComponentText for passive text already present in adapted primitives.
+
 import Foundation
 
-/// Owner-scoped history chrome, intercepted before conversation continuity or speech.
 public enum WatchHistoryUpdate: Equatable, Sendable {
     case loading
     case content(title: String, chats: [ChatSummary])
@@ -27,7 +29,6 @@ public enum WatchHistoryUpdate: Equatable, Sendable {
     }
 }
 
-/// Passive text already present in watch-adapted primitives; never action metadata.
 public enum WatchComponentText {
     public struct KeyValueRow: Equatable, Sendable {
         public let label: String

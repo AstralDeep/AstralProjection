@@ -1,7 +1,6 @@
-// Feature 051 (FR-038) — manifest drift guard, the Swift twin of
-// windows-client/tests/test_protocol_manifest.py and the Android
-// VocabularyParityTest: if contracts/ui_protocol.json changes vocabulary
-// and the Apple dispositions don't account for it, this suite fails CI.
+// Tests AstralCore's ClientDispositions against contracts/ui_protocol.json: vocabulary parity, voice and
+// runtime frame classification, and per-client (iOS, macOS, watch) disposition completeness.
+
 import XCTest
 
 @testable import AstralCore
@@ -65,8 +64,6 @@ final class ManifestDriftTests: XCTestCase {
                 case carriedOn = "carried_on"
             }
         }
-        // ui_protocol.json shape: push_types are {name, category} objects;
-        // component_types and accept_actions are plain strings.
         let pushTypes: [Named]
         let componentTypes: [String]
         let acceptActions: [String]
@@ -82,7 +79,6 @@ final class ManifestDriftTests: XCTestCase {
         }
     }
 
-    /// Walk up from this file until the committed manifest is found.
     static func manifestURL() throws -> URL {
         var dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
         for _ in 0..<8 {
@@ -110,54 +106,8 @@ final class ManifestDriftTests: XCTestCase {
             Set(manifest.componentTypes),
             Set(ClientDispositions.allComponentTypes),
             "component_types drift — update Dispositions.swift + parity matrix")
-        // 69 = 58 + seven remote-v1 and four client-local-v2 voice pushes.
-        // The client-to-server voice_playout_event remains directional and is
-        // pinned separately in frame_contracts.voice_065.client_frames.
-        // (conversation_snapshot, operation_status, agent_lifecycle,
-        // conversation_commit_ready, and three agent_host_* control frames).
-        // Host-only frames remain explicitly ignored by author-only clients;
-        // macOS hosting is enabled only by feature 059.
-        // 72 = 69 + the three feature-076 remote-computer-control pushes
-        //        (computer_request host-only; computer_host / computer_session
-        //        presence — ignored on Apple pending the Mac follow-up).
         XCTAssertEqual(manifest.pushTypes.count, 72)
         XCTAssertEqual(manifest.componentTypes.count, 35)
-        // 73 = 67 + the four feature-054 chrome_llm_sys_* admin actions
-        //        + the two feature-055 component_refine/component_restore actions.
-        // 87 = 73 + the feature-058 BYO authoring + agent-management chrome actions
-        //        (chrome_author_* / chrome_agent_*).
-        // 91 = 87 + the four feature-063 remote-compute actions
-        //        (chrome_machine_add/probe/delete + remote_op_decision) —
-        //        all posted through the generic SDUI action path, no new
-        //        client code.
-        // 94 = 91 + the T026 machine-credential/re-trust actions
-        //        (chrome_machine_credential_set/delete + chrome_machine_retrust),
-        //        same generic path.
-        // 102 = 94 + the eight feature-065 server-owned composer actions.
-        // 109 = 102 + the seven feature-076 actions (computer_event /
-        //        computer_response — host-only; five chrome_computer_* session
-        //        controls posted through the generic SDUI action path).
-        // 117 = 109 + the eight feature-077 actions (chrome_author_quick_* ×4,
-        //        chrome_user_skill_* ×4) — all posted through the generic SDUI
-        //        action path from the My agents & skills surface, no new
-        //        client code.
-        // 125 = 117 + the eight feature-079 persistent-assignment actions;
-        //       full clients post these through the existing SDUI action path.
-        // 129 = 125 + the four closed feature-088 private-note actions.
-        // 132 = 129 + the three closed feature-088 T037 actions
-        //        (chrome_declarative_view / chrome_declarative_command /
-        //        chrome_turn_selection_set) behind guidance_agents_v1 and
-        //        guidance_selection_v1, which no Apple client advertises yet;
-        //        they ride the existing chrome_surface frame, no new push type.
-        // 134 = 132 + the two closed feature-088 T043/T044 actions
-        //        (chrome_work_result_save: the exact two-step Save command behind
-        //        work_save_v1; chrome_job_stop: the terminal recurring-work Stop
-        //        behind recurring_work_v1). No Apple client advertises either
-        //        capability yet; both ride chrome_surface, no new push type.
-        // 136 = 134 + the two closed feature-088 T048 Connections actions
-        //        (chrome_connection_issue / chrome_connection_revoke) behind
-        //        connections_v1, which no Apple client advertises yet; both ride
-        //        the existing chrome_surface frame, no new push type.
         XCTAssertEqual(manifest.acceptActions.count, 136)
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_note_") }), GuidanceRequest.noteActions)
@@ -174,8 +124,6 @@ final class ManifestDriftTests: XCTestCase {
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_assignment_") }), expected)
         XCTAssertTrue(
             Set(manifest.pushTypes.map(\.name)).isDisjoint(with: ["assignment_state", "assignment_approval"]))
-        // Wrist status and full-client handoff are selected by the server from
-        // the same assignment snapshot; no native assignment menu is defined.
     }
 
     func testConversationalVoiceFramesAndActionsAreClassifiedExactly() throws {
@@ -252,7 +200,7 @@ final class ManifestDriftTests: XCTestCase {
                     continue
                 }
                 if case .ignored(_) = disposition {
-                    // Expected: Apple clients remain author-only until feature 059.
+                    // Expected: Apple clients are author-only.
                 } else {
                     XCTFail("\(client.client) must explicitly ignore host-only \(frame)")
                 }
@@ -293,7 +241,6 @@ final class ManifestDriftTests: XCTestCase {
                     client.components[name],
                     "\(client.client): missing component disposition for \(name)")
             }
-            // No disposition for a name the manifest doesn't have (stale row).
             for name in client.frames.keys {
                 XCTAssertTrue(
                     ClientDispositions.allPushTypes.contains(name),
@@ -308,17 +255,11 @@ final class ManifestDriftTests: XCTestCase {
     }
 
     func testWatchHandlesNotificationForBackgroundContinuity() {
-        // 055 background-task continuity: a completion notification must reach
-        // the wrist. There is no watch test target to pin the reduce, so this
-        // pins the disposition — a regression to .ignored would silently drop
-        // background completions on the watch again.
         XCTAssertEqual(ClientDispositions.watch.frames["notification"], .handled)
     }
 
     func testWatchNativeSetIsWithinProfileVocabulary() {
-        // The watch renders natively exactly what the watch ROTE profile can
-        // emit — charts/tables/code are degraded server-side and must NOT be
-        // advertised as natively supported.
+        // Charts/tables/code are degraded server-side; watch must not claim them
         let native = Set(ClientDispositions.watch.nativeComponentTypes)
         for forbidden in [
             "bar_chart", "line_chart", "pie_chart", "plotly_chart",

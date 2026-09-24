@@ -1,10 +1,8 @@
-"""Feature 063 — the Windows native renderer draws the remote_machines settings
-surface (server ``components()``) correctly, with zero surface-specific client
-code. The one native risk the parity map flagged is the ``textarea`` field kind
-(the pasted PEM) — no other shipping surface uses it — so this locks it: a
-multi-line PEM survives the QPlainTextEdit and the form's action-submit posts the
-exact ``chrome_machine_add {fields}`` payload the backend handler parses.
+"""Tests for astral_client/renderer.py: the server-driven remote_machines settings
+surface renders correctly, including the textarea field kind for a pasted PEM key
+surviving round trip through the chrome_machine_add submit action.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -15,8 +13,6 @@ from PySide6.QtWidgets import QPlainTextEdit, QPushButton  # noqa: E402
 
 from astral_client.renderer import RenderContext, render  # noqa: E402
 
-# The ParamPicker the server's remote_machines.components() emits (all credential
-# fields always present — native forms can't reactively show/hide on cred_type).
 FORM = {
     "type": "param_picker",
     "title": "Add a machine",
@@ -53,12 +49,10 @@ def test_pem_textarea_round_trips_through_action_submit(qapp):
     seen = []
     w = render(FORM, _ctx(lambda a, p: seen.append((a, p))))
 
-    # The private_key field is the only textarea (QPlainTextEdit).
     areas = w.findChildren(QPlainTextEdit)
     assert len(areas) == 1, "expected exactly one textarea (private_key)"
     areas[0].setPlainText(PEM)
 
-    # A single-submit_action form renders exactly one action button.
     btns = w.findChildren(QPushButton)
     assert len(btns) == 1
     btns[0].click()
@@ -67,10 +61,8 @@ def test_pem_textarea_round_trips_through_action_submit(qapp):
     action, payload = seen[0]
     assert action == "chrome_machine_add"
     fields = payload["fields"]
-    # Newlines survive the Qt textarea → the handler stores a valid multi-line PEM.
     assert fields["private_key"] == PEM
     assert fields["private_key"].count("\n") == PEM.count("\n") >= 3
-    # All fields are present (native no-toggle) and select defaults flow through.
     assert fields["cred_type"] == "ssh_key" and fields["os_family"] == "linux"
     assert set(fields) >= {"label", "address", "port", "username", "os_family",
                            "role", "cred_type", "private_key", "passphrase", "password"}

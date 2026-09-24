@@ -1,13 +1,8 @@
-"""Live end-to-end check: connect to a RUNNING orchestrator (USE_MOCK_AUTH=true),
-send a chat to a keyless agent, and render the REAL ui_render components it
-returns as native widgets (offscreen). Proves the whole chain:
-
-    register_ui -> chat_message -> ReAct loop -> astralprims -> ROTE
-                -> ui_render(components) -> native PySide6 widgets
-
-Not a pytest test (needs a live server). Usage:
-    python tests/e2e_live.py --prompt "roll 3 dice"
+"""Manual end-to-end smoke script: connects to a running orchestrator, sends one chat
+turn, and renders the returned ui_render components as native Qt widgets offscreen to
+prove the full render chain. Run directly, not via pytest.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,7 +50,7 @@ async def collect(url: str, token: str, prompt: str, window_s: float = 12.0):
                     "session_id": status["chat_id"],
                     "payload": {"message": prompt, "chat_id": status["chat_id"]}}))
                 sent = True
-                deadline = loop.time() + window_s  # restart the window after asking
+                deadline = loop.time() + window_s
             if t in ("ui_render", "ui_upsert"):
                 captured.append(msg)
     return captured, status
@@ -73,7 +68,6 @@ def main() -> int:
         print(f"AUTH FAILED: {status['auth']} — orchestrator is not in mock-auth mode.")
         return 2
 
-    # Gather every structured component from the real payloads.
     components = []
     for m in captured:
         if m.get("type") == "ui_render":

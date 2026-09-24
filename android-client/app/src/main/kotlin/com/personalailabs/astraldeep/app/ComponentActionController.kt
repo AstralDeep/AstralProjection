@@ -1,3 +1,6 @@
+// Coordinates per-component action decisions (pickers, links, refine) keeping exact session/component context
+// without credentials in UI state; used by MainActivity and tested via ComponentControllerFixture.
+
 package com.personalailabs.astraldeep.app
 
 import android.content.ClipData
@@ -40,7 +43,6 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.io.File
 
-/** Per-component decisions retain their exact session/component context, never credentials in UI state. */
 internal class ComponentActionController(
     private val activity: ComponentActivity,
     private val currentToken: () -> String?,
@@ -183,8 +185,6 @@ internal class ComponentActionController(
         action.job =
             activity.lifecycleScope.launch {
                 try {
-                    // Normal reducers retain this exact submission through accepted/running,
-                    // and remove it only on terminal/refusal or conversation retirement.
                     vm.state.first { state ->
                         !isCurrent(action) || state.pendingSubmissions[issued.requestGeneration] != issued
                     }
@@ -199,7 +199,6 @@ internal class ComponentActionController(
         kind: String,
         vm: AppViewModel,
     ) {
-        // One owned picker/link sheet per operation; a second component must not mint a hidden result.
         if (active.any { it.ticket.kind == kind }) return
         if (kind == "csv" && pickerOutstanding) return
         if (kind == "share" && mutableShare.value != null) return
@@ -242,7 +241,6 @@ internal class ComponentActionController(
                     if (!retained) finish(action)
                 }
                 if (retained) {
-                    // Forgotten sheets/pickers retain no private bytes indefinitely.
                     action.job =
                         activity.lifecycleScope.launch {
                             delay(120_000)

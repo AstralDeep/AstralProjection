@@ -1,12 +1,8 @@
-"""Query-start canvas skeleton (cross-client parity with Android's
-SkeletonCanvas / the web client's #astral-canvas-skeleton).
-
-`Canvas.show_skeleton()` appends a loading placeholder when a chat turn is
-sent; the FIRST canvas content of the turn removes it (`set_components` for a
-full render, `apply_ops` for upserts — streaming routes through apply_ops
-too), and `hide_skeleton()` clears it when a turn ends with no canvas output
-(text-only answers, errors, cancellation).
+"""Tests for astral_client/app.py and renderer.py's Canvas: the query-start loading
+skeleton — appended on show, cleared by the first full render or upsert, kept through
+no-op ops, and idempotent hide at turn end.
 """
+
 import os
 
 import pytest
@@ -31,8 +27,7 @@ def test_show_skeleton_appends_placeholder(qapp):
     assert c._skeleton is None
     c.show_skeleton()
     assert c._skeleton is not None
-    assert c._lay.indexOf(c._skeleton) != -1  # actually in the layout
-    # idempotent — a second show never stacks a second placeholder
+    assert c._lay.indexOf(c._skeleton) != -1
     first = c._skeleton
     c.show_skeleton()
     assert c._skeleton is first
@@ -55,8 +50,6 @@ def test_upsert_clears_skeleton(qapp):
 
 
 def test_empty_ops_keep_skeleton(qapp):
-    # A no-op upsert (e.g. a frame for another chat filtered upstream) is not
-    # canvas content — the loading state stays until real content or turn end.
     c = Canvas(_ctx())
     c.show_skeleton()
     c.apply_ops([])
@@ -65,7 +58,7 @@ def test_empty_ops_keep_skeleton(qapp):
 
 def test_hide_skeleton_is_idempotent(qapp):
     c = Canvas(_ctx())
-    c.hide_skeleton()  # never shown — must not raise
+    c.hide_skeleton()
     c.show_skeleton()
     c.hide_skeleton()
     assert c._skeleton is None
@@ -73,8 +66,6 @@ def test_hide_skeleton_is_idempotent(qapp):
 
 
 def test_skeleton_appends_below_existing_components(qapp):
-    # A follow-up query must not disturb the persistent workspace — the
-    # placeholder sits under the existing components.
     c = Canvas(_ctx())
     c.set_components([_card("A")])
     c.show_skeleton()
@@ -85,4 +76,4 @@ def test_skeleton_card_variant_renders_blocks(qapp):
     w = render({"type": "skeleton", "variant": "card", "count": 3}, _ctx())
     assert w.layout().count() == 3
     bar = w.layout().itemAt(0).widget()
-    assert bar.height() >= 40 or bar.minimumHeight() >= 40  # chunky card block
+    assert bar.height() >= 40 or bar.minimumHeight() >= 40

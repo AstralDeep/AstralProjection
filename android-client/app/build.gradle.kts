@@ -1,4 +1,6 @@
-// :app — the Android/Compose client. Depends on :core for all pure logic.
+// Gradle build for the :app Android/Compose client, depending on :core for pure logic; configures lint,
+// release signing, the registered Play/OIDC application identity, and dependency-version overrides.
+
 import org.gradle.api.DefaultTask
 import org.gradle.api.file.RegularFileProperty
 import org.gradle.api.provider.Property
@@ -24,14 +26,10 @@ plugins {
     alias(libs.plugins.ktlint)
 }
 
-// AGP 9's built-in Kotlin integration is not discovered by ktlint 12's Android
-// source-set adapter. Keep the existing check/format lifecycle authoritative for
-// every maintained Kotlin source until that adapter supports built-in Kotlin.
 tasks.withType<BaseKtLintCheckTask>().configureEach {
     source(fileTree("src") { include("**/*.kt") })
 }
 
-// Framework-only test providers run in a separate process; keep their Java source linted.
 tasks.withType<JavaCompile>().configureEach {
     if (name.endsWith("AndroidTestJavaWithJavac")) options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
 }
@@ -103,18 +101,13 @@ abstract class CopyCanonicalVoiceFixture065Task : DefaultTask() {
             .joinToString("") { "%02x".format(it) }
 }
 
-// Release signing is read from a gitignored keystore.properties (see docs/play-store-release.md).
-// Absent on CI and fresh clones — release builds are simply unsigned there.
 val keystoreProperties =
     Properties().apply {
         val f = rootProject.file("keystore.properties")
         if (f.exists()) f.inputStream().use { load(it) }
     }
 
-// These are registered product identities, not repository names. Moving the
-// client to AstralProjection must never mint a new Play application or OIDC
-// redirect scheme. Version code 5 is the migration floor; every later upload
-// must increase it even when it targets a non-production Play track.
+// Registered Play/OIDC id — never mint a new one on repo moves
 val registeredApplicationId = "com.personalailabs.astraldeep"
 val registeredRedirectScheme = "com.personalailabs.astraldeep"
 val migrationVersionCodeFloor = 5
@@ -123,9 +116,6 @@ check(currentVersionCode >= migrationVersionCodeFloor) {
     "Android versionCode must not regress below the AstralProjection migration floor"
 }
 
-// Feature 065 has one canonical C0-C6 fixture in Projection's contracts. Android
-// test resources/assets are generated from those exact bytes; no client-owned
-// JSON variant is kept in this project.
 val canonicalVoiceFixture =
     rootProject.layout.projectDirectory.file(
         "../contracts/fixtures/voice_065/client_conformance.json",
@@ -180,10 +170,6 @@ android {
     compileSdk = libs.versions.compileSdk.get().toInt()
 
     defaultConfig {
-        // Play Store identity (registered; permanent once uploaded). The Kotlin
-        // AppAuth redirect scheme shares this registered id; the Kotlin
-        // namespace/source packages intentionally append `.app`. The scheme
-        // must match the astral-mobile client's Valid Redirect URI in Keycloak.
         applicationId = registeredApplicationId
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
@@ -191,9 +177,6 @@ android {
         versionName = "1.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // AppAuth captures the OIDC redirect via this scheme (RedirectUriReceiverActivity).
-        // Must match the astral-mobile client's Valid Redirect URI:
-        //   com.personalailabs.astraldeep:/oauth2redirect
         manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme
     }
 
@@ -268,8 +251,6 @@ tasks.configureEach {
 }
 
 composeCompiler {
-    // :core is pure Kotlin (no Compose dep), so its wire types are declared
-    // stable via this config instead of @Immutable annotations (feature 052).
     stabilityConfigurationFiles.add(rootProject.layout.projectDirectory.file("compose_stability.conf"))
     metricsDestination = layout.buildDirectory.dir("compose-metrics")
     reportsDestination = layout.buildDirectory.dir("compose-reports")
@@ -302,9 +283,7 @@ dependencies {
     implementation(libs.appauth)
     implementation(libs.coil.compose)
     implementation(libs.livekit.android)
-    // LiveKit 2.27.0 publishes vulnerable protobuf-javalite 3.22.0. The
-    // catalog's strict 3.25.5 constraint is the approved compatible repair
-    // for CVE-2024-7254/GHSA-735f-pc8j-v9w8; the generated lock pins it.
+    // Pinned to patch LiveKit's vulnerable protobuf-javalite (CVE-2024-7254)
     implementation(libs.protobuf.javalite)
 
     testImplementation(libs.junit)

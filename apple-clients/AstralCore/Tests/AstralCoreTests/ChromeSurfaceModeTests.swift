@@ -1,7 +1,6 @@
-// Feature 054 — the additive chrome_surface `mode` field (first-run gate).
-// `mode` is a reserved field on an EXISTING frame type: the manifest drift
-// guard asserts frame TYPE names only, so this field rides with no
-// ui_protocol.json change and no disposition churn.
+// Tests for the chrome_surface mode field: defaults to replace when absent, parses when present, and falls
+// back safely for non-string values.
+
 import XCTest
 
 @testable import AstralCore
@@ -20,19 +19,16 @@ final class ChromeSurfaceModeTests: XCTestCase {
     }
 
     func testModeDefaultsToReplaceWhenAbsent() {
-        // Pre-054 servers never send `mode` — the accessor must default.
         let f = frame(#"{"type":"chrome_surface","surface_key":"theme","title":"Appearance","components":[]}"#)
         XCTAssertEqual(f.surfaceMode, "replace")
     }
 
     func testExplicitReplaceParses() {
-        // The blank close instruction carries mode:"replace" explicitly.
         let f = frame(#"{"type":"chrome_surface","surface_key":"","components":[],"mode":"replace"}"#)
         XCTAssertEqual(f.surfaceMode, "replace")
     }
 
     func testNonStringModeFallsBackToReplace() {
-        // Lenient decode (FR-003): a malformed field can never crash a client.
         let f = frame(#"{"type":"chrome_surface","surface_key":"llm","components":[],"mode":7}"#)
         XCTAssertEqual(f.surfaceMode, "replace")
     }

@@ -1,11 +1,8 @@
-"""Feature 033 (capability C-D5) — the AOM / semantic-tree renderer.
-
-Verifies the structural (role / name / state) render target: flag gating, role
-mapping (incl. heading-vs-text by variant), accessible-name precedence, state
-extraction, recursion through children/content, the table summary + per-tab
-children, the depth cap, non-dict degradation, and JSON-serializability of the
-document envelope (with no leaked HTML markup).
+"""Tests for backend/webrender/aom.py, the semantic-tree (AOM) renderer: flag gating,
+role/name/state derivation, recursion through children, table/tab summaries, the
+depth cap, and markup-free JSON output.
 """
+
 from __future__ import annotations
 
 import json
@@ -18,8 +15,6 @@ if str(BACKEND_DIR) not in sys.path:
 
 from webrender import aom  # noqa: E402
 
-
-# ───────────────────────── flag gating ───────────────────────────────────────
 
 def test_flag_defaults_off(monkeypatch):
     monkeypatch.delenv("FF_AOM_RENDERER", raising=False)
@@ -37,8 +32,6 @@ def test_flag_disabled_falsy_values(monkeypatch):
         monkeypatch.setenv("FF_AOM_RENDERER", raw)
         assert aom.aom_enabled() is False
 
-
-# ───────────────────────── role mapping ──────────────────────────────────────
 
 def test_role_mapping_for_known_types():
     cases = {
@@ -77,8 +70,6 @@ def test_unknown_type_is_generic():
     assert aom.to_semantic_node({"type": "wizbang"})["role"] == "generic"
 
 
-# ───────────────────────── semantic_name ─────────────────────────────────────
-
 def test_name_precedence_title_first():
     comp = {"type": "card", "title": "T", "label": "L", "content": "C"}
     assert aom.semantic_name(comp) == "T"
@@ -86,7 +77,6 @@ def test_name_precedence_title_first():
 
 def test_name_falls_back_to_label():
     comp = {"type": "button", "label": "Save", "content": "ignored-no-title"}
-    # label beats text/content/value when title is absent
     assert aom.semantic_name({"type": "button", "label": "Save"}) == "Save"
     assert aom.semantic_name(comp) == "Save"
 
@@ -108,8 +98,6 @@ def test_name_non_dict_is_empty_string():
     assert aom.semantic_name(None) == ""
     assert aom.semantic_name("just a string") == ""
 
-
-# ───────────────────────── semantic_state ────────────────────────────────────
 
 def test_state_includes_variant_and_value():
     state = aom.semantic_state({"type": "alert", "variant": "warning", "value": "5"})
@@ -133,8 +121,6 @@ def test_state_omits_absent_keys():
     assert state == {}
     assert "variant" not in state and "value" not in state and "level" not in state
 
-
-# ───────────────────────── recursion ─────────────────────────────────────────
 
 def test_recurses_through_content_children():
     comp = {
@@ -187,12 +173,10 @@ def test_table_produces_summary_child_with_counts():
 
 
 def test_depth_cap_truncates_deep_nesting():
-    # Build a chain deeper than the cap (12).
     comp: dict = {"type": "container", "title": "leaf-name"}
     for _ in range(20):
         comp = {"type": "container", "content": [comp]}
     node = aom.to_semantic_node(comp)
-    # Walk down to the truncated leaf.
     depth = 0
     cur = node
     while cur["children"]:
@@ -211,8 +195,6 @@ def test_non_dict_is_generic_node():
     }
     assert aom.to_semantic_node(None)["role"] == "generic"
 
-
-# ───────────────────────── document envelope ─────────────────────────────────
 
 def test_render_aom_wraps_in_document():
     out = aom.render_aom([{"type": "text", "content": "hello"}])
@@ -246,8 +228,7 @@ def test_render_aom_is_json_serializable_no_html():
         ],
     }
     out = aom.render_aom([comp], device="voice")
-    blob = json.dumps(out)  # must not raise
+    blob = json.dumps(out)
     assert isinstance(blob, str)
-    # The semantic tree is structure, not markup: it emits no HTML element tags.
     assert "<" not in blob
     assert "<table" not in blob and "<div" not in blob and "<span" not in blob

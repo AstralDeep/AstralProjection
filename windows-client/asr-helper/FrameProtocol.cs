@@ -1,3 +1,7 @@
+// Binary frame protocol (12-byte 'ADSH'-magic header plus typed payload) for the stdio pipe between
+// the Windows client and its bundled speech helper; Program.cs is the sole reader/writer of
+// HelperFrame.
+
 using System;
 using System.IO;
 using System.Text;

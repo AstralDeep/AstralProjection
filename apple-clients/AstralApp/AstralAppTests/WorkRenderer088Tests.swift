@@ -1,3 +1,6 @@
+// Tests for the Work-surface renderer: the maximum retained excerpt renders every character as literal native
+// text, and nested evidence read buttons render alongside the unavailable state.
+
 import AstralCore
 import SwiftUI
 import XCTest

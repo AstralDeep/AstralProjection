@@ -1,3 +1,6 @@
-"""AstralDeep native Windows client — a PySide6 ROTE/webrender target that
-renders the orchestrator's structured SDUI components as native widgets."""
+"""Package root for the native Windows client: a PySide6 app that renders the
+orchestrator's SDUI components as Qt widgets, imported by every astral_client and
+win_agent module (app.py, protocol.py, renderer.py).
+"""
+
 __version__ = "0.5.2"

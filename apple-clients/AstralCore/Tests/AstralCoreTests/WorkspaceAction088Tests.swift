@@ -1,3 +1,6 @@
+// Tests for workspace actions: closed descriptor ordering, PHI-denial explanation scoping, streaming
+// transport bounds, one-time authenticated share requests, and share-link origin/credential rejection.
+
 import XCTest
 
 @testable import AstralCore

@@ -1,3 +1,6 @@
+// Renders the artifact provenance badge and refine dialog: badges reflect only the server-stamped field,
+// never client-derived trust; refine sends component_refine for the server to revalidate.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import androidx.compose.foundation.clickable
@@ -41,9 +44,6 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-// Server-owned component affordances follow the web footer's inline ordering.
-
-/** The three server-stamped trust marks (wire-contract §6). */
 enum class Provenance(
     val label: String,
     val glyph: String,
@@ -53,21 +53,13 @@ enum class Provenance(
     Generated("AI-generated", "✦"),
 }
 
-// Decorative/structural types assert no facts — never badged, never refined
-// (mirrors the web footer's skip set, webrender/renderer.py _PROV_SKIP_TYPES).
 private val PROVENANCE_SKIP_TYPES = setOf("divider", "skeleton")
 
-// The web footer's tolerant normalization sets — the server stamps the three
-// canonical values, but agent-authored synonyms still read as the right mark.
 private val PROVENANCE_GROUNDED = setOf("grounded", "verified", "tool", "search", "source")
 private val PROVENANCE_ESTIMATED = setOf("estimated", "uncertain", "approx", "low_confidence")
 private val PROVENANCE_GENERATED = setOf("generated", "model", "ai")
 
-/**
- * The badge kind for a component's server-stamped `provenance` field. Absent,
- * blank, or unknown values render NOTHING — the client never derives trust
- * locally (the stamp is server-owned and overwrites agent-supplied values).
- */
+// Trust badges are server-stamped only — never derived client-side
 internal fun provenanceOf(c: Component): Provenance? {
     if (c.type.trim().lowercase() in PROVENANCE_SKIP_TYPES) return null
     val kind = c.str("provenance")?.trim()?.lowercase()?.takeIf { it.isNotBlank() } ?: return null
@@ -79,10 +71,8 @@ internal fun provenanceOf(c: Component): Provenance? {
     }
 }
 
-/** A dialog action is revalidated against its exact captured owner/chat/component by its handler. */
 internal fun refinePayload(instruction: String): JsonObject = buildJsonObject { put("instruction", instruction.trim()) }
 
-/** DownloadManager rejects path separators/exotic chars in destination names. */
 internal fun exportFilename(
     base: String,
     ext: String,
@@ -96,7 +86,6 @@ internal fun exportFilename(
     return "${safe.take(60)}.$ext"
 }
 
-/** Missing component_chrome intentionally leaves only the server provenance warning. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun ArtifactFooter(
@@ -180,10 +169,8 @@ internal fun ArtifactFooter(
     }
 }
 
-/** Plain trailing warning text uses the web footer's typography and spacing. */
 @Composable
 private fun ProvenanceBadge(p: Provenance) {
-    // Keep the trust stamp in the model; ordinary tool results need no badge.
     if (p == Provenance.Grounded) return
     val tone =
         when (p) {
@@ -205,11 +192,6 @@ private fun ProvenanceBadge(p: Provenance) {
     }
 }
 
-/**
- * The refine instruction prompt (T040): a plain-language instruction sent as
- * `component_refine` — the server runs the full gate stack and answers with a
- * `ui_upsert` onto the same identity, or an honest per-action error frame.
- */
 @Composable
 private fun RefineDialog(
     onDismiss: () -> Unit,

@@ -1,4 +1,7 @@
-"""Work responses are current reads, never queued or unsolicited content."""
+"""Tests for windows-client work-surface reads (astral_client/protocol.py): responses
+are treated as current, correlated reads, never queued events, covering retirement,
+malformed frames, timeout/retry, and transport rechecks before send.
+"""
 
 import asyncio
 import json
@@ -6,7 +9,7 @@ import uuid
 from pathlib import Path
 
 import pytest
-from test_message_routing import win as window_fixture  # noqa: F401 - pytest fixture registration
+from test_message_routing import win as window_fixture  # noqa: F401
 from astral_client.protocol import OrchestratorClient, WindowsProtocolError
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel
@@ -119,8 +122,6 @@ def test_canonical_work_result_uses_complete_literal_qt_labels(win):
     root = Path(__file__).resolve().parents[2]
     fixture = json.loads((root / "contracts/fixtures/work_088/read_surface.json").read_text())
     message = fixture["frames"]["result"]
-    # Keep the actual canonical builder shapes and variants while exercising
-    # source-controlled text, with no Markdown/HTML/link rendering authority.
     literal = '**literal** [source](https://example.invalid) <b>HTML</b> & "text"\nSecond line'
     expected = []
 
@@ -188,7 +189,6 @@ def test_retirement_never_reopens_old_work(win, change):
     elif change == "disconnect":
         win._on_status("closed:synthetic")
     elif change == "auth":
-        # Avoid ordinary external reauthentication; retirement precedes it.
         win._begin_silent_refresh = lambda: None
         win._on_status("auth_required:synthetic")
     elif change == "rotation":
@@ -264,7 +264,6 @@ def transport(qapp):
 
 
 def flush(loop):
-    # Deliver the scheduled coroutine and its future completion callback.
     loop.run_until_complete(asyncio.sleep(0))
     loop.run_until_complete(asyncio.sleep(0))
 

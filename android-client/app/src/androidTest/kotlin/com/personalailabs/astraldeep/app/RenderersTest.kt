@@ -1,3 +1,6 @@
+// Instrumented test for the primitive renderer registry: registered types render, an unknown type degrades to
+// a labeled placeholder, and a select submits its option key rather than its label.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.ui.test.assertIsDisplayed
@@ -15,7 +18,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
-/** US2 (T037): renderer groups render; an unknown type degrades to a labeled placeholder (FR-005). */
 class RenderersTest {
     @get:Rule val rule = createComposeRule()
 
@@ -42,11 +44,6 @@ class RenderersTest {
         rule.onNodeWithText("[frobnicator]").assertIsDisplayed()
     }
 
-    /**
-     * The LLM provider field is `kind:"select"` ON THE WIRE (web renders a `<select>`,
-     * Windows a QComboBox): it must open a dropdown — never a box you type "openai"
-     * into — and submit the picked option KEY unchanged for the `chrome_llm_*` handlers.
-     */
     @Test
     fun a_select_field_opens_a_dropdown_and_submits_the_picked_key() {
         val emitted = mutableListOf<Pair<String, JsonObject>>()
@@ -65,9 +62,9 @@ class RenderersTest {
             val r = Renderer(Emit { action, payload -> emitted += action to payload }).registerAllRenderers()
             CanvasHost(components = listOf(picker), renderer = r)
         }
-        rule.onNodeWithText("openai").assertIsDisplayed() // the default is preselected, not typed
-        rule.onNodeWithText("openai").performClick() // opens the menu
-        rule.onNodeWithText("xai").performClick() // pick a different provider
+        rule.onNodeWithText("openai").assertIsDisplayed()
+        rule.onNodeWithText("openai").performClick()
+        rule.onNodeWithText("xai").performClick()
         rule.onNodeWithText("Save").performClick()
 
         assertEquals(1, emitted.size)

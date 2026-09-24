@@ -1,3 +1,6 @@
+// Tests for download policy: exact-origin authorization, redirects that never leak a bearer token or
+// downgrade credentials, confined-filename save paths, and canvas-export revision requirements.
+
 import XCTest
 
 @testable import AstralCore

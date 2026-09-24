@@ -1,3 +1,6 @@
+// Compose renderers for the data primitives (list, table, tabs, chat_history, skeleton), registered via
+// registerDataRenderers(); the table pager's table_paginate events come back as an in-place ui_upsert.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import androidx.compose.foundation.horizontalScroll
@@ -43,7 +46,6 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-/** Register the data primitives (US2): list, table, tabs, chat_history, skeleton. */
 fun Renderer.registerDataRenderers(): Renderer =
     apply {
         register("list") { c -> ListPrimitive(c) { render(it) } }
@@ -125,8 +127,6 @@ private fun TablePrimitive(
                 }
             }
         }
-        // A server-paginated table (total_rows + page_size) gets a pager row; the
-        // reply is a ui_upsert keyed to this component_id, updating it in place.
         if (shouldPaginate(total, size)) {
             val ps = pagerState(total!!, size!!, offset)
             TablePager(
@@ -138,7 +138,6 @@ private fun TablePrimitive(
     }
 }
 
-/** "‹ Prev · rows X–Y of Z · Next ›" — the pager row for a paginated table (T027). */
 @Composable
 private fun TablePager(
     state: PagerState,
@@ -162,7 +161,6 @@ private fun TablePager(
     }
 }
 
-/** The `table_paginate` payload: {component_id, params:{page_offset, page_size}}. */
 private fun paginatePayload(
     componentId: String?,
     offset: Int,
@@ -229,9 +227,5 @@ private fun ChatHistoryPrimitive(
 
 @Composable
 private fun SkeletonPrimitive(c: Component) {
-    // A `skeleton` is a LOADING placeholder. The native canvas commits only FINAL
-    // content (the app shows its own skeleton while a query is in flight), so a
-    // skeleton reaching the canvas is stray — a placeholder the model never filled.
-    // Render nothing rather than dead gray bars. (The reducer also drops top-level
-    // skeletons so they leave no gap; this handles any nested ones.)
+    // Stray loading placeholder: render nothing.
 }

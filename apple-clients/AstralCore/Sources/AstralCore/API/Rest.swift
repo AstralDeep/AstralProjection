@@ -1,5 +1,7 @@
-// Feature 051 — REST surface shared by the three Apple clients: chat list /
-// detail / creation, and the 044 native sign-out (client_id attribution).
+// REST client shared by the Apple targets: chat list/detail/creation, operation reconciliation,
+// canvas/component export and download, agent permissions, audit, and attributed sign-out. Used throughout
+// AppModel and the Views layer.
+
 import Foundation
 
 public struct ChatSummary: Sendable, Identifiable, Equatable {
@@ -28,7 +30,6 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
         self.timeLabel = json["time"]?.stringValue
     }
 
-    /// The server owns history enrichment and ROTE's per-device row count.
     public init?(historyItem: JSONValue) {
         guard let id = historyItem["chat_id"]?.stringValue ?? historyItem["id"]?.stringValue else { return nil }
         self.init(
@@ -46,13 +47,11 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
     }
     public var displayPreview: String { Self.singleLine(preview) }
 
-    /// Match CSS white-space: nowrap without interpreting message markup.
     private static func singleLine(_ value: String) -> String {
         value.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "[\\t\\n\\f\\r ]+", with: " ", options: .regularExpression)
     }
 
-    /// Same display thresholds as the server's history_surface._relative_time.
     public func relativeTime(now: Date = Date()) -> String {
         if let timeLabel { return Self.singleLine(timeLabel) }
         guard let timestamp = Double(updatedAt), timestamp.isFinite else { return "" }
@@ -74,9 +73,6 @@ public struct ChatSummary: Sendable, Identifiable, Equatable {
     }
 }
 
-/// Payload-free retained operation projection returned by the authenticated
-/// feature-060 reconciliation endpoint. Credentials and submitted fields are
-/// deliberately absent from this type.
 public struct OperationProjection: Sendable, Equatable {
     public let operationId: String
     public let operationKind: String
@@ -138,7 +134,6 @@ public struct OperationProjection: Sendable, Equatable {
     }
 }
 
-/// The immutable retained result of one owner-scoped submission identity.
 public enum OperationSubmissionProjection: Sendable, Equatable {
     case accepted(OperationProjection)
     case refused(code: String, retryable: Bool, retryAfterMs: UInt64?)
@@ -205,8 +200,6 @@ public struct RestClient: Sendable {
             }
     }
 
-    /// Independently authorized display-only rendering after the ordinary
-    /// export GET. Never retries; the caller retains its captured owner fence.
     public func canvasPresentation(chatId: String, renderRevision: UInt64, capture: Data) async throws -> Data {
         let source = try CanvasExportPolicy.validateRequest(capture)
         guard !chatId.isEmpty, chatId.utf8.count <= 256,
@@ -232,7 +225,6 @@ public struct RestClient: Sendable {
         return data
     }
 
-    /// ws(s):// twin of the server base for the orchestrator socket.
     public var webSocketURL: URL {
         var comps = URLComponents(url: serverBase, resolvingAgainstBaseURL: false)!
         comps.scheme = comps.scheme == "https" ? "wss" : "ws"
@@ -260,14 +252,11 @@ public struct RestClient: Sendable {
         return items.compactMap { ChatSummary(json: $0) }
     }
 
-    /// One explicit mint attempt using the existing owner/PHI-gated route.
-    /// The result stays ephemeral; callers must recheck their initiating owner
-    /// before displaying it. An uncertain POST is never retried here.
+    // Never retried — a duplicate POST would mint an extra share
     public func shareCanvas(chatId: String) async throws -> URL {
         try await share(chatId: chatId, componentId: nil)
     }
 
-    /// Mint only the specified owned component through the same PHI-gated route.
     public func shareComponent(chatId: String, componentId: String) async throws -> URL {
         guard !componentId.isEmpty, componentId.utf8.count <= 256 else { throw URLError(.badURL) }
         return try await share(chatId: chatId, componentId: componentId)
@@ -305,8 +294,6 @@ public struct RestClient: Sendable {
         return try WorkspaceRequestPolicy.shareURL(raw, relativeTo: serverBase)
     }
 
-    /// CSV is an authenticated owned-component operation, not a public artifact
-    /// URL. A missing/stale credential must prevent dispatch altogether.
     public func downloadComponentCSV(chatId: String, componentId: String) async throws -> URL {
         let request = try await componentCSVRequest(chatId: chatId, componentId: componentId)
         return try await streamDownload(
@@ -339,8 +326,6 @@ public struct RestClient: Sendable {
         return (200...299).contains(status)
     }
 
-    /// Reconcile one retained user-owned accepted operation. A non-disclosing
-    /// 404 returns nil; transport and malformed-success responses throw.
     public func operation(id: String) async throws -> OperationProjection? {
         let (status, json) = try await request("GET", "api/operations/\(id)")
         if status == 404 { return nil }
@@ -350,8 +335,6 @@ public struct RestClient: Sendable {
         return operation
     }
 
-    /// Resolve acceptance/refusal by the original client submission UUID when
-    /// the socket closed before an operation ID reached the client.
     public func operationSubmission(id: String) async throws -> OperationSubmissionProjection? {
         let (status, json) = try await request("GET", "api/operation-submissions/\(id)")
         if status == 404 { return nil }
@@ -361,7 +344,6 @@ public struct RestClient: Sendable {
         return result
     }
 
-    /// 044 native sign-out: server-side revocation attributed to this client.
     public func logout(clientId: String, refreshToken: String) async throws -> Bool {
         let (status, json) = try await request(
             "POST", "api/auth/logout",
@@ -373,7 +355,6 @@ public struct RestClient: Sendable {
         return status == 200 && ok
     }
 
-    /// The per-user, hash-chained audit log (`GET /api/audit`).
     public func audit() async -> [AuditEvent] {
         var req = NoStoreHTTP.request(url: serverBase.appendingPathComponent("api/audit"))
         if let token = await tokenProvider() {
@@ -385,8 +366,6 @@ public struct RestClient: Sendable {
         return AuditEvent.parse(data)
     }
 
-    /// Upload one file (`POST /api/upload`, multipart `file` field) — the exact
-    /// web/Android contract. Returns the attachment metadata or nil on failure.
     public func uploadAttachment(
         filename: String, mimeType: String?,
         data fileData: Data
@@ -419,13 +398,6 @@ public struct RestClient: Sendable {
             parserStatus: json["parser_status"]?.stringValue)
     }
 
-    /// Download a server file with Bearer auth — the native twin of the web's
-    /// cookie-carrying anchor click on `file_download` components. Handles the
-    /// root-relative `/api/download/{session}/{filename}` URLs agents emit by
-    /// resolving them against `serverBase`; absolute OFF-origin URLs (e.g. a
-    /// `download_card`'s GitHub release asset) are fetched WITHOUT the token —
-    /// credentials never leave our origin. Returns a temporary file URL whose
-    /// last path component is the intended filename (for share/save UIs).
     public func downloadFile(
         from urlString: String,
         suggestedFilename: String? = nil,
@@ -436,8 +408,6 @@ public struct RestClient: Sendable {
             req, suggestedFilename: suggestedFilename, expectedRenderRevision: expectedRenderRevision)
     }
 
-    /// Shared bounded private writer. Component CSV and revision-bound canvas
-    /// exports add stricter request policy without changing public downloads.
     private func streamDownload(
         _ req: URLRequest, suggestedFilename: String?, expectedRenderRevision: UInt64?,
         refusesRedirects: Bool = false
@@ -508,7 +478,6 @@ public struct RestClient: Sendable {
         return destination
     }
 
-    /// Removes only private temporary files produced by this download facade.
     public static func removeTemporaryDownload(_ file: URL) {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("astral-downloads", isDirectory: true)
             .standardizedFileURL
@@ -519,8 +488,6 @@ public struct RestClient: Sendable {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    /// Testable request construction; fetching and redirects reuse this exact
-    /// request, so URL policy cannot diverge from the authorization decision.
     func downloadRequest(from urlString: String) async throws -> URLRequest {
         let url = try DownloadPolicy.resolve(urlString, relativeTo: serverBase)
         var request = NoStoreHTTP.request(url: url)
@@ -530,8 +497,6 @@ public struct RestClient: Sendable {
         return request
     }
 
-    /// Toggle one tool's permission (feature-013 per-(tool,kind) shape):
-    /// `PUT /api/agents/{id}/permissions {per_tool_permissions:{tool:{kind:enabled}}}`.
     @discardableResult
     public func setToolPermission(
         agentId: String, tool: String, kind: String,
@@ -545,11 +510,9 @@ public struct RestClient: Sendable {
     }
 }
 
-/// Metadata returned by `POST /api/upload` for a staged attachment (feature 031).
 public struct AttachmentUpload: Sendable {
     public let attachmentId: String
     public let filename: String
     public let category: String
-    /// covered | preparing | pending_admin_approval | unavailable
     public let parserStatus: String?
 }

@@ -1,3 +1,7 @@
+// Entry point for the bundled speech-recognition helper subprocess: validates System.Speech
+// recognizer/locale/audio-format capability, then runs recognition sessions over
+// BoundedAudioStream, exchanging FrameProtocol frames with the client.
+
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -636,7 +640,7 @@ namespace AstralSpeechHelper
                 }
                 catch (InvalidOperationException)
                 {
-                    // Recognition may have completed between its terminal callback and stop.
+                    // Recognition may finish before stop.
                 }
             }
             finally

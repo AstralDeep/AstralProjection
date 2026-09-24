@@ -1,7 +1,8 @@
+// Stable, non-secret per-installation identity that binds an authenticated UI connection to voice-control
+// REST calls in WatchVoiceREST.swift; it is not an authorization credential on its own.
+
 import Foundation
 
-// Stable, non-secret installation identity used only to bind an authenticated
-// UI connection to voice-control REST calls. This is not an authorization key.
 enum WatchVoiceDeviceIdentity {
     static let defaultsKey = "voice.device-id.v1"
 

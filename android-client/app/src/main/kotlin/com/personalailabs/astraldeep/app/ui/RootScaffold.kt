@@ -1,3 +1,7 @@
+// Compose app shell: top bar, connection/banner strips, and the Settings menu rendered from the server-owned
+// ChromeMenuModel so every client matches. Hosted by MainActivity; a pinned mandatory surface locks
+// navigation except sign-out.
+
 package com.personalailabs.astraldeep.app.ui
 
 import androidx.activity.compose.BackHandler
@@ -55,15 +59,6 @@ import com.personalailabs.astraldeep.core.chrome.MenuItem
 import com.personalailabs.astraldeep.core.chrome.TopBarControl
 import kotlinx.serialization.json.JsonObject
 
-/**
- * The app root. The top bar is deliberately minimal and identical across clients
- * (feature 042): the small brand logo · a New-chat button · a Recent-chats
- * button · a Settings gear whose dropdown holds ALL settings, built from the
- * single server-owned menu model the orchestrator pushes over `chrome_menu`
- * (Constitution XII — one definition, every client renders it). There is no
- * separate Settings *screen* anymore (it used to duplicate Agents/Audit). Chat
- * is the adaptive SDUI shell; the others are native Compose surfaces.
- */
 @Composable
 fun RootScaffold(
     vm: AppViewModel,
@@ -72,9 +67,7 @@ fun RootScaffold(
     onWorkspaceAction: (TopBarControl) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
-    // A mandatory surface (the 054 first-run LLM-setup gate) swallows system Back
-    // — the dialog cannot be dismissed until the server closes it; sign-out is
-    // the guaranteed escape (spec FR-013).
+    // Intentionally empty: blocks Back while the mandatory surface is pinned
     BackHandler(enabled = state.mandatorySurface) {}
     Scaffold(
         topBar = {
@@ -82,8 +75,6 @@ fun RootScaffold(
                 model = state.chromeMenu,
                 workspace = workspaceControls(state),
                 onWorkspaceAction = onWorkspaceAction,
-                // Top-bar navigation is suppressed while a mandatory surface is
-                // pinned — everything EXCEPT sign-out (spec FR-013).
                 navigationLocked = state.mandatorySurface,
                 onNewChat = {
                     vm.newChat()
@@ -96,11 +87,7 @@ fun RootScaffold(
             )
         },
     ) { padding ->
-        // Edge-to-edge (targetSdk 35): pad for the system bars the Scaffold
-        // reports, mark them consumed, then let the input rise above the IME.
         Column(modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
-            // Connection + banner strips (feature 044): a degraded connection and
-            // server errors/notifications are visible, never silent.
             connectionStripLabel(state.connection, state.everConnected)?.let { ConnectionStrip(it) }
             state.banner?.let {
                 BannerBar(text = it, isError = state.bannerKind == "error", onDismiss = vm::dismissBanner)
@@ -134,7 +121,6 @@ fun RootScaffold(
     }
 }
 
-/** The slim "Reconnecting…" strip shown while a previously-live session is degraded. */
 @Composable
 private fun ConnectionStrip(label: String) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
@@ -147,7 +133,6 @@ private fun ConnectionStrip(label: String) {
     }
 }
 
-/** A dismissible one-line banner for server errors, offline drops, and notifications. */
 @Composable
 private fun BannerBar(
     text: String,
@@ -200,7 +185,6 @@ internal fun AstralTopBar(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(2.dp),
         ) {
-            // Small brand logo only — no wordmark, no status text.
             Image(
                 painter = painterResource(R.drawable.app_icon),
                 contentDescription = "AstralDeep",
@@ -262,7 +246,6 @@ internal fun AstralTopBar(
     }
 }
 
-/** Map a resolved top-bar action glyph to a drawable (T037). */
 private fun topBarActionIcon(icon: TopBarIcon): Int =
     when (icon) {
         TopBarIcon.SPARKLE -> R.drawable.ic_sparkle
@@ -270,12 +253,6 @@ private fun topBarActionIcon(icon: TopBarIcon): Int =
         TopBarIcon.GENERIC -> R.drawable.ic_menu
     }
 
-/**
- * The Settings gear + its dropdown, rendered from the server-owned model.
- * `internal` so the instrumented UI test can drive it without real auth.
- * While [navigationLocked] (a mandatory surface is pinned, feature 054) every
- * menu item is disabled — only Sign out stays enabled (spec FR-013).
- */
 @Composable
 internal fun SettingsMenu(
     model: ChromeMenuModel?,
@@ -343,8 +320,6 @@ internal fun NewChatButton(
     onClick: () -> Unit,
     showLabel: Boolean = LocalConfiguration.current.screenWidthDp >= 640,
 ) {
-    // Keep the native touch target while the visible control matches the web
-    // topbar's 38px outlined button and compact-width icon-only treatment.
     Box(
         Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)
             .clip(RoundedCornerShape(8.dp))

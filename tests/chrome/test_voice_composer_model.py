@@ -1,4 +1,6 @@
-"""Server-owned conversational composer behavior for Feature 065."""
+"""Tests for backend/webrender/chrome/composer_model.py: owner/takeover state, control
+availability, and fail-closed invalid states.
+"""
 
 from __future__ import annotations
 

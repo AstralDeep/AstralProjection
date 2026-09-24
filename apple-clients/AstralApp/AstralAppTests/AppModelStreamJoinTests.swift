@@ -1,11 +1,7 @@
+// Tests for AppModel's mid-stream join behavior: stream_subscribed after load_chat leaves an
+// already-rehydrated component in place, and the live canvas, not a placeholder, is read for mid-turn guards.
+
 import AstralCore
-// Feature 055 edge case — a device joining mid-stream gets the current
-// component state, not a blank placeholder: `stream_subscribed` after
-// load_chat has already re-hydrated the streamed component must leave it in
-// place (web twin: the client.js `stream_subscribed` guard). Under the
-// live-op rule ops target the VISIBLE canvas even mid-turn, so the guard
-// reads the live canvas ids — the same list applyCanvasOps mutates — and a
-// mid-turn ack can't blank what the user is looking at.
 import XCTest
 
 @testable import AstralDeep
@@ -33,7 +29,7 @@ final class AppModelStreamJoinTests: XCTestCase {
         model.canvas = [liveChartCard]
         reduce(model, subscribedFrame)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc"])
-        XCTAssertEqual(model.canvas[0].type, "card")  // not the text placeholder
+        XCTAssertEqual(model.canvas[0].type, "card")
     }
 
     func testSubscribedBuildsPlaceholderOnFreshCanvas() {
@@ -46,10 +42,10 @@ final class AppModelStreamJoinTests: XCTestCase {
     func testMidTurnGuardReadsTheLiveCanvas() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [liveChartCard]
-        model.sendChat("working…")  // arms pendingReplace — the canvas stays live
+        model.sendChat("working…")
         reduce(model, subscribedFrame)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc"])
-        XCTAssertEqual(model.canvas[0].type, "card")  // not the text placeholder
+        XCTAssertEqual(model.canvas[0].type, "card")
     }
 
     func testMidTurnPlaceholderAppliesLiveWhenCanvasLacksIdentity() {
@@ -58,6 +54,6 @@ final class AppModelStreamJoinTests: XCTestCase {
         reduce(model, subscribedFrame)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc"])
         XCTAssertEqual(model.canvas[0].type, "text")
-        XCTAssertTrue(model.pendingCanvas.isEmpty)  // placeholders never start a buffer
+        XCTAssertTrue(model.pendingCanvas.isEmpty)
     }
 }

@@ -1,6 +1,6 @@
-// Feature 051 — watch-side device-login state machine against a scripted
-// broker (contracts/device-login.md): pacing (pending keeps interval,
-// slow_down raises it, never poll faster), terminal states, error mapping.
+// Tests for the device-login flow (DeviceLoginPoll) against a scripted broker: no-store URL-cache exclusion,
+// poll pacing under pending/slow_down, terminal states, and broker-unavailable error mapping.
+
 import XCTest
 
 @testable import AstralCore
@@ -237,7 +237,6 @@ final class DeviceLoginTests: XCTestCase {
             start: start,
             sleeper: { seconds in await waits.record(seconds) })
         if case .approved = result {} else { XCTFail("expected approved") }
-        // 5 (initial) → 5 (pending keeps) → 10 (slow_down raises) → 10 (kept)
         let recorded = await waits.values
         XCTAssertEqual(recorded, [5, 5, 10, 10])
     }

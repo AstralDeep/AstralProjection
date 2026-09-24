@@ -1,19 +1,6 @@
-"""WebSocket client for the AstralDeep orchestrator.
-
-Speaks the exact client protocol: connects to ws://<host>/ws, sends `register_ui`
-(token + device caps) first, then streams JSON messages. Inbound messages are
-delivered to the Qt main thread via the `message` signal; outbound `ui_event` /
-`chat_message` are sent thread-safely onto the asyncio loop.
-
-Feature 044 (FR-003): the transport owns the connection lifecycle — it
-auto-reconnects after a drop with exponential backoff (1 s base, x2, 30 s cap,
-reset on a successful open), buffers outbound frames composed while
-disconnected in a bounded queue flushed FIFO on (re)connect, and surfaces every
-state change through the `status` signal so the app can keep the connection
-state visible. Queue overflow is never silent: the oldest frame is dropped AND
-a `send_dropped:` status is emitted for the UI to surface.
-
-Runs the asyncio websocket loop in a daemon thread so the Qt UI stays responsive.
+"""WebSocket client for the orchestrator: sends register_ui, then streams JSON frames to
+the Qt thread via the message signal; owns reconnect backoff, a bounded offline
+queue, and the continuity/voice state app.py consumes.
 """
 
 from __future__ import annotations
@@ -76,7 +63,7 @@ _VOICE_SINGLE_KINDS = _VOICE_PLAYOUT_KINDS - {"result"}
 
 
 class WindowsProtocolError(ValueError):
-    """An inbound or outbound feature-060 wire value failed closed."""
+    pass
 
 
 _VOICE_LOCAL_REASONS = frozenset(
@@ -274,8 +261,6 @@ _CLIENT_LOCAL_REQUIREMENTS = {
 
 
 def _exact_client_local_requirements(value: object) -> bool:
-    """Match JSON requirements without Python bool/int/float coercion."""
-
     return bool(
         isinstance(value, dict)
         and set(value) == set(_CLIENT_LOCAL_REQUIREMENTS)
@@ -288,15 +273,11 @@ def _exact_client_local_requirements(value: object) -> bool:
 
 @dataclass(frozen=True)
 class VoiceLocalValue:
-    """Validated client-local v2 data with no engine, endpoint, or authority."""
-
     disposition: str
     payload: dict[str, Any]
 
 
 def parse_client_local_capability(payload: object) -> Optional[VoiceLocalValue]:
-    """Parse only exact client-local capability/rest values; unknown keys fail closed."""
-
     if not isinstance(payload, dict):
         return None
     unavailable = {
@@ -381,8 +362,6 @@ def parse_client_local_capability(payload: object) -> Optional[VoiceLocalValue]:
 
 
 def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
-    """Parse exact v2 local frames. Invalid frames deliberately become typed fallback."""
-
     if not isinstance(payload, dict):
         return None
     frame_type = payload.get("type")
@@ -561,8 +540,6 @@ def _valid_voice_local_detail(payload: dict[str, Any]) -> bool:
 
 
 def build_voice_local_final(value: VoiceLocalValue) -> Optional[dict[str, Any]]:
-    """Return a bounded validated local-final frame without remote proof semantics."""
-
     if value.disposition != "final" or value.payload.get("type") != "voice_local_final":
         return None
     return dict(value.payload)
@@ -571,8 +548,6 @@ def build_voice_local_final(value: VoiceLocalValue) -> Optional[dict[str, Any]]:
 def validate_voice_recovery_envelope(
     payload: object, expected_refresh_id: str
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Validate the exact, short-lived remote-v1 grant refresh envelope."""
-
     if (
         not isinstance(payload, dict)
         or set(payload) != {"refresh_id", "replayed", "replay_expires_at", "session", "grant"}
@@ -636,8 +611,6 @@ def _is_uuid4(value: object) -> bool:
 
 
 def load_or_create_voice_device_id(settings: Optional[QSettings] = None) -> str:
-    """Return one stable, non-secret installation UUID4 for voice ownership."""
-
     store = settings or QSettings("AstralDeep", "WindowsClient")
     current = store.value(VOICE_DEVICE_ID_KEY, "", type=str) or ""
     if _is_uuid4(current):
@@ -649,13 +622,6 @@ def load_or_create_voice_device_id(settings: Optional[QSettings] = None) -> str:
 
 
 def _validate_semantic_json(value: object, name: str = "semantic value") -> None:
-    """Validate JSON semantics and reject web-only presentation authority.
-
-    Python's JSON decoder accepts non-finite numbers by default. Native
-    continuity state must fail closed on those values and on any nested
-    ``_presentation`` member, which is reserved exclusively for web sockets.
-    """
-
     if value is None or isinstance(value, (str, bool, int)):
         return
     if isinstance(value, float):
@@ -702,12 +668,6 @@ def _stable_json(value: object) -> str:
 
 
 def decode_token_account(token: str) -> Optional[tuple[str, str]]:
-    """Read unverified ``iss``/``sub`` claims only to namespace local storage.
-
-    This helper is not an authentication decision. The orchestrator remains
-    solely responsible for verifying the token and authorizing chat access.
-    """
-
     if not isinstance(token, str):
         return None
     pieces = token.split(".")
@@ -728,14 +688,6 @@ def decode_token_account(token: str) -> Optional[tuple[str, str]]:
 
 
 class ConversationResumeStore:
-    """Account-scoped, non-credential active-chat locator in ``QSettings``.
-
-    The account identity appears only as a SHA-256 digest in the key. Values
-    are exact version-one JSON and synchronous ``sync()`` calls make selection
-    durable before load, registration, or presentation changes continue.
-    Unknown schemas and malformed future values are retained but never used.
-    """
-
     PREFIX = "astraldeep.active_chat.v1."
     ACCOUNT_KEY = "astraldeep.active_chat.account.v1"
     CLEAR_REASONS = frozenset(
@@ -761,8 +713,6 @@ class ConversationResumeStore:
         return f"{ConversationResumeStore.PREFIX}{digest}"
 
     def bind_account(self, issuer: str, subject: str) -> str:
-        """Select an account key, clearing a definitively switched account."""
-
         next_key = self.account_key(issuer, subject)
         previous = self.settings.value(self.ACCOUNT_KEY, "", type=str) or ""
         if previous and previous != next_key:
@@ -818,8 +768,6 @@ class ConversationResumeStore:
         return True
 
     def clear(self, reason: str, chat_id: Optional[str] = None) -> bool:
-        """Clear only one of the four definitive contract events."""
-
         if reason not in self.CLEAR_REASONS or self.storage_key is None:
             return False
         if reason == "confirmed_deletion" and chat_id != self.active_chat():
@@ -829,15 +777,11 @@ class ConversationResumeStore:
         return True
 
 
-# 066 T023 contract extension: the closed set of variants a canonical text
-# part may carry (mirrors backend shared/protocol.py CANONICAL_TEXT_PART_VARIANTS).
 CANONICAL_TEXT_PART_VARIANTS = frozenset({"caption"})
 
 
 @dataclass(frozen=True)
 class SemanticPart:
-    """One validated canonical transcript part in original wire order."""
-
     type: str
     text: Optional[str] = None
     components: tuple[dict[str, Any], ...] = ()
@@ -850,8 +794,6 @@ class SemanticPart:
 
 @dataclass(frozen=True)
 class SemanticMessage:
-    """One visible, validated canonical transcript message."""
-
     message_id: str
     role: str
     created_at: str
@@ -860,8 +802,6 @@ class SemanticMessage:
 
 
 def decode_semantic_transcript(transcript: object) -> list[SemanticMessage]:
-    """Decode canonical transcript forms without language debug formatting."""
-
     if not isinstance(transcript, list):
         raise WindowsProtocolError("transcript must be an array")
     decoded: list[SemanticMessage] = []
@@ -895,7 +835,6 @@ def decode_semantic_transcript(transcript: object) -> list[SemanticMessage]:
                 raise WindowsProtocolError("transcript part is invalid")
             part_type = part["type"]
             if part_type == "text":
-                # 066 T023: exactly {type, text} plus an OPTIONAL bounded variant.
                 if set(part) == {"type", "text", "variant"}:
                     if part.get("variant") not in CANONICAL_TEXT_PART_VARIANTS:
                         raise WindowsProtocolError("text part variant is outside the canonical set")
@@ -971,8 +910,6 @@ def decode_semantic_transcript(transcript: object) -> list[SemanticMessage]:
 
 @dataclass(frozen=True)
 class ConversationSnapshot:
-    """Complete committed transcript and canvas received in one frame."""
-
     schema_version: int
     snapshot_id: str
     chat_id: str
@@ -1040,8 +977,6 @@ class ConversationSnapshot:
 
 @dataclass(frozen=True)
 class ConversationCommitReady:
-    """Prelude binding a detached commit snapshot to the active connection."""
-
     schema_version: int
     chat_id: str
     connection_generation: str
@@ -1095,13 +1030,6 @@ class _ConversationRequest:
 
 
 class ConversationContinuityReducer:
-    """Purpose-aware atomic snapshot and disposable-overlay reducer.
-
-    The reducer owns only protocol state. Qt widgets are changed by the app
-    after ``snapshot_applied`` returns, so invalid or stale frames cannot
-    partially mutate either committed surface.
-    """
-
     def __init__(self) -> None:
         self.active_chat_id: Optional[str] = None
         self.connection_generation: Optional[str] = None
@@ -1196,7 +1124,6 @@ class ConversationContinuityReducer:
         self.overlay_frames.clear()
 
     def retire_uncommitted_commit(self, request_generation: str) -> bool:
-        """Close a correlated, authoritatively ended attempt without replay reuse."""
         request = self._request
         if (
             request is None or request.generation != request_generation
@@ -1333,8 +1260,6 @@ class ConversationContinuityReducer:
 
 @dataclass(frozen=True)
 class OperationStatus:
-    """Server-owned operation state; local submitting is never represented here."""
-
     operation_id: str
     action: str
     surface: str
@@ -1427,8 +1352,6 @@ class OperationStatus:
 
 @dataclass(frozen=True)
 class AdmissionRefusal:
-    """Exact pre-admission refusal correlated to one client submission."""
-
     submission_id: str
     accepted: bool
     code: str
@@ -1476,8 +1399,6 @@ class AdmissionRefusal:
 
 @dataclass(frozen=True)
 class AgentLifecycle:
-    """One generation-fenced projection of the authoritative agent runtime."""
-
     agent_id: str
     revision_id: Optional[str]
     runtime_instance_id: Optional[str]
@@ -1544,8 +1465,6 @@ class AgentLifecycle:
 
 @dataclass(frozen=True)
 class LocalOperationSubmission:
-    """Immediate client-only projection created before outbound socket I/O."""
-
     submission_id: str
     request_generation: str
     action: str
@@ -1568,8 +1487,6 @@ class LocalOperationSubmission:
 
 @dataclass(frozen=True)
 class VoiceTranscriptSubmission:
-    """One worker-bound final retained only until correlated disposition."""
-
     transcript: dict[str, Any]
 
     _BASE_FIELDS: ClassVar[frozenset[str]] = frozenset(
@@ -1719,8 +1636,6 @@ class VoiceTranscriptSubmission:
 
 @dataclass(frozen=True)
 class QueuedReplayPreparation:
-    """Exact queued identity plus the new connection fence to install first."""
-
     connection_generation: str
     submission: LocalOperationSubmission
     request_purpose: Optional[str]
@@ -1739,8 +1654,6 @@ class QueuedReplayPreparation:
 
 
 class QueuedReplayAcknowledgement:
-    """Thread-safe one-shot result for the GUI's before-send preparation."""
-
     def __init__(self) -> None:
         self.accepted = False
         self.reason = "preparation did not complete"
@@ -1756,8 +1669,6 @@ class QueuedReplayAcknowledgement:
 
 @dataclass(frozen=True)
 class AgentHostRegistration:
-    """Structured v2 registration sent by the Windows desktop host."""
-
     host_id: str
     supported_runtime_contract_versions: tuple[int, ...]
     runtime_lock_sha256: str
@@ -1796,8 +1707,6 @@ class AgentHostRegistration:
 
 @dataclass(frozen=True)
 class AgentHostRegistered:
-    """Validated server acknowledgement for the current host connection."""
-
     host_id: str
     host_session_id: str
     inventory_required: bool
@@ -1823,8 +1732,6 @@ class AgentHostRegistered:
 
 @dataclass(frozen=True)
 class AgentHostRegistrationRefused:
-    """Exact non-disclosing refusal for an incompatible host registration."""
-
     code: str
     retryable: bool
     details: dict[str, Any]
@@ -1893,8 +1800,6 @@ class AgentHostRegistrationRefused:
 
 @dataclass(frozen=True)
 class MacOSHostCapability:
-    """Candidate-owned macOS host applicability value; never inferred locally."""
-
     supported: bool
     runtime_contract_versions: tuple[int, ...]
     source_feature: Optional[str]
@@ -1925,8 +1830,6 @@ class MacOSHostCapability:
 
 
 def parse_runtime_frame(data: dict[str, Any]) -> object:
-    """Parse a recognized 060 frame strictly, leaving legacy frames as dicts."""
-
     parser = {
         "conversation_snapshot": ConversationSnapshot.from_dict,
         "conversation_commit_ready": ConversationCommitReady.from_dict,
@@ -1938,14 +1841,10 @@ def parse_runtime_frame(data: dict[str, Any]) -> object:
     return parser(data) if parser is not None else data
 
 
-#: Bounded outbound buffer while disconnected (matches the Android client).
 MAX_QUEUE = 64
 
-#: The GUI must acknowledge a queued replay fence promptly. A timeout keeps
-#: the exact frame queued and forces a reconnect instead of sending unfenced.
 REPLAY_PREPARATION_TIMEOUT_S = 2.0
 
-#: Reconnect backoff bounds (seconds) — 1 s base doubling to a 30 s cap.
 BACKOFF_BASE_S = 1.0
 BACKOFF_MAX_S = 30.0
 
@@ -1953,11 +1852,6 @@ BACKOFF_MAX_S = 30.0
 def backoff_delay_s(
     attempt: int, base: float = BACKOFF_BASE_S, cap: float = BACKOFF_MAX_S
 ) -> float:
-    """Delay before reconnect ``attempt`` (1-based): base * 2^(attempt-1), capped.
-
-    Mirrors the Android client's ``backoffDelayMs`` so both natives share the
-    same contract (specs/044 contracts/session-lifecycle.md §1).
-    """
     if attempt <= 1:
         return base
     return min(base * (2 ** (attempt - 1)), cap)
@@ -1969,11 +1863,6 @@ def device_caps(
     supported_types=None,
     voice_capability: Optional[dict[str, Any]] = None,
 ) -> dict:
-    """Report this client as a native ``windows`` device with the set of SDUI
-    primitive types it renders natively. ROTE keys off ``device_type`` for the
-    desktop host-config and uses ``supported_types`` to substitute web-only
-    primitives (e.g. audio) the native renderer can't draw — so the
-    server adapts to the desktop app's real capabilities, not the web view's."""
     caps = {
         "device_type": "windows",
         "screen_width": width,
@@ -1993,22 +1882,12 @@ def device_caps(
 
 
 class OrchestratorClient(QObject):
-    message = Signal(dict)  # any inbound server message {type: ...}
-    # Synchronously emitted on the caller's thread before `_send` can perform
-    # socket I/O. Native UI owners use this to render the client-only
-    # "Submitting…" projection without claiming server acceptance.
+    message = Signal(dict)
     submission = Signal(object)
-    # Exact client identity discarded from the bounded queue. The UI settles
-    # only this local projection while the status signal explains the loss.
     submission_dropped = Signal(object)
-    # Queued replays use a synchronous acknowledgement protocol across the
-    # transport/GUI thread boundary. The receiver installs the new connection
-    # and request fence plus the exact local projection, then completes ack.
     queued_replay_preparation = Signal(object, object)
     connection_generation_changed = Signal(str)
     voice_submission_settled = Signal(str, str)
-    # "connecting" | "connected" | "reconnecting:<attempt>" |
-    # "auth_required:<reason>" | "closed:<why>" | "send_dropped:<action>"
     status = Signal(str)
 
     def __init__(
@@ -2031,23 +1910,9 @@ class OrchestratorClient(QObject):
             device_id or load_or_create_voice_device_id(),
             "device_id",
         )
-        # register_ui session id. The app points this at the ACTIVE CHAT id so
-        # a reconnect's re-register resumes that chat's fan-out + background-
-        # task replay server-side (feature 055); "win-client" is the no-chat
-        # default this client has always sent.
         self.session_id: str = "win-client"
-        # Feature 060 replaces the client-invented host session with a
-        # structured runtime-contract advertisement and server-issued ack.
-        # MainWindow supplies the installation-persisted identity owned by the
-        # BYO host. The fallback keeps isolated transport tests/source users
-        # compatible; production construction never relies on it.
         self.host_id: str = _uuid4(host_id or str(uuid.uuid4()), "host_id")
         self.host_session_id: Optional[str] = None
-        # Feature 076: this desktop can be a COMPUTER HOST. ``computer_host`` is
-        # the descriptor announced at register_ui while the owner's "Allow
-        # remote control" switch is on (None otherwise); the capability string
-        # tells the server this client version could host, so the "My
-        # computers" surface can offer the switch on this device only.
         self.computer_host: Optional[dict[str, Any]] = None
         self.computer_host_capable: bool = False
         self.connection_generation: Optional[str] = None
@@ -2066,7 +1931,7 @@ class OrchestratorClient(QObject):
         self._ws = None
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._stop = False
-        self._auth_hold = False  # auth_required seen: don't loop on a bad token
+        self._auth_hold = False
         self._connected = False
         self._had_session = False
         self._pending: deque[str] = deque()
@@ -2076,13 +1941,9 @@ class OrchestratorClient(QObject):
         self._queued_replay_preparation_required = False
 
     def require_queued_replay_preparation(self) -> None:
-        """Require the GUI acknowledgement before any retained UI event send."""
-
         self._queued_replay_preparation_required = True
 
     def configure_resume(self, chat_id: Optional[str]) -> None:
-        """Bind the synchronously persisted active chat used by registration."""
-
         if chat_id is not None:
             _uuid4(chat_id, "chat_id")
         self.resume_chat_id = chat_id
@@ -2094,8 +1955,6 @@ class OrchestratorClient(QObject):
         chat_id: Optional[str],
         generation: Optional[str] = None,
     ) -> str:
-        """Open one fresh hydration/commit equality fence for normalized work."""
-
         if purpose not in {"hydration", "commit"}:
             raise WindowsProtocolError("conversation request purpose is invalid")
         if chat_id is not None:
@@ -2108,13 +1967,9 @@ class OrchestratorClient(QObject):
         return request_generation
 
     def adopt_server_request(self, purpose: str, chat_id: str, generation: str) -> None:
-        """Adopt a validated server-originated request fence (commit prelude)."""
-
         self.begin_conversation_request(purpose, chat_id, generation)
 
     def configure_agent_host(self, host_id: str) -> None:
-        """Bind the persisted installation ID before the transport starts."""
-
         if self._thread.is_alive() or self._connected or self._ws is not None:
             raise RuntimeError("agent host identity is immutable after client start")
         self.host_id = _uuid4(host_id, "host_id")
@@ -2127,10 +1982,7 @@ class OrchestratorClient(QObject):
             client_version=__version__,
         )
 
-    # --- lifecycle ------------------------------------------------------- #
     def _safe_status(self, s: str) -> None:
-        """Emit a status signal, tolerating teardown (the C++ QObject may be
-        deleted while this daemon thread is still running)."""
         try:
             self.status.emit(s)
         except RuntimeError:
@@ -2143,12 +1995,6 @@ class OrchestratorClient(QObject):
             pass
 
     def _handle_runtime_frame(self, msg: dict[str, Any]) -> bool:
-        """Validate recognized 060 frames and bind a matching host ack.
-
-        Returns ``False`` for malformed or wrong-host frames so callers drop
-        them without mutating UI or host state.
-        """
-
         try:
             parsed = parse_runtime_frame(msg)
         except WindowsProtocolError:
@@ -2159,8 +2005,6 @@ class OrchestratorClient(QObject):
                 self._safe_status("protocol_error:agent_host_registered")
                 return False
             if self.host_session_id is not None and self.host_session_id != parsed.host_session_id:
-                # A server session is immutable for one accepted connection.
-                # Only the next register_ui generation may bind another one.
                 self._safe_status("protocol_error:agent_host_registered")
                 return False
             self.host_session_id = parsed.host_session_id
@@ -2188,8 +2032,6 @@ class OrchestratorClient(QObject):
         return True
 
     def _settle_voice_local_ack(self, frame: dict[str, Any]) -> bool:
-        """Consume one exact ACK registered by an outbound v2-local final."""
-
         required = {
             "type",
             "schema_version",
@@ -2242,8 +2084,6 @@ class OrchestratorClient(QObject):
                 pass
 
     def request_reconnect(self) -> None:
-        """Close the current socket without disabling the reconnect loop."""
-
         if self._loop and self._ws:
             try:
                 asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
@@ -2251,8 +2091,6 @@ class OrchestratorClient(QObject):
                 pass
 
     def _should_reconnect(self) -> bool:
-        """Auto-reconnect unless the app is quitting or the server demanded
-        re-authentication (the app owns the refresh + rebuild in that case)."""
         return not self._stop and not self._auth_hold
 
     def _run(self) -> None:
@@ -2265,13 +2103,13 @@ class OrchestratorClient(QObject):
                 self._loop.run_until_complete(self._main())
                 if not self._stop and not self._auth_hold:
                     self._safe_status("closed:server")
-            except Exception as exc:  # surface connection failures to the UI
+            except Exception as exc:
                 if not self._stop:
                     self._safe_status(f"closed:{exc}")
             self._connected = False
             self._ws = None
             if self._had_session:
-                attempt = 0  # successful open resets the backoff (FR-003)
+                attempt = 0
             if not self._should_reconnect():
                 break
             attempt += 1
@@ -2280,8 +2118,6 @@ class OrchestratorClient(QObject):
                 break
 
     def _interruptible_sleep(self, seconds: float) -> bool:
-        """Sleep in slices so stop()/auth_required end the wait promptly.
-        Returns False when the loop should exit instead of reconnecting."""
         remaining = seconds
         while remaining > 0:
             if not self._should_reconnect():
@@ -2292,8 +2128,6 @@ class OrchestratorClient(QObject):
         return self._should_reconnect()
 
     def _register_frame(self) -> dict:
-        """The register_ui handshake frame, rebuilt per (re)connect so
-        ``session_id`` reflects the chat that was open when the drop happened."""
         self.connection_generation = str(uuid.uuid4())
         with self._voice_local_ack_lock:
             self._voice_local_pending_ack = None
@@ -2353,31 +2187,18 @@ class OrchestratorClient(QObject):
                     if not self._handle_runtime_frame(msg):
                         continue
                     if msg.get("type") == "auth_required":
-                        # Hold auto-reconnect: retrying with the same token
-                        # would loop; the app refreshes and rebuilds instead.
                         self._auth_hold = True
                         self._safe_status(f"auth_required:{msg.get('reason', '')}")
                     self._safe_message(msg)
 
     async def _finish_open(self, ws) -> None:
-        """Post-register open sequence. Drain the offline queue FIFO BEFORE
-        flipping `_connected`, so any queued frame goes out ahead of a new
-        direct send. If `_connected` were set first, a frame sent by the
-        "connected" handler could race ahead of the queued backlog and reorder
-        reconnect delivery. Then drain ONCE MORE after the flip: a frame
-        appended to `_pending` between the first drain and the flip would
-        otherwise sit unflushed while the connection stays healthy — once
-        `_connected` is True no new frame enters the queue, so the second
-        drain deterministically closes that window (FR-003)."""
         await self._flush_pending(ws)
         self._connected = True
         await self._flush_pending(ws)
         await self._resend_voice_pending(ws)
         self._safe_status("connected")
 
-    # --- outbound -------------------------------------------------------- #
     async def _flush_pending(self, ws) -> None:
-        """Restore replay fences, then drain queued frames FIFO (FR-003)."""
         while self._pending and not self._stop:
             frame = self._rebind_pending_conversation_frame(self._pending.popleft())
             submission = self._queued_submission_from_frame(frame)
@@ -2396,22 +2217,14 @@ class OrchestratorClient(QObject):
                     "CLOSED",
                 }
                 if not acknowledged or self._stop or socket_closed:
-                    # The frame is still reliable queued work: keep its exact
-                    # IDs, fail visibly, and force the outer loop to establish
-                    # a fresh connection before trying the handshake again.
                     self._pending.appendleft(frame)
                     self._safe_status(f"replay_deferred:{submission.action}")
                     raise ConnectionError("queued replay preparation failed")
             else:
-                # Headless/transport-only consumers retain the legacy signal;
-                # the shipping GUI opts into the acknowledged path above.
                 self.submission.emit(submission)
             try:
                 await ws.send(frame)
             except BaseException:
-                # No successful await means the frame never left the reliable
-                # queue contract. Preserve its exact identities for the next
-                # connection and let the transport loop reconnect.
                 self._pending.appendleft(frame)
                 raise
 
@@ -2419,8 +2232,6 @@ class OrchestratorClient(QObject):
         self,
         preparation: QueuedReplayPreparation,
     ) -> bool:
-        """Wait without blocking the socket loop for the GUI's exact fence."""
-
         acknowledgement = QueuedReplayAcknowledgement()
         try:
             self.queued_replay_preparation.emit(preparation, acknowledgement)
@@ -2445,8 +2256,6 @@ class OrchestratorClient(QObject):
     def _queued_submission_from_frame(
         serialized: str,
     ) -> Optional[LocalOperationSubmission]:
-        """Parse exact safe replay identity from one serialized UI event."""
-
         try:
             frame = json.loads(serialized)
         except (ValueError, TypeError):
@@ -2497,8 +2306,6 @@ class OrchestratorClient(QObject):
         serialized: str,
         submission: LocalOperationSubmission,
     ) -> Optional[QueuedReplayPreparation]:
-        """Construct the strict GUI handshake from the rebound exact frame."""
-
         try:
             frame = json.loads(serialized)
         except (ValueError, TypeError):
@@ -2521,16 +2328,6 @@ class OrchestratorClient(QObject):
         return preparation
 
     def _rebind_pending_conversation_frame(self, serialized: str) -> str:
-        """Fence queued normalized UI work to the newly opened connection.
-
-        Submission and request generations remain the identities of the same
-        queued work; only the connection equality fence changes. The last
-        queued conversation request becomes the transport's current request
-        before ``connected`` is emitted, so the UI reducer expects the final
-        coherent snapshot. Surface operations are rebound too so their
-        canonical status can be checked against the current connection.
-        """
-
         if self.connection_generation is None:
             return serialized
         try:
@@ -2561,37 +2358,24 @@ class OrchestratorClient(QObject):
 
     def _send(self, obj: dict) -> None:
         frame = json.dumps(obj)
-        # Snapshot `_ws`/`_loop` under the guard: the transport thread can null
-        # `_ws` between the check and the attribute access, which would raise an
-        # AttributeError inside a Qt slot (TOCTOU). If the snapshot is None after
-        # the guard, fall through to the queue path.
+        # Snapshot _ws first — the transport thread can null it mid-check
         ws = self._ws
         loop = self._loop
         if self._connected and loop and ws:
             fut = asyncio.run_coroutine_threadsafe(ws.send(frame), loop)
-            # The socket can die AFTER the `_connected` check with the flag
-            # still True — a fire-and-forget send would then vanish silently.
-            # Re-queue a failed fast-path send through the offline path so it
-            # goes out on the next (re)connect. The callback runs on the
-            # asyncio loop thread; deque appends are thread-safe.
             fut.add_done_callback(lambda f: self._on_fast_send_done(f, frame))
             return
         self._queue_frame(frame)
 
     def _on_fast_send_done(self, fut, frame: str) -> None:
-        """Done-callback for a connected fast-path send: on failure the frame is
-        re-queued so an outbound frame never just vanishes (FR-003)."""
         try:
             failed = fut.cancelled() or fut.exception() is not None
-        except Exception:  # noqa: BLE001 — treat an unreadable future as failed
+        except Exception:  # noqa: BLE001
             failed = True
         if failed:
             self._queue_frame(frame)
 
     def _queue_frame(self, frame: str) -> None:
-        """Queue a frame for the (re)connect flush with a bounded buffer;
-        overflow is dropped-oldest AND surfaced — an outbound frame never just
-        vanishes."""
         submission = self._queued_submission_from_frame(frame)
         if submission is None:
             self._safe_status(f"send_rejected:{self._queued_action(frame)}")
@@ -2614,15 +2398,6 @@ class OrchestratorClient(QObject):
         payload: dict,
         session_id: Optional[str] = None,
     ) -> LocalOperationSubmission:
-        """Identify, project, then send one UI event.
-
-        Both client identities are present at the top level and in ``payload``.
-        Canonical caller-supplied identities are preserved; absent or malformed
-        values are replaced with fresh UUID4s before the local projection is
-        emitted. The signal is deliberately emitted before ``_send`` so UI
-        feedback cannot race behind socket I/O.
-        """
-
         if not isinstance(payload, dict):
             raise WindowsProtocolError("ui_event payload must be an object")
         if not isinstance(action, str) or _SNAKE_CASE.fullmatch(action) is None:
@@ -2669,7 +2444,6 @@ class OrchestratorClient(QObject):
             self._work_read_generation = None
 
     def send_current_work_read(self, params: dict, request_generation: str, *, is_current=lambda: True) -> bool:
-        """Send one Work read on this connection only, without offline retention."""
         _uuid4(request_generation, "request_generation")
         if not isinstance(params, dict):
             raise WindowsProtocolError("Work parameters must be an object")
@@ -2723,13 +2497,6 @@ class OrchestratorClient(QObject):
         self,
         transcript: dict[str, Any],
     ) -> LocalOperationSubmission:
-        """Submit one proven final through the ordinary ``chat_message`` path.
-
-        The immutable recognition binding is retained only in memory until a
-        fully correlated acknowledgement or rejection arrives. Reconnects
-        replace only the UI connection fence; they never mint new turn IDs.
-        """
-
         submission = VoiceTranscriptSubmission(copy.deepcopy(transcript))
         submission.validate()
         if submission.expired():
@@ -2758,8 +2525,6 @@ class OrchestratorClient(QObject):
         return local
 
     def send_voice_local_frame(self, frame: dict[str, Any]) -> bool:
-        """Send one exact current-socket client-local frame without v1 proof wrapping."""
-
         parsed = parse_voice_local_frame(frame)
         if parsed is None or frame.get("type") not in {
             "voice_local_ready",
@@ -2799,8 +2564,6 @@ class OrchestratorClient(QObject):
         return sent
 
     def forget_voice_local_final(self, value: dict[str, Any]) -> bool:
-        """Forget only the exact content-free correlation owned by ``value``."""
-
         if not isinstance(value, dict):
             return False
         expected = {
@@ -2821,8 +2584,6 @@ class OrchestratorClient(QObject):
         submission_id: str,
         request_generation: str,
     ) -> bool:
-        """Send the strict current-socket new-chat prelude for voice activation."""
-
         _uuid4(submission_id, "submission_id")
         _uuid4(request_generation, "request_generation")
         connection = _uuid4(
@@ -2853,8 +2614,6 @@ class OrchestratorClient(QObject):
         return True
 
     def _send_voice_frame(self, frame: dict[str, Any]) -> bool:
-        """Send without the ordinary offline queue; the proof-bound store retries."""
-
         loop = self._loop
         ws = self._ws
         if not self._connected or loop is None or ws is None:
@@ -2872,13 +2631,6 @@ class OrchestratorClient(QObject):
         return True
 
     def send_voice_playout_event(self, frame: dict[str, Any]) -> None:
-        """Send one strict, content-free local playout observation.
-
-        Playout evidence is current-socket telemetry, never a replayable UI
-        action.  It therefore uses the direct voice send seam but is not added
-        to either the ordinary offline queue or the retained transcript store.
-        """
-
         required = {
             "type",
             "schema_version",
@@ -2977,8 +2729,6 @@ class OrchestratorClient(QObject):
         self._send_voice_frame(copy.deepcopy(frame))
 
     def _pending_voice_frames(self) -> list[dict[str, Any]]:
-        """Return current-connection retries, expiring stale proofs visibly."""
-
         if not _is_uuid4(self.connection_generation):
             return []
         frames: list[dict[str, Any]] = []
@@ -2995,8 +2745,6 @@ class OrchestratorClient(QObject):
             await ws.send(json.dumps(frame, ensure_ascii=False, separators=(",", ":")))
 
     def settle_voice_submission(self, frame: dict[str, Any]) -> bool:
-        """Clear only a fully correlated current-connection ack/rejection."""
-
         if not isinstance(frame, dict):
             return False
         frame_type = frame.get("type")
@@ -3097,19 +2845,8 @@ class OrchestratorClient(QObject):
         return True
 
     def send_host_frame(self, frame: dict[str, Any]) -> None:
-        """Send one exact v2 host frame only on its currently bound socket.
-
-        Host frames carry ``host_session_id`` and must never enter the generic
-        reconnect queue: replaying one on the next connection would send a stale
-        session frame before that connection receives its acknowledgement.
-        """
-
         frame_type = frame.get("type") if isinstance(frame, dict) else None
-        # The v3 host vocabulary: the agent_* lifecycle frames AND the child's
-        # tool result, which the server's host-frame adapter names
-        # ``mcp_response``. The old ``agent_`` prefix test refused every result
-        # a personal agent ever produced — the server saw only timeouts (077
-        # live finding).
+        # mcp_response has no agent_ prefix but belongs in this set
         if not isinstance(frame_type, str) or not (
             frame_type.startswith("agent_") or frame_type == "mcp_response"
         ):
@@ -3120,8 +2857,6 @@ class OrchestratorClient(QObject):
             return
         serialized = json.dumps(frame)
         future = asyncio.run_coroutine_threadsafe(ws.send(serialized), loop)
-        # A failed session-fenced send is intentionally not re-queued. Socket
-        # loss/reconciliation creates a new server session and fresh frames.
         future.add_done_callback(self._consume_host_send_result)
 
     @staticmethod

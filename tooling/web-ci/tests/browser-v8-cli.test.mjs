@@ -1,3 +1,5 @@
+// Tests for browser-v8-cli.mjs: conversion of browser V8 coverage observations.
+
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";

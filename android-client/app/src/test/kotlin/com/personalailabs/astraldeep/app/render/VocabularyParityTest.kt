@@ -1,3 +1,6 @@
+// Tests that Android's rendered component vocabulary matches the committed ui_protocol.json manifest, so a
+// backend vocabulary change fails until the app renders or deliberately excludes the new type.
+
 package com.personalailabs.astraldeep.app.render
 
 import com.personalailabs.astraldeep.app.render.renderers.registerAllRenderers
@@ -10,18 +13,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/**
- * Guards the advertised vocabulary (the Android twin of the Windows
- * `test_no_silent_backend_vocabulary_drift`). Since feature 044 the expected
- * set is anchored on the committed UI-protocol manifest
- * (`contracts/ui_protocol.json`) — the same file the backend keeps equal
- * to `webrender.allowed_primitive_types()` — so a backend vocabulary change
- * fails this test until the app either renders the new type or deliberately
- * excludes it. Pure JVM — the @Composable renderers are stored, not invoked.
- */
 class VocabularyParityTest {
-    /** Backend primitives deliberately NOT rendered natively on Android; ROTE
-     * substitutes them server-side (sanctioned web-only per FR-026). */
     private val excluded = setOf("audio", "generative")
 
     private fun manifestComponentTypes(): Set<String> {
@@ -54,8 +46,6 @@ class VocabularyParityTest {
 
     @Test
     fun excluded_types_are_real_backend_types() {
-        // Guard the guard: a stale exclusion (type no longer in the backend
-        // vocabulary) should be cleaned up.
         assertTrue(excluded.all { it in manifestComponentTypes() })
     }
 }

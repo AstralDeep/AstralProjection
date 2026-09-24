@@ -1,8 +1,7 @@
-// SC-007 / SC-002 first-task reachability. The REAL shipped shell template,
-// the REAL server-rendered top bar, the REAL astral.css/client.js, and the
-// tracked Work/notes surface fixtures — driven at 1440/768/320 px and at 320 px
-// with 200% root text. Synthetic socket replies exercise presentation and the
-// client reducer, not institutional IAM or a live staging deployment.
+// Browser tests for first-task reachability against the real shipped shell, top bar, and client
+// script (src/astralprojection/resources.py): controls stay reachable and on screen at desktop,
+// tablet, and 320px/200%-text viewports.
+
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { delimiter, dirname, resolve } from "node:path";
@@ -38,9 +37,9 @@ test.afterAll(async () => {
   await writeFile(resolve(coverageOutput), JSON.stringify(rawCoverage) + "\n", { mode: 0o600 });
 });
 
-// One python hop renders the same chrome the server sends: the role-gated top
-// bar, and the tracked Work surface frames put through the real web component
-// renderer inside the real chrome modal shell.
+
+
+
 const PY = [
   "import json",
   "from webrender import render_one",
@@ -51,8 +50,9 @@ const PY = [
   "work = {name: render_modal_shell(frames[name]['title'],"
     + " ''.join(render_one(component) for component in frames[name]['components']), 'work')"
     + " for name in ('detail', 'unavailable')}",
+  "reasoning = render_one({'type': 'collapsible', 'title': 'Reasoning', 'content': [{'type': 'text', 'content': 'Planning step. ' * 300}]})",
   "print(json.dumps({'topbar': render_topbar(['user'], export_enabled=True, share_enabled=True,"
-    + " pulse_enabled=True), 'work': work, 'settings': render_modal_shell('Agents & permissions', '', 'agents',"
+    + " pulse_enabled=True), 'work': work, 'reasoning': reasoning, 'agent_example': render_modal_shell('Agent examples', '%%EXAMPLE_BODY%%', 'agent_intro'), 'settings': render_modal_shell('Agents & permissions', '', 'agents',"
     + " nav_html=render_settings_nav(build_menu_model(['user']), 'agents'))}))",
 ].join("\n");
 
@@ -66,8 +66,8 @@ const RENDERED = JSON.parse(execFileSync(process.env.ASTRAL_TEST_PYTHON || "pyth
 const NOTES = JSON.parse(await readFile(
   resolve(ROOT, "contracts/fixtures/guidance_088/notes_surface.json"), "utf8"));
 
-// The composer's voice control ships disabled until the server's authoritative
-// projection arrives; the tracked voice conformance vector is that projection.
+
+
 const VOICE = JSON.parse(await readFile(
   resolve(ROOT, "contracts/fixtures/voice_065/client_conformance.json"), "utf8"))
   .cases.find(entry => entry.id === "C0")
@@ -79,16 +79,15 @@ const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.h
   .replaceAll("%%ASTRAL_TOKEN%%", "fixture-owner-token")
   .replaceAll("%%ASTRAL_RESUMED%%", "true")
   .replaceAll("%%ASTRAL_ACCEPT%%", ".txt,.pdf")
-  .replaceAll("%%ASTRAL_LANDING%%", JSON.stringify({ agents: [], scenarios: [], categories: [] }))
   .replaceAll("%%ASTRAL_USER_NAME%%", "Fixture owner")
   .replaceAll("%%ASTRAL_USER_ROLE%%", "Member")
   .replace("%%ASTRAL_TOPBAR%%", () => RENDERED.topbar);
 
-// Every control a first task needs, named by the role the success criteria use.
-// Recent chats is not among them any more: on the web it opened the list that
-// sits directly beneath it in the sidebar, and the owner took it off the
-// History header on 2026-09-19. It is still in the chrome model, and a native
-// client still receives it.
+
+
+
+
+
 const CONTROLS = [
   ["New chat", "#astral-newchat-btn"],
   ["Settings", "#astral-settings-btn"],
@@ -103,22 +102,22 @@ const CONTROLS = [
   ["Send", "#astral-form button[type=\"submit\"]"],
 ];
 
-/** UI v2 keeps secondary controls behind More options at every width. */
+
 async function revealComposerControls(page) {
   const more = page.locator("#astral-composer-more");
   if (await more.isVisible() && await more.getAttribute("aria-expanded") !== "true") await more.click();
 }
 
-/** Below 1024 the sidebar is an off-canvas drawer (089 T053), so the controls
- *  it hosts sit outside the viewport until its toggle opens it. Open it, for
- *  the same reason: reachable is the claim, not permanently on screen. */
+
+
+
 async function revealSidebar(page) {
   const toggle = page.locator("#astral-drawer-toggle");
   if (await toggle.isVisible() && await toggle.getAttribute("aria-expanded") !== "true") {
     await toggle.click();
   }
-  // The drawer slides in. Measuring before it lands reads the position it is
-  // travelling through, not the one it comes to rest at.
+
+
   await page.waitForFunction(() => {
     const sidebar = document.getElementById("astral-sidebar");
     return !sidebar || sidebar.getBoundingClientRect().x >= 0;
@@ -136,7 +135,7 @@ async function receive(page, frame) {
   await page.evaluate(value => window.__sockets.at(-1).receive(value), frame);
 }
 
-async function setup(page, { width = 320, font = "100%" } = {}) {
+async function setup(page, { width = 320, font = "100%", landing = { agents: [], scenarios: [], categories: [] } } = {}) {
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
   await page.setViewportSize({ width, height: 800 });
@@ -168,7 +167,7 @@ async function setup(page, { width = 320, font = "100%" } = {}) {
   await page.route(`${ORIGIN}/**`, async route => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/") {
-      await route.fulfill({ contentType: "text/html", body: SHELL });
+      await route.fulfill({ contentType: "text/html", body: SHELL.replaceAll("%%ASTRAL_LANDING%%", JSON.stringify(landing)) });
       return;
     }
     if (path.startsWith("/static/")) {
@@ -186,7 +185,7 @@ async function setup(page, { width = 320, font = "100%" } = {}) {
   if (font !== "100%") await page.evaluate(size => {
     document.documentElement.style.fontSize = size;
   }, font);
-  // The authoritative composer projection enables the shipped voice control.
+
   const registration = await page.evaluate(() => window.__frames.find(f => f.type === "register_ui"));
   await receive(page, { ...VOICE, connection_generation: registration.connection_generation });
   await expect(page.locator("#astral-voice-controls button[data-voice-key=\"voice-start\"]")).toBeEnabled();
@@ -283,11 +282,11 @@ async function operable(page, names) {
   }
 }
 
-// Below 1024 the shell has two regions rather than one flat surface: a
-// focus-trapped sidebar drawer, and the composer, whose secondary controls sit
-// behind one overflow button. They are deliberately never open together -- the
-// drawer's backdrop covers the composer -- so each region is checked where its
-// own controls live. Every control still has to be reachable and on screen.
+
+
+
+
+
 const SIDEBAR = "#astral-sidebar";
 const COMPOSER = "#astral-composer";
 
@@ -333,8 +332,8 @@ for (const [width, font] of [[1440, "100%"], [1440, "200%"], [1024, "100%"],
         expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
         expect(bounds.y).toBeGreaterThanOrEqual(0);
         for (const item of await menu.getByRole("menuitem").all()) {
-          // A clipped label can hide inside an in-bounds button. Check the
-          // content as well, without shrinking the user's selected text size.
+
+
           expect(await item.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
           await item.click({ trial: true });
         }
@@ -364,9 +363,9 @@ for (const [width, font] of [[1440, "100%"], [1440, "200%"], [1024, "100%"],
         }, [CONTROLS, scope]);
         if (name && !seen.includes(name)) seen.push(name);
       }
-      // Tab order must follow DOM order; where the walk happens to start is an
-      // accident of what had focus when the region was entered, so compare the
-      // sequence as the cycle it is rather than pinning its first element.
+
+
+
       const from = Math.max(present.indexOf(seen[0]), 0);
       expect(seen).toEqual([...present.slice(from), ...present.slice(0, from)]);
       observed.push(...seen);
@@ -375,10 +374,141 @@ for (const [width, font] of [[1440, "100%"], [1440, "200%"], [1024, "100%"],
   });
 }
 
+for (const [width, font] of [[1440, "100%"], [320, "100%"], [320, "200%"]]) {
+  test(`bounded result preview keeps collapse and full screen operable at ${width}px/${font}`, async ({ page }) => {
+    await setup(page, { width, font });
+    const html = '<div class="dynamic-renderer" data-astral-export="true" data-astral-share="true"><div class="astral-component" data-component-id="responsive-result"><label>Workspace note<input aria-label="Workspace note" value="Retain this note"></label><div style="height:900px">A tall interactive result</div><button type="button">Last workspace action</button></div></div>';
+    await page.evaluate(markup => window.__ASTRAL_PARITY__.seedConversation({
+      query: "Show a detailed result",
+      agent_id: "Specialist with a descriptive result title",
+      ui_html: markup,
+    }), html);
+    await receive(page, { type: "ui_update", html });
+    const card = page.locator('[data-astral-live-turn] .sdui-widget-container');
+    const body = card.locator(".sdui-widget-body");
+    const collapse = card.getByRole("button", { name: "Collapse container", exact: true });
+    const expand = card.getByRole("button", { name: "Open this result in full screen", exact: true });
+    await expect(body).toHaveClass(/has-overflow/u);
+    await expect(body.locator(".sdui-widget-expand-chip")).toBeVisible();
+    expect((await card.boundingBox()).height).toBeLessThanOrEqual(441);
+    await noHorizontalScroll(page, width);
+    for (const control of [collapse, expand, page.locator("#astral-export-page-btn"), page.locator("#astral-share-page-btn")]) {
+      await expect(control).toBeVisible();
+      await control.click({ trial: true });
+      const box = await control.boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width);
+    }
+    await collapse.click();
+    await expect(body).toBeHidden();
+    const restore = card.getByRole("button", { name: "Expand container", exact: true });
+    await expect(restore).toHaveAttribute("aria-expanded", "false");
+    await expand.click({ trial: true });
+    await restore.click();
+    await expect(body).toBeVisible();
+    await expect(body).toHaveClass(/has-overflow/u);
+    await page.evaluate(() => { window.__responsiveInput = document.querySelector('[aria-label="Workspace note"]'); });
+    await expand.click();
+    const fullscreen = page.locator("#astral-fullscreen");
+    const fullBody = fullscreen.locator(".sdui-widget-body");
+    await expect(fullscreen).toBeVisible();
+    await expect(fullBody).toHaveCSS("max-height", "none");
+    expect((await fullBody.boundingBox()).height).toBeGreaterThan(900);
+    await expect(fullBody.locator(".sdui-widget-overlay")).toBeHidden();
+    await expect(page.locator("#astral-fs-actions #astral-export-page-btn")).toBeVisible();
+    await expect(page.locator("#astral-fs-actions #astral-share-page-btn")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Workspace note" })).toHaveValue("Retain this note");
+    await page.getByRole("textbox", { name: "Workspace note" }).fill("Edited in full screen");
+    const first = fullscreen.locator("#astral-export-page-btn");
+    const last = fullscreen.getByRole("button", { name: "Last workspace action", exact: true });
+    await first.focus();
+    await page.keyboard.press("Shift+Tab");
+    await expect(last).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect(first).toBeFocused();
+    await expect(page.locator(".astral-app")).toHaveJSProperty("inert", true);
+    await noHorizontalScroll(page, width);
+    await page.keyboard.press("Escape");
+    await expect(fullscreen).toBeHidden();
+    await expect(expand).toBeFocused();
+    await expect(page.locator(".astral-app")).toHaveJSProperty("inert", false);
+    expect(await page.evaluate(() => document.querySelector('[aria-label="Workspace note"]') === window.__responsiveInput)).toBe(true);
+    await expect(page.getByRole("textbox", { name: "Workspace note" })).toHaveValue("Edited in full screen");
+    await expect(card.locator("#astral-export-page-btn")).toBeVisible();
+    await expect(card.locator("#astral-share-page-btn")).toBeVisible();
+    await expect(body.locator(".sdui-widget-expand-chip")).toBeVisible();
+  });
+}
+
+
+test("result controls expand the live chart and resize it again when restored", async ({ page }) => {
+  await setup(page, { width: 1440 });
+  await page.evaluate(() => {
+    window.__chartResizes = [];
+    window.Plotly = { Plots: { resize(node) {
+      window.__chartResizes.push({ fullScreen: Boolean(node.closest("#astral-fs-canvas")), width: node.parentElement.clientWidth });
+      node.style.width = `${node.parentElement.clientWidth}px`;
+    } } };
+    window.__ASTRAL_PARITY__.seedConversation({
+      query: "Show the complete chart",
+      agent_id: "Chart Specialist",
+      ui_html: '<div class="js-plotly-plot" style="height:900px">Chart result</div>',
+    });
+    window.__liveChart = document.querySelector(".js-plotly-plot");
+  });
+  const card = page.locator('[data-astral-live-turn] .sdui-widget-container');
+  const body = card.locator(".sdui-widget-body");
+  await expect(body).toHaveClass(/has-overflow/u);
+  await expect(card.locator(".window-dot")).toHaveCount(0);
+  await card.getByRole("button", { name: "Collapse container", exact: true }).click();
+  await expect(body).toBeHidden();
+  await card.getByRole("button", { name: "Expand container", exact: true }).click();
+  await expect(body).toBeVisible();
+  await expect(card).toHaveCSS("box-shadow", "none");
+  await card.hover();
+  await expect(card).toHaveCSS("box-shadow", "none");
+  await card.getByRole("button", { name: "Open this result in full screen" }).click();
+  await expect(page.locator("#astral-fullscreen")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => window.__chartResizes.some(entry => entry.fullScreen))).toBe(true);
+  expect(await page.evaluate(() => document.querySelector("#astral-fs-canvas .js-plotly-plot") === window.__liveChart)).toBe(true);
+  await page.locator("#astral-fs-exit").click();
+  await expect.poll(() => page.evaluate(() => window.__chartResizes.some(entry => !entry.fullScreen))).toBe(true);
+  const dimensions = await page.evaluate(() => window.__chartResizes);
+  expect(dimensions.find(entry => entry.fullScreen).width).toBeGreaterThan(dimensions.find(entry => !entry.fullScreen).width);
+  await body.locator(".sdui-widget-expand-chip").click();
+  await expect(page.locator("#astral-fullscreen")).toBeVisible();
+  await expect(page.locator("#astral-fs-canvas")).toContainText("Chart result");
+  await page.keyboard.press("Escape");
+  expect(await page.evaluate(() => document.querySelector("#astral-chat .js-plotly-plot") === window.__liveChart)).toBe(true);
+});
+
+
+test("keyboard focus reveals a clipped result input in full screen", async ({ page }) => {
+  await setup(page, { width: 320 });
+  await page.evaluate(() => window.__ASTRAL_PARITY__.seedConversation({
+    query: "Edit a detailed result",
+    agent_id: "Specialist",
+    ui_html: '<div style="height:900px">Detailed result</div><label>Result annotation<input aria-label="Result annotation"></label>',
+  }));
+  const body = page.locator('[data-astral-live-turn] .sdui-widget-body');
+  await expect(body).toHaveClass(/has-overflow/u);
+  await page.getByRole("button", { name: "Open this result in full screen" }).focus();
+  await page.keyboard.press("Tab");
+  await expect(page.locator("#astral-fullscreen")).toBeVisible();
+  const input = page.getByRole("textbox", { name: "Result annotation" });
+  await expect(input).toBeFocused();
+  await input.fill("Accessible through the keyboard");
+  await expect(input).toHaveValue("Accessible through the keyboard");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#astral-fullscreen")).toBeHidden();
+  await expect(page.getByRole("textbox", { name: "Result annotation" })).toHaveValue("Accessible through the keyboard");
+});
+
+
 test("settings status colors and actions follow the current shared theme", async ({ page }) => {
   await setup(page, { width: 768 });
-  // These chrome attributes are emitted by the host's settings renderer.
-  // Exercise the shipped stylesheet with both dark and light theme channels.
+
+
   await page.evaluate(() => {
     const surface = document.createElement("section");
     surface.id = "palette-probe";
@@ -419,8 +549,8 @@ test("settings status colors and actions follow the current shared theme", async
   for (let index = 0; index < dark.length; index++) {
     expect(light[index].color, `settings control ${index} must follow the theme`).not.toBe(dark[index].color);
   }
-  // Semantic channels remain centralized too; the three status roles must
-  // affect foregrounds, borders and translucent fills rather than literals.
+
+
   await page.evaluate(() => {
     for (const role of ["success", "warning", "error"]) {
       document.documentElement.style.setProperty(`--color-${role}`, "91 33 182");
@@ -447,7 +577,7 @@ test("Enter in the composer sends exactly one chat message and opens no modal", 
   await expect(page.locator("#astral-modal")).toBeEmpty();
   await expect(page.locator("#astral-input")).toHaveValue("");
   await noHorizontalScroll(page, 320);
-  // Shift+Enter keeps composing instead of sending a second turn.
+
   await page.locator("#astral-input").fill("second line");
   await page.locator("#astral-input").press("Shift+Enter");
   expect(await page.evaluate(() => window.__frames
@@ -518,3 +648,70 @@ test("the notes editor stays operable at 320px with 200% text", async ({ page })
   await operable(page, ["Keep note", "Forget note"]);
   await noHorizontalScroll(page, 320);
 });
+
+
+for (const width of [1440, 320]) {
+  test(`agent example Run loads the composer and sends one ordinary turn at ${width}px`, async ({ page }) => {
+    await setup(page, { width });
+    const prompt = 'Build a grant-spend workbook with monthly detail and a summary sheet.';
+    const pending = await openSurface(page, "agent_intro", { agent_id: "connectors" });
+    const payload = JSON.stringify({ message: prompt });
+    await receive(page, { type: "chrome_render", region: "modal", mode: "replace", surface_key: "agent_intro",
+      request_generation: pending.request_generation,
+      html: RENDERED.agent_example.replace("%%EXAMPLE_BODY%%", `<div class="astral-agent-example"><button data-ui-action="chat_message" data-ui-payload='${payload}'>Run workbook</button></div>`) });
+    await page.getByRole("button", { name: "Run workbook", exact: true }).click();
+    await expect(page.locator("#astral-modal")).toBeEmpty();
+    await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(prompt);
+    await expect(page.locator(".astral-user-bubble")).toContainText(prompt);
+    const sends = await page.evaluate(() => window.__frames.filter(frame => frame.action === "chat_message"));
+    expect(sends).toHaveLength(1);
+    expect(sends[0].payload.message).toBe(prompt);
+    expect(sends[0].submission_id).toMatch(/^[0-9a-f-]{36}$/u);
+    expect(sends[0].payload.snapshot_purpose).toBe("commit");
+    await noHorizontalScroll(page, width);
+  });
+}
+
+test("scenario Run loads its prompt and empty examples never submit", async ({ page }) => {
+  const prompt = "Compare monthly grant spending across two programs";
+  await setup(page, { width: 1440, landing: { agents: [], categories: ["Analysis"], scenarios: [
+    { title: "Grant comparison", category: "Analysis", prompt },
+    { title: "Empty example", category: "Analysis", prompt: " " },
+  ] } });
+  await page.getByRole("button", { name: "Run: Empty example", exact: true }).click();
+  expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chat_message"))).toEqual([]);
+  await page.getByRole("button", { name: "Run: Grant comparison", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "Message", exact: true })).toHaveValue(prompt);
+  expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chat_message").length)).toBe(1);
+});
+
+test("reasoning remains a compact keyboard-operable disclosure", async ({ page }) => {
+  await setup(page, { width: 320 });
+  await receive(page, { type: "ui_render", target: "chat", html: RENDERED.reasoning });
+  const reasoning = page.locator(".astral-reasoning");
+  const body = reasoning.locator(":scope > div");
+  await expect(body).toBeHidden();
+  await reasoning.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(body).toBeVisible();
+  expect(await body.evaluate(node => node.clientHeight)).toBeLessThanOrEqual(160);
+  expect(await body.evaluate(node => node.scrollHeight)).toBeGreaterThan(160);
+  await noHorizontalScroll(page, 320);
+  await reasoning.locator("summary").press("Enter");
+  await expect(body).toBeHidden();
+});
+
+for (const [width, font] of [[1440, "100%"], [320, "200%"]]) {
+  test(`summary bubble and separate reasoning fit ${width}px at ${font} text`, async ({ page }) => {
+    await setup(page, { width, font });
+    await receive(page, { type: "ui_render", target: "canvas", html: "<p>Grant workbook</p>" });
+    await receive(page, { type: "ui_render", target: "chat", html: `${RENDERED.reasoning}<p>Your grant workbook is ready. Download ${"grant_summary_".repeat(30)}.xlsx.</p>` });
+    const summary = page.locator(".chat-text-summary");
+    await expect(summary).toHaveCount(1);
+    await expect(summary).toHaveCSS("border-top-width", "1px");
+    await expect(summary).toHaveCSS("border-radius", "12px");
+    await expect(summary.locator(".astral-reasoning")).toHaveCount(0);
+    await expect(page.locator(".astral-reasoning-turn summary")).toBeVisible();
+    await noHorizontalScroll(page, width);
+  });
+}

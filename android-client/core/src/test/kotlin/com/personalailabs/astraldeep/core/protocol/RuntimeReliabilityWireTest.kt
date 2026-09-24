@@ -1,3 +1,6 @@
+// Tests for Wire's decoding resilience against malformed and adversarial frame payloads across the inbound
+// vocabulary, ensuring the client fails closed rather than crashing.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.Json
@@ -190,8 +193,6 @@ class RuntimeReliabilityWireTest {
 
     @Test
     fun textPartVariantIsBoundedToTheCanonicalSet() {
-        // 066 T023 contract extension: a text part may carry an OPTIONAL
-        // variant from the closed set {"caption"}; anything else fails closed.
         fun withTextPart(part: String): JsonObject {
             val transcript =
                 JsonArray(

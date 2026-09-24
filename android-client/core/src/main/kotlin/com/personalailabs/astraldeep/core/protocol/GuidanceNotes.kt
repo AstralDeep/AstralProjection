@@ -1,3 +1,6 @@
+// Strict decoder for the native guidance-notes view geometry, validating the exact shared shape before
+// falling back to tolerant SDUI decoding; used by Screens.kt and Input.kt to render guidance forms.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.JsonArray
@@ -7,7 +10,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import java.util.UUID
 
-/** Closed notes-view geometry, matching the shared builder before tolerant SDUI decoding. */
 internal object GuidanceNotes {
     private val categories = listOf("Profession", "Goal", "Preference", "Workflow tag", "Context")
 
@@ -105,7 +107,7 @@ internal object GuidanceNotes {
             }
         if (fields.map { (it as? JsonObject)?.string("name") } != names) return false
         for (value in fields) {
-            val field = value as JsonObject // The complete ordered-name check proved every object above.
+            val field = value as JsonObject
             val name = field.string("name")!!
             if (!field.shape(setOf("name", "label", "kind", "default"), setOf("options", "help", "visible_when")) ||
                 !text(field["label"], 8192) || ("help" in field && !text(field["help"], 8192))

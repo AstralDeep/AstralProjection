@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Deterministic, stdlib-only Windows candidate manifest tooling.
-
-The candidate workflow builds the executable once. This tool records two clean
-installed-runtime resolutions and binds the one archived executable to its
-source, profile, runtime manifest, and final hash lock without signing or
-publishing anything.
+"""Deterministic CLI recording two clean-install runtime resolutions and binding one
+archived Windows executable to its source, profile and hash lock, without signing or
+publishing.
 """
 
 from __future__ import annotations
@@ -30,7 +27,7 @@ _SHA = re.compile(r"^[0-9a-f]{40,64}$")
 
 
 class CandidateManifestError(RuntimeError):
-    """A candidate identity or clean-resolution comparison failed closed."""
+    pass
 
 
 def sha256_file(path: Path) -> str:
@@ -56,8 +53,6 @@ def canonical_profile_sha256(path: Path) -> str:
 
 
 def locked_packages(path: Path) -> dict[str, str]:
-    """Return normalized exact package versions from the complete lock."""
-
     packages: dict[str, str] = {}
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -65,8 +60,7 @@ def locked_packages(path: Path) -> dict[str, str]:
         raise CandidateManifestError("release lock is unreadable") from exc
     for line in lines:
         if '; sys_platform == "darwin"' in line:
-            # Helper pin used only so a macOS host can dry-resolve the Windows
-            # lock despite pip evaluating PyInstaller's marker on the host.
+            # Skips darwin-only pins: this Windows lock is checked from any host
             continue
         match = _LOCK_LINE.match(line)
         if match is None:
@@ -95,8 +89,6 @@ def locked_packages(path: Path) -> dict[str, str]:
 def installed_versions(
     names: Iterable[str], distributions: Optional[Iterable[Any]] = None
 ) -> dict[str, str]:
-    """Read only lock-selected distributions from the active interpreter."""
-
     available: dict[str, str] = {}
     rows = importlib.metadata.distributions() if distributions is None else distributions
     for distribution in rows:

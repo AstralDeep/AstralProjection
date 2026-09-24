@@ -1,19 +1,8 @@
-"""Feature 076 — this desktop as a computer host: executor + controller tests.
-
-Offscreen and platform-neutral: the Windows-only injector/system are replaced
-by fakes, screen capture by a stub, and the banner by a recording double. What
-is pinned (spec FR-007/FR-008/FR-013/FR-014 + contracts/transport.md §2-4):
-
-- chord parsing, coordinate mapping through the last capture, app/path
-  validation, file verbs in a temp dir, command execution bounds;
-- the controller answers a request only for the active session id, refuses
-  while paused or with consent off, executes screenshots inline and other verbs
-  on a worker thread (one at a time), and always answers with a typed
-  ``computer_response``;
-- consent on/off announces/withdraws; a session frame shows the banner and
-  sends the heartbeat acknowledgement; local input pauses; socket loss ends
-  the mirrored session; Stop is the kill switch.
+"""Tests for astral_client/remote_control.py and win_agent/computer_use.py: remote-host
+chord/coordinate mapping, verb execution bounds, session/consent gating,
+presence-based pause, and the Stop kill switch.
 """
+
 from __future__ import annotations
 
 import json
@@ -32,8 +21,6 @@ from PySide6.QtCore import QCoreApplication, QSettings  # noqa: E402
 
 from astral_client import remote_control as rc  # noqa: E402
 
-
-# ── fakes ──────────────────────────────────────────────────────────────────────
 
 class FakeInjector:
     def __init__(self):
@@ -116,8 +103,6 @@ def make_executor():
     return cu.Executor(injector=FakeInjector(), system=FakeSystem(), capture_fn=fake_capture)
 
 
-# ── pure helpers ──────────────────────────────────────────────────────────────
-
 def test_parse_chord_variants():
     assert cu.parse_chord("ctrl+shift+s") == ([0x11, 0x10], ord("S"))
     assert cu.parse_chord("Enter") == ([], 0x0D)
@@ -134,7 +119,7 @@ def test_coordinates_map_through_the_last_capture():
     geo = cu.CaptureGeometry(0, 1280, 720, 0.5, 100, 200, 2560, 1440)
     assert geo.to_physical(0, 0) == (100, 200)
     assert geo.to_physical(640, 360) == (1380, 920)
-    assert geo.to_physical(1280, 720) == (100 + 2559, 200 + 1439)  # clamped inside the screen
+    assert geo.to_physical(1280, 720) == (100 + 2559, 200 + 1439)
     with pytest.raises(cu.VerbError):
         geo.to_physical(1281, 10)
     assert cu.to_physical(None, 5, 6, (0, 0, 1920, 1080)) == (5, 6)
@@ -151,8 +136,6 @@ def test_validate_app_names_and_paths():
         with pytest.raises(cu.VerbError):
             cu.validate_app(bad)
 
-
-# ── executor ──────────────────────────────────────────────────────────────────
 
 def test_executor_input_verbs_use_the_capture_geometry():
     ex = make_executor()
@@ -190,18 +173,13 @@ def test_keyboard_into_a_terminal_needs_the_owners_approval():
             ex.run(verb, args)
         assert exc.value.code == "confirmation_required" and "confirm_action" in exc.value.message
     assert ex.injector.calls == []
-    # the server passes the owner's approval as terminal_ok → allowed
     assert ex.run("type_text", {"text": "Get-Date", "terminal_ok": True}) == {"chars": 8}
     assert ex.run("press_keys", {"keys": "enter", "terminal_ok": True}) == {"keys": "enter"}
-    # a spoofed truthy-but-not-True value is not an approval
     with pytest.raises(cu.VerbError):
         ex.run("type_text", {"text": "x", "terminal_ok": "yes"})
-    # clicking a terminal window is still fine (it does not run anything)
     ex.run("click", {"x": 1, "y": 1})
     ex.system.foreground = "notepad.exe"
     assert ex.run("type_text", {"text": "hi"}) == {"chars": 2}
-    # a console-hosted REPL (python/node/psql …) is a terminal by WINDOW CLASS,
-    # while the same image name as a GUI program (this client) is not
     ex.system.foreground, ex.system.foreground_window_class = "python.exe", "ConsoleWindowClass"
     with pytest.raises(cu.VerbError) as exc:
         ex.run("type_text", {"text": "import os"})
@@ -267,10 +245,8 @@ def test_executor_file_verbs(tmp_path):
     sub.mkdir()
     (sub / "f").write_text("x")
     with pytest.raises(cu.VerbError):
-        ex.run("delete_path", {"path": str(sub)})  # not empty
+        ex.run("delete_path", {"path": str(sub)})
 
-
-# ── settings + descriptor ─────────────────────────────────────────────────────
 
 def _settings(tmp_path):
     return rc.RemoteControlSettings(QSettings(str(tmp_path / "rc.ini"), QSettings.Format.IniFormat))
@@ -295,8 +271,6 @@ def test_descriptor_matches_the_transport_contract(tmp_path):
     assert d["verbs"] == list(cu.VERBS) and len(d["verbs"]) == 19
     assert d["screens"][0]["primary"] is True
 
-
-# ── controller ────────────────────────────────────────────────────────────────
 
 class FakeBanner:
     def __init__(self, on_pause, on_resume, on_stop):
@@ -346,7 +320,6 @@ def test_session_frame_shows_banner_and_acks_with_a_heartbeat(qapp, tmp_path):
     assert controller.session["session_id"] == "cs_1"
     assert sent[-1] == ("computer_event", {"host_id": controller.host_id, "event": "heartbeat", "session_id": "cs_1"})
     assert controller._banner.visible and controller._banner.states[-1] == ("Android phone", False, None)
-    # a frame about ANOTHER of the owner's computers is ignored
     controller.handle_frame(_session_frame(controller, session_id="cs_other", host_id=str(uuid.uuid4())))
     assert controller.session["session_id"] == "cs_1"
     controller.handle_frame(_session_frame(controller, state="ended", reason="idle_timeout"))
@@ -368,7 +341,6 @@ def test_requests_are_gated_by_session_and_consent(qapp, tmp_path):
     controller.handle_frame({"type": "computer_request", "request_id": "r4", "session_id": "cs_1",
                              "verb": "format_disk", "args": {}})
     assert sent[-1][1]["error"]["code"] == "unsupported"
-    # worker verb → answered on the GUI thread after the thread finishes
     controller.handle_frame({"type": "computer_request", "request_id": "r5", "session_id": "cs_1",
                              "verb": "click", "args": {"x": 10, "y": 10}})
     for _ in range(40):
@@ -378,7 +350,6 @@ def test_requests_are_gated_by_session_and_consent(qapp, tmp_path):
     reply = next(p for _a, p in sent if p.get("request_id") == "r5")
     assert reply["ok"] is True and reply["result"]["button"] == "left"
     assert controller.executor.injector.calls[-1][0] == "click"
-    # paused → typed refusal without touching the executor
     controller.pause_locally("local_input")
     assert sent[-1] == ("computer_event", {"host_id": controller.host_id, "event": "paused",
                                            "session_id": "cs_1", "reason": "local_input"})
@@ -413,15 +384,14 @@ def test_local_input_pauses_and_socket_loss_ends(qapp, tmp_path):
     system = controller.executor.system
     system.now = 5000
     controller.handle_frame(_session_frame(controller))
-    # input older than the session start (or our own injection) is not a person
     system.input_tick = 4000
     controller._poll_presence()
     assert controller.session["state"] == "active"
     controller.executor.injector.last_injected_tick = 6000
-    system.input_tick = 6300  # within the grace window after our own click
+    system.input_tick = 6300
     controller._poll_presence()
     assert controller.session["state"] == "active"
-    system.input_tick = 7000  # a real person
+    system.input_tick = 7000
     controller._poll_presence()
     assert controller.session["state"] == "paused" and controller.session["pause_reason"] == "local_input"
     assert controller._banner.states[-1] == ("Android phone", True, "local_input")
@@ -430,22 +400,19 @@ def test_local_input_pauses_and_socket_loss_ends(qapp, tmp_path):
 
 
 def test_remote_resume_rebaselines_presence_like_a_local_one(qapp, tmp_path):
-    """A remote resume (a ``computer_session`` frame flipping paused → active)
-    must re-baseline the presence detector, or the very input that caused the
-    pause re-pauses the session on the next poll, forever."""
     controller, sent = make_controller(tmp_path)
     system = controller.executor.system
     system.now = 5000
     controller.handle_frame(_session_frame(controller))
-    system.input_tick = 7000  # a person
+    system.input_tick = 7000
     controller._poll_presence()
     assert controller.session["state"] == "paused"
     system.now = 9000
     controller.handle_frame(_session_frame(controller, state="active"))
     assert controller.session["state"] == "active"
-    controller._poll_presence()  # last input (7000) predates the resume (9000)
+    controller._poll_presence()
     assert controller.session["state"] == "active"
-    system.input_tick = 9500  # the person is still there
+    system.input_tick = 9500
     controller._poll_presence()
     assert controller.session["state"] == "paused"
     assert sent[-1][1]["event"] == "paused"
@@ -453,9 +420,6 @@ def test_remote_resume_rebaselines_presence_like_a_local_one(qapp, tmp_path):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="user32 synthesis is Windows-only")
 def test_focus_window_alt_tap_counts_as_our_own_input(monkeypatch):
-    """focus_window lifts the SetForegroundWindow lock with a synthetic ALT tap;
-    that tap must be stamped as OUR input or the presence detector pauses the
-    session as 'someone is using this computer' right after every focus."""
     class _U32:
         def IsIconic(self, hwnd): return 0
         def ShowWindow(self, hwnd, cmd): return 1
@@ -480,7 +444,7 @@ def test_stop_is_the_kill_switch(qapp, tmp_path):
     assert sent[-1] == ("computer_event", {"host_id": controller.host_id, "event": "stopped",
                                            "session_id": "cs_1", "reason": "local_stop"})
     assert controller.session is None
-    controller.stop_all()  # idempotent
+    controller.stop_all()
     assert sent[-1][1]["event"] == "stopped"
 
 

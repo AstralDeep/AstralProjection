@@ -1,3 +1,6 @@
+// Tests that Wire's voice-frame decoding conforms exactly to the shared canonical fixture also used by
+// VoiceFixtureBundle065Test and the Apple/Watch twins.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.Json
@@ -18,7 +21,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Feature 065 canonical Android wire conformance, loaded from the one shared C0-C6 fixture. */
 class VoiceContract065Test {
     private val json = Json
     private val fixture by lazy {

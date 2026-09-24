@@ -1,4 +1,6 @@
-"""Enforce AstralProjection's one-way dependency boundary."""
+"""Tests for AstralProjection's one-way dependency boundary: Projection source never
+imports AstralDeep implementation packages.
+"""
 
 from __future__ import annotations
 
@@ -75,8 +77,6 @@ def _literal_dynamic_import_root(
     importlib_names: set[str],
     import_module_names: set[str],
 ) -> str | None:
-    """Return the absolute root from a literal dynamic import, if present."""
-
     is_builtin_import = isinstance(node.func, ast.Name) and node.func.id == "__import__"
     is_importlib_import = (
         isinstance(node.func, ast.Attribute)

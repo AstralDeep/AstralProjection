@@ -1,3 +1,6 @@
+// Tests for the watch history surface: server-adapted row population without side effects on workspace or
+// speech, scope/alias isolation, malformed-history resilience, and canonical-over-REST precedence.
+
 import AstralCore
 import XCTest
 

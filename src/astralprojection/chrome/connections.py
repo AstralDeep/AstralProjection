@@ -1,28 +1,6 @@
-"""Pure owner-facing framework credential views (feature 088 T048 projection half).
-
-A framework credential lets the owner's own tooling reach their Work through the
-framework ingress. The credential itself is the authority, so this module is
-deliberately narrow:
-
-* ``build_connections_view`` renders the owner's already-authorized credential
-  rows -- the non-secret key prefix, the granted scopes, expiry, how many
-  admissions have been consumed out of the allowance, and whether the row is
-  revoked, expired or exhausted -- plus the issue form and, for a live row, the
-  revoke command carrying the exact ``credential_id`` and ``expected_revision``
-  the host issued. **No plaintext secret is an input to this builder**, so a
-  listing can never re-disclose one, not on first render and not on any
-  re-render, reconnect or navigation replay.
-* ``build_issued_secret_view`` is the one dedicated view that shows a freshly
-  issued secret, and it shows it exactly once, in one component, together with
-  the warning that it cannot be shown again. It refuses a secret that is not the
-  one belonging to the row it was handed, so a stale pairing cannot be displayed
-  as if it were current.
-
-Every field is validated against an exact closed key set: an unknown or
-malformed row is refused as unavailable rather than rendered partially. The host
-authorizes and authenticates; this builder invents no authority, offers no
-action beyond the two server-issued commands, and computes no expiry clock of
-its own (``expired`` is the host's decision against server time).
+"""Pure view builders for the owner's framework-credential surface: lists authorized
+credential rows and renders a freshly issued secret exactly once, never accepting
+plaintext as an input.
 """
 
 from __future__ import annotations
@@ -95,7 +73,6 @@ def _count(value: object, minimum: int = 0) -> int:
 
 
 def _row(value: object) -> dict[str, object]:
-    """Accept exactly the public credential record; anything else is refused."""
     _require(isinstance(value, Mapping) and set(value) == _ROW_KEYS)  # type: ignore[arg-type]
     row = dict(value)  # type: ignore[arg-type]
     _require(_IDENTITY_RE.fullmatch(_string(row["credential_id"], 36)) is not None)
@@ -120,7 +97,6 @@ def _row(value: object) -> dict[str, object]:
 
 
 def _row_badge(row: Mapping[str, object]) -> ComponentView:
-    """One honest state per row; a revoked row is never shown as merely used up."""
     if row["revoked"]:
         return badge("Revoked", "error")
     if row["expired"]:
@@ -169,7 +145,6 @@ def _row_card(row: Mapping[str, object]) -> ComponentView:
 
 
 def _issue_form(form_state: object) -> list[ComponentView]:
-    """Offer issuance only with the host's own closed scope vocabulary."""
     if form_state is None:
         return []
     _require(isinstance(form_state, Mapping) and set(form_state) == _FORM_KEYS)  # type: ignore[arg-type]
@@ -235,7 +210,6 @@ def build_connections_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Build the owner's credential list; no plaintext secret can reach it."""
     if denied:
         return denied_view(SURFACE, TITLE, "You are not allowed to view these connections.")
     if error:
@@ -270,7 +244,6 @@ def build_issued_secret_view(
     theme: ThemeView | None = None,
     layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Show one freshly issued secret exactly once, bound to its own record."""
     try:
         row = _row(view)
         _require(_SECRET_RE.fullmatch(_string(secret, 256)) is not None)
@@ -301,7 +274,7 @@ def build_issued_secret_view(
         ]
         return build_view(SURFACE, TITLE, components, theme=theme, layout=layout)
     except (ValueError, TypeError, AttributeError, KeyError, OverflowError):
-        # The refusal deliberately carries no part of the secret or the record.
+        # Refusal text must never echo any part of the secret
         return unavailable_view(
             SURFACE,
             TITLE,

@@ -1,3 +1,8 @@
+"""Tests for windows-client LETS integration (win_agent/lets_executor.py, LETS v1.0.11):
+manifest and replay persistence across restart, receipt lease/cost binding, dispatch
+claim-before-actuate ordering, and fail-closed tamper handling.
+"""
+
 from __future__ import annotations
 
 import hashlib

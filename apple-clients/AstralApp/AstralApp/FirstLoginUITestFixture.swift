@@ -1,12 +1,9 @@
 #if DEBUG
+    // DEBUG-only deterministic transport feeding AppModel's production reducer canonical frames, for UI-testing
+    // first-login without reading or persisting submitted credentials; compiled out of release builds.
     import AstralCore
     import Foundation
 
-    /// Deterministic UI-test transport for the first-login provider surface.
-    ///
-    /// The fixture is compiled out of release builds. It feeds the production
-    /// reducer canonical server frames and deliberately never reads or records the
-    /// submitted `fields`, so a UI test credential cannot enter diagnostics.
     enum FirstLoginUITestFixture {
         enum Scenario: String {
             case slowSuccess = "slow-success"
@@ -45,8 +42,6 @@
             return Scenario(rawValue: arguments[flagIndex + 1])
         }
 
-        /// Optional runner-owned completion gate; no arbitrary URL, credential,
-        /// or provider response can enter this DEBUG-only transport.
         static func completionGateURL(
             arguments: [String] = ProcessInfo.processInfo.arguments,
             environment: [String: String] = ProcessInfo.processInfo.environment
@@ -82,9 +77,6 @@
             } catch { return false }
         }
 
-        /// A real loopback HTTP peer lives in the UI-test runner. The app uses
-        /// normal bootstrap/Rest/capture/WebKit, with a synthetic memory-only
-        /// session. No URL or token is accepted from launch configuration.
         @MainActor
         static func workspaceActionsModel() -> AppModel? {
             if let scenario = requestedScenario(),
@@ -93,8 +85,6 @@
                 guard ProcessInfo.processInfo.environment["ASTRAL_UI_TESTING"] == "1",
                     let defaults = UserDefaults(suiteName: "WorkspaceNavigationUITest.\(UUID().uuidString)")
                 else { preconditionFailure("Invalid workspace navigation UI-test configuration.") }
-                // This fixture never bootstraps, opens a socket, or loads a
-                // credential. Its model is selected before the default store.
                 defaults.set("http://127.0.0.1:1", forKey: "serverBase")
                 return AppModel(
                     conversationResumeStore: ConversationResumeStore(defaults: defaults),
@@ -254,7 +244,7 @@
                     let requestGeneration = payload["request_generation"]?.stringValue
                 else { return }
 
-                // Intentionally do not inspect payload["fields"].
+                // Intentionally not read — a submitted credential must not reach diagnostics
                 Task { @MainActor [weak model] in
                     guard let model else { return }
                     await respond(
@@ -287,9 +277,6 @@
 
             switch scenario {
             case .slowSuccess:
-                // Keep the validating phase visible long enough for deterministic
-                // one-second UI assertions, while leaving enough headroom for
-                // scene-background/foreground automation inside the five-second bound.
                 try? await Task.sleep(nanoseconds: 800_000_000)
                 model.handleFrame(
                     status(
@@ -321,8 +308,6 @@
                         phase: "completed",
                         label: "Provider setup complete"))
             case .invalidCredentials:
-                // Keep a retry active long enough for UI automation to observe
-                // the duplicate-control disabled state through accessibility.
                 try? await Task.sleep(nanoseconds: 1_200_000_000)
                 model.handleFrame(
                     status(
@@ -471,9 +456,6 @@
                     event["action"]?.stringValue == "chrome_open",
                     event["payload"]?["surface"]?.stringValue == "audit"
                 else { return }
-                // Appearance deliberately never replies: each actual Retry
-                // must start its ordinary ten-second timer. Activity log
-                // supplies a canonical reply on the next turn of the run loop.
                 Task { @MainActor [weak model] in
                     await Task.yield()
                     model?.handleFrame(
@@ -511,9 +493,6 @@
             model.composerDraft = ""
             model.activeChatId = "11111111-1111-4111-8111-111111111111"
             model.turns = [AppModel.ChatTurn(id: "rich-result", role: "assistant", text: "Synthetic review result")]
-            // Canonical fields consumed by the shared web renderer. The tabs
-            // remain in the same canvas while their parent disclosure unmounts
-            // and remounts the selected pane, as in an ordinary saved result.
             model.canvas =
                 InboundFrame.parse(
                     #"""
@@ -569,9 +548,6 @@
             model.canvas = result.renderComponents
         }
 
-        /// Drives the production strict voice reducer so UI automation can
-        /// inspect the server-owned composer affordance without microphone,
-        /// network, credential, or synthetic audio access.
         @MainActor
         private static func installVoiceComposer(on model: AppModel) {
             model.screen = .chat
@@ -598,9 +574,6 @@
             if let frame = InboundFrame.parse(composer) { model.handleFrame(frame) }
         }
 
-        /// Feeds a canonical terminal turn through the shared production
-        /// notice reducer. Session correlation is covered by controller tests;
-        /// this DEBUG-only seam exists solely for visual/accessibility UI QA.
         @MainActor
         private static func installVoiceTerminalNotice(on model: AppModel) {
             let terminalTurn =
@@ -626,10 +599,6 @@
             model.voice.installTerminalNoticeForUITesting(turn)
         }
 
-        /// Recreates an authenticated native process around the production
-        /// account-scoped locator and snapshot reducer. Frames remain a DEBUG
-        /// fixture, so this proves process persistence and semantic rendering,
-        /// not backend transport availability.
         @MainActor
         private static func installContinuity(_ scenario: Scenario, on model: AppModel) {
             guard

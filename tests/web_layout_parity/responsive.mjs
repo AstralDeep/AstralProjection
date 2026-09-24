@@ -1,15 +1,6 @@
-/**
- * Feature 089 (T047): the responsive checklist (SC-012), automated.
- *
- * Thirteen items, pass/fail, 100% required, at 1024×768, 768×1024, 390×844,
- * 320×640 and 1280×800 at 200% text. Every item that can be established from
- * the page is established from the page; R12 (orientation change) and R13
- * (keyboard, focus, screen-reader names, reduced motion, 200% text) are
- * driven here too, because they are behaviour rather than geometry.
- *
- * Usage:
- *   node responsive.mjs --url http://127.0.0.1:8001 --out <report dir>
- */
+// Automates the responsive checklist against the Astral web client at five viewports, using
+// drivers.mjs and regions.mjs; covers drawers, sheets, orientation change, and accessibility
+// (focus, reduced motion, 200% text).
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -33,7 +24,6 @@ async function evaluateViewport(page, vp, fixture) {
   const results = [];
   const wide = vp.width >= 1024;
 
-  // Landing first: most items are about the shell, not the conversation.
   await candidateDriver.landing(page);
   const landing = await page.evaluate(probeResponsive, {
     selectors: CANDIDATE_SELECTORS,
@@ -77,7 +67,6 @@ async function evaluateViewport(page, vp, fixture) {
     results.push({ id: 'R4', title: '<768 composer', pass: true, detail: 'n/a at this viewport', skipped: true });
   }
 
-  // The conversation states carry R5, R8 and R9.
   await candidateDriver.conversation(page, fixture);
   const convo = await page.evaluate(probeResponsive, {
     selectors: CANDIDATE_SELECTORS,
@@ -103,12 +92,10 @@ async function evaluateViewport(page, vp, fixture) {
     convo.tinyText.length === 0 && (vp.width >= 700 || await usesTableForm(page)),
     `tiny=${JSON.stringify(convo.tinyText)}`));
 
-  // R6 — the two overlays become full-viewport sheets below 768.
   const sheets = await exerciseSheets(page, fixture, vp);
   results.push(check('R6', '<768: overlay and settings become full-viewport sheets; settings tabs scroll horizontally',
     sheets.ok, JSON.stringify(sheets)));
 
-  // R7 — landing collapses to one column, filter tabs become a chip row.
   await candidateDriver.landing(page);
   const collapse = await page.evaluate((sel) => {
     function cols(s) {
@@ -135,8 +122,6 @@ async function evaluateViewport(page, vp, fixture) {
         && collapse.tabsScroll === true && collapse.tabsWrap === 'nowrap',
     JSON.stringify(collapse)));
 
-  // R10 / R11 — hit targets, overlaps and clipping, across landing and
-  // conversation, plus every 088 capability within two interactions.
   const smallTargets = wide ? [] : landing.smallTargets.concat(convo.smallTargets);
   results.push(check('R10', 'Every control ≥ 44×44 CSS px below 1024',
     wide || smallTargets.length === 0, JSON.stringify(smallTargets.slice(0, 10))));
@@ -152,13 +137,11 @@ async function evaluateViewport(page, vp, fixture) {
       unreachable: reach.unreachable,
     })));
 
-  // R12 — orientation change re-adapts without losing the draft or scroll.
   const orientation = await exerciseOrientation(page, vp);
   results.push(check('R12', 'Orientation change re-registers the viewport and keeps the draft and scroll position',
     orientation.viewportReRegistered && orientation.draftKept && orientation.scrollKept,
     JSON.stringify(orientation)));
 
-  // R13 — keyboard, focus-visible, accessible names, reduced motion, 200% text.
   const a11y = await exerciseA11y(page, vp);
   results.push(check('R13', 'Keyboard, focus-visible, accessible names, reduced motion and 200% text (088 FR-028)',
     a11y.focusReachesComposer && a11y.focusVisible && a11y.unnamed.length === 0
@@ -168,7 +151,6 @@ async function evaluateViewport(page, vp, fixture) {
   return results;
 }
 
-/** The web ROTE profile's grid cap, mirrored from `rote/capabilities.py`. */
 function maxColumnsFor(width) {
   if (width >= 1024) return 4;
   if (width >= 768) return 2;
@@ -180,7 +162,6 @@ async function usesTableForm(page) {
     const scope = document.querySelector('.astral-response-card') || document.body;
     const donut = scope.querySelector('[data-component="donut_chart"], .astral-donut');
     const radar = scope.querySelector('[data-component="radar_chart"], .astral-radar');
-    // Below 700px the adapter substitutes a table, so neither should remain.
     return !donut && !radar && !!scope.querySelector('table');
   });
 }
@@ -209,7 +190,6 @@ async function exerciseDrawer(page) {
     return r.width > 0 && r.left > -1 && r.left < window.innerWidth - 10;
   });
 
-  // Focus trap: tab far enough to wrap, and never leave the drawer.
   out.trapped = await page.evaluate(async (sel) => {
     const drawer = document.querySelector(sel);
     if (!drawer) return false;
@@ -279,11 +259,6 @@ async function exerciseSheets(page, fixture, vp) {
   return out;
 }
 
-/**
- * R11's second half: every 088 capability reachable in ≤ 2 interactions from
- * the main view. Each capability names the control that reveals it and the
- * control that performs it; one interaction each.
- */
 const CAPABILITY_PATHS = [
   { name: 'new chat', via: 'drawer', target: '#astral-newchat-btn' },
   { name: 'recent chats', via: 'drawer', target: '#astral-recent-work, #astral-chats-btn' },
@@ -295,11 +270,6 @@ const CAPABILITY_PATHS = [
 ];
 
 async function reachability(page) {
-  // Two passes, because the two disclosures cover each other: below 1024 the
-  // directory is behind the drawer toggle, and below 768 the secondary
-  // composer controls are behind the overflow button — one interaction each,
-  // which is what the checklist allows. Opening both at once would have the
-  // drawer sitting on top of the composer.
   const width = page.viewportSize().width;
   const unreachable = [];
 
@@ -352,9 +322,6 @@ async function exerciseOrientation(page, vp) {
   await page.waitForTimeout(700);
   const result = await page.evaluate((sel) => {
     const canvas = document.querySelector(sel.canvas);
-    // Where the content now fits the rotated viewport there is no scroll
-    // position left to keep, and demanding one would fail a page for being
-    // short. The question only has an answer while the region can scroll.
     const scrollable = !!canvas && canvas.scrollHeight - canvas.clientHeight > 4;
     return {
       viewportReRegistered: (window.__ASTRAL_VIEWPORT_REGISTRATIONS__ || 0) > 0,
@@ -373,7 +340,6 @@ async function exerciseA11y(page, vp) {
   await candidateDriver.landing(page);
   const out = {};
 
-  // Keyboard reaches the composer without a mouse.
   await page.evaluate(() => document.body.focus());
   let reached = false;
   for (let i = 0; i < 60; i += 1) {
@@ -444,8 +410,6 @@ async function main() {
       });
       const page = await context.newPage();
       if (vp.zoom) {
-        // 200% *text* zoom: the root font size doubles; the layout must cope
-        // without a horizontal scrollbar.
         await page.addInitScript(() => {
           document.addEventListener('DOMContentLoaded', () => {
             document.documentElement.style.fontSize = '32px';

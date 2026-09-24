@@ -1,3 +1,6 @@
+// Exports the canvas to an offline, self-contained HTML bundle for viewing without the app; the embedded
+// WebView only renders fixed bundled content, never a live credentialed session.
+
 package com.personalailabs.astraldeep.app.render
 
 import android.annotation.SuppressLint
@@ -33,7 +36,7 @@ import java.util.Base64
 internal const val EXPORT_ORIGIN = "https://astral-export.invalid/"
 internal const val MAX_PORTABLE_EXPORT = 32 * 1024 * 1024
 
-/** Fixed bundled code consumes only an inert presentation, with no credentials or action bridge. */
+// Bundled inert content only — no credentials or JS action bridge
 @SuppressLint("SetJavaScriptEnabled")
 internal suspend fun renderOfflineCanvasExport(
     activity: ComponentActivity,

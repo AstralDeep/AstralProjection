@@ -1,3 +1,6 @@
+// Shimmering placeholder composables shown while the canvas or a list surface (agents/history/audit) is
+// loading, used by CanvasHost and Screens.kt until the first SDUI content commits.
+
 package com.personalailabs.astraldeep.app.ui
 
 import androidx.compose.animation.core.RepeatMode
@@ -21,13 +24,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-// Shared shimmering skeleton placeholders — the loading state for the canvas
-// (while a query is answered) and for the list surfaces (while their data loads).
-
-/** Base tone for the placeholder blocks (clearly above the near-black bg). */
 private val SkeletonShade = Color(0xFF313A5C)
 
-/** The pulsing alpha every skeleton placeholder shares. */
 @Composable
 internal fun shimmerAlpha(): Float {
     val transition = rememberInfiniteTransition(label = "skeleton")
@@ -56,7 +54,6 @@ internal fun SkeletonBlock(
     )
 }
 
-/** Canvas placeholder: a heading over a few large cards, until the first SDUI commits. */
 @Composable
 internal fun SkeletonCanvas(modifier: Modifier = Modifier) {
     val alpha = shimmerAlpha()
@@ -69,7 +66,6 @@ internal fun SkeletonCanvas(modifier: Modifier = Modifier) {
     }
 }
 
-/** Row placeholders for the list surfaces (agents / history / audit) while they load. */
 @Composable
 internal fun SkeletonList(
     modifier: Modifier = Modifier,

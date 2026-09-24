@@ -1,12 +1,8 @@
-"""063.1 — declarative ``visible_when`` on ParamPicker fields.
-
-The server may mark a field ``visible_when: {field, equals, default}``; the
-renderer shows it only while the named controller select's current value
-matches, re-evaluating live on selection change. Fields without the attribute
-— and whole payloads from servers that predate it — render exactly as before,
-and hidden fields still submit their values (the server side reads only the
-inputs matching the controller, so a stale hidden value is inert).
+"""Tests for astral_client/renderer.py: declarative visible_when on ParamPicker fields —
+initial and reactive visibility against a controller select, and that hidden fields
+still submit their values.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -75,7 +71,6 @@ def test_hidden_fields_still_submit_their_values(qapp):
     combo, textarea, _ = _widgets(w)
     textarea.setPlainText("KEYDATA")
     combo.setCurrentText("password")
-    # Qt escapes "&" to "&&" for mnemonics (_btn_label), so match loosely.
     submit = next(b for b in w.findChildren(QPushButton)
                   if "probe" in b.text())
     submit.click()

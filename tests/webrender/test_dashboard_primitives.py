@@ -1,10 +1,8 @@
-"""Feature 029 follow-up — structural render tests for the dashboard
-primitives (badge, hero, keyvalue, timeline, rating).
-
-Components are plain dicts (not astralprims instances) so the suite passes
-regardless of the installed astralprims version — the renderer consumes
-dicts either way, and these types ship with astralprims 0.2.0.
+"""Tests for the dashboard primitive renderers (badge, hero, keyvalue, timeline, rating)
+in backend/webrender/__init__.py: variant/escaping behavior, empty-state rendering,
+and morph-anchor support on plain dict components.
 """
+
 import webrender
 from webrender import render_one
 
@@ -74,7 +72,7 @@ def test_timeline_empty_renders_nothing():
 
 def test_rating_stars_clamped_and_value():
     html = render_one({"type": "rating", "value": 4.8, "label": "Satisfaction"})
-    assert html.count("astral-star--filled") == 5  # 4.8 rounds to 5 of 5
+    assert html.count("astral-star--filled") == 5
     assert "4.8/5" in html and "Satisfaction" in html
 
     html = render_one({"type": "rating", "value": 99, "max_value": 4})

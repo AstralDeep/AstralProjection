@@ -108,6 +108,22 @@
     </aside>
 
     <div id="astral-main" class="astral-main">
+      <!-- Top dashboard overview bar (a8p console frame) -->
+      <header id="astral-response-top-nav" class="response-top-nav">
+        <button type="button" id="astral-back-dash-btn" class="btn-back-dash" title="Return to Dashboard">
+          &larr; Dashboard Overview
+        </button>
+        <div class="response-query-chip">
+          <button type="button" id="astral-turns-chip" class="astral-turns-chip" disabled>(0 turns)</button>
+        </div>
+        <div class="response-top-nav-right">
+          <button type="button" id="astral-top-newchat-btn" class="btn-new-chat" title="Start New Conversation">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>New Chat</span>
+          </button>
+        </div>
+      </header>
+
       <!-- Canvas: the scrolling area of the main column. It holds the landing
            and, once a turn has run, the conversation feed. Server-rendered UI
            (astralprims primitives) lands in the newest turn's workspace. -->
@@ -306,6 +322,7 @@
           <div id="astral-fs-sub" class="astral-fs-sub"></div>
         </div>
       </div>
+      <div id="astral-fs-actions" class="astral-fs-actions"></div>
       <button type="button" id="astral-fs-exit" class="astral-fs-exit">
         <span>Exit full screen</span><span class="astral-fs-kbd">Esc</span>
       </button>

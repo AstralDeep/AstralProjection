@@ -1,3 +1,7 @@
+// Compose screens for Agents, History, Audit, and SDUI settings surfaces (chrome_surface), reusing the chat
+// canvas's component renderer. surfaceViewState and connectionStripLabel are pure state rules also used by
+// AppViewModel.
+
 package com.personalailabs.astraldeep.app.ui
 
 import androidx.compose.foundation.clickable
@@ -244,7 +248,6 @@ private fun AuditCard(event: AuditEvent) {
 /** The three states of an SDUI settings surface while/after it is requested (T039). */
 enum class SurfaceViewState { Loaded, Loading, TimedOut }
 
-/** Pure state rule: a delivered surface wins; else loading until the timeout fires. */
 fun surfaceViewState(
     hasSurface: Boolean,
     timedOut: Boolean,
@@ -255,16 +258,8 @@ fun surfaceViewState(
         else -> SurfaceViewState.Loading
     }
 
-/** How long to wait for a `chrome_surface` before offering Retry (T039). */
 private const val SURFACE_TIMEOUT_MS = 10_000L
 
-/**
- * Feature 043/044 — a settings surface delivered as SDUI (chrome_surface),
- * rendered natively with the SAME component renderer used for the chat canvas.
- * While waiting, a skeleton shows; if no surface arrives within
- * [SURFACE_TIMEOUT_MS] the screen offers a Retry that re-requests it (T039), so a
- * dropped/blocked surface never leaves an INFINITE skeleton.
- */
 @Composable
 fun SurfaceScreen(
     surface: Inbound.ChromeSurface?,
@@ -292,14 +287,13 @@ fun SurfaceScreen(
         SurfaceViewState.TimedOut ->
             SurfaceTimeout(
                 onRetry = {
-                    attempt += 1 // re-arm the loading timer
+                    attempt += 1
                     onRetry()
                 },
             )
     }
 }
 
-/** Monotonic id per delivered `chrome_surface` frame (drives item-state reset). */
 private val surfaceRevision = AtomicInteger()
 
 @Composable
@@ -307,13 +301,7 @@ private fun SurfaceContent(
     surface: Inbound.ChromeSurface,
     renderer: Renderer,
 ) {
-    // Each server push is a NEW delivery: scroll back to the top (so a
-    // re-render's leading notice — e.g. a failed LLM save — or a guide
-    // section's fresh content is actually SEEN) and key every item by the
-    // delivery revision so per-item composable state resets. Without the
-    // reset, a re-delivered component that compares EQUAL to its predecessor
-    // kept its old state — the LLM form stayed stuck on "Saving…" with its
-    // buttons gone after an error re-render.
+    // Keys items by revision: equal content would else keep stale state
     val revision = remember(surface) { surfaceRevision.incrementAndGet() }
     val listState = rememberLazyListState()
     LaunchedEffect(revision) { listState.scrollToItem(0) }
@@ -364,7 +352,6 @@ private fun SurfaceTimeout(onRetry: () -> Unit) {
     }
 }
 
-/** Human-readable connection status shown in the top bar. */
 fun connectionLabel(c: ConnectionState): String =
     when (c) {
         ConnectionState.Connected -> "Connected"
@@ -373,11 +360,6 @@ fun connectionLabel(c: ConnectionState): String =
         ConnectionState.AuthRequired -> "Re-authenticating…"
     }
 
-/**
- * The slim connection strip's label; null = hidden. Shows only once a session
- * has been live and then degrades — a visible reconnect, never a silent stall
- * (feature 044 T014). Pure → unit-tested.
- */
 fun connectionStripLabel(
     c: ConnectionState,
     everConnected: Boolean,

@@ -1,11 +1,8 @@
-"""Feature 055 (US4 T040 + US5 T045) — canvas component context menu.
-
-Right-click on a canvas component offers Refine… (emits ``component_refine``
-per wire-contract §3; disabled while viewing history) plus the export entries
-(CSV for tables, canvas HTML) that open the session-authed export URLs in the
-system browser. No versions submenu: no native frame carries the version
-list, so restore stays a web affordance (declared parity carve-out).
+"""Tests for astral_client/app.py's canvas context menu (renderer.py, rest.py):
+Refine/export menu composition, CSV/canvas export URLs, the component_refine emit
+path, and hit-testing to the top-level identity.
 """
+
 import os
 
 import pytest
@@ -43,8 +40,6 @@ def _action(menu, label):
     return next(a for a in menu.actions() if a.text() == label)
 
 
-# --- URL builders (pure) ------------------------------------------------------
-
 def test_export_component_csv_url():
     assert rest.export_component_csv_url("http://h:8001/", "wc_a", "c1") == (
         "http://h:8001/api/export/component/wc_a.csv?chat_id=c1"
@@ -62,8 +57,6 @@ def test_export_canvas_html_url():
         "http://h:8001/api/export/canvas/c1.html"
     )
 
-
-# --- menu composition ---------------------------------------------------------
 
 def test_menu_on_table_offers_refine_and_both_exports(qapp):
     c = _canvas()
@@ -91,7 +84,6 @@ def test_menu_without_chat_or_component_is_none(qapp):
 def test_menu_without_chat_still_offers_refine(qapp):
     c = _canvas(chat_id=None)
     c.set_components([_table("wc_t")])
-    # No chat context → no export URLs; refine (id-scoped) remains.
     assert _labels(c.component_menu("wc_t", c._rendered["wc_t"])) == ["Refine…"]
 
 
@@ -102,8 +94,6 @@ def test_refine_disabled_in_timeline_mode(qapp):
     menu = c.component_menu("wc_a", c._rendered["wc_a"])
     assert not _action(menu, "Refine…").isEnabled()
 
-
-# --- export actions open the system browser ------------------------------------
 
 def test_csv_export_opens_url(qapp):
     opened = []
@@ -121,8 +111,6 @@ def test_canvas_export_opens_url(qapp):
     _action(c.component_menu(None, None), "Export canvas (HTML)").trigger()
     assert opened == ["http://127.0.0.1:8001/api/export/canvas/c1.html"]
 
-
-# --- refine emit path -----------------------------------------------------------
 
 def test_refine_emits_component_refine(qapp, monkeypatch):
     seen = []
@@ -154,7 +142,6 @@ def test_refine_cancelled_prompt_sends_nothing(qapp, monkeypatch):
 
 def test_refine_refused_in_timeline_mode(qapp, monkeypatch):
     seen = []
-    # The prompt must not even open on a read-only historical view.
     monkeypatch.setattr(appmod, "_ask_refine_instruction",
                         lambda *a: pytest.fail("prompt opened in timeline mode"))
     c = _canvas(emit=lambda a, p: seen.append((a, p)))
@@ -163,13 +150,11 @@ def test_refine_refused_in_timeline_mode(qapp, monkeypatch):
     assert seen == []
 
 
-# --- hit-testing: only canvas-tracked identities are targeted -------------------
-
 def test_component_at_resolves_top_level_identity(qapp):
     c = _canvas()
     c.set_components([_card("wc_a")])
     inner_label = c._by_id["wc_a"].findChildren(appmod.QLabel)[0]
-    c._inner.childAt = lambda pos: inner_label  # offscreen: no real geometry
+    c._inner.childAt = lambda pos: inner_label
     cid, comp = c._component_at(QPoint(1, 1))
     assert cid == "wc_a" and comp["component_id"] == "wc_a"
 
@@ -179,8 +164,6 @@ def test_component_at_skips_nested_author_ids(qapp):
     comp = _card("wc_a")
     comp["content"] = [{"type": "text", "id": "author-child", "content": "x"}]
     c.set_components([comp])
-    # The nested child's widget carries the author id property, but it is not a
-    # workspace identity — the walk must land on the top-level component.
     child = next(w for w in c._by_id["wc_a"].findChildren(appmod.QLabel)
                  if w.property("component_id") == "author-child")
     c._inner.childAt = lambda pos: child

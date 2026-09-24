@@ -1,9 +1,7 @@
-"""Feature-065 conversational voice controller for the native Windows client.
-
-The controller owns only permission, authenticated session control, and direct
-RTC media. Recognized finals are copied into the existing strict
-``chat_message`` transport by :mod:`astral_client.protocol`; this module never
-dispatches an agent, invokes a tool, or invents an assistant answer.
+"""Conversational voice controller owning permission, session control, and direct RTC
+media for the native client. Recognized finals are relayed into the existing
+chat_message transport via astral_client/protocol.py, never dispatching an agent
+itself.
 """
 
 from __future__ import annotations
@@ -63,9 +61,8 @@ from .protocol import (
 _LIVEKIT_VENDOR_LOGGERS = ("livekit", "livekit.rtc", "livekit.rtc.synchronizer")
 
 
+# Vendor logging can leak credentialed RTC data
 def _disable_livekit_vendor_logging() -> None:
-    """Prevent dependency diagnostics from retaining credentialed RTC data."""
-
     for logger_name in _LIVEKIT_VENDOR_LOGGERS:
         logging.getLogger(logger_name).disabled = True
 
@@ -86,10 +83,6 @@ _CONTROL_ORDER = (
     "voice-chat-context",
     "voice-sensitive-recap",
 )
-# Glyphs for the server-owned `icon` names in webrender/chrome/composer_model.py.
-# Mirrors the web client's VOICE_ICONS vocabulary (client.js) so a control means
-# the same thing on every surface. Keyed on the ICON, not the control key, so
-# two controls sharing an icon stay consistent.
 _CONTROL_GLYPHS = {
     "microphone": "🎙",
     "device-transfer": "🔄",
@@ -99,9 +92,6 @@ _CONTROL_GLYPHS = {
     "chat": "💬",
     "speaker-consent": "🔊",
 }
-# A voice status the composer stays quiet about: session off with nothing the
-# server actually wants to say. Mirrors client.js `state === "off" && !message`
-# (the reason rides through as the message, so the neutral one counts as none).
 _QUIET_VOICE_MESSAGES = frozenset({"", "off", "ready"})
 _CONTROL_ACTIONS = {
     "voice-start": "voice_session_start",
@@ -273,8 +263,6 @@ _LOCAL_MAX_ANNOUNCEMENTS = 8
 
 
 def canonicalize_local_final(value: str) -> str:
-    """Return the strict client-local transcript form without retaining input."""
-
     if not isinstance(value, str):
         raise ValueError("local final must be text")
     canonical = unicodedata.normalize(
@@ -299,8 +287,6 @@ def encode_helper_frame(
     payload: bytes | str = b"",
     recognition_id: int = 0,
 ) -> bytes:
-    """Encode one exact, length-bounded inherited-pipe helper frame."""
-
     if kind not in _HELPER_KINDS:
         raise ValueError("unknown helper frame kind")
     if (
@@ -351,8 +337,6 @@ def _read_exact(stream: Any, size: int) -> bytes:
 
 
 def read_helper_frame(stream: Any) -> tuple[str, int, bytes]:
-    """Read one strict helper frame and reject malformed input before allocation."""
-
     header = stream.read(_HELPER_HEADER.size)
     if len(header) != _HELPER_HEADER.size:
         raise ValueError("helper frame header is truncated")
@@ -377,8 +361,6 @@ def read_helper_frame(stream: Any) -> tuple[str, int, bytes]:
 
 
 class WindowsSpeechHelper:
-    """First-party System.Speech subprocess over scrubbed inherited stdio only."""
-
     _ENV_ALLOWLIST = ("SystemRoot", "WINDIR")
 
     def __init__(
@@ -429,8 +411,7 @@ class WindowsSpeechHelper:
         generation = ticket
         process = None
         try:
-            # Close must either invalidate this ticket before spawn or observe
-            # the published child and reap it before returning.
+            # Close must invalidate the ticket or reap the child first
             with self._state_lock:
                 if self._disposed or ticket != self._lifecycle_generation:
                     return False
@@ -667,8 +648,6 @@ class WindowsSpeechHelper:
             )
 
     def abort_recognition(self) -> None:
-        """Terminate the helper without waiting on its reader thread."""
-
         self._fail_closed()
 
     @staticmethod
@@ -732,8 +711,6 @@ class WindowsSpeechHelper:
 
 
 class _QtTextToSpeechBackend(QObject):
-    """QTextToSpeech wrapper that exposes only local categorical lifecycle."""
-
     def __init__(self, parent: Optional[QObject] = None) -> None:
         super().__init__(parent)
         self._engine_name = "sapi"
@@ -797,8 +774,6 @@ class _QtTextToSpeechBackend(QObject):
 
 
 class QtLocalSpeechAdapter(QObject):
-    """Half-duplex local ASR/TTS owner with an exact 500 ms echo fence."""
-
     _helper_final_received = Signal(int, str)
     _helper_error_received = Signal(int, str)
 
@@ -1029,17 +1004,12 @@ def _timestamp(value: object) -> Optional[datetime]:
 
 
 class VoiceHttpError(RuntimeError):
-    """Content-free authenticated voice-control failure."""
-
     def __init__(self, code: str, status: int = 0) -> None:
         self.code = code
         self.status = status
         super().__init__(code)
 
 
-# 066 T032 parity: honest composer lines for server refusal reasons, wording
-# aligned with web's VOICE_REASON_TEXT and Apple's messageFor. An unmapped
-# code still renders verbatim (honest, if terse) rather than a generic line.
 _REFUSAL_REASON_TEXT = {
     "worker_unavailable": "No voice worker is available right now. You can keep typing.",
     "asr_unavailable": "The speech recognition service is unavailable right now. You can keep typing.",
@@ -1061,8 +1031,6 @@ def _refusal_line(reason: object) -> str:
 
 
 class VoiceHttpClient:
-    """Bounded stdlib client for the server's authenticated voice REST API."""
-
     def __init__(
         self,
         http_base: str,
@@ -1135,8 +1103,6 @@ class VoiceHttpClient:
         )
 
     def current_media_grant(self, session_id: str, scope: dict[str, str]) -> dict[str, Any]:
-        """Read credential-free current remote media fences."""
-
         return self._request("GET", f"/api/voice/sessions/{session_id}/media-grants", None, scope)
 
     def refresh_media_grant(
@@ -1145,8 +1111,6 @@ class VoiceHttpClient:
         body: dict[str, Any],
         scope: dict[str, str],
     ) -> dict[str, Any]:
-        """Rotate one current remote media grant with an idempotent UUID4."""
-
         return self._request("POST", f"/api/voice/sessions/{session_id}/media-grants", body, scope)
 
     def _request(
@@ -1217,8 +1181,6 @@ class VoiceHttpClient:
 
 
 class QtAudioBackend(QObject):
-    """QtMultimedia capture/playout with no persistent audio buffer."""
-
     capability_changed = Signal(dict)
     _playback_ready = Signal(bytes, int, int)
     _playout_begin = Signal(object)
@@ -1561,8 +1523,6 @@ def _pcm_format(sample_rate: int, channels: int) -> QAudioFormat:
 
 
 class LiveKitRoomSession:
-    """One direct-RTC room with a Qt microphone source and audio sink."""
-
     def __init__(self, *, stream_factory: Optional[Callable[..., Any]] = None) -> None:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._thread: Optional[threading.Thread] = None
@@ -1705,8 +1665,6 @@ class LiveKitRoomSession:
         await room.disconnect()
 
     def authorize_announcement(self, manifest: dict[str, Any]) -> None:
-        """Install one controller-validated content-free manifest on the RTC loop."""
-
         loop = self._loop
         if loop is None:
             return
@@ -2077,8 +2035,6 @@ class LiveKitRoomSession:
 
 
 class VoiceComposerWidget(QWidget):
-    """Accessible native renderer for the server-owned composer controls."""
-
     action_requested = Signal(str)
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -2096,8 +2052,6 @@ class VoiceComposerWidget(QWidget):
         self.status_label.setObjectName("voiceConversationStatus")
         self.status_label.setAccessibleName("Voice conversation status")
         self.status_label.setAccessibleDescription("Voice controls are loading")
-        # Pre-frame the state is unknown, not "unavailable" — web hides the
-        # line and says "Checking voice availability…" in the control tooltip.
         self.status_label.setVisible(False)
         self.transcript_label = QLabel("")
         self.transcript_label.setObjectName("voiceTranscriptPreview")
@@ -2143,14 +2097,6 @@ class VoiceComposerWidget(QWidget):
             control = controls.get(key)
             if control is None or not control["visible"]:
                 continue
-            # 066 cross-client style parity: web and Android render the voice
-            # controls as ICONS with the server's label carried in the tooltip
-            # + accessible name. Windows rendered the label as button TEXT, so
-            # a composer that reads "Start voice conversation | Voice: off"
-            # beside a phone's single mic glyph looked like another product.
-            # Same server model, same order, same labels — icon presentation.
-            # An unmapped icon name keeps its text rather than becoming a
-            # blank button.
             glyph = _CONTROL_GLYPHS.get(control["icon"], "")
             button = QPushButton(glyph or control["label"])
             button.setObjectName("voiceComposerControl")
@@ -2196,13 +2142,6 @@ class VoiceComposerWidget(QWidget):
         safe_message = str(message or safe_state).strip()[:240]
         self.status_label.setText(f"Voice: {safe_state.replace('_', ' ')}")
         self.status_label.setAccessibleDescription(safe_message)
-        # 066 parity: web hides its voice state line when the session is off
-        # and the server has nothing to say (`hidden = state === "off" &&
-        # !message` in client.js), so an idle composer is just the mic icon.
-        # Windows kept a permanent "Voice: off" chip in the composer row.
-        # Anything the server actually reports — a reason, an error, any live
-        # state — still shows, and the accessible description is set either
-        # way, so a screen reader loses nothing.
         self.status_label.setVisible(
             not (safe_state == "off" and safe_message.lower() in _QUIET_VOICE_MESSAGES)
         )
@@ -2216,8 +2155,6 @@ class VoiceComposerWidget(QWidget):
         turn_id: Optional[str] = None,
         occurred_at: Optional[str] = None,
     ) -> None:
-        """Show a persistent, non-color terminal outcome for one voice request."""
-
         self.set_voice_status(_TURN_VOICE_PHASES.get(state, "error"), message)
         terminal_notice = _TERMINAL_TURN_NOTICES.get(state)
         if terminal_notice is None:
@@ -2245,8 +2182,6 @@ class VoiceComposerWidget(QWidget):
         turn_id: Optional[str] = None,
         occurred_at: Optional[str] = None,
     ) -> None:
-        """Present a correlated terminal rejection without replaying it."""
-
         guidance = (
             "Please try speaking again, or use typed chat."
             if retry_policy == "explicit_user_retry"
@@ -2272,8 +2207,6 @@ class VoiceComposerWidget(QWidget):
         update_status: bool = True,
         text_result_available: bool = False,
     ) -> None:
-        """Distinguish failed speech output from the underlying text request."""
-
         if update_status:
             self.set_voice_status("error", message)
         self._show_request_notice(
@@ -2299,8 +2232,6 @@ class VoiceComposerWidget(QWidget):
         )
 
     def clear_request_notice(self, *, preserve_fence: bool = False) -> None:
-        """Hide and scrub the prior request outcome on an explicit reset."""
-
         if not preserve_fence:
             self._request_notice_turn_id = None
             self._request_notice_occurred_at = None
@@ -2316,8 +2247,6 @@ class VoiceComposerWidget(QWidget):
         turn_id: Optional[str],
         occurred_at: Optional[str],
     ) -> None:
-        """Clear only when a distinct, non-older turn has demonstrably begun."""
-
         next_occurred_at = _timestamp(occurred_at)
         if state not in _TURN_NOTICE_CLEAR_STATES or not _uuid4(turn_id):
             return
@@ -2347,8 +2276,6 @@ class VoiceComposerWidget(QWidget):
         turn_id: Optional[str] = None,
         occurred_at: Optional[str] = None,
     ) -> None:
-        """Render and announce one server-explained request or speech outcome."""
-
         server_message = str(message or "No additional details were provided.")
         text = f"⚠ {heading}\n{server_message}"
         if guidance:
@@ -2585,8 +2512,6 @@ def _valid_partial_transcript(frame: dict[str, Any]) -> bool:
 
 
 class VoiceController(QObject):
-    """Generation-fenced session reducer and explicit-action controller."""
-
     status_changed = Signal(str, str)
     transcript_changed = Signal(str, bool)
     chat_required = Signal(str, str)
@@ -2895,8 +2820,6 @@ class VoiceController(QObject):
         return True
 
     def _accept_turn_state(self, frame: dict[str, Any]) -> bool:
-        """Reduce one current, strict turn state before it may affect native UI."""
-
         required = {
             "type",
             "schema_version",
@@ -3051,9 +2974,7 @@ class VoiceController(QObject):
     ) -> None:
         if self._closed or activation_epoch != self._activation_epoch:
             return
-        # A native permission completion is a one-shot capability. Consuming
-        # its epoch prevents duplicate platform callbacks from creating a
-        # second session with a fresh activation UUID.
+        # Consuming the epoch blocks a duplicate permission callback
         self._activation_epoch += 1
         if permission != "authorized":
             self._set_status(
@@ -3481,8 +3402,6 @@ class VoiceController(QObject):
         return self.transport.send_voice_local_frame(frame) is not False
 
     def _local_authority_matches(self, value: dict[str, Any]) -> bool:
-        """Return whether a frozen local frame still belongs to this live session."""
-
         return bool(
             self.speech_backend == "client_local"
             and not self._closed
@@ -3729,8 +3648,6 @@ class VoiceController(QObject):
         return True
 
     def owns_local_message_ack(self, frame: dict[str, Any]) -> bool:
-        """Return whether this ACK claims the one GUI-owned local final."""
-
         pending = self._local_pending_final
         return bool(
             self.speech_backend == "client_local"
@@ -3850,8 +3767,6 @@ class VoiceController(QObject):
         ):
             return
         turn["final_received"] = True
-        # The adapter's final signal is emitted only after its helper Stopped
-        # barrier and capture shutdown have completed.
         self._local_speech_stopped = True
         try:
             text = canonicalize_local_final(text)
@@ -3932,8 +3847,7 @@ class VoiceController(QObject):
         try:
             self._send_local_frame(frame)
         except (OSError, RuntimeError, ValueError):
-            # A transient transport failure retains one bounded plaintext frame
-            # solely for exact-id retry until the acknowledgement deadline.
+            # Ignored: the scheduled retry below resends the frame
             pass
         self.transcript_changed.emit(text, True)
         self._schedule_local_final_retry(pending)
@@ -4419,8 +4333,6 @@ class VoiceController(QObject):
         report_recognition: bool = True,
         report_playout: bool = True,
     ) -> None:
-        """Fence and physically stop all local owners before any outbound report."""
-
         should_stop_adapter = (
             not self._local_speech_stopped
             or self._local_active_playout is not None
@@ -5018,7 +4930,6 @@ class VoiceController(QObject):
 
     @Slot()
     def _renew_foreground_lease(self) -> None:
-        """Renew the server lease without changing true-idle interaction state."""
         if (
             not self._foreground_active
             or not self._has_session()
@@ -5077,7 +4988,6 @@ class VoiceController(QObject):
         )
 
     def set_foreground_active(self, active: bool, reason: str) -> None:
-        """Fence lease renewal and capture to the native app foreground."""
         if active:
             self._foreground_active = True
             if not self._has_session():
@@ -5109,10 +5019,6 @@ class VoiceController(QObject):
     def _stop_speech(self) -> None:
         if not self._has_session():
             return
-        # A user interruption is a local realtime action first.  The bounded,
-        # generation-fenced server request still runs below and still owns its
-        # error semantics, but network latency must never leave stale speech
-        # playing after the user has pressed Stop.
         local_session = self.speech_backend == "client_local"
         if local_session:
             if self._local_stop_inflight or self._local_stop_reset_pending:

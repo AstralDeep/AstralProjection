@@ -1,3 +1,7 @@
+// Tests for workspace toolbar actions: capability and canvas gating stay available while busy, export uses
+// one encoded revision query, credential refresh can't start a stale request, and duplicate shares never
+// reissue.
+
 import AstralCore
 import XCTest
 

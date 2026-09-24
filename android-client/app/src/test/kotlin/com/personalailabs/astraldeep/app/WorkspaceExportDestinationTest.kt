@@ -1,3 +1,6 @@
+// Tests for workspace canvas export destination selection (share sheet vs. file download), as driven by
+// WorkspaceActionController.
+
 package com.personalailabs.astraldeep.app
 
 import kotlinx.coroutines.Dispatchers

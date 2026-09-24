@@ -1,4 +1,6 @@
-// Isolated worker VM: synthetic public bytes only, no user browser or credentials.
+// Tests for the offline service worker running in an isolated VM against synthetic public bytes
+// only, with no browser or credentials.
+
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -13,10 +15,7 @@ const worker = await readFile(resolve(STATIC, "service-worker.js"), "utf8");
 const registration = await readFile(resolve(STATIC, "offline-registration.js"), "utf8");
 const ORIGIN = "https://astral.example";
 const assets = JSON.parse(worker.match(/const PUBLIC_ASSETS = (\[[\s\S]*?\]);/)[1]);
-// The generator hashes text assets with LF endings, because .gitattributes
-// stores them that way and the image that serves them is Linux. A Windows
-// checkout materialises CRLF, so read them the same way the generator did or
-// every digest here disagrees with the worker on that host alone.
+// Read as LF; a CRLF checkout desyncs every digest
 const TEXT_ASSETS = /\.(html|css|webmanifest)$/u;
 const bodies = new Map(await Promise.all(assets.map(async (asset) => {
   const raw = await readFile(resolve(STATIC, asset.path.slice(8)));
@@ -221,7 +220,6 @@ test("offline root receives only public disconnected HTML; empty cache preserves
     if (typeof input !== "string") throw new Error("network unavailable");
     return responseFor(assets.find(asset => input === ORIGIN + asset.path));
   });
-  // No cached fallback and a failed public fetch preserve the original root error.
   const empty = harness(() => { throw new Error("network unavailable"); });
   await assert.rejects(empty.fetch("/", { mode: "navigate" }), /network unavailable/);
   await h.event("install");

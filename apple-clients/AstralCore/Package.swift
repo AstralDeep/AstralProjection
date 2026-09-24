@@ -1,18 +1,15 @@
 // swift-tools-version: 5.9
-// Feature 051 — shared first-party core for the three Apple SDUI clients.
-// ZERO third-party dependencies (Constitution V): Foundation, CryptoKit,
-// URLSession only. All protocol/transport/auth logic lives here so
-// `swift test` covers it headlessly (no Xcode project required).
+// SwiftPM manifest for AstralCore, the zero-third-party-dependency protocol/transport/auth layer shared by
+// the three Apple SDUI clients, buildable and testable headlessly without an Xcode project.
 import CryptoKit
 import Foundation
 import PackageDescription
 
-// Feature 065 keeps one canonical C0-C6 fixture in Projection's contracts.
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let repositoryRoot =
     packageRoot
-    .deletingLastPathComponent()  // apple-clients
-    .deletingLastPathComponent()  // repository
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
 let canonicalVoiceFixture = repositoryRoot.appendingPathComponent(
     "contracts/fixtures/voice_065/client_conformance.json")
 let canonicalLocalVoiceFixture = repositoryRoot.appendingPathComponent(
@@ -62,9 +59,6 @@ let package = Package(
             name: "AstralCoreTests",
             dependencies: ["AstralCore"],
             path: "Tests/AstralCoreTests",
-            // Existing AstralPrims generator inputs remain source-tree-only.
-            // The relative link below has no client-owned JSON bytes; SwiftPM
-            // copies its hash-checked canonical target into Bundle.module.
             exclude: [
                 "Fixtures/astralprims-fixtures.json",
                 "Fixtures/generate_fixtures.py",

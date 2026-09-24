@@ -1,34 +1,20 @@
-"""Gated open-ended / generative primitives.
-
-Lets the model compose a NOVEL widget beyond the closed astralprims palette —
-but safely, by expressing it as a constrained grammar (a small set of
-compositional building blocks) that a deterministic post-validator checks and an
-escape-by-default renderer materializes. The model never emits raw HTML; it
-emits a typed tree of allowed nodes, every text leaf is HTML-escaped, styling is
-fixed CSS classes (no model-supplied inline style/script), and the tree is
-bounded in size and depth. A genuinely new named primitive still rides the
-draft→self-test→admin-approval rail; this module is the safety floor under that —
-an unapproved generative spec renders only from the safe grammar.
-
-Pure, stdlib only (``html.escape``). Flag ``FF_GENERATIVE_PRIMITIVES`` (default
-OFF). Fail-safe: an invalid spec renders a plain notice, never the unvalidated
-content.
+"""Validates and renders a model-composed widget against a small closed grammar so an
+agent can build a novel layout without emitting raw HTML; gated by
+FF_GENERATIVE_PRIMITIVES, falls back to a safe notice.
 """
+
 from __future__ import annotations
 
 import html
 import os
 from typing import Any, Dict, List, Tuple
 
-#: The constrained grammar — the only node types the model may compose.
 _CONTAINERS = {"col", "row", "group"}
 _LEAVES = {"text", "label", "value", "badge", "bar", "divider", "spacer"}
 _ALLOWED_TYPES = _CONTAINERS | _LEAVES
 
-#: Bounded enums for the few styling knobs (model can't supply free-form style).
 _VARIANTS = {"default", "muted", "strong", "success", "warning", "danger", "info"}
 
-#: Structural bounds (a generative widget is a small composition, not a document).
 _MAX_NODES = 120
 _MAX_DEPTH = 6
 _MAX_CHILDREN = 24
@@ -36,15 +22,11 @@ _MAX_TEXT = 2000
 
 
 def generative_enabled() -> bool:
-    """FF_GENERATIVE_PRIMITIVES feature flag (default OFF)."""
     return os.getenv("FF_GENERATIVE_PRIMITIVES", "false").strip().lower() in (
         "1", "true", "yes", "on")
 
 
 def validate(spec: Any) -> Tuple[bool, List[str]]:
-    """Validate a generative spec against the constrained grammar. Returns
-    ``(ok, errors)``; ``ok`` iff the whole tree is composed only of allowed
-    node types within the structural bounds with well-typed fields."""
     errors: List[str] = []
     count = [0]
 
@@ -119,8 +101,6 @@ def _render_node(node: Dict[str, Any]) -> str:
 
 
 def render(spec: Any) -> str:
-    """Render a generative spec to safe HTML (escape-by-default, fixed classes).
-    An invalid spec yields a plain fail-safe notice — never the raw content."""
     ok, errors = validate(spec)
     if not ok:
         return ('<div class="gen-invalid">This generated widget could not be '

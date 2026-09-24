@@ -1,4 +1,7 @@
-"""Feature 065 Windows permission, session, media, and teardown behavior."""
+"""Tests for windows-client voice lifecycle (astral_client/protocol.py,
+astral_client/voice.py): permission gating, session/turn state, takeover fencing,
+connection rotation, and remote recovery.
+"""
 
 from __future__ import annotations
 

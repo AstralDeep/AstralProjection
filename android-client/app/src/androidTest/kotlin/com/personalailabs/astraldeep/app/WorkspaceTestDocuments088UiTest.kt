@@ -1,3 +1,6 @@
+// Instrumented test for cross-UID document-provider access on API 34, where Shell cannot grant
+// MANAGE_DOCUMENTS directly.
+
 package com.personalailabs.astraldeep.app
 
 import android.Manifest
@@ -15,7 +18,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
-/** Actual cross-UID provider access on API34, where Shell cannot grant MANAGE_DOCUMENTS. */
 class WorkspaceTestDocuments088UiTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
@@ -56,7 +58,7 @@ class WorkspaceTestDocuments088UiTest {
     }
 
     @Test
-    @SdkSuppress(minSdkVersion = 34) // Rwe exposes the rejected shell call's separate stderr on the affected CI API.
+    @SdkSuppress(minSdkVersion = 34)
     fun unrelatedShellCallerCannotResetTargetFixtureDocuments() {
         val uri = TestDocuments.create("preserved")
         val command = "content call --uri content://${TestDocuments.AUTHORITY} --method test-reset"

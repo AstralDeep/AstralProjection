@@ -1,3 +1,5 @@
+// Tests for guidance-surface field rendering helpers used by the native notes/guidance view.
+
 package com.personalailabs.astraldeep.app.render
 
 import com.personalailabs.astraldeep.app.render.renderers.fieldIsVisible

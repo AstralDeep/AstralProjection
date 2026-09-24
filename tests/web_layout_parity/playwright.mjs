@@ -1,12 +1,6 @@
-/**
- * Feature 089 (T047): resolve Playwright from the repository's CI tooling.
- *
- * `tooling/web-ci` already lock-pins `@playwright/test`, and adding a second
- * copy under `tests/` would give the parity harness a different browser build
- * from the one the 088 browser specs run against. This shim borrows that
- * installation instead, and fails with an instruction rather than a module
- * resolution error when it has not been installed yet.
- */
+// Resolves the Playwright install from tooling/web-ci so the layout-parity harness shares its
+// browser build with the rest of the suite; imported by every script and spec that drives a
+// browser.
 
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';

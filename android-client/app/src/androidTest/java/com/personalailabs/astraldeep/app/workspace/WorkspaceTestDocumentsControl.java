@@ -1,3 +1,6 @@
+// Instrumented-test-only ContentProvider granting synthetic document URIs to the target app under
+// test, without bypassing real SAF permission grants; paired with WorkspaceTestDocuments.java.
+
 package com.personalailabs.astraldeep.app.workspace;
 
 import android.content.ContentProvider;
@@ -14,7 +17,6 @@ import java.io.FileNotFoundException;
 import java.util.HashSet;
 import java.util.Set;
 
-/** Test APK only: the matching target can manage synthetic fixtures, never bypass SAF protection. */
 public final class WorkspaceTestDocumentsControl extends ContentProvider {
     private static final String TARGET = "com.personalailabs.astraldeep";
     private static final String DOCUMENTS = "com.personalailabs.astraldeep.test.workspace.documents";
@@ -37,8 +39,6 @@ public final class WorkspaceTestDocumentsControl extends ContentProvider {
             throw new SecurityException("Synthetic document target missing");
         }
         if (extras != null) throw new IllegalArgumentException("Unexpected synthetic extras");
-        // These calls run as the test APK that owns the protected provider. Only the
-        // selected document URI is granted to the target, as with a picker result.
         long identity = Binder.clearCallingIdentity();
         try {
             if ("test-create".equals(method)) {

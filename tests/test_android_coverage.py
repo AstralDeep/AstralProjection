@@ -1,3 +1,8 @@
+"""Tests for scripts/android_coverage.py: the Android coverage pipeline's preparation,
+device-receipt binding, staging, and report domains fail closed on tampered, drifted,
+or replayed inputs and never leak private paths or arguments.
+"""
+
 from __future__ import annotations
 
 import json
@@ -16,7 +21,6 @@ from scripts import android_coverage as c
 
 
 def test_coverage_network_overlay_is_loopback_only_and_separate_from_release() -> None:
-    """Only the opt-in fixture APK may use its explicit loopback transport allowance."""
     app = Path(__file__).resolve().parents[1] / "android-client/app"
     android = "{http://schemas.android.com/apk/res/android}"
     manifest = ET.parse(app / "src/coverage/AndroidManifest.xml").getroot()
@@ -46,7 +50,6 @@ def test_coverage_network_overlay_is_loopback_only_and_separate_from_release() -
 
 
 def _brace_block(text: str, opener: str) -> str:
-    """Return the body of the first `opener` block, matched by brace depth."""
     start = text.index(opener) + len(opener)
     depth = 1
     for index in range(start, len(text)):
@@ -438,12 +441,10 @@ def test_cli_failure_is_data_free(prepared, capsys):
 
 
 def test_cli_failure_token_never_echoes_a_private_path(prepared, monkeypatch, capsys):
-    """Only closed InvalidCoverage codes print verbatim; anything else prints its class."""
     root, output, _ = prepared
     secret = "/private/astral-secret-path/app.apk"
 
     def explode(*_args, **_kwargs):
-        # A bare OSError stays OSError (errno 2 would become FileNotFoundError).
         raise OSError("cannot open " + secret)
 
     monkeypatch.setattr(c, "verify", explode)
@@ -457,15 +458,12 @@ def test_cli_failure_token_never_echoes_a_private_path(prepared, monkeypatch, ca
 
 
 def test_coverage_unit_lane_is_never_cached_or_up_to_date() -> None:
-    """A FROM-CACHE or UP-TO-DATE unit lane would leave prepare() with no receipt."""
     script = (
         Path(__file__).resolve().parents[1] / "android-client/gradle/coverage.gradle"
     ).read_text(encoding="utf-8")
     block = _brace_block(script, "tasks.withType(Test).configureEach {")
     assert "doNotTrackState(" in block
     body = _brace_block(block, "doFirst {")
-    # Configuration-cache safety: the execution-time body may not touch the script
-    # object graph, so every layout provider is captured at configuration time.
     assert "layout." not in body, body
     assert "unitAgentFile.get().asFile" in body and "task: taskPath" in body
 
@@ -527,7 +525,6 @@ def test_native_collector_workflow_requires_prepared_exact_apks_all_fixtures_and
 
 
 def test_emulator_action_physical_lines_preserve_complete_coverage_commands(tmp_path, monkeypatch):
-    """Run each action script line through a shell and the real CLI argument parser."""
     shell = shutil.which("sh")
     if shell is None:
         pytest.skip("Emulator action argument contract requires a POSIX shell")
@@ -632,7 +629,6 @@ def test_transport_timeout_does_not_expose_private_command_arguments(
     assert "private" not in str(error.value)
     marker = c.read_json(output / "staging.failed.json")
     assert marker["status"] == "failed"
-    # The persisted reason is the closed transport code, never the command vector.
     assert marker["reason"] == "device_transport_failed"
     assert "private" not in json.dumps(marker)
 

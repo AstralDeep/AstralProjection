@@ -1,3 +1,6 @@
+// Tests for ParamPicker field rendering rules (select/checklist/etc.) against the exact shapes
+// webrender/chrome/surfaces/llm.py emits, guarding against fields silently degrading to plain text.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import kotlinx.serialization.json.Json
@@ -12,17 +15,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/**
- * The pure `param_picker` field rules. The regression that motivated them: the
- * feature-054 LLM provider field arrives as `kind:"select"` (web renders a
- * `<select>`, Windows a QComboBox, Apple a Picker) and Android silently degraded
- * it to a text box — the user had to TYPE "openai". `checklist` degraded the same
- * way and submitted a String where the handlers parse a list.
- */
 class ParamPickerFieldsTest {
     private fun field(json: String): JsonObject = Json.parseToJsonElement(json) as JsonObject
 
-    /** The real shape emitted by `webrender/chrome/surfaces/llm.py` (keys, server-owned). */
     private val provider =
         field(
             """{"name":"provider","label":"Provider","kind":"select","default":"openai",
@@ -40,8 +35,6 @@ class ParamPickerFieldsTest {
         payload: JsonObject,
         name: String,
     ): List<String> = (fieldsOf(payload)[name] as JsonArray).map { (it as JsonPrimitive).content }
-
-    // --- select ---------------------------------------------------------------
 
     @Test
     fun a_select_with_options_renders_a_dropdown_preselecting_the_default() {
@@ -68,7 +61,6 @@ class ParamPickerFieldsTest {
 
     @Test
     fun selecting_an_option_submits_that_key_verbatim() {
-        // What SelectField's onSelect does: write the option key into the text state.
         val picked = mapOf("provider" to "xai")
         val payload = collectFields(listOf(provider), picked, emptyMap(), emptyMap())
         assertEquals("xai", str(payload, "provider"))
@@ -81,8 +73,6 @@ class ParamPickerFieldsTest {
         val payload = collectFields(fields, initialTexts(fields), initialBools(fields), initialChecks(fields))
         assertEquals("openai", str(payload, "provider"))
     }
-
-    // --- checklist ------------------------------------------------------------
 
     private val tools =
         field(
@@ -101,7 +91,6 @@ class ParamPickerFieldsTest {
         assertEquals(setOf("read", "write"), initialChecks(listOf(tools))["tools"])
         val stale = field("""{"name":"tools","kind":"checklist","default":["gone"],"options":["read"]}""")
         assertEquals(emptySet(), initialChecks(listOf(stale))["tools"])
-        // A checklist never lands in the string state (that was the String-vs-list bug).
         assertFalse(initialTexts(listOf(tools)).containsKey("tools"))
     }
 
@@ -110,8 +99,6 @@ class ParamPickerFieldsTest {
         val payload = collectFields(listOf(tools), emptyMap(), emptyMap(), emptyMap())
         assertEquals(emptyList(), list(payload, "tools"))
     }
-
-    // --- the other kinds are unchanged ---------------------------------------
 
     @Test
     fun booleans_texts_and_the_action_payload_keep_their_shapes() {
@@ -132,7 +119,7 @@ class ParamPickerFieldsTest {
             )
         assertEquals(true, (fieldsOf(payload)["on"] as JsonPrimitive).booleanOrNull)
         assertEquals("https://x", str(payload, "base_url"))
-        assertEquals("", str(payload, "api_key")) // write-only key field: blank = keep
+        assertEquals("", str(payload, "api_key"))
         assertEquals("openai", str(payload, "provider"))
         assertEquals("a1", (payload["agent_id"] as JsonPrimitive).content)
     }

@@ -1,12 +1,7 @@
+// Tests for AppModel's background-task reduce logic: task_completed/notification frames for the open chat
+// reload it, frames for other chats banner instead, and reconnect reissues load_chat for the active chat.
+
 import AstralCore
-// 055 — cross-device background-task continuity, iOS/macOS reduce side:
-// `task_completed`/`notification` frames that name the OPEN chat re-issue
-// load_chat (the server persisted the output; reloading re-hydrates narrative
-// + canvas); frames for a different chat surface as an info banner instead.
-// `task_started` keeps the in-chat status line for the open chat and banners
-// otherwise. Reconnect (`.connected` with an active chat) also re-issues
-// load_chat — register_ui resumes the session but replays no turn frames.
-// Outbound frames are observed via the model's `outboundTap` seam.
 import XCTest
 
 @testable import AstralDeep
@@ -36,8 +31,6 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
             .compactMap { $0["payload"]?["chat_id"]?.stringValue }
     }
 
-    // MARK: task_completed
-
     func testTaskCompletedForOpenChatReloadsIt() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
@@ -59,8 +52,6 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
     }
 
     func testTaskCompletedWithoutChatIdKeepsIssuingSocketBehavior() {
-        // Pre-fan-out servers (watch_task ack) omit chat_id — the frame
-        // targets the issuing socket and still refreshes the open chat.
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
@@ -68,8 +59,6 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         XCTAssertEqual(loadChats(log), ["c1"])
         XCTAssertEqual(model.errorBanner, "Background task finished")
     }
-
-    // MARK: task_started
 
     func testTaskStartedForOpenChatSetsStatusLine() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
@@ -90,13 +79,10 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         XCTAssertFalse(model.bannerIsError)
     }
 
-    // MARK: notification
-
     func testNotificationForOpenChatBannersAndReloads() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.activeChatId = "c1"
         let log = record(model)
-        // Scheduler shape: chat_id/title/body/level at the top level.
         reduce(
             model, #"{"type":"notification","level":"info","chat_id":"c1","title":"Job done","body":"Digest ready"}"#)
         XCTAssertEqual(model.errorBanner, "Job done: Digest ready")
@@ -122,8 +108,6 @@ final class AppModelBackgroundContinuityTests: XCTestCase {
         XCTAssertEqual(model.errorBanner, "Reader live: Ask again")
         XCTAssertTrue(loadChats(log).isEmpty)
     }
-
-    // MARK: reconnect
 
     func testReconnectReissuesLoadChatForActiveChat() async {
         let model = AppModel(tokenStore: InMemoryTokenStore())

@@ -1,18 +1,9 @@
-"""Feature 027 — server-rendered application chrome for the web target.
-
-The chrome layer (top bar, settings menu, modal surfaces) is orchestrator
-render-layer output for the web client (Constitution II: the orchestrator
-renders). It is intentionally NOT expressed as astralprims primitives —
-astralprims stays a general-purpose primitive library; app chrome is
-web-specific HTML built with the same escape-by-default discipline as
-``webrender.renderer`` (every text interpolation goes through ``esc()``).
-
-Chrome HTML never enters the ROTE/astralprims pipeline; canvas/chat content
-continues to flow astralprims → ROTE → ``render_for_target`` unchanged.
-Surfaces MAY embed rendered primitives via ``render_one`` (e.g. color
-pickers in the Theme surface) so client-side side effects stay wired.
+"""Renders the chrome shell (modal wrapper, error/notice blocks) from settings_nav and
+topbar for orchestrator/chrome_events.py and the projection surfaces; stays outside
+the astralprims/ROTE primitive pipeline.
 """
-from webrender import esc, render_one, safe_url  # noqa: F401  (re-exported for surfaces)
+
+from webrender import esc, render_one, safe_url  # noqa: F401
 
 from .settings_nav import render_settings_nav  # noqa: F401
 from .topbar import render_topbar  # noqa: F401
@@ -22,35 +13,6 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
                        mandatory: bool = False, *, subtitle: str = "",
                        icon: str = "", sections: tuple = (),
                        footer_html: str = "", nav_html: str = "") -> str:
-    """Wrap a surface body in the standard chrome modal (overlay + card).
-
-    ``body_html`` is trusted, already-escaped chrome output from a surface
-    renderer; ``title``, ``subtitle``, ``icon`` and ``surface`` are escaped
-    here.
-
-    Feature 089 gives the dialog the a8p structure: an icon badge beside the
-    title and a subtitle, an optional tab strip, a scrolling body and a footer
-    for the surface's own actions. A surface that declares ``sections`` gets
-    the tabs; one that does not is unchanged apart from its styling, so every
-    existing caller keeps working without passing anything new.
-
-    ``sections`` is a sequence of ``(key, label)`` pairs. The body is expected
-    to carry one ``data-section="<key>"`` element per pair; ``client.js``
-    shows the selected one. If the body carries no matching element the tab
-    simply selects nothing, which is visible rather than broken.
-
-    ``nav_html`` is the settings rail (:func:`render_settings_nav`). When it
-    is given, the body sits in a two-column split with the rail on the left —
-    that is what the gear now opens instead of a dropdown. A dialog with no
-    rail (an error notice, the first-run gate, a surface opened from
-    somewhere other than the menu) renders exactly as before.
-
-    ``mandatory=True`` (feature 054 first-run gate): the ✕ button is
-    omitted, ``data-mandatory="1"`` is stamped on the card so
-    ``client.js closeModal()`` refuses every dismissal affordance, and a
-    "Sign out" link is included — the one guaranteed escape hatch
-    (spec FR-013).
-    """
     if mandatory:
         close_btn = (
             '<a href="/auth/logout" class="astral-modal-signout text-xs text-astral-muted '
@@ -98,9 +60,6 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
     pane_tabs = ""
     if nav_html:
         card_cls += " has-nav"
-        # A tab strip belongs to the pane it switches, not to the dialog: run
-        # across the whole width it sits over the rail as well, which reads as
-        # navigation for the rail too.
         pane_tabs, tabs_html = tabs_html, ""
         body = (f'<div class="astral-modal-split">{nav_html}'
                 f'<div class="astral-modal-pane">{pane_tabs}{body}</div></div>')
@@ -124,7 +83,6 @@ def render_modal_shell(title: str, body_html: str, surface: str = "",
 
 
 def chrome_error_block(message: str, retry_surface: str = "") -> str:
-    """In-modal error notice (never a silent drop — contract failure section)."""
     retry = ""
     if retry_surface:
         retry = (
@@ -140,7 +98,6 @@ def chrome_error_block(message: str, retry_surface: str = "") -> str:
 
 
 def notice_block(kind: str, message: str) -> str:
-    """Inline success/error/info notice rendered at the top of a surface."""
     styles = {
         "success": "border-green-500/20 bg-green-500/10 text-green-400",
         "error": "border-red-500/20 bg-red-500/10 text-red-400",

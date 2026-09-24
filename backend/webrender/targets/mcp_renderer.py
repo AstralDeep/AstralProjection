@@ -1,4 +1,7 @@
-"""Safe, deterministic projection from Astral primitives to MCP content."""
+"""Renders astralprims components into bounded, deterministic MCP content blocks for
+mcp_server_endpoint; registered into webrender/registry.py as the 'mcp' target.
+"""
+
 from __future__ import annotations
 
 import json

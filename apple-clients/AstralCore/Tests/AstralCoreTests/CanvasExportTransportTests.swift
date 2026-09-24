@@ -1,3 +1,6 @@
+// Tests for canvas export transport (CanvasExportPolicy): slow-drip deadline enforcement and
+// streaming-response cancellation against a real loopback HTTP peer.
+
 import Foundation
 import Network
 import XCTest
@@ -72,8 +75,6 @@ final class CanvasExportTransportTests: XCTestCase {
     }
 }
 
-/// A real loopback HTTP peer keeps the idle timeout alive with small chunks.
-/// No external listener, user credential, file or application is involved.
 private final class CanvasExportDripServer: @unchecked Sendable {
     let ready = XCTestExpectation(description: "loopback listener ready")
     let startedBody = XCTestExpectation(description: "response body started")

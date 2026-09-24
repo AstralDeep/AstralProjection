@@ -1,3 +1,6 @@
+// Test fixture reusing the isolated WebSocket/Activity/SAF harness for component-action UI tests, without
+// real user auth or the product debug path; used by ArtifactChromeUiTest and ComponentActions088UiTest.
+
 package com.personalailabs.astraldeep.app.workspace
 
 import android.net.Uri
@@ -23,7 +26,6 @@ import kotlinx.serialization.json.jsonObject
 import okhttp3.mockwebserver.MockResponse
 import java.io.File
 
-/** Reuses the existing isolated WebSocket/Activity/SAF fixture; no user auth or product debug path. */
 internal class ComponentControllerFixture : AutoCloseable {
     val base = WorkspaceControllerFixture()
     val registry = WorkspaceResultRegistry()

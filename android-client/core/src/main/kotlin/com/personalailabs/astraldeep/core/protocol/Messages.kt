@@ -1,5 +1,6 @@
-// The frozen local-v2 manifest's exact field vocabulary stays inline so schema
-// review can compare each declared shape directly.
+// Wire-model data classes for every client-server frame — voice, chrome, workspace verbs, conversation
+// snapshots — decoded by Wire.kt and folded into UiState by AppViewModel.reduce().
+
 @file:Suppress("ktlint:standard:max-line-length")
 
 package com.personalailabs.astraldeep.core.protocol
@@ -16,11 +17,6 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.Instant
 
-/**
- * Device capabilities reported in `register_ui` (maps to the server-side
- * `DeviceProfile`, `backend/rote/capabilities.py`). `supportedTypes` is the
- * client's capability negotiation — ROTE substitutes any primitive outside it.
- */
 data class DeviceCapabilities(
     val screenWidth: Int,
     val screenHeight: Int,
@@ -30,9 +26,7 @@ data class DeviceCapabilities(
     val hasTouch: Boolean = true,
     val supportedTypes: List<String> = emptyList(),
     val deviceType: String = "android",
-    /** Stable, non-secret installation UUID. Authority still requires the live UI binding. */
     val deviceId: String? = null,
-    /** Runtime media facts reported for server-owned voice capability adaptation. */
     val hasMicrophone: Boolean = false,
     val hasAudioOutput: Boolean = false,
     val microphonePermission: String = "not_determined",
@@ -40,7 +34,6 @@ data class DeviceCapabilities(
     val voiceTransport: String = "livekit",
 )
 
-/** One ordered server-owned composer control. Android renders this model, never a local menu copy. */
 data class VoiceControl(
     val key: String,
     val action: String,
@@ -59,7 +52,6 @@ data class VoiceOwnerDevice(
     val generation: Int,
 )
 
-/** Server-owned conversational state carried by `composer_state`. */
 data class VoiceComposerModel(
     val available: Boolean,
     val state: String,
@@ -82,7 +74,7 @@ data class VoiceComposerModel(
     val controls: List<VoiceControl>,
 )
 
-/** Ephemeral UI-connection bearer. Its value must never be logged or persisted. */
+// Ephemeral bearer — never log or persist this value
 data class VoiceControlBinding(
     val deviceId: String,
     val connectionGeneration: String,
@@ -95,7 +87,6 @@ data class VoiceControlBinding(
             "bindingId=$bindingId, binding=[REDACTED], expiresAt=$expiresAt)"
 }
 
-/** Proof-bearing immutable origin copied onto the ordinary `chat_message`. */
 data class VoiceOrigin(
     val schemaVersion: String,
     val sessionId: String,
@@ -117,7 +108,6 @@ data class VoiceOrigin(
             "textDigestSha256=[REDACTED], transcriptProof=[REDACTED], proofExpiresAt=$proofExpiresAt)"
 }
 
-/** Reliable LiveKit transcript envelope. Partials are presentation-only. */
 data class VoiceTranscript(
     val sessionId: String,
     val generation: Int,
@@ -244,7 +234,6 @@ enum class LocalVoiceDisposition(val wireValue: String) {
     FINISHED("finished"),
 }
 
-/** Strict data-only local capability; it cannot select a backend or runtime. */
 data class LocalVoiceCapability(val disposition: LocalVoiceDisposition, val payload: JsonObject) {
     companion object {
         private val fields =
@@ -281,7 +270,6 @@ data class LocalVoiceCapability(val disposition: LocalVoiceDisposition, val payl
     }
 }
 
-/** Exact v2 local frame. Invalid/unknown values are intentionally untyped. */
 data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposition, val payload: JsonObject) {
     companion object {
         val reasons =
@@ -398,7 +386,6 @@ private fun localDetail(value: JsonObject): Boolean {
 private val localKinds =
     setOf("greeting", "acknowledgement", "progress", "waiting", "result", "sensitive_notice", "failure", "refusal", "cancellation")
 
-/** Content-free manifest that must precede a worker audio track. */
 data class VoiceAnnouncementMedia(
     val sessionId: String,
     val generation: Int,
@@ -418,7 +405,6 @@ data class VoiceAnnouncementMedia(
     val trackName: String?,
 )
 
-/** Content-free local render observation sent on the authenticated UI socket. */
 data class VoicePlayoutEvent(
     val deviceId: String,
     val connectionGeneration: String,
@@ -437,21 +423,12 @@ data class VoicePlayoutEvent(
     val observedAt: String,
 )
 
-/**
- * Feature 060 account-scoped hydration request carried by `register_ui.resume`.
- * Android remains an author-only client and never attaches `agent_host`.
- */
 data class ConversationResume(
     val activeChatId: String,
     val requestGeneration: String,
     val schemaVersion: Int = 1,
 )
 
-/**
- * Complete generation and revision fence on a disposable preview frame.
- * A null scope means the frame came from the bounded legacy compatibility
- * path; a partially present or malformed scope is rejected by [Wire].
- */
 data class TransientFrameScope(
     val chatId: String,
     val connectionGeneration: String,
@@ -460,22 +437,16 @@ data class TransientFrameScope(
     val frameSequence: ULong,
 )
 
-/** Complete committed canvas carried atomically with a conversation transcript. */
 data class SnapshotCanvas(
     val target: String,
     val components: List<Component>,
 )
 
-/** Stable safe error projection carried by a terminal `operation_status`. */
 data class OperationStatusError(
     val code: String,
     val message: String,
 )
 
-/**
- * Structured v2 desktop-host advertisement. Android validates the shared
- * shape for parity but never emits it because Android is author-only.
- */
 data class AgentHostRegistration(
     val hostId: String,
     val supportedRuntimeContractVersions: List<Int>,
@@ -484,7 +455,6 @@ data class AgentHostRegistration(
     val clientVersion: String,
 )
 
-/** Server acknowledgement for a validated desktop-host advertisement. */
 data class AgentHostRegistered(
     val hostId: String,
     val hostSessionId: String,
@@ -492,19 +462,16 @@ data class AgentHostRegistered(
     val acceptedAt: String,
 )
 
-/** Candidate-owned macOS personal-agent host applicability. */
 data class PersonalAgentHostCapability(
     val supported: Boolean,
     val runtimeContractVersions: List<Int>,
     val sourceFeature: String?,
 )
 
-/** Exact immutable capability map shared by the dashboard and `system_config`. */
 data class CandidateCapabilityMap(
     val macosPersonalAgentHost: PersonalAgentHostCapability,
 )
 
-/** A streaming error, as carried in a `ui_stream_data.error` or a `stream_error` payload. */
 data class StreamError(
     val code: String?,
     val message: String?,
@@ -520,9 +487,7 @@ data class Agent(
     val scopes: Map<String, Boolean>,
     val tools: List<String> = emptyList(),
     val toolDescriptions: Map<String, String> = emptyMap(),
-    /** Effective per-tool enabled state (server-computed from scopes + overrides). */
     val permissions: Map<String, Boolean> = emptyMap(),
-    /** Each tool's required permission kind (e.g. "tools:read"), for toggling. */
     val toolScopeMap: Map<String, String> = emptyMap(),
 )
 
@@ -559,7 +524,6 @@ data class ChatSummary(
         }
     }
 
-    /** Same display thresholds as the server's history_surface._relative_time. */
     fun relativeTime(now: Instant = Instant.now()): String {
         serverTime?.let { return displayText(it) }
         val timestamp = updatedAt.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return ""
@@ -580,12 +544,6 @@ data class ChatSummary(
 
 data class ChatTurn(val role: String, val content: String)
 
-/**
- * A staged upload referenced from an outbound `chat_message` (feature 031). The
- * server resolves the [attachmentId] (ownership-validated) and injects the
- * "Attachments on this turn" reader block. Mirrors the web payload shape
- * `{attachment_id, filename, category}`.
- */
 data class ChatAttachment(
     val attachmentId: String,
     val filename: String,
@@ -594,10 +552,6 @@ data class ChatAttachment(
 
 data class ChatTranscript(val id: String?, val messages: List<ChatTurn>)
 
-/**
- * Inbound server → client messages the client acts on, plus an [Unknown]
- * fallback so an unrecognized `type` is ignored rather than fatal.
- */
 sealed interface Inbound {
     data class UiRender(
         val target: String,
@@ -619,7 +573,6 @@ sealed interface Inbound {
         val terminal: Boolean,
         val error: StreamError?,
         val toolName: String?,
-        /** 055 additive field — workspace identity when the stream is bridged; absent on legacy streams. */
         val componentId: String? = null,
         val scope: TransientFrameScope? = null,
     ) : Inbound
@@ -648,7 +601,6 @@ sealed interface Inbound {
         val fromMessage: Boolean? = null,
     ) : Inbound
 
-    /** Authoritative "a new user turn has started" (emitted once per chat turn). */
     data class UserMessageAcked(
         val chatId: String?,
         val messageId: String?,
@@ -680,11 +632,6 @@ sealed interface Inbound {
 
     data class ChatLoaded(val chat: ChatTranscript) : Inbound
 
-    /**
-     * Feature 060 authoritative committed transcript + canvas projection.
-     * Every top-level field and every semantic transcript part is validated
-     * before this variant is constructed.
-     */
     data class ConversationSnapshot(
         val schemaVersion: Int,
         val snapshotId: String,
@@ -698,10 +645,6 @@ sealed interface Inbound {
         val canvas: SnapshotCanvas,
     ) : Inbound
 
-    /**
-     * Strict prelude that opens a commit-purpose request fence for a detached
-     * or server-originated update before its authoritative snapshot arrives.
-     */
     data class ConversationCommitReady(
         val schemaVersion: Int,
         val chatId: String,
@@ -716,7 +659,6 @@ sealed interface Inbound {
 
     data class ChatStatus(val status: String?, val message: String?) : Inbound
 
-    /** Feature 060 server-owned durable operation projection. */
     data class OperationStatus(
         val operationId: String,
         val action: String,
@@ -735,7 +677,6 @@ sealed interface Inbound {
         val updatedAt: String,
     ) : Inbound
 
-    /** Feature 060 generation-fenced personal-agent runtime projection. */
     data class AgentLifecycle(
         val agentId: String,
         val revisionId: String?,
@@ -750,16 +691,8 @@ sealed interface Inbound {
 
     data class ChromeRender(val region: String, val html: String) : Inbound
 
-    /** Feature 042 — the server-owned chrome model (top bar + settings menu). */
     data class ChromeMenu(val model: ChromeMenuModel) : Inbound
 
-    /**
-     * Feature 043 — a settings surface delivered as SDUI components (native).
-     * [mode] is the reserved delivery field (feature 054): `"replace"` (the
-     * default, and the value when absent) is today's behavior; `"mandatory"`
-     * marks the first-run LLM-setup gate — render even though unsolicited and
-     * suppress every dismissal until the server closes the surface.
-     */
     data class ChromeSurface(
         val surfaceKey: String,
         val title: String,
@@ -770,7 +703,6 @@ sealed interface Inbound {
 
     data class AuthRequired(val reason: String?) : Inbound
 
-    /** Exact pre-admission refusal correlated to one client-only submission. */
     data class AdmissionRefusal(
         val submissionId: String,
         val code: String,
@@ -779,7 +711,6 @@ sealed interface Inbound {
         val retryAfterMs: ULong?,
     ) : Inbound
 
-    /** Feature 044/060 — normalized error plus optional submission/conversation fence. */
     data class ErrorFrame(
         val code: String?,
         val message: String,
@@ -787,27 +718,18 @@ sealed interface Inbound {
         val connectionGeneration: String? = null,
         val requestGeneration: String? = null,
         val retryable: Boolean = false,
-        /** Present with [accepted] false when durable admission refused local work. */
         val submissionId: String? = null,
         val accepted: Boolean? = null,
     ) : Inbound
 
-    /** One step of the running turn's execution trail (`chat_step`). */
     data class ChatStep(val id: String?, val name: String?, val status: String?) : Inbound
 
-    /** A live progress line from an executing tool (`tool_progress`), pre-composed. */
     data class ToolProgress(val label: String) : Inbound
 
-    /** The turn detached into a background task (`task_started`). */
     data class TaskStarted(val taskId: String?, val chatId: String? = null) : Inbound
 
-    /** A background task finished (`task_completed`). */
     data class TaskCompleted(val taskId: String?, val chatId: String?) : Inbound
 
-    /**
-     * A scheduler/system push (`notification`, feature 044). [chatId] names the
-     * chat the job wrote into (055 continuity — the open chat reloads on it).
-     */
     data class Notification(
         val title: String?,
         val body: String?,
@@ -815,68 +737,36 @@ sealed interface Inbound {
         val chatId: String? = null,
     ) : Inbound
 
-    /**
-     * Feature 076 — presence of one of the owner's computers (`computer_host`) or
-     * a remote-control session change on it (`computer_session`). The phone keeps
-     * no model of either: an open "My computers" surface is re-requested so the
-     * server re-renders it. [type] names which of the two frames arrived.
-     */
     data class ComputerPresence(
         val type: String,
         val hostId: String?,
         val state: String?,
     ) : Inbound
 
-    /**
-     * Boot/refresh of stored user preferences (`user_preferences`, feature 044).
-     * [theme] is the raw `preferences.theme` object (preset|colors|color_key+value);
-     * the :app reducer interprets it into the live palette (US5 restyle).
-     */
     data class UserPreferences(val theme: JsonObject?) : Inbound
 
-    /**
-     * The read-only workspace timeline is being entered/left
-     * (`workspace_timeline_mode`, feature 028/044). While [active], the client
-     * disables mutating affordances (input/send + component actions).
-     */
     data class WorkspaceTimelineMode(val active: Boolean) : Inbound
 
-    // --- workspace component verbs (055 US3, wire-contract §4) — promoted
-    // ignored → handled; the server's ui_upsert/ui_render fan-outs stay
-    // authoritative, these give the issuing socket immediate feedback. ---
-
-    /** A `save_component` ack (`component_saved`); [title] names the saved row. */
     data class ComponentSaved(val title: String?) : Inbound
 
-    /** `component_save_error` — a save/delete failure. */
     data class ComponentSaveError(val error: String?) : Inbound
 
-    /** `component_deleted` — an identity-keyed remove of [componentId]. */
     data class ComponentDeleted(val componentId: String?) : Inbound
 
-    /** `combine_status` — combine/condense progress. */
     data class CombineStatus(val status: String?, val message: String?) : Inbound
 
-    /** `combine_error` — a combine/condense failure. */
     data class CombineError(val error: String?) : Inbound
 
-    /**
-     * `components_combined` / `components_condensed` — the consumed identities
-     * to remove plus the carried result component(s), identity-assigned at
-     * decode (workspace id when stamped, else the fresh saved-row id).
-     */
     data class ComponentsReplaced(
         val removedIds: List<String>,
         val newComponents: List<Component>,
     ) : Inbound
 
-    /** `saved_components_list` — [count] rows; no native surface consumes the rows yet. */
     data class SavedComponentsList(val count: Int) : Inbound
 
     data class Unknown(val type: String) : Inbound
 }
 
-/** Current-connection owner surfaces share correlation but never response ownership. */
 fun isPrivateChromeSurface(surface: String): Boolean = surface == "work" || surface == "guidance"
 
 fun isGuidanceNoteAction(action: String): Boolean =

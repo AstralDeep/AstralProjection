@@ -1,3 +1,6 @@
+// Tests for canvas export policy: single fresh-bearer capture requests, denial/uncertain-response non-retry,
+// credential/origin/size validation, and response field substitution refusal.
+
 import Foundation
 import XCTest
 

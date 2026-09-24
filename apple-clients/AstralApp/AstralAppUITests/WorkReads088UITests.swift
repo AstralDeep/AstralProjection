@@ -1,7 +1,9 @@
+// UI tests (iOS only) for the Work-read surface's server menu, scrolling, retry, and close over the isolated
+// HTTP/WS loopback fixture.
+
 #if os(iOS)
     import XCTest
 
-    /// Actual server-menu, scrolling, retry and close over the existing isolated HTTP/WS fixture.
     final class WorkReads088UITests: XCTestCase {
         private var app: XCUIApplication!
         private var peer: WorkspaceActionLoopback!

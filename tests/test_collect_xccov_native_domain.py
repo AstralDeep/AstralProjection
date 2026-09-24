@@ -1,4 +1,7 @@
-"""Diagnostic collector tests; fixture geometry is never native hit evidence."""
+"""Tests for scripts/collect_xccov_native_domain.py (with
+scripts/native_xccov_domain.py): binds binary/source/test inputs exactly, refuses
+drifted or symlinked inputs, and keeps CLI failures private.
+"""
 
 from __future__ import annotations
 
@@ -80,7 +83,6 @@ def _metadata(lane):
 
 
 def _xctestrun(lane):
-    # These substitutions match real Xcode26.6 generated Products metadata.
     if lane == "core":
         targets = [
             {
@@ -132,7 +134,7 @@ def _xctestrun(lane):
             }
         ]
     for product in products:
-        product["Architectures"] = ["x86_64"]  # Not executed-architecture evidence.
+        product["Architectures"] = ["x86_64"]
     return {
         "TestConfigurations": [{"TestTargets": targets}],
         "CodeCoverageBuildableInfos": products,

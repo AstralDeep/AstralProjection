@@ -1,7 +1,8 @@
+// The watch app's central model: device-login lifecycle, the WebSocket session via WSClient under the watch
+// device profile, transcript/canvas state, and voice coordination; drives WatchChatView, WatchHomeView, and
+// WatchGuidanceSurfaceView.
+
 import AstralCore
-// Feature 051 — the watch app's brain: device-login lifecycle (start → QR →
-// poll → tokens, auto-rotate before expiry), broker-based refresh, WS session
-// with the `watch` device profile, transcript state, and speech coordination.
 import Foundation
 import SwiftUI
 
@@ -33,8 +34,6 @@ final class WatchModel {
         }
     }
 
-    // MARK: observable state
-
     var phase: Phase = .signedOut
     var login: DeviceLoginStart?
     var loginExpiresAt: Date = .distantFuture
@@ -65,9 +64,6 @@ final class WatchModel {
     var entries: [Entry] = [] {
         didSet { if !entries.isEmpty { workspaceStarted = true } }
     }
-    /// The live canvas — identity-keyed workspace components. `ui_upsert` ops
-    /// apply in place (replace/remove by component_id) instead of stacking
-    /// duplicate transcript entries (FR-013 as it reaches the watch).
     var canvas: [AstralComponent] = [] {
         didSet { if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true } }
     }
@@ -78,8 +74,6 @@ final class WatchModel {
         didSet { if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true } }
     }
     var statusText: String?
-    /// Separates live progress from informational/error notices so the watch
-    /// never presents a terminal message with an indeterminate spinner.
     var statusShowsActivity = false
     var errorBanner: String?
     var connected = false
@@ -131,9 +125,6 @@ final class WatchModel {
 
     let speaker = Speaker()
 
-    // Feature 065 — conversational voice is server-owned and independent of
-    // the legacy spoken-rendition `Speaker` above. The bridge carries exact
-    // worker ASR/TTS media; `Speaker` is never used as a conversation fallback.
     var voiceComposer: WatchVoiceComposer?
     var voiceState: WatchVoiceState = .off
     var voiceReason = "ready"
@@ -178,17 +169,7 @@ final class WatchModel {
         }
     }
 
-    // MARK: config + session
-
-    /// The backend this watch talks to: a validated override pushed by the iPhone
-    /// companion if one has ever arrived, else the build-time endpoint from
-    /// Config/*.xcconfig (feature 053, FR-011). A watch with no companion — which
-    /// is a fully supported state — simply keeps the build-time value.
     var serverBase = WatchOverrideSync.resolvedServerBase()
-    /// The server-issued chat id this session is talking to. The backend
-    /// routes by `session_id` FIRST — a made-up id would send every message
-    /// to a phantom chat, so this is adopted from chat_created/chat_loaded
-    /// and nil until the server assigns one.
     @ObservationIgnored var activeChatId: String?
     private let store: TokenStorage = {
         #if canImport(Security)
@@ -198,16 +179,13 @@ final class WatchModel {
         #endif
     }()
 
-    /// Retained so the companion-override observer outlives `bootstrap()`.
     @ObservationIgnored private var overrideObserver: NSObjectProtocol?
 
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var loginTask: Task<Void, Never>?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
     @ObservationIgnored private var ws: WSClient?
-    /// Single-flight refresh (see `refreshOutcome`) + a session generation so
-    /// a refresh resolving after sign-out can never resurrect wiped
-    /// credentials or be joined by the next account's session.
+    // Generation-fenced: a late refresh can't reuse wiped creds
     @ObservationIgnored private var refreshTask: Task<RefreshResult, Never>?
     @ObservationIgnored private var refreshTaskGeneration = -1
     @ObservationIgnored private var sessionGeneration = 0
@@ -240,11 +218,8 @@ final class WatchModel {
     @ObservationIgnored private var voicePlayoutSequence: UInt64 = 0
     @ObservationIgnored private var voiceForegroundActive = true
 
-    /// Test seam: observes the exact frame before it reaches the socket.
     @ObservationIgnored var outboundTap: ((String) -> Void)?
 
-    /// Test-only override for the dedicated, current-connection voice path.
-    /// Production always falls through to `WSClient.sendCurrentConnectionVoice`.
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
 
     var deviceLogin: DeviceLoginClient {
@@ -256,8 +231,6 @@ final class WatchModel {
             await self?.freshAccessToken()
         }
     }
-
-    // MARK: lifecycle
 
     convenience init() {
         self.init(conversationResumeStore: ConversationResumeStore())
@@ -325,9 +298,6 @@ final class WatchModel {
         transientEntries = []
         transientCanvas = nil
         guard continuity.beginConnection(generation) else { return false }
-        // Recents belong to the account, not a socket generation. Preserve an
-        // in-flight REST fallback and canonical rows through a reconnect; the
-        // established socket requests fresh device-adapted history below.
         reframePendingVoiceSubmissions(for: generation)
         voiceControlBinding = nil
         pendingVoiceActivation = nil
@@ -370,18 +340,11 @@ final class WatchModel {
     }
 
     func bootstrap() async {
-        // Feature 053 — listen for an endpoint override from the iPhone companion.
-        // Opportunistic: activate() no-ops without a companion, and the observer
-        // simply never fires. `deviceLogin`/`rest` are computed from `serverBase`,
-        // so adopting a new endpoint rebuilds them on the next use.
         WatchOverrideSync.shared.activate()
         overrideObserver = NotificationCenter.default.addObserver(
             forName: WatchOverrideSync.didChangeNotification,
             object: nil, queue: .main
         ) { [weak self] _ in
-            // Delivered on `queue: .main`, and WatchModel is MainActor-isolated,
-            // so we are already where we need to be — no hop, no captured-var
-            // concurrency warning.
             MainActor.assumeIsolated {
                 self?.serverBase = WatchOverrideSync.resolvedServerBase()
             }
@@ -389,24 +352,14 @@ final class WatchModel {
 
         if let stored = store.load() {
             tokens = stored.tokenSet
-            // Enter the signed-in home IMMEDIATELY: the WS dial starts now
-            // and the register frame waits on the (single-flight) broker
-            // refresh inside onConnect, so the two round trips overlap
-            // instead of running back-to-back behind the QR spinner. An
-            // offline launch keeps the stored session (sign in once per
-            // device) — the home screen shows "Reconnecting…" and the WS
-            // backoff loop registers when the network returns. Only a
-            // definitive IdP rejection returns the watch to the QR screen.
             enterSignedIn()
             if case .rejected = await refreshOutcome() {
-                await signOut(revokeRemote: false)  // ends at the QR screen
+                await signOut(revokeRemote: false)
             }
             return
         }
         beginDeviceLogin()
     }
-
-    // MARK: US3 — QR sign-in
 
     func beginDeviceLogin() {
         loginTask?.cancel()
@@ -423,22 +376,16 @@ final class WatchModel {
                 loginExpiresAt = Date().addingTimeInterval(start.expiresIn)
                 phase = .waitingApproval
 
-                // Rotate to a fresh code shortly before expiry (FR-023). The
-                // rotation timer must be a DIRECT child of the group: the
-                // group awaits every child before returning, and a child that
-                // awaits an outer Task's `.value` is uncancellable — it would
-                // pin an approved sign-in to the full ~10-minute timer.
                 let result: DeviceLoginPoll = try await withThrowingTaskGroup(of: DeviceLoginPoll?.self) { group in
                     group.addTask { try await self.deviceLogin.waitForApproval(start: start) }
                     group.addTask { [expiresIn = start.expiresIn] in
-                        // Task.sleep is cancellation-aware; cancelAll() ends it.
                         try? await Task.sleep(nanoseconds: UInt64(max(expiresIn - 10, 5) * 1_000_000_000))
                         return nil
                     }
                     defer { group.cancelAll() }
                     while let next = try await group.next() {
                         if let terminal = next { return terminal }
-                        return .expired  // rotation fired first
+                        return .expired
                     }
                     return .expired
                 }
@@ -456,7 +403,7 @@ final class WatchModel {
                             : "Sign-in was declined.")
                     return
                 case .expired:
-                    continue  // auto-rotate: fetch a fresh QR
+                    continue
                 case .pending, .slowDown:
                     continue
                 }
@@ -472,14 +419,6 @@ final class WatchModel {
         }
     }
 
-    // MARK: session
-
-    /// Ensure a live access token via the backend broker, with failures
-    /// classified (rejected → QR screen; transient/offline → keep session).
-    /// SINGLE-FLIGHT: concurrent callers (the WS onConnect and the recents /
-    /// audit REST tokenProvider) join one in-flight broker round trip — two
-    /// parallel grants with the same rotating refresh token can revoke the
-    /// whole session at the IdP.
     private func refreshOutcome() async -> RefreshResult {
         if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
             return await inFlight.value
@@ -489,8 +428,6 @@ final class WatchModel {
         return await runRefresh()
     }
 
-    /// Start (and register) a refresh attempt unconditionally —
-    /// `refreshOutcome` gates it behind expiry, `handleAuthRequired` forces it.
     private func runRefresh() async -> RefreshResult {
         guard let refresh = tokens?.refreshToken else { return .rejected("no refresh token") }
         let generation = sessionGeneration
@@ -500,8 +437,6 @@ final class WatchModel {
         refreshTaskGeneration = generation
         let result = await attempt.value
         if refreshTaskGeneration == generation { refreshTask = nil }
-        // A sign-out while the request was in flight ended this session —
-        // never resurrect wiped credentials.
         if case .ok(let set) = result, generation == sessionGeneration {
             tokens = set
             store.save(StoredTokens(from: set))
@@ -525,17 +460,9 @@ final class WatchModel {
         }
         phase = .signedIn
         connectWS()
-        // Recents load via WatchHomeView's `.task` the moment home appears
-        // (it appears on every path into `.signedIn`) — no eager fetch here.
     }
 
-    /// `revokeRemote: false` skips the server-side revocation round trip —
-    /// used when the IdP has ALREADY refused the credential (nothing to
-    /// revoke, and the call would only delay returning to the QR screen).
     func signOut(revokeRemote: Bool = true) async {
-        // Snapshot remote-revocation inputs, then wipe the local session before
-        // the first await. A suspended or killed watch app must never relaunch
-        // into the account that was just signed out.
         let access = tokens?.accessToken
         let refresh = tokens?.refreshToken
         let logoutClient = RestClient(serverBase: serverBase) { access }
@@ -565,8 +492,6 @@ final class WatchModel {
         speaker.stop()
         beginDeviceLogin()
 
-        // The local account is already gone; these network operations cannot
-        // make the prior Keychain session durable again.
         await socket?.stop()
         if let voiceSessionToEnd, let voiceEndClient {
             try? await voiceEndClient.endSession(voiceSessionToEnd)
@@ -601,8 +526,6 @@ final class WatchModel {
             Task { try? await voiceEndClient.endSession(voiceSessionToEnd) }
         }
     }
-
-    // MARK: WS
 
     private var viewport: (Int, Int) {
         #if os(watchOS)
@@ -749,8 +672,6 @@ final class WatchModel {
             }
             return
         }
-        // History is an owner-scoped chrome surface, never a conversation
-        // publication. Intercept before welcome, continuity, and spoken output.
         if frame.name == "ui_render", frame.renderTarget == "history" {
             guard let update = WatchHistoryUpdate(frame: frame) else { return }
             switch update {
@@ -765,9 +686,6 @@ final class WatchModel {
             }
             return
         }
-        // Registration establishes a connection before the server's global
-        // welcome arrives. It has no conversation generation; admit only its
-        // validated ephemeral components while no hydration/turn is open.
         if !workspaceStarted, continuity.requestGeneration == nil,
             let components = WorkspaceWelcome.unscopedComponents(in: frame)
         {
@@ -781,8 +699,6 @@ final class WatchModel {
         {
             return
         }
-        // Dispositions: ClientDispositions.watch — unlisted/ignored frames
-        // fall through the default silently (FR-003).
         switch frame.name {
         case "composer_state":
             consumeVoiceComposer(frame)
@@ -821,9 +737,6 @@ final class WatchModel {
             let comps = frame.renderComponents
             guard !comps.isEmpty else { return }
             if frame.renderTarget == "chat" {
-                // End-of-turn narrative — a transcript entry, NOT a canvas
-                // replacement: clobbering here wiped the components the
-                // ui_upsert just delivered (iOS diverts the same way).
                 entries.append(.turn(id: "turn-\(entries.count)", components: comps))
             } else {
                 canvas = comps
@@ -834,10 +747,6 @@ final class WatchModel {
         case "ui_upsert":
             let ops = frame.upsertOps
             guard !ops.isEmpty else { return }
-            // 055 uniform rule: the watch has no turn state, so the ephemeral
-            // welcome (`wel_` identities) is purged whenever ops land — turn
-            // content must never render under a retained welcome (the empty
-            // blanking render was always dropped by the guard above).
             canvas = Canvas.apply(canvas.dropWelcome(), ops)
             speakLegacy(frame.speech)
         case "ui_stream_data":
@@ -863,8 +772,6 @@ final class WatchModel {
             statusShowsActivity = true
         case "chat_created":
             if consumeVoiceChatCreated(frame) { return }
-            // Adopt the server-issued chat id; the transcript the user is
-            // looking at (their just-sent bubble) must NOT be wiped.
             if let chatId = nestedChatId(frame) { adoptChat(chatId) }
         case "chat_loaded":
             if continuity.connectionGeneration == nil {
@@ -889,9 +796,6 @@ final class WatchModel {
                 }
             }
         case "notification":
-            // 055 background-task continuity (audit item 7): a completion that
-            // happened elsewhere reaches the wrist as a brief status line and
-            // is spoken through the same TTS path as delivery speech.
             let titled = [frame.payload["title"]?.stringValue, frame.payload["body"]?.stringValue]
                 .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: ": ")
             let message = titled.isEmpty ? (frame.payload["message"]?.stringValue ?? "") : titled
@@ -902,7 +806,7 @@ final class WatchModel {
             Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 8_000_000_000)
                 guard let self, self.statusText == message, !self.statusShowsActivity else { return }
-                self.statusText = nil  // brief: clear unless something replaced it
+                self.statusText = nil
             }
         case "auth_required":
             Task { await self.handleAuthRequired() }
@@ -1127,11 +1031,6 @@ final class WatchModel {
         continuity.clearChatKeepingConnection()
     }
 
-    /// The server refused our token. A near-expiry token refreshes anyway on
-    /// the normal path, so join the in-flight refresh if one is running,
-    /// otherwise FORCE a broker refresh: an unchanged/refused credential
-    /// means the session is dead server-side (revoked / hard cap) — wipe and
-    /// return to the QR screen instead of looping reconnects.
     private func handleAuthRequired() async {
         guard let refused = tokens?.accessToken else {
             await signOut()
@@ -1145,25 +1044,21 @@ final class WatchModel {
         }
         switch result {
         case .ok(let set) where set.accessToken != refused:
-            break  // the reconnect loop re-registers with the fresh token
+            break
         case .ok, .rejected:
-            await signOut()  // same/refused token — the session is dead server-side
+            await signOut()
         case .transient:
-            break  // offline blip; keep the session and retry
+            break
         }
     }
 
-    /// Re-hydrate a loaded transcript: user text with read-only attachment
-    /// name-chips (FR-033/T049 — the watch has no upload affordance) and
-    /// assistant narrative. Rich canvas content arrives right after as a
-    /// speech-free `ui_render` (the server re-hydrates the workspace).
     private func reduceChatLoaded(_ frame: InboundFrame) {
         let chat = frame.payload["chat"]
         activeChatId = chat?["id"]?.stringValue ?? activeChatId
         if let account = conversationAccount, let activeChatId {
             _ = conversationResumeStore.save(chatId: activeChatId, for: account)
         }
-        canvas = []  // the server re-hydrates the workspace via ui_render next
+        canvas = []
         let messages = chat?["messages"]?.arrayValue ?? chat?["history"]?.arrayValue ?? []
         var loaded: [Entry] = []
         for (index, message) in messages.enumerated() {
@@ -1186,16 +1081,10 @@ final class WatchModel {
         statusShowsActivity = false
     }
 
-    // MARK: US4 — conversation
-
     func refreshRecents() async {
         await refreshRecents { try await self.rest.chats() }
     }
 
-    /// REST is a bounded fallback until the socket supplies canonical ROTE
-    /// metadata. Its suspended reply cannot replace newer chrome or cross an
-    /// account/session boundary. A same-owner socket reconnect does not cancel
-    /// this HTTP read. The loader also isolates tests from IAM.
     func refreshRecents(load: () async throws -> [ChatSummary]) async {
         guard !hasCanonicalRecents else { return }
         let generation = UUID()
@@ -1352,7 +1241,6 @@ final class WatchModel {
         workReadEpoch = UUID().uuidString.lowercased()
     }
 
-    /// A timeout/send failure applies only while this exact request is still pending.
     func failWorkRead(generation: String?) {
         guard let generation, workReadState.generation == generation else { return }
         invalidateWorkRead()
@@ -1447,8 +1335,6 @@ final class WatchModel {
         statusShowsActivity = true
     }
 
-    /// Restore the exact client identity and current connection fence before
-    /// shared transport replays retained bytes.
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
         guard let connectionGeneration = continuity.connectionGeneration else { return false }
@@ -1500,9 +1386,6 @@ final class WatchModel {
         Task { await ws?.send(frame) }
     }
 
-    /// Voice submissions and content-free playout evidence are fenced to the
-    /// currently established UI socket. The voice controller owns transcript
-    /// retry; none of these frames may enter the generic offline replay queue.
     private func sendCurrentConnectionVoice(_ frame: String) {
         guard connected, VoiceCurrentConnectionFrame(frameText: frame) != nil else { return }
         outboundTap?(frame)
@@ -1573,8 +1456,6 @@ final class WatchModel {
         }
     }
 
-    /// Welcome examples use the same authenticated chat request as dictation.
-    /// Preserve an unsent draft; never dispatch other native button actions.
     @discardableResult
     func sendWelcomeExample(_ component: AstralComponent) -> Bool {
         guard let message = WorkspaceWelcome.chatMessage(of: component) else { return false }
@@ -1585,8 +1466,6 @@ final class WatchModel {
         return true
     }
 
-    /// Dictated text goes through the STANDARD chat path (FR-029) after the
-    /// user confirms it (edge case: garbled dictation never auto-sends).
     func sendPending() {
         let text = pendingDictation.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
@@ -1626,8 +1505,6 @@ final class WatchModel {
                 submissionId: identity.submissionId,
                 requestGeneration: request))
     }
-
-    // MARK: Feature 065 — conversational voice
 
     func performVoiceAction(_ action: String) {
         guard let control = visibleVoiceControls.first(where: { $0.action == action }),
@@ -2109,10 +1986,6 @@ final class WatchModel {
     }
 
     private func reframePendingVoiceSubmissions(for connectionGeneration: String) {
-        // Connection generation is a socket fence, not part of the worker's
-        // transcript proof. Rebuild only that binding from the retained exact
-        // transcript so an unacknowledged final can continue on the new UI
-        // socket without entering the generic offline queue.
         var retainedBytes = pendingVoiceSubmissions.values.reduce(0) {
             $0 + $1.frame.utf8.count
         }
@@ -2424,8 +2297,7 @@ final class WatchModel {
                     session.foregroundActive,
                     let client = self.makeVoiceRESTClient()
                 else { return }
-                // A lease renewal is transport liveness, never user activity:
-                // omitting `interaction` preserves the server's true idle timer.
+                // Omits interaction: must not reset the server idle timer
                 _ = try? await client.updateSession(
                     session,
                     changes: [

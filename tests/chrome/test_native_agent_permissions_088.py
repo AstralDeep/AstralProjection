@@ -1,4 +1,6 @@
-"""Host-gated native agent settings use ordinary chrome actions."""
+"""Tests for src/astralprojection/chrome/agents.py: native agent-permission rendering
+and host-gated denials.
+"""
 
 import json
 

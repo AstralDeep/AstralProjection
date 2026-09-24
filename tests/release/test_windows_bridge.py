@@ -1,3 +1,7 @@
+"""Tests for scripts/verify_windows_bridge.py: dual-bundle identity binding, downgrade
+and trust-boundary rejection, and active/inert workflow status.
+"""
+
 from __future__ import annotations
 
 import hashlib

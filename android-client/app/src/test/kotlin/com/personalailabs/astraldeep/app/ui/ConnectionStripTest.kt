@@ -1,3 +1,6 @@
+// Tests for the reconnect strip's show/label rule: visible only once a session has been live and then
+// degrades.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.transport.ConnectionState
@@ -5,7 +8,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** Feature 044 T014 — the visible-reconnect strip's pure show/label rule. */
 class ConnectionStripTest {
     @Test
     fun hidden_before_the_first_connect() {

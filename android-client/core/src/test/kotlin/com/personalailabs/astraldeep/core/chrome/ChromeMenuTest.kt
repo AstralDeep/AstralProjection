@@ -1,3 +1,6 @@
+// Tests for ChromeMenuModel.fromJson: decoding the chrome_menu model, default-filling absent fields, and
+// dropping malformed keyless entries.
+
 package com.personalailabs.astraldeep.core.chrome
 
 import com.personalailabs.astraldeep.core.protocol.Inbound
@@ -80,7 +83,6 @@ class ChromeMenuTest {
         )
         assertEquals("Agents & permissions", m.menu[0].items[0].label)
         assertEquals(listOf("tour", "guide"), m.menu[1].items.map { it.key })
-        // admin group + params
         val adminGroup = m.menu[2]
         assertTrue(adminGroup.adminOnly)
         assertEquals("admin_tools", adminGroup.items[0].surface)
@@ -123,8 +125,8 @@ class ChromeMenuTest {
         val m = ChromeMenuModel.fromJson(parse(weird))!!
         assertEquals(2, m.version)
         assertEquals("agents", m.menu[0].items[0].surface)
-        assertEquals(JsonObject(emptyMap()), m.menu[0].items[0].params) // default when absent
-        assertEquals("Sign out", m.signout.label) // defaults fill an empty signout
+        assertEquals(JsonObject(emptyMap()), m.menu[0].items[0].params)
+        assertEquals("Sign out", m.signout.label)
     }
 
     @Test
@@ -162,7 +164,6 @@ class ChromeMenuTest {
 
     @Test
     fun data_class_defaults_are_exercised() {
-        // Construct via defaults so the default-value expressions are covered.
         assertEquals(JsonObject(emptyMap()), SurfaceRef("pulse").params)
         val c = TopBarControl(key = "k", kind = "action")
         assertNull(c.label)
@@ -203,8 +204,6 @@ class ChromeMenuTest {
 
     @Test
     fun malformed_entries_are_skipped_and_version_defaults() {
-        // Missing version → defaults to 1; keyless topbar control, keyless group,
-        // and items missing key/surface are all dropped; valid ones kept.
         val malformed =
             """
             {"topbar":[{"kind":"action"},{"key":"settings","kind":"menu"}],
@@ -216,10 +215,10 @@ class ChromeMenuTest {
              "signout":{"key":"signout"}}
             """.trimIndent()
         val m = ChromeMenuModel.fromJson(parse(malformed))!!
-        assertEquals(1, m.version) // absent → default
-        assertEquals(listOf("settings"), m.topbar.map { it.key }) // keyless action dropped
-        assertEquals(listOf("account"), m.menu.map { it.key }) // keyless group dropped
-        assertEquals(listOf("agents"), m.menu[0].items.map { it.key }) // key/surface-less items dropped
-        assertEquals("logout", m.signout.action) // default fills partial signout
+        assertEquals(1, m.version)
+        assertEquals(listOf("settings"), m.topbar.map { it.key })
+        assertEquals(listOf("account"), m.menu.map { it.key })
+        assertEquals(listOf("agents"), m.menu[0].items.map { it.key })
+        assertEquals("logout", m.signout.action)
     }
 }

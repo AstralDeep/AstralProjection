@@ -1,3 +1,8 @@
+"""Tests for scripts/merge_xccov_line_coverage.py (with scripts/native_xccov_domain.py):
+deterministic unit/UI coverage merging, per-platform lane requirements, and closed
+refusal of malformed or mismatched inputs.
+"""
+
 from __future__ import annotations
 
 import json
@@ -662,7 +667,6 @@ def test_ios_lanes_require_their_real_core_or_app_source_domain(tmp_path, wrong_
 
 
 def test_isolated_import_uses_only_the_policy_sibling_exporter(tmp_path, monkeypatch):
-    """Exercise the production -I fallback while measuring its actual source."""
     import builtins
     import runpy
 

@@ -1,7 +1,6 @@
-// Feature 053 — the shared inline-markdown parse every surface renders through.
-// The contract under test: inline spans are styled (no literal asterisks reach
-// a screen), block syntax and newlines survive verbatim, and no input can
-// yield a blank or thrown result.
+// Tests for the shared inline-markdown renderer: styled inline spans, literal block syntax and newlines,
+// dangerous link-scheme inertness, and safe handling of malformed or empty input.
+
 import XCTest
 
 @testable import AstralCore
@@ -74,13 +73,10 @@ final class InlineMarkdownTests: XCTestCase {
     }
 
     func testNewlinesArePreserved() {
-        // inlineOnlyPreservingWhitespace: multi-line narrative keeps its shape.
         XCTAssertEqual(plain("line one\nline two"), "line one\nline two")
     }
 
     func testBlockSyntaxStaysLiteral() {
-        // Inline-only by design (parity with the phone renderer): a heading
-        // marker is not a style, it is content.
         XCTAssertEqual(plain("# Heading"), "# Heading")
     }
 

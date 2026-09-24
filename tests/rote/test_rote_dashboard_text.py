@@ -1,8 +1,7 @@
-"""ROTE voice-profile text extraction for the dashboard primitives
-(badge, hero, keyvalue, timeline, rating) — feature 029 follow-up.
-
-Without these branches the VOICE profile silently drops the new types.
+"""Tests for the ROTE voice profile's text extraction of dashboard primitives (badge,
+hero, keyvalue, timeline, rating) in backend/rote/adapter.py.
 """
+
 import sys
 from pathlib import Path
 

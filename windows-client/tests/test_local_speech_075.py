@@ -1,4 +1,7 @@
-"""Feature 075 Windows client-local speech adapter behavior."""
+"""Tests for astral_client/voice.py and helper_integrity.py: client-local speech adapter
+selection, capability negotiation, and fallback, driven against fakes for the helper
+subprocess, audio, TTS, and local transport.
+"""
 
 from __future__ import annotations
 

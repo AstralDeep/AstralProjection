@@ -1,4 +1,8 @@
-"""Private export assets are reproducible, offline and installable resources."""
+"""Tests for scripts/build_native_export.py (with src/astralprojection/resources.py):
+private export assets build reproducibly, offline, and installable, with bundled
+assets, script boundaries, and accessor path traversal enforced.
+"""
+
 import base64
 import hashlib
 import json

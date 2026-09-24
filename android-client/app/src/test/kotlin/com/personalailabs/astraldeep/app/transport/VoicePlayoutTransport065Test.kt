@@ -1,3 +1,5 @@
+// Tests for the transport that sends local voice-playout observation events over the authenticated UI socket.
+
 package com.personalailabs.astraldeep.app.transport
 
 import com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent

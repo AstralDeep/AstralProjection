@@ -1,8 +1,6 @@
-"""Stable access to AstralProjection's packaged contracts and web resources.
-
-Callers receive :class:`importlib.resources.abc.Traversable` objects and never
-need to know the repository, wheel, or site-packages layout. Every relative
-name is validated before it reaches a resource provider.
+"""Validated access to AstralProjection's packaged static, template and contract
+resources as Traversable objects, so callers never need to know the repository or
+wheel layout.
 """
 
 from __future__ import annotations
@@ -28,11 +26,11 @@ _WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:")
 
 
 class InvalidResourcePath(ValueError):
-    """A requested package-relative resource name is unsafe or ambiguous."""
+    pass
 
 
 class ResourceNotFoundError(FileNotFoundError):
-    """A declared AstralProjection package resource is absent."""
+    pass
 
 
 def _relative_parts(name: str) -> tuple[str, ...]:
@@ -76,20 +74,14 @@ def _file(root: Traversable, name: str) -> Traversable:
 
 
 def static_root() -> Traversable:
-    """Return the packaged web-static resource root."""
-
     return _directory("webrender", "static")
 
 
 def template_root() -> Traversable:
-    """Return the packaged HTML-template resource root."""
-
     return _directory("webrender", "templates")
 
 
 def contract_root() -> Traversable:
-    """Return the package containing the authoritative UI contract and fixtures."""
-
     contract_package = importlib.import_module("contracts")
     if getattr(contract_package, "RESOURCE_NAMESPACE", None) != _CONTRACT_RESOURCE_NAMESPACE:
         raise ResourceNotFoundError("AstralProjection contract resource package is absent")
@@ -97,61 +89,42 @@ def contract_root() -> Traversable:
 
 
 def static_path(name: str) -> Traversable:
-    """Return one file below the packaged static root."""
-
     return _file(static_root(), name)
 
 
 def template_path(name: str) -> Traversable:
-    """Return one packaged HTML template."""
-
     return _file(template_root(), name)
 
 
 def font_path(name: str) -> Traversable:
-    """Return one packaged web font."""
-
     return _file(_directory("webrender", "static", "fonts"), name)
 
 
 def image_path(name: str) -> Traversable:
-    """Return one packaged web image."""
-
     return _file(_directory("webrender", "static", "img"), name)
 
 
 def vendor_path(name: str) -> Traversable:
-    """Return one vendored bundle, checksum, license, or third-party notice."""
-
     return _file(_directory("webrender", "static", "vendor"), name)
 
 
 def export_asset_path(name: str) -> Traversable:
-    """Return one immutable packaged native export asset (never user data)."""
     return _file(_directory("contracts", "assets", "exports"), name)
 
 
 def protocol_manifest_path() -> Traversable:
-    """Return the authoritative packaged UI-protocol manifest."""
-
     return _file(contract_root(), "ui_protocol.json")
 
 
 def fixture_path(name: str) -> Traversable:
-    """Return one packaged cross-client conformance fixture."""
-
     return _file(_directory("contracts", "fixtures"), name)
 
 
 def notice_path() -> Traversable:
-    """Return AstralProjection's packaged top-level product notice."""
-
     return _file(_directory("astralprojection"), "NOTICE")
 
 
 def resource_sha256(resource: Traversable) -> str:
-    """Return the SHA-256 digest of one resource's exact bytes."""
-
     if not resource.is_file():
         raise ResourceNotFoundError("cannot digest a missing or non-file resource")
     return hashlib.sha256(resource.read_bytes()).hexdigest()

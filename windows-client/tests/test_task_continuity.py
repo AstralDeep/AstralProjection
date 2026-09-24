@@ -1,13 +1,8 @@
-"""Feature 055 — cross-device background-task continuity on the desktop.
-
-A job started on ONE device must surface live on every other device: a
-``task_completed``/``notification`` for the OPEN chat re-issues ``load_chat``
-(narrative + canvas refresh without user action); for ANOTHER chat the banner
-becomes a tap-to-open toast; ``task_started`` elsewhere is an unobtrusive
-status notice. Reconnect re-registers with the active chat id as
-``session_id`` (the server resumes the fan + replays task state) and reloads
-the previously open chat.
+"""Tests for astral_client/app.py and protocol.py: cross-device task continuity —
+task_completed/notification routing to reload-in-place or tap-to-open by chat, and
+reconnect re-registration with the open chat's session_id.
 """
+
 import os
 
 import pytest
@@ -15,7 +10,7 @@ import pytest
 pytest.importorskip("PySide6")
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-os.environ["ASTRAL_WIN_AGENT"] = "0"  # don't spawn the client-hosted tools agent
+os.environ["ASTRAL_WIN_AGENT"] = "0"
 
 from astral_client import app as appmod  # noqa: E402
 from astral_client.app import MainWindow, frame_chat_id  # noqa: E402
@@ -23,7 +18,6 @@ from astral_client.protocol import OrchestratorClient  # noqa: E402
 
 
 class _FakeClient:
-    """Stands in for OrchestratorClient — records sends, never touches a socket."""
     def __init__(self, *a, **k):
         self.sent = []
         self.session_id = "win-client"
@@ -62,17 +56,13 @@ def _sent_load_chats(win):
     return [p for a, p in win.client.sent if a == "load_chat"]
 
 
-# --- frame_chat_id: both wire shapes (pure) -----------------------------------
-
 def test_frame_chat_id_reads_payload_then_top_level():
     assert frame_chat_id({"payload": {"chat_id": "c1"}}) == "c1"
-    assert frame_chat_id({"chat_id": "c2"}) == "c2"  # scheduler notification
+    assert frame_chat_id({"chat_id": "c2"}) == "c2"
     assert frame_chat_id({"payload": {"chat_id": "c1"}, "chat_id": "c2"}) == "c1"
     assert frame_chat_id({"payload": {}}) is None
     assert frame_chat_id({}) is None
 
-
-# --- task_completed: open chat refreshes, other chat taps-to-open --------------
 
 def test_task_completed_for_open_chat_reloads_it(win):
     win.active_chat = "c1"
@@ -80,14 +70,14 @@ def test_task_completed_for_open_chat_reloads_it(win):
                      "payload": {"task_id": "t1", "chat_id": "c1", "status": "completed"}})
     assert _sent_load_chats(win) == [{"chat_id": "c1"}]
     assert not win._banner.isHidden()
-    assert win._banner_chat is None  # click just dismisses
+    assert win._banner_chat is None
 
 
 def test_task_completed_for_other_chat_is_tap_to_open(win):
     win.active_chat = "c1"
     win._on_message({"type": "task_completed",
                      "payload": {"task_id": "t1", "chat_id": "c2", "status": "completed"}})
-    assert _sent_load_chats(win) == []  # never hijacks the open canvas
+    assert _sent_load_chats(win) == []
     assert not win._banner.isHidden()
     assert win._banner_chat == "c2"
     win._on_banner_clicked()
@@ -103,8 +93,6 @@ def test_task_completed_without_chat_keeps_legacy_banner(win):
     assert not win._banner.isHidden()
     assert win._banner_chat is None
 
-
-# --- notification: same routing, top-level chat_id ------------------------------
 
 def test_notification_for_open_chat_reloads_it(win):
     win.active_chat = "c1"
@@ -137,11 +125,9 @@ def test_plain_banner_clears_stale_tap_target(win):
     win._on_message({"type": "task_completed",
                      "payload": {"task_id": "t1", "chat_id": "c2"}})
     assert win._banner_chat == "c2"
-    win._show_banner("Component saved")  # any ordinary notice
+    win._show_banner("Component saved")
     assert win._banner_chat is None
 
-
-# --- task_started: elsewhere = status notice, here = banner ---------------------
 
 def test_task_started_in_other_chat_is_status_notice_not_banner(win):
     win.active_chat = "c1"
@@ -163,8 +149,6 @@ def test_task_started_without_chat_keeps_banner(win):
     win._on_message({"type": "task_started", "payload": {"task_id": "t1"}})
     assert not win._banner.isHidden()
 
-
-# --- reconnect: re-register resumes the open chat -------------------------------
 
 def test_reconnect_reissues_load_chat_for_open_chat(win):
     win.active_chat = "c1"
@@ -196,8 +180,6 @@ def test_register_frame_carries_session_id(qapp):
 
 
 def test_register_frame_declares_host_capability(qapp):
-    """060: Windows advertises the structured v2 host contract and never
-    invents the server-owned host session."""
     c = OrchestratorClient("ws://127.0.0.1:9/ws", "tok")
     frame = c._register_frame()
     assert frame["agent_host"] == {

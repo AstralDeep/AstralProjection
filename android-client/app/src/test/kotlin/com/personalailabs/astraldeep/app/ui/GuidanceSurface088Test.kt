@@ -1,3 +1,5 @@
+// Tests for AppViewModel's handling of the native guidance-notes surface delivered over chrome_surface.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest

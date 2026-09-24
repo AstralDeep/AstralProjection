@@ -1,3 +1,6 @@
+// Resolves a server-owned top-bar control (pulse/timeline) into its drawable, label, and target surface for
+// AstralTopBar in RootScaffold.kt; a control with no actionable surface resolves to null.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.core.chrome.TopBarControl
@@ -6,13 +9,6 @@ import kotlinx.serialization.json.JsonObject
 /** Which glyph a server-owned top-bar action maps to (feature 044 T037). */
 enum class TopBarIcon { SPARKLE, HISTORY, GENERIC }
 
-/**
- * A resolved, renderable view of a server-owned top-bar action control (pulse /
- * timeline, feature 042/044 T037): its glyph, label, and the surface to open. A
- * control with no actionable surface returns null (nothing to render). Pure — no
- * Compose/Android — so the mapping is JVM-unit-tested; the composable only maps
- * [icon]→drawable and dispatches [surface] via `chrome_open`.
- */
 data class TopBarActionView(
     val key: String,
     val label: String,

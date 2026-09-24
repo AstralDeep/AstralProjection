@@ -1,3 +1,6 @@
+// UI tests for first-login control accessibility and the main composer: stable role/name/state and focus
+// behavior, and the composer uses the system keyboard without an app-drawn Done accessory.
+
 import XCTest
 
 final class Accessibility060UITests: XCTestCase {
@@ -92,9 +95,6 @@ final class Accessibility060UITests: XCTestCase {
         XCTAssertTrue(nativeSend.waitForExistence(timeout: 2))
         XCTAssertTrue(keyboard.frame.intersects(nativeSend.frame))
 
-        // The fixture initially renders the overflowing transcript at its top.
-        // Scroll into the transcript, then use the native interactive downward
-        // dismissal gesture rather than an application-drawn keyboard accessory.
         let messageScroll = app.scrollViews["conversation-message-scroll"]
         XCTAssertTrue(messageScroll.waitForExistence(timeout: 2))
         messageScroll.swipeUp()

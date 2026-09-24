@@ -1,14 +1,8 @@
+// Tests for AppModel's first-turn reduce logic: wel_-prefixed welcome components are purged from the canvas
+// when a turn arms, via sendChat and the chat_message event path, and excluded from every canvas-history
+// snapshot.
+
 import AstralCore
-// Feature 055 (US1) — first-turn contract reduce tests: welcome components
-// arrive with `wel_`-prefixed identities and the server no longer sends the
-// turn-start blanking `ui_render []`, so the CLIENT purges `wel_` from the
-// committed canvas in the same mutation that arms `pendingReplace` (sendChat
-// AND the sendEvent chat_message path) and keeps `wel_` out of every
-// canvas-history archive (commitTurn). The purge is unconditional — with the
-// server flag off the welcome ships id-less and nothing matches. Under the
-// live-op rule only full `ui_render` replaces buffer mid-turn (identity-keyed
-// ops apply to the visible canvas immediately — AppModelLiveCanvasTests), so
-// the commit-on-done regressions below drive a buffered render.
 import XCTest
 
 @testable import AstralDeep
@@ -38,7 +32,6 @@ final class AppModelFirstTurnContractTests: XCTestCase {
             "component_id": .string("wel_examples"), "title": .string("Try asking"),
         ])
     }
-    /// Carries only `id` — the purge keys on `component_id ?? id`.
     private var welcomeHint: AstralComponent {
         component([
             "type": .string("text"), "id": .string("wel_hint"),
@@ -55,8 +48,6 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     private func reduce(_ model: AppModel, _ json: String) {
         model.handleFrame(InboundFrame.parse(json)!)
     }
-
-    // MARK: arming purge (sendChat / sendEvent chat_message)
 
     func testSendChatPurgesWelcomeWhenArming() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
@@ -81,17 +72,13 @@ final class AppModelFirstTurnContractTests: XCTestCase {
         XCTAssertTrue(model.canvas.isEmpty)
     }
 
-    // MARK: history-leak regression (commitTurn archive filter)
-
     func testCommitNeverArchivesWelcomeToHistory() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [workspaceCard]
         model.sendChat("first")
-        // A welcome resurrecting mid-turn (reconnect re-register) must still
-        // never reach the timeline.
         model.canvas = [welcomeHero, workspaceCard]
-        reduce(model, resultRender)  // buffers into pendingCanvas
-        reduce(model, doneStatus)  // commit
+        reduce(model, resultRender)
+        reduce(model, doneStatus)
         XCTAssertEqual(model.canvasHistory.count, 1)
         XCTAssertEqual(model.canvasHistory[0].components.map(\.componentId), ["wc_abc123"])
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_result"])
@@ -101,20 +88,18 @@ final class AppModelFirstTurnContractTests: XCTestCase {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [welcomeHero, welcomeExamples]
         model.sendChat("first")
-        model.canvas = [welcomeHero]  // resurrected mid-turn
+        model.canvas = [welcomeHero]
         reduce(model, resultRender)
         reduce(model, doneStatus)
-        XCTAssertTrue(model.canvasHistory.isEmpty)  // welcome-only ⇒ no snapshot
+        XCTAssertTrue(model.canvasHistory.isEmpty)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_result"])
     }
-
-    // MARK: text-only resurrection regression
 
     func testTextOnlyTurnDropsWelcomeFromKeptCanvas() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("just a question")
-        model.canvas = [welcomeHero, workspaceCard]  // resurrected mid-turn
-        reduce(model, doneStatus)  // no components this turn — canvas kept
+        model.canvas = [welcomeHero, workspaceCard]
+        reduce(model, doneStatus)
         XCTAssertFalse(model.turnActive)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc123"])
         XCTAssertTrue(model.canvasHistory.isEmpty)
@@ -123,14 +108,12 @@ final class AppModelFirstTurnContractTests: XCTestCase {
     func testUpsertOnlyTurnDropsWelcomeAtCommit() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.sendChat("just a question")
-        model.canvas = [welcomeHero, workspaceCard]  // resurrected mid-turn
-        reduce(model, resultUpsert)  // live op — no buffered render
-        reduce(model, doneStatus)  // live canvas commits, welcome dropped
+        model.canvas = [welcomeHero, workspaceCard]
+        reduce(model, resultUpsert)
+        reduce(model, doneStatus)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_abc123", "wc_result"])
         XCTAssertTrue(model.canvasHistory.isEmpty)
     }
-
-    // MARK: pinned lifecycle unchanged for non-welcome canvases
 
     func testCommitStillArchivesAPlainCanvas() {
         let model = AppModel(tokenStore: InMemoryTokenStore())

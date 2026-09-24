@@ -1,3 +1,7 @@
+// Registers the input/code/file primitives (forms, selects, checklists, theme picker, color picker, file
+// actions); enforces the wire contract that option keys — never labels — round-trip verbatim to the chrome_*
+// handlers.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import androidx.compose.foundation.background
@@ -62,17 +66,14 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-/** How long a ParamPicker shows "Saving…" before restoring its buttons when no
- *  surface re-render arrives (the server normally replies well within this). */
 private const val SUBMIT_FAILSAFE_MS = 12_000L
 
-/** Register the input/code/file primitives (US2). */
 fun Renderer.registerInputRenderers(): Renderer =
     apply {
         register("input") { c -> InputPrimitive(c, emit) }
         register("param_picker") { c -> ParamPickerPrimitive(c, emit) }
         register("color_picker") { c -> ColorPickerPrimitive(c, emit, theme) }
-        register("theme_apply") { c -> ThemeApplyPrimitive(c, theme) } // US5: apply the emitted palette live
+        register("theme_apply") { c -> ThemeApplyPrimitive(c, theme) }
         register("code") { c -> CodePrimitive(c) }
         register("file_upload") { c -> FileActionButton(c, emit, c.str("label") ?: "Upload") }
         register("file_download") { c -> FileDownloadPrimitive(c, download) }
@@ -104,7 +105,6 @@ private fun InputPrimitive(
     )
 }
 
-/** Emit the server-owned action, then preserve Compose's native IME dismissal. */
 internal fun dispatchInputDone(
     action: String?,
     value: String,
@@ -120,9 +120,6 @@ internal fun dispatchInputDone(
     }
 }
 
-// --- param_picker field rules (pure — JVM unit-tested) ----------------------
-
-/** One field attribute as a string; absent / non-primitive reads as null. */
 internal fun fieldStr(
     f: JsonObject,
     key: String,
@@ -130,25 +127,12 @@ internal fun fieldStr(
 
 internal fun fieldKind(f: JsonObject): String = fieldStr(f, "kind") ?: "text"
 
-/**
- * The option KEYS a `select`/`checklist` offers. The catalog is server-owned (the
- * LLM provider presets, for one) — the client never invents, relabels or reorders
- * options, and submits the key it was handed verbatim.
- */
+// Options are server-owned; submit the key verbatim, never relabel
 internal fun fieldOptions(f: JsonObject): List<String> =
     (f["options"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList()
 
-/** A `select` only becomes a dropdown when the server actually gave it options —
- *  an empty menu is a dead control, so it degrades to the free-text field. */
 internal fun rendersAsDropdown(f: JsonObject): Boolean = fieldKind(f) == "select" && fieldOptions(f).isNotEmpty()
 
-/**
- * 063.1 declarative visibility: a field marked `visible_when {field, equals,
- * default}` shows only while the named controller select's current value
- * (typed-or-`default`) equals `equals`. Fields without the marker — and whole
- * payloads from servers that predate it — are always visible, so the server can
- * emit the attribute freely for older clients.
- */
 internal fun fieldIsVisible(
     f: JsonObject,
     texts: Map<String, String>,
@@ -156,7 +140,6 @@ internal fun fieldIsVisible(
 ): Boolean {
     val vw = f["visible_when"] as? JsonObject ?: return !guidanceNotes || "visible_when" !in f
     if (guidanceNotes) {
-        // Shared note forms use {controller: exact string}; legacy forms keep their original rule.
         return vw.isNotEmpty() &&
             vw.all { (controller, expected) ->
                 expected is JsonPrimitive && expected.isString && texts[controller] == expected.content
@@ -168,13 +151,6 @@ internal fun fieldIsVisible(
     return current == expected
 }
 
-/**
- * The initially selected key of a `select`: the server default when it is on the
- * menu, else the first option — a dropdown always shows *something*, and that
- * something is what an untouched Save submits (parity with `<select>`, which
- * selects its first `<option>` when none is marked selected). With no options the
- * field is a text box, so the raw default carries through.
- */
 internal fun selectInitial(
     default: String?,
     options: List<String>,
@@ -185,8 +161,6 @@ internal fun selectInitial(
         else -> options.first()
     }
 
-/** The initially checked keys of a `checklist`: the server's default list ∩ its
- *  options (an option-less default could never be unchecked, nor submitted). */
 internal fun checklistInitial(
     default: JsonElement?,
     options: List<String>,
@@ -195,8 +169,6 @@ internal fun checklistInitial(
         ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
         ?.filterTo(mutableSetOf()) { it in options } ?: emptySet()
 
-/** Seed state for every field that holds a string: text/password/textarea/number
- *  and `select` (which holds the selected option KEY). */
 internal fun initialTexts(fields: List<JsonObject>): Map<String, String> =
     fields.mapNotNull { f ->
         val name = fieldStr(f, "name") ?: return@mapNotNull null
@@ -219,13 +191,6 @@ internal fun initialChecks(fields: List<JsonObject>): Map<String, Set<String>> =
         if (fieldKind(f) == "checklist") name to checklistInitial(f["default"], fieldOptions(f)) else null
     }.toMap()
 
-/**
- * The `{fields: {...}}` submit payload (plus the action's extra payload). Each kind
- * keeps its WIRE TYPE, because that is what the `chrome_*` handlers parse (web
- * parity: client.js `collectFields`): boolean → bool, checklist → array of keys in
- * server order, everything else → string — a `select` submits the option KEY, not
- * its label, so the handlers keep working untouched.
- */
 internal fun collectFields(
     fields: List<JsonObject>,
     texts: Map<String, String>,
@@ -250,13 +215,6 @@ internal fun collectFields(
         extra.forEach { (k, v) -> put(k, v) }
     }
 
-/**
- * Feature 043 — a settings form. Renders each field (text / password / textarea /
- * number / boolean / select / checklist) with collected state and one or more action
- * buttons that post the SAME `{fields: {...}}` payload to a `chrome_*` handler
- * (action-submit), or the single `submit_action`. Falls back to the legacy
- * single-action button.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ParamPickerPrimitive(
@@ -280,9 +238,7 @@ private fun ParamPickerPrimitive(
             }
             fields.forEach { f ->
                 val name = fieldStr(f, "name") ?: return@forEach
-                // 063.1: a hidden field keeps its state and still submits — it only
-                // stops rendering. Reading `texts` here re-evaluates visibility on
-                // every controller change (SnapshotStateMap subscription).
+                // Hidden fields still submit their state; only rendering stops
                 if (!fieldIsVisible(f, texts, guidanceNotes = LocalGuidanceNotes.current)) return@forEach
                 val label = fieldStr(f, "label") ?: name
                 val kind = fieldKind(f)
@@ -329,12 +285,6 @@ private fun ParamPickerPrimitive(
                 }
             }
             val actions = c.arr("actions")?.mapNotNull { it as? JsonObject } ?: emptyList()
-            // The submit is fire-and-forget (the server re-pushes the surface on
-            // success, replacing this component). Until then show a transient
-            // "Saving…" so a tap is never silent (T039); a new surface resets it
-            // (SurfaceContent keys items per delivery), and a lost/failed
-            // re-render restores the buttons after a bounded wait — the form
-            // must never be stuck spinner-only with no way to resubmit.
             var submitting by remember(c) { mutableStateOf(false) }
             if (submitting) {
                 LaunchedEffect(Unit) {
@@ -346,9 +296,6 @@ private fun ParamPickerPrimitive(
                     Text("Saving…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                // Wrap, never overflow: three action buttons (LLM's Load / Test /
-                // Save) must not squeeze the last one into a vertical letter
-                // stack on a phone width — extra buttons flow to the next line.
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -380,13 +327,6 @@ private fun ParamPickerPrimitive(
     }
 }
 
-/**
- * A `select` field — an exposed dropdown, NOT a free-text box (the LLM provider
- * setup made the difference user-visible: you picked a provider on every other
- * client and typed `openai` by hand here). Shows the current option and opens the
- * server's list on tap; the picked KEY is what gets submitted. Same
- * Box + [DropdownMenu] idiom as [ColorPickerPrimitive].
- */
 @Composable
 private fun SelectField(
     label: String,
@@ -431,11 +371,6 @@ private fun SelectField(
     }
 }
 
-/**
- * A `checklist` field — toggle chips (web parity: the aria-pressed chip row), so the
- * submit carries a LIST of keys. As a text field it submitted a String and every
- * handler expecting a list broke on Android alone.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun ChecklistField(
@@ -470,12 +405,6 @@ private fun ChecklistField(
     }
 }
 
-/**
- * Feature 044 US5 — an INTERACTIVE theme channel picker. Shows the channel's
- * swatch + hex; tapping opens a menu of on-brand choices (the presets' values for
- * this channel). Picking one restyles the app instantly ([ThemeSink]) AND persists
- * it (`save_theme {theme:{color_key, color_value}}`), matching the web round-trip.
- */
 @Composable
 private fun ColorPickerPrimitive(
     c: Component,
@@ -521,8 +450,8 @@ private fun ColorPickerPrimitive(
                                 put("color_key", key)
                                 put("color_value", hex)
                             }
-                        theme.apply(spec) // restyle live
-                        emit.event("save_theme", buildJsonObject { put("theme", spec) }) // persist
+                        theme.apply(spec)
+                        emit.event("save_theme", buildJsonObject { put("theme", spec) })
                     },
                 )
             }
@@ -530,7 +459,6 @@ private fun ColorPickerPrimitive(
     }
 }
 
-/** A small rounded color chip; falls back to the surface tint for a bad hex. */
 @Composable
 private fun ColorSwatch(hex: String) {
     val color = hexToColor(hex) ?: MaterialTheme.colorScheme.surfaceVariant
@@ -544,11 +472,6 @@ private fun ColorSwatch(hex: String) {
     )
 }
 
-/**
- * Feature 044 US5 — `theme_apply` is a side-effect component: when it appears it
- * pushes its palette spec (preset|colors|color_key+value) to the [ThemeSink] so the
- * app restyles live. It renders no visible UI.
- */
 @Composable
 private fun ThemeApplyPrimitive(
     c: Component,
@@ -582,7 +505,6 @@ private fun FileActionButton(
     ) { Text(label) }
 }
 
-/** Feature — a download button that fetches an authed backend file to the device. */
 @Composable
 private fun FileDownloadPrimitive(
     c: Component,

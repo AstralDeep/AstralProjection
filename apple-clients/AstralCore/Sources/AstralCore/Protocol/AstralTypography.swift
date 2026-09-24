@@ -1,9 +1,11 @@
+// Registers the shared web-parity fonts from the package resource bundle for every Apple form factor,
+// preserving Dynamic Type scaling through relative text styles. Used across nearly every
+// AstralApp/AstralWatch view.
+
 import CoreText
 import Foundation
 import SwiftUI
 
-/// Shared approved web fonts, registered from the package resource bundle on
-/// every Apple form factor. Relative styles preserve Dynamic Type scaling.
 public enum AstralTypography {
     public static let sansName = "Inter-Regular"
     public static let monoName = "JetBrainsMono-Regular"

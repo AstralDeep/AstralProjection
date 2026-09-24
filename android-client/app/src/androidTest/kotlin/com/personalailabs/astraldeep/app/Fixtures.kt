@@ -1,3 +1,6 @@
+// Small shared fixture builders (attrs, textComponent) for constructing test Component instances; reused by
+// Android core tests and Apple's AstralCore primitive tests.
+
 package com.personalailabs.astraldeep.app
 
 import com.personalailabs.astraldeep.core.sdui.Component

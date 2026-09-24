@@ -1,3 +1,6 @@
+// Tests for VoiceSessionController's LiveKit publication reconciliation: matching a discovered track
+// publication to its expected manifest exactly once.
+
 package com.personalailabs.astraldeep.app.voice
 
 import kotlin.test.Test

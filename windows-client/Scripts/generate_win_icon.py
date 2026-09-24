@@ -1,27 +1,7 @@
 #!/usr/bin/env python3
-"""Generate the Windows app icon (``windows-client/assets/astraldeep.ico``) from
-the same brand master the Android and Apple clients use.
-
-Master: ``android-client/Android Raw Assets/AppIcon.png`` (3000x3000, dark navy
-field + purple swirl + teal orb) — the single source of the mark across every
-client, so a brand refresh is one file, not four.
-
-Zero third-party dependencies (Constitution V): resampling uses PySide6, which
-the Windows client already ships (`QImage.scaled(..., SmoothTransformation)`),
-and the ICO container is assembled byte-by-byte with `struct`. Pillow is NOT a
-client dependency and is not being added for a build-time script.
-
-Frames are PNG-compressed inside the ICO (the format Windows Vista+ expects for
-the 256px slot, and what the previous file already used); Explorer, the taskbar
-and Qt all pick the right frame from the directory.
-
-Usage:
-    python windows-client/Scripts/generate_win_icon.py [--master PATH] [--check]
-
-``--check`` verifies the committed .ico without regenerating it: every declared
-frame decodes, all sizes are present, and the 256px frame's background is the
-brand navy (not the washed-out white mark this replaced). Exits non-zero on
-violation.
+"""Regenerates windows-client/assets/astraldeep.ico from the shared brand master
+(android-client's AppIcon.png) via PySide6 scaling; run after editing the brand mark,
+and CI runs it with --check.
 """
 
 from __future__ import annotations
@@ -32,7 +12,6 @@ import pathlib
 import struct
 import sys
 
-# Headless by default: this is a build-time script, it must never need a display.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QBuffer, QIODevice, QSize, Qt  # noqa: E402
@@ -42,30 +21,23 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 DEFAULT_MASTER = REPO / "android-client" / "Android Raw Assets" / "AppIcon.png"
 ICO_PATH = REPO / "windows-client" / "assets" / "astraldeep.ico"
 
-#: Windows shell frames. 16/32/48 are the shell workhorses (tray, title bar,
-#: small icons); 256 is what Explorer's large views and the taskbar scale from.
 SIZES = (16, 24, 32, 48, 64, 128, 256)
 
-#: The brand field colour (master top-left). The check asserts the 256 frame
-#: still lands on it — a white/transparent corner means the stale mark is back.
 BRAND_BG = (0x17, 0x19, 0x40)
 BG_TOLERANCE = 24
 
 
 def _app() -> QGuiApplication:
-    """A QGuiApplication is required before QImage can use the image plugins."""
     return QGuiApplication.instance() or QGuiApplication([])
 
 
 def _png_bytes(img: QImage, size: int) -> bytes:
-    """One PNG-encoded frame, downsampled from the master with smooth filtering."""
     frame = img.scaled(
         QSize(size, size),
         Qt.AspectRatioMode.IgnoreAspectRatio,
         Qt.TransformationMode.SmoothTransformation,
     )
-    # QBuffer() with no argument owns its internal QByteArray — binding it to a
-    # temporary one instead hands Qt a pointer to a freed object (a hard crash).
+    # No-arg only — a bound temp QByteArray gets freed under Qt
     buf = QBuffer()
     buf.open(QIODevice.OpenModeFlag.WriteOnly)
     if not frame.save(buf, "PNG"):
@@ -83,13 +55,10 @@ def build_ico(master: pathlib.Path, sizes=SIZES) -> bytes:
         raise ValueError(f"master must be square, got {img.width()}x{img.height()}")
 
     frames = [(s, _png_bytes(img, s)) for s in sizes]
-    # ICONDIR: reserved, type(1=icon), count. Then one 16-byte ICONDIRENTRY per
-    # frame; the image data follows the whole directory (offsets are absolute).
     header = struct.pack("<HHH", 0, 1, len(frames))
     offset = len(header) + 16 * len(frames)
     entries, blobs = b"", b""
     for size, png in frames:
-        # A 256px frame is encoded as 0 in the byte-wide width/height fields.
         dim = 0 if size >= 256 else size
         entries += struct.pack(
             "<BBBBHHII", dim, dim, 0, 0, 1, 32, len(png), offset
@@ -100,7 +69,6 @@ def build_ico(master: pathlib.Path, sizes=SIZES) -> bytes:
 
 
 def _frames(path: pathlib.Path) -> list[tuple[int, bytes]]:
-    """Parse the ICO directory -> [(declared size, frame bytes)]."""
     data = path.read_bytes()
     reserved, kind, count = struct.unpack("<HHH", data[:6])
     if reserved != 0 or kind != 1:
@@ -135,8 +103,6 @@ def check(path: pathlib.Path = ICO_PATH) -> int:
         if (size, size) not in avail:
             problems.append(f"Qt cannot load the {size}px frame")
 
-    # Proof the artwork is the brand mark, not the retired white one: the 256
-    # frame's corner must be the opaque navy field.
     big = icon.pixmap(256, 256).toImage()
     px = big.pixelColor(0, 0)
     if px.alpha() != 255:

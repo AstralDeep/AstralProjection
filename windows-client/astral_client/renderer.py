@@ -1,16 +1,6 @@
-"""Native renderer: AstralDeep SDUI component dicts -> PySide6 widgets.
-
-This is a real ROTE/webrender *target* — it consumes the same structured
-`components` that the orchestrator puts on every `ui_render`/`ui_upsert` (the
-non-web wire layer, FR-018) and draws native Qt widgets instead of HTML. The web
-renderer (backend/webrender/renderer.py) is the reference for field shapes.
-
-Public API:
-    render(component: dict, ctx: RenderContext) -> QWidget
-
-`ctx.emit(action, payload)` is called for interactive components (buttons,
-history rows, param-picker / table-pagination submits) so the app can post a
-`ui_event` back to the orchestrator.
+"""Native renderer turning orchestrator SDUI component dicts into PySide6 widgets,
+mirroring backend/webrender/renderer.py's field shapes; render(component, ctx) is
+called by app.py's Canvas, with ctx.emit posting ui_events back.
 """
 
 from __future__ import annotations
@@ -51,23 +41,10 @@ from . import theme as T
 
 @dataclass
 class RenderContext:
-    """Carried through a render pass. `emit` posts a ui_event back to the server;
-    `download` (optional) fetches an authed backend file URL and saves it natively;
-    `chat_id` (optional, kept current by the app) scopes component actions such
-    as table pagination to the active conversation; `apply_theme` (optional,
-    wired by the MainWindow to its `_apply_theme_pref` path) is the app's single
-    theme-apply implementation — the `theme_apply` component and the color
-    picker route their specs through it (feature 044 US5)."""
-
     emit: Callable[[str, dict], None]
     download: Optional[Callable[[str, str], None]] = None
     chat_id: Optional[str] = None
     apply_theme: Optional[Callable[[Any], None]] = None
-
-
-# --------------------------------------------------------------------------- #
-# small widget helpers
-# --------------------------------------------------------------------------- #
 
 
 def _label(
@@ -109,14 +86,8 @@ def _vbox(spacing: int = 8, margins: tuple = (0, 0, 0, 0)) -> QVBoxLayout:
 _box_counter = [0]
 
 
+# Scopes via #name; an unscoped style cascades to every child
 def _scoped(widget: QWidget, css: str) -> QWidget:
-    """Apply ``css`` to ``widget`` ONLY, via an object-name selector.
-
-    A bare-property stylesheet (e.g. ``border: 1px solid``) set directly on a
-    container cascades that border onto every child widget in Qt — which is why
-    a card's border was bleeding onto its labels. Scoping to ``#name`` confines
-    it to the container itself.
-    """
     _box_counter[0] += 1
     name = f"abox{_box_counter[0]}"
     widget.setObjectName(name)
@@ -151,12 +122,6 @@ def _render_into(layout, items: List[dict], ctx: RenderContext) -> None:
         layout.addWidget(render(child, ctx))
 
 
-# --------------------------------------------------------------------------- #
-# primitive renderers
-# --------------------------------------------------------------------------- #
-
-# Web type scale (astral.css / Tailwind): h1 text-2xl 24, h2 text-xl 20,
-# h3 text-lg 18, body text-sm 14, caption text-xs 12.
 _TEXT_SIZES = {
     "h1": (24, True),
     "h2": (20, True),
@@ -196,13 +161,11 @@ def _r_card(c, ctx):
 
 
 def _css_of(c: dict) -> dict:
-    """The component's astralprims ``css`` styling dict ({} when absent/bad)."""
     v = c.get("css")
     return v if isinstance(v, dict) else {}
 
 
 def _css_px(css: dict, key: str, default: int) -> int:
-    """A ``"22px"``/``"22"`` css length as int, tolerant of garbage."""
     try:
         raw = str(css.get(key, "")).strip().lower().replace("px", "")
         n = int(float(raw)) if raw else default
@@ -212,7 +175,6 @@ def _css_px(css: dict, key: str, default: int) -> int:
 
 
 def _css_flex(css: dict) -> int:
-    """The css ``flex`` grow factor as a Qt stretch (0 = unset)."""
     try:
         return max(0, int(float(str(css.get("flex") or 0))))
     except (TypeError, ValueError):
@@ -220,11 +182,6 @@ def _css_flex(css: dict) -> int:
 
 
 def _css_swatch(c: dict) -> Optional[QWidget]:
-    """A childless css-styled container is a colored box — e.g. the Theme
-    surface's preset swatch cells. The web applies the astralprims ``css``
-    field as inline styles; natively we honor the same minimal subset
-    (background / height / flex) so those strips are never blank. Mirrors the
-    Android twin (Attrs.kt containerMode / Basic.kt SwatchBox)."""
     css = _css_of(c)
     bg = str(css.get("background") or "").strip()
     if _children(c) or not bg:
@@ -243,7 +200,6 @@ def _r_container(c, ctx):
     w = QWidget()
     kids = _children(c)
     if (c.get("direction") or "") == "row":
-        # The web flex row (tab bars, per-row action buttons, swatch strips).
         lay = QHBoxLayout()
         lay.setSpacing(8)
         lay.setContentsMargins(0, 0, 0, 0)
@@ -254,7 +210,7 @@ def _r_container(c, ctx):
             flexed = flexed or stretch > 0
             lay.addWidget(render(child, ctx), stretch)
         if not flexed:
-            lay.addStretch(1)  # plain rows left-align instead of spreading
+            lay.addStretch(1)
         return w
     lay = _vbox(10)
     w.setLayout(lay)
@@ -279,10 +235,6 @@ def _r_hero(c, ctx):
     variant = c.get("variant", "default")
     gradient = variant == "gradient"
     if gradient:
-        # Subtle primary→secondary wash derived from the LIVE palette (parity
-        # with the web's .astral-hero--gradient — never hardcoded midnight hex).
-        # The web adds a 3px accent-gradient strip along the top edge; QSS has
-        # no ::after, so the strip rides border-top.
         bg = (
             "qlineargradient(x1:0,y1:0,x2:1,y2:1,"
             f"stop:0 {T._rgba(T.PRIMARY, 0.18)}, stop:1 {T._rgba(T.SECONDARY, 0.08)})"
@@ -292,13 +244,11 @@ def _r_hero(c, ctx):
             f"border-top:3px solid {T.PRIMARY}; border-radius:12px;"
         )
     elif variant == "subtle":
-        # Web .astral-hero--subtle: faint text-channel wash, no elevation.
         css = (
             f"background:{T._rgba(T.TEXT, 0.02)}; border:1px solid {T.BORDER};"
             "border-radius:12px;"
         )
     else:
-        # Default hero = plain raised surface with a soft border (web parity).
         css = f"background:{T.SURFACE}; border:1px solid {T.BORDER}; border-radius:12px;"
     _scoped(frame, css)
     frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
@@ -322,7 +272,6 @@ def _r_hero(c, ctx):
         row = QHBoxLayout()
         row.setSpacing(6)
         for b in badges:
-            # Web hero badges use the accent (primary-tinted) pill variant.
             row.addWidget(_r_badge({"label": b, "variant": "accent"}, ctx))
         row.addStretch(1)
         lay.addLayout(row)
@@ -330,16 +279,12 @@ def _r_hero(c, ctx):
 
 
 def _r_badge(c, ctx):
-    # Web pill: bg variant/15, border variant/25, text variant color, text-xs
-    # font-medium, fully-rounded, optional decorative icon before the label.
     variant = c.get("variant", "default")
     try:
         known = variant in T.VARIANT_COLORS
-    except TypeError:  # unhashable variant from raw LLM/agent JSON
+    except TypeError:
         known, variant = False, "default"
     if not known or variant == "default":
-        # Web default pill is NEUTRAL (bg-white/10 text border-white/15), not
-        # primary-tinted like the other VARIANT_COLORS consumers.
         color, bg = T.TEXT, T._rgba(T.TEXT, 0.10)
     else:
         color, bg = T.VARIANT_COLORS[variant]
@@ -356,10 +301,6 @@ def _r_badge(c, ctx):
 
 
 def _r_metric(c, ctx):
-    # Web .astral-metric: variant-tinted 135° gradient (color/20 → color/5),
-    # a 3px variant accent along the left edge, uppercase muted title, text-2xl
-    # value, optional subtitle + thin progress bar. The old renderer hardcoded
-    # the midnight indigo wash for every variant.
     variant = c.get("variant", "default")
     accent, _ = T.VARIANT_COLORS.get(variant, T.VARIANT_COLORS["default"])
     frame = QFrame()
@@ -394,7 +335,6 @@ def _r_metric(c, ctx):
         lay.addWidget(_label(c["subtitle"], color=T.MUTED, size=12))
     progress = c.get("progress")
     if isinstance(progress, (int, float)) and not isinstance(progress, bool):
-        # Web threshold colors: red past 0.9, yellow past 0.7, else primary.
         pv = max(0.0, min(float(progress), 1.0))
         pcolor = (T.VARIANT_COLORS["error"][0] if pv > 0.9
                   else T.VARIANT_COLORS["warning"][0] if pv > 0.7
@@ -415,9 +355,6 @@ def _r_metric(c, ctx):
 
 
 def _r_keyvalue(c, ctx):
-    # Web .astral-kv: a grid of soft item boxes (bg text/3%, border text/5%,
-    # radius-sm) each holding an uppercase muted label, a semibold value and an
-    # optional hint — honoring the component's `columns` (1–4, default 2).
     frame = _card_frame()
     lay = _vbox(8, (16, 14, 16, 14))
     frame.setLayout(lay)
@@ -457,8 +394,6 @@ def _r_keyvalue(c, ctx):
 
 
 def _r_timeline(c, ctx):
-    # Web .astral-timeline: variant-colored status dots with a soft ring, a
-    # monospace time column, medium title + muted description per entry.
     frame = _card_frame()
     lay = _vbox(10, (16, 14, 16, 14))
     frame.setLayout(lay)
@@ -497,9 +432,6 @@ def _r_timeline(c, ctx):
 
 
 def _r_rating(c, ctx):
-    # Web .astral-rating: uppercase muted label, warning-filled stars over
-    # dimmed empties, a semibold value (honoring show_value) and a muted
-    # subtitle.
     try:
         val = float(c.get("value", 0))
     except (TypeError, ValueError):
@@ -540,15 +472,10 @@ def _r_rating(c, ctx):
     return frame
 
 
-#: Alert variant glyphs standing in for the web's inline SVG icons.
 _ALERT_GLYPHS = {"info": "ⓘ", "success": "✓", "warning": "⚠", "error": "⨂"}
 
 
 def _r_alert(c, ctx):
-    # Web .astral-alert: variant-TINTED surface (color/10) + tinted border
-    # (color/20) + a 3px left accent, with a colored icon column beside the
-    # colored title and a softened message. The old renderer drew a plain
-    # surface card with only the left accent colored.
     variant = c.get("variant", "info")
     vkey = variant if variant in _ALERT_GLYPHS else "info"
     color, _ = T.VARIANT_COLORS.get(vkey, T.VARIANT_COLORS["info"])
@@ -573,9 +500,6 @@ def _r_alert(c, ctx):
 
 
 def _btn_label(label) -> str:
-    """Literal button text: Qt treats a lone ``&`` as a mnemonic marker and
-    swallows it ("Attachments & files" → "Attachments files"), so server-provided
-    labels escape it. Android/web render the ampersand verbatim — parity."""
     return str(label).replace("&", "&&")
 
 
@@ -585,11 +509,11 @@ def _r_button(c, ctx):
     if variant == "primary":
         btn.setObjectName("primary")
     elif variant == "danger":
-        btn.setObjectName("danger")  # solid error-token treatment (theme QSS)
+        btn.setObjectName("danger")
     elif variant == "secondary":
-        btn.setObjectName("secondary")  # web outline w/ primary-tinted border
+        btn.setObjectName("secondary")
     elif variant == "ghost":
-        btn.setObjectName("ghost")  # web text-only muted treatment
+        btn.setObjectName("ghost")
     action = c.get("action")
     payload = c.get("payload") or {}
     if action:
@@ -599,7 +523,6 @@ def _r_button(c, ctx):
 
 
 def _to_number(text: str):
-    """Mirror the web client's ``Number(value)`` coercion for number fields."""
     try:
         f = float(text)
     except (TypeError, ValueError):
@@ -608,12 +531,6 @@ def _to_number(text: str):
 
 
 def _fill_template(template: str, state: dict) -> str:
-    """Build a submit message from a template + collected field values.
-
-    Mirrors client.js ``submitParamPicker``: ``{__values_json__}`` expands to the
-    pretty-printed state, then ``{field}`` tokens are substituted (strings inline,
-    other values as JSON); unknown tokens are left untouched.
-    """
     msg = (template or "").replace("{__values_json__}", json.dumps(state, indent=2))
 
     def _repl(m):
@@ -627,8 +544,6 @@ def _fill_template(template: str, state: dict) -> str:
 
 
 def _r_param_picker(c, ctx):
-    """A field form + Submit; on submit emit a ``chat_message`` built from the
-    field values and ``submit_message_template`` (parity with the web target)."""
     frame = _card_frame()
     lay = _vbox(10, (16, 14, 16, 14))
     frame.setLayout(lay)
@@ -637,11 +552,8 @@ def _r_param_picker(c, ctx):
     if c.get("description"):
         lay.addWidget(_label(c["description"], color=T.MUTED, size=13))
     getters: Dict[str, Callable[[], Any]] = {}
-    # 063.1 declarative visibility: fields marked visible_when {field, equals,
-    # default} show only while the named controller select matches; hidden
-    # fields still submit (the server reads only the matching inputs).
     combos: Dict[str, QComboBox] = {}
-    conditional: List[Any] = []  # (visible_when, [widgets])
+    conditional: List[Any] = []
     for field in c.get("fields", []) or []:
         if not isinstance(field, dict):
             continue
@@ -673,7 +585,7 @@ def _r_param_picker(c, ctx):
             row.setSpacing(6)
             for opt in field.get("options") or []:
                 btn = QPushButton(_btn_label(opt))
-                btn.setObjectName("chip")  # web checklist-chip treatment
+                btn.setObjectName("chip")
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn.setCheckable(True)
                 btn.setChecked(opt in sel)
@@ -690,7 +602,6 @@ def _r_param_picker(c, ctx):
             getters[name] = lambda e=edit: None if e.text() == "" else _to_number(e.text())
             lay.addWidget(edit)
         elif kind == "password":
-            # Feature 043: write-only key field — never pre-filled (blank = keep).
             lay.addWidget(_label(label, size=13, weight=500))
             edit = QLineEdit()
             edit.setEchoMode(QLineEdit.EchoMode.Password)
@@ -704,7 +615,7 @@ def _r_param_picker(c, ctx):
             area.setMinimumHeight(72)
             getters[name] = lambda a=area: a.toPlainText()
             lay.addWidget(area)
-        else:  # text (default)
+        else:
             lay.addWidget(_label(label, size=13, weight=500))
             edit = QLineEdit()
             if default is not None:
@@ -729,10 +640,6 @@ def _r_param_picker(c, ctx):
         for combo in combos.values():
             combo.currentTextChanged.connect(lambda _t: _apply_visibility())
         _apply_visibility()
-    # Feature 043: settings forms (LLM, Personalization) submit their collected
-    # fields to a chrome_* action (action-submit) rather than a chat message. A
-    # form may carry several action buttons (Load / Test / Save) that all submit
-    # the SAME fields. Falls back to the legacy chat_message submit otherwise.
     actions = c.get("actions") if isinstance(c.get("actions"), list) else []
     if not actions and c.get("submit_action"):
         actions = [{"label": c.get("submit_label", "Save"), "action": c["submit_action"],
@@ -771,7 +678,6 @@ def _r_param_picker(c, ctx):
 
 
 def _r_input(c, ctx):
-    """A labeled single-line text field + Submit (emits a ``chat_message``)."""
     w = QWidget()
     lay = _vbox(6)
     w.setLayout(lay)
@@ -804,7 +710,6 @@ def _r_input(c, ctx):
 
 
 def _accept_to_filter(accept: str) -> str:
-    """Turn an HTML ``accept`` string into a Qt file dialog filter."""
     accept = (accept or "").strip()
     if not accept or accept == "*/*":
         return "All files (*)"
@@ -821,8 +726,6 @@ def _accept_to_filter(accept: str) -> str:
 
 
 def _r_file_upload(c, ctx):
-    """A native file-picker button. When the component carries an ``action`` the
-    chosen path is emitted with its payload (mirrors ``_r_button`` wiring)."""
     w = QWidget()
     lay = _vbox(6)
     w.setLayout(lay)
@@ -831,8 +734,6 @@ def _r_file_upload(c, ctx):
     action = c.get("action")
     payload = c.get("payload") or {}
     btn = QPushButton(_btn_label(label))
-    # Web file-upload buttons wear the soft primary tint (bg primary/20,
-    # border primary/30, primary text), not the solid gradient.
     btn.setObjectName("tintPrimary")
     btn.setCursor(Qt.CursorShape.PointingHandCursor)
     btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
@@ -860,9 +761,6 @@ def _r_file_upload(c, ctx):
 
 
 def _r_file_download(c, ctx):
-    """A download button/link showing the filename, opening the URL externally,
-    plus a SHA-256 integrity block when present. Serves both ``file_download``
-    and the richer ``download_card``."""
     frame = _card_frame()
     lay = _vbox(8, (16, 12, 16, 12))
     frame.setLayout(lay)
@@ -877,7 +775,6 @@ def _r_file_download(c, ctx):
     )
     if meta:
         lay.addWidget(_label(meta, color=T.MUTED, size=11))
-    # file_download uses `url`; download_card uses `download_url`.
     url = c.get("url") or c.get("download_url") or ""
     filename = c.get("filename") or c.get("title")
     label = c.get("label") or (f"Download {filename}" if filename else "Download File")
@@ -885,13 +782,9 @@ def _r_file_download(c, ctx):
     btn = QPushButton(_btn_label(label))
     btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     if valid:
-        # Web file-download buttons wear the soft SECONDARY tint (violet).
         btn.setObjectName("tintSecondary")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         u = str(url)
-        # A root-relative /api/download/... URL is an authed backend file: fetch
-        # it with the session token and save via a native dialog. An absolute
-        # http(s) URL (e.g. a download_card GitHub asset) opens externally.
         if u.startswith("/") and getattr(ctx, "download", None) is not None:
             fn = str(filename or "download")
             btn.clicked.connect(lambda checked=False, uu=u, ff=fn: ctx.download(uu, ff))
@@ -903,8 +796,6 @@ def _r_file_download(c, ctx):
     lay.addWidget(btn)
     sha = str(c.get("sha256") or c.get("sha") or "").lower()
     if sha:
-        # Web integrity block: near-black inset well, uppercase micro-label,
-        # secondary-tinted monospace digest.
         well = QFrame()
         _scoped(
             well,
@@ -927,8 +818,6 @@ def _r_file_download(c, ctx):
 
 
 def _r_code(c, ctx):
-    # Web .astral-code: near-black well (bg black/40, border white/5), an
-    # optional language band, green-400 monospace text.
     frame = QFrame()
     _scoped(
         frame,
@@ -967,9 +856,6 @@ def _r_divider(c, ctx):
 
 
 def _r_progress(c, ctx):
-    # Web progress: a "label ... NN%" muted header row over a thin (h-2)
-    # rounded track whose fill is the primary→secondary accent gradient — the
-    # percentage never renders inside the bar.
     w = QWidget()
     lay = _vbox(4)
     w.setLayout(lay)
@@ -1003,9 +889,6 @@ def _r_progress(c, ctx):
 def _r_list(c, ctx):
     items = c.get("items", []) or []
     if c.get("variant") == "detailed":
-        # Web detailed list: each item is its own soft link-card (surface-1,
-        # soft border, radius-md) with a semibold title (a link when `url` is
-        # present), muted subtitle and softened description.
         w = QWidget()
         lay = _vbox(10)
         w.setLayout(lay)
@@ -1016,9 +899,6 @@ def _r_list(c, ctx):
             cl = _vbox(3, (12, 10, 12, 10))
             card.setLayout(cl)
             title = str(item.get("title", ""))
-            # Web parity + the same safety posture: the title is escaped and
-            # only http(s) URLs become links (webrender safe_url refuses
-            # javascript:/file:/custom schemes the same way).
             url = str(item.get("url") or "")
             if url.startswith(("http://", "https://")):
                 link = QLabel(
@@ -1064,8 +944,6 @@ def _r_list(c, ctx):
     return frame
 
 
-#: Web `_cell` status pills: semantic foreground per well-known status word
-#: (red-400 / yellow-400 / green-400 equivalents from the semantic tokens).
 _TABLE_STATUS_COLORS = {
     "Critical": "error", "Severe": "error",
     "Moderate": "warning",
@@ -1083,14 +961,12 @@ def _r_table(c, ctx):
     if title:
         lay.addWidget(_label(title, size=14, bold=True))
     tbl = QTableWidget(len(rows), len(headers))
-    # Web thead: uppercase text-xs tracking-wider muted (text-transform is not
-    # QSS — uppercase the strings; the band bg/size live in the theme QSS).
     tbl.setHorizontalHeaderLabels([str(h).upper() for h in headers])
     tbl.verticalHeader().setVisible(False)
     tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
     tbl.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-    tbl.setShowGrid(False)  # web rows separate with border-bottom, not a grid
-    tbl.setAlternatingRowColors(True)  # web zebra: even rows bg-white/2
+    tbl.setShowGrid(False)
+    tbl.setAlternatingRowColors(True)
     from PySide6.QtGui import QBrush, QColor
 
     for r, row in enumerate(rows):
@@ -1101,12 +977,9 @@ def _r_table(c, ctx):
                 item.setForeground(QBrush(QColor(T.VARIANT_COLORS[status][0])))
             tbl.setItem(r, col, item)
     tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-    tbl.verticalHeader().setDefaultSectionSize(36)  # web px-4 py-3 row rhythm
+    tbl.verticalHeader().setDefaultSectionSize(36)
     tbl.setFixedHeight(min(420, 36 * len(rows) + 40))
     lay.addWidget(tbl)
-    # Feature 044 (T026): a server-side pagination pager when the table
-    # advertises a total + page size (parity with the web table_paginate
-    # round-trip — the server replies with a ui_upsert keyed to component_id).
     total = c.get("total_rows")
     page_size = c.get("page_size")
     if isinstance(total, int) and isinstance(page_size, int) and page_size > 0:
@@ -1115,9 +988,6 @@ def _r_table(c, ctx):
 
 
 def _table_pager(c, ctx, n_rows: int):
-    """A ``‹ Prev  rows X–Y of Z  Next ›`` row under a paginated table. Prev/Next
-    emit ``table_paginate`` for the table's component id; the server upserts the
-    same component in place."""
     total = int(c.get("total_rows") or 0)
     page_size = int(c.get("page_size") or 0)
     try:
@@ -1199,7 +1069,6 @@ def _r_collapsible(c, ctx):
 
 
 def _r_chart(c, ctx):
-    """bar/line/pie via QtCharts when available, else a labeled fallback."""
     try:
         from .charts import build_chart
 
@@ -1217,10 +1086,6 @@ def _r_chart(c, ctx):
 
 
 def _image_pixmap(url: str):
-    """Best-effort ``QPixmap`` from a ``data:`` URI ONLY (synchronous, fast, no
-    network). Returns ``None`` on any failure — and for http(s) URLs, which are
-    fetched OFF the GUI thread by :class:`_AsyncImageLabel` (a synchronous
-    urlopen here would freeze the render for up to 4 s per image). Never raises."""
     from PySide6.QtGui import QPixmap
 
     url = str(url or "")
@@ -1233,14 +1098,11 @@ def _image_pixmap(url: str):
         pix = QPixmap()
         pix.loadFromData(raw)
         return pix if not pix.isNull() else None
-    except Exception:  # noqa: BLE001 — image load is best-effort, degrade to alt
+    except Exception:  # noqa: BLE001
         return None
 
 
 def _fetch_image_bytes(url: str):
-    """Fetch remote image bytes over http(s) (8 MB / 4 s bounds). Returns
-    ``None`` on any failure so the caller degrades to alt text — never raises.
-    Called ONLY from a worker thread (never the GUI thread)."""
     url = str(url or "")
     if not url.startswith(("http://", "https://")):
         return None
@@ -1248,23 +1110,14 @@ def _fetch_image_bytes(url: str):
         import urllib.request
 
         req = urllib.request.Request(url, headers={"User-Agent": "AstralWindowsClient"})
-        with urllib.request.urlopen(req, timeout=4) as r:  # noqa: S310 — scheme-guarded
+        with urllib.request.urlopen(req, timeout=4) as r:  # noqa: S310
             return r.read(8 * 1024 * 1024)
-    except Exception:  # noqa: BLE001 — image load is best-effort, degrade to alt
+    except Exception:  # noqa: BLE001
         return None
 
 
 class _AsyncImageLabel(QLabel):
-    """A QLabel that shows its alt text immediately, then fetches a remote image
-    OFF the GUI thread and swaps in the QPixmap when the bytes arrive.
-
-    A synchronous ``urlopen`` during ``render()`` used to freeze the GUI thread
-    up to 4 s per remote image. The fetch runs on a daemon thread and the bytes
-    are marshaled back via the ``_loaded`` signal, so the widget is only ever
-    touched on the GUI thread (the worker never touches Qt state). A failed or
-    empty fetch keeps the alt-text placeholder."""
-
-    _loaded = Signal(object)  # raw image bytes, or None on failure
+    _loaded = Signal(object)
 
     def __init__(self, url: str, alt: str, maxw: int, parent=None):
         super().__init__(parent)
@@ -1282,13 +1135,12 @@ class _AsyncImageLabel(QLabel):
         raw = _fetch_image_bytes(url)
         try:
             self._loaded.emit(raw)
-        except RuntimeError:  # the C++ QLabel may be gone during teardown
+        except RuntimeError:
             pass
 
     def _apply_bytes(self, raw: object) -> None:
-        """GUI-thread slot: turn fetched bytes into the displayed pixmap."""
         if not raw:
-            return  # keep the alt-text placeholder
+            return
         from PySide6.QtGui import QPixmap
 
         pix = QPixmap()
@@ -1311,11 +1163,6 @@ def _image_max_width(c) -> int:
 
 
 def _r_image(c, ctx):
-    """Native image: decode a ``data:`` URI synchronously, or fetch an http(s)
-    URL OFF the GUI thread (immediate alt-text placeholder, QPixmap when ready);
-    show the alt text when unavailable. Parity with the Android ``image``
-    renderer — a native improvement over the old placeholder. The widget is
-    always returned synchronously (no blocking network on the render path)."""
     w = QWidget()
     lay = _vbox(4)
     w.setLayout(lay)
@@ -1323,10 +1170,9 @@ def _r_image(c, ctx):
     url = str(c.get("url") or c.get("src") or "")
     maxw = _image_max_width(c)
     if url.startswith(("http://", "https://")):
-        # Remote: placeholder now, real bytes fetched off-thread (never blocks).
         lay.addWidget(_AsyncImageLabel(url, alt, maxw))
         return w
-    pix = _image_pixmap(url)  # data: URIs decode synchronously (fast, no network)
+    pix = _image_pixmap(url)
     if pix is not None:
         if pix.width() > maxw:
             pix = pix.scaledToWidth(maxw, Qt.TransformationMode.SmoothTransformation)
@@ -1346,9 +1192,6 @@ def _is_number(v) -> bool:
 
 
 def _plotly_to_chart_dict(c) -> Optional[dict]:
-    """Extract numeric x/y traces from a Plotly figure spec into a chart dict the
-    QtCharts path (``charts.build_chart``) can draw, or ``None`` when there is
-    nothing numeric to plot."""
     data = c.get("data")
     layout = c.get("layout") if isinstance(c.get("layout"), dict) else {}
     fig = c.get("figure") if isinstance(c.get("figure"), dict) else None
@@ -1384,9 +1227,6 @@ def _plotly_to_chart_dict(c) -> Optional[dict]:
 
 
 def _r_plotly_chart(c, ctx):
-    """Plotly is web/JS-only; draw a best-effort native approximation from the
-    figure's traces via the QtCharts bar/line path, else a labeled note. Never
-    raises. Advertising this type keeps ROTE from degrading server-side charts."""
     spec = _plotly_to_chart_dict(c)
     if spec is not None:
         try:
@@ -1395,7 +1235,7 @@ def _r_plotly_chart(c, ctx):
             w = build_chart(spec)
             if w is not None:
                 return w
-        except Exception:  # noqa: BLE001 — fall through to the labeled note
+        except Exception:  # noqa: BLE001
             pass
     frame = _card_frame(bg=T.SURFACE_2)
     lay = _vbox(4, (16, 14, 16, 14))
@@ -1433,8 +1273,6 @@ def _r_skeleton(c, ctx):
         count = int(c.get("count", 3) or 3)
     except (TypeError, ValueError):
         count = 3
-    # "card" placeholders are chunky blocks (the canvas loading state, matching
-    # the web/Android SkeletonCanvas); the default stays thin text-like lines.
     height, radius = (72, 12) if c.get("variant") == "card" else (14, 7)
     for _ in range(max(1, min(6, count))):
         bar = QLabel()
@@ -1444,12 +1282,6 @@ def _r_skeleton(c, ctx):
     return w
 
 
-# Feature 055 (US4, wire-contract §6): the server-stamped ``provenance`` field
-# → compact trust badge (glyph, label, tooltip, semantic color). Absent/unknown
-# values render nothing — pre-055 servers (and FF off) stay byte-identical.
-# Colors mirror the web footer: grounded=success green, estimated=warning
-# yellow, generated=muted. ``None`` color resolves to T.MUTED at render time
-# (the palette is live-themable, so colors can't be captured at import).
 _PROVENANCE_BADGES = {
     "estimated": ("≈", "estimated", "warning",
                   "Estimated / low-confidence value"),
@@ -1457,14 +1289,10 @@ _PROVENANCE_BADGES = {
                   "Written by the assistant — not sourced from a tool"),
 }
 
-#: Decorative / structural types that assert no facts — never badged
-#: (parity with the web footer's skip set).
 _PROVENANCE_SKIP_TYPES = frozenset({"divider", "skeleton"})
 
 
 def provenance_badge(c: dict) -> Optional[QLabel]:
-    """The compact provenance badge for a component dict, or ``None`` when the
-    field is absent/unknown or the type is decorative (render nothing)."""
     if not isinstance(c, dict):
         return None
     if str(c.get("type", "")).strip().lower() in _PROVENANCE_SKIP_TYPES:
@@ -1484,9 +1312,6 @@ def provenance_badge(c: dict) -> Optional[QLabel]:
 
 
 def _with_provenance_badge(widget: QWidget, c: dict) -> QWidget:
-    """Wrap a rendered top-level component with its right-aligned provenance
-    badge row (the native component chrome). No badge → the widget is returned
-    unwrapped, byte-identical to pre-055 rendering."""
     badge = provenance_badge(c)
     if badge is None:
         return widget
@@ -1553,27 +1378,17 @@ REGISTRY: Dict[str, Callable[[dict, RenderContext], QWidget]] = {
 
 
 def _apply_theme_via_ctx(spec, ctx) -> None:
-    """Feature 044 (US5) — route a theme spec to the app's SINGLE theme-apply
-    implementation: ``RenderContext.apply_theme``, wired by the MainWindow to
-    its ``_apply_theme_pref`` path (which mutates the palette synchronously and
-    DEFERS the global restyle to the next event-loop turn — a global re-polish
-    from *inside* a render pass is re-entrant and segfaults headless Qt).
-    Without a wired callback (bare unit renders) only the palette mutates;
-    theming must never break a render pass (fail-open)."""
     try:
         cb = getattr(ctx, "apply_theme", None)
         if callable(cb):
             cb(spec)
         else:
             T.apply_theme(spec)
-    except Exception:  # noqa: BLE001 — theming must never break a render pass
+    except Exception:  # noqa: BLE001
         pass
 
 
 def _choose_color(initial: str, parent, key: str) -> Optional[str]:
-    """Open the native colour chooser, returning the picked ``#rrggbb`` (or
-    ``None`` if cancelled). Factored out so the color_picker's emit path is
-    unit-testable without driving a modal dialog."""
     from PySide6.QtGui import QColor
     from PySide6.QtWidgets import QColorDialog
 
@@ -1582,11 +1397,6 @@ def _choose_color(initial: str, parent, key: str) -> Optional[str]:
 
 
 def _r_color_picker(c, ctx):
-    """Feature 043/044 — a theme channel swatch + hex readout (Theme surface).
-
-    Clicking the swatch opens a native colour chooser; on pick it emits
-    ``save_theme`` (server persist, FR-016) AND applies the change to the live
-    palette immediately (US5 fine-tune)."""
     w = QWidget()
     lay = QHBoxLayout()
     lay.setContentsMargins(0, 2, 0, 2)
@@ -1620,9 +1430,6 @@ def _r_color_picker(c, ctx):
 
 
 def _r_theme_apply(c, ctx):
-    """Feature 043/044 — the ``theme_apply`` side-effect carries the chosen
-    preset/colors for the client to apply. Route it to the app's theme path
-    (US5) and return a zero-height spacer (no visible UI)."""
     _apply_theme_via_ctx(c, ctx)
     w = QWidget()
     w.setFixedHeight(0)
@@ -1633,18 +1440,13 @@ REGISTRY.update({"color_picker": _r_color_picker, "theme_apply": _r_theme_apply}
 
 
 def render(component: Any, ctx: RenderContext, *, top_level: bool = False) -> QWidget:
-    """Render one structured SDUI component dict into a native widget.
-
-    ``top_level=True`` adds the component chrome — today the provenance badge
-    (055 US4) — and is passed only by the canvas for its top-level components;
-    nested children are stamped with ``provenance`` too (``_tag_source``
-    recurses) but must not each grow a badge."""
     if not isinstance(component, dict):
         return _label(str(component))
     builder = REGISTRY.get(component.get("type", ""), _r_fallback)
     try:
         widget = builder(component, ctx)
-    except Exception as exc:  # never let one bad component crash the canvas
+    # Never let one bad component crash the whole canvas
+    except Exception as exc:
         widget = _label(
             f"[render error: {component.get('type')}: {exc}]", color=T.MUTED, size=12
         )
@@ -1657,6 +1459,4 @@ def render(component: Any, ctx: RenderContext, *, top_level: bool = False) -> QW
 
 
 def supported_types() -> List[str]:
-    """The primitive types this native target renders directly (the rest fall
-    back to a labeled placeholder) — used for ROTE capability negotiation."""
     return sorted(REGISTRY.keys())

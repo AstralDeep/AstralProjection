@@ -1,3 +1,6 @@
+// Instrumented UI test for component action submission: duplicate-submit barriers, pending-state tracking,
+// and real-socket ordering via ComponentControllerFixture.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.ui.test.assertIsEnabled
@@ -146,7 +149,6 @@ class ComponentActions088UiTest {
                 perform("refine", buildJsonObject { put("instruction", " ") })
                 replace(ComponentControllerFixture.component("Replacement"))
                 perform("history", buildJsonObject { put("version_no", 2) }, captured)
-                // A later allowed action is a queue barrier; no invalid restore crossed the real socket.
                 perform("refine", buildJsonObject { put("instruction", "Barrier") })
                 await { base.outboundFrames.count { it["action"] == JsonPrimitive("component_refine") } == 2 }
                 assertEquals(1, base.outboundFrames.count { it["action"] == JsonPrimitive("component_restore") })
@@ -276,7 +278,6 @@ class ComponentActions088UiTest {
                     val frame = base.outboundFrames.single { frame -> frame["action"] == JsonPrimitive(event) }
                     val generation = frame.getValue("request_generation").jsonPrimitive.content
                     assertTrue(base.model.state.value.pendingSubmissions.containsKey(generation))
-                    // UI progress state must not invalidate the exact component that was just submitted.
                     assertTrue(controller.pending.value.contains("wc_a" to kind))
                     compose.onNodeWithText(kind).assertIsNotEnabled()
                     perform(kind, payload)
@@ -291,7 +292,6 @@ class ComponentActions088UiTest {
                     base.send(operation(frame, "completed", 3))
                     await { !controller.pending.value.contains("wc_a" to kind) }
                     compose.onNodeWithText(kind).assertIsEnabled()
-                    // A new current submission is a real socket barrier after all duplicate attempts.
                     perform(kind, payload)
                     await { base.outboundFrames.count { f -> f["action"] == JsonPrimitive(event) } == 2 }
                     val second = base.outboundFrames.last { f -> f["action"] == JsonPrimitive(event) }

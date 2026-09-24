@@ -1,9 +1,9 @@
+// Authenticated REST client for voice-session control: create/take-over/update/end, speech stop, recap
+// consent, grant refresh. Every call carries the Keycloak bearer and device binding; errors expose only
+// bounded reason codes.
+
 import AstralCore
 import Foundation
-
-// Feature 065 — authenticated voice control. Every mutation carries the
-// Keycloak bearer plus the short-lived device/connection binding. Grant and
-// binding material stay in memory and errors expose only bounded reason codes.
 
 struct WatchVoiceRESTClient: Sendable {
     typealias Transport = @Sendable (URLRequest) async throws -> (Int, Data)

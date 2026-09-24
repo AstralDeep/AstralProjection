@@ -1,3 +1,6 @@
+// Instrumented UI test for guidance notes rendering: the shared builder fixture drives the shipping Compose
+// renderer with synthetic note values only.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -24,7 +27,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** Exact shared builder fixture, shipping Compose renderer, synthetic note values only. */
 class GuidanceNotes088UiTest {
     @get:Rule val rule = createComposeRule()
     private val events = mutableListOf<Pair<String, JsonObject>>()

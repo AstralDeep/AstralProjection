@@ -1,8 +1,8 @@
-"""Tests for ``astral_client.rest`` (the audit REST helper).
-
-Pure logic + an injected ``opener`` — no Qt, no network. Covers URL building,
-response shaping, the Bearer header, and error mapping.
+"""Tests for astral_client/rest.py: the audit REST helper's URL building, Bearer auth,
+response shaping, and error mapping for logout, the chrome menu model, audit queries,
+and attachment upload — via an injected opener, no real network.
 """
+
 import urllib.error
 
 import pytest
@@ -21,8 +21,6 @@ from astral_client.rest import (
     upload_attachment,
 )
 
-
-# ── feature 044: server-revoking sign-out (FR-005) ──────────────────────────
 
 class _FakeLogoutResp:
     def __init__(self, status):
@@ -91,8 +89,6 @@ def test_keycloak_logout_noop_without_inputs():
     assert keycloak_logout("https://iam", "c", "") is False
 
 
-# ── feature 042: chrome menu model (single server-owned source of truth) ──────
-
 def test_chrome_menu_url():
     assert chrome_menu_url("http://h:8001/") == "http://h:8001/api/chrome/menu"
 
@@ -132,7 +128,6 @@ def test_parse_chrome_menu_tolerates_empty_and_malformed():
         "signout": {"label": "Sign out", "action": "logout"},
     }
     assert parse_chrome_menu(None)["sections"] == []
-    # items without a surface are dropped; a group with no valid items is dropped.
     m = {"menu": [
         {"label": "Empty", "items": [{"label": "nosurf"}]},
         {"label": "Ok", "items": [{"label": "A", "surface": "agents"}]},
@@ -151,7 +146,7 @@ def test_audit_url_strips_trailing_slash_and_encodes_filters():
     assert "limit=25" in u
     assert "event_class=auth" in u
     assert "outcome=failure" in u
-    assert "q=login+x" in u   # urlencoded space
+    assert "q=login+x" in u
     assert "cursor=c1" in u
 
 
@@ -174,7 +169,7 @@ def test_parse_audit_response_rows_and_cursor():
     }
     rows, nxt = parse_audit_response(data)
     assert nxt == "NEXT"
-    assert rows[0]["recorded_at"] == "2026-06-30 12:34:56"   # ISO -> display
+    assert rows[0]["recorded_at"] == "2026-06-30 12:34:56"
     assert rows[0]["event_class"] == "auth"
     assert rows[0]["outcome"] == "success"
     assert rows[0]["action_type"] == "auth.ws_register"
@@ -188,8 +183,8 @@ def test_parse_audit_response_empty_and_missing_cursor():
 def test_parse_audit_response_defensive_against_bad_items():
     rows, _ = parse_audit_response({"items": [None, 7, {"event_id": "e"}]})
     assert len(rows) == 1
-    assert rows[0]["event_class"] == ""   # missing key -> empty string
-    assert rows[0]["recorded_at"] == "-"  # missing ts -> dash
+    assert rows[0]["event_class"] == ""
+    assert rows[0]["recorded_at"] == "-"
 
 
 class _FakeResp:
@@ -243,8 +238,6 @@ def test_event_classes_and_outcomes_exported():
     assert OUTCOMES == ("in_progress", "success", "failure", "interrupted")
 
 
-# ── feature 044: chat attachment upload (US4, T043) ──────────────────────────
-
 def test_upload_attachment_multipart_bearer_and_parse():
     seen = {}
 
@@ -252,7 +245,7 @@ def test_upload_attachment_multipart_bearer_and_parse():
         seen["url"] = req.full_url
         seen["method"] = req.get_method()
         seen["auth"] = req.get_header("Authorization")
-        seen["ctype"] = req.get_header("Content-type")  # urllib capitalizes the key
+        seen["ctype"] = req.get_header("Content-type")
         seen["body"] = req.data
         return _FakeResp(
             b'{"attachment_id":"att-1","filename":"a.csv",'
@@ -268,7 +261,7 @@ def test_upload_attachment_multipart_bearer_and_parse():
     assert seen["auth"] == "Bearer TOK"
     assert seen["ctype"].startswith("multipart/form-data; boundary=")
     assert b'name="file"; filename="a.csv"' in seen["body"]
-    assert b"col\n1\n" in seen["body"]        # the file bytes are in the body
+    assert b"col\n1\n" in seen["body"]
 
 
 def test_upload_attachment_http_error_becomes_resterror():

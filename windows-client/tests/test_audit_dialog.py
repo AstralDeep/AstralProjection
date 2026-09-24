@@ -1,11 +1,7 @@
-"""Tests for the native AuditDialog (read-only audit-log viewer).
-
-Needs Qt -> uses the offscreen ``qapp`` fixture (skips when PySide6 is absent).
-The dialog owns no I/O; these exercise population (``add_page``), the reset/
-append semantics of ``begin_load``, the filter round-trip, cursor pagination,
-and the error path.
+"""Tests for astral_client/app.py's AuditDialog: a read-only audit-log viewer — page
+population, begin_load reset/append semantics, the filter round trip, cursor
+pagination, and the error path.
 """
-
 
 def _row(**kw):
     base = {
@@ -25,10 +21,8 @@ def test_add_page_appends_rows_and_toggles_load_more(qapp):
     d = AuditDialog(None, lambda f, reset: None)
     d.add_page([_row(), _row(outcome="failure")], "NEXT")
     assert d._table.rowCount() == 2
-    # isVisibleTo(dialog) reflects the explicit flag without needing the dialog
-    # to be actually shown on screen.
+    # isVisibleTo(dialog) differs from isVisible() offscreen
     assert d._more_btn.isVisibleTo(d)
-    # A second page appends; a None cursor hides "Load more".
     d.add_page([_row(event_class="file")], None)
     assert d._table.rowCount() == 3
     assert not d._more_btn.isVisibleTo(d)
@@ -70,7 +64,7 @@ def test_load_more_passes_cursor_and_reset_false(qapp):
 
     calls = []
     d = AuditDialog(None, lambda f, reset: calls.append((f, reset)))
-    d.add_page([_row()], "CUR")   # sets the next cursor
+    d.add_page([_row()], "CUR")
     d._load_more()
     assert calls[-1][1] is False
     assert calls[-1][0]["cursor"] == "CUR"

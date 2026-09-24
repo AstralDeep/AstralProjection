@@ -1,11 +1,7 @@
 #!/usr/bin/env python3
-"""Repair SwiftPM resource signatures in an already exported Mac Store package.
-
-Xcode may leave resource bundles Development-signed after exporting the outer
-app for distribution. Work on a private extraction; select the *exported* app's
-profile-authorized Distribution leaf, sign resource bundles inside-out, and
-seal the app last. Verify the actual repackaged payload before publishing it.
-No archive, source, version, profile, entitlement or executable-code changes.
+"""Repairs Development-signed resource bundles left inside an already-exported Mac Store
+package: re-signs them inside-out with the exported app's Distribution identity,
+reseals the app last, and verifies the repackaged payload.
 """
 
 from __future__ import annotations
@@ -24,14 +20,13 @@ from pathlib import Path
 
 
 class PackageError(ValueError):
-    """A closed, non-secret package validation failure."""
+    pass
 
 
 def run(*args: str) -> bytes:
     result = subprocess.run(args, capture_output=True, timeout=180, check=False)
     if result.returncode:
         raise PackageError(f"{Path(args[0]).name}_failed")
-    # codesign's display metadata is intentionally emitted on stderr.
     if args[0] == "codesign" and "--verbose=4" in args:
         return result.stderr
     return result.stdout
@@ -77,7 +72,6 @@ def certificate(path: Path, scratch: Path, arch: str | None = None) -> str:
 
 
 def installer_certificate(package: Path, scratch: Path) -> str:
-    """Reuse the exact valid installer identity that signed Xcode's export."""
     run("pkgutil", "--check-signature", str(package))
     toc = scratch / "package-toc.xml"
     run("xar", "-f", str(package), "--dump-toc=" + str(toc))
@@ -124,7 +118,7 @@ def display(code: Path, arch: str | None = None) -> str:
 def architectures(code: Path) -> list[str | None]:
     metadata = display(code)
     if "Mach-O" not in metadata:
-        return [None]  # Resource-only bundles have no machine-code slices.
+        return [None]
     executable = re.search(r"^Executable=(.+)$", metadata, re.MULTILINE)
     if executable is None or not Path(executable[1]).resolve().is_relative_to(code.resolve()):
         raise PackageError("invalid_code_executable")
@@ -150,7 +144,6 @@ def distribution_identity(app: Path, scratch: Path) -> tuple[str, dict]:
         or signed.get("com.apple.security.app-sandbox") is not True
     ):
         raise PackageError("not_store_distribution")
-    # A profile alone is insufficient: Development profiles also carry leaves.
     with tempfile.TemporaryDirectory(dir=scratch) as directory:
         prefix = str(Path(directory) / "leaf")
         run("codesign", "-d", "--extract-certificates=" + prefix, str(app))
@@ -165,8 +158,7 @@ def distribution_identity(app: Path, scratch: Path) -> tuple[str, dict]:
         if certificate(app, scratch, arch) != identity:
             raise PackageError("architecture_certificate_mismatch")
         flags = re.search(r"\bflags=0x([0-9a-fA-F]+)\b", display(app, arch))
-        # This repair preserves the existing runtime-only flags. Refuse other
-        # flag combinations instead of silently changing them while resealing.
+        # Refuse unknown flags rather than silently changing them
         if flags is None or int(flags[1], 16) != 0x10000:
             raise PackageError("unsupported_original_signature_flags")
     return identity, signed
@@ -186,7 +178,7 @@ def normalized_metadata(root: Path) -> dict[str, bytes]:
     for path in [root / "Distribution", *root.glob("*.pkg/PackageInfo")]:
         element = ET.fromstring(path.read_bytes())
         for node in element.iter():
-            node.attrib.pop("installKBytes", None)  # Recomputed signature size.
+            node.attrib.pop("installKBytes", None)
         result[str(path.relative_to(root))] = ET.tostring(element)
     return result
 
@@ -218,8 +210,6 @@ def assert_payload(original: Path, final: Path, scratch: Path) -> None:
         }:
             raise PackageError("payload_content_changed")
         executables.append(name)
-    # Remove signatures only from disposable binary copies, then compare all
-    # executable bytes. This includes both architectures and load commands.
     for index, executable in enumerate(executables):
         copies = []
         for label, root in (("before", original), ("after", final)):

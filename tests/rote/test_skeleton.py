@@ -1,10 +1,8 @@
-"""Feature 037 — server-driven, cross-device loading skeleton tests.
-
-Covers the webrender ``skeleton`` primitive (renderer + builder + registry) and
-its ROTE adaptation across device targets (voice collapses to speech; watch /
-mobile cap the row count; browser/tv pass through). Pure Python — no DB, no
-network.
+"""Tests for the webrender skeleton primitive (backend/webrender/renderer.py) and its
+ROTE adaptation (backend/rote/adapter.py): voice speaks the loading state,
+watch/mobile cap row count, browser/tv pass through.
 """
+
 from __future__ import annotations
 
 import sys
@@ -28,8 +26,6 @@ def _profile(device_type: str) -> DeviceProfile:
     return DeviceProfile.from_dict({"device_type": device_type})
 
 
-# ───────────────────────── renderer ──────────────────────────────────────────
-
 def test_skeleton_is_a_recognized_primitive():
     assert "skeleton" in allowed_primitive_types()
 
@@ -39,21 +35,20 @@ def test_render_skeleton_structure_and_a11y():
                             "count": 3, "label": "Loading chats…"})
     assert 'role="status"' in html and 'aria-busy="true"' in html
     assert 'aria-live="polite"' in html
-    assert "Loading chats…" in html              # sr-only accessible label
-    # a chat-history/list row carries 3 shimmer lines (avatar + title + subtitle)
+    assert "Loading chats…" in html
     assert html.count("astral-skeleton-line") == 9
 
 
 def test_render_skeleton_count_is_bounded():
     many = render_skeleton({"type": "skeleton", "variant": "lines", "count": 100})
-    assert many.count("astral-skeleton-line") == 12   # capped at _SKELETON_MAX_ROWS
+    assert many.count("astral-skeleton-line") == 12
     one = render_skeleton({"type": "skeleton", "variant": "lines", "count": 0})
-    assert one.count("astral-skeleton-line") == 1     # floored at 1
+    assert one.count("astral-skeleton-line") == 1
 
 
 def test_render_skeleton_bad_count_defaults():
     html = render_skeleton({"type": "skeleton", "variant": "lines", "count": "nope"})
-    assert html.count("astral-skeleton-line") == 4    # default
+    assert html.count("astral-skeleton-line") == 4
 
 
 def test_render_skeleton_escapes_label():
@@ -71,10 +66,8 @@ def test_render_one_dispatches_skeleton():
 def test_skeleton_component_builder():
     assert skeleton_component(variant="chat-history", count=6, label="Loading…") == {
         "type": "skeleton", "variant": "chat-history", "count": 6, "label": "Loading…"}
-    assert skeleton_component(count="bad")["count"] == 4   # builder coerces
+    assert skeleton_component(count="bad")["count"] == 4
 
-
-# ───────────────────────── ROTE adaptation ───────────────────────────────────
 
 def test_rote_voice_speaks_the_loading_state():
     out = ComponentAdapter.adapt(

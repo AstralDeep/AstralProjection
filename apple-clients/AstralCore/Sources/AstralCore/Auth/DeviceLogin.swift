@@ -1,6 +1,7 @@
-// Feature 051 — watch-side client of the backend device-login broker
-// (contracts/device-login.md). The watch NEVER contacts the IdP: start/poll/
-// refresh all go to the orchestrator, which brokers RFC 8628 at Keycloak.
+// Watch-side client for the backend's device-login broker: the watch never talks to the identity provider
+// directly, only start/poll/refresh against the orchestrator. Used by WatchModel and TokenStore's broker
+// refresh strategy.
+
 import Foundation
 
 public struct DeviceLoginStart: Sendable, Equatable {
@@ -53,15 +54,13 @@ public enum DeviceLoginPoll: Sendable, Equatable {
 }
 
 public enum DeviceLoginError: Error, Equatable {
-    case unavailable(String)  // 503 — flag off / IdP down / grant not enabled
-    case invalidHandle  // 400 — expired or replayed handle
-    case rejected(String)  // 401 invalid_grant — the IdP refused the credential
+    case unavailable(String)
+    case invalidHandle
+    case rejected(String)
     case rateLimited
     case transport(String)
 }
 
-/// Thin async client over the three broker endpoints. `Transport` is
-/// injectable so the state machine is fully testable without a network.
 public struct DeviceLoginClient: Sendable {
     public typealias Transport = @Sendable (URL, Data) async throws -> (Int, Data)
 
@@ -151,9 +150,6 @@ public struct DeviceLoginClient: Sendable {
         return tokens
     }
 
-    /// Poll until terminal, honoring the server's pacing (pending keeps the
-    /// current interval; slow_down replaces it — never poll faster, SC-009).
-    /// `onTick` fires before each wait so the UI can show progress.
     public func waitForApproval(
         start: DeviceLoginStart,
         onTick: (@Sendable (TimeInterval) -> Void)? = nil,

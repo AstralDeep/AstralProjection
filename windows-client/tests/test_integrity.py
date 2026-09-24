@@ -1,19 +1,6 @@
-"""Tests for the desktop client integrity verifier (features 039 + 060).
-
-Covers:
-  - SHA256SUMS parsing (extracts the exe's hash)
-  - SHA-256 mismatch ⇒ refuse + delete
-  - missing sigstore module ⇒ fail-closed (refuse)
-  - bad sigstore signature ⇒ refuse
-  - happy path (good hash + good signature) ⇒ ok
-  - latest_release missing any asset ⇒ None
-  - publisher-contract bridge compatibility (spec 060, FR-048 clauses 8-11):
-    API-shaped ``/releases/latest`` payloads must carry name == tag, a strict
-    ``v<semver>`` tag, non-draft/non-prerelease state, and exactly the three
-    canonical assets with positive numeric ids; the pinned SAN/issuer constants
-    must never move.
-
-Network is fully mocked (urllib + sigstore). Pure Python, no PySide6.
+"""Tests for astral_client/integrity.py: SHA-256/sigstore verification of the client
+exe, launch-time update decisions, and the releases/latest publisher-contract bridge
+(asset shape, semver, draft/prerelease rejection).
 """
 
 from __future__ import annotations
@@ -128,7 +115,6 @@ def test_sha256_file(tmp_path):
 
 
 def test_verify_refuses_on_sha_mismatch(monkeypatch, tmp_path):
-    # Real exe bytes, but a SHA256SUMS that claims a different hash.
     exe_bytes = b"real binary content"
     monkeypatch.setattr(
         integrity,
@@ -141,7 +127,6 @@ def test_verify_refuses_on_sha_mismatch(monkeypatch, tmp_path):
         lambda url, dest, **k: (open(dest, "wb").write(exe_bytes), True)[1],
     )
     monkeypatch.setattr(integrity, "_download_text", lambda url: f"{'0' * 64}  AstralDeep.exe\n")
-    # sigstore must not even be reached (sha check fails first).
     res = integrity.verify_latest(str(tmp_path))
     assert not res.ok
     assert "SHA-256 mismatch" in res.reason
@@ -159,7 +144,6 @@ def test_verify_fail_closed_when_sigstore_missing(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(integrity, "_download_text", lambda url: f"{sha}  AstralDeep.exe\n")
 
-    # Force the sigstore import to fail → fail-closed.
     import builtins
 
     real_import = builtins.__import__
@@ -225,7 +209,7 @@ def test_latest_release_none_when_asset_missing(monkeypatch):
             "tag_name": "v1.2.3",
             "assets": [
                 {"id": 2, "name": "AstralDeep.exe", "browser_download_url": "u"}
-            ],  # no sha/bundle
+            ],
         },
     )
     assert integrity.latest_release() is None
@@ -257,12 +241,6 @@ def test_latest_release_parses(monkeypatch):
 
 
 def test_verify_sigstore_builds_identity_from_tag(monkeypatch):
-    """The expected SAN is the workflow path + the release's tag (exact match).
-
-    Regression: the old verifier pinned a prefix identity that could never
-    exactly match the tag-specific SAN GitHub issues, so every release would
-    fail-closed. Now the identity is rebuilt from the tag.
-    """
     captured = {}
 
     class FakeIdentity:
@@ -304,7 +282,6 @@ def test_verify_sigstore_builds_identity_from_tag(monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "sigstore.models", type("M", (), {"Bundle": FakeBundle}))
 
-    # _verify_sigstore opens both files before verifying; use real temp paths.
     import tempfile
 
     with tempfile.NamedTemporaryFile(suffix=".exe", delete=False) as ef:
@@ -324,11 +301,6 @@ def test_verify_sigstore_builds_identity_from_tag(monkeypatch):
     finally:
         os.remove(exe_path)
         os.remove(bundle_path)
-
-
-# --------------------------------------------------------------------------- #
-# verify_running_exe — verify the on-disk running binary (no exe re-download)
-# --------------------------------------------------------------------------- #
 
 
 def _rel(version="0.2.0"):
@@ -355,7 +327,6 @@ def test_verify_running_exe_happy(monkeypatch, tmp_path):
     assert res.ok, res.reason
     assert res.exe_path == str(exe)
     assert res.version == "0.2.0"
-    # the tiny bundle is cleaned up; the running exe is NEVER deleted.
     assert not os.path.exists(os.path.join(str(tmp_path), "cosign.bundle"))
     assert os.path.exists(str(exe))
 
@@ -370,7 +341,6 @@ def test_verify_running_exe_sha_mismatch_does_not_delete_exe(monkeypatch, tmp_pa
     monkeypatch.setattr(integrity, "_verify_sigstore", lambda e, b, **kw: (True, "verified"))
     res = integrity.verify_running_exe(str(exe), workdir=str(tmp_path), _release=_rel)
     assert not res.ok and "SHA-256 mismatch" in res.reason
-    # never delete the user's running binary, even on mismatch.
     assert os.path.exists(str(exe))
 
 
@@ -386,11 +356,6 @@ def test_verify_running_exe_offline(tmp_path):
     exe.write_bytes(b"x")
     res = integrity.verify_running_exe(str(exe), workdir=str(tmp_path), _release=lambda: None)
     assert not res.ok and "release" in res.reason.lower()
-
-
-# --------------------------------------------------------------------------- #
-# check_at_launch — launch-time integrity/update decision (fully injected)
-# --------------------------------------------------------------------------- #
 
 
 def _verok(*a, **k):
@@ -476,20 +441,7 @@ def test_check_at_launch_never_raises_on_error():
     assert n["status"] == "error" and n["message"] == ""
 
 
-# --------------------------------------------------------------------------- #
-# Publisher-contract bridge compatibility (spec 060, FR-048 clauses 8-11).
-#
-# The protected publisher creates tag exactly v<strict-semver>, names the
-# release exactly its tag, uploads exactly the three canonical assets, and only
-# ever transitions a non-draft, non-prerelease release to public/latest. These
-# tests pin the shipped updater's /releases/latest parser to that contract so
-# the T119 release-windows.yml rewrite cannot silently drift what the client
-# accepts — nor silently move the SAN/issuer the verifier pins.
-# --------------------------------------------------------------------------- #
-
-
 def _latest_payload(**overrides):
-    """A fully API-shaped /releases/latest response for the 0.4.0 candidate."""
     payload = {
         "id": 60001,
         "name": "v0.4.0",
@@ -520,7 +472,6 @@ def _latest_payload(**overrides):
 
 
 def _serve_latest(monkeypatch, payload):
-    """Serve ``payload`` through the _api_get seam for /releases/latest only."""
     expected_path = f"repos/{integrity._REPO}/releases/latest"
     monkeypatch.setattr(
         integrity, "_api_get", lambda path: payload if path == expected_path else None
@@ -535,7 +486,6 @@ def test_bridge_happy_path_0_4_0_selected_over_installed_0_3_0(monkeypatch, tmp_
     assert rel.release_id == 60001
     assert rel.asset_ids == (60011, 60012, 60013)
     assert integrity.is_newer_version(rel.version, "0.3.0") is True
-    # The shipped v0.3.0 updater flow selects 0.4.0 as a verified update.
     n = integrity.check_at_launch(
         "0.3.0",
         "C:/AstralDeep.exe",
@@ -547,8 +497,6 @@ def test_bridge_happy_path_0_4_0_selected_over_installed_0_3_0(monkeypatch, tmp_
 
 
 def test_bridge_latest_selection_never_offers_older_or_equal(monkeypatch, tmp_path):
-    # /releases/latest returning an OLDER release than the installed 0.3.0
-    # must never be offered (latest-disposition selection semantics).
     _serve_latest(monkeypatch, _latest_payload(name="v0.2.9", tag_name="v0.2.9"))
     n = integrity.check_at_launch(
         "0.3.0",
@@ -559,7 +507,6 @@ def test_bridge_latest_selection_never_offers_older_or_equal(monkeypatch, tmp_pa
         _verify_latest=_verok,
     )
     assert n["status"] == "current_newer"
-    # The SAME installed version verifies in place; no update is offered.
     _serve_latest(monkeypatch, _latest_payload(name="v0.3.0", tag_name="v0.3.0"))
     n = integrity.check_at_launch(
         "0.3.0",
@@ -587,15 +534,15 @@ def test_bridge_rejects_draft_and_prerelease(monkeypatch, field):
 @pytest.mark.parametrize(
     "tag",
     [
-        "0.4.0",  # missing v prefix
-        "V0.4.0",  # wrong-case prefix
-        "vv0.4.0",  # v inside the version
-        "v 0.4.0",  # whitespace after prefix
-        "v0.4.0 ",  # trailing whitespace
-        "v0.4.0\n",  # line terminator
-        "v01.4.0",  # leading-zero core
-        "v0.4.0-01",  # leading-zero numeric prerelease
-        "v",  # empty version
+        "0.4.0",
+        "V0.4.0",
+        "vv0.4.0",
+        "v 0.4.0",
+        "v0.4.0 ",
+        "v0.4.0\n",
+        "v01.4.0",
+        "v0.4.0-01",
+        "v",
     ],
 )
 def test_bridge_rejects_non_strict_semver_tags(monkeypatch, tag):
@@ -614,21 +561,20 @@ def test_bridge_rejects_extra_asset(monkeypatch):
 
 def test_bridge_rejects_missing_asset(monkeypatch):
     payload = _latest_payload()
-    payload["assets"] = payload["assets"][:2]  # no cosign.bundle
+    payload["assets"] = payload["assets"][:2]
     _serve_latest(monkeypatch, payload)
     assert integrity.latest_release() is None
 
 
 def test_bridge_rejects_renamed_asset(monkeypatch):
     payload = _latest_payload()
-    payload["assets"][0]["name"] = "astraldeep.exe"  # exact-name contract
+    payload["assets"][0]["name"] = "astraldeep.exe"
     _serve_latest(monkeypatch, payload)
     assert integrity.latest_release() is None
 
 
 def test_bridge_rejects_duplicate_canonical_asset(monkeypatch):
     payload = _latest_payload()
-    # Two exe rows, no bundle — still 3 assets but not exactly one of each.
     payload["assets"][2] = dict(payload["assets"][0], id=60014)
     _serve_latest(monkeypatch, payload)
     assert integrity.latest_release() is None
@@ -643,12 +589,6 @@ def test_bridge_rejects_non_positive_or_non_numeric_asset_ids(monkeypatch, bad_i
 
 
 def test_bridge_identity_constants_are_pinned():
-    """FR-048 clause 13: the bridge signs under the EXISTING tag-ref SAN.
-
-    The T119 release-windows.yml rewrite keeps the file path and the OIDC
-    issuer the shipped verifier accepts — if either constant moves, every
-    already-shipped client fail-closes on the next release.
-    """
     assert integrity._SIGNING_WORKFLOW == (
         "https://github.com/AstralDeep/AstralDeep/.github/workflows/release-windows.yml"
     )
@@ -657,14 +597,6 @@ def test_bridge_identity_constants_are_pinned():
     assert integrity._SHA_NAME == "SHA256SUMS"
     assert integrity._BUNDLE_NAME == "cosign.bundle"
 
-
-# --------------------------------------------------------------------------- #
-# Repository-transition trust model (feature 074, T060/T061).
-#
-# Version 0.5.0 below is test data, not a release decision. The active policy
-# intentionally remains legacy_only until release planning selects and signs an
-# exact bridge version and executable digest through the old trusted workflow.
-# --------------------------------------------------------------------------- #
 
 _TEST_BRIDGE_SHA256 = hashlib.sha256(b"byte-identical bridge executable").hexdigest()
 

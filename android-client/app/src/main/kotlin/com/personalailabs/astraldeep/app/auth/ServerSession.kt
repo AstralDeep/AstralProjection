@@ -1,3 +1,7 @@
+// Security-sensitive session types and helpers: redacted exceptions, HTTPS-only backend scoping, and
+// session/cookie custody kept distinct from AppAuth's refresh grant. Used by ServerSessionCoordinator and
+// OidcAuth.
+
 package com.personalailabs.astraldeep.app.auth
 
 import kotlinx.serialization.json.Json
@@ -11,14 +15,13 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.time.Instant
 import java.util.Base64
 
-/** Closed errors intentionally contain no HTTP body, token, cookie, or provider exception. */
+// Never include HTTP body, token, cookie, or provider details here
 class ServerSessionException(val reason: Reason) : Exception("Server session ${reason.name.lowercase()}") {
     enum class Reason { INVALID, UNAVAILABLE, RETIRED, STORAGE }
 }
 
 internal fun sessionInvalid(): Nothing = throw ServerSessionException(ServerSessionException.Reason.INVALID)
 
-/** Code-owned backend/client binding. HTTP and non-root backend URLs are never eligible. */
 class ServerSessionScope(val backend: String, val issuer: String, val clientId: String, val redirectUri: String) {
     val origin: HttpUrl = backend.toHttpUrlOrNull() ?: sessionInvalid()
 
@@ -39,7 +42,6 @@ class ServerSessionScope(val backend: String, val issuer: String, val clientId: 
     override fun toString(): String = "ServerSessionScope"
 }
 
-/** One AppAuth-validated original code and verifier; no refresh grant is representable. */
 class ServerAuthorizationCode internal constructor(
     internal val scope: ServerSessionScope,
     internal val code: String,
@@ -63,7 +65,6 @@ class ServerAuthorizationCode internal constructor(
     override fun toString(): String = "ServerAuthorizationCode(private)"
 }
 
-/** A server-issued cookie is retained verbatim; this is never an AppAuth refresh owner. */
 class ServerSession internal constructor(
     val scope: ServerSessionScope,
     val userId: String,
@@ -120,7 +121,6 @@ class ServerSession internal constructor(
     }
 }
 
-/** Token claims are compared for local account binding only; the backend authenticates them. */
 internal fun validateSessionToken(
     scope: ServerSessionScope,
     owner: String,
@@ -153,7 +153,6 @@ internal fun JsonObject.boolean(key: String): Boolean =
         else -> sessionInvalid()
     }
 
-/** Bounded flat JSON objects only; duplicate fields and nested values are refused. */
 internal fun sessionObject(raw: String): JsonObject {
     if (raw.encodeToByteArray().size > 32768) sessionInvalid()
     val keys = mutableSetOf<String>()

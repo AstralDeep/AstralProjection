@@ -1,7 +1,10 @@
+// Server-owned private-notes (guidance) surface for the watch, including full-form editing on the wrist;
+// presented from WatchHomeView, and its response state survives being briefly covered by a picker or field
+// editor.
+
 import AstralCore
 import SwiftUI
 
-/// Server-owned private notes, including full forms on the wrist.
 struct WatchGuidanceSurfaceView: View {
     @Environment(WatchModel.self) var model
     var body: some View {
@@ -27,8 +30,6 @@ struct WatchGuidanceSurfaceView: View {
             guard !Task.isCancelled, model.guidanceUpdate == nil else { return }
             model.failGuidanceRequest(generation: generation)
         }
-        // The Home destination binding retires the selected notes surface.
-        // A picker/editor child may temporarily cover this view without closing it.
     }
 }
 
@@ -69,8 +70,6 @@ struct WatchGuidanceFormView: View {
                             TextField(label, text: binding(name))
                                 .accessibilityIdentifier("note-field-\(name)")
                                 .accessibilityLabel(label)
-                            // The native wrist editor is single-line at rest; retain a complete
-                            // readable preview for multiline and maximum-sized current values.
                             if name == "value", let text = current(name).stringValue, !text.isEmpty {
                                 Text(verbatim: text).fixedSize(horizontal: false, vertical: true)
                             }
@@ -89,7 +88,5 @@ struct WatchGuidanceFormView: View {
             .disabled(!model.connected || model.guidanceUpdate == nil || form.request(values: values) == nil)
             .accessibilityIdentifier("note-submit")
         }
-        // State belongs to this complete response generation. Navigation to a
-        // native field editor preserves it; replacement or retirement destroys it.
     }
 }

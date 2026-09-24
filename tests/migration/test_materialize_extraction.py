@@ -1,3 +1,7 @@
+"""Tests for scripts/migration/materialize_extraction.py: plan validation, resumable
+materialization, and rejection of tampered or mismatched manifests.
+"""
+
 from __future__ import annotations
 
 import importlib.util

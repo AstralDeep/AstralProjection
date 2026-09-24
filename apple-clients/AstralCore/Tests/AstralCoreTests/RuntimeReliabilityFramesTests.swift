@@ -1,3 +1,7 @@
+// Tests for runtime reliability wire frames: conversation-snapshot field completeness, operation
+// status/lifecycle flag and generation validation, UI-event identity duplication, and capability-map
+// validation.
+
 import XCTest
 
 @testable import AstralCore

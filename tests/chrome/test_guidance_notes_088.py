@@ -1,4 +1,6 @@
-"""Private-note forms preserve exact revisions and never create authority."""
+"""Tests for src/astralprojection/chrome/guidance.py's notes view: save/forget/toggle
+forms, pagination and fail-closed handling of invalid snapshots.
+"""
 
 from copy import deepcopy
 import json
@@ -162,8 +164,6 @@ def test_invalid_new_identity_refuses_form_and_untyped_state_is_safe():
 
 @pytest.mark.parametrize("mode", ["list", "new", "edit", "forget"])
 def test_notes_contract_is_byte_identical_under_the_guidance_dispatcher(mode):
-    """Feature 088 T037 added sibling views; a notes state without ``view`` renders exactly as before,
-    and the notes builder itself still refuses a ``view`` discriminator as an unknown key."""
     original = state(mode)
     assert build_guidance_view(original).to_dict() == build_notes_view(original).to_dict()
     tagged = build_notes_view({"view": "skills", **original})

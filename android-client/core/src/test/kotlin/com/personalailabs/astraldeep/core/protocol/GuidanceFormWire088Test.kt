@@ -1,3 +1,6 @@
+// Tests that Wire refuses shared guidance-form envelopes Android doesn't natively render (skills,
+// declarative-agent, selection) in full, never partially, since the client never advertises support for them.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.Json
@@ -14,7 +17,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
-/** Real shared form envelopes must be refused in full before any private field is rendered. */
 class GuidanceFormWire088Test {
     private fun fixtures(): JsonObject {
         val file =
@@ -44,12 +46,6 @@ class GuidanceFormWire088Test {
             Json.parseToJsonElement(file.readText()).jsonObject.getValue("frames").jsonObject
         }
 
-    /**
-     * Feature 088 T037: the shared skills, declarative-agent and selection forms exist in the
-     * contract but Android admits only the closed notes geometry. Until GuidanceNotes admits
-     * them, every such guidance frame is refused in full — never rendered partially — and the
-     * client never advertises the capability that would make a host send one.
-     */
     @Test fun unadmitted_088_guidance_forms_are_refused_in_full_until_deliberately_admitted() {
         val frames = unadmittedFixtures()
         assertEquals(mapOf("skills" to 4, "agents" to 8, "selection" to 2), frames.mapValues { it.value.size })

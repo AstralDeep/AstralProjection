@@ -1,4 +1,7 @@
-"""Feature 060 canonical progress and lifecycle reducers for native Windows."""
+"""Tests for astral_client/app.py and protocol.py: canonical progress/lifecycle reducers
+— operation sequencing and terminal-state visibility, admission-refusal correlation,
+transport identity projection, and reconnect/commit-snapshot convergence.
+"""
 
 from __future__ import annotations
 
@@ -171,8 +174,6 @@ def test_success_is_idle_and_restores_a_different_active_operation(window):
     assert window._banner.text() == "Running"
     assert window._operation_banner_operation_id == OPERATION_2
 
-    # Completing the visible operation restores the other genuine activity;
-    # "Completed" itself is never projected as a banner or busy state.
     assert window._reduce_operation_status(
         operation(1, "completed", operation_id=OPERATION_2)
     )
@@ -448,9 +449,6 @@ def test_chat_terminal_uses_retained_submission_after_request_state_clears(windo
     local = window.client.send_chat("hello", CHAT, request_generation=REQUEST)
     assert local.chat_id == CHAT
 
-    # A complete commit snapshot may clear the conversation request before the
-    # durable operation's terminal projection arrives. The retained local
-    # submission remains the correlation fence.
     window._continuity._request = None
 
     assert window._reduce_operation_status(
@@ -606,8 +604,6 @@ def test_queued_surface_disconnect_reconnect_restores_before_accepted_and_termin
 
     class FakeWs:
         async def send(self, frame):
-            # This executes on the transport worker only after the GUI-thread
-            # acknowledgement has installed both the generation and local map.
             assert window._continuity.connection_generation == OTHER
             assert local.submission_id in window._pending_submissions_by_id
             sent.append(frame)
@@ -617,7 +613,7 @@ def test_queued_surface_disconnect_reconnect_restores_before_accepted_and_termin
     def flush_on_transport_thread():
         try:
             asyncio.run(window.client._flush_pending(FakeWs()))
-        except BaseException as exc:  # make worker assertion failures visible
+        except BaseException as exc:
             error.append(exc)
 
     worker = threading.Thread(target=flush_on_transport_thread)

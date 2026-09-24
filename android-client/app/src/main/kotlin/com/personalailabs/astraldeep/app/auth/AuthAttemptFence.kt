@@ -1,6 +1,8 @@
+// An Activity-owned equality fence for auth attempts — convenient for local UI sequencing, but never proof of
+// actual server authorization. Used by MainActivity and tested in ServerSession088Test.
+
 package com.personalailabs.astraldeep.app.auth
 
-/** Activity-owned equality fence, never proof of server authorization. */
 internal class AuthAttemptFence {
     private var epoch = 0L
     private var mode = Mode.LEGACY

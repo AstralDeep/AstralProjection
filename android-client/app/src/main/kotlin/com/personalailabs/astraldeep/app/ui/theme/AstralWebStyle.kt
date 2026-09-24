@@ -1,3 +1,7 @@
+// Compose style tokens ported 1:1 from the web renderer's CSS (webrender/renderer.py, static/astral.css):
+// card-surface and soft-shadow modifiers used across render/renderers and RootScaffold to keep native parity
+// with the web.
+
 package com.personalailabs.astraldeep.app.ui.theme
 
 import androidx.compose.foundation.background
@@ -16,7 +20,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Exact resting-state tokens from webrender/renderer.py and static/astral.css. */
 internal object AstralWebStyle {
     val CardShape = RoundedCornerShape(10.dp)
     val MetricShape = RoundedCornerShape(12.dp)
@@ -42,7 +45,6 @@ internal fun Modifier.astralCardSurface(): Modifier =
         .border(1.dp, AstralWebStyle.SoftBorder, AstralWebStyle.CardShape)
         .clip(AstralWebStyle.CardShape)
 
-/** CSS outer shadows exclude the box interior, including translucent surfaces. */
 internal fun Modifier.astralSoftShadow(cornerDp: Float): Modifier =
     drawWithCache {
         val radius = cornerDp.dp.toPx()

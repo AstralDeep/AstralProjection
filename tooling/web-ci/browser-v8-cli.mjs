@@ -1,3 +1,6 @@
+// CLI converting browser V8 coverage observations to the canonical format via
+// coverage-conversion.mjs, for coverage-union.mjs and its tests.
+
 import { lstatSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -26,8 +29,6 @@ function browserEntry(entry, source) {
       || typeof entry.scriptId !== "string" || !entry.scriptId || entry.source !== source) {
     fail("entry shape or candidate source does not match");
   }
-  // Inline page.addScriptTag observations have no URL; routed shell fixtures
-  // carry the one client asset URL. File/Node and other asset lanes are denied.
   if (entry.url === "") return;
   let url;
   try { url = new URL(entry.url); } catch { fail("entry has no browser asset URL"); }
@@ -35,7 +36,6 @@ function browserEntry(entry, source) {
       || url.username || url.password || url.search || url.hash) fail("entry belongs to another coverage lane");
 }
 
-/** Union independent browser observations only after exact-source conversion. */
 export async function convertBrowserV8Reports({ inputs, repoRoot }) {
   if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > 32) fail("input count is empty or excessive");
   const sourceFile = resolve(realpathSync(repoRoot), SOURCE_PATH);

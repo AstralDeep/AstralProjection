@@ -1,4 +1,8 @@
-"""Cross-client component actions preserve host flags and original identity."""
+"""Tests for the cross-client component action/version model
+(backend/webrender/chrome/component_model.py): host-flag-scoped, identity-gated
+actions and versions that renderer metadata can only restrict, never widen.
+"""
+
 from __future__ import annotations
 
 import copy

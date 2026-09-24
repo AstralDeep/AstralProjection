@@ -1,4 +1,6 @@
-/** Exact runner bytes with synthetic OS/process adapters; never release evidence. */
+// Tests for release-runner.mjs against synthetic OS/process adapters and exact runner bytes; not
+// release evidence itself.
+
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";

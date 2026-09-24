@@ -1,12 +1,8 @@
+// Tests for AppModel's chrome_surface reduce logic: the mandatory first-run gate pins navigation on an
+// unsolicited surface, a blank close lifts it, and every entry point but sign-out stays suppressed while
+// pinned.
+
 import AstralCore
-// Feature 054 — first-run gate reduce tests (T021/T025): a `chrome_surface`
-// with `mode:"mandatory"` is ACCEPTED even though unsolicited and pins
-// navigation; the server's blank close instruction lifts the pin; unsolicited
-// non-mandatory surfaces keep the pre-054 banner demotion; and while pinned,
-// every navigation entry point is suppressed EXCEPT sign-out (spec FR-013).
-// Frames drive the real reducer via `AppModel.handleFrame`. The `mode` field
-// parse itself (present/absent/malformed) is pinned by the CI-run
-// AstralCore suite (`ChromeSurfaceModeTests`).
 import XCTest
 
 @testable import AstralDeep
@@ -42,8 +38,6 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         model.handleFrame(InboundFrame.parse(json)!)
     }
 
-    // MARK: mandatory accept + pin
-
     func testMandatoryUnsolicitedSurfaceIsAcceptedAndPinned() {
         let model = signedInModel()
         reduce(model, mandatoryLLM)
@@ -52,10 +46,8 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         XCTAssertEqual(model.pendingSurface?.title, "Set up your AI provider")
         XCTAssertEqual(model.pendingSurface?.components.count, 1)
         XCTAssertTrue(model.mandatorySurface)
-        XCTAssertNil(model.errorBanner)  // accepted, not demoted to a banner
+        XCTAssertNil(model.errorBanner)
     }
-
-    // MARK: blank close lifts the pin
 
     func testBlankCloseClearsTheMandatoryPin() {
         let model = signedInModel()
@@ -67,8 +59,6 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         XCTAssertEqual(model.pendingSurfaceKey, "")
     }
 
-    // MARK: regression — unsolicited non-mandatory surfaces still demote
-
     func testNonMandatoryUnsolicitedSurfaceStillDemotesToBanner() {
         let model = signedInModel()
         reduce(model, unsolicitedTheme)
@@ -78,8 +68,6 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         XCTAssertEqual(model.errorBanner, "Appearance: Pick a theme")
         XCTAssertTrue(model.bannerIsError)
     }
-
-    // MARK: navigation suppressed while pinned, restored after the close
 
     func testNavigationSuppressedWhileMandatoryAndRestoredAfterClose() {
         let model = signedInModel()
@@ -96,10 +84,10 @@ final class AppModelChromeSurfaceTests: XCTestCase {
 
         model.newChat()
         XCTAssertEqual(model.screen, .surface)
-        XCTAssertEqual(model.turns.count, 1)  // resetChatState never ran
+        XCTAssertEqual(model.turns.count, 1)
 
         model.openSurface("theme")
-        XCTAssertEqual(model.pendingSurfaceKey, "llm")  // pin not replaced
+        XCTAssertEqual(model.pendingSurfaceKey, "llm")
 
         reduce(model, blankClose)
         model.goTo(.history)
@@ -177,8 +165,6 @@ final class AppModelChromeSurfaceTests: XCTestCase {
         model.retryPendingSurface()
         XCTAssertEqual(payloads.count, 2)
     }
-
-    // MARK: sign-out stays available while pinned (FR-013)
 
     func testSignOutStaysAvailableWhileMandatory() async {
         let model = signedInModel()

@@ -1,6 +1,6 @@
-// Feature 065 browser-media contract suite.  It drives the shipped classic
-// client against a synthetic DOM, WebSocket, getUserMedia, and LiveKit room;
-// no speech API or product-only test hook is used.
+// Tests for the shipped web client's voice conversation flow: drives it against a synthetic DOM,
+// WebSocket, getUserMedia, and LiveKit room, with no real speech API or test-only hook.
+
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
@@ -457,10 +457,6 @@ async function installHarness(page, {
         const frame = JSON.parse(raw);
         this.sent.push(frame);
         window.__socketEvents.push(frame);
-        // 066: the client gates action() sends behind the post-registration
-        // rote_config verdict (socketReady + queue flush). Mirror the real
-        // server: registration is acknowledged with a device verdict, so
-        // ui_events dispatch immediately instead of queueing forever.
         if (frame.type === "register_ui") {
           queueMicrotask(() => {
             this.receive({
@@ -3944,8 +3940,6 @@ test("permission revocation, explicit stop, and server idle end tear down only m
   expect(await page.evaluate(() => window.__rooms[0].disconnected)).toBe(true);
   await expect(page.locator("#astral-input")).toBeEnabled();
 
-  // Re-establish synthetic media, then exercise the explicit server-owned end
-  // control and verify accepted work is not represented as cancelled locally.
   await page.evaluate(() => {
     window.__voiceTrack.readyState = "live";
     window.__voiceTrack.enabled = true;
@@ -4392,7 +4386,6 @@ test("pagehide and offline stop media synchronously with bounded suspension reas
   expect(await page.evaluate(() => window.__rooms[0].disconnected)).toBe(true);
   expect(await page.evaluate(() => window.__voiceTrack.enabled)).toBe(false);
 
-  // A network event after lifecycle suspension cannot restart or publish media.
   const roomCount = await page.evaluate(() => window.__rooms.length);
   await page.evaluate(() => window.dispatchEvent(new Event("offline")));
   expect(await page.evaluate(() => window.__rooms.length)).toBe(roomCount);
@@ -4433,8 +4426,6 @@ test("worker disconnect retries one stable refresh and preserves an unacknowledg
       && frame.payload.voice_origin.transcript_proof === firstSubmission.payload.voice_origin.transcript_proof
   ))).toBe(true);
 
-  // A retained recognition-time envelope from revision 1 remains admissible
-  // after the session rotates to revision 2; server proof validation is still decisive.
   await receive(page, transcriptFrame({
     turn_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     client_turn_id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -4788,9 +4779,6 @@ test("a result publication that never subscribes reports a turn-scoped speech fa
     );
   }, { announcement: manifest, workerIdentity: WORKER_IDENTITY });
 
-  // 066 R-9: the subscribe watchdog is 2500ms (the SFU binds the downtrack
-  // ~0.9-1.1s after publish; the old 1000ms watchdog raced real
-  // subscriptions), so the failure notice appears shortly after 2.5s.
   await expect(page.locator("#astral-voice-turn-notice")).toBeVisible({ timeout: 4000 });
   await expect(page.locator("#astral-voice-turn-notice")).toHaveAttribute(
     "data-state", "speech_error",

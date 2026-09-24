@@ -1,3 +1,6 @@
+// A dependency-free Compose Markdown renderer (headings, lists, code blocks, bold/italic/code, safe links) —
+// the Android analogue of the web/Windows clients' rendered markdown.
+
 package com.personalailabs.astraldeep.app.render
 
 import androidx.compose.foundation.layout.Arrangement
@@ -28,12 +31,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URI
 import java.util.Locale
 
-/**
- * A small, dependency-free Markdown renderer for Compose — the Android analogue of
- * the rendered markdown the web/Windows clients show. Handles the common subset
- * the LLM emits: headings, bullet/numbered lists, fenced code blocks, and inline
- * **bold**, *italic*, and `code`. Anything else falls through as plain text.
- */
 @Composable
 fun MarkdownText(
     text: String,
@@ -108,11 +105,6 @@ private fun CodeBlock(code: String) {
     }
 }
 
-/** Web Markdown permits HTTP(S), mailto and leading-slash references only.
- * Resolve the latter against the configured backend before handing a URL to
- * Android; a device URI handler has no browser document origin. No credentials
- * or request headers are attached to these browser/email links.
- */
 internal fun markdownLinkUrl(
     reference: String,
     backendBaseUrl: String,
@@ -131,7 +123,6 @@ internal fun markdownLinkUrl(
     }
 }
 
-/** Parse inline **bold**, *italic*, _italic_, `code`, and safe [links](url). */
 fun inlineMarkdown(
     text: String,
     backendBaseUrl: String = AppConfig.API_BASE,
@@ -140,8 +131,6 @@ fun inlineMarkdown(
         var i = 0
         while (i < text.length) {
             when {
-                // A `[label](url)` link → a clickable, underlined accent span (T029).
-                // A Text rendering this AnnotatedString handles the tap automatically.
                 text[i] == '[' -> {
                     val close = text.indexOf(']', i + 1)
                     val open = close + 1

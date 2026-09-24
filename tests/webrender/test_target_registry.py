@@ -1,4 +1,6 @@
-"""Behavioral contracts for target fallback and profile routing."""
+"""Tests for target fallback and profile-based target routing
+(backend/webrender/__init__.py, backend/rote/capabilities.py, AstralPrimitives).
+"""
 
 from types import SimpleNamespace
 

@@ -1,6 +1,6 @@
-// Feature 060 — shared monotonic reducers for canonical operation progress and
-// personal-agent lifecycle projections.  App and Watch use the same equality
-// and generation fences so a delayed frame cannot roll either client back.
+// Monotonic reducers for operation-progress and agent-lifecycle projections, sharing equality and generation
+// fences between AppModel and WatchModel so a delayed frame can never roll either client back.
+
 import Foundation
 
 public struct ClientOperationIdentity: Sendable, Equatable {
@@ -22,8 +22,6 @@ public struct ClientOperationIdentity: Sendable, Equatable {
     }
 }
 
-/// Immediate client-only acknowledgement. It deliberately has no operation
-/// ID and cannot represent durable server acceptance or a terminal result.
 public struct LocalOperationSubmission: Sendable, Equatable, Identifiable {
     public let submissionId: String
     public let action: String
@@ -63,9 +61,6 @@ public struct LocalOperationSubmission: Sendable, Equatable, Identifiable {
     }
 }
 
-/// Safe metadata parsed from the exact serialized UI event retained by the
-/// offline queue. The two client identities never change across reconnects;
-/// only the connection fence installed by the UI model is refreshed.
 public struct QueuedOperationReplay: Sendable, Equatable {
     public let identity: ClientOperationIdentity
     public let action: String
@@ -178,8 +173,6 @@ public struct StatusLifecycleReducer: Sendable {
         return true
     }
 
-    /// Compatibility overload for chat-only reducers. Surface operations must
-    /// call the explicit overload with their retained pending generations.
     @discardableResult
     public mutating func accept(
         operation status: OperationStatus,

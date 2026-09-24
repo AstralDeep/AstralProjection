@@ -1,17 +1,8 @@
+"""Device capability/profile models for ROTE: DeviceCapabilities holds what the frontend
+reports in register_ui, DeviceProfile derives the rendering constraints adapter.py
+enforces, with per-device-type defaults overridable via ROTE_HOST_CONFIG.
 """
-ROTE Capabilities — Device capability and profile models.
 
-DeviceCapabilities: raw data reported by the frontend on connection.
-DeviceProfile: derived rendering constraints used by the adapter.
-
-Declarative per-target host-config: the per-device-type rendering constraints
-are data, not code — a single ``_BASE_HOST_CONFIG`` dict that an operator can
-tune (or extend with a new target) via the ``ROTE_HOST_CONFIG`` env var (a JSON
-object of partial per-type overrides), with no code change. Two of the fields —
-``max_actions`` and ``supports_interactivity`` — let a host bound what a
-(potentially compromised) agent may render on a given surface; both default to
-unlimited / interactive, so the mechanism is opt-in.
-"""
 import json
 import logging
 import os
@@ -33,52 +24,31 @@ _LOCAL_INSTALLATION_STATES = frozenset(
 
 
 class DeviceType(str, Enum):
-    BROWSER = "browser"  # Full desktop browser
-    WINDOWS = "windows"  # Native Windows desktop app (renders structured components natively)
-    ANDROID = "android"  # Native Android app (phone/tablet/foldable; renders structured components natively)
-    IOS = "ios"  # Native iOS/iPadOS app (renders structured components natively; 051)
-    MACOS = "macos"  # Native macOS desktop app (renders structured components natively; 051)
-    TABLET = "tablet"  # iPad / Android tablet (~768-1024px)
-    MOBILE = "mobile"  # Phone (<=480px viewport)
-    WATCH = "watch"  # Smartwatch (<=200px viewport, or explicit)
-    TV = "tv"  # Smart TV (large screen, read-only)
-    VOICE = "voice"  # Audio-only, no screen
+    BROWSER = "browser"
+    WINDOWS = "windows"
+    ANDROID = "android"
+    IOS = "ios"
+    MACOS = "macos"
+    TABLET = "tablet"
+    MOBILE = "mobile"
+    WATCH = "watch"
+    TV = "tv"
+    VOICE = "voice"
 
 
-# Declarative host-config. Keys mirror the DeviceProfile rendering fields;
-# values are the per-device defaults. `max_actions` 0 = unlimited;
-# `supports_interactivity` False means the surface is read-only (interactive
-# buttons are stripped).
 _BASE_HOST_CONFIG: Dict[str, dict] = {
     "browser": dict(max_grid_columns=6, supports_charts=True, supports_tables=True,
                     supports_code=True, supports_file_io=True, supports_tabs=True,
                     max_text_chars=0, max_table_rows=0, max_table_cols=0,
                     max_actions=0, supports_interactivity=True),
-    # Native Windows desktop: full-capability surface like a browser, but it
-    # renders structured components with native widgets (not HTML) — it reports
-    # a `supported_types` set so ROTE substitutes the web-only primitives
-    # (e.g. plotly_chart) it can't draw natively.
     "windows": dict(max_grid_columns=6, supports_charts=True, supports_tables=True,
                     supports_code=True, supports_file_io=True, supports_tabs=True,
                     max_text_chars=0, max_table_rows=0, max_table_cols=0,
                     max_actions=0, supports_interactivity=True),
-    # Native Android app (phone/tablet/foldable): a full-capability native surface
-    # like `windows`. It renders structured components with native Compose widgets
-    # (not HTML) and reports a `supported_types` set so ROTE substitutes only the
-    # primitives it can't draw natively. Feature 088 shares viewport-based grid
-    # density with web while preserving native content capabilities (e.g., code
-    # and full tables on phones). Operators can further restrict either profile
-    # via ROTE_HOST_CONFIG; the viewport cap never broadens a native restriction.
     "android": dict(max_grid_columns=6, supports_charts=True, supports_tables=True,
                     supports_code=True, supports_file_io=True, supports_tabs=True,
                     max_text_chars=0, max_table_rows=0, max_table_cols=0,
                     max_actions=0, supports_interactivity=True),
-    # Native Apple clients (051): full-capability native surfaces exactly like
-    # `windows`/`android`, with the same viewport grid cap as web for feature 088.
-    # Their native content capabilities and `supported_types` substitution stay
-    # independent of web text/table truncation. The watch target is NOT here on
-    # purpose: watchOS registers the existing `watch` profile, which is the
-    # degradation authority for the wearable.
     "ios":     dict(max_grid_columns=6, supports_charts=True, supports_tables=True,
                     supports_code=True, supports_file_io=True, supports_tabs=True,
                     max_text_chars=0, max_table_rows=0, max_table_cols=0,
@@ -109,17 +79,11 @@ _BASE_HOST_CONFIG: Dict[str, dict] = {
                     max_actions=0, supports_interactivity=False),
 }
 
-# The DeviceProfile fields that the host-config supplies (everything except the
-# identity pair device_type/capabilities). Used to validate env overrides.
 _HOST_CONFIG_FIELDS = frozenset(_BASE_HOST_CONFIG["browser"].keys())
 
 
+# Unknown or malformed env keys are ignored, never applied
 def load_host_config() -> Dict[str, dict]:
-    """Return the effective per-device-type host-config: the base defaults with
-    any ``ROTE_HOST_CONFIG`` env overrides merged in (partial, per-type). An
-    unparseable or out-of-shape override is ignored (fail-safe to defaults) and
-    only whitelisted fields are honored, so the env can never inject arbitrary
-    keys into DeviceProfile."""
     merged = {k: dict(v) for k, v in _BASE_HOST_CONFIG.items()}
     raw = os.getenv("ROTE_HOST_CONFIG")
     if not raw:
@@ -142,7 +106,6 @@ def load_host_config() -> Dict[str, dict]:
 
 @dataclass
 class DeviceCapabilities:
-    """Raw capabilities as reported by the frontend in register_ui."""
     device_type: str = "browser"
     screen_width: int = 1920
     screen_height: int = 1080
@@ -166,43 +129,31 @@ class DeviceCapabilities:
     synthesis_locale: str = "unknown"
     has_camera: bool = False
     has_file_system: bool = True
-    connection_type: str = "unknown"  # wifi, 4g, 3g, 2g, slow-2g
+    connection_type: str = "unknown"
     user_agent: str = ""
-    # 066 additive envelope fields (older clients omit them; defaults are the
-    # least-restrictive interpretation so behavior is unchanged when absent).
     reduced_motion: bool = False
-    pointer_type: str = "fine"  # fine | coarse
+    pointer_type: str = "fine"
 
 
 @dataclass
 class DeviceProfile:
-    """Derived rendering profile used to drive component adaptation."""
     device_type: DeviceType
     capabilities: DeviceCapabilities
-    # Rendering constraints
-    max_grid_columns: int   # Maximum columns in a grid layout
-    supports_charts: bool   # Bar/line/pie/plotly charts
-    supports_tables: bool   # Table component
-    supports_code: bool     # Code blocks
-    supports_file_io: bool  # file_upload / file_download
-    supports_tabs: bool     # Tabs component
-    max_text_chars: int     # Max text length before truncation; 0 = unlimited
-    max_table_rows: int     # Max rows to keep in tables; 0 = unlimited
-    max_table_cols: int     # Max columns to keep in tables; 0 = unlimited
-    # Host bounds — default to unbounded/interactive:
-    max_actions: int = 0            # Max action-buttons per surface; 0 = unlimited
-    supports_interactivity: bool = True  # False = read-only surface (buttons stripped)
-    # Capability negotiation — the primitive types this target can render. None =
-    # render everything (no substitution); a set engages the fallback ladder for
-    # any type outside it.
+    max_grid_columns: int
+    supports_charts: bool
+    supports_tables: bool
+    supports_code: bool
+    supports_file_io: bool
+    supports_tabs: bool
+    max_text_chars: int
+    max_table_rows: int
+    max_table_cols: int
+    max_actions: int = 0
+    supports_interactivity: bool = True
     supported_types: Optional[FrozenSet[str]] = None
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "DeviceProfile":
-        """Build a DeviceProfile from a raw dict (from the frontend).
-
-        An optional ``supported_types`` list (the client's capability-negotiated
-        renderable set) is carried onto the profile."""
         valid_keys = DeviceCapabilities.__dataclass_fields__.keys()
         normalized = {k: v for k, v in data.items() if k in valid_keys}
         voice = data.get("voice")
@@ -225,10 +176,6 @@ class DeviceProfile:
         contract = normalized.get("voice_contract", voice.get("contract"))
         normalized["voice_contract"] = contract if contract == "client_local/v1" else ""
 
-        # Web and older Windows registration payloads used ``transport`` while
-        # native protocol descriptors use the unambiguous ``voice_transport``.
-        # Normalize the alias from declared capability data only; client type or
-        # user-agent identity never participates in the decision.
         transport = normalized.get(
             "voice_transport",
             data.get(
@@ -285,16 +232,13 @@ class DeviceProfile:
 
     @staticmethod
     def default() -> "DeviceProfile":
-        """Default full-browser profile (no adaptation)."""
         return DeviceProfile._derive(DeviceCapabilities())
 
     @staticmethod
     def _derive(caps: DeviceCapabilities) -> "DeviceProfile":
-        """Derive the profile from capabilities, including size-based overrides."""
         raw = caps.device_type
         dt = DeviceType(raw) if raw in DeviceType._value2member_map_ else DeviceType.BROWSER
 
-        # Override based on viewport size when the frontend reports "browser"
         vw = caps.viewport_width or caps.screen_width
         if dt == DeviceType.BROWSER:
             if vw <= 200:
@@ -304,14 +248,9 @@ class DeviceProfile:
             elif vw <= 1024:
                 dt = DeviceType.TABLET
 
-        # Constraints come from the declarative host-config (base defaults +
-        # ROTE_HOST_CONFIG env overrides) instead of being hard-coded here.
         host_config = load_host_config()
         fields = dict(host_config.get(dt.value, host_config[DeviceType.BROWSER.value]))
         if dt in {DeviceType.ANDROID, DeviceType.IOS, DeviceType.MACOS}:
-            # Same-sized native and web canvases get the same grid density.
-            # Keep native content capabilities and explicit stricter host limits;
-            # Windows retains its existing layout outside the 088 redesign scope.
             density_type = "mobile" if vw <= 480 else "tablet" if vw <= 1024 else "browser"
             fields["max_grid_columns"] = min(
                 fields["max_grid_columns"], host_config[density_type]["max_grid_columns"]
@@ -321,8 +260,6 @@ class DeviceProfile:
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["device_type"] = self.device_type.value
-        # supported_types is a frozenset for fast membership checks, but the
-        # profile is JSON-serialized into rote_config — emit it as a sorted list.
         if d.get("supported_types") is not None:
             d["supported_types"] = sorted(d["supported_types"])
         return d

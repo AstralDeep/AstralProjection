@@ -1,30 +1,30 @@
-/* 088: only exact public package bytes may enter this worker's cache.
- * The personalized root document, API/auth responses, drafts, and results are
- * always excluded. Regenerate the block with scripts/build_offline_assets.py.
- */
+// Service worker that caches only the exact public asset bytes in PUBLIC_ASSETS, never personalized
+// or authenticated responses. scripts/build_offline_assets.py regenerates that list;
+// offline-registration.js registers the worker.
+
 "use strict";
 
 const CACHE_PREFIX = "astraldeep-public-offline-";
 // BEGIN GENERATED PUBLIC ASSETS
-const CACHE_NAME = CACHE_PREFIX + "6e819c33d50ca0a8a5182bcd";
+const CACHE_NAME = CACHE_PREFIX + "a828aec1e17a6b895cffd0c7";
 const PUBLIC_ASSETS = [
   {
     "path": "/static/offline.html",
     "type": "text/html",
-    "bytes": 922,
-    "sha256": "5e2869b72add93d993a4633bd34b27792f1f03308a3d53c389969f0c1ecfffc3"
+    "bytes": 1087,
+    "sha256": "3325519d7a38149518a6202d1b8bc7b8595268fbd64ac3b4dc21db0313b502b7"
   },
   {
     "path": "/static/offline.css",
     "type": "text/css",
-    "bytes": 822,
-    "sha256": "5978d277da2bae09d591bf8e3909f3961bbc835f5cb95d542c89b9fac585884f"
+    "bytes": 853,
+    "sha256": "56fa79095aedd500d9783375bec6e89816f79266729a7953af092f210a7b2acb"
   },
   {
     "path": "/static/astral.css",
     "type": "text/css",
-    "bytes": 106125,
-    "sha256": "12c67ef9e821bbb38c6a36b654a90c14d500fa77c94cda5cfbc5c70b2dab07fd"
+    "bytes": 115231,
+    "sha256": "533f535d6b94779fa7ceb191365cb540dbf793fbc75e863b3c90862ebefe8e19"
   },
   {
     "path": "/static/fonts/open-sans-latin.woff2",
@@ -49,7 +49,6 @@ const PUBLIC_ASSETS = [
 const OFFLINE_PATH = "/static/offline.html";
 const ORIGIN = self.location.origin;
 
-/** Fetch a bounded public asset anonymously and verify its exact package bytes. */
 async function fetchPublicAsset(asset) {
   const url = new URL(asset.path, ORIGIN).href;
   const response = await fetch(url, {
@@ -61,7 +60,6 @@ async function fetchPublicAsset(asset) {
   return verifiedPublicResponse(asset, response);
 }
 
-/** Validate cache hits too: only known public bytes may be displayed offline. */
 async function verifiedPublicResponse(asset, response) {
   const contentType = (response.headers.get("Content-Type") || "").split(";")[0].trim();
   if (response.status !== 200 || contentType !== asset.type || !response.body ||
@@ -90,7 +88,7 @@ async function verifiedPublicResponse(asset, response) {
   if (size !== asset.bytes || digest !== asset.sha256) {
     throw new Error("Public offline asset differs from its package.");
   }
-  // Retain only public metadata, never response cookies or request headers.
+  // Rebuilt headers only — never copy response's original headers/cookies
   return new Response(bytes, { headers: {
     "Content-Type": asset.type,
     "Cache-Control": "public, max-age=0, must-revalidate",
@@ -99,7 +97,6 @@ async function verifiedPublicResponse(asset, response) {
   } });
 }
 
-/** A complete verified install precedes activation; a failed update stays inactive. */
 async function installPublicAssets() {
   const responses = await Promise.all(PUBLIC_ASSETS.map(fetchPublicAsset));
   const cache = await caches.open(CACHE_NAME);
@@ -108,7 +105,6 @@ async function installPublicAssets() {
   await self.skipWaiting();
 }
 
-/** Retire only this worker's old public assets, preserving unrelated origin stores. */
 async function activatePublicAssets() {
   const names = await caches.keys();
   await Promise.all(names.filter(name => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME)
@@ -116,7 +112,6 @@ async function activatePublicAssets() {
   await self.clients.claim();
 }
 
-/** A fixed allowlist bounds cache growth even if the browser evicts an entry. */
 async function publicAsset(asset) {
   const cache = await caches.open(CACHE_NAME);
   const url = new URL(asset.path, ORIGIN).href;
@@ -133,7 +128,6 @@ async function publicAsset(asset) {
   return response;
 }
 
-/** Never persist the root response, and preserve all online redirects/errors. */
 async function rootNavigation(request) {
   try {
     return await fetch(request, { cache: "no-store" });

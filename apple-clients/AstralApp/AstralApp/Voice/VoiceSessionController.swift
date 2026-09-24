@@ -1,9 +1,8 @@
+// Manages Apple voice sessions: LiveKit media, mic capture, and playout, always retrying final transcripts as
+// one immutable chat_message instead of a voice-only endpoint. Backs AppModel; mirrors Android's
+// VoiceSessionController.kt.
+
 import AVFoundation
-// Feature 065 — included conversational voice for iOS and macOS.
-//
-// The controller never dispatches through a voice-only query endpoint. Final
-// ASR text is retained as one immutable ordinary chat_message and retried until
-// a completely correlated acknowledgement or rejection arrives.
 import AstralCore
 import Foundation
 import LiveKit
@@ -95,12 +94,6 @@ enum AppleVoicePermission {
             defaultAudioDeviceID(kAudioHardwarePropertyDefaultInputDevice)
         }
 
-        /// Reads macOS's default output device without instantiating an audio graph.
-        ///
-        /// Inspecting an `AVAudioEngine` output format instantiates an I/O graph solely
-        /// for capability detection and can fault before its node is initialized. The
-        /// hardware property is the authoritative, side-effect-free capability probe
-        /// and does not start or retain audio resources.
         static func defaultAudioOutputDeviceID() -> AudioObjectID? {
             defaultAudioDeviceID(kAudioHardwarePropertyDefaultOutputDevice)
         }
@@ -183,7 +176,6 @@ enum AppleVoicePermission {
             return total > 0 ? total : nil
         }
 
-        /// Separates value validation from hardware access for deterministic tests.
         static func hasUsableAudioOutputDevice(_ deviceID: AudioObjectID?) -> Bool {
             hasUsableAudioDevice(deviceID)
         }
@@ -388,9 +380,6 @@ enum AppleVoicePlayoutMatchDecision: Sendable, Equatable {
     case drop(VoiceAnnouncementMedia, AppleVoicePublishedTrack)
 }
 
-/// Pure manifest/track matching state used by the LiveKit adapter. Keeping
-/// ordering and bounds independent of SDK callbacks makes races deterministic
-/// and lets the same policy run in focused tests without synthetic audio.
 struct AppleVoicePlayoutMatcher: Sendable {
     struct Active: Sendable, Equatable {
         let manifest: VoiceAnnouncementMedia
@@ -492,8 +481,6 @@ struct AppleVoicePlayoutMatcher: Sendable {
         return active
     }
 
-    /// Expire only a still-unmatched half-pair. An exact pair waiting behind
-    /// current speech is already matched and may remain in the bounded queue.
     mutating func expireUnmatched(sid: String) -> (
         manifest: VoiceAnnouncementMedia?, track: AppleVoicePublishedTrack?
     )? {
@@ -522,15 +509,10 @@ struct AppleVoicePlayoutMatcher: Sendable {
         manifests.removeAll()
         tracks.removeAll()
         pendingCount = 0
-        // Preserve the sequence fence. Stop/mute/reconnect must never replay a
-        // cleared announcement on the same grant merely because the queue reset.
         return result
     }
 }
 
-/// Counts input PCM in fixed 24-kHz-equivalent mono samples. LiveKit normally
-/// supplies 48-kHz PCM; 24-kHz is accepted too. Other rates, channel counts,
-/// and fractional-equivalent frames fail closed instead of being guessed.
 struct AppleVoiceSampleBudget: Sendable, Equatable {
     let targetSamples: Int
     private(set) var consumedSamples = 0
@@ -558,8 +540,6 @@ struct AppleVoiceSampleBudget: Sendable, Equatable {
     }
 }
 
-/// Official LiveKit direct-RTC adapter. Auto-subscribe is disabled so no
-/// assistant audio can play before a valid, expected-worker manifest.
 @MainActor
 final class AppleLiveKitVoiceMediaClient: NSObject, AppleVoiceMediaClient {
     var eventHandler: ((AppleVoiceMediaEvent) -> Void)?
@@ -576,8 +556,7 @@ final class AppleLiveKitVoiceMediaClient: NSObject, AppleVoiceMediaClient {
     private var playoutEpoch = 0
 
     private static let vendorLoggingDisabled: Void = {
-        // Default SDK diagnostics can include credentialed signaling/SDP.
-        // Product-owned failures remain bounded and content-free below.
+        // SDK logs can leak credentialed signaling/SDP
         LiveKitSDK.disableLogging()
     }()
 
@@ -768,9 +747,7 @@ final class AppleLiveKitVoiceMediaClient: NSObject, AppleVoiceMediaClient {
             track.sid?.stringValue == announcement.trackSid,
             track.name == announcement.trackName
         else { return }
-        // The SDK's default playout cannot trim a malicious/buggy track at an
-        // exact manifest sample boundary. Keep it silent and replay only the
-        // renderer's bounded copy through a private, memory-only audio engine.
+        // Don't trust SDK playout here — mute, then replay the bounded copy
         track.volume = 0
         do {
             let renderer = try BoundedVoiceAudioRenderer(
@@ -921,9 +898,6 @@ final class AppleLiveKitVoiceMediaClient: NSObject, AppleVoiceMediaClient {
             expireUnmatched(sid: sid, force: true)
             return
         }
-        // Once the exact declared sample budget has been copied into the
-        // private player, LiveKit may retire its one-quantum source track while
-        // the final scheduled frames are still reaching the output device.
         if activeRenderer?.sampleBudgetComplete == true { return }
         if let activeRenderer {
             activeRenderer.interrupt()
@@ -982,9 +956,7 @@ extension AppleLiveKitVoiceMediaClient: RoomDelegate {
     nonisolated func room(_ room: Room, didDisconnectWithError error: LiveKitError?) {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // Intentional/stale rooms are cleared before awaiting disconnect;
-            // their delayed delegate callback must not overwrite a newly
-            // connected room with a spurious reconnecting state.
+            // A stale room's delayed callback must not overwrite the new one
             guard self.room === room else { return }
             self.interruptPlayout()
             self.room = nil
@@ -1081,8 +1053,6 @@ extension AppleLiveKitVoiceMediaClient: RoomDelegate {
     }
 }
 
-/// Observes PCM only to impose a hard sample ceiling on the already-authorized
-/// LiveKit track. It records nothing and owns no file handle.
 private final class BoundedVoiceAudioRenderer: AudioRenderer, @unchecked Sendable {
     private let lock = NSLock()
     private weak var track: RemoteAudioTrack?
@@ -1193,11 +1163,7 @@ private final class BoundedVoiceAudioRenderer: AudioRenderer, @unchecked Sendabl
             ? "finished" : (startReported ? "interrupted" : "dropped")
         lock.unlock()
 
-        // AVAudioPlayerNode invokes .dataPlayedBack on its private completion
-        // queue. Stopping the player from that same queue waits on itself and
-        // prevents the terminal playout proof from ever reaching the server.
-        // Publish the exactly-once terminal first, then leave that queue before
-        // touching the player, engine, or LiveKit renderer registration.
+        // Must complete before stopping — same queue would self-deadlock
         completion(phase)
         DispatchQueue.main.async { [self] in
             player.stop()
@@ -1206,9 +1172,6 @@ private final class BoundedVoiceAudioRenderer: AudioRenderer, @unchecked Sendabl
         }
     }
 
-    /// Converts into fixed 24-kHz mono PCM while the renderer lock serializes
-    /// AVAudioConverter state. The returned buffer is newly owned; LiveKit may
-    /// immediately reuse its input after this callback returns.
     private func convertLocked(_ input: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
         if let converterInputFormat, converterInputFormat != input.format {
             return nil
@@ -1337,9 +1300,6 @@ final class URLSessionAppleVoiceControlAPI: AppleVoiceControlAPI {
         var result = await request(
             binding: binding, path: path,
             method: "POST", body: nil, encodedBody: encodedBody)
-        // A transport failure may have happened after the server committed the
-        // CAS. Retry the byte-identical UUID4 request once so the replay window
-        // can return the same grant instead of minting an untracked publisher.
         if result.status == 0 {
             result = await request(
                 binding: binding, path: path, method: "POST", body: nil,
@@ -1426,10 +1386,6 @@ final class URLSessionAppleVoiceControlAPI: AppleVoiceControlAPI {
             + "&expected_media_grant_revision=\(fence.mediaGrantRevision)"
         let result = await request(binding: binding, path: path, method: "DELETE", body: nil)
         if result.status == 204 { return true }
-        // A session the lease reaper already ended is a clean end for the
-        // owning device (the server treats the matching-fence user DELETE as
-        // idempotent; older servers answer 409 session_already_ended) —
-        // showing "stale_generation" for it read as a broken Stop button.
         return result.status == 409
             && result.body?["code"]?.stringValue == "session_already_ended"
     }
@@ -1816,9 +1772,6 @@ final class AppleVoiceSessionController {
     func setChatAdopter(_ adopter: @escaping (String) -> Void) { chatAdopter = adopter }
 
     #if DEBUG
-        /// Visual/accessibility fixture seam. Protocol correlation remains in
-        /// `consumeTurnState`; UI automation uses this only to render the same
-        /// shared reducer output without opening media or a real session.
         func installTerminalNoticeForUITesting(_ turn: VoiceTurnState) {
             terminalNotice = VoiceTerminalNoticeReducer.reduce(
                 current: terminalNotice, turn: turn)
@@ -1871,12 +1824,6 @@ final class AppleVoiceSessionController {
             {
                 self.session = updated
                 if updated.chatContextSynced && updated.foregroundActive {
-                    // The PATCH response already confirms the new chat
-                    // context is applied — restore capture immediately
-                    // instead of wedging on "Updating the voice chat
-                    // context…" until a server push. (The server also emits
-                    // voice_session_state after every session PATCH, which
-                    // authoritatively reconciles phase if we diverge.)
                     if microphoneDesired {
                         try? await media.setMicrophoneEnabled(true)
                     }
@@ -1887,9 +1834,6 @@ final class AppleVoiceSessionController {
                         "Updating the voice chat context…")
                 }
             } else {
-                // A silently-dropped context PATCH used to leave a phantom
-                // live session (mic off, no renewals visible to the user).
-                // Surface it and enter the normal recovery path.
                 markRecoveryRequired()
                 scheduleRecovery()
                 feedback(
@@ -2667,10 +2611,6 @@ final class AppleVoiceSessionController {
     }
 
     private func reserializePendingFinals(for connectionGeneration: String) {
-        // The UI connection generation is socket-scoped and is deliberately
-        // outside the worker's transcript proof. Rebuilding from the retained
-        // immutable transcript changes only that socket binding; the
-        // submission/request/turn IDs, text digest, expiry, and HMAC stay exact.
         var dropped = false
         for submissionId in Array(pendingFinals.keys) {
             guard let pending = pendingFinals[submissionId],
@@ -3180,9 +3120,6 @@ final class AppleVoiceSessionController {
         if !retainPending { clearPendingFinals() }
     }
 
-    /// Renews only the authenticated 45-second ownership lease. Reasserting
-    /// foreground state is intentionally not an `interaction`, so this task
-    /// cannot extend the independent five-minute true-idle deadline.
     private func startLeaseRenewalIfNeeded() {
         guard leaseRenewal == nil, recoveryEligible, session?.foregroundActive == true,
             currentBinding() != nil
@@ -3268,12 +3205,6 @@ final class AppleVoiceSessionController {
         }
     }
 
-    /// Local media events do not carry a lifecycle timestamp. Attribute a
-    /// durable text-result notice only when the result announcement matches
-    /// the current fenced turn (or its existing same-turn notice). A delayed
-    /// result from an older turn must not relabel the current request, while
-    /// greeting/progress failures remain session feedback rather than claims
-    /// about a text result.
     private func reportAnnouncementSpeechFailure(
         _ announcement: VoiceAnnouncementMedia, _ message: String
     ) {
@@ -3314,9 +3245,6 @@ final class AppleVoiceSessionController {
         case "media_error": "Voice media ended. Start a new voice conversation or keep typing."
         case "ended_by_user": "Voice conversation ended. Accepted requests keep running."
         case "backgrounded": "Voice is paused while this app is in the background."
-        // 066/P5: these unavailability reasons used to fall through to the
-        // default "Voice is available." — an actively misleading line for a
-        // disabled mic. Every reason the server can refuse with names itself.
         case "feature_disabled": "Voice is not enabled on this server. You can keep typing."
         case "worker_unavailable", "media_unavailable", "voice_unavailable",
             "asr_unavailable", "tts_unavailable":

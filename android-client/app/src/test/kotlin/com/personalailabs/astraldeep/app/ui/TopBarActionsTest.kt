@@ -1,3 +1,5 @@
+// Tests for topBarActionView: mapping a server-owned top-bar control to its icon, label, and target surface.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.core.chrome.SurfaceRef
@@ -8,7 +10,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** Feature 044 T037 — the pure server-top-bar action mapping (control → icon/label/surface). */
 class TopBarActionsTest {
     @Test
     fun maps_pulse_and_timeline_to_their_icons_and_surfaces() {

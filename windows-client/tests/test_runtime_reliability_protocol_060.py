@@ -1,4 +1,7 @@
-"""Windows wire-model and structured host-registration contracts for 060."""
+"""Tests for astral_client/protocol.py: the Windows wire model and structured
+host-registration contract — snapshot completeness, operation/lifecycle generation
+fencing, and registration-ack binding to the matching host.
+"""
 
 from __future__ import annotations
 

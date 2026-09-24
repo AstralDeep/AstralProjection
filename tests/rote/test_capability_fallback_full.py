@@ -1,10 +1,8 @@
-"""Feature 033 (capability C-D1) — capability-negotiated contracts + fallback ladder.
-
-A target declares the primitive types it can render; ROTE substitutes any
-unsupported type down a fixed ladder (timeline→list, chart→table→text, …) so the
-SDUI contract degrades gracefully. Covers the pure ladder, the profile
-capability field, and the recursive structural degradation.
+"""Tests for ROTE's capability fallback ladder (backend/rote/fallback.py,
+backend/rote/adapter.py): unsupported primitive types substitute down a fixed ladder,
+structurally and recursively through containers.
 """
+
 from __future__ import annotations
 
 import sys
@@ -24,8 +22,6 @@ def _profile(supported=None):
     p.supported_types = frozenset(supported) if supported is not None else None
     return p
 
-
-# ───────────────────────── first_supported ───────────────────────────────────
 
 def test_supported_type_is_unchanged():
     assert fallback.first_supported("timeline", {"timeline", "text"}) == "timeline"
@@ -47,11 +43,8 @@ def test_unknown_type_falls_to_text():
 
 
 def test_empty_supported_renders_everything():
-    # None/empty supported set = full support, no substitution
     assert fallback.first_supported("timeline", set()) == "timeline"
 
-
-# ───────────────────────── profile capability field ──────────────────────────
 
 def test_profile_default_supported_types_is_none():
     assert DeviceProfile.default().supported_types is None
@@ -66,8 +59,6 @@ def test_from_dict_parses_supported_types():
 def test_from_dict_without_supported_types_is_none():
     assert DeviceProfile.from_dict({"device_type": "browser"}).supported_types is None
 
-
-# ───────────────────────── degradation (structural) ──────────────────────────
 
 def _adapt(comp, supported):
     return ComponentAdapter.adapt([comp], _profile(supported))[0]
@@ -106,7 +97,7 @@ def test_chart_with_series_degrades_to_table():
 
 def test_chart_without_data_falls_through_to_text():
     comp = {"type": "line_chart", "title": "Mystery"}
-    out = _adapt(comp, {"text"})  # table & list both unsupported
+    out = _adapt(comp, {"text"})
     assert out["type"] == "text"
 
 
@@ -121,24 +112,22 @@ def test_text_only_target_collapses_everything():
         assert _adapt(comp, {"text"})["type"] == "text"
 
 
-# ───────────────────────── degradation (recursive) ───────────────────────────
-
 def test_supported_container_degrades_unsupported_child():
     comp = {"type": "card", "title": "Status", "content": [
         {"type": "text", "content": "ok"},
         {"type": "timeline", "items": [{"time": "9am", "title": "Standup"}]}]}
     out = _adapt(comp, {"card", "text", "list"})
-    assert out["type"] == "card"  # card itself supported
+    assert out["type"] == "card"
     kinds = [c["type"] for c in out["content"]]
-    assert kinds == ["text", "list"]  # the nested timeline degraded
+    assert kinds == ["text", "list"]
 
 
 def test_unsupported_container_becomes_supported_container():
     comp = {"type": "grid", "columns": 2, "children": [
         {"type": "metric", "title": "A", "value": "1"}]}
-    out = _adapt(comp, {"container", "text"})  # grid unsupported → container
+    out = _adapt(comp, {"container", "text"})
     assert out["type"] == "container"
-    assert out["content"][0]["type"] == "text"  # metric degraded inside
+    assert out["content"][0]["type"] == "text"
 
 
 def test_tabs_content_degrades():

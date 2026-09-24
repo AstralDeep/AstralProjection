@@ -1,4 +1,7 @@
-"""Windows-side feature-060 BYO runtime compatibility and fencing tests."""
+"""Tests for win_agent/byo_host.py, process_supervision.py, and
+astral_client/protocol.py: host identity persistence, ack-bound registration,
+inventory reconciliation, heartbeat sequencing, and fenced tunnel/exit handling.
+"""
 
 from __future__ import annotations
 
@@ -418,7 +421,6 @@ def test_protocol_registration_uses_persisted_identity_and_structured_metadata(
     }
     assert "host_session_id" not in frame["agent_host"]
 
-    # Session-fenced frames are never replayed from the generic reconnect queue.
     client.send_host_frame(
         {
             "type": "agent_runtime_heartbeat",
@@ -658,9 +660,6 @@ def test_invalid_inventory_is_all_or_nothing_and_valid_delete_removes_revision(
     )
     restarted.handle_frame(valid)
     assert not revision_dir.exists()
-    # The last revision's deletion takes the empty ``revisions/`` shell and the
-    # agent root with it — a leftover root is reported as an installed agent by
-    # ``inventory()`` (rig finding 2026-09-03).
     assert not (tmp_path / AGENT_ID).exists()
     assert restarted.inventory() == []
     assert supervisor.spawns == []
@@ -906,8 +905,6 @@ def test_fenced_tunnel_and_all_three_exit_kinds_are_exact(tmp_path) -> None:
         "exit_code"
     ] == 23
 
-    # A fresh runtime whose stdout protocol closes while the process remains
-    # alive is killed and reported as protocol_eof, never as raw diagnostics.
     second_delivery = _delivery()
     second_delivery["fence"] = dict(
         second_delivery["fence"],
@@ -1030,12 +1027,6 @@ def test_agent_host_ack_model_is_frozen_and_exact() -> None:
 
 
 def test_prelaunch_fence_accepts_the_servers_explicit_null_process_id() -> None:
-    """Feature 077 live finding: Deep's canonical ``RuntimeFence.to_dict()``
-    serializes ``process_id: None`` before launch (a dataclass ``asdict``), and
-    the host refused every real delivery as 'pre-launch fence fields are
-    invalid' — the express lane's first delivered agent was discarded on the
-    PC. An explicit null IS the pre-launch shape; a bound process on this frame
-    is still refused."""
     from win_agent.byo_host import ByoAgentHost
 
     base = {
@@ -1056,10 +1047,6 @@ def test_prelaunch_fence_accepts_the_servers_explicit_null_process_id() -> None:
 
 
 def test_a_revision_that_ran_once_survives_the_next_inventory_scan(tmp_path) -> None:
-    """Feature 077 live finding: Python wrote ``__pycache__`` into the revision
-    directory when the worker imported the agent, the exact-listing check then
-    called the revision corrupt on the next reconnect and DELETED it — every
-    personal agent that had ever run vanished at the next client restart."""
     files = _bundle()
     first_supervisor = _RecordingSupervisor()
     first = ByoAgentHost(
@@ -1070,11 +1057,9 @@ def test_a_revision_that_ran_once_survives_the_next_inventory_scan(tmp_path) -> 
     )
     first.handle_frame(_ack())
     assert first.handle_frame(_delivery(files)) is True
-    # the worker is launched with byte-code writing off …
     launch_env = first_supervisor.spawns[0].get("environment") or first_supervisor.spawns[0].get("env") or {}
     assert launch_env.get("PYTHONDONTWRITEBYTECODE") == "1"
     first.stop_all()
-    # … but an older install (or a manual run) may have left the cache behind
     revision_dir = os.path.join(str(tmp_path), AGENT_ID, "revisions", REVISION_ID)
     os.makedirs(os.path.join(revision_dir, "__pycache__"))
     with open(os.path.join(revision_dir, "__pycache__", "agent_main.cpython-311.pyc"), "wb") as fh:
@@ -1092,25 +1077,20 @@ def test_a_revision_that_ran_once_survives_the_next_inventory_scan(tmp_path) -> 
     inventory = frames[-1]
     assert inventory["type"] == "agent_host_inventory"
     assert [e["revision_id"] for e in inventory["entries"]] == [REVISION_ID]
-    assert os.path.isfile(os.path.join(revision_dir, "agent_main.py"))   # not deleted
-    # a genuinely foreign file is still corruption
+    assert os.path.isfile(os.path.join(revision_dir, "agent_main.py"))
     with open(os.path.join(revision_dir, "extra.py"), "w") as fh:
         fh.write("x")
     assert restarted._installed_revision(AGENT_ID, REVISION_ID) is None
 
 
 def test_send_host_frame_accepts_the_childs_tool_result() -> None:
-    """Feature 077 live finding: the host's transport guard accepted only
-    ``agent_*`` frames, so the child's ``mcp_response`` — the one frame that
-    carries a tool result — was refused on the way out and every personal-agent
-    call timed out on the server."""
     from astral_client.protocol import OrchestratorClient, WindowsProtocolError
 
     client = OrchestratorClient("ws://127.0.0.1/ws", "token", host_id=HOST_ID)
     client.send_host_frame({"type": "mcp_response", "request_id": str(uuid.uuid4()),
                             "request_generation": str(uuid.uuid4()), "fence": {}, "result": {}})
     client.send_host_frame({"type": "agent_runtime_heartbeat", "host_session_id": HOST_SESSION_ID})
-    assert list(client._pending) == []            # never queued for replay either way
+    assert list(client._pending) == []
     with pytest.raises(WindowsProtocolError):
         client.send_host_frame({"type": "chat_message", "message": "not a host frame"})
     with pytest.raises(WindowsProtocolError):

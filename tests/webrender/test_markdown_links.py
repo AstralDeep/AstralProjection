@@ -1,4 +1,8 @@
-"""Link destinations and code must never be rewritten as Markdown emphasis."""
+"""Tests for backend/webrender/sanitize.py: link destinations and code spans survive
+markdown formatting literally, unsafe destinations stay blocked, and user text cannot
+forge protected fragment tokens.
+"""
+
 from html.parser import HTMLParser
 
 import pytest

@@ -1,3 +1,5 @@
+// Tests for the table component's pager math: prev/next button enablement and the page-label text.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import kotlin.test.Test
@@ -5,7 +7,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Feature 044 T027 — the pure table-pager math (prev/next enablement + label). */
 class TablePagerTest {
     @Test
     fun should_paginate_only_with_positive_total_and_size() {

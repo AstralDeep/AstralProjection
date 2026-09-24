@@ -1,14 +1,7 @@
 #!/usr/bin/env python3
-"""Collect a diagnostic iOS compiler domain from explicit tested Products.
-
-This does not build, launch tests, select arbitrary objects, or grant evidence
-authority. The protected normalizer independently validates retained full
-Products/source/results. In particular, Darwin profiles do not supply a usable
-profile-to-binary UUID witness; matching source and mapping is not that proof.
-
-The output is an intermediate compiler domain. export_xccov_line_coverage must
-read the actual raw observations and narrow observed_sources before a report is
-usable. Empty-profile counters are never exported as execution observations.
+"""Collects a diagnostic iOS coverage domain from validated Xcode test Products without
+building or launching tests; export_xccov_line_coverage.py turns it into a usable
+report.
 """
 
 from __future__ import annotations
@@ -47,21 +40,17 @@ CORE = FOLDER + "AstralCoreTests.xctest"
 
 
 class CollectionError(ValueError):
-    """Stable, data-free diagnostic refusal."""
-
     def __init__(self) -> None:
         super().__init__("native_xccov_collection_invalid")
 
 
 def require(value: Any) -> None:
-    """Refuse a malformed or incomplete diagnostic input without exposing data."""
     if not value:
         raise CollectionError()
 
 
 @contextmanager
 def _stage(name: str):
-    """Attach only a closed local stage; preserve the original refusal and type."""
     require(name in STAGES)
     try:
         yield
@@ -81,7 +70,6 @@ def _module(name: str) -> Any:
 
 
 def _path(path: Path) -> Path:
-    """Canonical absolute paths cannot traverse symlink or dot aliases."""
     require(path.is_absolute() and str(path) == str(path.resolve()))
     return path
 
@@ -115,7 +103,6 @@ def _identity(path: Path, raw: bytes) -> dict[str, Any]:
 
 
 def _tree(root: Path, deadline: float) -> dict[str, Any]:
-    """Retain a bounded raw-result identity without interpreting its contents."""
     require(_path(root).is_dir())
     result = {}
     total = 0
@@ -141,12 +128,6 @@ def _tree(root: Path, deadline: float) -> dict[str, Any]:
 def _test_documents(
     xcresult: Path, inventory: dict[str, Any], policy: Any, run: Any, deadline: float
 ) -> dict[str, Any]:
-    """Query an exact private copy: Xcode lazily writes its SQLite cache.
-
-    The original result remains fully fenced, including any existing cache.
-    No raw members are excluded or rewritten. The bounded copy is checked
-    before the trusted tool reads it and removed on every exit.
-    """
     with tempfile.TemporaryDirectory(prefix="astral-result-query-") as directory:
         copied = Path(directory).resolve() / "Result.xcresult"
         with _stage("result_copy"):
@@ -185,7 +166,6 @@ def _test_documents(
 
 
 def _source_closure(repo: Path, exporter: Any, run: Any, deadline: float) -> tuple:
-    """Bind maintained and test Swift bytes/modes to one immutable Git HEAD."""
     require(run(["git", "rev-parse", "--show-object-format"], 128).strip() == b"sha1")
     head = run(["git", "rev-parse", "HEAD"], 128).strip()
     require(re.fullmatch(rb"[0-9a-f]{40}", head))
@@ -234,13 +214,8 @@ def _source_closure(repo: Path, exporter: Any, run: Any, deadline: float) -> tup
     return head.decode(), sources, facts, tracked
 
 
+# xctestrun Architectures lists x86_64 even on arm64 — not proof
 def _products(products: Path, lane: str) -> tuple[dict[str, Any], bytes]:
-    """Validate the fixed Xcode 26 iOS test-root/host and shipping identities.
-
-    Generic xctestrun Architectures can list only x86_64 even for a universal
-    build. It is not executed-architecture evidence: raw test_identity and the
-    exact selected Mach-O independently require arm64 iOS Simulator instead.
-    """
     require(_path(products).is_dir() and products.name == "Products")
     records = {}
 
@@ -346,7 +321,6 @@ def _products(products: Path, lane: str) -> tuple[dict[str, Any], bytes]:
 def collect(
     *, repo: Path, products: Path, xcresult: Path, lane: str, output: Path, binary_archive: Path
 ) -> dict[str, Any]:
-    """Collect an intermediate domain, retaining only create-only local artifacts."""
     require(lane in {"core", "unit", "ui"})
     repo, products, xcresult = _path(repo), _path(products), _path(xcresult)
     output, binary_archive = _path(output), _path(binary_archive)
@@ -435,7 +409,6 @@ def collect(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the fixed iOS collector CLI, reporting only stable failure text."""
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("repo", "products", "xcresult", "output", "binary-archive"):
         parser.add_argument("--" + name, required=True, type=Path)
@@ -444,7 +417,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         collect(**vars(args))
     except Exception as exc:
-        # Never include native tool output, raw paths, or data in a refusal.
         print("native_xccov_collection_invalid", file=sys.stderr)
         stage = getattr(exc, "collection_stage", "inputs")
         stage = stage if isinstance(stage, str) and stage in STAGES else "inputs"

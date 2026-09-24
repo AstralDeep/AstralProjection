@@ -1,8 +1,7 @@
-"""Tests for the native ``chrome_render`` safety-net (``astral_client.chrome``).
-
-Pure logic — no Qt required. Verifies that a pushed chrome modal is acknowledged
-(not silently dropped), while close/topbar frames are ignored.
+"""Tests for astral_client/chrome.py: a pushed chrome modal frame is acknowledged rather
+than silently dropped, while close and topbar region frames are ignored.
 """
+
 from astral_client.chrome import chrome_render_notice
 
 

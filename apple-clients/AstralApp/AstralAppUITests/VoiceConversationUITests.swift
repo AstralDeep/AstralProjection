@@ -1,8 +1,8 @@
+// UI tests for the voice composer control's accessibility and typed-fallback availability, driven by the
+// DEBUG fixture reducer without opening real media, credentials, or a network connection.
+
 import XCTest
 
-/// Cross-platform UI journey for the server-owned composer affordance. The
-/// DEBUG fixture drives the same strict reducer as production and never opens
-/// a microphone, media room, credential, or network connection.
 final class VoiceConversationUITests: XCTestCase {
     private var app: XCUIApplication!
 

@@ -1,3 +1,6 @@
+// Instrumented UI test for the Settings dropdown menu: renders the server-owned chrome menu model natively
+// (matching web exactly) by driving SettingsMenu directly, without live auth.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.ui.test.assertIsDisplayed
@@ -16,15 +19,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
-/**
- * Feature 042 — the Settings dropdown renders the server-owned menu model
- * natively, matching the web exactly. Auth-free: drives [SettingsMenu] with a
- * model directly (the app otherwise needs real Keycloak to receive the model).
- */
 class ChromeMenuUiTest {
     @get:Rule val rule = createComposeRule()
 
-    // An admin model (so ADMIN TOOLS is present) mirroring GET /api/chrome/menu.
     private val adminModel =
         ChromeMenuModel(
             version = 1,
@@ -79,7 +76,6 @@ class ChromeMenuUiTest {
             }
         }
         rule.onNodeWithContentDescription("Settings").performClick()
-        // ACCOUNT + HELP + ADMIN TOOLS items + red Sign out — the exact web set.
         listOf(
             "Agents & permissions", "LLM settings", "Personalization", "Audit log", "Theme",
             "Take the tour", "User guide",

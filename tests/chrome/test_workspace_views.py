@@ -1,3 +1,7 @@
+"""Tests for src/astralprojection/chrome/workspace.py: remote machines, feature flags,
+history, timeline, and saved-results view states.
+"""
+
 from __future__ import annotations
 
 from astralprojection.chrome import render_html
@@ -192,8 +196,6 @@ def test_timeline_snapshot_missing_and_read_only_component_render() -> None:
     assert "unknown_widget component is not available" in html
     assert _actions(selected) == ["chrome_workspace_timeline_live"]
 
-
-# ── Feature 088 T044: saved results (result-publication receipts) ──────────────
 
 import json  # noqa: E402
 from pathlib import Path  # noqa: E402

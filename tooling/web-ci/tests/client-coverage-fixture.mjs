@@ -1,5 +1,6 @@
-// Optional exact-source observations from the existing browser contract suites.
-// This helper is test code; canonical conversion remains in browser-v8-cli.mjs.
+// Collects optional exact-source browser coverage observations from the existing contract suites
+// for test use; canonical conversion itself stays in browser-v8-cli.mjs.
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 

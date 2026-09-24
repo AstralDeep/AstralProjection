@@ -1,3 +1,7 @@
+// Redirect and origin policy for workspace share/export requests: the minted capability URL stays bounded and
+// ephemeral, refusing redirects and any link to a different origin or route. Enforced by Rest.swift's
+// share/export calls.
+
 import Foundation
 
 public enum WorkspaceShareError: Error, Equatable, Sendable {
@@ -5,8 +9,6 @@ public enum WorkspaceShareError: Error, Equatable, Sendable {
     case phiBlocked
 }
 
-/// The share response contains a capability URL: keep it bounded and ephemeral,
-/// refuse redirects, and never accept a link to another origin or route.
 enum WorkspaceRequestPolicy {
     static let maximumResponseBytes = 16 * 1024
 
@@ -45,7 +47,7 @@ enum WorkspaceRequestPolicy {
     }
 }
 
-/// A minting POST must never be redirected or replayed at a new endpoint.
+// A minting POST must never be redirected elsewhere
 final class WorkspaceRedirectRefusal: NSObject, URLSessionTaskDelegate {
     func urlSession(
         _ session: URLSession, task: URLSessionTask,

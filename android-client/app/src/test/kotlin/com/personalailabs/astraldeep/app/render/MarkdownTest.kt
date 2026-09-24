@@ -1,3 +1,6 @@
+// Tests that inline markdown [label](url) links decode into URL annotations for the Compose text renderer
+// (render/Markdown.kt).
+
 package com.personalailabs.astraldeep.app.render
 
 import androidx.compose.ui.text.LinkAnnotation
@@ -8,7 +11,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Feature 044 T029 — inline `[label](url)` markdown links become URL annotations. */
 class MarkdownTest {
     @Test
     fun link_produces_a_url_annotation_and_inlines_the_label() {

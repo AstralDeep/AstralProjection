@@ -1,3 +1,6 @@
+// Instrumented UI test exercising the real client socket, reducer, and current-only sender for guidance
+// notes; only the server's replies are synthetic.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.activity.compose.setContent
@@ -30,7 +33,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
-/** Actual client socket, reducer, shared form and current-only sender; only server replies are synthetic. */
 class GuidanceNotesTransport088UiTest {
     @get:Rule val rule = createEmptyComposeRule()
 

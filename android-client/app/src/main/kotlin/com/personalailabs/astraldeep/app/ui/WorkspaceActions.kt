@@ -1,3 +1,7 @@
+// Resolves workspace-level actions (export/share of the whole canvas) into context and leases in-flight
+// requests by identity ticket; mirrored by Apple's WorkspaceActionContext and driven from
+// WorkspaceActionController.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.AccountIdentity
@@ -41,7 +45,6 @@ internal fun workspaceContext(
     )
 }
 
-/** Identity tickets keep a late completion from releasing a newer in-flight action. */
 internal class WorkspaceActionLeases {
     class Ticket internal constructor(val operation: String, val context: WorkspaceContext)
 

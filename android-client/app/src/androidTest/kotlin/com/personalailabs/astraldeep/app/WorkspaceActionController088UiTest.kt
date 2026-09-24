@@ -1,3 +1,6 @@
+// Instrumented integration test for WorkspaceActionController using a synthetic controller but real
+// transport, WebView, ActivityResultRegistry, and DocumentsProvider.
+
 package com.personalailabs.astraldeep.app
 
 import android.content.Intent
@@ -20,7 +23,6 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
-/** Synthetic controller integration; actual transport, WebView, ActivityResultRegistry and DocumentsProvider. */
 class WorkspaceActionController088UiTest {
     @Before fun grantTestProviderAccess() {
         TestDocuments.reset()

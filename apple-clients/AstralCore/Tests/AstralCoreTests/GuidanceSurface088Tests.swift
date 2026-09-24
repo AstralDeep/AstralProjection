@@ -1,3 +1,6 @@
+// Tests for the guidance (private notes) surface wire contract: shared producer frame defaults, command
+// identity requirements, malformed-field rejection, and unknown-frame whole-surface refusal.
+
 import Foundation
 import XCTest
 

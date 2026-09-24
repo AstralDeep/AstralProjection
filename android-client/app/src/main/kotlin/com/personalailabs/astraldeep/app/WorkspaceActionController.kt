@@ -1,3 +1,6 @@
+// Manages workspace export/save actions: prepared exports stay private until the user's explicit save, using
+// a provider-grant-free cache that self-recovers after process death; paired with WorkspaceExportDestination.
+
 package com.personalailabs.astraldeep.app
 
 import android.content.ClipData
@@ -32,7 +35,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import java.io.File
 
-/** Private prepared exports live only until this Activity's explicit save decision. */
 internal class WorkspaceActionController(
     private val activity: ComponentActivity,
     private val currentToken: () -> String?,
@@ -92,7 +94,6 @@ internal class WorkspaceActionController(
         }
 
     init {
-        // This dedicated cache has no provider grants; recover files left by process death.
         directory.mkdirs()
         directory.listFiles()?.forEach { it.delete() }
     }
@@ -167,7 +168,6 @@ internal class WorkspaceActionController(
                     if (!awaitingSave) finish(action)
                 }
                 if (awaitingSave) {
-                    // A forgotten picker must not retain private HTML for an unbounded time.
                     action.job =
                         activity.lifecycleScope.launch {
                             delay(120_000)

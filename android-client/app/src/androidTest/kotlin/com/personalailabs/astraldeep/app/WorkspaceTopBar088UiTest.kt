@@ -1,3 +1,6 @@
+// Instrumented UI test for AstralTopBar: renders the server-owned ChromeMenuModel's export/share workspace
+// controls and sign-out item.
+
 package com.personalailabs.astraldeep.app
 
 import android.content.res.Configuration

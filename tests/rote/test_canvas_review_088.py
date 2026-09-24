@@ -1,4 +1,8 @@
-"""Canvas review: constrained geometry and lossless chart data fallbacks."""
+"""Tests for ROTE canvas adaptation (backend/rote/adapter.py,
+backend/rote/capabilities.py): phone chart geometry stays capability-based, and
+static Plotly fallbacks preserve all points and series.
+"""
+
 from copy import deepcopy
 
 import pytest

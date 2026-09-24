@@ -1,10 +1,7 @@
-// Feature 055 (US2) — the `component_id` keying rule (wire-contract §2): a
-// stream frame carrying the additive field keys its canvas node by that
-// workspace identity from the FIRST frame (including the `stream_subscribed`
-// placeholder) and never creates a `stream-<id>` node, so the terminal persist
-// `ui_upsert` under the same identity replaces in place instead of rendering a
-// second copy. Frames without the field keep the synthetic-node behavior
-// byte-identically; seq dedupe stays keyed on `stream_id` either way.
+// Tests for the stream component_id keying rule: a workspace-bridged frame keys its canvas node by
+// component_id from the first frame instead of a synthetic stream-<id> node, while seq dedupe stays on
+// stream_id.
+
 import XCTest
 
 @testable import AstralCore
@@ -27,15 +24,13 @@ final class StreamKeyingTests: XCTestCase {
             """)
     }
 
-    // MARK: keying rule
-
     func testComponentIdKeysNodeFromFirstFrame() {
         var seq: [String: Int] = [:]
         let ops = streamFrameToOps(
             chunk(seq: 1, componentId: "wc_abc"),
             activeChat: "c1", seqState: &seq)
         XCTAssertEqual(ops.map(\.componentId), ["wc_abc"])
-        XCTAssertEqual(ops[0].component?.componentId, "wc_abc")  // never stream-s1
+        XCTAssertEqual(ops[0].component?.componentId, "wc_abc")
     }
 
     func testSubscribedPlaceholderKeyedByIdentity() {
@@ -48,8 +43,6 @@ final class StreamKeyingTests: XCTestCase {
                 #"{"type":"stream_subscribed","stream_id":"s1","tool_name":"live_chart"}"#))
         XCTAssertEqual(legacy.map(\.componentId), ["stream-s1"])
     }
-
-    // MARK: mid-stream join — placeholder must not blank a held component
 
     func testSubscribedPlaceholderSkippedWhenIdentityAlreadyHeld() {
         let ack = subscribeAckOps(
@@ -98,7 +91,7 @@ final class StreamKeyingTests: XCTestCase {
                 chunk(seq: 2, componentId: "wc_abc"),
                 activeChat: "c1", seqState: &seq
             ).isEmpty)
-        XCTAssertEqual(seq, ["s1": 2])  // dedupe key is the stream id, not the identity
+        XCTAssertEqual(seq, ["s1": 2])
         XCTAssertTrue(
             streamFrameToOps(
                 chunk(seq: 1, componentId: "wc_abc"),
@@ -128,14 +121,10 @@ final class StreamKeyingTests: XCTestCase {
                 """), activeChat: "c1", seqState: &seq)
         XCTAssertEqual(ops.map(\.componentId), ["wc_abc"])
         XCTAssertEqual(ops[0].component?.type, "alert")
-        XCTAssertNil(seq["s1"])  // terminal forget unchanged
+        XCTAssertNil(seq["s1"])
     }
 
-    // MARK: no double render
-
     func testTerminalPersistUpsertReplacesInPlace() {
-        // Full bridged-stream lifecycle: placeholder → chunks → empty terminal
-        // → persist ui_upsert under the same identity. Exactly ONE node.
         var seq: [String: Int] = [:]
         var canvas: [AstralComponent] = []
         canvas = Canvas.apply(
@@ -174,9 +163,6 @@ final class StreamKeyingTests: XCTestCase {
     }
 
     func testLegacyStreamWithoutFieldStaysOnSyntheticNode() {
-        // Contrast case pinning WHY the keying rule exists: without the field
-        // the retained chunk lives under stream-s1, so a persist upsert under
-        // a workspace identity would be a second node.
         var seq: [String: Int] = [:]
         var canvas = Canvas.apply(
             [],

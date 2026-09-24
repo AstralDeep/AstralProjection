@@ -1,3 +1,6 @@
+// Tests for Streaming's frame-to-ops translation: stable node keys for in-place updates, the
+// stream-to-workspace-identity bridge, and the late-join placeholder guard.
+
 package com.personalailabs.astraldeep.core.streaming
 
 import com.personalailabs.astraldeep.core.protocol.Inbound
@@ -31,7 +34,7 @@ class StreamingTest {
         val ops = streamFrameToOps(frame(components = listOf(comp("text"))), activeChat = null, seqState = seq)
         assertEquals(1, ops.size)
         assertEquals(streamNodeId("s1"), ops[0].componentId)
-        assertEquals(streamNodeId("s1"), ops[0].component?.id) // stable node key for in-place updates
+        assertEquals(streamNodeId("s1"), ops[0].component?.id)
         assertEquals(1, seq["s1"])
     }
 
@@ -102,8 +105,6 @@ class StreamingTest {
         assertEquals("alert", ops[0].component?.type)
     }
 
-    // ---- 055 stream→artifact bridge: component_id keying (wire-contract §2) ----
-
     @Test
     fun bridged_frame_keyed_by_component_id_not_stream_node() {
         val ops = streamFrameToOps(frame(componentId = "wc_abc"), null, mutableMapOf())
@@ -125,8 +126,6 @@ class StreamingTest {
         assertTrue("wc_abc" !in seq)
         assertTrue(streamFrameToOps(frame(seq = 1, componentId = "wc_abc"), null, seq).isEmpty())
     }
-
-    // ---- 055 late join: placeholder must not blank retained content ----
 
     @Test
     fun subscribe_ack_skipped_when_identity_already_on_canvas() {
@@ -150,7 +149,7 @@ class StreamingTest {
         val existing = canvas.mapNotNullTo(mutableSetOf()) { it.id }
         canvas = Canvas.apply(canvas, subscribeAckOps(Inbound.StreamSubscribed("s1", "ticker", "wc_abc"), existing))
         assertEquals(1, canvas.size)
-        assertEquals("card", canvas[0].type) // retained render survives the mid-stream join
+        assertEquals("card", canvas[0].type)
     }
 
     @Test
@@ -159,7 +158,6 @@ class StreamingTest {
         var canvas = Canvas.apply(emptyList(), subscribeAckOps(Inbound.StreamSubscribed("s1", "ticker", "wc_abc")))
         canvas = Canvas.apply(canvas, streamFrameToOps(frame(seq = 1, componentId = "wc_abc"), null, seq))
         canvas = Canvas.apply(canvas, streamFrameToOps(frame(seq = 2, terminal = true, componentId = "wc_abc"), null, seq))
-        // The server's terminal persist ui_upsert under the same identity.
         canvas = Canvas.apply(canvas, listOf(CanvasOp("upsert", "wc_abc", comp("card").copy(id = "wc_abc"))))
         assertEquals(1, canvas.size)
         assertEquals("card", canvas[0].type)

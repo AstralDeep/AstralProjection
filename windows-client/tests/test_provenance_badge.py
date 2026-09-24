@@ -1,11 +1,8 @@
-"""Feature 055 (US4, T036) — native provenance badge.
-
-The server stamps every delivered component dict with
-``provenance: "grounded"|"estimated"|"generated"`` (wire-contract §6); the
-desktop renders a compact right-aligned badge in the component chrome for
-TOP-LEVEL canvas components only. Absent/unknown values (pre-055 servers,
-FF_COMPONENT_REFINE off) render nothing — byte-identical widgets.
+"""Tests for astral_client/app.py, renderer.py, and theme.py: the top-level-only
+provenance badge (grounded/estimated/generated) rendered in component chrome, absent
+for unknown values, and applied through both full canvas renders and upserts.
 """
+
 import os
 
 import pytest
@@ -35,8 +32,6 @@ def _card(provenance=None, cid="wc_1"):
     return comp
 
 
-# --- the badge itself ---------------------------------------------------------
-
 @pytest.mark.parametrize("kind,text", [
     ("estimated", "estimated"),
     ("generated", "AI-generated"),
@@ -58,12 +53,12 @@ def test_badge_colors_match_theme_conventions(qapp):
 
 
 @pytest.mark.parametrize("comp", [
-    {"type": "card"},                                  # field absent
-    {"type": "card", "provenance": "grounded"},        # quiet tool-result baseline
-    {"type": "card", "provenance": "verified"},        # outside the vocabulary
+    {"type": "card"},
+    {"type": "card", "provenance": "grounded"},
+    {"type": "card", "provenance": "verified"},
     {"type": "card", "provenance": ""},
     {"type": "card", "provenance": None},
-    {"type": "divider", "provenance": "grounded"},     # decorative skip set
+    {"type": "divider", "provenance": "grounded"},
     {"type": "skeleton", "provenance": "generated"},
     "not-a-dict",
 ])
@@ -71,25 +66,21 @@ def test_badge_absent_or_unknown_renders_nothing(qapp, comp):
     assert provenance_badge(comp) is None
 
 
-# --- render() chrome wiring ---------------------------------------------------
-
 def test_top_level_render_carries_badge(qapp):
     w = render(_card("estimated"), _ctx(), top_level=True)
     b = _badge_of(w)
     assert b is not None and "estimated" in b.text()
-    # The wrapper keeps the workspace identity for canvas reconciliation.
     assert w.property("component_id") == "wc_1"
 
 
 def test_top_level_render_without_field_is_unwrapped(qapp):
     from PySide6.QtWidgets import QFrame
     w = render(_card(), _ctx(), top_level=True)
-    assert isinstance(w, QFrame)  # the card frame itself, no chrome wrapper
+    assert isinstance(w, QFrame)
     assert _badge_of(w) is None
 
 
 def test_nested_children_never_grow_badges(qapp):
-    # _tag_source stamps nested children too — only the top level is badged.
     comp = _card("estimated")
     comp["content"] = [
         {"type": "text", "content": "child", "provenance": "grounded"},
@@ -101,12 +92,9 @@ def test_nested_children_never_grow_badges(qapp):
 
 
 def test_default_render_ignores_provenance(qapp):
-    # Non-canvas call sites (surfaces, nested renders) pass no top_level flag.
     w = render(_card("grounded"), _ctx())
     assert _badge_of(w) is None
 
-
-# --- through the canvas -------------------------------------------------------
 
 def test_canvas_full_render_badges_components(qapp):
     c = Canvas(_ctx())

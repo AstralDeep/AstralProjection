@@ -1,3 +1,8 @@
+"""Tests for the MCP render target (backend/webrender/targets/mcp_renderer.py,
+backend/webrender/registry.py): text/alert/fallback projection, depth bounding, and
+serialization of lists, scalars, and nulls.
+"""
+
 from __future__ import annotations
 
 from webrender.registry import TARGET_RENDERERS

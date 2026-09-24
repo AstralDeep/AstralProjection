@@ -1,4 +1,7 @@
-"""Tests for the standalone Windows voice-fixture materializer."""
+"""Tests for test_support/voice_fixture_065.py: canonical fixture loading and
+materialization, deep-copied mutation application, duplicate-id rejection,
+cyclic-inheritance detection, and strict JSON loading.
+"""
 
 from __future__ import annotations
 

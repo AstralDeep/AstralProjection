@@ -1,15 +1,15 @@
+// Session and timeout policy for authenticated canvas exports: a presentation is untrusted display data with
+// no dispatch authority, using a bounded, non-shared URLSession per export. Used by Rest.swift and
+// OfflineCanvasExport.
+
 import Foundation
 
-/// A presentation is untrusted display data. It carries no dispatch authority.
 public enum CanvasExportPolicy {
     public enum Failure: Error { case invalidCapture }
     public static let version = "astral.canvas-export/v1"
     public static let maximumInputBytes = 8 * 1024 * 1024
     public static let maximumOutputBytes = 32 * 1024 * 1024
 
-    /// Resource time bounds the whole response, including peers that keep
-    /// resetting the idle timeout with small chunks. Each export owns and
-    /// invalidates this session; its bytes/cookies never enter a shared cache.
     static func boundedSession(like session: URLSession? = nil) -> URLSession {
         let configuration = NoStoreHTTP.configuration()
         let supplied = session?.configuration

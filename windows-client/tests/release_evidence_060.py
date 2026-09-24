@@ -1,33 +1,6 @@
-"""Windows release-evidence producer (T109, spec 060 US8).
-
-Runs in the ``windows-producer`` job of ``release-readiness.yml`` against
-T068's ALREADY-DOWNLOADED archived build-once unsigned EXE — this module never
-downloads or rebuilds anything. It re-hashes the executable FIRST, drives the
-packaged client plus a direct authenticated WebSocket session against the
-trusted staging endpoint, and emits one schema-valid ``platform_evidence``
-report (``platform: windows``) that the protected decision job later
-re-validates independently. Local success is diagnostic only.
-
-Environment contract (the workflow supplies every value; the module skips
-module-wide ONLY when ``ASTRAL_WINDOWS_EXE`` is unset and never skips once it
-is present):
-
-- ``ASTRAL_WINDOWS_EXE``             path to the downloaded ``AstralDeep.exe``
-- ``ASTRAL_WINDOWS_EXE_SHA256``      expected digest from the candidate job
-- ``ASTRAL_STAGING_URL``             trusted staging endpoint (HTTPS)
-- ``ASTRAL_RELEASE_EVIDENCE_OUTPUT`` where ``windows.json`` is written
-- ``ASTRAL_RELEASE_STAGING_FILE``    trusted stage-deploy outputs JSON
-- ``ASTRAL_WINDOWS_CANDIDATE_DIR``   downloaded candidate artifact directory
-                                     (``reproducibility.json`` lives here)
-- ``ASTRAL_WINDOWS_ARTIFACT_ID``     numeric candidate Actions artifact id
-- ``ASTRAL_WINDOWS_SMOKE_TOKEN``     short-lived staging access token
-- ``ASTRAL_RELEASE_CANDIDATE_SHA`` / ``ASTRAL_RELEASE_ID`` /
-  ``ASTRAL_RELEASE_VERSION``         release identity
-- ``ASTRAL_RELEASE_LIFECYCLE_AGENT_ID`` / ``ASTRAL_RELEASE_LIFECYCLE_STATES``
-- ``GITHUB_REPOSITORY``, ``GITHUB_WORKFLOW``, ``GITHUB_RUN_ID``,
-  ``GITHUB_RUN_ATTEMPT``, ``GITHUB_JOB``, ``RUNNER_OS``, ``RUNNER_ARCH``,
-  ``RUNNER_NAME``, ``ASTRAL_RUNNER_ENVIRONMENT`` (+ ``ASTRAL_RUNNER_IMAGE``
-  or the hosted ``ImageOS``/``ImageVersion`` pair)
+"""CI evidence producer for the windows-producer release job: re-hashes the downloaded
+candidate exe, drives it against staging over a real WebSocket session, and emits a
+platform_evidence report the decision job re-validates.
 """
 
 from __future__ import annotations
@@ -112,7 +85,6 @@ TTS_SAMPLE_RATE_HZ = 24000
 REQUIRED_LIFECYCLE_STATES = {"starting", "online", "updating", "failed", "offline"}
 
 _STARTED_AT = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-# check_id -> completed check object, filled in file order and assembled last.
 _CHECKS: dict[str, dict] = {}
 
 
@@ -167,8 +139,6 @@ def _output_path() -> Path:
 
 
 def _atomic_json(path: Path, value: dict) -> str:
-    """Write pretty JSON atomically (temp + rename) and return its sha256."""
-
     data = (json.dumps(value, indent=2) + "\n").encode("utf-8")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.{os.getpid()}.{uuid.uuid4()}.tmp")
@@ -179,8 +149,6 @@ def _atomic_json(path: Path, value: dict) -> str:
 
 
 def _write_raw(name: str, payload: dict) -> dict:
-    """Persist one check's raw evidence and return its evidence_artifact row."""
-
     raw_dir = _output_path().parent / "windows-raw"
     sha256 = _atomic_json(raw_dir / f"{name}.json", payload)
     return {
@@ -231,8 +199,6 @@ def _clean_env(tmp_path: Path) -> dict[str, str]:
 
 
 def _clear_native_windows_settings() -> None:
-    """Give each GUI check the same absent-HKCU starting state as a new user."""
-
     if sys.platform != "win32":
         return
     result = subprocess.run(
@@ -245,8 +211,6 @@ def _clear_native_windows_settings() -> None:
 
 
 def _staging_profile(path: Path) -> Path:
-    """The bundled release profile, repointed at the trusted staging endpoint."""
-
     value = json.loads(
         (ROOT / "deployment" / "release-profile.json").read_text(encoding="utf-8")
     )
@@ -274,8 +238,6 @@ def _staging_environment() -> dict:
 
 
 def _validate_voice_runtime(value: object) -> None:
-    """Validate, but never reconstruct, the trusted stage voice identity."""
-
     assert isinstance(value, dict) and set(value) == VOICE_RUNTIME_FIELDS, (
         "trusted voice_runtime has a missing, extra, or non-object field"
     )
@@ -348,8 +310,6 @@ def _workflow_identity() -> dict:
 
 
 def _artifact() -> dict:
-    """The exact archived candidate EXE identity, re-hashed locally."""
-
     repository = _required_env("GITHUB_REPOSITORY")
     run_id = _required_env("GITHUB_RUN_ID")
     attempt = _required_env("GITHUB_RUN_ATTEMPT")
@@ -367,11 +327,6 @@ def _artifact() -> dict:
             f"windows-candidate:{_required_env('ASTRAL_RELEASE_CANDIDATE_SHA')}"
         ),
     }
-
-
-# ---------------------------------------------------------------------------
-# WebSocket session driving (the e2e_live.py seams, pointed at staging)
-# ---------------------------------------------------------------------------
 
 
 async def _open_session(token: str, session_id: str | None = None):
@@ -429,8 +384,6 @@ def _transcript_messages(msg: dict) -> list:
 
 
 async def _load_chat_snapshot(ws, chat_id: str, deadline_s: float) -> list:
-    """Request the chat and return its transcript messages (empty on timeout)."""
-
     await ws.send(
         json.dumps(
             {
@@ -447,11 +400,6 @@ async def _load_chat_snapshot(ws, chat_id: str, deadline_s: float) -> list:
     return _transcript_messages(msg) if msg else []
 
 
-# ---------------------------------------------------------------------------
-# 0. Identity precondition — re-hash BEFORE executing anything
-# ---------------------------------------------------------------------------
-
-
 def test_downloaded_exe_rehash_matches_candidate_digest_first():
     assert sys.platform == "win32", (
         "the windows evidence producer requires a real Windows runner"
@@ -461,11 +409,6 @@ def test_downloaded_exe_rehash_matches_candidate_digest_first():
     assert actual == expected, (
         f"archived EXE bytes drifted: re-hash {actual} != candidate {expected}"
     )
-
-
-# ---------------------------------------------------------------------------
-# Windows extra checks driven from the frozen executable
-# ---------------------------------------------------------------------------
 
 
 def test_windows_deployment_validation_report(tmp_path):
@@ -527,8 +470,6 @@ def test_windows_frozen_worker_completes_benign_round_trip(tmp_path):
 
 
 def test_windows_upgrade_from_0_3_0_selects_candidate_release(monkeypatch):
-    """Drive the shipped v0.3.0 updater parser against an API-shaped fixture."""
-
     started = time.monotonic()
     version = _required_env("ASTRAL_RELEASE_VERSION")
     fixture = {
@@ -605,17 +546,11 @@ def test_dependency_lock_reproducibility_manifest_binds_tracked_lock():
     _record_check("dependency_lock_reproducibility", time.monotonic() - started, value)
 
 
-# ---------------------------------------------------------------------------
-# Common client checks against the trusted staging endpoint
-# ---------------------------------------------------------------------------
-
-
 def test_sign_in_accepts_staging_token_and_refuses_a_stale_principal():
     started = time.monotonic()
     token = _required_env("ASTRAL_WINDOWS_SMOKE_TOKEN")
 
     async def _drive() -> dict:
-        # Negative control: a garbage principal must be refused up front.
         ws = await _open_session(f"invalid-{uuid.uuid4()}")
         try:
             refused = await _await_frame(
@@ -717,7 +652,6 @@ def test_reconnect_resume_restores_the_conversation_twenty_times():
                     }
                 )
             )
-            # The turn is complete when the durable transcript holds both sides.
             loop = asyncio.get_event_loop()
             deadline = loop.time() + 240.0
             baseline: list = []
@@ -881,8 +815,6 @@ def test_personal_agent_authoring_surface_and_benign_host_round_trip(tmp_path):
 
     payload = asyncio.run(_drive())
 
-    # The delivered personal agent runs on the OWNER's desktop: prove the
-    # packaged host worker completes a benign hosted round trip.
     agent = tmp_path / "benign-personal-agent"
     agent.mkdir()
     (agent / "agent_main.py").write_text(
@@ -1028,11 +960,6 @@ def test_accessibility_semantics_of_changed_windows_controls():
             "lifecycle_label_named": True,
         },
     )
-
-
-# ---------------------------------------------------------------------------
-# Final assembly: emit + in-process schema/policy validation
-# ---------------------------------------------------------------------------
 
 
 def _validator_module():

@@ -1,4 +1,7 @@
-"""Defensive branch coverage for the Feature 075 local speech adapter."""
+"""Tests for astral_client/voice.py and helper_integrity.py: defensive branch coverage
+for the local speech adapter — malformed/stale helper frames, stop/abort failure
+paths, capture-start recovery, and TTS phase mapping.
+"""
 
 from __future__ import annotations
 

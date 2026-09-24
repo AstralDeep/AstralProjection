@@ -1,8 +1,9 @@
+// Server-authored placement hints for the initial workspace welcome and viewport-based layout bounds;
+// WorkspaceWelcome/WorkspaceLayout drive AppModel and the watch/phone/desktop workspace views to match the
+// web shell.
+
 import Foundation
 
-/// Placement hints authored by the server for the initial workspace. Only
-/// top-level ephemeral welcome components qualify; nested or identified result
-/// content is never extracted, even if it contains a similarly named marker.
 public enum WorkspaceWelcome {
     public enum Role: String, CaseIterable, Sendable {
         case intro
@@ -20,8 +21,6 @@ public enum WorkspaceWelcome {
         hasWelcomeIdentity(component) && component.raw["data-welcome"]?.stringValue == "example"
     }
 
-    /// The watch can run ordinary welcome prompts through its existing chat
-    /// dispatcher. Other actions retain the explicit phone/desktop handoff.
     public static func chatMessage(of component: AstralComponent) -> String? {
         guard component.type == "button",
             component.raw["data-welcome"]?.stringValue == "example",
@@ -44,9 +43,6 @@ public enum WorkspaceWelcome {
         return true
     }
 
-    /// Welcome is ephemeral connection UI, never a conversation preview. A
-    /// scoped or partly malformed frame must still pass through the ordinary
-    /// continuity reducer; a welcome marker cannot bypass its equality fences.
     public static func unscopedComponents(in frame: InboundFrame) -> [AstralComponent]? {
         guard ["ui_render", "ui_update"].contains(frame.name),
             let payload = frame.payload.objectValue,
@@ -67,7 +63,6 @@ public enum WorkspaceWelcome {
     }
 
     public static func components(_ components: [AstralComponent], for role: Role) -> [AstralComponent] {
-        // Mirrors the web placement host: the newest component owns each slot.
         components.last(where: { Self.role(of: $0) == role }).map { [$0] } ?? []
     }
 
@@ -80,8 +75,6 @@ public enum WorkspaceWelcome {
     }
 }
 
-/// Widths and rail preference match the server's web shell. Preference never
-/// overrules the minimum width needed for a usable multiline composer.
 public enum WorkspaceLayout: Equatable, Sendable {
     case stacked
     case collapsed

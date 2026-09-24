@@ -1,3 +1,6 @@
+// Derives the phone's single-pane vs split layout mode and whether a welcome component may render outside the
+// canvas; shared model mirrored by the Apple clients' WorkspacePresentation twin.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -13,7 +16,6 @@ fun layoutModeFor(widthDp: Int): LayoutMode =
         else -> LayoutMode.Split
     }
 
-/** Only a top-level welcome identity can move out of the canvas. */
 internal fun welcomePlacementRole(component: Component): String? {
     if (component.id?.startsWith("wel_") == false) return null
     return (component.attributes["data-welcome"] as? JsonPrimitive)?.contentOrNull
@@ -27,6 +29,5 @@ internal val UiState.showsStart: Boolean
             visibleTurns.none { it.hasVisibleContent } && canvasHistory.isEmpty() &&
             visibleCanvas.all { welcomePlacementRole(it) != null }
 
-/** A pending navigation acknowledgment does not retire server-owned welcome. */
 internal val UiState.acceptsStartWelcome: Boolean
     get() = !workspaceStarted && requestGeneration == null && !turnActive && !pendingReplace

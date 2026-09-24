@@ -1,6 +1,6 @@
-// :core — pure Kotlin (no Android). Protocol decode, SDUI model, streaming
-// consumer, and REST shaping live here so they are JVM-unit-testable without an
-// emulator (FR-016). Kover enforces the changed-code coverage gate.
+// Gradle build for :core, the pure-Kotlin module (protocol decode, SDUI model, streaming, REST shaping) kept
+// Android-free so it's JVM-unit-testable without an emulator; Kover enforces a module coverage gate here.
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
@@ -34,8 +34,6 @@ kover {
     reports {
         verify {
             rule {
-                // Constitution III — keep module coverage at the gate. CI also
-                // runs changed-code coverage; this guards the pure-logic core.
                 minBound(90)
             }
         }

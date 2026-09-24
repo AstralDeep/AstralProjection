@@ -1,18 +1,16 @@
+// Hand-rolled OIDC Authorization Code + PKCE (S256), matching the Windows client's stdlib implementation with
+// zero third-party dependencies. Backs TokenStore's direct-refresh strategy and the iOS/macOS sign-in flow.
+
 import CryptoKit
-// Feature 051 — OIDC Authorization Code + PKCE (S256), hand-rolled on Apple
-// frameworks exactly as the Windows client hand-rolls it on the Python
-// stdlib (research D5: zero third-party Swift dependencies).
 import Foundation
 
 public enum PKCE {
-    /// RFC 7636 §4.1 — 32 random octets, base64url without padding.
     public static func makeVerifier() -> String {
         var bytes = [UInt8](repeating: 0, count: 32)
         _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes)
         return base64url(Data(bytes))
     }
 
-    /// RFC 7636 §4.2 — S256: BASE64URL(SHA256(ASCII(verifier))).
     public static func challenge(for verifier: String) -> String {
         let digest = SHA256.hash(data: Data(verifier.utf8))
         return base64url(Data(digest))
@@ -26,8 +24,6 @@ public enum PKCE {
     }
 }
 
-/// Builders for the authorize/token requests against a Keycloak realm
-/// (`authority` = full realm URL, matching KEYCLOAK_AUTHORITY server-side).
 public struct OIDCConfig: Sendable {
     public let authority: URL
     public let clientId: String
@@ -99,7 +95,6 @@ func formEncode(_ fields: [String: String]) -> String {
         .joined(separator: "&")
 }
 
-/// Decoded token response subset (shared by PKCE, device grant and refresh).
 public struct TokenSet: Sendable, Equatable {
     public let accessToken: String
     public let refreshToken: String?
@@ -121,13 +116,10 @@ public struct TokenSet: Sendable, Equatable {
         self.expiresAt = now.addingTimeInterval(json["expires_in"]?.numberValue ?? 300)
     }
 
-    /// Refresh 60 s before expiry (Windows-client contract).
     public func needsRefresh(now: Date = Date()) -> Bool {
         now >= expiresAt.addingTimeInterval(-60)
     }
 
-    /// Non-validating claims decode (roles/identity display only — the
-    /// server re-validates every token at the WS/REST gates).
     public var claims: JSONValue? {
         let parts = accessToken.split(separator: ".")
         guard parts.count >= 2 else { return nil }

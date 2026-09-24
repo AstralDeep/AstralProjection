@@ -1,5 +1,7 @@
-"""QtCharts renderers for the bar/line/pie SDUI chart primitives. Plotly specs
-(`plotly_chart`) are web-only and fall back to a placeholder in renderer.py."""
+"""Draws bar/line/pie SDUI charts natively via QtCharts, reading live colors from
+theme.py; renderer.py falls back to this for chart components since Plotly specs are
+web-only.
+"""
 
 from __future__ import annotations
 
@@ -21,10 +23,6 @@ from PySide6.QtCharts import (
 from . import theme as T
 
 def _palette() -> list:
-    """Series colors read from the LIVE theme (primary → secondary → accent,
-    then the fixed semantic tokens). Computed per call, not captured at import:
-    the palette is mutable (feature 044 US5), so a hardcoded list left charts
-    indigo while the rest of the app switched to ocean/sunset/forest."""
     return [
         T.PRIMARY,
         T.SECONDARY,
@@ -38,8 +36,6 @@ def _palette() -> list:
 def _style(chart: QChart, title: str) -> QChartView:
     chart.setTitle(title or "")
     chart.setTitleBrush(QColor(T.TEXT))
-    # Web .astral-chart-card: layered surface-1 + soft border + radius-md, NOT
-    # the solid raised surface.
     chart.setBackgroundBrush(QColor(T.SURFACE))
     chart.setPlotAreaBackgroundVisible(False)
     chart.legend().setLabelColor(QColor(T.MUTED))
@@ -90,7 +86,6 @@ def build_chart(c: dict) -> Optional[QChartView]:
             _axis_color(ax)
         return _style(chart, title)
 
-    # default: bar_chart
     series = QBarSeries()
     for di, ds in enumerate(datasets):
         bs = QBarSet(str(ds.get("label", f"series {di + 1}")))

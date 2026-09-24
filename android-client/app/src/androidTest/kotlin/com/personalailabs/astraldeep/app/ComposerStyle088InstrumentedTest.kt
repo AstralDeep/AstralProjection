@@ -1,3 +1,6 @@
+// Instrumented UI test for the composer InputBar's narrow-width layout: the send button stays right-aligned
+// and editing/read-only rules hold.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.foundation.layout.Box

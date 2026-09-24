@@ -1,14 +1,13 @@
-/* Shared script-free visual export finalizer. No identity or action authority. */
+// Shared script-free finalizer that rebuilds a mounted canvas into a standalone document using
+// embedded fonts and already-loaded chart pixels, for both web and native export flows.
+
 (function () {
   "use strict";
-  /** Rebuild a mounted canvas using explicit public-font bytes and Plotly pixels. */
   async function snapshot(options) {
     var canvas = options.canvas;
     var document = canvas.ownerDocument;
     var Plotly = options.plotly;
     var getComputedStyle = document.defaultView.getComputedStyle.bind(document.defaultView);
-    // Export only the mounted canvas. Chat, credentials, action payloads and
-    // author markup are never serialized; all nodes/attributes are rebuilt.
     var doc = document.implementation.createHTMLDocument("AstralDeep workspace");
     var policy = doc.createElement("meta");
     policy.httpEquiv = "Content-Security-Policy";
@@ -22,8 +21,6 @@
     charset.setAttribute("charset", "utf-8");
     doc.head.prepend(charset);
     var jobs = [], count = 0;
-    // Fonts are the same public, first-party-hosted assets the live shell uses.
-    // Embed their bytes so opening the file makes no server/network requests.
     [["Open Sans", "open-sans-latin.woff2", "400 800"]].forEach(function (font) {
       jobs.push(function () { return Promise.resolve(options.loadFont(font[1])).then(function (buffer) {
         if (buffer.byteLength > 1024 * 1024) throw new Error("Canvas font exceeds the export size limit.");
@@ -39,8 +36,6 @@
       var style = getComputedStyle(source);
       for (var i = 0; i < style.length; i++) {
         var key = style[i], value = style.getPropertyValue(key);
-        // Computed values capture the selected theme without carrying any
-        // stylesheet, custom-property payload, animation or network URL.
         if (key.indexOf("--") === 0 || /^(animation|transition)/.test(key) || /url\s*\(/i.test(value)) continue;
         target.style.setProperty(key, value);
       }
@@ -74,7 +69,6 @@
       });
       if (node.tagName === "IMG") {
         out.alt = node.alt || "Image";
-        // Copy loaded pixels; never refetch media or retain authenticated URLs.
         var pixels = document.createElement("canvas");
         pixels.width = Math.min(node.naturalWidth || 1, 4096);
         pixels.height = Math.min(node.naturalHeight || 1, 4096);

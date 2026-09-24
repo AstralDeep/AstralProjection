@@ -1,3 +1,6 @@
+// Tests that the read-only workspace timeline locks every mutating action, including the component
+// refine/restore verbs.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -7,7 +10,6 @@ import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Feature 044 T041 — the read-only workspace timeline locks mutating affordances. */
 class TimelineModeTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 
@@ -25,7 +27,6 @@ class TimelineModeTest {
     fun the_guard_blocks_mutations_but_not_navigation() {
         assertTrue(isTimelineMutation("chat_message"))
         assertTrue(isTimelineMutation("component_action"))
-        // 055 US4: the refine/restore verbs are component mutations too.
         assertTrue(isTimelineMutation("component_refine"))
         assertTrue(isTimelineMutation("component_restore"))
         assertFalse(isTimelineMutation("chrome_open"))

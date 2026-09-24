@@ -1,16 +1,6 @@
-/**
- * Feature 089 (T047): score the Astral web client against the a8p captures.
- *
- * Reads the reference measurements written by `capture-reference.mjs`, drives
- * the Astral web client through the same five states at the same three
- * desktop viewports, and applies the rules in `regions.mjs`. Every CSP
- * violation raised along the way is recorded, because a layout that only
- * works with an inline style is not the layout the contract asks for.
- *
- * Usage:
- *   node score-parity.mjs --url http://127.0.0.1:8001 \
- *     --reference <reference dir> --out <report dir>
- */
+// Scores the Astral web client against capture-reference.mjs's saved measurements using
+// regions.mjs's rules, driving the client with drivers.mjs and recording any CSP violation
+// encountered along the way.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -21,7 +11,6 @@ import {
 } from './regions.mjs';
 import { candidateDriver, probeReducedMotionDialog, MODAL_CARD } from './drivers.mjs';
 
-/** The composer controls on the bar: attach, voice, more options (with background, advanced, timeline, pulse nested). */
 const REQUIRED_COMPOSER_CONTROLS = 3;
 
 function arg(name, fallback) {
@@ -53,8 +42,6 @@ async function main() {
   const report = { generated: new Date().toISOString(), baseUrl, viewports: [] };
 
   try {
-    // The one fact measured in its own context: does the dialog hold still
-    // when the viewer has asked for reduced motion?
     const rmContext = await browser.newContext({
       viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce',
     });

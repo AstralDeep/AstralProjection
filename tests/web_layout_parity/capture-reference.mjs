@@ -1,16 +1,6 @@
-/**
- * Feature 089 (T046): capture the a8p reference.
- *
- * For each of the three desktop viewports and the five contract states, this
- * writes a PNG and the region bounding-box JSON the scorer later compares
- * against. It also writes one `context.json` holding the behavioural facts
- * (live filter, hover lift, return-to-landing, expand-to-full-screen, the
- * component kinds present, dialog animation), so the reference side of every
- * scored item is on disk rather than re-derived on each scoring run.
- *
- * Usage:
- *   node capture-reference.mjs --url http://127.0.0.1:8010 --out <reference dir>
- */
+// Captures a8p's reference screenshots and region bounding boxes at three desktop viewports and
+// five contract states, plus the behavioural facts regions.mjs scores against; run before
+// score-parity.mjs.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -81,7 +71,6 @@ async function main() {
       process.stdout.write(`${vp.name}: ${STATES.length} states captured\n`);
     }
 
-    // The one fact that needs its own browser context.
     const reduced = await browser.newContext({
       viewport: { width: 1440, height: 900 },
       reducedMotion: 'reduce',

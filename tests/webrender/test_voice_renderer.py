@@ -1,4 +1,8 @@
-"""Feature 033 (capability C-D4) — the VOICE renderer (structured SSML for TTS)."""
+"""Tests for backend/webrender/voice.py, the SSML voice renderer: envelope wrapping,
+per-type speech text, row/item caps, recursion through cards and tabs,
+decorative-type silence, and text escaping.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -15,8 +19,6 @@ from webrender.voice import render_voice  # noqa: E402
 def _v(comps):
     return render_voice(comps)
 
-
-# ───────────────────────── envelope + leaves ─────────────────────────────────
 
 def test_wraps_in_speak():
     out = _v([{"type": "text", "content": "hello"}])
@@ -44,8 +46,6 @@ def test_hero_and_badge_and_rating():
     assert "4 out of 5" in _v([{"type": "rating", "title": "Score", "value": 4}])
 
 
-# ───────────────────────── collections ───────────────────────────────────────
-
 def test_table_speaks_rows():
     out = _v([{"type": "table", "title": "Q", "headers": ["Name", "Rev"],
                "rows": [["Alice", "10"], ["Bob", "20"]]}])
@@ -56,7 +56,7 @@ def test_table_speaks_rows():
 def test_table_bounds_rows():
     rows = [["r", str(i)] for i in range(20)]
     out = _v([{"type": "table", "headers": ["x", "y"], "rows": rows}])
-    assert "and 12 more rows" in out  # 20 - 8 cap
+    assert "and 12 more rows" in out
 
 
 def test_keyvalue_and_list():
@@ -69,7 +69,7 @@ def test_keyvalue_and_list():
 
 def test_list_bounds_items():
     out = _v([{"type": "list", "items": [str(i) for i in range(20)]}])
-    assert "and 8 more" in out  # 20 - 12 cap
+    assert "and 8 more" in out
 
 
 def test_timeline_speaks_events():
@@ -82,8 +82,6 @@ def test_chart_is_announced_not_read():
     out = _v([{"type": "bar_chart", "title": "Sales", "data": {"series": [1, 2, 3]}}])
     assert "A chart: Sales" in out and "1" not in out
 
-
-# ───────────────────────── recursion ─────────────────────────────────────────
 
 def test_card_recurses_into_children():
     out = _v([{"type": "card", "title": "Status", "content": [
@@ -103,12 +101,10 @@ def test_decorative_types_are_silent():
     assert _v([{"type": "skeleton"}]) == "<speak></speak>"
 
 
-# ───────────────────────── safety ────────────────────────────────────────────
-
 def test_text_is_ssml_escaped():
     out = _v([{"type": "text", "content": "A & B < C > D"}])
     assert "&amp;" in out and "&lt;" in out and "&gt;" in out
-    assert "A & B" not in out  # raw ampersand never leaks
+    assert "A & B" not in out
 
 
 def test_markdown_punctuation_stripped():
@@ -116,8 +112,6 @@ def test_markdown_punctuation_stripped():
     assert "*" not in out and "_" not in out and "`" not in out
     assert "bold" in out and "italic" in out
 
-
-# ───────────────────────── registry dispatch ─────────────────────────────────
 
 def test_render_for_target_voice_dispatches_to_ssml():
     out = render_for_target("voice", [{"type": "text", "content": "spoken"}])

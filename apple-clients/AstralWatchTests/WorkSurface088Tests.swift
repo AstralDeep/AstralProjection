@@ -1,3 +1,7 @@
+// Tests for the watch Work surface: isolation from conversation speech, owner/connection-change clearing
+// without queueing reads, disabled-button validity, admission-refusal ticket retirement, and reconnect retry
+// retention.
+
 import AstralCore
 import XCTest
 

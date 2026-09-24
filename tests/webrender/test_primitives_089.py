@@ -1,11 +1,6 @@
-"""Feature 089 (T037): the six composite renderers and multi-dataset bar charts.
-
-These renderers take agent-supplied data, so the tests that matter most are the
-ones asserting what does **not** come out: no unescaped text, no value in a
-``style``/``class``/``href``/``on*`` attribute, and no color from component
-data. astralprims gives these types no color field on purpose -- colors resolve
-from theme roles -- and a renderer that let one through would quietly undo
-that.
+"""Tests for the six composite renderers and multi-dataset bar charts in
+backend/webrender/renderer.py: no unescaped text or attribute injection,
+clamped/coerced values, screen-reader semantics, and theme-only colors.
 """
 
 from __future__ import annotations
@@ -43,16 +38,10 @@ def _render(component: dict) -> str:
     return PRIMITIVE_RENDERERS[component["type"]](component)
 
 
-# -- registration ---------------------------------------------------------
-
-
 @pytest.mark.parametrize("wire_type", NEW_TYPES)
 def test_every_new_type_is_registered_and_allowed(wire_type: str) -> None:
     assert wire_type in PRIMITIVE_RENDERERS
     assert wire_type in allowed_primitive_types()
-
-
-# -- escaping -------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -77,18 +66,10 @@ def test_every_new_type_is_registered_and_allowed(wire_type: str) -> None:
     ids=NEW_TYPES,
 )
 def test_no_raw_script_vector_survives(component: dict) -> None:
-    """The payload may appear as text; it must never appear as markup.
-
-    Asserting the substring is absent would be wrong: an escaped
-    ``&lt;img src=x onerror=&quot;...`` still contains "onerror=" as literal
-    text, and that is exactly the safe outcome. What must be absent is the
-    unescaped form.
-    """
     html = _render(component)
     assert "<img" not in html
     assert '<img src=x onerror="alert(1)">' not in html
     if "alert(1)" in html:
-        # Present only in escaped form.
         assert "&lt;img" in html or "&quot;alert(1)&quot;" in html
 
 
@@ -103,7 +84,6 @@ def test_no_raw_script_vector_survives(component: dict) -> None:
     ],
 )
 def test_attribute_breakout_is_escaped(component: dict) -> None:
-    """The closing quote must be escaped, so no new attribute is created."""
     html = _render(component)
     assert '" onmouseover="' not in html
     assert "&quot; onmouseover=&quot;" in html or "onmouseover" not in html
@@ -111,7 +91,6 @@ def test_attribute_breakout_is_escaped(component: dict) -> None:
 
 @pytest.mark.parametrize("wire_type", NEW_TYPES)
 def test_no_component_value_reaches_a_dangerous_attribute(wire_type: str) -> None:
-    """A field value must never land in style, href, src or an event handler."""
     poison = "POISON_VALUE_12345"
     components = {
         "action_group": {"type": "action_group", "label": poison, "align": poison,
@@ -134,15 +113,10 @@ def test_no_component_value_reaches_a_dangerous_attribute(wire_type: str) -> Non
     html = _render(components[wire_type])
     for attribute in ("style=", "href=", "src=", "onclick=", "onload="):
         if attribute in html:
-            # If the attribute exists at all it must not carry the poison.
             for match in re.finditer(re.escape(attribute) + r'"([^"]*)"', html):
                 assert poison not in match.group(1)
-    # A variant or status token must never be interpolated into a class name.
     for match in re.finditer(r'class="([^"]*)"', html):
         assert poison not in match.group(1)
-
-
-# -- clamping and coercion ------------------------------------------------
 
 
 @pytest.mark.parametrize("value,expected_fraction", [
@@ -151,7 +125,6 @@ def test_no_component_value_reaches_a_dangerous_attribute(wire_type: str) -> Non
 def test_gauge_clamps_its_value(value, expected_fraction) -> None:
     html = render_gauge({"type": "gauge", "value": value})
     assert f"{round(expected_fraction * 100)}%" in html
-    # The dash array can never exceed the circumference.
     for match in re.finditer(r'stroke-dasharray="([\d.]+)', html):
         assert float(match.group(1)) <= 126.0 + 1e-6
 
@@ -164,7 +137,6 @@ def test_stat_group_clamps_columns(columns, expected) -> None:
 
 
 def test_radar_chart_refuses_fewer_than_three_axes() -> None:
-    """Two axes is a line, not a radar. Rendering one would be misleading."""
     assert render_radar_chart({
         "type": "radar_chart", "axes": ["a", "b"],
         "datasets": [{"label": "s", "data": [1, 2]}],
@@ -186,16 +158,13 @@ def test_donut_segments_never_exceed_the_circumference() -> None:
         float(m.group(1))
         for m in re.finditer(r'stroke-dasharray="([\d.]+) ', html)
     ]
-    assert lengths and sum(lengths) <= 251.5  # 2 * pi * 40, with rounding slack
+    assert lengths and sum(lengths) <= 251.5
 
 
 def test_negative_chart_values_are_floored_at_zero() -> None:
     html = render_donut_chart({"type": "donut_chart", "labels": ["a", "b"],
                                "data": [-10, 10]})
     assert "-" not in re.search(r'stroke-dasharray="([^"]*)"', html).group(1)
-
-
-# -- semantics and a11y ---------------------------------------------------
 
 
 def test_stat_group_uses_a_definition_list() -> None:
@@ -215,7 +184,6 @@ def test_pipeline_stepper_uses_an_ordered_list() -> None:
 
 
 def test_only_the_first_active_step_is_current() -> None:
-    """More than one aria-current="step" tells a screen reader nothing."""
     html = render_pipeline_stepper({
         "type": "pipeline_stepper",
         "steps": [
@@ -239,7 +207,6 @@ def test_gauge_and_donut_expose_an_image_role_with_a_label() -> None:
 
 
 def test_radar_chart_emits_a_hidden_data_table() -> None:
-    """A polygon conveys nothing to a screen reader; the numbers are the content."""
     html = render_radar_chart({
         "type": "radar_chart",
         "title": "Models",
@@ -262,18 +229,12 @@ def test_action_group_is_a_labelled_group() -> None:
     })
     assert 'role="group"' in html
     assert 'aria-label="Result actions"' in html
-    # Buttons dispatch through the existing delegated handler, which reads
-    # data-action -- 089 adds no new event path.
     assert 'data-action="save_result"' in html
     assert "astral-action" in html
 
 
-# -- theme-bound colors ---------------------------------------------------
-
-
 @pytest.mark.parametrize("wire_type", NEW_TYPES)
 def test_no_renderer_emits_a_color_literal(wire_type: str) -> None:
-    """Colors come from theme classes, never from component data."""
     components = {
         "action_group": {"type": "action_group", "buttons": []},
         "stat_group": {"type": "stat_group",
@@ -299,14 +260,10 @@ def test_series_colors_cycle_through_theme_classes() -> None:
     })
     used = set(re.findall(r"astral-series-(\d)", html))
     assert used <= {"1", "2", "3", "4", "5", "6"}
-    assert len(used) == 6  # the seventh and eighth reuse the cycle
-
-
-# -- multi-dataset bar chart ----------------------------------------------
+    assert len(used) == 6
 
 
 def test_bar_chart_renders_every_dataset() -> None:
-    """Before 089 this dropped datasets 2..n and looked correct doing it."""
     html = render_bar_chart({
         "type": "bar_chart",
         "labels": ["a", "b"],

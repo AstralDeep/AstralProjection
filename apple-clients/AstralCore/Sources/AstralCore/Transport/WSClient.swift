@@ -1,8 +1,7 @@
-// Feature 051 — orchestrator WebSocket transport.
-// Shared reconnect contract with Windows/Android (FR-005): backoff 1 s base,
-// ×2 per attempt, 30 s cap, reset on success; bounded 64-frame outbound FIFO
-// queue while disconnected with drop-oldest + a user-visible drop signal.
-// The pure pieces (BackoffPolicy, BoundedQueue) are separated for testing.
+// Actor-based WebSocket transport with the reconnect contract shared across Windows/Android/Apple clients:
+// capped exponential backoff, a bounded drop-oldest outbound queue, and sends fenced to the currently
+// established connection.
+
 import Foundation
 
 public struct BackoffPolicy: Sendable {
@@ -17,7 +16,6 @@ public struct BackoffPolicy: Sendable {
         self.cap = cap
     }
 
-    /// Delay for the NEXT reconnect attempt (1, 2, 4, … capped at 30).
     public mutating func next() -> TimeInterval {
         let delay = min(base * pow(factor, Double(attempt)), cap)
         attempt += 1
@@ -36,14 +34,11 @@ public struct BoundedQueue<Element>: Sendable where Element: Sendable {
         self.limit = limit
     }
 
-    /// Append; drops the OLDEST element when full. Returns true if a drop
-    /// occurred (surface it to the user — never drop silently).
     @discardableResult
     public mutating func append(_ element: Element) -> Bool {
         appendReturningDropped(element) != nil
     }
 
-    /// Append and return the exact oldest element removed at capacity.
     public mutating func appendReturningDropped(_ element: Element) -> Element? {
         var dropped: Element?
         if elements.count >= limit {
@@ -77,17 +72,13 @@ private struct QueuedOutboundFrame: Sendable {
     let replay: QueuedOperationReplay
 }
 
-/// URLSession-backed client. The app layer supplies the register_ui frame on
-/// every (re)connect via `onConnect` and consumes `events`.
 public actor WSClient {
     public let url: URL
     private var task: URLSessionWebSocketTask?
     private var backoff = BackoffPolicy()
     private var queue = BoundedQueue<QueuedOutboundFrame>(limit: 64)
     private var running = false
-    /// `URLSessionWebSocketTask.state == .running` only means `resume()` was
-    /// called. It does not prove registration or the first server receive, so
-    /// user work must remain in our replayable queue until this fence is true.
+    // Socket running does not mean registered; queue until true
     private var established = false
     private var continuation: AsyncStream<WSEvent>.Continuation?
     private var onConnect: (@Sendable () async -> String?)?
@@ -97,15 +88,12 @@ public actor WSClient {
         self.url = url
     }
 
-    /// Event stream (single consumer). Call before `start()`.
     public func events() -> AsyncStream<WSEvent> {
         AsyncStream { continuation in
             self.continuation = continuation
         }
     }
 
-    /// `onConnect` returns the register_ui frame to send first on every
-    /// (re)connect (silent resume: `resumed: true` after the first).
     public func start(
         onConnect: @escaping @Sendable () async -> String?,
         onReplay: @escaping @Sendable (QueuedOperationReplay) async -> Bool = { _ in true }
@@ -125,7 +113,6 @@ public actor WSClient {
         continuation?.finish()
     }
 
-    /// Send or queue (bounded) while disconnected.
     public func send(_ text: String) {
         guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text),
             !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text)
@@ -149,10 +136,6 @@ public actor WSClient {
         }
     }
 
-    /// Component edits target the exact view where they were invoked. They
-    /// cannot enter the reconnect queue, including after a failed send. The
-    /// callback runs after crossing actor isolation; recheck the same established
-    /// socket afterwards so validation cannot migrate an edit to another socket.
     @discardableResult
     public func sendCurrentComponentEvent(
         _ text: String, isCurrent: @Sendable () async -> Bool
@@ -171,7 +154,6 @@ public actor WSClient {
         }
     }
 
-    /// Work navigation reads belong to one current view and never enter replay.
     @discardableResult
     public func sendCurrentWorkEvent(
         _ text: String, isCurrent: @Sendable () async -> Bool
@@ -182,7 +164,6 @@ public actor WSClient {
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
     }
 
-    /// Private notes opens and commands belong to one current view and never enter replay.
     @discardableResult
     public func sendCurrentGuidanceEvent(
         _ text: String, isCurrent: @Sendable () async -> Bool
@@ -193,8 +174,6 @@ public actor WSClient {
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
     }
 
-    /// Each typed entry captures the original established task before its first await.
-    /// A view check cannot move a private read or command onto a replacement socket.
     private func sendCurrentOwnerSurfaceEvent(
         _ text: String, using current: URLSessionWebSocketTask,
         isCurrent: @Sendable () async -> Bool
@@ -210,10 +189,6 @@ public actor WSClient {
         }
     }
 
-    /// Send a proof-bound voice frame only on the socket that established its
-    /// connection fence. A valid frame is intentionally dropped while
-    /// disconnected; the voice controller owns bounded transcript retry, and
-    /// playout evidence is never replayable.
     @discardableResult
     public func sendCurrentConnectionVoice(_ text: String) -> Bool {
         guard let frame = VoiceCurrentConnectionFrame(frameText: text) else {
@@ -223,9 +198,6 @@ public actor WSClient {
         return sendCurrentConnectionVoice(frame)
     }
 
-    /// Typed overload for callers that validate before crossing actor
-    /// isolation. Returns true only when the current established task accepted
-    /// the send attempt; it never retains the frame for reconnect replay.
     @discardableResult
     public func sendCurrentConnectionVoice(_ frame: VoiceCurrentConnectionFrame) -> Bool {
         guard established, let task, task.state == .running else { return false }
@@ -235,16 +207,6 @@ public actor WSClient {
 
     private func runLoop() async {
         while running {
-            // Dial FIRST, then fetch credentials while the TCP/TLS/WS
-            // handshake is in flight — URLSession buffers sends until the
-            // socket is open, so register_ui is still the first frame on the
-            // wire. On a cold launch with a stale access token the IdP
-            // refresh and the dial overlap instead of running back-to-back.
-            // The shared session (vs. one per attempt) keeps the TLS session
-            // cache warm across reconnects and never leaks session objects.
-            // Nothing but register_ui is ever sent pre-registration: if the
-            // credentials don't materialize, the socket is closed unused and
-            // we wait out the backoff. Offline launches sit here.
             let task = NoStoreHTTP.session.webSocketTask(with: url)
             self.task = task
             established = false
@@ -260,9 +222,6 @@ public actor WSClient {
             }
             task.send(.string(register)) { _ in }
 
-            // `.connected` (and the backoff reset, per the shared contract:
-            // reset ONLY on success) waits for the first successful receive —
-            // resume() alone proves nothing when the network is down.
             receive: while running {
                 do {
                     let message = try await task.receive()
@@ -319,9 +278,6 @@ public actor WSClient {
     ) {
         task.send(.string(queued.text)) { [weak self] error in
             guard error != nil else { return }
-            // Reuse the exact identities. If delivery became ambiguous, the
-            // server's durable submission idempotency fence prevents a second
-            // mutation while retaining work that URLSession did not accept.
             Task { await self?.retain(queued) }
         }
     }

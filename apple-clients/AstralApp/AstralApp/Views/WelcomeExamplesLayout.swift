@@ -1,7 +1,9 @@
+// Custom Layout that centers and wraps native equivalents of the server's welcome flex-row examples. Used by
+// ComponentView's welcome/example rendering.
+
 import AstralCore
 import SwiftUI
 
-/// Centered, wrapping native equivalents of the server welcome flex rows.
 struct WelcomeExamplesLayout: Layout {
     var spacing: CGFloat = 12
 

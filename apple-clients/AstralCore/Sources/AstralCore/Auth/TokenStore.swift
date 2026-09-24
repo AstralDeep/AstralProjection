@@ -1,8 +1,7 @@
-// Feature 051 — token persistence (Keychain on device, in-memory for tests)
-// and the refresh strategy per platform (research D7):
-//   iOS/macOS → refresh directly against the IdP token endpoint (Windows
-//               precedent, public client);
-//   watch     → refresh via the backend broker (single TLS peer).
+// Token persistence (Keychain on-device, in-memory for tests) and per-platform refresh strategy: iOS/macOS
+// refresh directly against the identity provider, watch refreshes via the backend broker. Backs AppModel and
+// most AstralApp test fixtures.
+
 import Foundation
 
 #if canImport(Security)
@@ -59,7 +58,6 @@ public final class InMemoryTokenStore: TokenStorage, @unchecked Sendable {
 }
 
 #if canImport(Security)
-    /// Keychain-backed store (FR-007: tokens live in the platform keychain).
     public final class KeychainTokenStore: TokenStorage, @unchecked Sendable {
         private let service: String
 
@@ -88,14 +86,10 @@ public final class InMemoryTokenStore: TokenStorage, @unchecked Sendable {
 
         public func save(_ tokens: StoredTokens) {
             guard let data = try? JSONEncoder().encode(tokens) else { return }
-            // Delete-then-add so the accessibility class is always applied
-            // (SecItemUpdate cannot change it on an existing item).
+            // Delete-then-add — SecItemUpdate can't change existing accessibility
             SecItemDelete(query as CFDictionary)
             var add = query
             add[kSecValueData as String] = data
-            // Available after first unlock: cold launches (including before the
-            // UI is unlocked post-reboot) restore the session without sign-in.
-            // ThisDeviceOnly: refresh tokens never ride iCloud Keychain backups.
             add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             SecItemAdd(add as CFDictionary, nil)
         }
@@ -106,26 +100,14 @@ public final class InMemoryTokenStore: TokenStorage, @unchecked Sendable {
     }
 #endif
 
-/// Outcome of a refresh attempt, classified so callers can tell a definitive
-/// credential rejection (wipe and re-authenticate) from a transient failure
-/// (KEEP the stored tokens — an offline launch must never destroy a session).
 public enum RefreshResult: Sendable {
     case ok(TokenSet)
-    /// The IdP/broker definitively refused the refresh token
-    /// (revoked / expired / hard-cap). Wipe and go to interactive sign-in.
     case rejected(String)
-    /// Network unreachable, timeout, rate limit, or server unavailable.
-    /// Credentials stay valid — retry later.
     case transient(String)
 }
 
-/// How a session obtains a fresh access token when the current one nears
-/// expiry. Both paths keep the sign-in interactive anchor untouched — the
-/// realm's session-max policy bounds them (research D7).
 public enum RefreshStrategy: Sendable {
-    /// Direct to the IdP token endpoint (iOS/macOS; Windows precedent).
     case direct(OIDCConfig)
-    /// Via the backend broker (watch; single TLS peer, FR-021).
     case broker(DeviceLoginClient)
 
     public func refresh(refreshToken: String) async throws -> TokenSet {
@@ -161,9 +143,6 @@ public enum RefreshStrategy: Sendable {
             contentType: "application/x-www-form-urlencoded")
     }
 
-    /// `refresh` with the failure mode classified (never throws). If the IdP
-    /// rotates without returning a new refresh token, the previous one is
-    /// preserved — dropping it would silently force a re-login at next expiry.
     public func attempt(refreshToken: String) async -> RefreshResult {
         do {
             var set = try await refresh(refreshToken: refreshToken)

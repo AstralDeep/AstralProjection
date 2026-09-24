@@ -1,3 +1,6 @@
+// Tests for coverage-conversion.mjs: Node/Playwright V8 entry conversion, referenced by
+// node-v8-cli.test.mjs.
+
 import assert from "node:assert/strict";
 import test from "node:test";
 

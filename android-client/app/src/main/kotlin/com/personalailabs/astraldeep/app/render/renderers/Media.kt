@@ -1,3 +1,6 @@
+// Registers the image media renderer, decoding data:image/… base64 URLs (used for local screenshots) since
+// Coil has no built-in data-URI fetcher; every other source loads through Coil normally.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,8 +17,6 @@ import com.personalailabs.astraldeep.core.sdui.Component
 import java.nio.ByteBuffer
 import java.util.Base64
 
-/** Register media primitives (US2). `image` is a native improvement over the
- *  Windows placeholder; `audio` stays excluded (placeholder) until added. */
 fun Renderer.registerMediaRenderers(): Renderer =
     apply {
         register("image") { c -> ImagePrimitive(c) }
@@ -27,10 +28,6 @@ private fun ImagePrimitive(c: Component) {
     val node = capture?.registry?.node(capture.path)
     val density = LocalDensity.current.density
     val source = c.str("url") ?: c.str("src")
-    // Feature 076: screenshots of the user's own computer arrive as
-    // `data:image/…;base64,…` URLs (the same form the web and Windows
-    // renderers already accept). Coil has no data-URI fetcher, so decode the
-    // bytes here and hand Coil a ByteBuffer; every other source is unchanged.
     val model: Any? =
         remember(source) { dataUriBytes(source)?.let { ByteBuffer.wrap(it) } ?: source }
     AsyncImage(
@@ -55,11 +52,6 @@ private fun ImagePrimitive(c: Component) {
     )
 }
 
-/**
- * The decoded bytes of a base64 `data:image/…` URL, or null for any other
- * source (including a malformed data URL — the caller then falls back to the
- * string, which Coil reports as a load failure rather than a crash).
- */
 internal fun dataUriBytes(source: String?): ByteArray? {
     if (source == null || !source.startsWith("data:image/", ignoreCase = true)) return null
     val comma = source.indexOf(',')

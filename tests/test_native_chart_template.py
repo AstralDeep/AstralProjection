@@ -1,4 +1,6 @@
-"""The embedded chart document is reproducible and has a closed trust boundary."""
+"""Tests confirming the embedded chart document template tracks its web options, vendor
+bundle, and fonts exactly, and that only its two intended scripts can execute.
+"""
 
 import base64
 import hashlib

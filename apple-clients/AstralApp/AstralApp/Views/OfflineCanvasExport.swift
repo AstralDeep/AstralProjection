@@ -1,3 +1,7 @@
+// Builds a self-contained offline HTML export of the canvas in an isolated WKWebView, embedding the
+// authenticated response as inert base64 data, never script. Used by AppModel; mirrors Android's
+// OfflineCanvasExport.kt.
+
 import AstralCore
 import CryptoKit
 import SwiftUI
@@ -10,8 +14,7 @@ enum CanvasExportFailure: LocalizedError {
     }
 }
 
-/// Only bundled executable bytes enter this document. The authenticated
-/// response is inserted as base64 display data, never as script source.
+// Response bytes are inert base64 data, never executable script
 enum OfflineCanvasExportDocument {
     static func html(presentation: Data, bundle: Bundle = .main) throws -> String {
         guard presentation.count <= CanvasExportPolicy.maximumOutputBytes,
@@ -40,8 +43,6 @@ enum OfflineCanvasExportDocument {
     }
 }
 
-/// Callback, cancellation and timeout compete for one continuation. Late
-/// WebKit callbacks cannot resume a newer export or keep its request alive.
 @MainActor
 private final class CanvasExportEvaluation {
     private var continuation: CheckedContinuation<Any?, Error>?

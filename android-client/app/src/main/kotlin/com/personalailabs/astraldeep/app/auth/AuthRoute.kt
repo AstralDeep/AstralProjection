@@ -1,20 +1,14 @@
+// Pure decision for where auth routes after a silent-refresh attempt: a definitive OAuth rejection signs out
+// with an explanation, a transient failure keeps the cached session. Used by MainActivity.
+
 package com.personalailabs.astraldeep.app.auth
 
 import net.openid.appauth.AuthorizationException
 import java.io.IOException
 
-/** Where the auth state routes after a silent-refresh attempt (feature 044 T016). */
 data class AuthRoute(val token: String?, val error: String?)
 
-/**
- * Pure decision (unit-tested): a successful silent refresh keeps the session; a
- * DEFINITIVE OAuth rejection (e.g. `invalid_grant` — the refresh token is dead)
- * routes to the sign-in screen with an explanation — a dead session is never a
- * log-only stall (FR-012/SC-004). A TRANSIENT failure (network error, IdP briefly
- * down) with a [cachedToken] in hand keeps the cached session instead of kicking a
- * valid year-long session to sign-in while offline — if the session is genuinely
- * dead the mid-session `auth_required` handler (no cached token) catches it later.
- */
+// Only a definitive OAuth rejection signs out; transient errors don't
 fun routeAfterRefresh(
     result: Result<String>,
     cachedToken: String? = null,
@@ -30,11 +24,6 @@ fun routeAfterRefresh(
         },
     )
 
-/**
- * Transient = the refresh could not be ATTEMPTED or ANSWERED (AppAuth
- * general/network/server errors, plain IO failures) — only an OAuth token-endpoint
- * rejection ([AuthorizationException.TYPE_OAUTH_TOKEN_ERROR]) proves the session dead.
- */
 private fun isTransientRefreshFailure(e: Throwable): Boolean =
     when (e) {
         is AuthorizationException -> e.type != AuthorizationException.TYPE_OAUTH_TOKEN_ERROR

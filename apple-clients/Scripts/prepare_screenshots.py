@@ -1,39 +1,7 @@
 #!/usr/bin/env python3
-"""Feature 053 - normalize captured screenshots into App Store Connect uploads.
-
-App Store Connect is strict about screenshots in two ways that raw captures
-violate:
-
-  1. **No alpha.** Screenshots must be flattened RGB. Every capture macOS and
-     the Simulator produce is RGBA (colour type 6), so ASC rejects them even
-     though the alpha channel is uniformly opaque.
-  2. **Exact pixel sizes.** Each device class accepts a small fixed set of
-     dimensions. The Simulator captures already land on an accepted size; a Mac
-     window capture lands on whatever the operator's display can render, which
-     is essentially never one of the four accepted 16:10 Mac sizes.
-
-So this script:
-
-  * decodes each PNG (stdlib ``zlib`` only - no Pillow, Constitution V),
-  * re-encodes it as colour type 2 (truecolour, **no alpha channel**),
-  * for classes whose capture size ASC does not accept (Mac, iPhone),
-     downscales the capture and centres it on an accepted canvas in a matte
-     colour sampled from the capture itself (see MAC_MATTE / IPHONE_MATTE),
-  * writes the results in listing order as ``NN-slug.png``, and
-  * asserts the exact size / absence of alpha of everything it wrote.
-
-Dropping the alpha channel is *pixel-exact*, not a lossy composite: the script
-refuses to run if any source pixel is non-opaque, so "flatten" can never
-silently change a colour. See ``--check``.
-
-Usage
------
-    # Regenerate from the operator's capture folder.
-    python3 apple-clients/Scripts/prepare_screenshots.py \
-        --source "$HOME/Desktop/Work/Astral Screenshots"
-
-    # Re-verify the committed outputs (no sources needed; safe for CI).
-    python3 apple-clients/Scripts/prepare_screenshots.py --check
+"""Normalizes raw macOS/Simulator screenshot captures for App Store Connect: flattens to
+opaque RGB while preserving embedded colour profiles, and pads non-conforming
+Mac/iPhone captures onto matte canvases sized to ASC's accepted dimensions.
 """
 
 from __future__ import annotations
@@ -52,43 +20,21 @@ OUT_ROOT = REPO_ROOT / "apple-clients" / "AppStore" / "screenshots"
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
-# Colour chunks are copied through from the input so the exported pixels keep
-# the meaning they were captured with. The Simulator tags sRGB; a Mac capture
-# carries an embedded ICC profile (Display P3 on most Macs). Dropping the
-# profile would reinterpret P3 pixels as sRGB and over-saturate the whole shot.
-# Everything else (eXIf, pHYs, iTXt, iDOT) is capture metadata ASC has no use
-# for, and eXIf in particular can carry an orientation flag we do not want.
+# Drop the profile and P3 captures look oversaturated
 COLOUR_CHUNKS = (b"iCCP", b"cICP", b"sRGB", b"gAMA", b"cHRM")
 
-# The Mac captures are 2940x1912 (ratio 1.538); the Mac App Store accepts only
-# 16:10. Downscaling to fit the 1800px height yields 2768x1800, which is then
-# centred on a 2880x1800 canvas -- 56px of matte per side, 1.9% of the width.
-#
-# The matte is pure black because that is what the capture's own top band
-# already is: sampling the resized image's edges gives #000000 across the
-# entire top row, #101220 down both sides, #141725 along the bottom. Black
-# therefore matches the top seamlessly and sits within ~0x20 of the side edges,
-# which is imperceptible on a dark UI. Padding with the side colour instead
-# would put a visible notch around the black title band.
 MAC_MATTE = (0x00, 0x00, 0x00)
 
-# The iPhone captures come from an iPhone 17 Pro Max (6.9", 1320x2868), but the
-# App Store Connect page presents the 6.5" slot (1242x2688 / 1284x2778).
-# Scaling to fit the 2778px height gives 1278x2778, centred with 3px of matte
-# per side. #0f1221 is the app's own background: sampling both edge columns of
-# every capture shows ~75% #0f1221 with a #1a1e2e band -- at 3px, invisible.
 IPHONE_MATTE = (0x0F, 0x12, 0x21)
 
 
 class Klass:
-    """One App Store device class."""
-
     def __init__(self, slug, source_dir, size, inner=None, matte=None):
         self.slug = slug
         self.source_dir = source_dir
-        self.size = size  # exact (w, h) ASC must receive
-        self.inner = inner  # (w, h) the capture is scaled to before padding
-        self.matte = matte  # padding colour when letterboxed
+        self.size = size
+        self.inner = inner
+        self.matte = matte
 
     @property
     def letterboxed(self):
@@ -102,9 +48,6 @@ CLASSES = [
     Klass("watch", "Watch", (416, 496)),
 ]
 
-# Listing order per class, keyed by the ``HH.MM.SS`` stamp in the capture's
-# filename (stable across the U+202F narrow no-break space macOS puts before
-# "PM", and across the operator renaming the folder).
 MANIFEST = {
     "iphone-6.5": [
         ("13.33.56", "dashboard"),
@@ -129,19 +72,12 @@ MANIFEST = {
     ],
 }
 
-# Captures deliberately left out of the listing, and why. Kept here rather than
-# deleted so the decision survives a re-run.
 EXCLUDED = {
     "13.45.05": (
         "watch: shows the watchOS system dictation keyboard, not AstralDeep. "
         "Guideline 2.3.3 wants the app itself in the shot."
     ),
 }
-
-
-# --------------------------------------------------------------------------
-# Minimal PNG codec (8-bit, non-interlaced, colour type 2 or 6)
-# --------------------------------------------------------------------------
 
 
 def _iter_chunks(blob):
@@ -153,7 +89,6 @@ def _iter_chunks(blob):
 
 
 def read_png(path):
-    """Return ``(width, height, rgb_rows, colour_chunks)``; alpha must be opaque."""
     blob = path.read_bytes()
     if blob[:8] != PNG_MAGIC:
         raise SystemExit(f"{path}: not a PNG")
@@ -216,8 +151,6 @@ def read_png(path):
     if bpp == 3:
         return width, height, rows, colour_chunks
 
-    # Refuse to guess at a background for translucent pixels: if the capture is
-    # fully opaque (it always is), dropping the channel is lossless.
     for line in rows:
         if any(a != 255 for a in line[3::4]):
             raise SystemExit(
@@ -244,10 +177,6 @@ def _chunk(typ, data):
 
 
 def write_png_rgb(path, width, height, rows, colour_chunks=()):
-    """Write colour type 2 (RGB, no alpha)."""
-    # Filter 0 (None) on every scanline. The adaptive filters buy maybe 30% on
-    # flat dark UI captures and cost a per-byte Python loop over ~15M bytes;
-    # ASC does not care about file size and neither does the repo.
     raw = bytearray()
     for line in rows:
         raw.append(0)
@@ -263,7 +192,6 @@ def write_png_rgb(path, width, height, rows, colour_chunks=()):
 
 
 def png_header(path):
-    """Cheap ``(width, height, colour_type)`` probe - no pixel decode."""
     blob = path.read_bytes()
     if blob[:8] != PNG_MAGIC:
         raise SystemExit(f"{path}: not a PNG")
@@ -271,18 +199,7 @@ def png_header(path):
     return width, height, colour
 
 
-# --------------------------------------------------------------------------
-# Pipeline
-# --------------------------------------------------------------------------
-
-
 def time_key(name):
-    """``Screenshot 2026-07-09 at 1.48.54<U+202F>PM.png`` -> ``1.48.54``.
-
-    NFKC folds the U+202F narrow no-break space macOS wedges in before "PM"
-    into a plain space, so the stamp survives a naive split. The extension is
-    stripped first, or ``13.33.56.png`` tokenizes into four parts, not three.
-    """
     stem = unicodedata.normalize("NFKC", pathlib.PurePath(name).stem)
     for token in stem.replace("-", " ").split():
         parts = token.split(".")
@@ -369,7 +286,6 @@ def build(source_root):
 
 
 def check():
-    """Verify the committed outputs. Needs no capture sources - CI-safe."""
     problems = []
     for klass in CLASSES:
         out_dir = OUT_ROOT / klass.slug

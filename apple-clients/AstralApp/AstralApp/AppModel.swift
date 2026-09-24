@@ -1,14 +1,10 @@
+// iOS/macOS app model, a faithful port of Android's AppViewModel: PKCE sign-in, the WS session, and the full
+// reduce() pipeline for conversation snapshots, canvas ops, and voice. Read by ChatView, RootView, and
+// Screens.swift.
+
 import AVFoundation
 import AstralCore
 import AuthenticationServices
-// Feature 051 — the iOS/macOS app model: a faithful port of the Android
-// `AppViewModel`. System-browser PKCE sign-in, WS session with the ios/macos
-// device profile, and the full server-driven reduce: the "commit-on-done"
-// canvas lifecycle (a replacing turn buffers full `ui_render` replaces into
-// `pendingCanvas` and swaps them in on `chat_status done`, pushing the prior
-// canvas onto the timeline, while identity-keyed ops morph the visible canvas
-// live), server-owned chrome (`chrome_menu`/`chrome_surface`), agents/audit/
-// history surfaces, streaming nodes, attachments, and live theming.
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -61,9 +57,7 @@ struct LLMFirstLoginOperation: Equatable {
         if phaseVisible && [State.submitting, .accepted].contains(state) {
             return "Waiting to check your provider credentials…"
         }
-        // Never empty while loading: the status view is a Text, and an empty
-        // Text exposes NO accessibility element — the status would vanish from
-        // the AX tree during the brief pre-first-frame window.
+        // An empty Text has no accessibility element and vanishes from AX
         if label.isEmpty && isLoading { return "Submitting…" }
         return label
     }
@@ -83,7 +77,7 @@ final class AppModel: NSObject {
 
     struct ChatTurn: Identifiable, Equatable {
         let id: String
-        let role: String  // "user" | "assistant" | "reasoning"
+        let role: String
         let text: String
         let components: [AstralComponent]
 
@@ -105,7 +99,7 @@ final class AppModel: NSObject {
         let filename: String
         var category: String
         var attachmentId: String?
-        var state: String  // "uploading" | "ready" | "failed"
+        var state: String
         var note: String?
         var id: Int { uid }
     }
@@ -122,17 +116,11 @@ final class AppModel: NSObject {
         let components: [AstralComponent]
     }
 
-    // MARK: configuration
-
     @ObservationIgnored private let defaults: UserDefaults
 
-    // UserDefaults-backed (the former @AppStorage pair — property wrappers
-    // aren't allowed on @Observable stored properties). Seeded in init.
     var serverBaseText: String {
         didSet {
             defaults.set(serverBaseText, forKey: "serverBase")
-            // Feature 053 — mirror the endpoint to the paired watch. Best-effort:
-            // the watch runs independently and falls back to its build-time default.
             #if os(iOS)
                 WatchOverrideSync.shared.push(serverBaseText)
             #endif
@@ -151,8 +139,6 @@ final class AppModel: NSObject {
     let voiceDeviceId: String
     @ObservationIgnored let voice = AppleVoiceSessionController()
 
-    // MARK: observable state (mirrors Android UiState)
-
     var signedIn = false
     var accountName = ""
     var connected = false
@@ -160,8 +146,6 @@ final class AppModel: NSObject {
     var screen: Screen = .chat
     var activeChatId: String?
 
-    // Ephemeral, account-owned presentation state. A disconnected transport or
-    // a resized view never clears a draft; account changes and New chat do.
     var composerDraft = ""
     var runInBackground = false
     var workspaceStarted = false
@@ -180,8 +164,6 @@ final class AppModel: NSObject {
     var pendingCanvas: [AstralComponent] = []
     var turnActive = false
     var pendingReplace = false
-    /// Set by the first live canvas op of an armed turn — clears the skeleton
-    /// while the turn stays active (web parity: first canvas content hides it).
     var liveOpsThisTurn = false
     var canvasLabel = ""
     var pendingLabel = ""
@@ -233,23 +215,16 @@ final class AppModel: NSObject {
     private var workReadUpdate: WorkSurfaceUpdate?
     private var workReadEpoch = UUID().uuidString.lowercased()
     @ObservationIgnored private var workReadTask: Task<Void, Never>?
-    /// 054 first-run gate: the server pinned the current surface
-    /// (`chrome_surface` `mode:"mandatory"`) — navigation is suppressed until
-    /// the server replaces or closes it. Sign-out stays available (FR-013).
     var mandatorySurface = false
     var timelineReadOnly = false
 
     var signInError: String?
 
-    /// One client-local projection for the current provider Save attempt. It
-    /// never claims server acceptance; canonical operation frames or the
-    /// authenticated reconciliation endpoints own that transition.
     var llmFirstLoginOperation: LLMFirstLoginOperation?
 
     let themeStore = ThemeStore()
     @ObservationIgnored let canvasCapture = CanvasCaptureRegistry()
 
-    // Derived
     var visibleCanvas: [AstralComponent] {
         if let idx = viewingIndex, canvasHistory.indices.contains(idx) {
             return canvasHistory[idx].components
@@ -263,9 +238,6 @@ final class AppModel: NSObject {
     var isViewingHistory: Bool { viewingIndex != nil }
     var showSkeleton: Bool { pendingReplace && !liveOpsThisTurn && viewingIndex == nil }
     var mutationsLocked: Bool { timelineReadOnly }
-    /// `statusText` also carries occasional non-progress notices.  Views must
-    /// only pair it with an indeterminate indicator while a locally correlated
-    /// operation or chat turn is genuinely still active.
     var statusShowsActivity: Bool {
         guard statusText != nil else { return false }
         if localOperationSubmissions.values.contains(where: localSubmissionShowsActivity) {
@@ -282,8 +254,6 @@ final class AppModel: NSObject {
         return acceptedOperationIsActive || turnActive || asyncDetached
     }
 
-    // MARK: session plumbing (never read by views — not observation-tracked)
-
     private let store: TokenStorage
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var ws: WSClient?
@@ -292,9 +262,6 @@ final class AppModel: NSObject {
     @ObservationIgnored private var seqState: [String: Int] = [:]
     @ObservationIgnored private var attachSeq = 0
     @ObservationIgnored private var statusLifecycle = StatusLifecycleReducer()
-    /// Single-flight refresh (see `refreshOutcome`) + a session generation so
-    /// a refresh resolving after sign-out can never resurrect wiped
-    /// credentials or be joined by the next account's session.
     @ObservationIgnored private var refreshTask: Task<RefreshResult, Never>?
     @ObservationIgnored private var refreshTaskGeneration = -1
     @ObservationIgnored private var sessionGeneration = 0
@@ -324,11 +291,8 @@ final class AppModel: NSObject {
     static let llmFirstLoginPhaseDelayNanoseconds: UInt64 = 1_000_000_000
     static let llmFirstLoginWatchdogNanoseconds: UInt64 = 10_000_000_000
 
-    /// Test seam: observes every outbound WS frame text (nil in production).
     @ObservationIgnored var outboundTap: ((String) -> Void)?
 
-    /// Test-only override for the dedicated, current-connection voice path.
-    /// Production always falls through to `WSClient.sendCurrentConnectionVoice`.
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
 
     var serverBase: URL {
@@ -346,8 +310,6 @@ final class AppModel: NSObject {
         }
     }
 
-    // MARK: lifecycle
-
     override convenience init() {
         #if canImport(Security)
             self.init(tokenStore: KeychainTokenStore())
@@ -356,9 +318,6 @@ final class AppModel: NSObject {
         #endif
     }
 
-    /// Tests supply an in-memory store explicitly: changing the test host's
-    /// bundle identifier does not change a Keychain service/account query.
-    /// Production's no-argument initializer retains its existing Keychain.
     init(
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
         tokenStore: TokenStorage,
@@ -383,12 +342,7 @@ final class AppModel: NSObject {
         }
         var storedBase = defaults.string(forKey: "serverBase") ?? ""
         var storedAuthority = defaults.string(forKey: "authority") ?? ""
-        // The override keys hold USER edits only. Earlier builds seeded the
-        // build-time DEFAULT into them on first launch, freezing the endpoint
-        // for the whole install base — a stored value equal to the current
-        // default is that seed (or a no-op edit), not an override: clear it so
-        // a future xcconfig repoint reaches existing installs and their
-        // paired watches.
+        // Equal to the default could be an old seeded value, not a real override
         if storedBase == AstralConfig.serverBaseURL {
             defaults.removeObject(forKey: "serverBase")
             storedBase = ""
@@ -420,9 +374,6 @@ final class AppModel: NSObject {
         #endif
     }
 
-    /// Bind the authenticated OIDC account to its opaque local locator. This
-    /// is preference namespacing only; the server remains authoritative for
-    /// ownership when the following registration/load request is handled.
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
             continuity.clear()
@@ -455,8 +406,6 @@ final class AppModel: NSObject {
     private var componentActionsInFlight: [ComponentActionContext] = []
     private var componentPendingOperations: [String: ComponentActionContext] = [:]
 
-    /// Server metadata decides presence, while the current owner and exact
-    /// visible component bind each action to the place where it was opened.
     func componentActionContext(for action: ComponentActionKind, component: AstralComponent) -> ComponentActionContext?
     {
         guard signedIn, downloadOwner.account != nil, screen == .chat, !mandatorySurface, workspaceStarted,
@@ -494,7 +443,6 @@ final class AppModel: NSObject {
         }
     }
 
-    /// A late credential refresh cannot dispatch a stale component request.
     func componentAccessToken(
         _ context: ComponentActionContext, resolve: (() async -> String?)? = nil
     ) async -> String? {
@@ -520,8 +468,6 @@ final class AppModel: NSObject {
             ]))
     }
 
-    /// Restoring sends the ordinary server-authorized event; no optimistic
-    /// canvas replacement, archived body, or descriptor-provided event executes.
     func restoreComponent(_ context: ComponentActionContext, version: UInt64) {
         guard context.action == .history, componentActionIsCurrent(context),
             ComponentChromeModel.versions(from: context.component.raw["versions"]).contains(where: {
@@ -629,8 +575,6 @@ final class AppModel: NSObject {
         workspaceActionsInFlight.contains(action.rawValue)
     }
 
-    /// A server descriptor controls presence; current workspace identity and
-    /// the ordinary authenticated endpoint independently govern execution.
     func workspaceActionContext(for action: WorkspaceAction) -> WorkspaceActionContext? {
         guard signedIn, screen == .chat, !mandatorySurface,
             !isViewingHistory, !timelineReadOnly, workspaceStarted,
@@ -647,13 +591,9 @@ final class AppModel: NSObject {
         guard let current = workspaceActionContext(for: context.action),
             current.owner == context.owner, current.server == context.server, current.chatId == context.chatId
         else { return false }
-        // Share retains the existing snapshot-at-mint API semantics. Only an
-        // export has an explicit server revision precondition and response.
         return context.action == .shareCanvas || current.renderRevision == context.renderRevision
     }
 
-    /// Recheck after credential refresh, before the transport can issue a
-    /// request. Discarding a late mint response alone would be too late.
     func workspaceAccessToken(
         _ context: WorkspaceActionContext,
         resolve: (() async -> String?)? = nil
@@ -727,9 +667,6 @@ final class AppModel: NSObject {
         return file
     }
 
-    /// The legacy GET performs its normal authorization/audit first. Its
-    /// canonical HTML is private and immediately removed; only the frozen
-    /// visible capture is finalized. No stage retries an uncertain request.
     func exportWorkspacePresentation(
         _ context: WorkspaceActionContext,
         authorize: () async throws -> URL,
@@ -796,8 +733,6 @@ final class AppModel: NSObject {
         return file
     }
 
-    /// Build one reconnect registration and open its hydration fence before
-    /// any welcome or transient frame can be reduced.
     func registrationFrame(token: String, resumed: Bool) -> String {
         let connection = UUID().uuidString.lowercased()
         guard beginConversationConnection(connection) else { return "{}" }
@@ -877,21 +812,11 @@ final class AppModel: NSObject {
     func bootstrap() async {
         guard let stored = store.load() else { return }
         tokens = stored.tokenSet
-        // Enter the signed-in shell IMMEDIATELY: the WS dial starts now, and
-        // the register frame waits on the (single-flight) token refresh
-        // inside onConnect — so the IdP round trip and the socket handshake
-        // run concurrently instead of back-to-back behind a blank sign-in
-        // screen. Transient (offline) keeps the stored credentials: the
-        // reconnect strip shows and the WS backoff loop registers once the
-        // network returns. Credentials are wiped ONLY on a definitive IdP
-        // rejection — never for being offline at launch.
         enterSignedIn(resumedSession: true)
         if case .rejected = await refreshOutcome() {
-            await signOut(revokeRemote: false)  // the IdP already refused the credential
+            await signOut(revokeRemote: false)
         }
     }
-
-    // MARK: sign-in
 
     func signIn() {
         guard let oidc else {
@@ -951,12 +876,6 @@ final class AppModel: NSObject {
         }
     }
 
-    /// Ensure a live access token, classifying failures so callers can tell
-    /// "the IdP revoked us" (wipe + interactive sign-in) from "we're offline"
-    /// (keep credentials, retry later). SINGLE-FLIGHT: concurrent callers
-    /// (the WS onConnect, REST tokenProvider, bootstrap validation) join one
-    /// in-flight IdP round trip — two parallel grants with the same rotating
-    /// refresh token can revoke the whole session at the IdP.
     private func refreshOutcome() async -> RefreshResult {
         if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
             return await inFlight.value
@@ -966,8 +885,6 @@ final class AppModel: NSObject {
         return await runRefresh()
     }
 
-    /// Start (and register) a refresh attempt unconditionally —
-    /// `refreshOutcome` gates it behind expiry, `handleAuthRequired` forces it.
     private func runRefresh() async -> RefreshResult {
         guard let refresh = tokens?.refreshToken, let oidc else {
             return .rejected("no refresh token")
@@ -978,8 +895,6 @@ final class AppModel: NSObject {
         refreshTaskGeneration = generation
         let result = await attempt.value
         if refreshTaskGeneration == generation { refreshTask = nil }
-        // A sign-out while the request was in flight ended this session —
-        // never resurrect wiped credentials.
         if case .ok(let set) = result, generation == sessionGeneration {
             tokens = set
             store.save(StoredTokens(from: set))
@@ -992,12 +907,6 @@ final class AppModel: NSObject {
         return nil
     }
 
-    /// The server refused our token. `refreshOutcome` short-circuits when the
-    /// token isn't near expiry, which would reconnect with the SAME rejected
-    /// credential forever — so join the in-flight refresh if one is running,
-    /// otherwise FORCE a real IdP refresh; reconnect only if it produced a
-    /// different token, else the session is dead server-side (revoked / hard
-    /// cap) and we go to interactive sign-in.
     private func handleAuthRequired() async {
         guard let refused = tokens?.accessToken else {
             await signOut()
@@ -1013,9 +922,9 @@ final class AppModel: NSObject {
         case .ok(let set) where set.accessToken != refused:
             connectWS(resumed: true)
         case .ok, .rejected:
-            await signOut()  // same token — the server will just refuse it again
+            await signOut()
         case .transient:
-            break  // offline blip; the WS backoff loop keeps retrying
+            break
         }
     }
 
@@ -1032,14 +941,8 @@ final class AppModel: NSObject {
         connectWS(resumed: resumedSession)
     }
 
-    /// `revokeRemote: false` skips the server-side revocation round trip —
-    /// used when the IdP has ALREADY refused the credential (nothing to
-    /// revoke, and the call would only delay landing on the sign-in screen).
     func signOut(revokeRemote: Bool = true) async {
-        // Snapshot the old credential and an authenticated revocation client,
-        // then make local sign-out durable before the first suspension point.
-        // A killed or frozen revocation request must not leave Keychain able
-        // to resurrect the account that the user just signed out of.
+        // Local wipe must precede the async revoke call, before any suspension
         let access = tokens?.accessToken
         let refresh = tokens?.refreshToken
         let logoutClient = RestClient(serverBase: serverBase) { access }
@@ -1065,22 +968,19 @@ final class AppModel: NSObject {
         operationStatuses = [:]
         agentLifecycles = [:]
         chromeMenu = nil
-        mandatorySurface = false  // the next session re-gates server-side
+        mandatorySurface = false
         clearLLMFirstLoginOperation()
         agents = []
         history = []
         historyTitle = "Recent chats"
         audit = []
 
-        // Everything above is synchronous local teardown. Remote revocation
-        // remains best-effort and uses only the captured old access token.
         await socket?.stop()
         if revokeRemote, let refresh {
             _ = try? await logoutClient.logout(clientId: clientId, refreshToken: refresh)
         }
     }
 
-    /// Local account-removal seam (for MDM/account-management surfaces).
     func clearConversationForAccountRemoval() {
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
@@ -1094,8 +994,6 @@ final class AppModel: NSObject {
         agentLifecycles = [:]
         voice.close()
     }
-
-    // MARK: WS
 
     @ObservationIgnored private var lastReportedViewport: (width: Int, height: Int)?
 
@@ -1121,7 +1019,6 @@ final class AppModel: NSObject {
         descriptor.microphonePermission = AppleVoicePermission.status
         descriptor.fullDuplex = true
         descriptor.voiceTransport = "livekit"
-        // 066 capability envelope: additive fields, ignored by older servers.
         #if os(macOS)
             descriptor.reducedMotion =
                 NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -1131,15 +1028,11 @@ final class AppModel: NSObject {
         return descriptor
     }
 
-    /// FR-002/T030: report viewport changes (rotation, iPad Split View /
-    /// Slide Over, macOS window resize) through the existing `update_device`
-    /// action so ROTE re-derives the layout — the Android fold/rotation twin.
     func viewportChanged(width: Int, height: Int) {
         guard width > 0, height > 0 else { return }
         if let last = lastReportedViewport, last == (width, height) { return }
         let isFirst = lastReportedViewport == nil
         lastReportedViewport = (width, height)
-        // The initial size rides on register_ui; only CHANGES re-report.
         guard signedIn, !isFirst else { return }
         let identity = ClientOperationIdentity.fresh()
         beginLocalOperationSubmission(
@@ -1160,7 +1053,7 @@ final class AppModel: NSObject {
         invalidateWorkRead()
         wsTask?.cancel()
         if let previous = ws {
-            Task { await previous.stop() }  // never leak a live socket loop
+            Task { await previous.stop() }
         }
         let client = WSClient(url: rest.webSocketURL)
         ws = client
@@ -1185,17 +1078,11 @@ final class AppModel: NSObject {
         }
     }
 
-    /// Internal (not private) so XCTests can drive connection events.
     func handle(_ event: WSEvent) async {
         switch event {
         case .connected:
             connected = true
             everConnected = true
-            // 055 continuity: register_ui resumed the server session, but the
-            // server replays no turn frames on register — re-issue load_chat
-            // so anything that finished while this socket was down (background
-            // task, another device) re-hydrates the narrative and canvas.
-            // No-op on first connect: activeChatId is never persisted.
             if continuity.connectionGeneration == nil {
                 refreshActiveChat()
             }
@@ -1231,9 +1118,6 @@ final class AppModel: NSObject {
             bannerIsError = true
             errorBanner = "Not sent while offline: \(replay.action) (\(reason))"
         case .sendRejected(let action):
-            // A malformed queued frame cannot be correlated safely. Clear the
-            // local-only map; valid retained frames restore themselves before
-            // replay on the next connection.
             clearPendingOperationSubmissions()
             bannerIsError = true
             errorBanner = "Not sent while offline: \(action) (invalid queued identity)"
@@ -1242,9 +1126,6 @@ final class AppModel: NSObject {
         }
     }
 
-    // MARK: reduce (port of AppViewModel.reduce)
-
-    /// Internal (not private) so XCTests can drive frames through the reducer.
     func handleFrame(_ frame: InboundFrame) {
         if guidanceState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
             let generation = guidanceState.generation
@@ -1260,8 +1141,6 @@ final class AppModel: NSObject {
         }
 
         voice.consume(frame)
-        // History is an owner-scoped chrome region, independent of the active
-        // conversation generation. It must never replace its canvas or turns.
         if frame.name == "ui_render", frame.renderTarget == "history" {
             let conversationFields = [
                 "chat_id", "chatId", "connection_generation", "request_generation",
@@ -1279,9 +1158,6 @@ final class AppModel: NSObject {
             }
             return
         }
-        // Registration establishes a connection before the server's global
-        // welcome arrives. It has no conversation generation; admit only its
-        // validated ephemeral components while no hydration/turn is open.
         if !workspaceStarted, continuity.requestGeneration == nil,
             let components = WorkspaceWelcome.unscopedComponents(in: frame)
         {
@@ -1342,10 +1218,6 @@ final class AppModel: NSObject {
                 applyCanvasOps(streamFrameToOps(frame, activeChat: activeChatId, seqState: &seqState))
             }
         case "stream_subscribed":
-            // 055 mid-stream join: load_chat may already have re-hydrated the
-            // streamed component — the placeholder must not blank it. Ops go
-            // live to the visible canvas even mid-turn, so its ids are the
-            // guard source (the same list applyCanvasOps mutates).
             if continuity.connectionGeneration == nil {
                 applyCanvasOps(
                     subscribeAckOps(
@@ -1395,9 +1267,7 @@ final class AppModel: NSObject {
         case "tool_progress":
             let head = [frame.payload["tool_name"]?.stringValue, frame.payload["message"]?.stringValue]
                 .compactMap { $0 }.joined(separator: ": ")
-            // The wire `percentage` is a JSON number (Optional[int] server-side).
-            // Bounds-checked: Int(Double) traps on out-of-range values, and no
-            // inbound frame may crash the client (FR-003).
+            // Int(Double) traps out-of-range — bounds-check before converting
             let pct =
                 frame.payload["percentage"]
                 .flatMap { value -> String? in
@@ -1439,15 +1309,9 @@ final class AppModel: NSObject {
                 bannerIsError = frame.payload["level"]?.stringValue == "error"
                 errorBanner = text
             }
-            // 055 continuity: a delivery into the OPEN chat refreshes it in
-            // place (scheduled-run output persists to history server-side).
             if let chatId = nestedChatId(frame), chatId == activeChatId {
                 refreshActiveChat()
             }
-        // 055 (US3): the eight workspace verb acks, promoted ignored → handled
-        // (wire-contract §4). The server's follow-up ui_upsert/ui_render
-        // fan-outs stay authoritative; these give the issuing socket immediate
-        // feedback without waiting on them.
         case "component_saved":
             let title = frame.payload["component"]?["title"]?.stringValue ?? ""
             bannerIsError = false
@@ -1474,9 +1338,6 @@ final class AppModel: NSObject {
                 applyCanvasOps(replacementOps(frame))
             }
         case "saved_components_list":
-            // Accepted ack; there is no native saved-components surface to
-            // refresh (browsing rides the server-driven chrome surface) — a
-            // future surface would consume `payload["components"]` here.
             break
         case "auth_required":
             Task { await self.handleAuthRequired() }
@@ -1561,9 +1422,6 @@ final class AppModel: NSObject {
                 transientTurns = []
                 transientCanvas = nil
             }
-            // A terminal success is historical evidence, not live progress.
-            // If another correlated operation is still active, project that
-            // operation; otherwise remove the status row altogether.
             statusText = latestActiveOperationStatusText()
         } else {
             statusText = status.label
@@ -1858,8 +1716,6 @@ final class AppModel: NSObject {
             continuity.apply(snapshot) == .applied
         else { return }
 
-        // Persist the locator before publishing either half of the atomic
-        // transcript+canvas replacement to observation.
         if let account = conversationAccount {
             _ = conversationResumeStore.save(chatId: snapshot.chatId, for: account)
         }
@@ -1892,13 +1748,6 @@ final class AppModel: NSObject {
         pendingCommitRequestGeneration = nil
     }
 
-    /// Feature 060 render frames are previews. A valid, strictly sequenced
-    /// scope may update only the disposable overlay; committed state changes
-    /// exclusively through a complete conversation_snapshot.
-    /// A chat-target preview turn, shaped exactly like the committed path
-    /// (`reduceUiRender`): the chat column is TEXT, so components are flattened
-    /// into it and never carried alongside. Carrying both rendered every
-    /// text-only answer twice — once as markdown, once as a duplicate card.
     private func chatPreviewTurn(
         _ components: [AstralComponent], frame: InboundFrame
     ) -> ChatTurn? {
@@ -1911,9 +1760,6 @@ final class AppModel: NSObject {
             components: [])
     }
 
-    /// Canvas-target preview components, filtered exactly like the committed
-    /// path (`reduceUiRender`): reasoning, doc cards and skeletons are chat /
-    /// loading artifacts and never belong on the canvas.
     private func canvasPreviewComponents(
         _ components: [AstralComponent]
     ) -> [AstralComponent] {
@@ -1991,16 +1837,11 @@ final class AppModel: NSObject {
         frame.payload["payload"]?["chat_id"]?.stringValue ?? frame.payload["chat_id"]?.stringValue
     }
 
-    /// 055 cross-device continuity: does a background-task frame concern the
-    /// chat currently open? A frame with no chat id targets the issuing
-    /// socket (pre-fan-out servers) and counts as ours.
     private func frameTargetsActiveChat(_ frame: InboundFrame) -> Bool {
         guard let chatId = nestedChatId(frame), !chatId.isEmpty else { return true }
         return chatId == activeChatId
     }
 
-    /// Re-issue load_chat for the open chat so the narrative and canvas pick
-    /// up content produced off this socket (background task, another device).
     private func refreshActiveChat() {
         guard let chatId = activeChatId, !chatId.isEmpty else { return }
         let identity = ClientOperationIdentity.fresh()
@@ -2072,8 +1913,6 @@ final class AppModel: NSObject {
         turns = messages.enumerated().map { index, m in
             let content = m["content"]?.stringValue ?? m["text"]?.stringValue ?? ""
             let role = m["role"]?.stringValue ?? (m["is_user"]?.boolValue == true ? "user" : "assistant")
-            // Index-keyed ids: identical repeated messages must not collide
-            // (duplicate Identifiable ids are undefined behavior in ForEach).
             return ChatTurn(id: "hist-\(index)", role: role, text: content)
         }
         canvas = []
@@ -2125,13 +1964,10 @@ final class AppModel: NSObject {
             }
             return
         }
-        // Selected Work accepts only its one correlated response, including after timeout.
         if screen == .surface && pendingSurfaceKey == "work" { return }
         let title = frame.payload["title"]?.stringValue ?? ""
         let components = AstralComponent.list(from: frame.payload["components"])
         if surfaceKey.isEmpty && components.isEmpty {
-            // The server's blank close instruction also lifts the 054
-            // mandatory pin (save success → close, then welcome ui_render).
             mandatorySurface = false
             if screen == .surface {
                 screen = .chat
@@ -2143,9 +1979,6 @@ final class AppModel: NSObject {
         }
         if frame.surfaceMode == "mandatory" {
             invalidateWorkRead()
-            // 054 first-run gate: accept the surface even though unsolicited
-            // and pin it — goTo/newChat/openSurface and the top bar suppress
-            // navigation until the server closes it; sign-out stays (FR-013).
             mandatorySurface = true
             screen = .surface
             pendingSurfaceKey = surfaceKey
@@ -2214,13 +2047,6 @@ final class AppModel: NSObject {
                 statusText = nil
                 stepTrail = []
                 asyncDetached = false
-                // The turn is over, so no further canvas work is coming. A
-                // committed snapshot always precedes `done` ("terminal status
-                // follows the sole committed-state frame"), so releasing the
-                // skeleton here cannot race one. A text-only turn produces no
-                // canvas ops and no snapshot at all, and would otherwise latch
-                // the skeleton forever — hiding a canvas that is already
-                // correct (the previous components, or the welcome).
                 pendingReplace = false
                 liveOpsThisTurn = false
             }
@@ -2246,9 +2072,6 @@ final class AppModel: NSObject {
             return
         }
         if pendingCanvas.isEmpty {
-            // No buffered render — the live canvas (already carrying any ops
-            // applied mid-turn) IS the committed state, minus any welcome
-            // that resurrected mid-turn (055: `wel_` never survives a turn).
             canvas = canvas.dropWelcome()
             turnActive = false
             pendingReplace = false
@@ -2257,8 +2080,6 @@ final class AppModel: NSObject {
             asyncDetached = false
             return
         }
-        // 055: `wel_` identities never enter the timeline; a welcome-only
-        // canvas archives nothing.
         let archived = canvas.dropWelcome()
         if !archived.isEmpty {
             let label = canvasLabel.isEmpty ? "Canvas \(canvasHistory.count + 1)" : canvasLabel
@@ -2275,11 +2096,6 @@ final class AppModel: NSObject {
         asyncDetached = false
     }
 
-    /// Identity-keyed ops morph the VISIBLE canvas immediately, even while a
-    /// replacing turn is armed — only full `ui_render` replaces buffer (the
-    /// mid-turn clobber hazard 044 guards against). A buffered render still
-    /// wins at commit, so mid-turn ops mirror into it and the committed state
-    /// stays what it would have been under accumulate-then-commit.
     private func applyCanvasOps(_ ops: [UpsertOp]) {
         if ops.isEmpty { return }
         canvas = Canvas.apply(canvas, ops)
@@ -2290,8 +2106,6 @@ final class AppModel: NSObject {
             }
         }
     }
-
-    // MARK: reduce helpers
 
     private func appendTurn(role: String, text: String) {
         turns.append(ChatTurn(id: "\(role)-\(turns.count)", role: role, text: text))
@@ -2306,12 +2120,6 @@ final class AppModel: NSObject {
         }
     }
 
-    /// components_combined / components_condensed → canvas ops: remove the
-    /// consumed ids, upsert each carried result. Results are saved-row shapes
-    /// (`{id, component_data, …}`); the component dict rides in
-    /// `component_data` and may not carry a workspace identity yet (the
-    /// server stamps it in the reconcile ui_render that follows), so identity
-    /// falls back to the fresh row id.
     private func replacementOps(_ frame: InboundFrame) -> [UpsertOp] {
         let removed = frame.payload["removed_ids"]?.arrayValue?.compactMap { $0.stringValue } ?? []
         var ops: [UpsertOp] = removed.map { UpsertOp(op: "remove", componentId: $0, component: nil) }
@@ -2440,8 +2248,6 @@ final class AppModel: NSObject {
         submission.action != "update_device" && submission.action != "chrome_llm_save"
     }
 
-    /// Rebind one exact retained UI event to this connection before its bytes
-    /// leave the offline queue.
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
         guard let connectionGeneration = continuity.connectionGeneration else { return false }
@@ -2499,10 +2305,6 @@ final class AppModel: NSObject {
         liveOpsThisTurn = false
         stepTrail = []
         asyncDetached = false
-        // A successful operation status is only lifecycle evidence. The
-        // authoritative conversation_snapshot may follow it, so keep the
-        // visible transient result until that atomic commit replaces it.
-        // Only a definitive failure/refusal is allowed to discard the overlay.
         if discardUncommitted {
             pendingCanvas = []
             transientTurns = []
@@ -2540,8 +2342,6 @@ final class AppModel: NSObject {
         }
         return nil
     }
-
-    // MARK: actions
 
     func dismissBanner() { errorBanner = nil }
 
@@ -2584,12 +2384,6 @@ final class AppModel: NSObject {
         pendingReplace = !background
         pendingCanvas = []
         liveOpsThisTurn = false
-        // 055 uniform rule: purge the ephemeral welcome (`wel_` identities)
-        // from the committed canvas at turn start — the server no longer
-        // sends the blanking `ui_render []` (wire-contract §1). Continuity
-        // mode keeps the welcome instead: there the canvas is replaced only by
-        // a committed snapshot, and a turn that never produces one must leave
-        // the run-examples screen exactly as it found it.
         if continuity.connectionGeneration == nil {
             canvas = canvas.dropWelcome()
         }
@@ -2667,7 +2461,7 @@ final class AppModel: NSObject {
             pendingCanvas = []
             liveOpsThisTurn = false
             if continuity.connectionGeneration == nil {
-                canvas = canvas.dropWelcome()  // 055: same turn-start purge as sendChat
+                canvas = canvas.dropWelcome()
             }
             viewingIndex = nil
             errorBanner = nil
@@ -2742,10 +2536,6 @@ final class AppModel: NSObject {
                 requestGeneration: identity.requestGeneration))
     }
 
-    /// Submit one server-authored ParamPicker action. Provider Save is the one
-    /// specialization: its client UUIDs and local `submitting` projection are
-    /// created synchronously before the socket send, while every other action
-    /// keeps the generic event path.
     @discardableResult
     func submitParamPicker(
         action: String,
@@ -2819,7 +2609,6 @@ final class AppModel: NSObject {
         return true
     }
 
-    /// Bridge for the component renderer's `emit(action, payload)` callback.
     func emit(_ action: String, payload: [String: JSONValue] = [:]) {
         sendEvent(action, .object(payload))
     }
@@ -2829,9 +2618,6 @@ final class AppModel: NSObject {
         Task { await ws?.send(text) }
     }
 
-    /// Voice final transcripts pass through the same conversation fence and
-    /// local operation bookkeeping as typed chat, while retries reuse the
-    /// exact serialized frame and never duplicate the optimistic bubble.
     @discardableResult
     func sendVoiceWire(_ text: String) -> Bool {
         guard signedIn, connected,
@@ -2903,10 +2689,6 @@ final class AppModel: NSObject {
 
     func voiceApplicationWillTerminate() { voice.close() }
 
-    // MARK: refine + export (055 US4/US5)
-
-    /// 055 US4: component-scoped refine (wire-contract §3). The instruction
-    /// comes from the context-menu sheet; an empty one never reaches the wire.
     func refineComponent(_ componentId: String, instruction: String) {
         let trimmed = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !componentId.isEmpty, !trimmed.isEmpty else { return }
@@ -2918,8 +2700,6 @@ final class AppModel: NSObject {
             ]))
     }
 
-    /// 055 US5: CSV export URL for one table component, chat-scoped per the
-    /// REST contract; opened in the system browser (session-authed route).
     func exportComponentURL(_ componentId: String) -> URL? {
         guard let chatId = activeChatId, !chatId.isEmpty, !componentId.isEmpty else { return nil }
         let base = serverBase.appendingPathComponent("api/export/component/\(componentId).csv")
@@ -2928,7 +2708,6 @@ final class AppModel: NSObject {
         return comps?.url
     }
 
-    /// 055 US5: self-contained HTML export of the current chat's canvas.
     func exportCanvasURL() -> URL? {
         guard let chatId = activeChatId, !chatId.isEmpty else { return nil }
         return serverBase.appendingPathComponent("api/export/canvas/\(chatId).html")
@@ -2936,7 +2715,7 @@ final class AppModel: NSObject {
 
     func newChat() {
         if mandatorySurface { return }
-        invalidateGuidance()  // 054: navigation pinned (sign-out only)
+        invalidateGuidance()
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.newChat, for: account)
         }
@@ -2980,8 +2759,6 @@ final class AppModel: NSObject {
         viewingIndex = nil
     }
 
-    /// FR-011: history offers open AND delete (server-side via REST, like the
-    /// Android/Windows twins), then refreshes the list.
     func deleteChat(_ chatId: String) {
         Task {
             guard (try? await rest.deleteChat(id: chatId)) == true else { return }
@@ -2992,7 +2769,7 @@ final class AppModel: NSObject {
     }
 
     func goTo(_ target: Screen) {
-        if mandatorySurface { return }  // 054: navigation pinned (sign-out only)
+        if mandatorySurface { return }
         if ["work", "guidance"].contains(pendingSurfaceKey) { closeSurface() }
         screen = target
         agentsLoading = target == .agents || agentsLoading
@@ -3006,8 +2783,6 @@ final class AppModel: NSObject {
         }
     }
 
-    /// Recent chats is a reversible view over the current workspace. Closing
-    /// it must not hydrate the chat again or discard its transient content.
     func toggleHistory() {
         guard !mandatorySurface else { return }
         if screen == .history {
@@ -3020,7 +2795,7 @@ final class AppModel: NSObject {
     func openMenuItem(_ item: ChromeMenuItem) { openSurface(item.surface, params: item.params) }
 
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
-        if mandatorySurface { return }  // 054: the pinned surface can't be replaced client-side
+        if mandatorySurface { return }
         if surface == "guidance" {
             _ = sendGuidanceRequest(
                 action: "chrome_open", payload: .object(["surface": .string(surface), "params": params]))
@@ -3049,12 +2824,6 @@ final class AppModel: NSObject {
         sendEvent("chrome_open", .object(["surface": .string(pendingSurfaceKey), "params": pendingSurfaceParams]))
     }
 
-    /// Dismiss the open settings surface — the native twin of web's
-    /// `astral-modal-close` ✕ (`client.js closeModal()`) and Android's system
-    /// Back. Both are LOCAL dismissals, so this sends no frame; the server
-    /// keeps no per-socket surface state to release. Refused while the 054
-    /// mandatory pin is set, exactly as web's `data-mandatory` card refuses
-    /// every dismissal affordance (FR-013: sign-out stays the one escape).
     func closeSurface() {
         if mandatorySurface { return }
         guard screen == .surface else { return }
@@ -3117,7 +2886,6 @@ final class AppModel: NSObject {
         _ = guidanceState.begin(request, generation: generation)
         screen = .surface
         pendingSurfaceKey = "guidance"
-        // No mutation fields or search terms are retained as retry state.
         pendingSurfaceParams = .object(["mode": .string("list")])
         pendingSurface = nil
         guard signedIn, connected, conversationAccount != nil, let socket = ws else {
@@ -3173,7 +2941,6 @@ final class AppModel: NSObject {
         workReadEpoch = UUID().uuidString.lowercased()
     }
 
-    /// A timeout/send failure applies only while this exact request is still pending.
     func failWorkRead(generation: String?) {
         guard let generation, workReadState.generation == generation else { return }
         invalidateWorkRead()
@@ -3308,8 +3075,6 @@ final class AppModel: NSObject {
 
     func backToLiveCanvas() { viewingIndex = nil }
 
-    // MARK: attachments
-
     func stageAttachment(filename: String, mimeType: String?, data: Data) {
         attachSeq += 1
         let uid = attachSeq
@@ -3336,7 +3101,6 @@ final class AppModel: NSObject {
         }
     }
 
-    /// Stage a picked or dropped file URL (file importer, macOS drag-and-drop).
     func stageFile(url: URL) {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -3365,8 +3129,6 @@ final class AppModel: NSObject {
                 attachmentId: id, state: "ready", note: nil))
         return true
     }
-
-    // MARK: connection label (parity with Android connectionStripLabel)
 
     var connectionStripLabel: String? {
         if !everConnected || connected { return nil }

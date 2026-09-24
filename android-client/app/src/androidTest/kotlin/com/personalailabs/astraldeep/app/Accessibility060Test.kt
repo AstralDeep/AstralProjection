@@ -1,3 +1,6 @@
+// Instrumented TalkBack accessibility semantics test for every changed Android authoring control; mirrored by
+// AstralWatchTests/Accessibility060Tests.swift on watchOS.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.ui.semantics.Role
@@ -18,7 +21,6 @@ import com.personalailabs.astraldeep.core.protocol.Agent
 import org.junit.Rule
 import org.junit.Test
 
-/** Spec 060 TalkBack semantics for every changed Android authoring control. */
 class Accessibility060Test {
     @get:Rule val rule = createComposeRule()
 

@@ -1,7 +1,5 @@
-"""Pin the worker's closed public asset allowlist to exact packaged bytes.
-
-Run after editing an offline resource. ``--check`` verifies without writing.
-The worker itself and all authenticated/executable app resources stay excluded.
+"""Regenerates the service worker's pinned public offline asset list from packaged
+bytes; run after editing an offline resource, with --check used in CI to catch drift.
 """
 
 from __future__ import annotations
@@ -21,12 +19,7 @@ PUBLIC_ASSETS = {
     "img/astra-fav.png": "image/png",
     "manifest.webmanifest": "application/manifest+json",
 }
-#: The text assets among them. Their bytes depend on how the checkout wrote
-#: its line endings, and the digest below must not: .gitattributes stores this
-#: tree with LF, a Windows checkout with core.autocrlf materialises CRLF, and
-#: the image that serves these files is Linux. Hashing the checkout's bytes
-#: produced a worker that refused its own assets ("Public offline asset differs
-#: from its package") on every host but the one that generated it.
+# Hash after LF-normalizing: a CRLF checkout must match the Linux server
 TEXT_ASSETS = frozenset({"offline.html", "offline.css", "astral.css",
                          "manifest.webmanifest"})
 BEGIN = "// BEGIN GENERATED PUBLIC ASSETS"
@@ -34,7 +27,6 @@ END = "// END GENERATED PUBLIC ASSETS"
 
 
 def render_worker() -> str:
-    """Return the worker with a deterministic, content-bound public cache version."""
     assets = []
     for name, content_type in PUBLIC_ASSETS.items():
         data = (STATIC / name).read_bytes()
@@ -51,7 +43,6 @@ def render_worker() -> str:
 
 
 def main() -> int:
-    """Regenerate, or refuse stale worker inputs without altering the tree."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()

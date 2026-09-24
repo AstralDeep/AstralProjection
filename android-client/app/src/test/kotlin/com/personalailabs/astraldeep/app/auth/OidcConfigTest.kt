@@ -1,3 +1,5 @@
+// Tests for OIDC client configuration parsing and defaults used by the Android auth flow.
+
 package com.personalailabs.astraldeep.app.auth
 
 import kotlin.test.Test

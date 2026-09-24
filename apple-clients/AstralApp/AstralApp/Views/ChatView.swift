@@ -1,10 +1,8 @@
+// Canvas-first adaptive chat shell whose width picks stacked, collapsed, or split layout around the canvas,
+// messages panel, step trail, and input bar; parity reference for AstralWatch's WatchChatView and
+// WatchHomeView.
+
 import AstralCore
-// Feature 051 — the adaptive chat shell, a 1:1 match to the Android AdaptiveShell:
-// a canvas-dominant area (skeleton while a replacing turn is in flight, empty-
-// state hint, live working bar, read-only timeline banner + snapshot overlay), a
-// collapsible "Messages" panel with reasoning snippets, the execution step trail,
-// and an input bar (mic · attachment chips · rounded field · paperclip · send).
-// Compact widths stack; regular widths (iPad/landscape/macOS) split into a rail.
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -12,35 +10,16 @@ import UniformTypeIdentifiers
     import PhotosUI
 #endif
 
-// 066 layout contract (specs/066-canvas-first-uiux/apple-handoff.md): the
-// canvas is the primary surface on every device class. Three width-driven
-// modes mirror the web reference — `stacked` < 700pt, `collapsed` 700–1023pt
-// (canvas full width, floating composer, conversation as a drawer with an
-// unread badge), `split` ≥ 1024pt (canvas LEADING, rail trailing). The stored
-// per-device preference can force `collapsed` at any width ≥ 700, but the
-// width bound always beats the preference so the rail can never crush the
-// composer below ~20 visible characters (FR-004). pt ≈ CSS px keeps the
-// breakpoints in parity with the web client's 700/1024.
-
 struct ChatShell: View {
     @Environment(AppModel.self) var model
-    // FR-002: the collapse/expand choice persists per device across launches
-    // ("" = automatic, "open" pins the split rail, "closed" collapses it).
     @AppStorage("astralChatPref") private var chatPref = ""
-    // The composer draft and the canvas sheets live HERE, above the mode
-    // switch: a resize across a breakpoint swaps the shell (new structural
-    // identity), and view-local state would silently discard typed-but-unsent
-    // text or dismiss an open timeline/refine sheet mid-edit.
     private var draft: Binding<String> {
         Binding(get: { model.composerDraft }, set: { model.composerDraft = $0 })
     }
     @State private var showTimeline = false
     @State private var componentActionTarget: ComponentActionTarget?
     var body: some View {
-        // The outer GeometryReader is itself a layout firewall (063 class): it
-        // answers the parent's proposal in O(1) and hands every shell a
-        // CONCRETE size, so no flexible sibling ever asks a transcript/canvas
-        // ScrollView for its ideal height.
+        // This GeometryReader prevents a layout livelock
         GeometryReader { geo in
             shell(size: geo.size)
                 .frame(width: geo.size.width, height: geo.size.height)
@@ -59,8 +38,6 @@ struct ChatShell: View {
         }
         .onDisappear { componentActionTarget = nil }
         #if os(macOS)
-            // T033/FR-017: Finder drag-and-drop stages chips exactly like the
-            // file dialog (Windows-client parity).
             .dropDestination(for: URL.self) { urls, _ in
                 guard !model.mutationsLocked, !urls.isEmpty else { return false }
                 for url in urls {
@@ -96,10 +73,6 @@ struct ChatShell: View {
     }
 }
 
-// MARK: - Layouts
-
-/// The same server-authored welcome components surround the one composer.
-/// Width only changes their arrangement; no native copy or example catalog exists.
 private struct StartShell: View {
     @Environment(AppModel.self) var model
     let containerSize: CGSize
@@ -145,13 +118,6 @@ private struct StackedShell: View {
     }
 }
 
-/// 066 `collapsed` mode: the canvas takes the FULL width and the composer
-/// floats as a centered bar (max 760pt) over its bottom edge; the transcript
-/// opens as a drawer inside that bar, with an unread badge on the toggle
-/// (FR-001/FR-003). `safeAreaInset` keeps the canvas's own scroll content
-/// clear of the bar while the bar visually overlays it — and, like every
-/// other transcript host, the drawer's ChatList gets a CONCRETE height so
-/// flexible-space rounds stay O(1) (063 livelock class).
 private struct CollapsedShell: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
@@ -184,17 +150,6 @@ private struct CollapsedShell: View {
                     .padding(.bottom, 12)
             }
             .onChange(of: assistantCount) { oldCount, newCount in
-                // FR-003: new assistant activity while the conversation is
-                // hidden surfaces as a badge, never an auto-reveal. Status
-                // updates ride setStatus paths, not turns, so they can't trip
-                // this counter. HEURISTIC: +1 deltas are treated as live
-                // turns, larger jumps as hydration (chat restore/switch).
-                // Known miscounts (recorded in the 066 follow-ups register):
-                // a multi-doc-card ui_upsert lands >1 in one transaction
-                // (under-counts), and a reasoning row + narrative in one
-                // reply can badge twice (over-counts). A structural fix needs
-                // reducer-level live-vs-hydration provenance, not a view-side
-                // delta guess.
                 if !drawerOpen, newCount == oldCount + 1 {
                     unread = min(unread + 1, 10)
                 }
@@ -208,9 +163,6 @@ private struct CollapsedShell: View {
                     Text("CONVERSATION")
                         .font(AstralTypography.caption2.bold()).foregroundStyle(p.muted)
                     Spacer()
-                    // The pin can only take effect where split is reachable
-                    // (≥1024pt — width bound beats preference); below that it
-                    // would be an inert affordance, so it is not offered.
                     if containerSize.width >= 1024 {
                         Button(action: onPinRail) {
                             Image(systemName: "sidebar.trailing")
@@ -252,9 +204,6 @@ private struct CollapsedShell: View {
     }
 }
 
-/// 066 `split` mode: canvas LEADS (left, stretching), the conversation rail
-/// TRAILS (right, clamped 320–420pt) — the same structural flip Windows'
-/// QSplitter and Android's SplitShell received (parity row P1).
 private struct SplitShell: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
@@ -264,7 +213,6 @@ private struct SplitShell: View {
     @Binding var componentActionTarget: ComponentActionTarget?
     let onCollapseRail: () -> Void
 
-    // Web reference: clamp(320px, 28vw, 420px).
     private var railWidth: CGFloat {
         max(320, min(420, containerSize.width * 0.28))
     }
@@ -276,9 +224,6 @@ private struct SplitShell: View {
             Divider().overlay(theme.palette.border)
             VStack(spacing: 0) {
                 RailHeader(onCollapse: onCollapseRail)
-                // Same layout firewall as CanvasArea: without it the rail
-                // VStack's flexible rounds measure the full transcript per
-                // proposal (063 livelock class — this is the macOS/iPad shape).
                 GeometryReader { geo in
                     ChatList().frame(width: geo.size.width, height: geo.size.height)
                 }
@@ -346,14 +291,10 @@ private struct ChatDrawerToggle: View {
     }
 }
 
-// MARK: - Canvas
-
 private struct CanvasArea: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     @Environment(\.astralViewportWidth) private var viewportWidth
-    // Owned by ChatShell (the sheets are attached there too) so a layout-mode
-    // switch cannot dismiss an open timeline or refine sheet mid-edit.
     @Binding var showTimeline: Bool
     @Binding var componentActionTarget: ComponentActionTarget?
     private var p: AstralPalette { theme.palette }
@@ -387,14 +328,6 @@ private struct CanvasArea: View {
                 }
             }
             ZStack(alignment: .topTrailing) {
-                // GeometryReader is a layout firewall: it answers every parent
-                // proposal in O(1) and lays the scroll content out ONCE at the
-                // final concrete size. Without it, the shell VStack's flexible-
-                // space rounds ask this subtree for its ideal height, and a
-                // vertical ScrollView answers that by realizing + measuring its
-                // ENTIRE LazyVStack — one component of the combinatorial layout
-                // pass behind the 063 stuck-canvas livelock (same class as the
-                // shimmer trigger fixed earlier; see StepTrailView/MessagesPanel).
                 GeometryReader { geo in
                     Group {
                         if model.showSkeleton && model.workspaceCanvas.isEmpty {
@@ -404,13 +337,7 @@ private struct CanvasArea: View {
                         } else {
                             ScrollView {
                                 LazyVStack(alignment: .leading, spacing: 12) {
-                                    // Keyed by component identity so a `remove` op
-                                    // doesn't shift every later component onto a new
-                                    // SwiftUI identity (resetting tabs/collapsibles
-                                    // and scroll anchors — FR-013).
                                     ForEach(canvasItems, id: \.key) { item in
-                                        // 055 US4/US5 chrome: provenance badge +
-                                        // refine/export context menu (top-level only).
                                         ComponentChrome(
                                             component: item.comp,
                                             onAction: { componentActionTarget = $0 }
@@ -566,8 +493,6 @@ private struct CanvasTimelineOverlay: View {
     }
 }
 
-// MARK: - Messages / rail
-
 private struct StepTrailView: View {
     @Environment(ThemeStore.self) var theme
     let lines: [String]
@@ -575,12 +500,6 @@ private struct StepTrailView: View {
         if lines.isEmpty {
             EmptyView()
         } else {
-            // One Text, not a ForEach of rows: the trail updates on every
-            // chat_step during a live turn, and per-row flexible layout fed the
-            // shell's flexible-space rounds (063 livelock). A single bounded
-            // Text is one cheap measure — and it can't hit the duplicate-
-            // identity hazard `ForEach(id: \.self)` had when a step repeats
-            // (two `✗ run_job` lines in one turn).
             Text(lines.suffix(4).joined(separator: "\n"))
                 .font(AstralTypography.caption2).foregroundStyle(theme.palette.muted)
                 .lineLimit(4)
@@ -607,19 +526,9 @@ private struct MessagesPanel: View {
             VStack(spacing: 0) {
                 if expanded {
                     Divider().overlay(p.border)
-                    // A CONCRETE height, not maxHeight: shrink-to-fit required
-                    // measuring the whole transcript (a vertical ScrollView's
-                    // ideal height realizes every LazyVStack row, including the
-                    // long markdown bubbles) on every flexible-space round of
-                    // the shell VStack — the core multiplier of the 063
-                    // stuck-canvas layout livelock. Fixed height = O(1) answer.
                     ChatList().frame(height: 320).background(p.bg)
                 }
                 Button {
-                    // Removing the lazy transcript in an animated layout
-                    // transaction can leave UIKit repeatedly placing its
-                    // departing rows while the canvas grows. Complete this
-                    // structural change before the next scroll interaction.
                     expanded.toggle()
                 } label: {
                     HStack(spacing: 8) {
@@ -665,10 +574,6 @@ private struct ChatList: View {
                     }
                     .padding(.horizontal, 12).padding(.vertical, 8)
                 } else {
-                    // AppKit's lazy placement engine can fail to converge when
-                    // a voice turn replaces pending rows with committed rows
-                    // while the status row disappears. An eager stack has a
-                    // deterministic content height and avoids that graph loop.
                     VStack(alignment: .leading, spacing: 8) {
                         rows
                     }
@@ -679,10 +584,6 @@ private struct ChatList: View {
             .scrollDismissesKeyboard(.immediately)
             .onChange(of: visible.count) { oldCount, newCount in
                 guard newCount > oldCount, let lastID = visible.last?.id else { return }
-                // Do not mutate scroll geometry inside the same AttributeGraph
-                // transaction that inserted the row. Even an unanimated
-                // synchronous scroll can feed AppKit's anchor translation back
-                // into lazy placement before that transaction settles.
                 Task { @MainActor in
                     await Task.yield()
                     guard !Task.isCancelled else { return }
@@ -728,11 +629,7 @@ private struct ChatBubble: View {
                     if !turn.text.isEmpty {
                         if isUser {
                             Text(turn.text).foregroundStyle(p.text)
-                        }
-                        // Assistant narrative (incl. doc cards diverted into the
-                        // transcript) carries block markdown — headings, fences,
-                        // lists and tables must render, not show their syntax.
-                        else {
+                        } else {
                             MarkdownBlockView(source: turn.text).foregroundStyle(p.text)
                         }
                     }
@@ -742,8 +639,6 @@ private struct ChatBubble: View {
                 }
                 .font(AstralTypography.subheadline)
                 .padding(.horizontal, 14).padding(.vertical, 10)
-                // User turns are the web's 20% primary tint + 30% border —
-                // not a saturated pill (cross-client bubble convention).
                 .background(
                     isUser ? AnyShapeStyle(p.primary.opacity(0.20)) : AnyShapeStyle(p.surface2),
                     in: RoundedRectangle(cornerRadius: AstralRadius.md)
@@ -788,13 +683,9 @@ private struct ReasoningSnippet: View {
     }
 }
 
-// MARK: - Input bar
-
 private struct InputBar: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
-    // Owned by ChatShell so the draft survives layout-mode switches
-    // (stacked/collapsed/split give this view a new structural identity).
     @Binding var input: String
     var framed = true
     @State private var showImporter = false
@@ -910,29 +801,17 @@ private struct InputBar: View {
     private func send() {
         guard canSend else { return }
         let submittedInput = input
-        focused = false  // resign native keyboard focus before model-driven re-rendering
+        focused = false
         input = ""
         model.sendChat(submittedInput)
     }
 }
 
-/// The order, visibility, labels, pressed state, and enabled state all come
-/// from the server-owned composer model. This view contributes presentation
-/// only; it cannot invent a local voice mutation or bypass REST authorization.
-/// The slim rows ABOVE the input: the durable terminal notice and the voice
-/// status line. Renders nothing when there is nothing to say.
 private struct VoiceComposerNotices: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     private var p: AstralPalette { theme.palette }
 
-    /// 066/P5+P11: the feedback line renders for every live status and every
-    /// unavailability reason, and hides ONLY the at-rest boilerplate
-    /// (off/ready — "Voice is available."), so the composer is quiet at rest
-    /// without ever showing a disabled mic with no explanation. This is the
-    /// Windows quiet-set rule (`state=="off" && message in {"", "off",
-    /// "ready"}`); Apple's local fallback fabricates a message for every
-    /// state, so gating on off/ready is the equivalent predicate.
     private var statusMessage: String? {
         guard let message = model.voice.message, !message.isEmpty else { return nil }
         if model.voice.phase == "off", model.voice.reason == "ready" { return nil }
@@ -966,19 +845,11 @@ private struct VoiceComposerNotices: View {
     }
 }
 
-/// The voice controls themselves, rendered INSIDE the input row at its
-/// leading edge — the same composer icon language as the paperclip and Send,
-/// matching Android (mic · input · paperclip · send) and Windows (ghost
-/// buttons beside the field). Server model drives order/visibility/state.
 private struct VoiceComposerControls: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     private var p: AstralPalette { theme.palette }
 
-    /// 066/P5: before the first `composer_state` of a connection (and after a
-    /// teardown clears it) the server model is absent — render a disabled
-    /// default mic instead of nothing, the native twin of the web client's
-    /// pre-rendered voice-start control. The first real frame replaces it.
     private var showsDefaultControl: Bool {
         model.voice.composer == nil && !model.voice.active
             && model.voice.terminalNotice == nil
@@ -999,9 +870,6 @@ private struct VoiceComposerControls: View {
                     Button {
                         Task { await model.performVoiceControl(control.action) }
                     } label: {
-                        // P11 shared control style: composer controls are
-                        // ICONS with the server label as the tooltip +
-                        // accessible name — never a text chip.
                         inlineIcon(
                             icon: symbol(control.icon),
                             busy: control.busy,
@@ -1057,9 +925,6 @@ private struct VoiceComposerControls: View {
     }
 }
 
-/// A visible and VoiceOver-readable alert anchored to the chat composer. Its
-/// icon and explicit title preserve meaning independently of theme color, and
-/// all server text is rendered by `Text` as inert plain content.
 private struct VoiceTerminalNoticeView: View {
     @Environment(ThemeStore.self) var theme
     let notice: VoiceTerminalNotice
@@ -1157,8 +1022,6 @@ private struct GlyphButton: View {
     }
 }
 
-/// Wrap controls at their intrinsic widths instead of squeezing the text
-/// editor. The final Send control aligns to the trailing edge of its row.
 private struct ComposerControlsLayout: Layout {
     var spacing: CGFloat
 
@@ -1216,13 +1079,7 @@ private struct SendButton: View {
     }
 }
 
-// MARK: - shimmer + safe index
-
 enum TranscriptLayoutPresentation {
-    /// AppKit's `LazyVStack` placement can remain inside one AttributeGraph
-    /// transaction when transcript identities and heights change together.
-    /// iOS keeps lazy rows for long mobile transcripts; macOS uses bounded,
-    /// eager placement inside the rail's concrete viewport.
     static var usesLazyRows: Bool {
         #if os(macOS)
             false
@@ -1233,11 +1090,6 @@ enum TranscriptLayoutPresentation {
 }
 
 enum ContinuousActivityPresentation {
-    /// AppKit's indeterminate progress views and animation timelines can feed
-    /// their ticks back through the transcript LazyVStack. On macOS that can
-    /// keep the main view graph permanently dirty, starving websocket/media
-    /// work and growing memory without bound. Static busy affordances retain
-    /// the visible state while limiting layout to real model changes.
     static var allowsAnimatedIndicators: Bool {
         #if os(macOS)
             false
@@ -1261,17 +1113,6 @@ extension View {
 }
 
 struct ShimmerModifier: ViewModifier {
-    /// The moving highlight must never dirty the view graph outside this
-    /// overlay. The previous `repeatForever` animation on an `@State` phase
-    /// forced a FULL layout pass of the hosting view on every animation
-    /// frame; once the chat screen's layout cost exceeded one frame
-    /// interval, the main thread livelocked in back-to-back layout and the
-    /// @MainActor frame reducer starved — delivered `conversation_snapshot`
-    /// / `chat_status done` frames were never reduced and the skeleton
-    /// latched forever (the 063 stuck-canvas defect; same class as the 061
-    /// grid-clamp hang). `TimelineView` scopes each tick's invalidation to
-    /// the gradient subtree, so outer layout runs only when real state
-    /// changes.
     func body(content: Content) -> some View {
         content.overlay(
             GeometryReader { geo in
@@ -1292,8 +1133,6 @@ struct ShimmerModifier: ViewModifier {
         .clipped()
     }
 
-    /// Pure sweep curve: cycle ∈ [0, 1) → offset multiplier in [-1, 1.6),
-    /// the same left-to-right pass the animated @State produced.
     static func phase(cycle: Double) -> CGFloat {
         CGFloat(-1 + cycle * 2.6)
     }
@@ -1311,8 +1150,6 @@ extension Array {
         .init(id: "u0", role: "user", text: "Show me Q3 sales"),
         .init(id: "a0", role: "assistant", text: "Here's a **live summary** of Q3."),
     ]
-    // Authored with AstralPrims (the Swift astralprims mirror) — the same
-    // wire dicts a Python agent would produce.
     model.canvas = [
         AstralPrims.Hero(
             title: "Q3 Sales",

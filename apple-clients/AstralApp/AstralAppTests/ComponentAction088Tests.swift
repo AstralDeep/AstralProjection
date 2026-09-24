@@ -1,3 +1,6 @@
+// Tests for the component-action send path: server descriptors gate presence, the read-only timeline rejects
+// refine/history, and stale credentials or duplicate shares cannot dispatch or replace pending state.
+
 import AstralCore
 import XCTest
 

@@ -1,11 +1,9 @@
+// Strict, watch-local wire contracts for conversational voice (composer, session, transcript, announcement,
+// PCM frame) sent over WatchVoiceBridge's relay; unlike the lenient UI vocabulary, unknown or additive fields
+// are rejected.
+
 import AstralCore
 import Foundation
-
-// Feature 065 — strict, watch-local last-mile contracts. The watch cannot use
-// LiveKit's WebRTC client, so it receives the same transcript and announcement
-// envelopes through a bounded PCM WebSocket relay. These models deliberately
-// reject additive/unknown fields: voice media is an authority-sensitive input,
-// unlike the lenient server-rendered UI vocabulary.
 
 enum WatchVoicePermission: String, Equatable, Sendable {
     case notDetermined = "not_determined"

@@ -1,3 +1,6 @@
+// REST client for canvas/component export, authorization, and presentation surfaces the WebSocket doesn't
+// carry; validates JSON bodies for duplicate keys before kotlinx.serialization can silently drop one.
+
 package com.personalailabs.astraldeep.app.rest
 
 import kotlinx.coroutines.CancellationException
@@ -60,7 +63,6 @@ internal class WorkspaceRest(
             .cookieJar(CookieJar.NO_COOKIES)
             .cache(null)
             .addNetworkInterceptor { chain ->
-                // OkHttp may follow a 503 Retry-After even with connection retries disabled.
                 val attempted = chain.request().tag(AtomicBoolean::class.java)
                 if (attempted == null || attempted.getAndSet(true)) throw IOException("Workspace request already attempted")
                 chain.proceed(chain.request())
@@ -108,7 +110,6 @@ internal class WorkspaceRest(
             }
         }
 
-    /** The established CSV endpoint, with the same bounded/cancellable authenticated transport as canvas exports. */
     suspend fun exportComponent(
         token: String,
         chatId: String,
@@ -138,7 +139,6 @@ internal class WorkspaceRest(
         }
     }
 
-    /** The caller supplies a fresh path inside its private, owner-scoped staging directory. */
     suspend fun exportCanvas(
         token: String,
         chatId: String,
@@ -175,7 +175,6 @@ internal class WorkspaceRest(
         }
     }
 
-    /** Existing owner/revision authorization runs before the native visible-state freeze. */
     suspend fun authorizeCanvas(
         token: String,
         chatId: String,
@@ -203,7 +202,6 @@ internal class WorkspaceRest(
         }
     }
 
-    /** Client display bytes remain ephemeral and the pure renderer grants no additional authority. */
     suspend fun canvasPresentation(
         token: String,
         chatId: String,
@@ -290,8 +288,6 @@ internal class WorkspaceRest(
     ): T =
         coroutineScope {
             val call = client.newCall(request)
-            // This child interrupts blocked headers/body reads immediately; the IO child
-            // still finishes closing its handles before this structured scope returns.
             val cancellation =
                 launch(Dispatchers.Unconfined, start = CoroutineStart.UNDISPATCHED) {
                     try {
@@ -351,7 +347,7 @@ internal class WorkspaceRest(
         return result
     }
 
-    /** kotlinx.serialization otherwise silently keeps the last duplicate object key. */
+    // kotlinx.serialization silently keeps the last duplicate key otherwise
     private fun requireDistinctKeys(text: String) {
         val keys = mutableSetOf<String>()
         var depth = 0
@@ -391,7 +387,6 @@ internal class WorkspaceRest(
             throw cancelled
         } catch (failure: Exception) {
             currentCoroutineContext().ensureActive()
-            // Platform/network/JSON errors can contain URLs and raw response text.
             throw (failure as? WorkspaceRequestException ?: WorkspaceRequestException(message))
         }
 

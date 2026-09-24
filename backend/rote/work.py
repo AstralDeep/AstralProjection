@@ -1,8 +1,6 @@
-"""Closed, bounded Work read-surface disposition; never an action authority.
-
-The only non-navigation action admitted is the feature-088 T043 exact Save
-command (``chrome_work_result_save``): two closed steps whose every field is a
-server-issued binding that Deep re-verifies. Nothing here authorizes a save.
+"""Closed, bounded validators for the Work read surface: only the exact two-step Save
+command, with server-issued bindings Deep re-verifies, is admitted as a
+non-navigation action; used by projection_surfaces/work.py and rote.adapter.
 """
 
 from copy import deepcopy
@@ -44,12 +42,6 @@ def _revision(value, minimum=1):
 
 
 def validate_work_save_command(payload):
-    """Accept only the two exact server-bound Save steps Deep's routes take.
-
-    ``propose`` mirrors ``WorkResultProposalRequest`` (review only) and ``save``
-    mirrors ``WorkResultSaveRequest`` plus the path identities. Every field is a
-    server-issued binding; the client neither invents nor widens authority.
-    """
     _require(type(payload) is dict and type(payload.get("version")) is int and payload["version"] == 1)
     command = payload.get("command")
     if command == "propose":
@@ -78,7 +70,6 @@ def validate_work_save_command(payload):
 
 
 def validate_work_navigation(payload):
-    """Accept only semantic list/detail/result navigation, with no side effects."""
     _require(type(payload) is dict and set(payload) == {"surface", "params"})
     _require(payload["surface"] == "work")
     params = payload["params"]
@@ -93,13 +84,8 @@ def validate_work_navigation(payload):
         _identity(params["operation_id"])
 
 
+# 1 MiB/1024 nodes sized for 100 rows plus 8 KiB evidence
 def validate_work_components(components, supported_types=None):
-    """Detach a closed complete view; never truncate data to fit a device.
-
-    The 1 MiB/1024-node envelope accommodates the producer's maximum 100 rows
-    with 4096-byte titles plus its 8192-byte evidence result and primitive
-    wrappers. These are representation bounds, not source-retention authority.
-    """
     try:
         encoded = json.dumps(components, ensure_ascii=False, allow_nan=False).encode("utf-8")
         _require(type(components) is list and len(encoded) <= 1024 * 1024)

@@ -1,3 +1,6 @@
+// Tests that the JVM test resource bundle carries the shared canonical voice fixture bytes, hash-checked
+// against the reference used by VoiceContract065Test and its Apple/Windows twins.
+
 package com.personalailabs.astraldeep.app
 
 import java.security.MessageDigest
@@ -5,7 +8,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 
-/** Proves the JVM test bundle contains the hash-checked canonical C0-C6 bytes. */
 class VoiceFixtureBundle065Test {
     @Test
     fun canonicalFixtureIsCopiedIntoTheUnitTestBundle() {

@@ -1,6 +1,9 @@
+// Server-owned action-descriptor model for canvas components (kind, target, confirmation) decoded defensively
+// from the wire. Read by the app-level ComponentChrome view and mirrored by Android's
+// chrome/ComponentChrome.kt.
+
 import Foundation
 
-/// A closed presentation vocabulary, never an event name or authorization grant.
 public enum ComponentActionKind: String, CaseIterable, Sendable {
     case refine, history, csv, share
 
@@ -16,8 +19,6 @@ public struct ComponentActionDescriptor: Equatable, Identifiable, Sendable {
     public var id: String { kind.rawValue }
 }
 
-/// Only archived-version display metadata survives. Archived bodies and arbitrary
-/// attributes never enter the sheet or determine which event is dispatched.
 public struct ComponentVersion: Equatable, Identifiable, Sendable {
     public let number: UInt64
     public let reason: String
@@ -35,7 +36,6 @@ public struct ComponentVersion: Equatable, Identifiable, Sendable {
     }
 }
 
-/// Defensive native interpretation of the shared server-owned component chrome.
 public enum ComponentChromeModel {
     public static let emptyHistory = "No earlier versions yet — refine the component to create one."
 
@@ -83,7 +83,6 @@ public enum ComponentChromeModel {
         return accepted.filter { !duplicates.contains($0.number) }
     }
 
-    /// `id` alone is a layout alias, not the durable component endpoint identity.
     public static func canonicalIdentity(of component: AstralComponent) -> String? {
         guard let value = component.raw["component_id"]?.stringValue, !value.isEmpty,
             !["dg_", "ly_", "wel_"].contains(where: value.hasPrefix),

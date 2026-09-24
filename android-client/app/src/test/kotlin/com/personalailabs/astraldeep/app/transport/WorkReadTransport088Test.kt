@@ -1,3 +1,6 @@
+// Tests for the work-surface read-request transport: sending a request and timing out under a stale
+// generation.
+
 package com.personalailabs.astraldeep.app.transport
 
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities

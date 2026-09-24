@@ -1,21 +1,8 @@
-"""Feature 076 — the computer-use executor: what this desktop does when a
-``computer_request`` arrives (spec contracts/verbs.md, transport.md §3-4).
-
-Stdlib + Qt only (Constitution V): screen capture through ``QScreen``, input
-through ``user32.SendInput`` / ``SetCursorPos`` via ``ctypes``, windows through
-``EnumWindows``, commands through ``subprocess``. Every verb returns a typed
-result dict — ``{"ok": True, "result": {...}}`` or
-``{"ok": False, "error": {"code", "message"}}`` — and never raises into the
-transport. The pure parts (chord parsing, coordinate mapping, path checks,
-verb table) are platform-neutral so they are unit-tested offscreen on any OS;
-the Windows-only parts are isolated in :class:`WindowsInjector` and
-:class:`WindowsSystem`, replaced by fakes in tests.
-
-Coordinates: the orchestrator sends points in the pixel space of the most
-recent screenshot; :func:`to_physical` maps them back through that capture's
-scale and screen origin. Before any screenshot they are primary-screen physical
-pixels (spec FR-013).
+"""Executes computer_request verbs — screenshot, input injection, window control, files,
+commands — via Qt/ctypes/subprocess. WindowsInjector and WindowsSystem isolate the
+OS-specific calls so tests can fake them.
 """
+
 from __future__ import annotations
 
 import base64
@@ -33,8 +20,6 @@ logger = logging.getLogger("ComputerUse")
 
 IS_WINDOWS = sys.platform == "win32"
 
-#: The closed verb set this host executes — must equal the orchestrator's
-#: HOST_VERBS (announced in the descriptor; the server refuses anything else).
 VERBS: Tuple[str, ...] = (
     "screenshot", "list_windows", "get_clipboard", "read_file", "list_dir", "wait",
     "click", "double_click", "right_click", "move", "drag", "scroll", "type_text",
@@ -51,43 +36,28 @@ MAX_WINDOWS = 100
 JPEG_QUALITY = 70
 MIN_WIDTH, MAX_WIDTH, DEFAULT_WIDTH = 320, 1920, 1280
 
-#: Command interpreters. Typing or pressing keys while one of these owns the
-#: foreground window is running a command, so it is refused unless the request
-#: carries the owner's approval (``terminal_ok`` — granted by the server after
-#: an approved confirm_action / shell open_app, spec D2).
-#: Terminal EMULATORS by image name. Console programs (cmd, powershell, a
-#: python/node/psql REPL, bash under WSL …) are not listed: every one of them
-#: lives inside a console host window, which :data:`TERMINAL_WINDOW_CLASSES`
-#: catches by class — while ``python.exe`` as a GUI program (this client) or
-#: ``node.exe`` as an Electron host is NOT a terminal and must not be refused.
 TERMINAL_PROCESSES = frozenset({
     "powershell.exe", "pwsh.exe", "cmd.exe", "windowsterminal.exe", "wt.exe", "conhost.exe",
     "openconsole.exe", "mintty.exe", "alacritty.exe", "wezterm-gui.exe", "hyper.exe",
     "tabby.exe", "conemu.exe", "conemu64.exe", "cmder.exe", "putty.exe", "kitty.exe",
 })
-#: Window classes that host a command interpreter: the classic console
-#: (conhost / OpenConsole) and Windows Terminal.
 TERMINAL_WINDOW_CLASSES = frozenset({"consolewindowclass", "cascadia_hosting_window_class"})
 
 
 class VerbError(Exception):
-    """A typed refusal the transport reports as ``{"ok": False, "error": …}``."""
-
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
         self.message = message
 
 
-# ── capture geometry / coordinate mapping (pure) ─────────────────────────────
-
 @dataclass(frozen=True)
 class CaptureGeometry:
     screen_index: int
-    width: int          # scaled (what the model/phone saw)
+    width: int
     height: int
-    scale: float        # scaled / physical
-    phys_x: int         # physical origin of that screen on the virtual desktop
+    scale: float
+    phys_x: int
     phys_y: int
     phys_w: int
     phys_h: int
@@ -105,9 +75,6 @@ class CaptureGeometry:
 
 def to_physical(geometry: Optional[CaptureGeometry], x: int, y: int,
                 primary: Optional[Tuple[int, int, int, int]] = None) -> Tuple[int, int]:
-    """Map screenshot-space coordinates to physical pixels. With no capture yet,
-    coordinates are primary-screen physical pixels bounded by ``primary``
-    ``(x, y, w, h)`` when known."""
     if geometry is not None:
         return geometry.to_physical(x, y)
     if primary is not None:
@@ -117,8 +84,6 @@ def to_physical(geometry: Optional[CaptureGeometry], x: int, y: int,
         return ox + x, oy + y
     return x, y
 
-
-# ── key chords (pure) ─────────────────────────────────────────────────────────
 
 VK = {
     "enter": 0x0D, "return": 0x0D, "tab": 0x09, "escape": 0x1B, "esc": 0x1B, "space": 0x20,
@@ -136,9 +101,6 @@ MODIFIERS = {"ctrl": 0x11, "control": 0x11, "shift": 0x10, "alt": 0x12, "win": 0
 
 
 def parse_chord(keys: str) -> Tuple[List[int], int]:
-    """``"ctrl+shift+s"`` → ``([VK_CONTROL, VK_SHIFT], ord("S"))``. Letters and
-    digits map through their uppercase virtual-key codes; everything else
-    through :data:`VK`. Unknown tokens are a typed ``out_of_range``."""
     raw = str(keys or "").replace(" ", "").lower()
     if not raw or raw.startswith("+") or raw.endswith("+") or "++" in raw:
         raise VerbError("out_of_range", "keys must be a chord like 'ctrl+s', 'enter' or 'alt+f4'")
@@ -162,14 +124,11 @@ def parse_chord(keys: str) -> Tuple[List[int], int]:
         else:
             raise VerbError("out_of_range", f"unknown key {part!r}")
     if main is None:
-        # A bare modifier chord (e.g. "win") presses and releases it.
         if len(mods) == 1:
             return [], mods[0]
         raise VerbError("out_of_range", "a chord needs one non-modifier key")
     return mods, main
 
-
-# ── path / argument validation (pure) ─────────────────────────────────────────
 
 def _abs_path(value: Any, *, must_exist: bool = False) -> Path:
     text = str(value or "").strip()
@@ -187,8 +146,6 @@ _APP_NAME_OK = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567
 
 
 def validate_app(app: Any) -> Tuple[str, bool]:
-    """Return ``(app, is_path)`` or raise. A bare name has no separators and only
-    safe characters; a path must be absolute and end in .exe/.lnk/.bat/.cmd."""
     text = str(app or "").strip()
     if not text or len(text) > 1024 or "\x00" in text:
         raise VerbError("out_of_range", "app must be an application name or an absolute path")
@@ -205,9 +162,7 @@ def validate_app(app: Any) -> Tuple[str, bool]:
     return text, False
 
 
-# ── Windows-only primitives ───────────────────────────────────────────────────
-
-if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
+if IS_WINDOWS:  # pragma: no cover
     import ctypes.wintypes as wt
 
     _user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -267,11 +222,6 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
     GWL_EXSTYLE, WS_EX_TOOLWINDOW = -20, 0x00000080
     DESKTOP_SWITCHDESKTOP = 0x0100
 
-    # Tick of the last input THIS process synthesized, whichever path sent it
-    # (``SendInput`` here, ``SetCursorPos`` in the injector). The presence
-    # detector treats input at or before this tick (+grace) as ours, so every
-    # synthesis path must stamp it — a focus_window ALT tap that did not used
-    # to pause the session as "someone is using this computer".
     _last_injected_tick: int = 0
 
     def _stamp_injected() -> None:
@@ -299,9 +249,6 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
         return inp
 
     class WindowsInjector:
-        """Mouse/keyboard synthesis. Records the tick of its own last injection
-        so the presence detector can tell human input from ours."""
-
         @property
         def last_injected_tick(self) -> int:
             return _last_injected_tick
@@ -365,8 +312,6 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
         return [int.from_bytes(data[i:i + 2], "little") for i in range(0, len(data), 2)]
 
     class WindowsSystem:
-        """Windows, presence, lock state, foreground."""
-
         @staticmethod
         def last_input_tick() -> int:
             info = LASTINPUTINFO()
@@ -432,7 +377,6 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
 
         @staticmethod
         def foreground_process() -> str:
-            """Lower-cased image name of the process owning the foreground window."""
             hwnd = _user32.GetForegroundWindow()
             if not hwnd:
                 return ""
@@ -448,7 +392,6 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
 
         @staticmethod
         def foreground_class() -> str:
-            """Lower-cased window class of the foreground window ('' if none)."""
             hwnd = _user32.GetForegroundWindow()
             if not hwnd:
                 return ""
@@ -461,8 +404,7 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
         def focus_window(hwnd: int) -> bool:
             if _user32.IsIconic(hwnd):
                 _user32.ShowWindow(hwnd, SW_RESTORE)
-            # Windows refuses SetForegroundWindow from a process that has not
-            # received input recently; a synthetic ALT tap lifts that lock.
+            # Alt tap lifts Windows' SetForegroundWindow focus-steal lock
             _send([_key(vk=0x12), _key(vk=0x12, flags=KEYEVENTF_KEYUP)])
             _user32.SetForegroundWindow(hwnd)
             time.sleep(0.05)
@@ -474,18 +416,15 @@ if IS_WINDOWS:  # pragma: no cover — exercised on the rig, not in CI
                 proc = subprocess.Popen([app, *args], close_fds=True,
                                         creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
                 return proc.pid
-            os.startfile(app)  # noqa: S606 — a validated bare app name via ShellExecute
+            os.startfile(app)  # noqa: S606
             return None
 
-else:  # non-Windows import (tests, other hosts): the platform pieces are absent
+else:
     WindowsInjector = None  # type: ignore[assignment]
     WindowsSystem = None  # type: ignore[assignment]
 
 
-# ── capture (Qt, GUI thread) ──────────────────────────────────────────────────
-
 def screens_descriptor() -> List[Dict[str, Any]]:
-    """The ``screens`` list for the host descriptor (physical pixels)."""
     from PySide6.QtGui import QGuiApplication
     app = QGuiApplication.instance()
     out: List[Dict[str, Any]] = []
@@ -505,9 +444,6 @@ def screens_descriptor() -> List[Dict[str, Any]]:
 
 def capture(screen_index: int = 0, max_width: int = DEFAULT_WIDTH,
             quality: int = JPEG_QUALITY) -> Tuple[Dict[str, Any], CaptureGeometry]:
-    """Grab one screen, downscale to ``max_width``, encode JPEG, return the
-    result payload + the geometry later verbs map coordinates through. MUST run
-    on the GUI thread (``QScreen.grabWindow``)."""
     from PySide6.QtCore import QBuffer, QIODevice, Qt
     from PySide6.QtGui import QGuiApplication
 
@@ -546,8 +482,6 @@ def capture(screen_index: int = 0, max_width: int = DEFAULT_WIDTH,
               "base64": base64.b64encode(data).decode("ascii")}
     return result, geometry
 
-
-# ── clipboard / files / commands (worker thread) ──────────────────────────────
 
 def clipboard_get() -> Dict[str, Any]:
     from win_agent.tools import _clip_get
@@ -629,13 +563,7 @@ def delete_path(path_value: Any) -> Dict[str, Any]:
     return {"path": str(path), "deleted": True}
 
 
-# ── the executor ──────────────────────────────────────────────────────────────
-
 class Executor:
-    """Runs one verb at a time against this desktop. ``injector`` and ``system``
-    default to the Windows implementations; tests inject fakes. ``capture_fn``
-    must be called on the GUI thread — the controller marshals it."""
-
     def __init__(self, injector=None, system=None, capture_fn: Callable = capture,
                  banner_titles: Tuple[str, ...] = ("AstralDeep remote control",)):
         if injector is None and IS_WINDOWS:
@@ -648,8 +576,6 @@ class Executor:
         self.banner_titles = banner_titles
         self.last_geometry: Optional[CaptureGeometry] = None
         self.primary_physical: Optional[Tuple[int, int, int, int]] = None
-
-    # -- helpers ------------------------------------------------------------
 
     def _need(self, what):
         if what is None:
@@ -664,8 +590,6 @@ class Executor:
         return to_physical(self.last_geometry, x, y, self.primary_physical)
 
     def _refuse_terminal_keyboard(self, args: Dict[str, Any]) -> None:
-        """Keyboard input into a command interpreter runs a command — refused
-        unless the server passed the owner's approval (``terminal_ok``)."""
         if args.get("terminal_ok") is True:
             return
         system = self.system
@@ -693,10 +617,7 @@ class Executor:
         if system is not None and getattr(system, "screen_locked", None) and system.screen_locked():
             raise VerbError("screen_locked", "the screen is locked — unlock the computer first")
 
-    # -- entry points -------------------------------------------------------
-
     def screenshot(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """GUI thread."""
         self._locked_check()
         result, geometry = self.capture_fn(int(args.get("screen_index") or 0),
                                            int(args.get("max_width") or DEFAULT_WIDTH))
@@ -704,8 +625,6 @@ class Executor:
         return result
 
     def run(self, verb: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Worker thread (everything except ``screenshot``). Returns the verb's
-        result dict or raises :class:`VerbError`."""
         args = args if isinstance(args, dict) else {}
         if verb == "wait":
             seconds = float(args.get("seconds") or 1.0)

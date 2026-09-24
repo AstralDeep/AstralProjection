@@ -1,4 +1,7 @@
-"""Work has a complete read-only surface disposition, independent of canvas."""
+"""Tests for the read-only Work surface (backend/rote/work.py,
+backend/webrender/chrome/menu_model.py): navigation descriptors, builder output,
+save-command vocabulary, and refusal of malformed or oversized payloads.
+"""
 
 from copy import deepcopy
 import importlib.util
@@ -44,9 +47,6 @@ def test_work_navigation_is_one_server_descriptor_with_explicit_watch_projection
     assert not project_watch_menu_model(enabled)["topbar"]
     assert not project_watch_menu_model(None)["topbar"]
     assert not project_watch_menu_model({"topbar": 3})["topbar"]
-    # UI v2's settings rail contains settings sections only. The shared model
-    # still carries Recent work for native/watch consumers; its presence there
-    # must not reintroduce the removed web action row.
     from webrender.chrome.settings_nav import render_settings_nav
 
     assert "Recent work" not in render_settings_nav(build_menu_model())
@@ -194,8 +194,6 @@ def test_shared_swift_golden_is_the_actual_builder_and_rote_output():
         )
     assert fixture["menu"] == project_watch_menu_model(menu_model_dict(work_enabled=True))
 
-
-# ── Feature 088 T043: the one closed non-navigation action in the Work vocabulary ──
 
 from rote.work import SAVE_ACTION, validate_work_save_command  # noqa: E402
 

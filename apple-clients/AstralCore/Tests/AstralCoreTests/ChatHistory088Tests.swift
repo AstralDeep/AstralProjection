@@ -1,3 +1,6 @@
+// Tests for chat history rendering: plain preview text and the strict saved flag, canonical server enrichment
+// with normalized whitespace, and relative time labels matching web's units.
+
 import XCTest
 
 @testable import AstralCore

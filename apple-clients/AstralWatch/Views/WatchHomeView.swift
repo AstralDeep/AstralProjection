@@ -1,6 +1,7 @@
+// Signed-in watch home: one-tap new conversation, bounded recent history (WatchHistoryRow), visible account
+// identity, and sign-out; launched from AstralWatchApp and the navigation harness.
+
 import AstralCore
-// Feature 051 US4 — signed-in watch home: one-tap new conversation, bounded
-// recents, visible account identity, one-tap sign-out (FR-028).
 import SwiftUI
 
 struct WatchHomeView: View {
@@ -71,8 +72,6 @@ struct WatchHomeView: View {
             }
 
             Section {
-                // The approving account is always visible so a mistaken
-                // approval is immediately obvious (spec edge case).
                 Label(
                     model.accountName.isEmpty ? "Signed in" : model.accountName,
                     systemImage: "person.crop.circle"
@@ -107,7 +106,6 @@ struct WatchHomeView: View {
     }
 }
 
-/// A generic wrapper over server Work components, separate from chat and speech.
 struct WatchWorkSurfaceView: View {
     @Environment(WatchModel.self) var model
     @State private var timedOut = false
@@ -141,8 +139,6 @@ struct WatchWorkSurfaceView: View {
     }
 }
 
-/// ROTE owns the wrist's four-row, preview-free history. Preserve its title,
-/// glyph, relative time, and saved marker using the existing system-styled UI.
 struct WatchHistoryRow: View {
     let chat: ChatSummary
 

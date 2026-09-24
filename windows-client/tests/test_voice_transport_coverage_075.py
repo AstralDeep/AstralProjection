@@ -1,4 +1,7 @@
-"""Focused branch coverage for the Windows client-local transport contract."""
+"""Tests for windows-client local transport branch coverage (astral_client/app.py,
+astral_client/protocol.py): malformed timestamp rejection, ACK settlement ordering,
+reconnect handling, and offline/shutdown send paths.
+"""
 
 import asyncio
 import json
@@ -49,8 +52,6 @@ def test_client_local_capability_rejects_malformed_timestamps(
     checked_at,
     expires_at,
 ):
-    """A typed fallback never admits a malformed temporal validity window."""
-
     payload = {
         "status": "unavailable",
         "checked_at": checked_at,
@@ -61,8 +62,6 @@ def test_client_local_capability_rejects_malformed_timestamps(
 
 
 def test_ack_settlement_rejects_a_non_exact_frame_before_state_lookup():
-    """Unknown ACK fields fail closed without consulting mutable window state."""
-
     malformed = {
         "type": "user_message_acked",
         "schema_version": "1",

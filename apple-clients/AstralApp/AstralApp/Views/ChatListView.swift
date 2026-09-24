@@ -1,7 +1,7 @@
+// SwiftUI History screen: recent chats from the server-owned history surface, falling back to history_list, a
+// loading skeleton, and tap-to-open — parity with Android's HistoryScreen and HistoryRows.kt.
+
 import AstralCore
-// Feature 051 — the History screen (Android HistoryScreen parity): recent chats
-// (from the server-owned history surface, with `history_list` fallback); a
-// skeleton while loading; tap opens the conversation.
 import SwiftUI
 
 struct HistoryView: View {

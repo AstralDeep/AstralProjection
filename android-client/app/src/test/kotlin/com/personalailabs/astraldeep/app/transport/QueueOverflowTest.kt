@@ -1,3 +1,6 @@
+// Tests that the offline event queue is bounded (drop-oldest) and that every dropped frame is reported to the
+// user, never silently discarded.
+
 package com.personalailabs.astraldeep.app.transport
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -11,7 +14,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/** Feature 044 T014 — the bounded offline queue's drop-oldest is never silent. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class QueueOverflowTest {
     @Test
@@ -20,7 +22,6 @@ class QueueOverflowTest {
             val client = OrchestratorClient("ws://localhost:9/ws")
             val drops = mutableListOf<String>()
             val job = launch(UnconfinedTestDispatcher(testScheduler)) { client.dropped.collect { drops.add(it) } }
-            // 66 frames while disconnected: the 64-deep queue drops the two oldest.
             repeat(66) { i -> client.sendEvent("action_$i", null) }
             testScheduler.advanceUntilIdle()
             assertEquals(listOf("action_0", "action_1"), drops)

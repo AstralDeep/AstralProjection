@@ -1,4 +1,7 @@
-"""Native audit filters, grouped events, and cursor continuity share server state."""
+"""Tests for src/astralprojection/chrome/admin.py's audit surface: native filter,
+grouping and cursor-continuity navigation.
+"""
+
 import json
 
 import pytest

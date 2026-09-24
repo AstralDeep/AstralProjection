@@ -1,3 +1,6 @@
+// Tests for Wire's frame decoders: default-value fallbacks, optional-field handling, and identity assignment
+// for combine/condense results.
+
 package com.personalailabs.astraldeep.core.protocol
 
 import kotlinx.serialization.json.Json
@@ -98,7 +101,6 @@ class WireTest {
         assertEquals(2, r.components.size)
         assertEquals("button", r.components[0].type)
         assertEquals("color_picker", r.components[1].type)
-        // No `mode` on the wire — defaults to today's behavior (054).
         assertEquals("replace", r.mode)
     }
 
@@ -126,7 +128,6 @@ class WireTest {
         assertEquals(3, r.seq)
         assertEquals(false, r.terminal)
         assertEquals(1, r.components.size)
-        // No component_id on the wire (legacy/narrative stream) — null, never a default.
         assertEquals(null, r.componentId)
     }
 
@@ -322,7 +323,6 @@ class WireTest {
     fun decodes_workspace_timeline_mode() {
         assertEquals(true, assertIs<Inbound.WorkspaceTimelineMode>(Wire.decode("""{"type":"workspace_timeline_mode","active":true}""")).active)
         assertEquals(false, assertIs<Inbound.WorkspaceTimelineMode>(Wire.decode("""{"type":"workspace_timeline_mode","active":false}""")).active)
-        // `on` is tolerated as an alias; a bare frame defaults to inactive.
         assertEquals(true, assertIs<Inbound.WorkspaceTimelineMode>(Wire.decode("""{"type":"workspace_timeline_mode","on":true}""")).active)
         assertEquals(false, assertIs<Inbound.WorkspaceTimelineMode>(Wire.decode("""{"type":"workspace_timeline_mode"}""")).active)
     }
@@ -353,8 +353,6 @@ class WireTest {
                 ),
             )
         assertEquals(listOf("rowA", "rowB"), r.removedIds)
-        // The first result carries its stamped workspace identity; the second
-        // falls back to the fresh saved-row id.
         assertEquals(listOf("wc_1", "rowD"), r.newComponents.map { it.id })
         assertEquals("card", r.newComponents[0].type)
     }

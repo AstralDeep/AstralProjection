@@ -1,3 +1,6 @@
+// Tests for OfflineCanvasExport: the bundled document encodes untrusted presentation data and keeps window
+// geometry, a real WebKit export is self-contained and script-free, and foreign images can't be fetched.
+
 import AstralCore
 import XCTest
 

@@ -1,3 +1,6 @@
+// Tests for watch history presentation: ROTE descriptor matching, loading/enriched/canonical-empty states,
+// conversation-scope isolation from owner chrome, and resilience to degraded history.
+
 import XCTest
 
 @testable import AstralCore

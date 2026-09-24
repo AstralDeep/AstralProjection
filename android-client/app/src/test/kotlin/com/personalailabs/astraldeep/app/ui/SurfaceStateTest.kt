@@ -1,9 +1,10 @@
+// Tests for the SDUI settings surface's bounded loading state machine: loading, loaded, and timed-out.
+
 package com.personalailabs.astraldeep.app.ui
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** Feature 044 T039 — the SDUI surface's bounded loading state (loaded/loading/timed-out). */
 class SurfaceStateTest {
     @Test
     fun a_delivered_surface_is_loaded_regardless_of_the_timer() {

@@ -1,22 +1,12 @@
-"""Capability fallback ladder.
-
-A renderer target publishes the set of primitive types it can render; ROTE then
-substitutes any unsupported type down a fixed degradation ladder
-(timeline→list, chart→table→text, …) so the SDUI contract degrades gracefully
-on a constrained or brand-new target instead of emitting an "unsupported
-component" placeholder. ``text`` is assumed universally renderable and is the
-terminal of every ladder.
-
-This module is the pure contract: the ladder and :func:`first_supported`. The
-structural conversion + recursion lives in ``ComponentAdapter`` (it reuses the
-existing text extraction).
+"""Pure capability-fallback ladder: for each primitive type, an ordered list of
+substitution candidates ending in text; first_supported() and the voice-disposition
+helpers are consumed by rote.adapter.ComponentAdapter's degradation.
 """
+
 from __future__ import annotations
 
 from typing import AbstractSet, Any
 
-#: Per-primitive ordered substitution candidates (best-fidelity first). Every
-#: chain bottoms out at ``text``, which is assumed always supported.
 FALLBACK_LADDER = {
     "timeline": ("list", "text"),
     "bar_chart": ("table", "list", "text"),
@@ -40,10 +30,6 @@ FALLBACK_LADDER = {
     "divider": ("text",),
     "image": ("text",),
     "skeleton": ("text",),
-    # Feature 089 composite readouts. Each ladder keeps as much of the meaning
-    # as the next target can hold: a gauge is a bounded value, so it becomes a
-    # progress bar before it becomes a metric; a stepper is an ordered sequence
-    # with states, so it becomes a timeline before a plain list.
     "action_group": ("container", "text"),
     "stat_group": ("grid", "keyvalue", "table", "text"),
     "gauge": ("progress", "metric", "text"),
@@ -52,14 +38,10 @@ FALLBACK_LADDER = {
     "radar_chart": ("table", "list", "text"),
 }
 
-#: Terminal fallback — assumed renderable everywhere.
 TERMINAL = "text"
 
 
 def first_supported(ctype: str, supported: AbstractSet[str]) -> str:
-    """The type ``ctype`` should render AS, given the target's ``supported``
-    set: ``ctype`` itself when supported, else the first ladder step that is
-    supported, else :data:`TERMINAL` (``text``). Pure + total."""
     c = (ctype or "").strip().lower()
     if not supported or c in supported:
         return c or TERMINAL
@@ -70,7 +52,6 @@ def first_supported(ctype: str, supported: AbstractSet[str]) -> str:
 
 
 def typed_voice_fallback(capabilities: Any, reason: str) -> dict[str, object]:
-    """Return the closed client-local unavailable shape while retaining typed UI."""
     return {
         "available": False,
         "disposition": "typed_fallback",
@@ -85,7 +66,6 @@ def typed_voice_fallback(capabilities: Any, reason: str) -> dict[str, object]:
 
 
 def local_voice_disposition(capabilities: Any) -> dict[str, object]:
-    """Classify normalized local speech facts into one closed ROTE disposition."""
     if capabilities.voice_transport != "client_local" or capabilities.voice_contract != (
         "client_local/v1"
     ):

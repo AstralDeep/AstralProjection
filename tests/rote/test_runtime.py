@@ -1,3 +1,8 @@
+"""Tests for ROTE registration and device-update handling (backend/rote/capabilities.py,
+backend/rote/rote.py): connection-scoped lookup/cleanup, the browser fast path, and
+noop/cache/raw/adapted result classification.
+"""
+
 from __future__ import annotations
 
 from rote.capabilities import DeviceType

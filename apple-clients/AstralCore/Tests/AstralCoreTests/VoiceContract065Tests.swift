@@ -1,3 +1,7 @@
+// Tests for the shared conversational-voice wire contract: client-local v2 fixture mapping and field
+// rejection, registration stability, transcript identity immutability, current-connection frame typing, and
+// terminal-notice wording.
+
 import CryptoKit
 import Foundation
 import XCTest

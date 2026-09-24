@@ -1,3 +1,5 @@
+// Tests for the WS reconnect backoff schedule used by the transport layer after a dropped connection.
+
 package com.personalailabs.astraldeep.app.transport
 
 import kotlin.test.Test

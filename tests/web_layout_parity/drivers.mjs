@@ -1,20 +1,6 @@
-/**
- * Feature 089 (T046/T047): putting each side into the five contract states.
- *
- * `contracts/web-layout-parity.md` scores five states. This file knows how to
- * reach each one on a8p and on the Astral web client, and how to establish the
- * behavioural facts a bounding box cannot show — that the search filters
- * live, that a card lifts on hover, that the expand chip opens the overlay,
- * and that the settings dialog is still under `prefers-reduced-motion`.
- *
- * The a8p driver never issues a chat turn. A real turn would need the owner's
- * TypeSafe key against the reference app, which the 089 credential rule does
- * not permit; instead the response is the one produced by a8p's *own*
- * server-side renderer in `a8p-response-fixture.json`, injected into the same
- * `conversationTurns` array a real turn would have filled.
- */
-
-/* eslint-env node */
+// Drives a8p and the Astral web client into the five layout-parity contract states, collecting
+// behavioural facts a bounding box can't show; consumed by capture-reference.mjs, responsive.mjs,
+// and score-parity.mjs.
 
 const SETTLE_MS = 350;
 
@@ -22,8 +8,6 @@ async function settle(page) {
   await page.waitForTimeout(SETTLE_MS);
   await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => r(null))));
 }
-
-// -- a8p (reference) -------------------------------------------------------
 
 export const referenceDriver = {
   name: 'a8p',
@@ -126,8 +110,6 @@ export const referenceDriver = {
   },
 };
 
-// -- the Astral web client (candidate) ------------------------------------
-
 export const candidateDriver = {
   name: 'astral',
 
@@ -200,19 +182,10 @@ export const candidateDriver = {
   },
 };
 
-// -- behavioural facts shared by both sides -------------------------------
-
-/**
- * The context flags `regions.mjs` consumes. Each is established by acting on
- * the page, because none of them can be read out of a single layout snapshot.
- */
 async function collectContext(page, driver, fixture, sel) {
   const ctx = {};
 
-  // B3 — the search input filters the list live.
   await driver.landing(page);
-  // Count what a reader can SEE: one implementation removes the nodes, the
-  // other hides them, and "the list filtered" means the same thing either way.
   const visibleItems = () => page.evaluate((s) => Array.prototype.filter.call(
     document.querySelectorAll(s),
     (el) => el.getBoundingClientRect().height > 0 && !el.hidden,
@@ -226,7 +199,6 @@ async function collectContext(page, driver, fixture, sel) {
   const afterClear = await visibleItems();
   ctx.filtersLive = before > 0 && afterNoMatch < before && afterClear === before;
 
-  // C4 — the scenario card lifts on hover.
   const card = page.locator(sel.scenarioCard).first();
   if (await card.count()) {
     const restY = await card.evaluate((el) => el.getBoundingClientRect().top);
@@ -241,7 +213,6 @@ async function collectContext(page, driver, fixture, sel) {
     ctx.cardHoverLift = false;
   }
 
-  // C5 — the landing comes back from "return to dashboard".
   await driver.conversation(page, fixture);
   const backCount = await page.locator(sel.backToLanding).count();
   if (backCount) {
@@ -253,7 +224,6 @@ async function collectContext(page, driver, fixture, sel) {
     ctx.landingReturns = false;
   }
 
-  // D4 — the expand chip opens the overlay.
   await driver.hover(page, fixture);
   if (await page.locator(sel.expandChip).count()) {
     await page.locator(sel.expandChip).first().click({ force: true });
@@ -265,7 +235,6 @@ async function collectContext(page, driver, fixture, sel) {
     ctx.expandOpensFullscreen = false;
   }
 
-  // D5 — the component kinds actually present in a rendered response.
   await driver.conversation(page, fixture);
   ctx.componentKinds = await page.evaluate((tableSel) => {
     const scope = document.querySelector('.sdui-widget-preview-content')
@@ -288,7 +257,6 @@ async function collectContext(page, driver, fixture, sel) {
     return getComputedStyle(head).position === 'sticky';
   }, sel.table);
 
-  // F2 — the dialog animates, and is still when reduced motion is asked for.
   await driver.settings(page);
   ctx.modalAnimates = await page.locator(sel.modalCard).first().evaluate((el) => {
     const cs = getComputedStyle(el);
@@ -298,8 +266,6 @@ async function collectContext(page, driver, fixture, sel) {
   return ctx;
 }
 
-/** Re-measure the one reduced-motion fact on a page opened with the media
- * feature forced; the caller supplies that page. */
 export async function probeReducedMotionDialog(page, driver, baseUrl, modalCardSelector) {
   await driver.open(page, baseUrl);
   await driver.settings(page);

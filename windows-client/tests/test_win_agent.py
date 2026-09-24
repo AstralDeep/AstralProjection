@@ -1,5 +1,8 @@
-"""Tests for the client-hosted Windows tools agent: the tools produce valid
-SDUI components, and the A2A dispatch mirrors the backend MCPServer contract."""
+"""Tests for the windows-client win_agent tools and dispatch (win_agent/agent.py,
+win_agent/tools.py): valid SDUI component output and A2A dispatch parity with the
+backend MCPServer contract.
+"""
+
 from __future__ import annotations
 
 import pytest
@@ -8,10 +11,6 @@ from win_agent import agent, tools
 
 
 def _clipboard_available() -> bool:
-    """True only where a real OS clipboard mechanism exists. The clipboard
-    round-trip test needs one — present on the Windows client's target platform,
-    absent on the headless Linux CI runner (no pyperclip backend / no powershell),
-    where the test is skipped rather than failed."""
     try:
         import pyperclip
 
@@ -32,8 +31,6 @@ def test_system_info_components():
 
 
 def test_list_directory(tmp_path, monkeypatch):
-    # list_directory is workspace-confined (feature 039); set the workspace to
-    # a tmp dir with a file in it.
     monkeypatch.setenv("ASTRAL_WORKSPACE_DIR", str(tmp_path))
     (tmp_path / "a.txt").write_text("x", encoding="utf-8")
     r = tools.list_directory()
@@ -48,11 +45,9 @@ def test_list_directory_bad_path():
 
 @pytest.mark.skipif(not _clipboard_available(), reason="no OS clipboard mechanism (headless CI)")
 def test_write_then_read_clipboard():
-    # round-trips through the real Windows clipboard (harmless).
     w = tools.write_clipboard(text="astral-test-123")
     assert w["_ui_components"][0]["variant"] == "success"
     r = tools.read_clipboard()
-    # read returns a card with the text (or info if clipboard tooling absent)
     assert r["_ui_components"][0]["type"] in ("card", "alert")
 
 
@@ -61,11 +56,7 @@ def test_open_path_requires_arg():
     assert r["_ui_components"][0]["variant"] == "warning"
 
 
-# --- A2A dispatch contract ------------------------------------------------- #
-
 def test_card_lists_all_tools(monkeypatch):
-    # The dangerous run_shell tool is only advertised when the bypass flag is on;
-    # with it off (default) the card lists every tool EXCEPT run_shell.
     monkeypatch.delenv("ASTRAL_DANGEROUS_BYPASS", raising=False)
     card = agent.build_card()
     assert card["agent_id"] == "windows-tools-1"

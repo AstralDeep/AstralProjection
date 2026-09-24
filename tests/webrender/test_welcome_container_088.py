@@ -1,4 +1,8 @@
-"""Welcome container metadata survives the actual mobile HTML rendering path."""
+"""Tests confirming the welcome container's metadata survives real mobile HTML rendering
+(backend/rote/adapter.py, backend/webrender/renderer.py) with one escaped wrapper and
+no event-dispatch attributes.
+"""
+
 import json
 from pathlib import Path
 

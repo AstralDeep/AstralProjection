@@ -1,3 +1,6 @@
+// Tests for workspace welcome/layout presentation: shared fixture placement preserving server components,
+// legacy-welcome qualification, manifest start-ordering, and width/rail layout bounds.
+
 import XCTest
 
 @testable import AstralCore

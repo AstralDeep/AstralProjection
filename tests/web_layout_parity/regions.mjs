@@ -1,27 +1,10 @@
-/**
- * Feature 089 (T047): the parity contract, expressed as code.
- *
- * `contracts/web-layout-parity.md` in AstralDeep lists 27 scored items across
- * six groups, weighted to 100. This file carries the same 27 items with the
- * selectors that locate each region on each side and the rule that turns two
- * measurements into Pass / Partial / Fail.
- *
- * Per the contract:
- *   - Partial means the position or structure matches but a dimension is off
- *     by more than the tolerance;
- *   - the tolerance is ±8% or ±8px, whichever is larger;
- *   - colors are excluded (they come from `ThemeView`);
- *   - content differences are excluded (real agents, real welcome examples).
- *
- * Items whose a8p counterpart does not exist (the 088 "recent work" section)
- * carry `referenceOptional`, and are then scored on the contract's own
- * structural description instead of against a reference measurement.
- */
+// Encodes the web-layout-parity contract's 27 scored items and 13 responsive checks as selectors
+// plus pass/partial/fail rules, applied to probe.mjs measurements by capture-reference.mjs,
+// responsive.mjs, and score-parity.mjs.
 
 export const TOLERANCE_PX = 8;
 export const TOLERANCE_RATIO = 0.08;
 
-/** a8p's console — the reference. */
 export const REFERENCE_SELECTORS = {
   sidebar: '#sidebar',
   main: '#main-content',
@@ -42,7 +25,7 @@ export const REFERENCE_SELECTORS = {
   agentItemName: '.agent-name',
   agentItemDesc: '.agent-desc',
   agentItemDot: '.agent-status-pill',
-  recentWork: null, // a8p has no 088 recent-work section
+  recentWork: null,
   recentToggle: null,
   profile: '#user-profile-box',
   recentAction: '.astral-recent-actions button:not(.astral-recent-toggle)',
@@ -120,7 +103,6 @@ export const REFERENCE_SELECTORS = {
   composerOverflow: null,
 };
 
-/** The Astral web client — the candidate. */
 export const CANDIDATE_SELECTORS = {
   sidebar: '#astral-sidebar',
   main: '#astral-main',
@@ -130,8 +112,6 @@ export const CANDIDATE_SELECTORS = {
   brandLogo: '#astral-brand img',
   brandText: '.astral-brand-text',
   brandTextLine: '.astral-brand-name, .astral-brand-sub',
-  // The account row is the gear alone; the identity it used to print heads
-  // the settings dialog instead (see the 2026-09-18 contract correction).
   profileIdentity: '#astral-profile-name, #astral-profile-role, .astral-profile-avatar',
   dirHead: '#astral-dir-head',
   agentCount: '#astral-agent-count',
@@ -206,8 +186,6 @@ export const CANDIDATE_SELECTORS = {
   fsKbd: '.astral-fs-kbd',
   fsCanvas: '#astral-fs-canvas',
 
-  // The host div has no box of its own; the overlay inside it is what
-  // covers the viewport, which is what the reference measures too.
   modal: '#astral-modal .astral-modal-overlay',
   modalCard: '#astral-modal .astral-modal-card',
   modalIcon: '.astral-modal-icon',
@@ -226,16 +204,12 @@ export const CANDIDATE_SELECTORS = {
   composerOverflow: '#astral-composer-more',
 };
 
-// -- scoring helpers -------------------------------------------------------
-
 export function near(a, b) {
   if (a == null || b == null) return false;
   const tol = Math.max(TOLERANCE_PX, Math.abs(b) * TOLERANCE_RATIO);
   return Math.abs(a - b) <= tol;
 }
 
-/** Pass when every dimension is within tolerance, Partial when at least one
- * is not but the structure held, Fail when the structure did not. */
 function dims(structureOk, pairs) {
   if (!structureOk) return { verdict: 'fail', detail: 'structure' };
   const bad = pairs.filter(([name, a, b]) => !near(a, b))
@@ -249,18 +223,13 @@ function ok(condition, detail) {
 }
 function present(m) { return !!(m && m.present); }
 
-/** Headless Chromium draws overlay scrollbars, so a measured gutter is 0 on
- * both sides. The declared rule is the observable fact instead. */
 function thinScrollbar(m) {
   const r = m.scrollbarRules || { widths: [], scrollbarWidth: 'auto' };
   if (r.scrollbarWidth === 'thin') return true;
   return r.widths.some((w) => w > 0 && w <= 8);
 }
 
-// -- the 27 scored items ---------------------------------------------------
-
 export const ITEMS = [
-  // A. Global frame (14)
   {
     id: 'A1', group: 'A', weight: 4, auto: true, state: 'landing',
     title: 'Two-column frame, full height, no page scroll, canvas scrolls internally',
@@ -335,14 +304,10 @@ export const ITEMS = [
     },
   },
 
-  // B. Sidebar (22)
   {
     id: 'B1', group: 'B', weight: 4, auto: true, state: 'landing',
     title: 'Brand block: logo only (no product name or tagline), bottom divider, returns to landing',
     score(ref, cand) {
-      // Owner directive 2026-09-18: the wordmark and tagline came off. The
-      // logo, the divider and the return-to-landing behavior are what this
-      // row still scores; the name/subtitle lines must be ABSENT.
       const structure = present(cand.brand) && cand.brandLogo.present
         && cand.brandTextLine.n === 0 && cand.brand.borderBottom > 0
         && cand.brand.box.y < cand.dirHead.box.y;
@@ -391,9 +356,6 @@ export const ITEMS = [
     id: 'B4', group: 'B', weight: 5, auto: true, state: 'landing',
     title: 'Scrollable agent list filling the remaining height; name and description flush left, status dot',
     score(ref, cand) {
-      // Owner directive 2026-09-18: no per-agent icon. The name and the
-      // description start at the card's left padding instead, so the row
-      // scores the absence of the icon and the presence of everything else.
       const p = cand.agentItems.parts;
       const structure = present(cand.agentList) && cand.agentItems.n > 0 && !!p
         && !p.icon && p.name && p.desc && p.dot
@@ -412,8 +374,6 @@ export const ITEMS = [
     id: 'B5', group: 'B', weight: 2, auto: true, state: 'landing', referenceOptional: true,
     title: 'History section above the agent directory, collapsible',
     score(ref, cand) {
-      // Owner directive 2026-09-21: History and the agent directory switched
-      // places — History sits on top, with the agent directory below.
       const structure = present(cand.recentWork) && cand.recentToggle.present
         && cand.recentWork.box.bottom <= cand.agentList.box.y + 2
         && cand.recentToggle.expanded !== null
@@ -427,10 +387,6 @@ export const ITEMS = [
     id: 'B6', group: 'B', weight: 4, auto: true, state: 'landing',
     title: 'Account row pinned to the sidebar bottom: picture, name, role, settings cog',
     score(ref, cand) {
-      // Owner directive 2026-09-18 took the identity off this row; the
-      // owner's 2026-09-19 walkthrough put it back, because a console with no
-      // sign of whose account it is reads as signed out. The dialog still
-      // heads itself with the same identity, from the same derivation.
       const p = cand.profileParts;
       const structure = present(cand.profile) && p.cog && p.avatar && p.name && p.role
         && cand.sidebar.box.bottom - cand.profile.box.bottom <= cand.sidebar.padding[2] + 4
@@ -448,13 +404,10 @@ export const ITEMS = [
     },
   },
 
-  // C. Landing (18)
   {
     id: 'C1', group: 'C', weight: 4, auto: true, state: 'landing', referenceOptional: true,
     title: 'Page header: title + subtitle left, status pill strip removed',
     score(ref, cand) {
-      // Owner directive 2026-09-21: The status pill strip in the page header
-      // is removed; the page header carries only the title and subtitle.
       const structure = present(cand.pageHeader) && cand.pageTitle.box && cand.pageSubtitle.box
         && (!present(cand.statusStrip) || cand.statusPills.n === 0)
         && cand.pageSubtitle.box.y >= cand.pageTitle.box.bottom - 2;
@@ -468,9 +421,6 @@ export const ITEMS = [
     id: 'C2', group: 'C', weight: 3, auto: true, state: 'landing', referenceOptional: true,
     title: 'No explanatory overview panel between the page header and the examples',
     score(ref, cand) {
-      // Owner directive 2026-09-18: the "How a turn runs" panel came off the
-      // landing. The examples are the explanation. This row now scores its
-      // ABSENCE, and that the examples sit directly under the page header.
       if (present(cand.overview)) {
         return { verdict: 'fail', detail: 'the overview panel is still rendered' };
       }
@@ -533,7 +483,6 @@ export const ITEMS = [
     },
   },
 
-  // D. Conversation and results (24)
   {
     id: 'D1', group: 'D', weight: 5, auto: true, state: 'conversation',
     title: 'Vertical feed, 24px gap; user turns right-aligned bubbles, assistant turns full width',
@@ -621,7 +570,6 @@ export const ITEMS = [
     },
   },
 
-  // E. Composer (10)
   {
     id: 'E1', group: 'E', weight: 3, auto: true, state: 'landing',
     title: 'Composer bar pinned to the bottom of the main column: top border, blurred background, 18px 48px padding',
@@ -676,7 +624,6 @@ export const ITEMS = [
     },
   },
 
-  // F. Overlays (12)
   {
     id: 'F1', group: 'F', weight: 6, auto: true, state: 'fullscreen',
     title: 'Full-screen result overlay: viewport-covering, icon badge, title row with badges, subtitle, exit + ESC hint, scrollable canvas',
@@ -700,10 +647,6 @@ export const ITEMS = [
     id: 'F2', group: 'F', weight: 6, auto: true, state: 'settings', referenceOptional: true,
     title: 'Settings dialog: centered card with slide-up (reduced motion respected), icon + title + close, left menu rail, right options pane',
     score(ref, cand, ctx) {
-      // Owner directive 2026-09-18: the gear opens the dialog directly and
-      // the menu is a rail down its left side, so this row scores the rail
-      // and its pane rather than a8p's tab strip. The reference has no rail
-      // to measure against, hence referenceOptional.
       const m = cand.modal;
       const structure = m.present && m.visible && m.icon && m.title && m.close
         && m.nav && m.navItems >= 4 && m.body
@@ -728,7 +671,6 @@ export const TOTAL_WEIGHT = ITEMS.reduce((sum, item) => sum + item.weight, 0);
 
 export const VERDICT_CREDIT = { pass: 1, partial: 0.5, fail: 0 };
 
-/** The responsive checklist (SC-012) — pass/fail, 100% required. */
 export const RESPONSIVE_VIEWPORTS = [
   { name: '1024x768', width: 1024, height: 768 },
   { name: '768x1024', width: 768, height: 1024 },

@@ -1,3 +1,6 @@
+// Controls only the test APK's own synthetic documents for SAF fixtures; target app I/O still uses ordinary
+// per-URI grants. Backs WorkspaceTestDocuments.java and its controllers.
+
 package com.personalailabs.astraldeep.app.workspace
 
 import android.net.Uri
@@ -5,7 +8,6 @@ import android.os.Bundle
 import android.provider.DocumentsContract
 import androidx.test.platform.app.InstrumentationRegistry
 
-/** Controls only this test APK's synthetic documents; target I/O uses ordinary per-URI grants. */
 internal object TestDocuments {
     const val AUTHORITY = "com.personalailabs.astraldeep.test.workspace.documents.control"
 

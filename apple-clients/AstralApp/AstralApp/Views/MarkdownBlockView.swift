@@ -1,10 +1,7 @@
+// Renders block markdown (headings, fences, lists, tables) by styling MarkdownBlocks segments and running
+// InlineMarkdown on text blocks; used by ChatView and ComponentView for narrative and block_md text.
+
 import AstralCore
-// Feature 053 — native rendering for block markdown (FR-004 parity with the
-// web's block_md): text components with variant="markdown" and assistant
-// narrative doc cards carry headings, fenced code, lists and pipe tables that
-// an inline-only parse would show as literal syntax. AstralCore segments the
-// source; this view styles each block and runs the shared inline parse on the
-// text-bearing ones.
 import SwiftUI
 
 struct MarkdownBlockView: View {

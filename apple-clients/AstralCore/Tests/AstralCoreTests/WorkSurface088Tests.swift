@@ -1,3 +1,6 @@
+// Tests for the Work surface wire contract: ROTE golden fixture retention, stale-response rejection, closed
+// read/close identity validation, malformed-field whole-result refusal, and watch capability opt-in.
+
 import Foundation
 import XCTest
 

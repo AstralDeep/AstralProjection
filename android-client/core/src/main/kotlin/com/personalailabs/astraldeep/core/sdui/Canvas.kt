@@ -1,21 +1,16 @@
+// Pure ordered-list reducer for canvas components keyed by identity — upsert in place or append, remove by id
+// — returning new lists for Compose stability; mirrors the Windows client's Canvas.apply_ops.
+
 package com.personalailabs.astraldeep.core.sdui
 
-/** A single in-place canvas mutation, from `ui_upsert.ops` or the streaming consumer. */
 data class CanvasOp(
     val op: String,
     val componentId: String,
     val component: Component? = null,
 )
 
-/**
- * Pure canvas reducer — the model behind the Compose canvas. Components are kept
- * in an ordered list keyed by their identity; `upsert` replaces in place
- * (preserving position) or appends, and `remove` drops by id. Returns a NEW list
- * (no input mutation) so it is trivially unit-testable and drives Compose state.
- *
- * Mirrors the Windows client's `Canvas.apply_ops`.
- */
 object Canvas {
+    // Untouched components keep their instance — Compose skips recomposing them
     fun apply(
         current: List<Component>,
         ops: List<CanvasOp>,

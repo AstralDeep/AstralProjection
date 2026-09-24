@@ -1,3 +1,6 @@
+// Instrumented test collecting Android voice permission/capability and TalkBack accessibility evidence for
+// the voice conversation feature.
+
 package com.personalailabs.astraldeep.app
 
 import android.Manifest
@@ -34,7 +37,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.security.MessageDigest
 
-/** Connected Android permission/capability and TalkBack evidence for feature 065. */
 @RunWith(AndroidJUnit4::class)
 class VoiceConversation065InstrumentedTest {
     @get:Rule val rule = createComposeRule()

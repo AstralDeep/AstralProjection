@@ -1,47 +1,6 @@
-"""Pure persistent-assignment views over an explicitly authorized host snapshot.
-
-``build_assignments_view`` accepts ``mode`` (list/create/revise/detail), ``enabled``,
-``execution_enabled``, optional safe ``error``/``notice``, ``assignments`` or one
-``assignment``. Rows carry assignment_id, instruction_revision, control_epoch,
-lifecycle, phase, next_wake_at/wake_reason, last_check_at/latest_result,
-grant_summary/grant_expires_at, limit_summary/usage_summary [{label,value}],
-currency_cap_label/monetary_cost_label, and safe tasks/activity/approvals.
-
-Definition is a display/form projection, not a Plane record: name, instructions,
-source_key, source_url, optional source_arguments JSON / linked_document_urls text,
-allowed_tools (portable tool identities), conversation_id,
-completion_condition, currency_cap_enabled and currency. Create/revise state also
-supplies source_options/tool_options, registered_reader_enabled,
-limit_fields [{name,label,value,help}], and
-optional activation_error. Limit fields use the host's canonical names, for example
-daily.tool_calls and lifetime.tokens, emitted as limits.daily.tool_calls etc.
-
-Both state and each row carry available_actions and submission_ids keyed by exact
-action name. Approvals use action_id, request_digest, state, instruction_revision,
-control_epoch, expires_at, expired, safe tool_label/target_label/arguments_summary/
-consequence/preconditions_summary, interactive_only, and submission_ids keyed by
-approve/decline. Raw arguments, tokens, grant IDs, claims, and arbitrary row fields
-are never forwarded. The host validates every command; this module only renders.
-
-LayoutView(mode="watch") selects bounded status/chat guidance and a full-client
-handoff without forms or buttons. Optional next_cursor/activity_cursor are opaque
-host pagination tokens. No IDs, permissions, quotes or clocks are generated here.
-
-``build_recurring_work_view`` (feature 088 T044) unifies the owner's scheduled
-jobs with their bound ongoing agent's latest typed monitoring observation. State:
-``mode`` (list/detail), ``enabled``, ``execution_enabled``, safe ``error``/
-``notice``, ``jobs`` or one ``job``, ``next_cursor``. A job row carries job_id
-(UUID4), name, kind (cron/interval/one_shot), expression, timezone, status
-(active/paused/expired/completed/disabled), terminal_stop, next_run_at,
-last_run_at, policy_version (int, or None for a legacy job without a policy),
-allowance ({admitted, max}; None means unknown, never zero; a missing allowance
-means no run limit), assignment ({assignment_id, name, lifecycle, phase}),
-observation ({kind, finding, observed_at, sequence, reason, complete_source_set})
-with kind one of initial/unchanged/changed/insufficient_evidence, safe runs
-[{started_at, outcome, summary}], available_actions and submission_ids keyed by
-chrome_job_pause/chrome_job_resume/chrome_job_stop. Stop is terminal: it is
-offered only for a policy job and labelled as permanent. Controls carry job_id,
-submission_id and expected_policy_version; the host validates every command.
+"""Pure view builders for persistent assignments and recurring scheduled jobs,
+projecting host-authorized definitions, controls and monitoring outcomes without
+touching the Plane record itself.
 """
 
 from __future__ import annotations
@@ -100,7 +59,6 @@ def _mapping(value: object) -> Mapping:
 
 
 def _display(value: object, default: str = "") -> str:
-    # Only a deliberate scalar projection is displayable, never repr(raw records).
     return str(value) if isinstance(value, (str, int, float)) and not isinstance(value, bool) else default
 
 
@@ -339,12 +297,6 @@ def _form(state: Mapping, row: Mapping, mode: str) -> list[ComponentView]:
 def build_assignments_view(
     state: Mapping[str, object], *, theme: ThemeView | None = None, layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Render a bounded host-authorized assignment snapshot for all client targets.
-
-    Mutation controls require the host's action allowlist and UUID4 submission
-    identities. These are presentation eligibility, never execution authority.
-    Use ``layout.mode == 'watch'`` for the declared wrist disposition.
-    """
     state = _mapping(state)
     layout = layout or LayoutView()
     mode = _display(state.get("mode"), "list")
@@ -411,8 +363,6 @@ def _count(value: object) -> int | None:
 
 
 def _allowance(row: Mapping) -> str:
-    # A missing allowance is the legacy job semantics (no policy, no run limit); a present
-    # allowance with an unknown member is "Unknown", never rendered as zero or exhausted.
     allowance = row.get("allowance")
     if allowance is None:
         return "No run limit"
@@ -522,12 +472,6 @@ def _job_detail(row: Mapping, execution_enabled: bool) -> list[ComponentView]:
 def build_recurring_work_view(
     state: Mapping[str, object], *, theme: ThemeView | None = None, layout: LayoutView | None = None,
 ) -> ChromeViewModel:
-    """Render scheduled jobs with their bound agent's latest monitoring outcome.
-
-    Controls are presentation eligibility only: they need the host's action allowlist
-    and UUID4 submission identities and carry the owner's policy version. Stop is
-    terminal and offered only for a policy job. Unknown allowance is never zero.
-    """
     state = _mapping(state)
     layout = layout or LayoutView()
     mode = _display(state.get("mode"), "list")

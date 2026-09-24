@@ -1,3 +1,6 @@
+// Tests for AppViewModel's welcome-component purge rule: wel_-prefixed components are turn-scoped, purged the
+// moment a turn arms, and never archived into the canvas timeline.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -14,14 +17,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/**
- * Feature 055 T015 — the uniform welcome rule (wire-contract §1). Welcome
- * components arrive with "wel_"-prefixed identities and are turn-scoped: purged
- * from the committed canvas the moment a turn arms, and never archived into the
- * read-only canvas timeline. The purge is UNCONDITIONAL (no client-side flag) —
- * when the server flag is off the welcome arrives id-less, nothing matches
- * "wel_", and the purge is a byte-equivalent no-op.
- */
 class WelcomePurgeTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 
@@ -75,10 +70,6 @@ class WelcomePurgeTest {
 
     @Test
     fun turn_start_arming_purges_welcome_from_the_canvas() {
-        // sendChat / the chat_message ui_event both arm through armTurn: the
-        // welcome goes in the same copy that sets pendingReplace, and the
-        // purged canvas is what the pre-turn snapshot (the timeline archive
-        // source) captures.
         val s = vm.armTurn(UiState(canvas = welcome + comp("A")))
         assertEquals(listOf("A"), s.canvas.map { it.id })
         assertEquals(listOf("A"), s.preTurnCanvas.map { it.id })
@@ -88,10 +79,6 @@ class WelcomePurgeTest {
 
     @Test
     fun commit_never_archives_a_welcome_only_canvas() {
-        // The "Canvas 1" leak regression: even if a welcome-only pre-turn
-        // snapshot survives to commit (arming's purge is the first line of
-        // defense), the archive guard drops it — the timeline never shows a
-        // welcome snapshot.
         var s = UiState(canvas = welcome, preTurnCanvas = welcome, turnActive = true, pendingReplace = true)
         s = vm.reduce(s, Inbound.UiUpsert(chatId = null, ops = listOf(CanvasOp("upsert", "A", comp("A")))))
         s = vm.reduce(s, Inbound.ChatStatus(status = "done", message = null))
@@ -101,8 +88,6 @@ class WelcomePurgeTest {
 
     @Test
     fun commit_archives_only_the_non_welcome_components() {
-        // In-turn ops morph the live canvas (055 live rule), so the timeline
-        // archives the pre-turn snapshot — minus welcome.
         var s =
             UiState(
                 canvas = welcome + comp("old"),
@@ -115,14 +100,11 @@ class WelcomePurgeTest {
         s = vm.reduce(s, Inbound.ChatStatus(status = "done", message = null))
         assertEquals(listOf(listOf("old")), s.canvasHistory.map { snap -> snap.components.map { it.id } })
         assertEquals("old turn", s.canvasHistory.single().label)
-        // Committed state == what the user saw at done: old + the live upsert.
         assertEquals(listOf("old", "A"), s.canvas.map { it.id })
     }
 
     @Test
     fun a_text_only_turn_does_not_resurrect_welcome() {
-        // Empty pendingCanvas at done keeps the canvas — minus welcome (belt-and-
-        // braces; arming already purged it on the normal path).
         var s = UiState(canvas = welcome + comp("A"), turnActive = true, pendingReplace = true)
         s = vm.reduce(s, Inbound.ChatStatus(status = "done", message = null))
         assertEquals(listOf("A"), s.canvas.map { it.id })
@@ -131,8 +113,6 @@ class WelcomePurgeTest {
 
     @Test
     fun non_welcome_ids_are_never_dropped() {
-        // "welcome" (no underscore), "wc_…" fingerprints, and id-less components
-        // all survive — only the exact "wel_" prefix is turn-scoped.
         val keep = listOf(comp("welcome"), comp("wc_abc123"), comp(null, "text"))
         val s = vm.armTurn(UiState(canvas = keep))
         assertEquals(listOf("welcome", "wc_abc123", null), s.canvas.map { it.id })

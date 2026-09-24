@@ -1,4 +1,8 @@
-"""Legacy Windows ignores the new closed workspace topbar kind safely."""
+"""Tests for windows-client topbar handling (astral_client/rest.py,
+backend/webrender/chrome/menu_model.py): unrecognized or closed-workspace topbar
+kinds are ignored rather than becoming surface actions.
+"""
+
 from astral_client.rest import parse_chrome_menu
 from webrender.chrome.menu_model import menu_model_dict
 

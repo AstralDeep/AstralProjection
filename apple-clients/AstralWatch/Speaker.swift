@@ -1,13 +1,11 @@
-// Feature 051 — on-device TTS for the server's spoken rendition (FR-030).
-// Speaks `speech.ssml` via AVSpeechUtterance(ssmlRepresentation:), falling
-// back to plain `text`. Never re-speaks a turn; navigation/stop obeys
-// immediately; system silent/DND is honored by the platform audio session.
+// On-device text-to-speech for the server's spoken turn rendition (SSML via AVSpeechUtterance, with
+// plain-text fallback); stops immediately on navigation and never re-speaks a turn, used by WatchModel and
+// WatchChatView.
+
 import AVFoundation
 import AstralCore
 import Observation
 
-// The core package names the rendition `Speech`; alias locally so it can
-// never collide with Apple's Speech framework module in app targets.
 typealias AstralSpeech = AstralCore.Speech
 
 @Observable
@@ -27,14 +25,10 @@ final class Speaker: NSObject {
         super.init()
         synthesizer.delegate = self
         #if os(watchOS)
-            // Ambient: mixes politely and honors the system silent/DND state.
             try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.duckOthers])
         #endif
     }
 
-    /// Speak a delivery's rendition exactly once. Dedup is keyed on the
-    /// rendition CONTENT — frames carry no stable turn id, and a server
-    /// re-push of the same canvas must never re-speak it (FR-030).
     func speak(_ speech: AstralSpeech?) {
         guard let speech else { return }
         let key = speech.text.hashValue

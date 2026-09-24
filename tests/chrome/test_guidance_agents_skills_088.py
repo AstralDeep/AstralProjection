@@ -1,4 +1,6 @@
-"""Skill, declarative-agent and selection forms carry exact identities and never private text."""
+"""Tests for src/astralprojection/chrome/agents.py and guidance.py: skill,
+declarative-agent and turn-selection forms and their exact command identities.
+"""
 
 from copy import deepcopy
 import json
@@ -109,14 +111,12 @@ def buttons(view, action=None):
 
 
 def commands(view):
-    """Every non-navigation command payload in the view."""
     return [item["payload"] for item in buttons(view)
             if item["action"] not in {"chrome_open", "chrome_declarative_view"}] + [
             item["submit_payload"] for item in forms(view)]
 
 
 def selected_ids(value):
-    """Local replica of backend work_submit._selected_ids (closed version-1 shape)."""
     assert type(value) is dict and set(value) == {"version", "agent", "skills", "notes"}
     assert value["version"] == 1
     agent = value["agent"]
@@ -133,8 +133,6 @@ def selected_ids(value):
             seen.add(entry[field_name])
     return agent is None and not value["skills"] and not value["notes"]
 
-
-# ---------------------------------------------------------------- shared
 
 @pytest.mark.parametrize("builder,state", [
     (build_skills_view, skills_state()), (build_skills_view, skills_state("edit")),
@@ -173,8 +171,6 @@ def test_nonready_states_render_neither_forms_nor_commands(builder, status):
     view = builder({"status": status, "mode": "list", "skills": [skill()]})
     assert not forms(view) and not buttons(view) and PRIVATE not in encoded(view)
 
-
-# ---------------------------------------------------------------- skills
 
 @pytest.mark.parametrize("mode", ["list", "new", "edit", "delete"])
 def test_skill_commands_never_carry_instructions_and_navigation_carries_exact_identity(mode):
@@ -277,8 +273,6 @@ def test_skill_notices_are_closed_server_owned_text(notice):
     view = build_skills_view(skills_state(notice=notice))
     assert any(item.get("variant") == "success" for item in nodes(view.to_dict()))
 
-
-# ---------------------------------------------------------------- declarative agents
 
 def test_declarative_builder_is_reexported_from_agents_module():
     assert reexported is build_declarative_agents_view
@@ -404,8 +398,6 @@ def test_agent_listing_bound_is_fifty_heads():
     assert not buttons(over)
 
 
-# ---------------------------------------------------------------- selection picker
-
 def test_every_selection_command_is_the_complete_version_one_shape():
     view = build_selection_form(selection_state())
     assert SELECTION_DISCLOSURE in render_html(view) and "Use for this chat" in render_html(view)
@@ -511,8 +503,6 @@ def test_agent_and_selection_notices_are_closed_server_owned_text(builder, state
         assert [item for item in nodes(view.to_dict()) if item.get("variant") == "success"]
     assert "PRIVATE" not in encoded(builder({**state, "notice": "PRIVATE"}))
 
-
-# ---------------------------------------------------------------- dispatcher
 
 def test_guidance_dispatcher_routes_on_the_closed_view_key_and_defaults_to_notes():
     assert set(GUIDANCE_VIEWS) == {"skills", "agents", "selection"}

@@ -1,3 +1,6 @@
+// Tests that Canvas.apply preserves referential identity for components an op batch doesn't touch, and stable
+// ordering throughout, guarding Compose recomposition-skipping.
+
 package com.personalailabs.astraldeep.core.sdui
 
 import kotlinx.serialization.json.Json
@@ -9,12 +12,6 @@ import kotlin.test.assertSame
 
 private fun comp(s: String) = Component.fromJson(Json.parseToJsonElement(s).jsonObject)
 
-/**
- * Guards the Compose-skipping precondition (feature 052, SC-009): `Canvas.apply`
- * must return the SAME instances for components an op batch did not touch, so
- * stability-annotated composables can skip recomposing them. Only the upserted
- * id may get a new instance, and order must be preserved throughout.
- */
 class CanvasIdentityTest {
     private val a = comp("""{"type":"text","component_id":"a"}""")
     private val b = comp("""{"type":"card","component_id":"b"}""")

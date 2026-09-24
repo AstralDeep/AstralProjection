@@ -1,4 +1,7 @@
-"""Feature-065 ROTE voice capability and form-factor contracts."""
+"""Tests for ROTE voice capability negotiation (backend/rote/adapter.py,
+backend/rote/capabilities.py): runtime voice facts, transport alias normalization,
+form-factor derivation, and client-local half-duplex/readiness fallbacks.
+"""
 
 from __future__ import annotations
 
@@ -257,7 +260,6 @@ def test_client_local_readiness_failures_remain_closed_typed_fallbacks(
     voice_updates: dict[str, object],
     reason: str,
 ) -> None:
-    """Every unavailable local capability retains the typed-only contract."""
     voice = {
         "contract": "client_local/v1",
         "configured_locale": "en-US",

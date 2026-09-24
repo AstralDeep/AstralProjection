@@ -1,4 +1,7 @@
-"""088 retains the server-owned 055 wrist export/share capability boundary."""
+"""Tests for the watch's Work surface disposition (backend/rote/adapter.py,
+backend/webrender/chrome/menu_model.py): artifact chrome and file-IO stay bounded to
+their supported hosts.
+"""
 
 import json
 
@@ -25,7 +28,6 @@ def test_manifest_declares_existing_watch_bounds_without_disabling_chat():
     assert disposition["chrome_menu_delivery"] is False
     assert disposition["workspace_capability_attributes"] is False
     assert disposition["supports_file_io"] is False
-    # A client declaration cannot widen the server's existing file-IO bound.
     profile = DeviceProfile.from_dict({
         "device_type": "watch", "viewport_width": 205, "supports_file_io": True,
     })

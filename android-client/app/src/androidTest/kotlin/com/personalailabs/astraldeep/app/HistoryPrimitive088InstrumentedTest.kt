@@ -1,3 +1,6 @@
+// Instrumented UI test for the chat-history primitive's rendering and theming via pixel capture against the
+// real Renderer registry.
+
 package com.personalailabs.astraldeep.app
 
 import android.graphics.Bitmap

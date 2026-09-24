@@ -1,6 +1,4 @@
-"""
-ROTE — Response Output Translation Engine
-
-Middleware that adapts backend UI component payloads to match
-the capability profile of each connected frontend device.
+"""ROTE (Response Output Translation Engine): adapts backend UI component payloads to
+each connected frontend's device-capability profile; see
+rote.adapter.ComponentAdapter and rote.capabilities.DeviceProfile.
 """

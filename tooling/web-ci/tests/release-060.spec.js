@@ -1,3 +1,7 @@
+// Playwright release gate against a staged deployment: Keycloak sign-in, chat, reload and resume,
+// agent authoring and lifecycle, and accessibility; emits platform evidence and coverage for
+// release-runner.mjs.
+
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
@@ -9,8 +13,6 @@ import { convertPlaywrightV8Coverage } from "../coverage-conversion.mjs";
 
 const PROMPT = "Roll exactly six six-sided dice and show the normalized results.";
 const REQUIRED_LIFECYCLE_STATES = new Set(["starting", "online", "updating", "failed", "offline"]);
-// Quickstart §5 / SC-006: a reload must restore the committed conversation
-// within five seconds; the reconnect_resume rate below is measured against it.
 const RESUME_CONTRACT_MS = 5_000;
 const VOICE_RUNTIME_FIELDS = new Set([
   "voice_worker_image_reference",
@@ -62,7 +64,6 @@ async function atomicJson(path, value) {
 }
 
 
-/** Build one schema-shaped quantitative measurement, failing a missed floor. */
 function measurement(metric, aggregation, value, unit, sampleCount, comparator, threshold) {
   const satisfied = {
     eq: value === threshold,
@@ -224,7 +225,6 @@ function passedCheck(id, durationMs, evidenceArtifacts, measurements = []) {
 }
 
 
-/** Map one Playwright coverage entry to its maintained candidate source path. */
 function maintainedSourcePath(entry, appOrigin) {
   if (typeof entry?.url !== "string") return null;
   let parsed;
@@ -246,7 +246,6 @@ function maintainedSourcePath(entry, appOrigin) {
 }
 
 
-/** Merge per-navigation V8 entries additively, like the coverage:node producer. */
 function mergedMaintainedEntries(rawCoverage, appOrigin) {
   const merged = new Map();
   for (const entry of rawCoverage) {
@@ -298,7 +297,7 @@ async function installWireObserver(page) {
         const frame = JSON.parse(payload);
         if (frame.type === "register_ui") observed.registerTokens.push(frame.token);
       } catch {
-        // Non-JSON frames cannot be authentication registrations.
+        // Non-JSON frames are never registrations.
       }
     });
     socket.on("close", () => { observed.socketCloses += 1; });
@@ -667,8 +666,6 @@ test("real Keycloak candidate browser release flow", async ({ context, page }) =
 
   const coverage = await page.coverage.stopJSCoverage();
   await atomicJson(coverageOutput, coverage);
-  // The lock-pinned producer converts and executable-syntax-filters the raw V8
-  // ranges into the exact Istanbul statement envelope the coverage gate parses.
   const istanbul = await convertPlaywrightV8Coverage(
     mergedMaintainedEntries(coverage, new URL(baseUrl).origin),
     (entry) => entry.sourcePath,

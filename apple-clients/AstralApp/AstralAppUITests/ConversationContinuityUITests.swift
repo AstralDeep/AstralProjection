@@ -1,3 +1,6 @@
+// UI tests for conversation continuity across process relaunch: twenty relaunches deterministically restore
+// the same semantic conversation, and the authenticated provider gate survives them.
+
 import Foundation
 import XCTest
 
@@ -119,9 +122,6 @@ final class ConversationContinuityUITests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         var texts: [String] = []
         repeat {
-            // One public accessibility snapshot observes the whole restored
-            // conversation atomically. Seven remote queries plus XCTest's
-            // existence-polling floor consumed the launch-inclusive budget.
             if let snapshot = try? app.snapshot() {
                 var pending: [XCUIElementSnapshot] = [snapshot]
                 texts.removeAll(keepingCapacity: true)

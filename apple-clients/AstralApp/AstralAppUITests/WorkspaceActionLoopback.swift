@@ -1,10 +1,12 @@
+// A bounded HTTP/WebSocket loopback peer standing in for the backend so a UI test exercises the app's real
+// URLSession, auth, export, and share paths unmodified. Used by GuidanceNotes088UITests, WorkReads088UITests,
+// and others.
+
 import CryptoKit
 import Foundation
 import Network
 import XCTest
 
-/// A bounded HTTP peer owned by one UI test, never by the product. The native
-/// app exercises its normal URLSession, authorization, export and share paths.
 final class WorkspaceActionLoopback: @unchecked Sendable {
     enum Route: Hashable { case authorization, presentation, share, componentCSV, firstLoginCompletion }
     struct Reply {
@@ -189,8 +191,6 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
         }
         let method = String(parts[0])
         let path = String(parts[1])
-        // Normal bootstrap may attempt its control socket. This fixture does
-        // not pretend that the HTTP peer is a live authenticated backend.
         if method == "GET", path == "/ws", headers["upgrade"]?.lowercased() == "websocket" {
             if supportsWebSocket {
                 upgradeSocket(connection, headers: headers)
@@ -199,9 +199,6 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
             send(response(status: 426, body: Data()), on: connection)
             return
         }
-        // After an explicit native ShareLink tap, iOS may fetch public URL
-        // preview metadata. Record this closed loopback-only set and return 404;
-        // it never supplies credentials, fake content, or a successful share.
         if supportsWebSocket, method == "GET",
             [
                 "/apple-touch-icon-precomposed.png", "/apple-touch-icon.png", "/favicon.ico",
@@ -288,8 +285,6 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
         var frames = 0
     }
 
-    /// Test-owned RFC6455 text transport: masked, final frames only, bounded to
-    /// 64KiB/32 frames/120 seconds. It records dispatch, never restores a canvas.
     private func upgradeSocket(_ connection: NWConnection, headers: [String: String]) {
         guard !socketPaused else {
             send(response(status: 426, body: Data()), on: connection)

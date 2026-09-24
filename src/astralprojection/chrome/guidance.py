@@ -1,12 +1,6 @@
-"""Shared guidance views over closed, already-authorized host snapshots.
-
-Private notes, skills, declarative agents and the per-chat selection picker are
-pure builders: Projection neither reads guidance nor grants access. The host
-rechecks the exact displayed revisions immediately before delivery and
-authorizes every command. Note plaintext appears only in the owner's ephemeral
-note view, never in action payloads or in the selection picker; skill
-instructions appear only inside the skill editor, never in a command.
-All layouts retain the same fields; native interaction qualification is separate.
+"""Pure view builders for private notes, skills, declarative agents and the per-chat
+selection picker, all over closed host-authorized snapshots; the host re-authorizes
+every command before delivery.
 """
 
 from __future__ import annotations
@@ -74,8 +68,6 @@ def _date(value):
         instant = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(milliseconds=value)
         return instant.isoformat(timespec="milliseconds").replace("+00:00", "Z")
     except OverflowError:
-        # The storage range exceeds datetime's. Keeping the existing expiry
-        # always preserves its exact integer, even when it cannot be displayed.
         return ""
 
 
@@ -154,7 +146,6 @@ def _forget(state):
 
 def build_notes_view(state: Mapping[str, object], *, theme: ThemeView | None = None,
                      layout: LayoutView | None = None) -> ChromeViewModel:
-    """Build list/new/edit/forget views; malformed snapshots disclose no rows."""
     try:
         _require(isinstance(state, Mapping))
         status = state.get("status")
@@ -178,10 +169,6 @@ def build_notes_view(state: Mapping[str, object], *, theme: ThemeView | None = N
         components = [alert("Private notes are unavailable. Refresh to try again.", "error")]
     return build_view("guidance", "Private notes", components, theme=theme, layout=layout)
 
-
-# ---------------------------------------------------------------------------
-# Skills (feature 088 T037): exact skill_id + command_id + expected_revision
-# ---------------------------------------------------------------------------
 
 _SKILL_NOTICES = {"saved": "Skill saved.", "enabled": "Skill enabled.",
                   "disabled": "Skill disabled.", "deleted": "Skill deleted."}
@@ -317,7 +304,6 @@ def _skills_delete(state):
 
 def build_skills_view(state: Mapping[str, object], *, theme: ThemeView | None = None,
                       layout: LayoutView | None = None) -> ChromeViewModel:
-    """Build list/new/edit/delete skill views; malformed snapshots disclose no rows."""
     try:
         _require(isinstance(state, Mapping))
         status = state.get("status")
@@ -341,10 +327,6 @@ def build_skills_view(state: Mapping[str, object], *, theme: ThemeView | None = 
         components = [alert(_SKILL_UNAVAILABLE, "error")]
     return build_view("guidance", "My skills", components, theme=theme, layout=layout)
 
-
-# ---------------------------------------------------------------------------
-# Declarative agents (feature 088 T032/T037): heads, history, closed commands
-# ---------------------------------------------------------------------------
 
 _AGENT_NOTICES = {"created": "Agent created.", "revised": "Revision saved.",
                   "activated": "Revision activated.", "archived": "Agent archived.",
@@ -593,7 +575,6 @@ _AGENT_MODES = {
 
 def build_declarative_agents_view(state: Mapping[str, object], *, theme: ThemeView | None = None,
                                   layout: LayoutView | None = None) -> ChromeViewModel:
-    """Build declarative agent list/history/command views; malformed snapshots disclose no rows."""
     try:
         _require(isinstance(state, Mapping))
         status = state.get("status")
@@ -615,10 +596,6 @@ def build_declarative_agents_view(state: Mapping[str, object], *, theme: ThemeVi
         components = [alert(_AGENTS_UNAVAILABLE, "error")]
     return build_view("guidance", "My agents", components, theme=theme, layout=layout)
 
-
-# ---------------------------------------------------------------------------
-# Per-chat selection picker (feature 088 T011/T037): version-1 selection shape
-# ---------------------------------------------------------------------------
 
 SELECTION_DISCLOSURE = (
     "Use for this chat: your selection applies to this chat only. Each task you send carries "
@@ -687,8 +664,8 @@ def _selected(state, agents, skills, notes):
     return chosen
 
 
+# All-empty here means explicit clear, not leave-unchanged
 def _selection_payload(chosen):
-    """The exact version-1 shape ``work_submit._selected_ids`` accepts; all-empty means clear."""
     return {"version": 1, "agent": None if chosen["agent"] is None else dict(chosen["agent"]),
             "skills": [dict(item) for item in chosen["skills"]],
             "notes": [dict(item) for item in chosen["notes"]]}
@@ -760,7 +737,6 @@ def _selection_form(state):
 
 def build_selection_form(state: Mapping[str, object], *, theme: ThemeView | None = None,
                          layout: LayoutView | None = None) -> ChromeViewModel:
-    """Build the bounded per-chat picker; every command carries the complete exact selection."""
     try:
         _require(isinstance(state, Mapping))
         status = state.get("status")
@@ -786,7 +762,6 @@ GUIDANCE_VIEWS = {"skills": build_skills_view, "agents": build_declarative_agent
 
 def build_guidance_view(state: Mapping[str, object], *, theme: ThemeView | None = None,
                         layout: LayoutView | None = None) -> ChromeViewModel:
-    """Dispatch on the closed ``view`` discriminator; its absence keeps the notes contract."""
     if isinstance(state, Mapping) and state.get("view") in GUIDANCE_VIEWS:
         builder = GUIDANCE_VIEWS[state["view"]]
         return builder({key: value for key, value in state.items() if key != "view"},

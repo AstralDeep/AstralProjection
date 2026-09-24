@@ -1,3 +1,6 @@
+// Tests for Work-surface read transport: closed read/close delivery exactly once, cancellation and
+// stopped-socket suppression, guidance-open isolation from replay, and post-refusal send refusal.
+
 import Foundation
 import Network
 import XCTest
@@ -23,7 +26,6 @@ final class WorkReadTransport088Tests: XCTestCase {
                 if case .connected = event { ready.fulfill() }
             }
         }
-        // This local peer tests physical transport only; it is not an IAM server.
         await client.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
         await fulfillment(of: [ready], timeout: 3)
         do { try await body(client, peer) } catch {
@@ -82,8 +84,6 @@ final class WorkReadTransport088Tests: XCTestCase {
                 await gate.release()
                 let sent = await pending.value
                 XCTAssertFalse(sent, mode)
-                // A post-refusal close is a delivery barrier on the same socket.
-                // If the denied read were sent, it would precede this exact frame.
                 if mode != "stopped" {
                     peer.expectSingleRead()
                     let close = Outbound.uiEvent(

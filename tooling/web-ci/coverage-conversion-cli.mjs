@@ -1,3 +1,7 @@
+// CLI converting a NODE_V8_COVERAGE directory to the canonical coverage envelope
+// (coverage-conversion.mjs's convertNodeV8Directory), writing atomically for coverage-union.mjs and
+// its tests.
+
 import {
   lstatSync,
   mkdtempSync,
@@ -105,9 +109,6 @@ function readSource(sourcePath) {
 async function mergeEntry(entries, source, repoPath, rawEntry) {
   const prior = entries.get(repoPath);
   if (prior && prior.source !== source) fail(`source changed between reports: ${repoPath}`);
-  // V8 ranges belong to one execution. Combining ranges first lets a narrow
-  // unexecuted branch from one run erase a broader successful observation.
-  // Apply the pinned token/line converter independently, then union only hits.
   const document = await convertNodeV8Coverage(
     [{ source, functions: rawEntry.functions }], () => repoPath,
   );
@@ -171,7 +172,6 @@ async function readEntries(directory, repoRoot) {
   };
 }
 
-/** Convert a bounded NODE_V8_COVERAGE directory to the canonical envelope. */
 export async function convertNodeV8Directory({ directory, repoRoot }) {
   const canonicalRoot = realpathSync(repoRoot);
   const canonicalDirectory = realpathSync(directory);

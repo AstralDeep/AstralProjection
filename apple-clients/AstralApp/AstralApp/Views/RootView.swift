@@ -1,9 +1,8 @@
+// The app shell: a minimal top bar (brand mark, New, Recent, server-owned chrome actions, Settings), a
+// connection strip and dismissible banner, and navigation to Chat/Agents/History/Audit/Surface. Loaded by
+// AstralAppMain.
+
 import AstralCore
-// Feature 051 — the app shell, a 1:1 match to the Android RootScaffold: a
-// minimal top bar (square brand mark · New pill · Recent · server-owned chrome
-// actions · Settings gear whose dropdown is built ENTIRELY from the server
-// `chrome_menu` model), a connection strip + dismissible banner, and the
-// navigable surfaces (Chat / Agents / History / Audit / Surface).
 import SwiftUI
 
 #if os(macOS)
@@ -46,8 +45,6 @@ struct RootView: View {
         }
         .environment(\.astralViewportWidth, viewportWidth)
         .background(p.bg.ignoresSafeArea())
-        // T030: rotation / iPad Split View / macOS resize → update_device so
-        // ROTE re-derives the layout for this socket.
         .background(
             GeometryReader { geo in
                 Color.clear
@@ -81,9 +78,6 @@ struct RootView: View {
     }
 }
 
-// MARK: - Top bar
-
-/// Keep the web's compact outline inside a native 44-point interaction target.
 struct AstralNewChatButton: View {
     let viewportWidth: CGFloat
     let palette: AstralPalette
@@ -129,9 +123,6 @@ struct AstralTopBar: View {
                 .frame(height: 44)
 
             AstralToolbarLayout(wraps: viewportWidth < 700) {
-                // 054 first-run gate: while the server pins a mandatory surface,
-                // every navigation control is hidden — only the Settings gear
-                // stays, reduced to its sign-out affordance (FR-013).
                 if !model.mandatorySurface {
                     newButton
 
@@ -145,7 +136,6 @@ struct AstralTopBar: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel("Recent chats")
 
-                    // Server-owned top-bar actions (pulse / timeline), rendered from the model.
                     ForEach(model.chromeMenu?.topbarActions ?? []) { control in
                         if let workspaceAction = control.workspaceAction {
                             if model.workspaceActionContext(for: workspaceAction) != nil {
@@ -249,8 +239,6 @@ struct AstralTopBar: View {
 
     private var settingsMenu: some View {
         Menu {
-            // 054: server menu items are navigation — suppressed while the
-            // mandatory surface is pinned; sign-out below always remains.
             if !model.mandatorySurface {
                 ForEach(model.chromeMenu?.menu ?? []) { group in
                     Section(group.label) {
@@ -278,9 +266,6 @@ struct AstralTopBar: View {
         .accessibilityLabel("Settings")
     }
 
-    // P11: keyed on the server model's own icon names (sparkle/history/gear —
-    // menu_model.py), the same rule the Windows fix pinned after its map was
-    // keyed on names the server never sends.
     private func topBarIcon(_ icon: String?) -> String {
         switch icon {
         case "sparkle": return "sparkles"
@@ -294,8 +279,6 @@ struct AstralTopBar: View {
     }
 }
 
-/// The server's compact chrome contract preserves order and wraps the action
-/// cluster at its natural touch-target sizes. The brand is laid out separately.
 struct AstralToolbarLayout: Layout {
     var wraps: Bool
     var spacing: CGFloat = 6
@@ -341,8 +324,6 @@ struct AstralToolbarLayout: Layout {
     }
 }
 
-// MARK: - Strips
-
 struct ConnectionStrip: View {
     @Environment(ThemeStore.self) var theme
     let label: String
@@ -376,8 +357,6 @@ struct BannerBar: View {
         .background(color.opacity(0.16))
     }
 }
-
-// MARK: - Sign in (logo + SSO only; server/realm come from AstralConfig)
 
 struct SignInView: View {
     @Environment(AppModel.self) var model
@@ -451,7 +430,6 @@ private func previewChrome() -> ChromeMenuModel? {
 }
 
 private func previewCanvas() -> [AstralComponent] {
-    // Authored with AstralPrims (the Swift astralprims mirror).
     [
         AstralPrims.Hero(
             title: "Q3 Sales",

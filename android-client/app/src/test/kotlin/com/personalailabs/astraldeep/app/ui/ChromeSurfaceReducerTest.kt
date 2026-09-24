@@ -1,3 +1,6 @@
+// Tests for AppViewModel's chrome_surface reducer: the blank-key close frame, a mismatched-key error surfaced
+// via banner, and a mandatory surface accepted and pinned unsolicited.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -13,13 +16,6 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/**
- * Feature 044 — the reducer's chrome_surface behavior: the documented blank-key
- * close frame pops the surface screen, and a mismatched-key error notice is
- * never a silent drop (FR-002). Feature 054 — a `mode:"mandatory"` surface (the
- * first-run LLM-setup gate) is accepted unsolicited and pinned until the blank
- * close frame clears it.
- */
 class ChromeSurfaceReducerTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 
@@ -52,7 +48,6 @@ class ChromeSurfaceReducerTest {
         mode: String = "replace",
     ) = Inbound.ChromeSurface(surfaceKey = key, title = title, components = components, mode = mode)
 
-    /** On the SDUI surface screen, awaiting (and holding) the "theme" surface. */
     private val onSurface =
         UiState(
             screen = Screen.Surface,
@@ -89,7 +84,7 @@ class ChromeSurfaceReducerTest {
         assertEquals("Not authorized: Admin role required.", s.banner)
         assertEquals("error", s.bannerKind)
         assertEquals(Screen.Surface, s.screen)
-        assertEquals(onSurface.pendingSurface, s.pendingSurface) // content untouched
+        assertEquals(onSurface.pendingSurface, s.pendingSurface)
     }
 
     @Test
@@ -111,7 +106,7 @@ class ChromeSurfaceReducerTest {
         assertEquals("llm", s.pendingSurfaceKey)
         assertEquals(gate, s.pendingSurface)
         assertTrue(s.mandatorySurface)
-        assertNull(s.banner) // accepted, never demoted
+        assertNull(s.banner)
     }
 
     @Test

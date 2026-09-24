@@ -1,18 +1,6 @@
-"""Feature 042 — the server-owned chrome model: the single source of truth for
-the top bar + settings menu that EVERY client renders.
-
-Constitution II/XII: the application chrome is described ONCE, here. The web
-renderer (``topbar.render_topbar``) turns this model into HTML; the
-``chrome_menu`` WS frame and ``GET /api/chrome/menu`` serialize the SAME model
-(``ChromeModel.to_dict``) for the native Windows/Android clients (and any future
-client, e.g. iOS). There is no second menu definition anywhere — a client is a
-thin consumer of this model, never a parallel reimplementation.
-
-The model is role-filtered and feature-flag-resolved BEFORE serialization, so a
-client renders exactly what it receives and never sees an item it must not (the
-admin group is simply absent for non-admins). Server-side authorization
-(``chrome_events`` + surface ``ADMIN_ONLY``) stays authoritative regardless of
-what any client displays.
+"""Single source of truth for the top bar and settings menu: builds the role-filtered,
+flag-resolved ChromeModel that every client (web topbar, native REST/WS) serializes
+and renders identically.
 """
 
 from __future__ import annotations
@@ -20,15 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
-# Bumped when the wire shape changes; clients ignore unknown fields and degrade
-# gracefully rather than fail (data-model.md forward-compat rule).
+# Bump only on wire-shape change; clients ignore unknown fields
 MODEL_VERSION = 2
 
 
 @dataclass(frozen=True)
 class SurfaceRef:
-    """A reference to a settings surface opened via the ``chrome_open`` action."""
-
     surface: str
     params: Dict = field(default_factory=dict)
 
@@ -38,18 +23,10 @@ class SurfaceRef:
 
 @dataclass(frozen=True)
 class TopBarControl:
-    """One control: brand|status|action|menu|workspace_action.
-
-    ``brand``/``status`` are non-interactive; ``action`` opens ``action``'s
-    surface via ``chrome_open``; ``menu`` (the gear) toggles the client's local
-    settings dropdown (no server round-trip). ``workspace_action`` names a
-    closed existing canvas operation; it never grants execution authority.
-    """
-
     key: str
     kind: str
     label: Optional[str] = None
-    icon: Optional[str] = None  # semantic id (gear|history|sparkle); clients map to their own asset
+    icon: Optional[str] = None
     action: Optional[SurfaceRef] = None
     operation: Optional[str] = None
     context: Optional[str] = None
@@ -80,8 +57,6 @@ class TopBarControl:
 
 @dataclass(frozen=True)
 class MenuItem:
-    """One selectable Settings entry."""
-
     key: str
     label: str
     surface: str
@@ -100,8 +75,6 @@ class MenuItem:
 
 @dataclass(frozen=True)
 class MenuGroup:
-    """A labeled, ordered group of items (rendered heading + items)."""
-
     key: str
     label: str
     items: Tuple[MenuItem, ...]
@@ -118,13 +91,6 @@ class MenuGroup:
 
 @dataclass(frozen=True)
 class SignOutItem:
-    """The always-last, visually-distinct (red) sign-out entry.
-
-    ``action="logout"`` — clients perform a real server logout then return to
-    the sign-in entry point (web: ``GET /auth/logout``; native: the equivalent
-    logout round-trip).
-    """
-
     key: str = "signout"
     label: str = "Sign out"
     style: str = "danger"
@@ -136,8 +102,6 @@ class SignOutItem:
 
 @dataclass(frozen=True)
 class ChromeModel:
-    """The complete chrome description a client needs to render."""
-
     topbar: Tuple[TopBarControl, ...]
     menu: Tuple[MenuGroup, ...]
     signout: SignOutItem
@@ -152,11 +116,6 @@ class ChromeModel:
         }
 
 
-# ---------------------------------------------------------------------------
-# The ONE canonical inventory. Order here IS the order on every client. These
-# are the exact labels/surfaces the web has shipped (topbar._menu_entries), now
-# promoted to the single source of truth all clients consume.
-# ---------------------------------------------------------------------------
 _ACCOUNT_ITEMS: Tuple[MenuItem, ...] = (
     MenuItem("agents", "Agents & permissions", "agents"),
     MenuItem("llm", "LLM settings", "llm"),
@@ -164,29 +123,11 @@ _ACCOUNT_ITEMS: Tuple[MenuItem, ...] = (
     MenuItem("audit", "Audit log", "audit"),
     MenuItem("theme", "Theme", "theme"),
 )
-# Feature 058 — the ONLY affordance that opens BYO authoring. Flag-gated
-# (FF_BYO_AGENTS, default OFF) exactly like Pulse: with the flag off the item is
-# absent from every client's menu, and the surface + its handlers refuse anyway
-# (defence in depth — a menu is a hint, never an authorization).
 _BYO_AGENTS_ITEM = MenuItem("my-agents", "My agents & skills", "agent_authoring")
-# Feature 077 — the same surface with only the skills half when personal agents
-# are off (FF_BYO_AGENTS) but user skills are on (FF_USER_SKILLS, default ON).
 _SKILLS_ONLY_ITEM = MenuItem("my-agents", "My skills", "agent_authoring")
 _NOTES_ITEM = MenuItem("guidance", "Private notes", "guidance", {"mode": "list"})
-# Feature 088 T048 -- the ONLY affordance that opens Connections (the owner's own
-# framework keys). Host-resolved exactly like the notes item above: with the
-# capability off the item is absent from every client's menu, and the surface and
-# its handlers refuse anyway. It is per-user, so admin_only stays False, and it is
-# deliberately NOT projected to the watch: issuing or revoking a key is not a
-# wrist action.
 _CONNECTIONS_ITEM = MenuItem("connections", "Connections", "connections")
-# Feature 063 — the ONLY affordance that opens the Remote machines inventory.
-# Flag-gated (FF_REMOTE_COMPUTE, default OFF) like "My agents": absent from every
-# client's menu when off. Per-user (not admin), so admin_only stays False.
 _REMOTE_MACHINES_ITEM = MenuItem("remote-machines", "Remote machines", "remote_machines")
-# Feature 076 — the ONLY affordance that opens the "My computers" surface (the
-# user's own desktops with remote control switched on). Flag-gated
-# (FF_COMPUTER_USE, default OFF) like the two items above; per-user.
 _MY_COMPUTERS_ITEM = MenuItem("my-computers", "My computers", "my_computers")
 _HELP_ITEMS: Tuple[MenuItem, ...] = (
     MenuItem("tour", "Take the tour", "tour"),
@@ -197,9 +138,6 @@ _ADMIN_ITEMS: Tuple[MenuItem, ...] = (
     MenuItem(
         "tutorial-admin", "Tutorial admin", "admin_tools", {"tab": "tutorial"}, admin_only=True
     ),
-    # Feature 054: the deployment-wide System LLM credential for background
-    # work — a declared web-only admin carve-out (Constitution XII), like the
-    # other admin tools: natives never receive the admin group.
     MenuItem("system-llm", "System LLM", "llm_system", admin_only=True),
 )
 
@@ -220,39 +158,6 @@ def build_menu_model(
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> ChromeModel:
-    """Build the role-filtered, flag-resolved chrome model.
-
-    Args:
-        roles: the session's verified roles. ``"admin"`` unlocks the ADMIN TOOLS
-            group. Anything falsy ⇒ no admin group.
-        pulse_enabled: host-resolved Pulse control presence. Projection never
-            reads the host's feature-flag implementation.
-        byo_enabled: host-resolved "My agents" (BYO authoring) presence.
-        remote_enabled: host-resolved remote-machine inventory presence.
-        computer_enabled: host-resolved "My computers" (feature 076) presence.
-        skills_enabled: host-resolved user-skills presence (feature 077). With
-            ``byo_enabled`` the item reads "My agents & skills"; alone it reads
-            "My skills" — the same ``agent_authoring`` surface either way.
-        export_enabled: host-resolved canvas HTML export availability.
-        share_enabled: host-resolved canvas sharing availability. These controls
-            also require the client's current ``live_canvas`` context.
-        work_enabled: host-resolved owner Work-read availability. Native hosts
-            additionally require negotiated work_read_v1 before delivery.
-        notes_enabled: host-resolved private notes presence; native delivery
-            requires negotiated guidance_notes_v1 and current human authority.
-        connections_enabled: host-resolved framework-credential (Connections)
-            presence. The item is absent for every client when off; the surface
-            and its handlers remain authoritative when on.
-        include_admin: whether the ADMIN TOOLS group is eligible at all. The web
-            passes ``True`` (admins see it). Native clients (Windows/Android)
-            pass ``False`` — admin settings are web-only, so the group is omitted
-            even for admins (the ``chrome_menu`` frame / REST never send it).
-            Server-side ``ADMIN_ONLY`` enforcement on ``chrome_open`` stays
-            authoritative regardless.
-
-    Returns:
-        A :class:`ChromeModel` ready to render (web) or serialize (native).
-    """
     roles = roles or []
     is_admin = "admin" in roles and include_admin
     show_pulse = bool(pulse_enabled)
@@ -294,10 +199,6 @@ def build_menu_model(
     )
     topbar.append(TopBarControl("settings", "menu", label="Settings", icon="gear"))
 
-    # Feature 043: "Take the tour" is a web-only capability (a web-DOM-anchored
-    # walkthrough with no native analog). The native channels pass
-    # include_tour=False so the item is omitted server-side — exactly like the
-    # admin group below (Constitution XII v2.3.1 deliberate web-only carve-out).
     help_items = (
         _HELP_ITEMS if include_tour else tuple(i for i in _HELP_ITEMS if i.surface != "tour")
     )
@@ -335,12 +236,6 @@ def menu_model_dict(
     include_admin: bool = True,
     include_tour: bool = True,
 ) -> Dict:
-    """Convenience: ``build_menu_model(...).to_dict()`` for the REST/WS channels.
-
-    The native channels (``GET /api/chrome/menu`` + the ``chrome_menu`` WS frame)
-    pass ``include_admin=False`` (ADMIN TOOLS is web-only) and
-    ``include_tour=False`` (feature 043 — "Take the tour" is web-only).
-    """
     return build_menu_model(
         roles,
         pulse_enabled=pulse_enabled,
@@ -359,12 +254,6 @@ def menu_model_dict(
 
 
 def project_watch_menu_model(model: Dict) -> Dict:
-    """Project negotiated Work and notes actions from the shared inventory.
-
-    This is the explicit wrist disposition, not another menu definition. The
-    host must negotiate each surface's capability before delivering it. Other chrome and
-    artifact operations keep their existing wrist omission.
-    """
     from copy import deepcopy
 
     canonical = next(control.to_dict() for control in build_menu_model(

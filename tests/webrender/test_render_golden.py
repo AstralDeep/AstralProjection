@@ -1,10 +1,8 @@
-"""Feature 026 — T016: golden/structural render tests for all primitive types.
-
-Asserts each of the 25 astralprims primitive types renders to the expected web
-HTML structure (tag + key Astral classes) and that children recurse. Structural
-invariants (not byte-exact fixtures) so the suite is robust to incidental markup
-tweaks while still proving parity-relevant structure.
+"""Golden structural render tests for backend/webrender/__init__.py and
+AstralPrimitives: each primitive type renders to its expected tag and Astral classes,
+with children recursing correctly.
 """
+
 import astralprims as ap
 import webrender
 
@@ -29,12 +27,12 @@ def test_button_carries_action_payload():
     html = r(ap.Button(label="Go", action="chat_message", payload={"x": 1}, variant="primary"))
     assert 'class="astral-action' in html and 'data-action="chat_message"' in html
     assert "bg-astral-primary" in html and "Go" in html
-    assert "&quot;x&quot;" in html  # payload JSON escaped into the attribute
+    assert "&quot;x&quot;" in html
 
 
 def test_card_title_accent_and_children():
     html = r(ap.Card(title="T", content=[ap.Text(content="body")]))
-    assert "bg-astral-primary inline-block" in html  # accent pill
+    assert "bg-astral-primary inline-block" in html
     assert 'class="space-y-3"' in html and "body" in html
 
 
@@ -49,7 +47,7 @@ def test_table_headers_rows_and_pagination():
 
 def test_table_cell_severity_badges_and_links():
     html = r(ap.Table(headers=["S"], rows=[["Critical"], ["https://x.com"]]))
-    assert "bg-red-500/20" in html  # Critical badge
+    assert "bg-red-500/20" in html
     assert 'target="_blank"' in html and "https://x.com" in html
 
 
@@ -63,7 +61,7 @@ def test_list_default_and_detailed():
 def test_alert_variants_icon_and_block_message():
     html = r(ap.Alert(message="msg **b**", variant="warning", title="Title"))
     assert "bg-yellow-500/10" in html and "<svg" in html
-    assert "<strong" in html  # block markdown bolded
+    assert "<strong" in html
 
 
 def test_progress_fill_and_label():
@@ -73,7 +71,7 @@ def test_progress_fill_and_label():
 
 def test_metric_variant_gradient_and_progress_threshold():
     assert "from-red-500/20" in r(ap.MetricCard(title="x", value="1", variant="error"))
-    assert "bg-red-500" in r(ap.MetricCard(title="x", value="1", progress=0.95))  # >0.9 red
+    assert "bg-red-500" in r(ap.MetricCard(title="x", value="1", progress=0.95))
 
 
 def test_code_block_escaped_green():
@@ -96,6 +94,10 @@ def test_tabs_and_divider_and_collapsible():
     assert r(ap.Divider()) == '<hr class="border-white/10 my-3"/>'
     coll = r(ap.Collapsible(title="More", content=[ap.Text(content="hidden")], default_open=True))
     assert "<details" in coll and " open" in coll and "hidden" in coll
+    reasoning = r(ap.Collapsible(title="Reasoning", content=[ap.Text(content="A bounded explanation")]))
+    assert "astral-reasoning" in reasoning and " open" not in reasoning
+    assert "A bounded explanation" in reasoning
+    assert "astral-reasoning" not in coll
 
 
 def test_charts_emit_plotly_placeholders():
@@ -117,8 +119,6 @@ def test_file_upload_download_and_audio():
     assert "astral-file-upload" in r(ap.FileUpload(label="Up"))
     valid = r(ap.FileDownload(label="Get", url="https://f.co/x.csv", filename="x.csv"))
     assert 'href="https://f.co/x.csv"' in valid and "bg-astral-secondary/20" in valid
-    # Root-relative URLs (what connectors emit since 030) must render a live
-    # anchor: the browser resolves them against the serving origin.
     rel = r(ap.FileDownload(label="Get", url="/api/download/s1/x.csv", filename="x.csv"))
     assert 'href="/api/download/s1/x.csv"' in rel and 'download="x.csv"' in rel
     assert "disabled" not in rel

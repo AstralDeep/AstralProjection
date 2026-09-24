@@ -1,3 +1,6 @@
+// Tests for operation status lifecycle: highest-sequence/first-terminal precedence, request-fence rejection,
+// pending-generation requirements, queued-replay identity validation, and full 25-state convergence.
+
 import XCTest
 
 @testable import AstralCore

@@ -1,8 +1,7 @@
-// Feature 051 — server-driven UI component model.
-// The server (astralprims → orchestrator → ROTE) owns WHAT is shown; the
-// client renders each `type` natively and falls back to readable text for
-// anything else (FR-004, FR-032/033 on watch — the server has already
-// adapted the payload per this socket's profile).
+// The server-driven UI component model: the server decides what renders, and this decodes each type
+// leniently, falling back to readable text for anything unrecognized. Read almost everywhere across both
+// Apple targets.
+
 import Foundation
 
 public struct AstralComponent: Equatable, Sendable {
@@ -24,8 +23,6 @@ public struct AstralComponent: Equatable, Sendable {
         guard let arr = json?.arrayValue else { return [] }
         return arr.compactMap { AstralComponent(json: $0) }
     }
-
-    // MARK: common fields (astralprims conventions)
 
     public var componentId: String? {
         raw["component_id"]?.stringValue ?? raw["id"]?.stringValue
@@ -67,8 +64,6 @@ public struct AstralComponent: Equatable, Sendable {
         raw["items"]?.arrayValue?.map { item in
             if let s = item.stringValue { return s }
             if let s = item["text"]?.stringValue ?? item["label"]?.stringValue { return s }
-            // Detailed-variant items are {title, url, subtitle, description} —
-            // compose a readable line or every web_search result is a blank bullet.
             let headline = item["title"]?.stringValue ?? ""
             let detail = item["subtitle"]?.stringValue ?? item["description"]?.stringValue ?? ""
             let joined = [headline, detail].filter { !$0.isEmpty }.joined(separator: " — ")
@@ -77,8 +72,6 @@ public struct AstralComponent: Equatable, Sendable {
     }
 
     public var keyValuePairs: [(String, String)] {
-        // The wire key is `items[]` of {label, value, hint} (astralprims KeyValue —
-        // the web/voice/ROTE renderers all read it); `pairs[]` is a legacy alias.
         let entries = raw["items"]?.arrayValue ?? raw["pairs"]?.arrayValue ?? []
         return entries.compactMap { pair in
             guard let o = pair.objectValue else { return nil }
@@ -88,9 +81,6 @@ public struct AstralComponent: Equatable, Sendable {
         }
     }
 
-    /// Fallback text used when a client has no native renderer for `type`
-    /// (parity disposition `.fallback`) — never blank if the server sent
-    /// anything human-readable.
     public var fallbackText: String {
         let candidates = [
             title, message, textContent, label, value,
@@ -104,8 +94,6 @@ public struct AstralComponent: Equatable, Sendable {
     }
 }
 
-/// Spoken rendition attached by the orchestrator to watch-bound deliveries
-/// (contracts/spoken-rendition.md). Absent field ⇒ silent delivery.
 public struct Speech: Equatable, Sendable {
     public let ssml: String
     public let text: String

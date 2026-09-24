@@ -1,4 +1,7 @@
-"""Spec 060 browser role/name/state/focus contracts for changed controls."""
+"""Tests for the browser-side accessibility contracts of changed controls
+(src/astralprojection/chrome/agents.py): role/name/state/focus behavior for status
+regions, authoring actions, and the permission switch.
+"""
 
 from __future__ import annotations
 

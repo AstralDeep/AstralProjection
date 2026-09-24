@@ -1,9 +1,8 @@
+// Native SwiftUI renderer for the astralprims component vocabulary, styled to match web/Android/Windows and
+// round-tripping actions via emit(); unknown types fall back to labeled text. Used by ChatView,
+// CanvasCapture, and Screens.
+
 import AstralCore
-// Feature 051 — the iOS/macOS SDUI renderer (FR-004/FR-025). Native views for
-// the full astralprims vocabulary, styled from the shared AstralDeep palette
-// (parity with web/Android/Windows), with `emit(action,payload)` round-trips
-// for interactive components (buttons, inputs, tables, forms, theme). Anything
-// unknown falls back to readable text with a type badge (FR-003).
 import SwiftUI
 
 private struct WorkReadSurfaceKey: EnvironmentKey {
@@ -23,8 +22,6 @@ extension EnvironmentValues {
     }
 }
 
-/// Work observations are retained literal evidence, including alert messages.
-/// Ordinary component alerts retain their existing Markdown presentation.
 struct ComponentAlertMessage: View {
     let text: String
     let literal: Bool
@@ -49,8 +46,6 @@ struct ComponentView: View {
     @Environment(\.astralWorkReadSurface) private var workReadSurface
     @Environment(\.astralViewportWidth) private var viewportWidth
     @Environment(\.canvasCapturePath) private var capturePath
-    /// Measured width of this component's slot, used to clamp multi-column
-    /// layouts on compact screens (0 until the first layout pass).
     @State private var slotWidth: CGFloat = 0
 
     private var p: AstralPalette { theme.palette }
@@ -66,16 +61,11 @@ struct ComponentView: View {
         }
     }
 
-    /// How many ~150 pt columns actually fit the measured slot, capped at
-    /// `authored`. Before the first measurement, fall back to 2 on the
-    /// assumption of a compact screen — never the authored maximum.
     private func fittedColumns(authored: Int) -> Int {
         guard slotWidth > 0 else { return min(authored, 2) }
         return min(authored, max(1, Int(slotWidth / 150)))
     }
 
-    /// Invisible width probe: writes the slot width into `slotWidth` without
-    /// influencing layout (fixed 0-height overlay on the container).
     private var widthProbe: some View {
         GeometryReader { geo in
             Color.clear
@@ -142,9 +132,6 @@ struct ComponentView: View {
             case "button":
                 buttonView
             case "file_upload":
-                // Not a live control here — the chat input owns attachment staging.
-                // A generic action button would emit a bogus component_action and
-                // earn a server error alert.
                 fileUploadHint
             case "input":
                 InputComponent(component: component)
@@ -171,14 +158,10 @@ struct ComponentView: View {
         }
     }
 
-    // MARK: text
-
     @ViewBuilder
     private var textView: some View {
         let text = component.textContent ?? component.fallbackText
         if component.variant == "markdown" && !workReadSurface {
-            // The server explicitly declared block content (web parity:
-            // block_md) — headings/fences/lists/tables must not stay literal.
             MarkdownBlockView(source: text)
                 .foregroundStyle(p.text)
                 .textSelection(.enabled)
@@ -201,8 +184,6 @@ struct ComponentView: View {
         default: return AstralTypography.body
         }
     }
-
-    // MARK: alert
 
     private var alertView: some View {
         let color = p.variant(component.variant)
@@ -232,8 +213,6 @@ struct ComponentView: View {
         }
     }
 
-    // MARK: containers
-
     private var cardView: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let title = component.title, !title.isEmpty {
@@ -255,10 +234,6 @@ struct ComponentView: View {
     private var containerView: some View {
         let dir = component.raw["direction"]?.stringValue
         if dir == "row" {
-            // Not a fixed HStack: N children on a phone would each get
-            // screenWidth/N points and wrap character-by-character. Clamp the
-            // side-by-side count to how many ~150 pt slots the measured width
-            // fits, breaking extra children to the next line.
             let count = fittedColumns(authored: max(1, component.children.count))
             LazyVGrid(
                 columns: Array(
@@ -275,10 +250,6 @@ struct ComponentView: View {
     }
 
     private var gridView: some View {
-        // The authored column count is a wide-screen hint. Honoring it verbatim
-        // on a phone gives each cell screenWidth/N points and wraps content
-        // character-by-character — clamp to the columns the measured width
-        // actually fits, so a 4-up grid becomes 2×2 on compact widths.
         let authored = max(1, Int(component.raw["columns"]?.numberValue ?? 2))
         let count = fittedColumns(authored: authored)
         return VStack(alignment: .leading, spacing: 6) {
@@ -294,8 +265,6 @@ struct ComponentView: View {
         }
         .overlay(alignment: .top) { widthProbe }
     }
-
-    // MARK: metric / badge / hero
 
     private var metricView: some View {
         let color = AstralWebStyle.metricAccent(component.variant, palette: p)
@@ -353,9 +322,6 @@ struct ComponentView: View {
             .background(color.opacity(0.18), in: Capsule())
     }
 
-    /// Hero variants match the web renderer: default = surface + soft border,
-    /// `gradient` = subtle 135° wash (primary 18% → secondary 8%) with a 3 pt
-    /// top accent bar, `subtle` = 2% text wash — never a full-strength banner.
     @ViewBuilder
     private var heroView: some View {
         if WorkspaceWelcome.role(of: component) == .intro {
@@ -423,8 +389,6 @@ struct ComponentView: View {
             return AnyShapeStyle(p.surface.opacity(0.55))
         }
     }
-
-    // MARK: list / keyvalue / timeline / rating
 
     private var listView: some View {
         let ordered = component.raw["ordered"]?.boolValue ?? false
@@ -499,8 +463,6 @@ struct ComponentView: View {
                     Image(systemName: i < value ? "star.fill" : "star")
                         .foregroundStyle(p.accent)
                 }
-                // The stars round — the number is the honest value (web shows
-                // it by default; 3.5/5 must not read as four stars flat).
                 if component.raw["show_value"]?.boolValue != false {
                     Text("\(rawValue.formatted(.number.precision(.fractionLength(0...1))))/\(maxValue)")
                         .font(AstralTypography.caption.weight(.semibold)).foregroundStyle(p.text)
@@ -512,8 +474,6 @@ struct ComponentView: View {
             }
         }
     }
-
-    // MARK: code / image / progress
 
     private var codeView: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -554,7 +514,6 @@ struct ComponentView: View {
 
     private var progressView: some View {
         VStack(alignment: .leading, spacing: 3) {
-            // The wire caption field is `label` (progress has no `title`).
             if let label = component.label ?? component.title, !label.isEmpty {
                 HStack {
                     markdown(label).font(AstralTypography.caption).foregroundStyle(p.muted)
@@ -571,11 +530,8 @@ struct ComponentView: View {
 
     private var progressFraction: Double {
         let value = component.raw["value"]?.numberValue ?? 0
-        // Web/others use 0–1; tolerate 0–100.
         return value > 1 ? min(value / 100, 1) : min(max(value, 0), 1)
     }
-
-    // MARK: interactive
 
     @ViewBuilder
     private var buttonView: some View {
@@ -638,8 +594,6 @@ struct ComponentView: View {
         .background(p.surface.opacity(0.3), in: RoundedRectangle(cornerRadius: AstralRadius.sm))
     }
 
-    // MARK: shared pieces
-
     @ViewBuilder
     private var titleLine: some View {
         if let title = component.title, !title.isEmpty {
@@ -650,8 +604,6 @@ struct ComponentView: View {
         }
     }
 
-    /// FR-033-style redirect: file upload lives in the chat input, so this
-    /// component is informational here — never a dead button.
     private var fileUploadHint: some View {
         VStack(alignment: .leading, spacing: 3) {
             if let label = component.label ?? component.title, !label.isEmpty {
@@ -685,8 +637,6 @@ struct ComponentView: View {
     }
 }
 
-// MARK: - Button style (parity with the web primary/secondary/ghost)
-
 struct AstralButtonStyle: ButtonStyle {
     let palette: AstralPalette
     let variant: String
@@ -716,14 +666,6 @@ struct AstralButtonStyle: ButtonStyle {
     }
 }
 
-// MARK: - Interactive component subviews
-
-/// Authenticated file download (file_download / download_card). The web's
-/// anchor click carries the session cookie; the native twin must fetch with
-/// the Bearer token (root-relative `/api/download/...` URLs resolve against
-/// the configured server) and then hand the file to the platform: a share
-/// sheet on iOS/iPadOS, a save panel on macOS. Off-origin URLs (e.g. GitHub
-/// release assets) are fetched without credentials.
 struct DownloadComponent: View {
     let component: AstralComponent
     var automaticallyStart = false
@@ -744,7 +686,6 @@ struct DownloadComponent: View {
     }
 
     private var urlString: String? {
-        // The unavailable variant ships download_url:"" — an empty URL is no URL.
         (component.raw["download_url"]?.stringValue ?? component.url)
             .flatMap { $0.isEmpty ? nil : $0 }
     }
@@ -755,8 +696,6 @@ struct DownloadComponent: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // The card's context (what this is, why it's trustworthy, which
-            // platform) — web parity; the button alone says none of it.
             if let title = component.title, !title.isEmpty {
                 Text(InlineMarkdown.attributed(title))
                     .font(AstralTypography.subheadline.bold()).foregroundStyle(p.text)
@@ -935,8 +874,7 @@ final class NativeDownloadSaveLease {
 
     init(file: URL) { self.file = file }
 
-    /// An old completion may arrive after a panel was cancelled or replaced.
-    /// Check the actual presentation lifetime before any destination write.
+    // Guards against a stale completion from a replaced panel
     func save(to destination: URL, isCurrent: () -> Bool) throws -> Bool {
         guard !cancelled, isCurrent() else { return false }
         let data = try Data(contentsOf: file, options: .mappedIfSafe)
@@ -957,7 +895,6 @@ final class NativeDownloadSaveLease {
     #endif
 }
 
-/// Table with server-driven pagination (emits `table_paginate`).
 struct TableComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
@@ -1029,7 +966,6 @@ struct TableComponent: View {
     }
 }
 
-/// Single-line input that submits its value through the standard event path.
 struct InputComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
@@ -1063,8 +999,6 @@ struct InputComponent: View {
     }
 }
 
-/// Multi-field form (param_picker) — text/boolean/select — submitting either a
-/// templated chat message or a `submit_action` with `{fields:{…}}`.
 struct ParamPickerComponent: View {
     let component: AstralComponent
     @Environment(\.astralGuidanceSurface) private var guidanceSurface
@@ -1089,7 +1023,6 @@ struct ParamPickerComponent: View {
                     .accessibilityIdentifier(
                         hasLLMSave ? "llm-provider-form-title" : "param-picker-form-title")
             }
-            // The form's operative instructions live here (web parity).
             if let desc = component.raw["description"]?.stringValue, !desc.isEmpty {
                 formText(desc)
                     .font(AstralTypography.caption).foregroundStyle(p.muted)
@@ -1122,11 +1055,7 @@ struct ParamPickerComponent: View {
                         ProgressView().controlSize(.small).tint(p.primary)
                             .accessibilityHidden(true)
                     }
-                    // The accessibility contract lives on the Text itself, with
-                    // no `.accessibilityElement(children:)` wrapper: wrapping —
-                    // even a Text — mints a generic AXGroup, and macOS AXGroups
-                    // drop AXValue, so XCUIElement.value (and VoiceOver's value
-                    // readout) read as empty on macOS.
+                    // No accessibilityElement wrapper — macOS AXGroups drop AXValue
                     Text(operation.presentedLabel)
                         .font(AstralTypography.caption)
                         .foregroundStyle(operation.errorCode == nil ? p.muted : p.error)
@@ -1153,10 +1082,6 @@ struct ParamPickerComponent: View {
         if fieldIsVisible(field) { fieldBody(field) }
     }
 
-    /// Server-declared conditional visibility (063): a field may carry
-    /// `visible_when: {field, equals, default}` — hidden unless the named
-    /// controller field's current value matches. Fields without the attribute
-    /// are always visible, so servers can emit it freely for older clients.
     private func fieldIsVisible(_ field: JSONValue) -> Bool {
         if guidanceSurface, let form = GuidanceForm(component: component) {
             return form.visible(
@@ -1262,8 +1187,6 @@ struct ParamPickerComponent: View {
                         set: { values[name] = $0 })
                 )
                 .frame(minHeight: 80)
-                // Param fields hold identifiers/keys (usernames, PEMs), never
-                // prose — autocap/autocorrect would corrupt them (063).
                 .autocorrectionDisabled(true)
                 #if os(iOS)
                     .textInputAutocapitalization(.never)
@@ -1340,9 +1263,6 @@ struct ParamPickerComponent: View {
             _ = model.submitParamPicker(action: action, fields: collected, payload: payload)
         } else if let template = component.raw["submit_message_template"]?.stringValue {
             var message = template
-            // Whole-form placeholder first (web parity: client.js substitutes
-            // {__values_json__} with the full state) — the classify training
-            // template relies on it; per-field {key} replacement can't fill it.
             if message.contains("{__values_json__}") {
                 let json =
                     (try? JSONValue.object(collected).encoded())
@@ -1357,7 +1277,6 @@ struct ParamPickerComponent: View {
     }
 }
 
-/// Tabs with local selection; renders the selected tab's children.
 struct TabsComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
@@ -1400,7 +1319,6 @@ struct TabsComponent: View {
     }
 }
 
-/// Collapsible disclosure (parity with web `<details>`).
 struct CollapsibleComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
@@ -1458,7 +1376,6 @@ struct CollapsibleComponent: View {
 
 }
 
-/// Color picker → live restyle + `save_theme` (feature 044 US5 parity).
 struct ColorPickerComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
@@ -1498,8 +1415,6 @@ struct ColorPickerComponent: View {
     }
 }
 
-/// The native shell hosts the exact bundled web Plotly renderer in an isolated
-/// ephemeral document. Server data never becomes executable HTML or authority.
 struct ChartComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme

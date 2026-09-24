@@ -1,3 +1,6 @@
+// Snapshots the currently loaded canvas/chart pixels (including Plotly zoom/legend state) without any network
+// or URL access, releasing each chart's private WebView once detached. Used by CanvasCapture and Media.
+
 package com.personalailabs.astraldeep.app.render
 
 import android.graphics.Bitmap
@@ -29,7 +32,6 @@ internal suspend fun WebView.exportScript(script: String): String =
         }
     }
 
-/** Only an already loaded drawable is copied; this path has no image loader or URL access. */
 internal fun loadedCanvasPixels(drawable: Drawable): CanvasPixels =
     object : CanvasPixels {
         override fun retainedBytes(): Long =
@@ -75,7 +77,6 @@ internal fun loadedCanvasPixels(drawable: Drawable): CanvasPixels =
         }
     }
 
-/** A current Plotly graph is snapshotted, including its zoom and legend state, never reconstructed. */
 internal class CurrentChartPixels(private var web: WebView?, private val generation: String) : CanvasPixels {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val mutex = Mutex()
@@ -119,7 +120,6 @@ internal class CurrentChartPixels(private var web: WebView?, private val generat
             }
         }
 
-    /** Detached rows retain only the latest successful pixels, then destroy their private graph. */
     fun release() {
         if (closed) {
             web?.stopLoading()

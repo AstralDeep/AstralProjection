@@ -1,6 +1,9 @@
+// Client model and reducer for the server-owned Work read surface: request/navigation decode, per-connection
+// correlation, and atomic acceptance of surface updates. Read by AppModel and rendered by Screens and
+// WatchHomeView.
+
 import Foundation
 
-/// Closed navigation in the server-owned Work read surface. Never an effect.
 public struct WorkReadRequest: Equatable, Sendable {
     public let params: JSONValue
 
@@ -49,7 +52,6 @@ public struct WorkReadRequest: Equatable, Sendable {
             requestGeneration: requestGeneration)
     }
 
-    /// The generic reconnect queue must reject even malformed attempts at this surface.
     public static func claimsCurrentConnectionSemantics(frameText: String) -> Bool {
         guard let frame = InboundFrame.parse(frameText), frame.name == "ui_event",
             let action = frame.payload["action"]?.stringValue,
@@ -72,7 +74,6 @@ public struct WorkReadRequest: Equatable, Sendable {
         return payload == ["surface": .string("work")]
     }
 
-    /// Thin consumers retain canonical labels/icons; only the supported surface is selected.
     public static func watchControls(in model: ChromeMenuModel?) -> [TopBarControl] {
         let controls =
             model?.topbarActions.filter { control in
@@ -92,7 +93,6 @@ public struct WorkReadRequest: Equatable, Sendable {
     }
 }
 
-/// Entire Work surface acceptance is atomic. No malformed row is silently dropped.
 public struct WorkSurfaceUpdate: Equatable, Sendable {
     public let requestGeneration: String
     public let title: String
@@ -176,7 +176,6 @@ public struct WorkSurfaceUpdate: Equatable, Sendable {
     }
 }
 
-/// Ephemeral request correlation; the owning model also binds owner and socket.
 public struct WorkReadState: Equatable, Sendable {
     public private(set) var request: WorkReadRequest?
     public private(set) var generation: String?
@@ -198,7 +197,6 @@ public struct WorkReadState: Equatable, Sendable {
         submissionId = nil
     }
 
-    /// Bind the exact nonqueued wire attempt so an unrelated refusal cannot retire it.
     @discardableResult
     public mutating func bindSubmission(frameText: String) -> Bool {
         guard let frame = InboundFrame.parse(frameText),

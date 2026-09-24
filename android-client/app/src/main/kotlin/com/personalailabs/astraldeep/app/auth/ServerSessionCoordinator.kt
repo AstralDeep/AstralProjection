@@ -1,3 +1,6 @@
+// One backend/account session custody owner: epoch fencing under a shared monitor ensures a stale response
+// can never publish after sign-out or a new interactive attempt. Used by MainActivity and OrchestratorClient.
+
 package com.personalailabs.astraldeep.app.auth
 
 import kotlinx.coroutines.Job
@@ -8,7 +11,6 @@ import kotlinx.coroutines.sync.withLock
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.time.Instant
 
-/** The production implementation uses the existing encrypted credential preferences. */
 internal interface ServerSessionPersistence {
     fun loadSession(
         scope: ServerSessionScope,
@@ -20,10 +22,6 @@ internal interface ServerSessionPersistence {
     fun clearSession(scope: ServerSessionScope): Boolean
 }
 
-/**
- * One backend/account custody owner. Epoch checks and encrypted writes share a monitor;
- * a stale response can never publish after sign-out or another interactive attempt.
- */
 class ServerSessionCoordinator internal constructor(
     private val transport: ServerSessionTransport,
     private val persistence: ServerSessionPersistence,
@@ -41,7 +39,6 @@ class ServerSessionCoordinator internal constructor(
         override fun toString(): String = "ServerSessionAttempt"
     }
 
-    /** Starts only a new user-requested sign-in; the authorization code has no retry path. */
     fun begin(): Attempt =
         synchronized(gate) {
             epoch++
@@ -70,7 +67,6 @@ class ServerSessionCoordinator internal constructor(
         }
     }
 
-    /** Load only the active encrypted record for this exact configured backend/client. */
     fun restore(): Boolean =
         synchronized(gate) {
             if (session != null || pending != null) return@synchronized session != null
@@ -89,7 +85,6 @@ class ServerSessionCoordinator internal constructor(
                     if (epoch != original.second) retired()
                     session ?: retired()
                 }
-            // Another waiter refreshed exactly this account while we waited.
             if (current !== original.first) return@withLock current.accessToken
             val result = transport.refresh(current)
             val job = currentCoroutineContext()[Job]
@@ -102,7 +97,6 @@ class ServerSessionCoordinator internal constructor(
         }
     }
 
-    /** Clear locally before remote logout. The returned snapshot permits only that logout. */
     fun retire(): ServerSession? =
         synchronized(gate) {
             epoch++
@@ -115,7 +109,6 @@ class ServerSessionCoordinator internal constructor(
 
     suspend fun logout(retired: ServerSession): Boolean = transport.logout(retired)
 
-    /** Keep token publication under the same session fence as persistence and socket creation. */
     internal fun <T> withToken(
         token: String,
         block: () -> T,
@@ -126,7 +119,6 @@ class ServerSessionCoordinator internal constructor(
             block()
         }
 
-    /** Private equality snapshot for the exact token already selected by the UI session. */
     class SocketTicket internal constructor(internal val session: ServerSession, internal val epoch: Long) {
         internal val cookie: String get() = session.cookie
 
@@ -156,7 +148,7 @@ class ServerSessionCoordinator internal constructor(
             epoch == ticket.epoch && session === ticket.session && ticket.session.cookieExpiresAt.isAfter(clock())
         }
 
-    /** No sign-out/write may interleave between the last equality check and socket creation. */
+    // No sign-out/write may land between this check and socket creation
     internal fun <T> withCurrent(
         ticket: SocketTicket,
         block: () -> T,
@@ -173,8 +165,6 @@ class ServerSessionCoordinator internal constructor(
         job?.ensureActive()
         if (!persistence.saveSession(value)) throw ServerSessionException(ServerSessionException.Reason.STORAGE)
         if (job?.isActive == false) {
-            // Cancellation may arrive during synchronous encrypted storage I/O.
-            // Retire that write before any token can be published or restored.
             epoch++
             pending = null
             session = null

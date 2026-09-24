@@ -1,9 +1,8 @@
+// Compact watch renderers for the server's ROTE-degraded component set, falling back to readable text for
+// anything else so the wrist view never renders blank; used by WatchChatView, WatchHomeView, and
+// WatchGuidanceSurfaceView.
+
 import AstralCore
-// Feature 051 US5 — compact watch renderers for the profile's native set,
-// readable-text fallback for everything else, and the "continue on another
-// device" affordance for over-budget interactivity (FR-032/FR-033).
-// The SERVER already degraded this payload via the watch ROTE profile; this
-// view is the last line of defense — it must never render blank.
 import SwiftUI
 
 struct WatchComponentView: View {
@@ -44,7 +43,6 @@ struct WatchComponentView: View {
     private var rendered: some View {
         switch component.type {
         case "text":
-            // ROTE can degrade an image to an empty text node — never a blank row.
             let content = component.textContent ?? component.fallbackText
             if content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 EmptyView()
@@ -78,8 +76,6 @@ struct WatchComponentView: View {
                 Text(component.value ?? "—")
                     .font(AstralTypography.title3.bold())
                     .minimumScaleFactor(0.6)
-                // Carries the server's "(chart condensed for watch)" note and
-                // any agent-authored context — dropping it left a bare number.
                 if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
                     markdown(sub).font(AstralTypography.caption2).foregroundStyle(.secondary)
                 }
@@ -121,7 +117,6 @@ struct WatchComponentView: View {
             ProgressView(component.label ?? "Loading…")
         case "progress":
             VStack(alignment: .leading, spacing: 2) {
-                // The wire caption field is `label` (progress has no `title`).
                 if let label = component.label ?? component.title, !label.isEmpty {
                     HStack {
                         markdown(label).font(AstralTypography.caption2).foregroundStyle(.secondary)
@@ -135,8 +130,6 @@ struct WatchComponentView: View {
                 ProgressView(value: progressFraction)
             }
         case "card", "container", "grid", "collapsible":
-            // A childless untitled container (grid collapse can produce one)
-            // must not draw an empty gray lozenge.
             if component.title?.isEmpty != false && component.children.isEmpty {
                 EmptyView()
             } else {
@@ -187,8 +180,6 @@ struct WatchComponentView: View {
         case "input", "file_upload", "color_picker":
             handoff
         default:
-            // Deterministic fallback chain terminates in readable text —
-            // zero blank canvases (FR-032).
             VStack(alignment: .leading, spacing: 2) {
                 markdown(component.fallbackText)
                     .font(AstralTypography.footnote)
@@ -209,9 +200,6 @@ struct WatchComponentView: View {
         }
     }
 
-    /// Wire text is markdown (parity with the phone/desktop renderers):
-    /// flatten block structure to plain lines, then parse inline spans — the
-    /// wrist shows neither literal asterisks nor literal `##`/fence syntax.
     private func markdown(_ string: String) -> Text {
         (workRead || guidance)
             ? Text(verbatim: string) : Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(string)))
@@ -250,8 +238,7 @@ struct WatchComponentView: View {
     }
 
     private var progressFraction: Double {
-        // Wire value is a 0–1 fraction; tolerate 0–100 (mirrors the iOS
-        // renderer — treating everything as percent renders ~0% bars).
+        // Value is 0 to 1; also tolerate legacy 0 to 100
         let value = component.raw["value"]?.numberValue ?? 0
         return value > 1 ? min(value / 100, 1) : min(max(value, 0), 1)
     }

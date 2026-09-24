@@ -1,3 +1,7 @@
+"""Tests for src/astralprojection/chrome/personalization.py: LLM, profile, memory,
+skills, scheduler, dreaming, pulse, theme and shell tab routing states.
+"""
+
 from __future__ import annotations
 
 from astralprojection.chrome import render_html
@@ -230,7 +234,6 @@ def test_theme_view_preserves_presets_custom_colors_and_shared_types() -> None:
         for item in ocean.to_dict()["components"]
         if item.get("type") == "button" and item.get("label") == "Applied"
     ]
-    # Buttons are nested in cards, so verify via the rendered disabled state.
     assert applied == []
     assert 'aria-disabled="true"' in ocean_html
     custom = build_theme_view(

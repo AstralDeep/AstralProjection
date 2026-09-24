@@ -1,26 +1,7 @@
-// Feature 060 T110 — watchOS release-evidence producer.
-//
-// Drives the SHIPPING Watch app models (WatchModel + ConversationResumeStore +
-// the production reducers) on a booted watchOS simulator against the exact
-// release-readiness staging endpoint and emits one schema-valid
-// `platform_evidence` report (watchos.json) plus per-check raw JSON references,
-// mirroring the web producer (tooling/web-ci/tests/release-060.spec.js).
-// Sign-in exercises the real device-login broker on the staged candidate; the
-// canonical `personal_agent` authoring check is ALWAYS not_applicable on
-// watchOS (the watch is excluded from BYO authoring entirely). Local/CI
-// evidence is diagnostic only — protected CI re-validates every byte.
-//
-// Environment contract (values reach this process through xcodebuild
-// `TEST_RUNNER_`-prefixed variables; identity names match the web producer):
-//   ASTRAL_STAGING_URL               staged candidate base URL; absent => XCTSkip
-//   ASTRAL_RELEASE_EVIDENCE_OUTPUT   absolute path of the watchos.json report
-//   ASTRAL_RELEASE_PLATFORM          optional; must be "watchos" when present
-//   ASTRAL_RELEASE_CANDIDATE_SHA / ASTRAL_RELEASE_ID / ASTRAL_RELEASE_VERSION
-//   ASTRAL_RELEASE_STAGING_FILE      trusted stage-deploy outputs JSON
-//   ASTRAL_RELEASE_ARTIFACT_REFERENCE / ASTRAL_RELEASE_ARTIFACT_SHA256
-//     (+ optional ASTRAL_RELEASE_ARTIFACT_NAME, ASTRAL_RELEASE_ARTIFACT_BUILD_IDENTITY)
-//   RUNNER_OS / RUNNER_ARCH / RUNNER_NAME / ASTRAL_RUNNER_IMAGE / ASTRAL_RUNNER_ENVIRONMENT
-//   GITHUB_WORKFLOW / GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT / GITHUB_JOB
+// Drives the shipping WatchModel and reducers on a booted watchOS simulator against the release-candidate
+// endpoint, emitting a platform_evidence report mirroring the web release producer; local evidence is
+// diagnostic only.
+
 import AstralCore
 import CryptoKit
 import Foundation
@@ -77,8 +58,6 @@ private struct EvidenceFailure: Error, CustomStringConvertible {
     var description: String { "\(code): \(message)" }
 }
 
-/// One check's produced facts. `applicabilityReason` wins over `failureCode`;
-/// both nil means the check passed.
 private struct CheckProduction {
     var raw: [String: Any] = [:]
     var measurements: [[String: Any]] = []
@@ -111,7 +90,6 @@ private func isSHA256(_ value: Any?) -> Bool {
     }
 }
 
-/// Validate the secret-free stage identity without rebuilding or overriding it.
 private func validateVoiceRuntime(_ value: Any) throws {
     guard let runtime = value as? [String: Any], Set(runtime.keys) == voiceRuntimeProjectionKeys,
         let profile = runtime["speech_profile"] as? [String: Any],
@@ -154,8 +132,6 @@ private func validateVoiceRuntime(_ value: Any) throws {
     }
 }
 
-/// Pretty sorted-key JSON with a trailing newline, written atomically
-/// (temp + rename); returns the byte digest — the web producer's `atomicJson`.
 @discardableResult
 private func writeCanonicalJSON(_ object: [String: Any], to path: String) throws -> String {
     let data = try JSONSerialization.data(
@@ -212,8 +188,6 @@ private func normalizedBaseURL(_ raw: String) throws -> String {
     return trimmed
 }
 
-/// Reads the environment contract once, owns the raw-evidence directory, and
-/// assembles check records plus the final watchos `platform_evidence` report.
 private final class WatchEvidenceRecorder {
     let baseURL: String
     let platform = "watchos"
@@ -465,8 +439,6 @@ final class ReleaseEvidenceTests: XCTestCase {
         }
     }
 
-    // MARK: - Check harness
-
     private func runCheck(
         _ id: String,
         recorder: WatchEvidenceRecorder,
@@ -491,8 +463,6 @@ final class ReleaseEvidenceTests: XCTestCase {
             return recorder.checkRecord(id: id, production: production, startedAt: started)
         }
     }
-
-    // MARK: - Model fixtures
 
     private func freshStore() -> ConversationResumeStore {
         let suite = "WatchReleaseEvidenceTests.\(UUID().uuidString)"
@@ -539,8 +509,6 @@ final class ReleaseEvidenceTests: XCTestCase {
             """)
     }
 
-    // MARK: - sign_in (real device-login broker on the staged candidate)
-
     private func performDeviceLoginSignIn(recorder: WatchEvidenceRecorder) async throws -> CheckProduction {
         guard let base = URL(string: recorder.baseURL) else {
             throw EvidenceFailure(code: "invalid_staging_url", message: "staging URL did not parse")
@@ -585,8 +553,6 @@ final class ReleaseEvidenceTests: XCTestCase {
         ]
         return production
     }
-
-    // MARK: - rendered_chat (production reducers end to end)
 
     private func runRenderedChat() throws -> CheckProduction {
         let started = Date()
@@ -654,8 +620,6 @@ final class ReleaseEvidenceTests: XCTestCase {
         return production
     }
 
-    // MARK: - reconnect_resume (>= 20 trials with counters)
-
     private func runResumeTrials() async throws -> CheckProduction {
         let store = freshStore()
         guard store.save(chatId: chat, for: account) else {
@@ -701,8 +665,6 @@ final class ReleaseEvidenceTests: XCTestCase {
         return production
     }
 
-    // MARK: - agent_lifecycle (surfaced without reload through the shipping reducer)
-
     private func runAgentLifecycle() throws -> CheckProduction {
         let started = Date()
         let model = WatchModel(conversationResumeStore: freshStore())
@@ -741,8 +703,6 @@ final class ReleaseEvidenceTests: XCTestCase {
         ]
         return production
     }
-
-    // MARK: - accessibility_semantics (WatchAccessibility060 contract)
 
     private func runAccessibilityContract() throws -> CheckProduction {
         let started = Date()

@@ -1,6 +1,7 @@
+// Server-owned action row (provenance badge, refine/export/history/share sheets) attached to top-level canvas
+// components; rendered from ChatView and mirrors Android's ComponentChrome.kt / ComponentActionController.kt.
+
 import AstralCore
-// Top-level provenance and component actions use the server-owned 088 chrome.
-// Nested children remain bare components; action descriptors grant no authority.
 import SwiftUI
 
 #if os(macOS)
@@ -15,8 +16,6 @@ struct ComponentActionTarget: Identifiable, Equatable {
     var title: String { context.component.title ?? "" }
 }
 
-/// A server-owned action row on top-level canvas components. Nested component
-/// renderers remain bare; client inference cannot add a missing descriptor.
 struct ComponentChrome: View {
     let component: AstralComponent
     var onAction: ((ComponentActionTarget) -> Void)?
@@ -33,7 +32,6 @@ struct ComponentChrome: View {
                     ForEach(ComponentChromeModel.actions(from: component.raw["component_chrome"])) { descriptor in
                         if let context = model.componentActionContext(for: descriptor.kind, component: component) {
                             Button {
-                                // Capture again at the actual tap, not an earlier body evaluation.
                                 if let current = model.componentActionContext(
                                     for: descriptor.kind, component: component)
                                 {
@@ -81,9 +79,6 @@ struct ComponentActionSheet: View {
     }
 }
 
-/// Compact trust mark under the component (web `_provenance_footer` parity:
-/// same icons/labels, trailing-aligned). Unknown or absent values render
-/// nothing — the server stamps exactly grounded|estimated|generated.
 struct ProvenanceBadge: View {
     let kind: String?
     @Environment(ThemeStore.self) var theme
@@ -111,7 +106,6 @@ struct ProvenanceBadge: View {
     }
 }
 
-/// Small instruction-entry sheet backing the server-described Refine action.
 struct RefineSheet: View {
     let target: ComponentActionTarget
     @Environment(AppModel.self) var model
@@ -160,21 +154,17 @@ struct RefineSheet: View {
             close()
             return
         }
-        instructionFocused = false  // Resign before model-driven canvas updates, like the chat composer.
+        instructionFocused = false
         model.refineComponent(target.context, instruction: trimmed)
         dismiss()
     }
 
     private func close() {
-        // Retire the field's keyboard focus before removing the sheet over the
-        // lazy canvas. Keeping it focused during dismissal can stall layout.
         instructionFocused = false
         dismiss()
     }
 }
 
-/// Exports use the authenticated download facade already used by generated
-/// files. A system browser cannot inherit this app's bearer session.
 struct ExportDownloadSheet: View {
     let url: URL?
     let filename: String
@@ -204,7 +194,6 @@ struct ExportDownloadSheet: View {
     }
 }
 
-/// Restorable metadata, in the same order and plain-text form as the web popover.
 private struct ComponentHistorySheet: View {
     let target: ComponentActionTarget
     @Environment(AppModel.self) private var model
@@ -248,8 +237,6 @@ private struct ComponentHistorySheet: View {
     }
 }
 
-/// The minted capability stays private until the user explicitly chooses Copy
-/// or Share. Cancelling or changing the initiating context clears the sheet.
 private struct ComponentShareSheet: View {
     let target: ComponentActionTarget
     @Environment(AppModel.self) private var model

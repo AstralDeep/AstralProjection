@@ -1,3 +1,6 @@
+// Encrypted persistence for the AppAuth AuthState via AndroidX Security EncryptedSharedPreferences; only the
+// refresh token needs to survive process death. Implements ServerSessionPersistence.
+
 package com.personalailabs.astraldeep.app.auth
 
 import android.content.Context
@@ -7,11 +10,6 @@ import net.openid.appauth.AuthState
 import java.security.MessageDigest
 import java.time.Instant
 
-/**
- * Encrypted persistence for the AppAuth [AuthState] (access + refresh tokens),
- * backed by AndroidX Security `EncryptedSharedPreferences`. Only the refresh
- * token needs to survive process death; the access token is short-lived.
- */
 class TokenStore(context: Context) : ServerSessionPersistence {
     private val prefs =
         EncryptedSharedPreferences.create(
@@ -55,7 +53,7 @@ class TokenStore(context: Context) : ServerSessionPersistence {
             if (old != null && old.startsWith("$pointer.") && old != key) remove(old)
             putString(key, session.encoded())
             putString(pointer, key)
-            remove(KEY) // A successful fresh issuance has exactly one local refresh owner.
+            remove(KEY)
         }.commit()
     }
 

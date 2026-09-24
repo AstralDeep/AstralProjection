@@ -1,3 +1,6 @@
+// Tests for the sign-out fallback that calls Keycloak's logout endpoint directly when the backend logout call
+// fails.
+
 package com.personalailabs.astraldeep.app.auth
 
 import kotlinx.coroutines.test.runTest
@@ -8,7 +11,6 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Feature 044 T019 — sign-out ladder rung 2: the direct-Keycloak logout fallback. */
 class KeycloakLogoutTest {
     @Test
     fun revoke_posts_the_rfc_form_and_is_true_on_204() =

@@ -1,3 +1,7 @@
+// Tests for watch workspace presentation: commit-fence release on correlated terminal outcomes only,
+// admission-refusal scoping, replay protection across new chats, and ephemeral-welcome acceptance on
+// registration.
+
 import AstralCore
 import XCTest
 
@@ -109,8 +113,6 @@ final class WorkspacePresentationTests: XCTestCase {
         model.handleFrame(welcomeFrame)
         XCTAssertEqual(model.visibleCanvas, welcomeFrame.renderComponents)
         XCTAssertFalse(model.workspaceStarted)
-        // chat_created binds the fresh locator; it must not turn welcome into
-        // a committed preview or prevent a subsequent welcome re-adaptation.
         model.handleFrame(InboundFrame.parse("{\"type\":\"chat_created\",\"payload\":{\"chat_id\":\"\(chat)\"}}")!)
         var updated = welcomeFrame.payload.objectValue!
         updated["type"] = .string("ui_update")

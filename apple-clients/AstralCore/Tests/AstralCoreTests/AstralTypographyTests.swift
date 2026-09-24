@@ -1,3 +1,6 @@
+// Tests for AstralCore's bundled font registration: approved fonts register without silent system family
+// substitution.
+
 import CoreText
 import XCTest
 

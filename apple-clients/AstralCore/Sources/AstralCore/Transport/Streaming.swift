@@ -1,15 +1,10 @@
-// Feature 051 — the pure canvas reducer + streaming consumer, ports of the
-// Android `Canvas.kt` and `Streaming.kt`. `Canvas.apply` mutates an ordered
-// component list by identity (upsert-in-place / remove); the stream helpers turn
-// a `ui_stream_data` / `stream_*` frame into canvas ops keyed by a synthetic
-// `stream-<id>` node (per-stream seq dedupe, session filter, terminal forget).
-// Feature 055 (US2): a frame carrying `component_id` (a workspace-bridged
-// stream) keys the node by that identity from the FIRST frame instead — the
-// terminal persist `ui_upsert` then replaces it in place (wire-contract §2).
+// Pure canvas reducer and stream-frame translator: Canvas.apply upserts/removes components by identity, and
+// streamFrameToOps/subscribeAckOps/streamErrorOps turn ui_stream_data/stream_* frames into ops for AppModel
+// and WatchModel.
+
 import Foundation
 
 extension AstralComponent {
-    /// A copy with its component identity forced to `id` (for synthetic nodes).
     public func withComponentId(_ id: String) -> AstralComponent {
         var obj = raw.objectValue ?? [:]
         obj["component_id"] = .string(id)
@@ -18,21 +13,12 @@ extension AstralComponent {
 }
 
 extension Array where Element == AstralComponent {
-    /// Feature 055 (US1) — the uniform welcome purge: drops the ephemeral
-    /// welcome components (identity prefixed `wel_`, stamped server-side on
-    /// both `id` and `component_id`). iOS/macOS apply it at turn start and
-    /// keep `wel_` out of every canvas-history archive; the watch — which has
-    /// no turn state — applies it at every `ui_upsert` apply. Unconditional
-    /// client-side: with the server flag off the welcome ships id-less,
-    /// nothing matches, and this is a no-op (wire-contract §1).
     public func dropWelcome() -> [AstralComponent] {
         filter { $0.componentId?.hasPrefix("wel_") != true }
     }
 }
 
 public enum Canvas {
-    /// Ordered, identity-keyed apply. `upsert` replaces in place (keeping
-    /// position) or appends; `remove` drops by id. Returns a NEW list.
     public static func apply(_ current: [AstralComponent], _ ops: [UpsertOp]) -> [AstralComponent] {
         var order: [String] = []
         var byId: [String: AstralComponent] = [:]
@@ -59,8 +45,6 @@ public let streamNodePrefix = "stream-"
 
 func streamNodeId(_ streamId: String) -> String { "\(streamNodePrefix)\(streamId)" }
 
-/// `componentId` (055) overrides the node — never the dedupe key, which stays
-/// on `stream_id` — so a bridged stream never grows a `stream-<id>` twin.
 private func nodeKey(
     streamId: String?, toolName: String?,
     componentId: String? = nil
@@ -96,9 +80,6 @@ private func containerOf(node: String, comps: [AstralComponent]) -> AstralCompon
         ]))
 }
 
-/// Translate a `ui_stream_data` / `stream_data` frame into canvas ops. Returns
-/// `[]` when dropped (unaddressable / another chat / stale). `seqState`
-/// (stream-key → last seq) is mutated in place.
 public func streamFrameToOps(
     _ frame: InboundFrame, activeChat: String?,
     seqState: inout [String: Int]
@@ -137,10 +118,6 @@ public func streamFrameToOps(
     return [UpsertOp(op: "upsert", componentId: node, component: body)]
 }
 
-/// A lightweight placeholder shown on `stream_subscribed`. `existingIds` —
-/// identities the target canvas already holds — suppresses the placeholder so
-/// a device joining mid-stream keeps the re-hydrated component instead of a
-/// blank node (web twin: the `stream_subscribed` guard in client.js).
 public func subscribeAckOps(_ frame: InboundFrame, existingIds: Set<String> = []) -> [UpsertOp] {
     let streamId = frame.payload["stream_id"]?.stringValue
     let toolName = frame.payload["tool_name"]?.stringValue
@@ -161,7 +138,6 @@ public func subscribeAckOps(_ frame: InboundFrame, existingIds: Set<String> = []
     return [UpsertOp(op: "upsert", componentId: node, component: comp)]
 }
 
-/// A standalone `stream_error` control message → an alert at the stream node.
 public func streamErrorOps(_ frame: InboundFrame) -> [UpsertOp] {
     let payload = frame.payload["payload"]
     let streamId = payload?["stream_id"]?.stringValue ?? frame.payload["stream_id"]?.stringValue

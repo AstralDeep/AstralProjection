@@ -1,8 +1,6 @@
-"""Frozen-safe, bounded supervision for Windows-hosted BYO agent children.
-
-This module deliberately has no dependency on the backend application tree or
-Qt.  It is bundled into ``AstralDeep.exe`` and owns every process-tree, pipe,
-buffer, and cleanup decision for desktop-hosted personal agents.
+"""Frozen-safe process-tree supervision for desktop-hosted BYO agent children: owns pipe
+draining, buffering, and cleanup for each SupervisedProcess, used by
+win_agent/byo_host.py. No dependency on Qt or the backend tree.
 """
 
 from __future__ import annotations
@@ -46,8 +44,6 @@ class TerminationReason(str, Enum):
 
 @dataclass(frozen=True)
 class ProcessSupervisionLimits:
-    """The immutable feature-060 neutral supervisor limits."""
-
     read_chunk_bytes: int = 16 * 1024
     maximum_logical_line_bytes: int = 64 * 1024
     ring_capacity_bytes_per_stream: int = 256 * 1024
@@ -115,8 +111,6 @@ EofCallback = Callable[[OutputStream], None]
 
 
 class BoundedStreamReader:
-    """Continuously drain one pipe in fixed binary reads and retain a byte ring."""
-
     def __init__(
         self,
         *,
@@ -210,12 +204,10 @@ class BoundedStreamReader:
                         self._on_diagnostic("output_line_too_long", self.stream)
                 elif self._on_line is not None:
                     self._on_line(line)
-            except Exception:  # noqa: BLE001 - a consumer cannot kill the drain
+            except Exception:  # noqa: BLE001
                 logger.exception("BYO %s output callback failed", self.stream.value)
 
     def close_pipe(self) -> None:
-        """Idempotently close the owned pipe."""
-
         with self._condition:
             if self._pipe_closed:
                 return
@@ -231,16 +223,12 @@ class BoundedStreamReader:
         if callable(read):
             value = read(self._limits.read_chunk_bytes)
         else:
-            # Narrow injected-process compatibility seam used by the existing
-            # feature-058 fake pipes. Production Popen pipes always use read().
             value = self._pipe.readline()
         if isinstance(value, str):
             return value.encode("utf-8", errors="replace")
         return value or b""
 
     def run(self) -> None:
-        """Drain to EOF, publish bounded lines, close the pipe, then signal EOF."""
-
         try:
             while True:
                 chunk = self._read_chunk()
@@ -309,13 +297,11 @@ ExitCallback = Callable[["SupervisedProcess", ProcessSnapshot], None]
 
 
 class _WindowsJob:
-    """Kill-on-close Windows Job Object for one BYO process tree."""
-
     _KILL_ON_JOB_CLOSE = 0x00002000
     _BASIC_ACCOUNTING = 1
     _EXTENDED_LIMIT = 9
 
-    def __init__(self, process: Any) -> None:  # pragma: no cover - Windows CI
+    def __init__(self, process: Any) -> None:  # pragma: no cover
         import ctypes
         from ctypes import wintypes
 
@@ -416,7 +402,7 @@ class _WindowsJob:
             self.close()
             raise error
 
-    def active_processes(self) -> int:  # pragma: no cover - Windows CI
+    def active_processes(self) -> int:  # pragma: no cover
         if self._closed:
             return 0
         value = self._accounting_type()
@@ -430,11 +416,11 @@ class _WindowsJob:
             raise self._ctypes.WinError(self._ctypes.get_last_error())
         return int(value.ActiveProcesses)
 
-    def terminate(self) -> None:  # pragma: no cover - Windows CI
+    def terminate(self) -> None:  # pragma: no cover
         if not self._closed and not self._kernel32.TerminateJobObject(self._handle, 1):
             raise self._ctypes.WinError(self._ctypes.get_last_error())
 
-    def close(self) -> None:  # pragma: no cover - Windows CI
+    def close(self) -> None:  # pragma: no cover
         if self._closed:
             return
         self._kernel32.CloseHandle(self._handle)
@@ -442,8 +428,6 @@ class _WindowsJob:
 
 
 class SupervisedProcess:
-    """One process, its complete tree, and both continuously-drained pipes."""
-
     def __init__(
         self,
         *,
@@ -502,8 +486,6 @@ class SupervisedProcess:
 
     @property
     def cleanup_complete(self) -> bool:
-        """Whether exit cleanup and its callback publication have completed."""
-
         return self._terminal_event.is_set()
 
     def _wait_for_parent_exit(self, timeout: float | None = None) -> int:
@@ -585,7 +567,7 @@ class SupervisedProcess:
             except ProcessLookupError:
                 pass
             return
-        if os.name == "nt":  # pragma: no cover - exercised by Windows CI
+        if os.name == "nt":  # pragma: no cover
             if force and self._windows_job is not None:
                 try:
                     self._windows_job.terminate()
@@ -605,7 +587,7 @@ class SupervisedProcess:
             )
             return
         method = getattr(self._process, "kill" if force else "terminate", None)
-        if callable(method):  # pragma: no cover - unsupported platform fallback
+        if callable(method):  # pragma: no cover
             method()
 
     def close_stdin(self) -> None:
@@ -630,8 +612,6 @@ class SupervisedProcess:
             if stream is None or getattr(stream, "closed", False):
                 raise BrokenPipeError("supervised child stdin is closed")
             if not self._isolated_tree:
-                # Existing feature-058 injected process fakes expose text-mode
-                # stdin. Production children are always the binary branch.
                 stream.write(text)
             else:
                 stream.write(encoded)
@@ -697,9 +677,6 @@ class SupervisedProcess:
             pipes_closed = stdout.pipe_closed and stderr.pipe_closed
             tree_terminated = not self.process_tree_alive()
             if self._windows_job is not None:
-                # Closing a kill-on-close job is the final kernel-owned safety
-                # net. Record whether the complete tree had already settled so
-                # cleanup evidence never mistakes an unverified close for proof.
                 self._tree_terminated_after_job_close = tree_terminated
                 self._windows_job.close()
                 self._windows_job = None
@@ -739,7 +716,7 @@ class SupervisedProcess:
         if self._on_exit is not None:
             try:
                 self._on_exit(self, self.snapshot())
-            except Exception:  # noqa: BLE001 - cleanup is already authoritative
+            except Exception:  # noqa: BLE001
                 logger.exception("BYO process-exit callback failed")
 
     def _monitor_exit(self) -> None:
@@ -800,8 +777,6 @@ class SupervisedProcess:
 
 
 class ProcessSupervisor:
-    """Factory and ownership boundary for every packaged BYO worker tree."""
-
     def __init__(
         self,
         *,
@@ -860,7 +835,7 @@ class ProcessSupervisor:
             platform_kwargs: dict[str, Any] = {}
             if os.name == "posix":
                 platform_kwargs["start_new_session"] = True
-            elif os.name == "nt":  # pragma: no cover - Windows CI
+            elif os.name == "nt":  # pragma: no cover
                 creationflags = int(popen_kwargs.pop("creationflags", 0))
                 platform_kwargs["creationflags"] = (
                     creationflags
@@ -880,7 +855,7 @@ class ProcessSupervisor:
             )
             isolated_tree = True
             windows_job = None
-            if os.name == "nt":  # pragma: no cover - Windows CI
+            if os.name == "nt":  # pragma: no cover
                 try:
                     windows_job = _WindowsJob(process)
                 except Exception:
@@ -903,9 +878,6 @@ class ProcessSupervisor:
         def release_process(
             completed: SupervisedProcess, snapshot: ProcessSnapshot
         ) -> None:
-            # A host can revise/restart agents for days. Retaining every terminal
-            # 512-KiB diagnostic ring in the supervisor would turn honest crash
-            # handling into an unbounded process-lifetime memory leak.
             with self._lock:
                 if self._processes.get(process_id) is completed:
                     self._processes.pop(process_id, None)
@@ -938,8 +910,6 @@ class ProcessSupervisor:
         )
         with self._lock:
             self._processes[process_id] = supervised
-            # A very short-lived child may finish before construction returns
-            # and before the callback can observe its registry entry.
             if supervised.cleanup_complete:
                 self._processes.pop(process_id, None)
         return supervised

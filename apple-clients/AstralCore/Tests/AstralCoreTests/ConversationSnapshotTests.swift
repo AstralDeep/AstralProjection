@@ -1,3 +1,7 @@
+// Tests for conversation snapshot reconciliation: canonical semantic-part decoding, atomic rejection of
+// malformed or mixed-purpose parts, revision equality rules, commit-ready fencing, and transient-frame
+// sequencing.
+
 import XCTest
 
 @testable import AstralCore
@@ -239,8 +243,6 @@ final class ConversationSnapshotTests: XCTestCase {
             XCTAssertEqual(
                 reducer.apply(try snapshot(request: detached, purpose: "commit", revision: 6)),
                 .rejected(.scopeMismatch))
-            // Client-originated commits need no prelude; only detached commits
-            // bind an expected revision. Either open request still completes.
             XCTAssertEqual(reducer.apply(try snapshot(request: commit, purpose: "commit", revision: 5)), .applied)
             XCTAssertTrue(reducer.accept(try ready(request: detached, revision: 6)))
             XCTAssertEqual(reducer.apply(try snapshot(request: detached, purpose: "commit", revision: 6)), .applied)

@@ -1,3 +1,6 @@
+// Composable share dialog that keeps content inside the app until an explicit user copy — no external share
+// intent or automatic clipboard write.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.foundation.text.selection.SelectionContainer
@@ -6,7 +9,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 
-/** Kept inside this app until an explicit copy. No external share intent or automatic clipboard write. */
 @Composable
 internal fun ComponentShareDialog(
     url: String,

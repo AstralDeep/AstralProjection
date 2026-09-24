@@ -1,10 +1,6 @@
-"""Feature 089 (T054): the web-profile rules for the six additive types.
-
-`contracts/ui-primitives-089.md` gives one rule per type, and each one is a
-narrowing of presentation, never of content. These tests hold that line: the
-numbers survive every substitution, the rules fire only on the profiles that
-draw the type at all, and the profiles that do not draw it see exactly what
-they saw before 089.
+"""Tests for the web-profile presentation rules on the six additive primitive types
+(backend/rote/adapter.py): layout narrows by viewport without losing content, and
+non-web profiles never see the new types.
 """
 
 from __future__ import annotations
@@ -19,9 +15,7 @@ NATIVE_DEVICES = ("windows", "android", "ios", "macos", "watch", "tv", "voice")
 
 
 def profile(device: str = "browser", width: int = 1440, height: int = 900) -> DeviceProfile:
-    # `from_dict` reads the viewport off the top level, the same shape the web
-    # client reports in `update_device`; a nested "capabilities" key is
-    # ignored and would silently leave the default 1920 in place.
+    # nested capabilities key is ignored; use top-level
     return DeviceProfile.from_dict({
         "device_type": device, "viewport_width": width, "viewport_height": height,
     })
@@ -32,14 +26,11 @@ def adapt(component: dict, **kwargs) -> dict | None:
     return out[0] if out else None
 
 
-# -- stat_group: columns never exceed the profile's grid cap ---------------
-
-
 @pytest.mark.parametrize("device,width,requested,expected", [
     ("browser", 1440, 4, 4),
-    ("browser", 1440, 8, 6),      # the browser cap
-    ("tablet", 900, 4, 3),        # the tablet cap
-    ("mobile", 390, 4, 1),        # one column on a phone
+    ("browser", 1440, 8, 6),
+    ("tablet", 900, 4, 3),
+    ("mobile", 390, 4, 1),
 ])
 def test_stat_group_columns_follow_the_grid_cap(device, width, requested, expected) -> None:
     out = adapt({"type": "stat_group", "title": "Now", "columns": requested,
@@ -55,13 +46,8 @@ def test_stat_group_keeps_every_item_when_the_columns_narrow() -> None:
 
 
 def test_stat_group_with_an_unreadable_column_count_is_left_alone() -> None:
-    """A malformed field is not this layer's to repair; dropping the component
-    would lose the readings it carries."""
     comp = {"type": "stat_group", "columns": "four", "items": []}
     assert adapt(comp, device="mobile", width=390)["columns"] == "four"
-
-
-# -- gauge: compact below 480 ---------------------------------------------
 
 
 def test_gauge_goes_compact_on_a_phone() -> None:
@@ -79,9 +65,6 @@ def test_gauge_is_unchanged_at_desktop_width() -> None:
 def test_a_gauge_that_is_already_compact_is_not_rebuilt() -> None:
     comp = {"type": "gauge", "label": "Load", "value": 0.4, "variant": "compact"}
     assert adapt(comp, device="mobile", width=390) == comp
-
-
-# -- donut and radar: the table form below 700px --------------------------
 
 
 def test_donut_becomes_a_table_below_700px_with_every_segment() -> None:
@@ -110,8 +93,6 @@ def test_radar_becomes_a_table_that_keeps_every_axis_and_series() -> None:
 
 
 def test_a_short_radar_series_is_padded_rather_than_truncating_the_axes() -> None:
-    """A dataset with fewer points than axes must not silently shift the
-    remaining values one column to the left."""
     out = adapt({
         "type": "radar_chart", "axes": ["A", "B", "C"],
         "datasets": [{"label": "partial", "data": [1, 2]}],
@@ -125,9 +106,6 @@ def test_donut_and_radar_survive_at_700px_and_above(comp_type) -> None:
     assert adapt(comp, device="tablet", width=700)["type"] == comp_type
 
 
-# -- pipeline_stepper: vertical below 768 ---------------------------------
-
-
 def test_stepper_goes_vertical_on_a_narrow_viewport() -> None:
     out = adapt({"type": "pipeline_stepper", "steps": [
         {"label": "One", "status": "done"}, {"label": "Two", "status": "active"}]},
@@ -139,9 +117,6 @@ def test_stepper_goes_vertical_on_a_narrow_viewport() -> None:
 def test_stepper_stays_horizontal_on_a_wide_viewport() -> None:
     comp = {"type": "pipeline_stepper", "steps": [{"label": "One", "status": "done"}]}
     assert "orientation" not in adapt(comp, device="browser", width=1440)
-
-
-# -- action_group: wrap on mobile, overflow past three --------------------
 
 
 def _actions(n: int) -> list[dict]:
@@ -173,9 +148,6 @@ def test_three_actions_on_a_desktop_are_left_exactly_as_they_were() -> None:
     assert adapt(comp, device="browser", width=1440) == comp
 
 
-# -- the rules never reach a profile that does not draw the type ----------
-
-
 @pytest.mark.parametrize("device", NATIVE_DEVICES)
 @pytest.mark.parametrize("comp_type,expected", [
     ("stat_group", {"grid", "keyvalue", "table", "text", "container", "card"}),
@@ -205,9 +177,6 @@ def test_a_web_profile_keeps_drawing_the_type_it_can_draw(device) -> None:
     comp = {"type": "stat_group", "columns": 2, "items": [{"label": "A", "value": "1"}]}
     out = adapt(comp, device=device, width=1440 if device == "browser" else 800)
     assert out["type"] == "stat_group"
-
-
-# -- identity survives every one of these rules ---------------------------
 
 
 @pytest.mark.parametrize("comp_type,extra", [

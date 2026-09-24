@@ -1,3 +1,6 @@
+// Instrumented UI test for canvas export with synthetic data only, never touching a live emulator install or
+// sign-in; exercises OfflineCanvasExport and ChartWebView pixel capture.
+
 package com.personalailabs.astraldeep.app
 
 import android.graphics.Bitmap
@@ -58,7 +61,6 @@ import java.io.File
 import java.net.ServerSocket
 import java.util.Base64
 
-/** Synthetic data only; never installs or signs in on the user's live emulator. */
 class PortableCanvasExport088UiTest {
     @get:Rule val rule = createComposeRule()
 
@@ -236,8 +238,6 @@ class PortableCanvasExport088UiTest {
             val initial = withContext(Dispatchers.Main) { capture.freeze(context) }
             rule.onNode(hasScrollAction()).performScrollToIndex(18)
             rule.onNodeWithText("Synthetic row 18 line 1").assertIsDisplayed()
-            // Compose may retain an offscreen AndroidView in its reuse pool. Exercise the
-            // exact row-release callback's pixel owner as well as the actual lazy scroll.
             withContext(Dispatchers.Main) { (web as ChartWebView).exportPixels?.release() }
             val retained = withContext(Dispatchers.Main) { capture.freeze(context) }
             assertEquals(initial.presentation["images"], retained.presentation["images"])

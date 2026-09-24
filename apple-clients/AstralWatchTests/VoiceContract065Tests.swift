@@ -1,3 +1,7 @@
+// Tests for the watch's conversational-voice contract: registration capability advertisement, composer
+// revision monotonicity, terminal-notice survival, ADPCM codec framing, announcement ledger ordering, and
+// foreground lease renewal.
+
 import AVFoundation
 import AstralCore
 import Foundation

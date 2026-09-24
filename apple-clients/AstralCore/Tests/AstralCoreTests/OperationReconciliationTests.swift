@@ -1,3 +1,6 @@
+// Tests for operation reconciliation: malformed identity/state/revision rejection, decoding of authenticated
+// operation and submission lookups, and refusal-versus-malformed-success distinction.
+
 import Foundation
 import XCTest
 

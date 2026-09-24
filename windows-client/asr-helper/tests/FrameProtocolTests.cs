@@ -1,3 +1,6 @@
+// Tests for FrameProtocol (asr-helper/FrameProtocol.cs): round-trip frame encoding,
+// oversized-payload rejection, and fail-closed handling of invalid magic/header bytes.
+
 using System;
 using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;

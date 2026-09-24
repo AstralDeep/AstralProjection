@@ -1,3 +1,6 @@
+// Tests for OkHttpVoiceControlApi: the REST voice-control contract (start/stop/session calls) against a mock
+// server.
+
 package com.personalailabs.astraldeep.app.voice
 
 import com.personalailabs.astraldeep.core.protocol.VoiceControlBinding

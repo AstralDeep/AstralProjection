@@ -1,3 +1,6 @@
+// CLI that unions coverage documents via coverage-union.mjs, rejecting duplicate JSON object keys
+// and writing a new output file.
+
 import {
   closeSync,
   lstatSync,

@@ -1,11 +1,11 @@
+// Watch-side foreground PCM relay for conversational voice: owns only ephemeral capture/playback buffers,
+// never persists a ticket, transcript, or raw audio, and never falls back to platform ASR/TTS; driven by
+// WatchModel.
+
 import AVFoundation
 import AstralCore
 import Foundation
 import Observation
-
-// Feature 065 — watchOS foreground PCM relay. The bridge owns only ephemeral
-// grants and audio buffers. It never persists a ticket, transcript proof, raw
-// PCM, or provider response and never falls back to platform ASR/TTS.
 
 enum WatchVoiceBridgeState: Equatable, Sendable {
     case idle
@@ -333,8 +333,6 @@ final class WatchVoiceBridge: WatchVoiceBridgeControlling {
                     fail(.serverFailure)
                 }
             case "speech_started", "speech_finished", "speech_interrupted", "ping", "pong":
-                // Content-free lifecycle hints may arrive between authoritative
-                // manifest/audio messages. They never authorize playout or a query.
                 guard text.utf8.count <= 2 * 1024 else {
                     throw WatchVoiceBridgeError.invalidControl
                 }

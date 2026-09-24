@@ -1,11 +1,8 @@
-"""Feature 033 (capability C-U6) — provenance / grounding surfacing.
-
-Each top-level canvas component gets a subtle footer marking whether its
-content is GROUNDED (traces to an agent tool) or AI-GENERATED (model-authored
-designer garnish), so a hallucinated card no longer looks identical to a
-verified one. Surfaced selectively (skipped on decorative types and
-watch/voice surfaces) and strictly fail-open (flag off ⇒ legacy markup).
+"""Tests for provenance/grounding footers in backend/webrender/renderer.py: tool-sourced
+content reads as grounded, the server-stamped value overrides agent-supplied
+synonyms, and the footer is skipped on decorative types and watch/voice.
 """
+
 from __future__ import annotations
 
 import sys
@@ -30,8 +27,6 @@ def _profile(device_type):
     return types.SimpleNamespace(device_type=types.SimpleNamespace(value=device_type))
 
 
-# ───────────────────────── flag ──────────────────────────────────────────────
-
 def test_provenance_enabled_default_on(monkeypatch):
     monkeypatch.delenv("FF_PROVENANCE_SURFACING", raising=False)
     assert renderer.provenance_enabled() is True
@@ -43,8 +38,6 @@ def test_provenance_flag_off_values(monkeypatch, value):
     assert renderer.provenance_enabled() is False
 
 
-# ───────────────────────── provenance_of ─────────────────────────────────────
-
 def test_tool_source_is_grounded():
     assert provenance_of({"type": "table", "_source_tool": "list_patients"}) == "grounded"
 
@@ -54,15 +47,12 @@ def test_no_source_is_generated():
 
 
 def test_nested_tool_source_is_grounded():
-    # a designed garnish container wrapping a tool ref reads as grounded
     comp = {"type": "card", "title": "Summary", "content": [
         {"type": "metric", "_source_tool": "avg_age", "value": "42"}]}
     assert provenance_of(comp) == "grounded"
 
 
 def test_stamped_field_is_authoritative():
-    # 055 US4: the server-stamped canonical value wins in BOTH directions —
-    # the footer reads the stamp, never re-derives around it.
     assert provenance_of({"type": "metric", "provenance": "grounded"}) == "grounded"
     assert provenance_of({"type": "metric", "provenance": "estimated"}) == "estimated"
     assert provenance_of({"type": "metric", "provenance": "generated",
@@ -71,8 +61,6 @@ def test_stamped_field_is_authoritative():
 
 
 def test_synonyms_are_not_honored():
-    # FR-026: agent-supplied synonyms cannot upgrade trust through the
-    # renderer — non-canonical values fall back to derivation.
     assert provenance_of({"type": "metric", "provenance": "verified"}) == "generated"
     assert provenance_of({"type": "metric", "provenance": "tool"}) == "generated"
     assert provenance_of({"type": "metric", "provenance": "uncertain"}) == "generated"
@@ -87,8 +75,6 @@ def test_unknown_explicit_falls_back_to_derivation():
 def test_non_dict_is_generated():
     assert provenance_of("nope") == "generated"
 
-
-# ───────────────────────── footer rendering ──────────────────────────────────
 
 def test_grounded_component_keeps_identity_without_tool_footer():
     out = render_component_fragment({
@@ -128,7 +114,6 @@ def test_flag_off_is_legacy_markup(monkeypatch):
             "_source_tool": "t"}
     out = render_component_fragment(comp)
     assert "astral-provenance" not in out
-    # still the normal identity wrapper
     assert 'data-component-id="c1"' in out
 
 
@@ -137,7 +122,6 @@ def test_footer_skipped_on_watch_and_voice():
             "provenance": "estimated"}
     assert "astral-provenance" not in render_component_fragment(comp, _profile("watch"))
     assert "astral-provenance" not in render_component_fragment(comp, _profile("voice"))
-    # but present on a full browser surface
     assert "astral-provenance" in render_component_fragment(comp, _profile("browser"))
 
 
@@ -145,8 +129,6 @@ def test_footer_present_when_no_profile():
     comp = {"type": "metric", "component_id": "c1", "provenance": "estimated", "value": "9"}
     assert "astral-provenance" in render_component_fragment(comp, None)
 
-
-# ───────────────────────── workspace threads profile ─────────────────────────
 
 def test_workspace_threads_profile_to_fragments():
     comps = [{"type": "metric", "component_id": "c1", "provenance": "estimated", "value": "9"}]

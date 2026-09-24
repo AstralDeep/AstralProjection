@@ -1,6 +1,6 @@
-// Feature 051 — minimal any-JSON model.
-// Server-driven UI payloads are decoded leniently into JSONValue so unknown
-// fields and future additive wire changes never break a client (FR-003/FR-006).
+// Minimal any-JSON value type used to decode server-driven UI payloads leniently, so unknown fields or future
+// wire additions never crash a client. Used almost everywhere across AstralCore, AstralApp, and AstralWatch.
+
 import Foundation
 
 public enum JSONValue: Codable, Equatable, Sendable {
@@ -42,8 +42,6 @@ public enum JSONValue: Codable, Equatable, Sendable {
         }
     }
 
-    // MARK: convenience accessors
-
     public var stringValue: String? {
         if case .string(let s) = self { return s }
         return nil
@@ -73,7 +71,6 @@ public enum JSONValue: Codable, Equatable, Sendable {
         objectValue?[key]
     }
 
-    /// Best-effort human text for fallback rendering.
     public var displayText: String {
         switch self {
         case .null: return ""
@@ -89,10 +86,6 @@ public enum JSONValue: Codable, Equatable, Sendable {
 }
 
 extension JSONValue {
-    /// One-pass JSONSerialization parse. This is the hot path for every WS
-    /// frame and REST body; the Codable route (`init(from:)`'s try-cascade)
-    /// pays an internal error throw/catch per scalar, which dominates decode
-    /// time on canvas-sized payloads. Same lenient any-JSON model.
     public static func parse(_ data: Data) throws -> JSONValue {
         JSONValue(bridging: try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]))
     }
@@ -114,14 +107,13 @@ extension JSONValue {
         case let string as String:
             self = .string(string)
         case let number as NSNumber:
-            // JSON true/false arrive as CFBoolean, an NSNumber subclass —
-            // type-check it or booleans would decode as numbers 1/0.
+            // Check CFBoolean first or true/false decode as 1/0
             self =
                 CFGetTypeID(number) == CFBooleanGetTypeID()
                 ? .bool(number.boolValue)
                 : .number(number.doubleValue)
         default:
-            self = .null  // NSNull (lenient model: never fail on a valid tree)
+            self = .null
         }
     }
 }

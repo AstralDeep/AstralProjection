@@ -1,10 +1,7 @@
-// Feature 060 — native conversation continuity models and equality fences.
-//
-// The server is the only committed-state authority. Apple clients keep a
-// non-secret active-chat locator, open one UUID4 request generation for each
-// hydration/turn, and replace transcript + canvas only after this reducer has
-// validated one complete snapshot. Legacy render frames are disposable
-// overlays and never advance `lastCommittedRenderRevision`.
+// Pure continuity reducer shared by iOS, macOS, and watch: a non-secret active-chat locator, one UUID4
+// generation per hydration/turn, and transcript/canvas replacement gated on a validated snapshot. Backs
+// AppModel and WatchModel.
+
 import CryptoKit
 import Foundation
 
@@ -23,7 +20,6 @@ public struct ConversationAccount: Sendable, Equatable {
         self.subject = subject
     }
 
-    /// Opaque account scope used by every Apple locator store.
     public var locatorStorageKey: String {
         var input = Data(issuer.utf8)
         input.append(0)
@@ -34,9 +30,6 @@ public struct ConversationAccount: Sendable, Equatable {
 }
 
 extension TokenSet {
-    /// Non-authoritative display claims are sufficient only for selecting a
-    /// local preference namespace. Server ownership is still validated on
-    /// every resume/load request.
     public var conversationAccount: ConversationAccount? {
         guard let issuer = claims?["iss"]?.stringValue,
             let subject = claims?["sub"]?.stringValue
@@ -97,10 +90,6 @@ public enum ConversationPart: Sendable, Equatable {
         }
         switch type {
         case "text":
-            // 066 T023: exactly {type, text} plus an OPTIONAL bounded variant
-            // (backend CANONICAL_TEXT_PART_VARIANTS twin). The weight hint is
-            // validated then dropped here; rendering parity is tracked with
-            // the parity checklist.
             guard Set(object.keys) == ["type", "text"] || Self.boundedCaptionShape(object),
                 let text = object["text"]?.stringValue,
                 continuityNonBlank(text)
@@ -135,7 +124,6 @@ public enum ConversationPart: Sendable, Equatable {
         }
     }
 
-    /// 066 T023: the bounded caption shape a text part may additionally take.
     private static func boundedCaptionShape(_ object: [String: JSONValue]) -> Bool {
         Set(object.keys) == ["type", "text", "variant"] && object["variant"]?.stringValue == "caption"
     }
@@ -246,7 +234,6 @@ public enum ConversationSnapshotApplyResult: Sendable, Equatable {
     case rejected(ConversationSnapshotRejection)
 }
 
-/// Pure, reusable continuity reducer shared by iOS, macOS, and watchOS.
 public struct ConversationContinuityReducer: Sendable {
     public private(set) var activeChatId: String?
     public private(set) var connectionGeneration: String?
@@ -276,8 +263,6 @@ public struct ConversationContinuityReducer: Sendable {
         return true
     }
 
-    /// Reset the local revision only for an intentional switch to a different
-    /// chat. Reconnect of the same chat preserves the committed revision.
     @discardableResult
     public mutating func selectChat(_ chatId: String, resetRevision: Bool) -> Bool {
         guard let chatId = continuityUUID4(chatId) else { return false }
@@ -310,8 +295,6 @@ public struct ConversationContinuityReducer: Sendable {
         return true
     }
 
-    /// Open a server-originated commit generation only when it is scoped to
-    /// the current chat/connection and promises a strictly newer revision.
     @discardableResult
     public mutating func accept(_ ready: ConversationCommitReady) -> Bool {
         guard ready.chatId == activeChatId,
@@ -370,7 +353,6 @@ public struct ConversationContinuityReducer: Sendable {
         return .applied
     }
 
-    /// Validate a disposable render overlay without mutating committed state.
     @discardableResult
     public mutating func acceptTransient(_ frame: InboundFrame) -> Bool {
         guard acceptedSnapshot == nil,
@@ -392,9 +374,6 @@ public struct ConversationContinuityReducer: Sendable {
         return true
     }
 
-    /// Retire only an authoritatively ended local attempt. Callers must first
-    /// validate and correlate its terminal status or admission refusal. Keep
-    /// committed content and used generations so late results cannot replay.
     @discardableResult
     public mutating func retireUncommittedCommit(requestGeneration: String) -> Bool {
         guard self.requestGeneration == requestGeneration, requestPurpose == .commit,
@@ -407,8 +386,6 @@ public struct ConversationContinuityReducer: Sendable {
         return true
     }
 
-    /// New chat/deletion clears presentation while the current connection's
-    /// consumed request generations remain replay-protected.
     public mutating func clearChatKeepingConnection() {
         activeChatId = nil
         requestGeneration = nil
@@ -455,9 +432,7 @@ private func continuityUnsignedInteger(_ value: JSONValue?) -> UInt64? {
 private func continuityRFC3339UTC(_ value: String) -> Bool {
     guard value.hasSuffix("Z") else { return false }
     if ISO8601DateFormatter().date(from: value) != nil { return true }
-    // A plain ISO8601DateFormatter rejects fractional seconds, which valid
-    // RFC 3339 producers may emit — accept them rather than dropping the
-    // message (and with it the whole committed conversation snapshot).
+    // ISO8601DateFormatter rejects fractional seconds RFC 3339 allows
     let fractional = ISO8601DateFormatter()
     fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return fractional.date(from: value) != nil

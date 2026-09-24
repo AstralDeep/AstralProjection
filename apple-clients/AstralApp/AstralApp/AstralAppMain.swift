@@ -1,8 +1,9 @@
+// SwiftUI app entry point for the shared iOS/macOS AstralDeep client; selects a deterministic UI-test fixture
+// model over the real AppModel when running under XCTest.
+
 import AVFoundation
 import AstralCore
 import Foundation
-// Feature 051 — iOS (twin of Android, US1) + macOS (twin of Windows, US2)
-// in one multiplatform SwiftUI target on the shared AstralCore package.
 import SwiftUI
 
 #if os(iOS)
@@ -20,8 +21,6 @@ struct AstralApp: App {
 
     init() {
         #if DEBUG
-            // Select the isolated HTTP fixture before constructing a default
-            // model: its token store and preferences must never be the user's.
             _model = State(initialValue: FirstLoginUITestFixture.workspaceActionsModel() ?? AppModel())
         #else
             _model = State(initialValue: AppModel())
@@ -54,12 +53,7 @@ struct AstralApp: App {
                             return
                         }
                     #endif
-                    // A macOS unit-test bundle is injected into the app host.
-                    // Starting the real login bootstrap there can block on a
-                    // developer login-keychain prompt before XCTest begins.
-                    // UI-test apps are separate processes and do not carry
-                    // XCTestConfigurationFilePath, so their real launch path
-                    // remains unchanged.
+                    // Skips real bootstrap in unit tests — avoids blocking on a Keychain prompt
                     if !unitTestHost { await model.bootstrap() }
                 }
                 .onChange(of: scenePhase) { _, phase in
@@ -141,10 +135,6 @@ struct AstralApp: App {
         }
         #if os(macOS)
             .windowStyle(.titleBar)
-            // 066: a fresh window opens wide enough for the split layout
-            // (canvas leading, rail trailing); the ≥1024pt breakpoint matches
-            // the web client. Users can still resize down to the 900pt
-            // minimum, where the collapsed (floating-composer) mode takes over.
             .defaultSize(width: 1280, height: 820)
         #endif
     }

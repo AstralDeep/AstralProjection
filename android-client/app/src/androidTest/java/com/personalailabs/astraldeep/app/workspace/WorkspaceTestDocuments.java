@@ -1,3 +1,6 @@
+// Instrumented-test-only DocumentsProvider exposing synthetic documents for SAF picker tests;
+// paired with WorkspaceTestDocumentsControl.java and driven by WorkspaceTestDocuments088UiTest.kt.
+
 package com.personalailabs.astraldeep.app.workspace;
 
 import android.database.Cursor;
@@ -19,7 +22,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-/** Test APK only; framework/Java dependencies allow Android's separate provider process. */
 public final class WorkspaceTestDocuments extends DocumentsProvider {
     private final ConcurrentHashMap<String, CountDownLatch> gates = new ConcurrentHashMap<>();
     private final Set<String> opened = ConcurrentHashMap.newKeySet();
@@ -96,7 +98,6 @@ public final class WorkspaceTestDocuments extends DocumentsProvider {
                     } catch (InterruptedException failure) {
                         Thread.currentThread().interrupt();
                     } catch (IOException expectedWhenCancelled) {
-                        // The cancellation fixture deliberately closes an in-flight pipe.
                     }
                 }, "synthetic-document-copy");
                 reader.setDaemon(true);

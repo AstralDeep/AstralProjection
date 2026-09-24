@@ -1,3 +1,6 @@
+// Tests for web-parity primitive styling (ComponentView.swift): card translucency and padding, metric variant
+// colors and clamped progress, and the New Chat button's native target at the web breakpoint.
+
 import AstralCore
 import SwiftUI
 import XCTest
@@ -62,7 +65,6 @@ final class WebPrimitiveStyleTests: XCTestCase {
     func testMetricRendersCanonicalTitleVariantEdgeAndClampedProgress() throws {
         let image = try render(
             #"{"type":"metric","title":"Total","value":18,"subtitle":"Six dice","variant":"success","progress":2}"#)
-        // The green variant edge and red full progress bar have separate meanings.
         assertRGB(try rgb(image, x: 21, y: image.height / 2), [32, 172, 84])
         assertRGB(try rgb(image, x: 300, y: image.height - 40), [239, 68, 68])
         let empty = try render(#"{"type":"metric","title":"Total","value":18,"progress":-1}"#)
@@ -93,7 +95,6 @@ final class WebPrimitiveStyleTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(image.height, 44)
             XCTAssertGreaterThanOrEqual(image.width, 44)
             widths.append(image.width)
-            // A corner inside the outline remains the unfilled top-bar color.
             assertRGB(try rgb(image, x: 8, y: image.height / 2), [26, 30, 46])
         }
         XCTAssertGreaterThan(widths[1], widths[0] + 40)

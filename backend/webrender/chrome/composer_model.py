@@ -1,8 +1,6 @@
-"""Server-owned conversational-voice state for every chat composer.
-
-Clients render this ordered model and invoke its named REST actions. They do
-not independently infer ownership, takeover, permission, busy, microphone, or
-speech state from local media callbacks.
+"""Builds the server-owned, ordered voice composer state (owner, mic/speech state,
+actions) that clients render as-is rather than inferring from local media callbacks;
+consumed by orchestrator/voice_runtime.py.
 """
 
 from __future__ import annotations
@@ -95,8 +93,6 @@ def _uuid4(value: str | None, field: str, *, nullable: bool = True) -> str | Non
 
 @dataclass(frozen=True, slots=True)
 class VoiceOwner:
-    """Current device owner, already authorized by the session repository."""
-
     device_id: str
     device_kind: str
     generation: int
@@ -122,8 +118,6 @@ class VoiceOwner:
 
 @dataclass(frozen=True, slots=True)
 class VoiceComposerContext:
-    """Authorized inputs used to derive one deterministic composer frame."""
-
     revision: int
     connection_generation: str
     local_device_id: str
@@ -172,8 +166,6 @@ class ComposerControl:
 
 
 def build_composer_state(context: VoiceComposerContext) -> dict[str, Any]:
-    """Build the canonical ordered voice composer frame."""
-
     _validate_context(context)
     owner = context.owner_device
     owns_session = owner is not None and owner.device_id == context.local_device_id

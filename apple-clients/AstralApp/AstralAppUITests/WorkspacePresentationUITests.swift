@@ -1,3 +1,7 @@
+// UI tests for workspace presentation: actions follow server order on native targets, history previews
+// distinguish same-title conversations, phone layouts scroll to below-fold charts, and start-composer
+// disclosure is irreversible.
+
 import XCTest
 
 final class WorkspacePresentationUITests: XCTestCase {
@@ -42,8 +46,6 @@ final class WorkspacePresentationUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         #if os(macOS)
-            // AppKit exposes the complete row as one accessible Button. Its
-            // combined label retains the title, time, preview, and saved badge.
             let preview = app.buttons["New Chat, 3h, Alpha = 2 Beta = 5, Has saved components"]
             let first = app.buttons["New Chat, 2h, First preview"]
         #else
@@ -203,8 +205,6 @@ final class WorkspacePresentationUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["Refine Result details"].waitForExistence(timeout: 3))
             let submit = app.buttons["Refine"].firstMatch
             XCTAssertFalse(submit.isEnabled)
-            // The unlabelled native field's placeholder becomes its value
-            // after typing. Identify the sheet field independently of its text.
             let fields = app.textFields.matching(NSPredicate(format: "identifier != %@", "chat-composer-input"))
             XCTAssertEqual(fields.count, 1)
             let instruction = fields.firstMatch
@@ -214,8 +214,6 @@ final class WorkspacePresentationUITests: XCTestCase {
             instruction.typeText("Sort by total")
             XCTAssertTrue(submit.isEnabled)
             capture(app, name: "workspace-088-refine-edit-before-cancel")
-            // Cancellation is local. This fixture does not pretend to process
-            // a component_refine command or produce a server-side revision.
             app.buttons["Cancel"].tap()
             XCTAssertFalse(app.staticTexts["Refine Result details"].exists)
             XCTAssertEqual(composer.value as? String, "Draft to keep")
@@ -255,8 +253,6 @@ final class WorkspacePresentationUITests: XCTestCase {
             background.tap()
             XCTAssertEqual(background.value as? String, "On")
             app.buttons["Send message"].tap()
-            // This proves the native composer and its one-shot arming. The
-            // existing deterministic reply is not evidence of a real worker.
             XCTAssertTrue(app.staticTexts["Workspace result"].waitForExistence(timeout: 5))
             XCTAssertEqual(background.value as? String, "Off")
             XCTAssertFalse((composer.value as? String ?? "").contains("/research"))
@@ -309,8 +305,6 @@ final class WorkspacePresentationUITests: XCTestCase {
             details.tap()
             XCTAssertEqual(details.value as? String, "Expanded")
             XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
-            // Collapsing content can clamp the scroll position to the shorter
-            // canvas. Reopening restores the selected pane below that viewport.
             for _ in 0..<8 {
                 if app.staticTexts["Measurement pane is selected"].isHittable { break }
                 canvas.swipeUp(velocity: .slow)

@@ -1,13 +1,8 @@
+// Tests for AppModel's workspace-verb reduce logic: component_deleted removes by identity,
+// components_combined/condensed apply carried rows and remove consumed ones, and save/combine acks drive
+// banners and status.
+
 import AstralCore
-// Feature 055 (US3) — workspace verb-ack reduce tests: the eight
-// `component_verbs` push frames are promoted ignored → handled on iOS/macOS
-// (wire-contract §4, research D8). `component_deleted` is an identity-keyed
-// remove; `components_combined`/`components_condensed` apply the carried
-// result rows (component dict under `component_data`, identity falling back
-// to the fresh row id) and remove the consumed ids; save/combine acks drive
-// the banner/status surfaces; `saved_components_list` is an accepted no-op
-// (no native saved-components surface). The watch keeps all eight ignored —
-// its reduce is untouched (Dispositions.watch pins the carve-out).
 import XCTest
 
 @testable import AstralDeep
@@ -36,8 +31,6 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
         model.handleFrame(InboundFrame.parse(json)!)
     }
 
-    // MARK: component_deleted — identity-keyed remove
-
     func testComponentDeletedRemovesByIdentity() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard, forecastCard]
@@ -55,14 +48,12 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
     func testComponentDeletedMidTurnAppliesLiveAndMirrorsIntoBuffer() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard, forecastCard]
-        model.sendChat("working…")  // arms pendingReplace
-        model.pendingCanvas = [budgetCard, forecastCard]  // a buffered render holds both
+        model.sendChat("working…")
+        model.pendingCanvas = [budgetCard, forecastCard]
         reduce(model, #"{"type":"component_deleted","component_id":"wc_forecast"}"#)
-        XCTAssertEqual(model.canvas.map(\.componentId), ["wc_budget"])  // visible immediately
-        XCTAssertEqual(model.pendingCanvas.map(\.componentId), ["wc_budget"])  // commit state matches
+        XCTAssertEqual(model.canvas.map(\.componentId), ["wc_budget"])
+        XCTAssertEqual(model.pendingCanvas.map(\.componentId), ["wc_budget"])
     }
-
-    // MARK: components_combined / components_condensed — replace morphs
 
     private let combinedFrame = #"""
         {"type":"components_combined","removed_ids":["wc_budget","wc_forecast"],
@@ -76,7 +67,7 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
         model.statusText = "Combining Budget with Forecast..."
         reduce(model, combinedFrame)
         XCTAssertEqual(model.canvas.map(\.componentId), ["wc_merged"])
-        XCTAssertNil(model.statusText)  // the in-progress line never sticks
+        XCTAssertNil(model.statusText)
     }
 
     func testCondensedFallsBackToRowIdWhenComponentDataLacksIdentity() {
@@ -95,12 +86,9 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
     func testCombinedSkipsMalformedRowsButStillRemoves() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.canvas = [budgetCard]
-        // component_data missing entirely — nothing to upsert, remove still applies.
         reduce(model, #"{"type":"components_combined","removed_ids":["wc_budget"],"new_components":[{"id":"row-1"}]}"#)
         XCTAssertTrue(model.canvas.isEmpty)
     }
-
-    // MARK: save/combine acks — banner + status surfaces
 
     func testComponentSavedShowsInfoBannerWithTitle() {
         let model = AppModel(tokenStore: InMemoryTokenStore())
@@ -130,10 +118,8 @@ final class AppModelWorkspaceVerbTests: XCTestCase {
         XCTAssertNil(model.statusText)
         XCTAssertTrue(model.bannerIsError)
         XCTAssertEqual(model.errorBanner, "At least 2 components are required to condense")
-        XCTAssertEqual(model.canvas.map(\.componentId), ["wc_budget"])  // canvas untouched
+        XCTAssertEqual(model.canvas.map(\.componentId), ["wc_budget"])
     }
-
-    // MARK: saved_components_list — accepted no-op (no native surface)
 
     func testSavedComponentsListIsAcceptedWithoutSideEffects() {
         let model = AppModel(tokenStore: InMemoryTokenStore())

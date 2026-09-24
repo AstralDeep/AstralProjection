@@ -1,22 +1,7 @@
 #!/usr/bin/env python3
-"""Derive a monotonic Apple build number across the repository transition.
-
-The AstralDeep Apple release workflow historically used its repository-local
-``GITHUB_RUN_NUMBER`` directly.  AstralProjection starts with a new run-number
-sequence, so using that value without an authenticated offset can reuse an App
-Store Connect build number.
-
-Release jobs must supply all three values from the protected Apple release
-environment.  There are deliberately no source-controlled defaults:
-
-``ASTRAL_APPLE_BUILD_NUMBER_BASE``
-    First build number reserved for Projection run 1.
-``ASTRAL_APPLE_LAST_SUBMITTED_BUILD``
-    Highest build confirmed in App Store Connect immediately before cutover.
-``GITHUB_RUN_NUMBER``
-    Monotonic run number assigned by GitHub to the Projection workflow.
-
-The output is a single positive integer suitable for ``CFBundleVersion``.
+"""CLI deriving a monotonic Apple CFBundleVersion from an explicit base, last-submitted
+build, and GITHUB_RUN_NUMBER, with no source-controlled defaults; run by the
+protected Apple release job.
 """
 
 from __future__ import annotations
@@ -30,9 +15,6 @@ BUILD_NUMBER_BASE_ENV = "ASTRAL_APPLE_BUILD_NUMBER_BASE"
 LAST_SUBMITTED_BUILD_ENV = "ASTRAL_APPLE_LAST_SUBMITTED_BUILD"
 RUN_NUMBER_ENV = "GITHUB_RUN_NUMBER"
 
-# A single-component CFBundleVersion remains portable across the current Apple
-# targets.  Fail before exceeding the documented four-digit major component;
-# release engineering can then adopt a reviewed dotted scheme deliberately.
 MAX_BUILD_NUMBER = 9_999
 _POSITIVE_DECIMAL = re.compile(r"[1-9][0-9]*\Z")
 
@@ -55,8 +37,6 @@ def calculate_build_number(
     run_number: str | int,
     last_submitted_build: str | int,
 ) -> int:
-    """Return the Projection build number or fail closed on unsafe inputs."""
-
     parsed_base = _positive_decimal(base, name="build-number base")
     parsed_run = _positive_decimal(run_number, name="workflow run number")
     parsed_last = _positive_decimal(last_submitted_build, name="last submitted build")

@@ -1,11 +1,7 @@
-// Feature 088 T011 (web half): Advanced settings in the UI v2 composer menu
-// opens the server-rendered composition picker (guidance view "selection"),
-// the client keeps the server-issued selection under the verified owner's key
-// only, and the ordinary Send stays a single action — no preflight, and no
-// selection key at all unless one was chosen. The REAL shell template, the
-// REAL astral.css/client.js and the tracked selection fixture are driven with
-// controlled socket replies; this proves the client reducer and presentation,
-// not the Deep host adapter or institutional IAM.
+// Tests for the Advanced-settings composition picker (src/astralprojection/resources.py):
+// server-issued selections stay scoped to the owner's key, and Send remains a single action without
+// one.
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
@@ -21,7 +17,6 @@ const ROOT = resolve(import.meta.dirname, "../../..");
 const STATIC = resolve(ROOT, "backend/webrender/static");
 const CLIENT_PATH = "backend/webrender/static/client.js";
 const SOURCE = await readFile(resolve(ROOT, CLIENT_PATH), "utf8");
-// A secure origin: the owner key is derived with crypto.subtle, exactly as in production.
 const ORIGIN = "https://selection.test";
 const STORAGE_PREFIX = "astraldeep.turn_selection.v1.";
 
@@ -30,9 +25,6 @@ const FIXTURE = JSON.parse(await readFile(
 const NOTES = JSON.parse(await readFile(
   resolve(ROOT, "contracts/fixtures/guidance_088/notes_surface.json"), "utf8"));
 
-// A minimal fixture top bar: the template's role-gated bar needs a python hop
-// (first-task-088.spec.js covers that); this spec needs only the two controls
-// the selection contract binds to — New chat and sign-out.
 const TOPBAR = '<div class="flex items-center gap-2 px-3"><button type="button" id="astral-newchat-btn">New chat</button>'
   + '<a id="logout" href="/auth/logout">Sign out</a></div>';
 const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.html"), "utf8"))
@@ -178,7 +170,6 @@ async function openPicker(page) {
   return pending;
 }
 
-/** Click a picker button and return the selection it carried plus the frame it sent. */
 async function choose(page, label) {
   const button = modal(page).getByRole("button", { name: label, exact: true });
   const carried = JSON.parse(await button.getAttribute("data-ui-payload"));
@@ -230,7 +221,6 @@ test("Advanced opens the server-rendered picker on demand and Close, Escape and 
   expect(Object.keys(pending.payload.params)).toEqual(["view"]);
   expect(pending.session_id).toBeUndefined();
   await expect(modal(page).locator("[aria-busy=\"true\"]")).toBeVisible();
-  // A reply for a different request can never display the picker.
   await receive(page, { ...FIXTURE.web_frames.picker, request_generation: "2e7c1b0a-4f6d-4a8b-9c1e-3d5f7a9b1c2d" });
   await expect(modal(page).getByRole("dialog", { name: "Use for this chat" })).toHaveCount(0);
   await receive(page, { ...FIXTURE.web_frames.picker, request_generation: pending.request_generation });
@@ -253,7 +243,6 @@ test("a picker button keeps the exact server-issued selection, shows a bounded c
   expect(sent.payload).toMatchObject(carried);
   expect(Object.keys(sent.payload).sort()).toEqual(["agent", "notes", "request_generation", "skills", "submission_id", "version"]);
   expect(sent.session_id).toBeUndefined();
-  // The command is an owner-surface write: the picker re-renders only against its generation.
   await expect(modal(page).locator("[aria-busy=\"true\"]")).toBeVisible();
   await receive(page, { ...FIXTURE.web_frames.picker, request_generation: sent.request_generation });
   await expect(modal(page).getByRole("dialog", { name: "Use for this chat" })).toBeVisible();
@@ -384,7 +373,6 @@ test("a server-issued binding on a guidance render replaces the local one; other
   await receive(page, { ...FIXTURE.web_frames.picker, html: stamped, request_generation: sent.request_generation });
   await expect(chip(page)).toHaveText(/Using 1 agent for this chat/u);
   expect((await storedSelections(page))[0][1].selection).toEqual(agentOnly);
-  // A malformed stamp and a notes render never disturb the binding.
   await page.keyboard.press("Escape");
   await expect(modal(page)).toBeEmpty();
   await requestPicker(page);
@@ -441,10 +429,6 @@ for (const [width, font] of [[320, "100%"], [320, "200%"]]) {
   test(`keyboard-only selection at ${width}px with ${font} text stays operable`, async ({ page }) => {
     await setup(page, { width, font });
     await noHorizontalScroll(page, width);
-    // UI v2's secondary controls sit behind More options at every width.
-    // Advanced settings is one
-    // of them, so a keyboard user reaches it through that button -- which is
-    // the thing worth proving here: still reachable, still without a mouse.
     const more = page.locator("#astral-composer-more");
     if (await more.isVisible()) {
       await more.focus();
@@ -480,7 +464,6 @@ for (const [width, font] of [[320, "100%"], [320, "200%"]]) {
     expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(width);
     await noHorizontalScroll(page, width);
     const clear = page.getByRole("button", { name: "Clear the selection for this chat", exact: true });
-    // The chip sits above the composer row, so it is one Shift+Tab back from the input.
     await page.locator("#astral-input").focus();
     for (let step = 0; step < 12 && !(await clear.evaluate(el => el === document.activeElement)); step++) {
       await page.keyboard.press("Shift+Tab");
@@ -488,8 +471,6 @@ for (const [width, font] of [[320, "100%"], [320, "200%"]]) {
     await expect(clear).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(chip(page)).toBeHidden();
-    // Focus returns to whatever opens the picker at this width: Advanced
-    // itself, or the overflow button it sits behind on a narrow composer.
     await expect(await advanced(page).isVisible()
       ? advanced(page) : page.locator("#astral-composer-more")).toBeFocused();
     expect("selection" in (await send(page, "Keyboard only")).payload).toBe(false);

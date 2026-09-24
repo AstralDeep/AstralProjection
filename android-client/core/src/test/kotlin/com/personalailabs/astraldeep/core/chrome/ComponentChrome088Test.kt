@@ -1,3 +1,5 @@
+// Tests for ComponentChrome: action and version derivation, and identity resolution for a rendered component.
+
 package com.personalailabs.astraldeep.core.chrome
 
 import com.personalailabs.astraldeep.core.sdui.Component

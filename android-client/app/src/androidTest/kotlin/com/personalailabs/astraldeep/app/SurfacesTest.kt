@@ -1,3 +1,6 @@
+// Instrumented test verifying the management surfaces (agents, tools) render their server-supplied data
+// correctly.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.ui.test.assertIsDisplayed
@@ -14,7 +17,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
-/** US4 (T048): the management surfaces render their data. */
 class SurfacesTest {
     @get:Rule val rule = createComposeRule()
 
@@ -29,9 +31,6 @@ class SurfacesTest {
                 onEnableRecommended = {},
             )
         }
-        // AgentCard prefixes the name with an expand caret ("▶ Weather"), so match
-        // the substring (feature 044: this instrumented test was nightly-only and
-        // its exact-match assertion had been silently broken since the 043 caret).
         rule.onNodeWithText("Weather", substring = true).assertIsDisplayed()
     }
 

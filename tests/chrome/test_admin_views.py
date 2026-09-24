@@ -1,3 +1,7 @@
+"""Tests for src/astralprojection/chrome/admin.py: audit, feedback, onboarding and
+diagnostics view states, including role gating and bounded diagnostic samples.
+"""
+
 from __future__ import annotations
 
 import json

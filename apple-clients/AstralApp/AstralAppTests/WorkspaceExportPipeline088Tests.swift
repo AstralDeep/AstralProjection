@@ -1,3 +1,7 @@
+// Tests for the workspace export pipeline (Views/OfflineCanvasExport.swift): production authorization,
+// capture, and the private-file write; refused authorization or presentation never falls back to producing a
+// file.
+
 import AstralCore
 import Network
 import XCTest
@@ -103,8 +107,6 @@ final class WorkspaceExportPipeline088Tests: XCTestCase {
     }
 }
 
-/// Test-only HTTP peer. Real client transports and WebKit run unchanged; no
-/// global URLProtocol, user defaults, Keychain, IdP or external host is used.
 private final class WorkspaceExportLoopback: @unchecked Sendable {
     let ready = XCTestExpectation(description: "workspace export loopback ready")
     let listener: NWListener

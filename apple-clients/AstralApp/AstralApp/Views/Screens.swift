@@ -1,12 +1,9 @@
-import AstralCore
-// Feature 051 — the native settings surfaces reached from the top-bar gear /
-// server chrome, 1:1 with the Android Screens.kt: Agents (per-agent + per-tool
-// permission toggles, "Enable recommended"), Audit (the hash-chained event log),
-// and the SDUI Surface screen (chrome_surface rendered natively, with a load
-// timeout + Retry). Plus the shared skeleton list.
-import SwiftUI
+// Native settings surfaces reached from the top-bar gear: Agents (per-tool permission toggles), Audit
+// (hash-chained event log), and the SDUI Surface screen with a load-timeout retry; 1:1 with Android's
+// Screens.kt.
 
-// MARK: - Agents
+import AstralCore
+import SwiftUI
 
 struct AgentsView: View {
     @Environment(AppModel.self) var model
@@ -115,8 +112,6 @@ private struct AgentCard: View {
     }
 }
 
-// MARK: - Audit
-
 struct AuditView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
@@ -176,8 +171,6 @@ private struct AuditCard: View {
     }
 }
 
-// MARK: - SDUI Surface (chrome_surface rendered natively, T039 timeout+retry)
-
 struct SurfaceView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
@@ -194,10 +187,6 @@ struct SurfaceView: View {
                             Text(surface.title.isEmpty ? "Settings" : surface.title)
                                 .font(AstralTypography.title2.bold()).foregroundStyle(p.text)
                             Spacer()
-                            // Web has the modal ✕ and Android the system Back;
-                            // without this the surface could only be left via
-                            // the top bar. Hidden while the 054 pin is set —
-                            // the same refusal web's `data-mandatory` card makes.
                             if !model.mandatorySurface {
                                 closeButton
                             }
@@ -241,8 +230,6 @@ struct SurfaceView: View {
                 closeButton.padding(16)
             }
         }
-        // Re-arm the 10 s load timer whenever the awaited surface key changes or
-        // a surface arrives, and for every explicit Retry of the same request.
         .task(id: surfaceTaskKey) {
             timedOut = false
             let workGeneration = model.workReadState.generation
@@ -277,8 +264,6 @@ struct SurfaceView: View {
         "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")"
     }
 }
-
-// MARK: - Skeleton list (loading placeholder)
 
 struct SkeletonList: View {
     @Environment(ThemeStore.self) var theme

@@ -1,12 +1,7 @@
-"""041 — the `android` ROTE device profile.
-
-The native Android client registers ``device_type: "android"`` and renders the
-structured components natively (Compose), so it receives a FULL-capability
-profile (like ``windows``) plus ``supported_types`` capability-negotiation —
-without web-oriented text/table truncation or code stripping on phones.
-Feature 088 shares web grid density while preserving native capabilities.
-Pure Python.
+"""Tests for backend/rote/adapter.py's 'android' device profile: full-capability
+rendering and supported-types negotiation distinct from web/mobile.
 """
+
 from __future__ import annotations
 
 import sys
@@ -29,15 +24,14 @@ def test_android_host_config_is_full_capability():
     cfg = load_host_config()
     assert "android" in cfg
     a = cfg["android"]
-    # Full native capability, mirroring `windows` (NOT the web `mobile` limits).
-    assert a["supports_code"] is True          # web-mobile strips code; native keeps it
+    assert a["supports_code"] is True
     assert a["supports_charts"] is True
     assert a["supports_tables"] is True
     assert a["supports_tabs"] is True
     assert a["supports_file_io"] is True
-    assert a["max_grid_columns"] == 6          # not the mobile 1 / tablet 3
-    assert a["max_table_rows"] == 0            # unbounded (mobile caps at 20)
-    assert a["max_table_cols"] == 0            # unbounded (mobile caps at 4)
+    assert a["max_grid_columns"] == 6
+    assert a["max_table_rows"] == 0
+    assert a["max_table_cols"] == 0
     assert a["supports_interactivity"] is True
 
 
@@ -55,20 +49,17 @@ def test_android_carries_supported_types_negotiation():
         "supported_types": ["text", "card", "table", "alert"],
     })
     assert prof.supported_types == frozenset({"text", "card", "table", "alert"})
-    # round-trips into rote_config as a sorted list
     assert prof.to_dict()["supported_types"] == ["alert", "card", "table", "text"]
 
 
 def test_android_distinct_from_web_mobile():
     cfg = load_host_config()
-    # The native profile must NOT inherit the web-mobile content constraints.
     assert cfg["android"]["supports_code"] is True
     assert cfg["mobile"]["supports_code"] is False
     assert cfg["android"]["max_grid_columns"] != cfg["mobile"]["max_grid_columns"]
 
 
 def test_android_respects_env_override(monkeypatch):
-    # Operators can still tune the native profile via ROTE_HOST_CONFIG.
     monkeypatch.setenv("ROTE_HOST_CONFIG", '{"android": {"max_grid_columns": 4}}')
     prof = DeviceProfile.from_dict({"device_type": "android"})
     assert prof.max_grid_columns == 4

@@ -1,5 +1,7 @@
-// Deterministic client reducer/continuity contract suite. This intentionally
-// uses a synthetic DOM and is never the feature-060 qualifying release proof.
+// Deterministic client reducer/continuity suite against a synthetic DOM, not the release proof:
+// socket reconnect, operation-status precedence, transcript/canvas persistence, and draft
+// preservation across viewport and auth changes.
+
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
@@ -91,6 +93,13 @@ function htmlShell() {
     <button id="astral-restore-chat-btn" type="button" hidden></button>
     <button id="astral-msgs-toggle" type="button"></button>
     <span id="astral-msgs-label"></span>
+    <header id="astral-response-top-nav">
+      <button type="button" id="astral-back-dash-btn">Dashboard Overview</button>
+      <button type="button" id="astral-turns-chip" disabled>(0 turns)</button>
+      <button type="button" id="astral-top-newchat-btn">Start new conversation</button>
+    </header>
+    <button type="button" id="astral-export-page-btn" class="astral-page-action" hidden>Export page</button>
+    <button type="button" id="astral-share-page-btn" class="astral-page-action" hidden>Share page</button>
     <div id="astral-history"></div>
     <main>
       <div id="astral-start-intro"></div>
@@ -113,6 +122,13 @@ function htmlShell() {
       <div id="astral-slash-menu" class="hidden"></div>
       <div id="astral-modal"></div>
     </main>
+    <div id="astral-fullscreen" class="astral-fullscreen" role="dialog" aria-modal="true" aria-labelledby="astral-fs-title" hidden>
+      <span id="astral-fs-title">Workspace</span>
+      <span id="astral-fs-sub"></span>
+      <div id="astral-fs-actions"></div>
+      <button type="button" id="astral-fs-exit">Exit full screen</button>
+      <div id="astral-fs-canvas" class="astral-fs-canvas"></div>
+    </div>
   </body></html>`;
 }
 
@@ -156,9 +172,8 @@ async function installHarness(page, { locator = true, url = "https://candidate.e
           locatorAtSend: localStorage.getItem(window.__locatorKey),
           viewAtSend: document.body.getAttribute("data-astral-view"),
         });
-        // 066: the client gates action() sends behind the post-registration
-        // rote_config verdict (socketReady + queue flush). Mirror the real
-        // server so ui_events dispatch immediately instead of queueing.
+
+
         if (frame.type === "register_ui") {
           queueMicrotask(() => {
             this.receive({
@@ -234,10 +249,8 @@ test("floating conversation restores to the right without losing its draft", asy
 
 
 test("a committed workspace lands in the visible feed, not an orphaned card", async ({ page }) => {
-  // Feature 089 made `canvas` the newest response card's body, which lives
-  // inside the feed. Replacing the transcript therefore detaches it, and the
-  // committed workspace was being appended to a node no longer in the page —
-  // the turn ran, the components existed, and nothing was drawn.
+
+
   await installHarness(page);
   await receive(page, snapshot((await registration(page)).frame));
   await expect(page.locator("#astral-chat")).toContainText("Committed answer");
@@ -258,8 +271,8 @@ test("a committed workspace lands in the visible feed, not an orphaned card", as
 test("canvas source stays in the result and opens the unchanged Markdown URL", async ({ page }) => {
   const url = "https://en.wikipedia.org/wiki/Dog_grooming";
   const source = `Source: [${url}](${url})`;
-  // Exercise the real server sanitizer, then let the browser parse and open
-  // its anchor. A text-only substring assertion missed the corrupt href.
+
+
   const html = execFileSync("python3", [
     "-c", "import runpy,sys; print(runpy.run_path(sys.argv[1])['block_md'](sys.argv[2]))",
     resolve(ROOT, "backend/webrender/sanitize.py"), source,
@@ -292,20 +305,250 @@ test("canvas source stays in the result and opens the unchanged Markdown URL", a
 });
 
 
-test("full screen control follows the turn label in the result header", async ({ page }) => {
+test("full screen control stays reachable in the result header", async ({ page }) => {
   await installHarness(page);
   await receive(page, snapshot((await registration(page)).frame));
   await page.addStyleTag({ path: resolve(ROOT, "backend/webrender/static/astral.css") });
   for (const width of [1440, 393]) {
     await page.setViewportSize({ width, height: 900 });
-    const button = page.locator(".astral-card-head-right > .astral-meta-chip + .astral-expand-chip");
-    await expect(button).toHaveText("Open full screen");
+    const button = page.locator(".astral-card-head-right > .astral-expand-chip");
+    await expect(button).toHaveAccessibleName("Open this result in full screen");
     await expect(button).toBeVisible();
     await expect(button).toHaveCSS("position", "static");
     await expect(button).toHaveCSS("opacity", "1");
     await expect(page.locator(".astral-response-card > .astral-expand-chip")).toHaveCount(0);
   }
 });
+
+test("dashboard navigation preserves the conversation and keyboard turns restores it", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame, {
+    transcript: [{ message_id: "user-turn", role: "user", created_at: COMMITTED_AT, parts: [{ type: "text", text: "Keep this conversation" }], attachments: [] }],
+  }));
+  await expect(page.locator("#astral-turns-chip")).toHaveText("(1 turn)");
+  await page.locator("#astral-back-dash-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await receive(page, { type: "task_completed", payload: { summary: "Background update" } });
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await expect(page.locator("#astral-chat")).toContainText("Keep this conversation");
+  await page.locator("#astral-turns-chip").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
+  await expect(page.locator('[data-component-id="rote-new"]')).toBeVisible();
+  await page.locator("#astral-top-newchat-btn").click();
+  await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
+  await expect(page.locator("#astral-turns-chip")).toHaveText("(0 turns)");
+  await expect(page.locator("#astral-turns-chip")).toBeDisabled();
+  await expect(page.locator("#astral-chat")).not.toContainText("Keep this conversation");
+});
+
+
+test("snapshot preserves header export and share controls through repeated rebuilds", async ({ page }) => {
+  await installHarness(page);
+  const scope = (await registration(page)).frame;
+  const canvas = { target: "canvas", components: [presentation("exportable", "Exportable result", { export: true, share: true })] };
+  await receive(page, snapshot(scope, { canvas }));
+  await page.evaluate(() => {
+    window.__exportNode = document.getElementById("astral-export-page-btn");
+    window.__shareNode = document.getElementById("astral-share-page-btn");
+  });
+  await receive(page, snapshot(scope, { snapshot_id: SNAPSHOT_B, render_revision: 1, canvas }));
+  for (const id of ["astral-export-page-btn", "astral-share-page-btn"]) {
+    await expect(page.locator(`#astral-chat .astral-card-head-right #${id}`)).toBeVisible();
+    await expect(page.locator(`#${id}`)).toHaveCount(1);
+  }
+  await page.locator("#astral-newchat-btn").click();
+  expect(await page.evaluate(() => ({
+    export: document.getElementById("astral-export-page-btn") === window.__exportNode,
+    share: document.getElementById("astral-share-page-btn") === window.__shareNode,
+  }))).toEqual({ export: true, share: true });
+  await expect(page.locator("#astral-export-page-btn")).toBeHidden();
+  await expect(page.locator("#astral-share-page-btn")).toBeHidden();
+});
+
+
+test("full screen accepts non-string agent metadata without interrupting snapshot commit", async ({ page }) => {
+  await installHarness(page);
+  const scope = (await registration(page)).frame;
+  await receive(page, snapshot(scope));
+  await page.getByRole("button", { name: "Open this result in full screen" }).click();
+  const component = { ...presentation("agent-metadata", "Valid workspace with structured metadata"), source_agent: { id: "agent-a" }, agent_id: 7, agent: true };
+  await receive(page, snapshot(scope, {
+    snapshot_id: SNAPSHOT_B,
+    render_revision: 1,
+    canvas: { target: "canvas", components: [component] },
+  }));
+  await expect(page.locator("#astral-fullscreen")).toBeVisible();
+  await expect(page.locator('#astral-fs-canvas [data-component-id="agent-metadata"]')).toBeVisible();
+  await page.locator("#astral-fs-exit").click();
+  await expect(page.locator('#astral-chat [data-component-id="agent-metadata"]')).toBeVisible();
+  await expect(page.getByRole("button", { name: "Open this result in full screen" })).toBeFocused();
+});
+
+
+for (const [agentId, expectedName] of [["renal-team", "Renal Specialist"], ["new_research-agent", "New Research Agent"]]) {
+  test(`snapshot displays the originating agent ${agentId} in preview and full screen`, async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__ASTRAL_LANDING__ = { agents: [{ id: "renal-team", name: "Renal Specialist" }], scenarios: [], categories: [] };
+    });
+    await installHarness(page);
+    await receive(page, snapshot((await registration(page)).frame, {
+      canvas: { target: "canvas", components: [{ ...presentation("named-result", "Result from the selected specialist"), source_agent: agentId }] },
+    }));
+    await expect(page.locator(".chat-agent-name-text")).toHaveText(expectedName);
+    await expect(page.locator(".sdui-widget-title")).toHaveText(`${expectedName} Interface`);
+    await page.getByRole("button", { name: "Open this result in full screen" }).click();
+    await expect(page.locator("#astral-fs-title")).toHaveText(`${expectedName} Interface`);
+    await expect(page.locator("#astral-fs-sub")).toHaveText("Active Specialist");
+  });
+}
+
+
+test("legacy upsert retains the overflow control and keyed stream updates the visible full screen result", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: "<p>Preparing results</p>" });
+  await page.evaluate(() => { window.__overflowControl = document.querySelector(".sdui-widget-overlay"); });
+  await receive(page, { type: "ui_upsert", ops: [{
+    op: "upsert", component_id: "legacy-result", html: '<div data-component-id="legacy-result">Prepared result</div>',
+  }] });
+  await expect(page.locator(".sdui-widget-body .dynamic-renderer")).toContainText("Prepared result");
+  await expect(page.locator(".sdui-widget-body")).not.toContainText("Preparing results");
+  expect(await page.evaluate(() => document.querySelector(".sdui-widget-overlay") === window.__overflowControl)).toBe(true);
+  await expect(page.locator(".sdui-widget-overlay")).toHaveCount(1);
+  await page.getByRole("button", { name: "Open this result in full screen" }).click();
+  await receive(page, { type: "ui_stream_data", stream_id: "legacy-stream", component_id: "stream-result", seq: 1, html: '<div data-component-id="stream-result">Partial streamed result</div>' });
+  await expect(page.locator('#astral-fs-canvas [data-component-id="stream-result"]')).toHaveText("Partial streamed result");
+  await receive(page, { type: "ui_stream_data", stream_id: "legacy-stream", component_id: "stream-result", seq: 2, terminal: true, html: '<div data-component-id="stream-result">Final streamed result</div>' });
+  await expect(page.locator('#astral-fs-canvas [data-component-id="stream-result"]')).toHaveText("Final streamed result");
+  await expect(page.locator('[data-component-id="stream-result"]')).toHaveCount(1);
+  await page.locator("#astral-fs-exit").click();
+  await expect(page.locator('#astral-chat [data-component-id="stream-result"]')).toHaveText("Final streamed result");
+  expect(await page.evaluate(() => document.querySelector(".sdui-widget-overlay") === window.__overflowControl)).toBe(true);
+});
+
+
+test("snapshot preserves distinct tables and cards with similar titles", async ({ page }) => {
+  await installHarness(page);
+  const components = [
+    { ...presentation("table-a", "Current results"), type: "table", title: "Results" },
+    { ...presentation("table-b", "Previous results"), type: "table", title: "Results" },
+    { ...presentation("card-a", "Comparison A"), type: "card", title: "Comparison (current)" },
+    { ...presentation("card-b", "Comparison B"), type: "card", title: "Comparison (previous)" },
+  ];
+  await receive(page, snapshot((await registration(page)).frame, {
+    canvas: { target: "canvas", components },
+  }));
+  await expect(page.locator("#astral-chat [data-component-id]")).toHaveText([
+    "Current results", "Previous results", "Comparison A", "Comparison B",
+  ]);
+});
+
+
+test("snapshot validates every table before replacing committed content", async ({ page }) => {
+  await installHarness(page);
+  const scope = (await registration(page)).frame;
+  await receive(page, snapshot(scope));
+  await receive(page, snapshot(scope, {
+    snapshot_id: SNAPSHOT_B,
+    render_revision: 1,
+    canvas: { target: "canvas", components: [
+      { ...presentation("table-a", "Restricted table"), type: "table" },
+      { ...presentation("table-b", "Conflicting table", { export: true, share: true }), type: "table" },
+    ] },
+  }));
+  await expect(page.locator('[data-component-id="rote-new"]')).toBeVisible();
+  await expect(page.locator('[data-component-id^="table-"]')).toHaveCount(0);
+});
+
+
+test("full screen restores the same interactive nodes and focus on Escape", async ({ page }) => {
+  await installHarness(page);
+  const component = presentation("editable", "Editable result");
+  component._presentation.html = '<div class="astral-component" data-component-id="editable"><label>Result note<input aria-label="Result note"></label></div>';
+  await receive(page, snapshot((await registration(page)).frame, {
+    canvas: { target: "canvas", components: [component] },
+  }));
+  await page.getByRole("textbox", { name: "Result note" }).fill("Keep this note");
+  await page.evaluate(() => { window.__resultNode = document.querySelector('[data-component-id="editable"]'); });
+  const expand = page.getByRole("button", { name: "Open this result in full screen" });
+  await expand.click();
+  await expect(page.locator("#astral-fullscreen")).toBeVisible();
+  await expect(page.locator('#astral-fs-canvas [data-component-id="editable"]')).toHaveCount(1);
+  await expect(page.getByRole("textbox", { name: "Result note" })).toHaveValue("Keep this note");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#astral-fullscreen")).toBeHidden();
+  await expect(page.locator('#astral-chat [data-component-id="editable"]')).toHaveCount(1);
+  expect(await page.evaluate(() => document.querySelector('[data-component-id="editable"]') === window.__resultNode)).toBe(true);
+  await expect(page.getByRole("textbox", { name: "Result note" })).toHaveValue("Keep this note");
+  await expect(expand).toBeFocused();
+});
+
+
+test("full screen receives live renders and upserts and follows the committed snapshot", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-input").fill("Update the workspace");
+  await page.locator("#astral-form").evaluate(form => form.requestSubmit());
+  const scope = await page.evaluate(() => window.__socketEvents.findLast(event => event.frame.action === "chat_message").frame);
+  const frame = {
+    chat_id: CHAT_ID,
+    connection_generation: scope.connection_generation,
+    request_generation: scope.request_generation,
+    base_render_revision: 0,
+    frame_sequence: 1,
+  };
+  await receive(page, { ...frame, type: "ui_render", target: "canvas", html: '<div class="dynamic-renderer"><div data-component-id="preview-result">First preview</div></div>' });
+  await page.locator('[data-astral-live-turn] .astral-expand-chip').click();
+  await expect(page.locator("#astral-fs-canvas")).toContainText("First preview");
+  await receive(page, { ...frame, frame_sequence: 2, type: "ui_update", html: '<div class="dynamic-renderer"><div data-component-id="preview-result">Rendered update</div></div>' });
+  await expect(page.locator("#astral-fs-canvas")).toContainText("Rendered update");
+  await receive(page, { ...frame, frame_sequence: 3, type: "ui_upsert", ops: [
+    { op: "upsert", component_id: "preview-result", html: '<div data-component-id="preview-result">Upserted preview</div>' },
+  ] });
+  await expect(page.locator("#astral-fs-canvas")).toContainText("Upserted preview");
+  await expect(page.locator('[data-component-id="preview-result"]')).toHaveCount(1);
+  await receive(page, snapshot(scope, {
+    snapshot_id: SNAPSHOT_B,
+    snapshot_purpose: "commit",
+    render_revision: 1,
+    canvas: { target: "canvas", components: [presentation("final-result", "Final committed workspace")] },
+  }));
+  await expect(page.locator("#astral-fullscreen")).toBeVisible();
+  await expect(page.locator("#astral-fs-canvas")).toContainText("Final committed workspace");
+  await expect(page.locator('[data-component-id="preview-result"]')).toHaveCount(0);
+  await page.locator("#astral-fs-exit").click();
+  await expect(page.locator('#astral-chat [data-component-id="final-result"]')).toBeVisible();
+  await expect(page.locator('[data-component-id="final-result"]')).toHaveCount(1);
+});
+
+
+for (const transition of ["new chat", "account switch", "sign out"]) {
+  test(`full screen clears private content on ${transition}`, async ({ page }) => {
+    await installHarness(page);
+    await receive(page, snapshot((await registration(page)).frame));
+    await page.getByRole("button", { name: "Open this result in full screen" }).click();
+    await expect(page.locator("#astral-fs-canvas")).toContainText("ROTE-adapted canvas");
+    if (transition === "new chat") {
+      await page.locator("#astral-newchat-btn").evaluate(button => button.click());
+    } else if (transition === "sign out") {
+      await page.locator("#logout").evaluate(link => {
+        link.addEventListener("click", event => event.preventDefault());
+        link.click();
+      });
+    } else {
+      await page.evaluate(token => {
+        window.__sessionToken = token;
+        window.__sessionSubject = "other-user";
+      }, OTHER_TOKEN);
+      await receive(page, { type: "auth_required" });
+      await page.waitForFunction(() => window.__sockets.length === 2);
+    }
+    await expect(page.locator("#astral-fullscreen")).toBeHidden();
+    await expect(page.locator("#astral-fs-canvas")).toBeEmpty();
+    await expect(page.locator('[data-component-id="rote-new"]')).toHaveCount(0);
+  });
+}
+
 
 test("turn numbering follows the transcript rather than every rebuild", async ({ page }) => {
   await installHarness(page);
@@ -319,7 +562,7 @@ test("turn numbering follows the transcript rather than every rebuild", async ({
   };
   await receive(page, snapshot(scope, twoTurns));
   await expect(page.locator(".astral-turn-pill")).toHaveText(["Turn 1", "Turn 2"]);
-  // Re-committing the same transcript at a later revision must not renumber it.
+
   await receive(page, snapshot(scope, {
     ...twoTurns,
     snapshot_id: SNAPSHOT_B,
@@ -331,11 +574,8 @@ test("turn numbering follows the transcript rather than every rebuild", async ({
 
 
 test("the conversation feed stays reachable at every width and keeps the draft", async ({ page }) => {
-  // Feature 089 retired the collapsible transcript: the feed IS the main
-  // column at every width, so there is no toggle to reveal it and no width at
-  // which it can be hidden while the workspace is on screen. What still has to
-  // hold across a resize is that the committed transcript stays put and the
-  // composer keeps an unsent draft.
+
+
   await page.setViewportSize({ width: 390, height: 900 });
   await installHarness(page);
   await page.addStyleTag({ path: resolve(ROOT, "backend/webrender/static/astral.css") });
@@ -405,6 +645,118 @@ function snapshot(scope, overrides = {}) {
 }
 
 
+function reasoningPresentation(id) {
+  const component = presentation(id, "Supporting explanation");
+  component.type = "collapsible";
+  component.title = "Reasoning";
+  component._presentation.html = `<div class="astral-component" data-component-id="${id}"><details class="astral-reasoning"><summary>Reasoning</summary><div>Supporting explanation</div></details></div>`;
+  return component;
+}
+
+function messageWithParts(id, role, parts) {
+  return { message_id: id, role, created_at: COMMITTED_AT, attachments: [], parts };
+}
+
+async function expectResultBeforeReasoning(page, id) {
+  expect(await page.locator(`[data-component-id="${id}"]`).evaluate(node => {
+    const card = document.querySelector('[data-astral-live-turn="1"]');
+    return Boolean(card.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING);
+  })).toBe(true);
+}
+
+for (const mixed of [true, false]) {
+  test(`saved reasoning follows the UI result with a separate summary bubble (mixed=${mixed})`, async ({ page }) => {
+    await installHarness(page);
+    await page.addStyleTag({ path: resolve(ROOT, "backend/webrender/static/astral.css") });
+    const scope = (await registration(page)).frame;
+    const reasoningPart = { type: "components", components: [reasoningPresentation("saved-reasoning")] };
+    const summaryPart = { type: "text", text: "Your grant workbooks are ready." };
+    const transcript = [messageWithParts("question", "user", [{ type: "text", text: "Build a grant workbook" }])];
+    transcript.push(messageWithParts("reasoning", "assistant", mixed ? [reasoningPart, summaryPart] : [reasoningPart]));
+    if (!mixed) transcript.push(messageWithParts("summary", "assistant", [summaryPart]));
+    const frame = snapshot(scope, { transcript });
+    await receive(page, frame);
+    await expectResultBeforeReasoning(page, "saved-reasoning");
+    await expect(page.locator(".chat-text-summary")).toHaveCount(1);
+    await expect(page.locator(".chat-text-summary")).toHaveText(summaryPart.text);
+    await expect(page.locator(".chat-text-summary")).toHaveCSS("border-top-width", "1px");
+    await expect(page.locator(".chat-text-summary")).toHaveCSS("padding-left", "16px");
+    await expect(page.locator(".chat-text-summary .astral-reasoning")).toHaveCount(0);
+    await page.locator(".astral-reasoning summary").click();
+    await receive(page, frame);
+    await expect(page.locator(".astral-reasoning")).toHaveAttribute("open", "");
+    await expect(page.locator(".astral-reasoning")).toHaveCount(1);
+    await receive(page, snapshot(scope, { snapshot_id: SNAPSHOT_B, render_revision: 1, transcript,
+      canvas: { target: "canvas", components: [{ ...presentation("invalid", "Invalid"), _presentation: { target: "web", html: "<script>bad</script>", workspace: { export: false, share: false } } }] },
+    }));
+    await expect(page.locator(".astral-reasoning")).toHaveAttribute("open", "");
+    await expectResultBeforeReasoning(page, "saved-reasoning");
+    await page.getByRole("button", { name: "Open this result in full screen" }).click();
+    await expect(page.locator("#astral-fs-canvas .astral-reasoning")).toHaveCount(0);
+    await page.locator("#astral-fs-exit").click();
+    await expectResultBeforeReasoning(page, "saved-reasoning");
+  });
+}
+
+test("text-only reasoning stays visible and earlier turns retain their own disclosure", async ({ page }) => {
+  await installHarness(page);
+  const transcript = [
+    messageWithParts("first-question", "user", [{ type: "text", text: "First question" }]),
+    messageWithParts("first-reasoning", "assistant", [{ type: "components", components: [reasoningPresentation("earlier-reasoning")] }]),
+    messageWithParts("second-question", "user", [{ type: "text", text: "Second question" }]),
+    messageWithParts("second-reasoning", "assistant", [{ type: "components", components: [reasoningPresentation("latest-reasoning")] }]),
+  ];
+  await receive(page, snapshot((await registration(page)).frame, { transcript, canvas: { target: "canvas", components: [] } }));
+  await expect(page.locator(".chat-text-summary")).toHaveCount(0);
+  await expect(page.locator(".astral-reasoning summary")).toHaveCount(2);
+  await expect(page.locator('[data-component-id="latest-reasoning"]')).toBeVisible();
+  expect(await page.locator('[data-component-id="earlier-reasoning"]').evaluate(node =>
+    Boolean(node.compareDocumentPosition(document.querySelectorAll(".astral-user-bubble")[1]) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true);
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator(".astral-reasoning")).toHaveCount(0);
+});
+
+test("live reasoning remains below result and summary through commit and cleanup", async ({ page }) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await page.locator("#astral-input").fill("Create a detailed comparison");
+  await page.locator("#astral-form").evaluate(form => form.requestSubmit());
+  const scope = await page.evaluate(() => window.__socketEvents.findLast(event => event.frame.action === "chat_message").frame);
+  const base = { type: "ui_render", target: "chat", chat_id: CHAT_ID, connection_generation: scope.connection_generation,
+    request_generation: scope.request_generation, base_render_revision: 0, frame_sequence: 1,
+    html: `<div class="dynamic-renderer">${reasoningPresentation("live-reasoning")._presentation.html}</div>` };
+  await receive(page, base);
+  await receive(page, { ...base, target: "canvas", frame_sequence: 2, html: "<p>Live comparison</p>" });
+  await receive(page, { ...base, frame_sequence: 3, html: "<p>The comparison is ready.</p>" });
+  await expectResultBeforeReasoning(page, "live-reasoning");
+  const overlay = page.locator('[data-astral-transient-overlay="chat"]');
+  await expect(overlay.locator(".chat-text-summary")).toHaveCount(1);
+  await expect(overlay.locator(".chat-text-summary")).toHaveText("The comparison is ready.");
+  expect(await overlay.evaluate(node => node.lastElementChild.classList.contains("astral-reasoning-turn"))).toBe(true);
+  await receive(page, operationStatus(scope, OPERATION_A, 0, "completed"));
+  await expect(page.locator('[data-component-id="live-reasoning"]')).toBeVisible();
+  await receive(page, snapshot(scope, { snapshot_id: SNAPSHOT_B, snapshot_purpose: "commit", render_revision: 1,
+    transcript: [messageWithParts("final", "assistant", [
+      { type: "components", components: [reasoningPresentation("saved-reasoning")] }, { type: "text", text: "The comparison is ready." },
+    ])],
+  }));
+  await expect(page.locator('[data-component-id="live-reasoning"]')).toHaveCount(0);
+  await expect(page.locator('[data-astral-transient-overlay="chat"]')).toHaveCount(0);
+  await expectResultBeforeReasoning(page, "saved-reasoning");
+  await page.locator("#astral-newchat-btn").click();
+  await expect(page.locator(".astral-reasoning")).toHaveCount(0);
+});
+
+test("legacy mixed response separates bare reasoning and preserves summary content", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await receive(page, { type: "ui_render", target: "canvas", html: "<p>Legacy result</p>" });
+  await receive(page, { type: "ui_render", target: "chat", html: '<details class="astral-reasoning"><summary>Reasoning</summary><div>Working detail</div></details><p>Result summary</p>' });
+  await expect(page.locator(".chat-text-summary")).toHaveText("Result summary");
+  await expect(page.locator(".astral-reasoning-turn")).toHaveText("ReasoningWorking detail");
+  await expect(page.locator(".chat-text-summary .astral-reasoning")).toHaveCount(0);
+});
+
+
 function operationStatus(scope, operationId, sequence, state, overrides = {}) {
   const terminal = ["completed", "failed", "cancelled", "retryable"].includes(state);
   const isError = ["failed", "cancelled", "retryable"].includes(state);
@@ -441,8 +793,8 @@ test("locator is present before registration and equal hydration replaces atomic
   }));
 
   await page.evaluate(() => {
-    // Poison both surfaces in place. Replacing #astral-canvas wholesale would
-    // take the feed with it, which the shipped shell nests inside it.
+
+
     document.querySelector("#astral-chat")
       .insertAdjacentHTML("afterbegin", '<div id="old-transcript">Old transcript</div>');
     document.querySelector(".astral-card-body").innerHTML = '<div id="old-canvas">Old canvas</div>';
@@ -454,8 +806,7 @@ test("locator is present before registration and equal hydration replaces atomic
   await expect(page.locator("#astral-canvas")).toContainText("ROTE-adapted canvas");
   await expect(page.locator("#astral-canvas #old-canvas")).toHaveCount(0);
 
-  // The bounded legacy acknowledgement may race behind the authoritative
-  // snapshot. It must not resurrect a completed hydration indicator.
+
   await receive(page, {type: "chat_loaded", chat: {id: CHAT_ID}});
   await expect(page.locator("#astral-status")).toHaveText("");
   await expect(page.locator("#astral-status")).toHaveAttribute("aria-busy", "false");
@@ -560,7 +911,7 @@ test("operation status is visible only while active and terminal failures stay s
   const bootstrap = await page.evaluate(() => window.__socketEvents.find((candidate) => (
     candidate.frame.type === "ui_event" && candidate.frame.action === "get_history"
   )).frame);
-  // Startup metadata is protocol-visible but never presented as user work.
+
   await expect(status).toHaveText("");
   await expect(status).toHaveAttribute("aria-busy", "false");
   await receive(page, operationStatus({
@@ -593,13 +944,12 @@ test("operation status is visible only while active and terminal failures stay s
   await expect(status).toHaveText("Working on second operation…");
   await expect(status).toHaveAttribute("aria-busy", "true");
 
-  // Content commit is not a terminal operation and cannot clear progress.
+
   await receive(page, snapshot(scope));
   await expect(status).toHaveText("Working on second operation…");
   await expect(status).toHaveAttribute("aria-busy", "true");
 
-  // Completing the visible operation restores another genuinely active one;
-  // the terminal success label itself is never rendered.
+
   await receive(page, operationStatus(scope, OPERATION_B, 1, "completed"));
   await expect(status).toHaveText("Preparing first operation…");
   await expect(status).toHaveAttribute("aria-busy", "true");
@@ -608,7 +958,7 @@ test("operation status is visible only while active and terminal failures stay s
   await expect(status).toHaveText("Visible terminal failure");
   await expect(status).toHaveAttribute("aria-busy", "false");
 
-  // A late generic chat terminal cannot erase another operation's error.
+
   await receive(page, {
     type: "chat_status",
     status: "done",
@@ -619,12 +969,12 @@ test("operation status is visible only while active and terminal failures stay s
   await expect(status).toHaveText("Visible terminal failure");
   await expect(status).toHaveAttribute("aria-busy", "false");
 
-  // A different success cannot erase the failure notice.
+
   await receive(page, operationStatus(scope, OPERATION_A, 1, "completed"));
   await expect(status).toHaveText("Visible terminal failure");
   await expect(status).toHaveAttribute("aria-busy", "false");
 
-  // A new explicit request owns the line and its success returns it to idle.
+
   await page.locator("#astral-input").fill("Next request");
   await page.locator("#astral-form").evaluate((form) => form.requestSubmit());
   const nextScope = await page.evaluate(() => {
@@ -691,7 +1041,7 @@ test("accepted completion restores a newer unacknowledged local submission", asy
   )).frame);
   await expect(status).toHaveText("Submitting…");
 
-  // A late update from the first operation can temporarily own the line.
+
   await receive(page, operationStatus(firstScope, OPERATION_A, 1, "running", {
     action: "new_chat",
     surface: "operation",
@@ -883,8 +1233,7 @@ test("sequenced transient overlay never mutates committed transcript or canvas",
   await expect(page.locator("#astral-canvas")).not.toContainText("Wrong base");
   await expect(page.locator("#astral-chat")).toContainText("Committed answer");
 
-  // A successful operation terminal may race ahead of the authoritative
-  // snapshot. It settles activity but cannot discard the visible answer.
+
   await receive(page, operationStatus(previewScope, OPERATION_A, 0, "completed"));
   await expect(page.locator("#astral-status")).toHaveText("");
   await expect(page.locator("#astral-status")).toHaveAttribute("aria-busy", "false");
@@ -1079,7 +1428,7 @@ test("new chat clears its multiline draft and attachments while accepted backgro
   await receive(page, { type: "task_started", payload: {
     task_id: OPERATION_A, chat_id: CHAT_ID, title: "Already accepted work",
   } });
-  // Authentication recovery for the same owner must preserve the whole draft.
+
   await receive(page, { type: "auth_required" });
   await page.waitForFunction(() => window.__socketEvents.filter((event) => event.frame.type === "register_ui").length >= 2);
   await expect(page.locator("#astral-input")).toHaveValue(draft);
@@ -1153,7 +1502,7 @@ test("new chat cancels the offline expiry callback without restoring the discard
   await page.clock.install({ time: new Date("2026-09-11T12:00:00Z") });
   await page.clock.pauseAt(new Date("2026-09-11T12:00:01Z"));
   await page.evaluate(() => {
-    window.fetch = () => new Promise(() => {}); // Keep reconnect pending beyond the queue deadline.
+    window.fetch = () => new Promise(() => {});
     window.__sockets.at(-1).close();
   });
   await page.locator("#astral-input").fill("Discarded offline draft");
@@ -1161,8 +1510,8 @@ test("new chat cancels the offline expiry callback without restoring the discard
   await page.getByRole("button", { name: "New chat" }).click();
   await page.clock.runFor(46000);
   await expect(page.locator("#astral-input")).toHaveValue("");
-  // The feed always carries one hidden live card so a render has somewhere to
-  // land; "discarded" means no turn is left showing, not an empty element.
+
+
   await expect(page.locator("#astral-chat .astral-turn:not([hidden])")).toHaveCount(0);
   await expect(page.locator("#astral-status")).not.toContainText("your message was not sent");
   await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
@@ -1330,7 +1679,7 @@ test("owner change erases a draft while same-owner authentication recovery retai
     window.__sessionToken = token;
     window.__sessionSubject = "other-user";
   }, { token: OTHER_TOKEN });
-  // Reconnect obtains the next authenticated owner's identity.
+
   await page.evaluate(() => window.__sockets.at(-1).close());
   await page.waitForFunction(() => window.__socketEvents.some((event) => (
     event.frame.type === "register_ui" && event.frame.token === window.__sessionToken
@@ -1739,7 +2088,7 @@ test("textarea slash discovery selection, Escape and New chat remain usable", as
   await expect(page.locator("#astral-slash-menu")).toHaveClass(/hidden/);
   await page.locator("#astral-input").fill("/help");
   await expect(page.locator("#astral-slash-menu")).not.toHaveClass(/hidden/);
-  // Programmatic activation proves reset, independently of the delayed blur cleanup.
+
   await page.locator("#astral-newchat-btn").evaluate((button) => button.click());
   await expect(page.locator("#astral-input")).toHaveValue("");
   await expect(page.locator("#astral-slash-menu")).toBeEmpty();
@@ -1816,7 +2165,7 @@ test("new chat receives a fresh welcome in the same slots and account change cle
   await page.locator("#welcome-example").click();
   await page.locator("#astral-newchat-btn").click();
   await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml({ title: "A new start" }) });
-  // Deep sends the fresh welcome before assigning the empty chat's identity.
+
   await receive(page, { type: "chat_created", payload: { chat_id: OTHER_CHAT_ID } });
   await expect(page.locator("#astral-start-intro")).toHaveText("A new start");
   await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
@@ -1833,8 +2182,8 @@ test("new chat receives a fresh welcome in the same slots and account change cle
 
 for (const rendering of ["workspace", "legacy"]) {
   test(`mobile New chat retains every welcome slot before tablet re-adaptation (${rendering})`, async ({ page }) => {
-    // These exact HTML frames come from the real ROTE/renderer pipeline; the
-    // Python welcome-container test checks them against the shared source fixture.
+
+
     const frames = JSON.parse(await readFile(resolve(ROOT, "tooling/web-ci/fixtures/welcome-rendering-088.json"), "utf8"));
     await page.setViewportSize({ width: 390, height: 900 });
     await installHarness(page);
@@ -1858,8 +2207,8 @@ for (const rendering of ["workspace", "legacy"]) {
       await expect(page.locator("#astral-input")).toHaveValue("");
     }
     await expectCompleteWelcome();
-    // Both widths use the stacked shell, but ROTE changes mobile -> tablet.
-    // The capability update follows the New chat response under the normal lane.
+
+
     await page.setViewportSize({ width: 694, height: 900 });
     await receive(page, { type: "rote_config", device_profile: { device_type: "tablet" } });
     await receive(page, { type: "ui_update", html: frames.tablet.legacy });
@@ -1877,8 +2226,8 @@ test("late welcome cannot replace work content or repopulate the start slots", a
   await receive(page, { type: "ui_render", target: "canvas", html: "<p>Current work result</p>" });
   await expect(page.locator("body")).toHaveAttribute("data-astral-view", "work");
   await receive(page, { type: "ui_render", target: "canvas", html: welcomeHtml() });
-  // The card carries its own chrome, so the claim is about the workspace's
-  // content: the work result is still there and the welcome did not land.
+
+
   await expect(page.locator("#astral-canvas")).toContainText("Current work result");
   await expect(page.locator("#astral-canvas [data-welcome]")).toHaveCount(0);
   await expect(page.locator('[id^="astral-start-"] [data-welcome]')).toHaveCount(0);

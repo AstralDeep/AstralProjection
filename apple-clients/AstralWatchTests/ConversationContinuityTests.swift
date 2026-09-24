@@ -1,3 +1,7 @@
+// Tests for watch conversation continuity: account-locator independence from endpoint overrides, stored-chat
+// registration across disconnects, semantic-snapshot application with transient overlays, and
+// definitive-clear handling.
+
 import AstralCore
 import XCTest
 

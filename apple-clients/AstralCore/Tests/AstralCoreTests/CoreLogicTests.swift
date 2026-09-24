@@ -1,12 +1,12 @@
-// Feature 051 — PKCE (RFC 7636 test vector), the shared reconnect contract
-// (backoff + bounded queue, FR-005), and lenient frame decoding (FR-003).
+// Tests for PKCE verifier/challenge generation (RFC 7636 vector), the shared WSClient backoff/bounded-queue
+// reconnect contract, JSONValue parsing, and lenient inbound frame decoding.
+
 import XCTest
 
 @testable import AstralCore
 
 final class PKCETests: XCTestCase {
     func testRFC7636AppendixBVector() {
-        // RFC 7636 Appendix B: the canonical S256 example.
         let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
         XCTAssertEqual(
             PKCE.challenge(for: verifier),
@@ -17,7 +17,7 @@ final class PKCETests: XCTestCase {
         let a = PKCE.makeVerifier()
         let b = PKCE.makeVerifier()
         XCTAssertNotEqual(a, b)
-        XCTAssertEqual(a.count, 43)  // 32 octets, base64url, no padding
+        XCTAssertEqual(a.count, 43)
         XCTAssertFalse(a.contains("=") || a.contains("+") || a.contains("/"))
     }
 
@@ -46,10 +46,10 @@ final class ReconnectContractTests: XCTestCase {
         XCTAssertEqual(policy.next(), 4)
         XCTAssertEqual(policy.next(), 8)
         XCTAssertEqual(policy.next(), 16)
-        XCTAssertEqual(policy.next(), 30)  // capped
+        XCTAssertEqual(policy.next(), 30)
         XCTAssertEqual(policy.next(), 30)
         policy.reset()
-        XCTAssertEqual(policy.next(), 1)  // reset on success
+        XCTAssertEqual(policy.next(), 1)
     }
 
     func testBoundedQueueDropsOldestAt64() {
@@ -57,20 +57,17 @@ final class ReconnectContractTests: XCTestCase {
         for i in 0..<64 {
             XCTAssertFalse(queue.append(i))
         }
-        XCTAssertTrue(queue.append(64))  // drop signal
+        XCTAssertTrue(queue.append(64))
         XCTAssertEqual(queue.droppedCount, 1)
         let drained = queue.drainAll()
         XCTAssertEqual(drained.count, 64)
-        XCTAssertEqual(drained.first, 1)  // FIFO, oldest dropped
+        XCTAssertEqual(drained.first, 1)
         XCTAssertEqual(drained.last, 64)
         XCTAssertEqual(queue.count, 0)
     }
 }
 
 final class JSONValueParseTests: XCTestCase {
-    /// The JSONSerialization fast path must keep the Codable route's
-    /// semantics — booleans stay booleans (CFBoolean is an NSNumber), numbers
-    /// stay numbers, and every JSON shape round-trips through `encoded()`.
     func testScalarKindsSurviveParse() throws {
         let json = try JSONValue.parse(
             Data(
@@ -79,8 +76,8 @@ final class JSONValueParseTests: XCTestCase {
         XCTAssertEqual(json["f"], .bool(false))
         XCTAssertEqual(json["one"], .number(1))
         XCTAssertEqual(json["pi"], .number(3.5))
-        XCTAssertEqual(json["zero"], .number(0))  // NOT .bool(false)
-        XCTAssertEqual(json["s"], .string("1"))  // NOT .number(1)
+        XCTAssertEqual(json["zero"], .number(0))
+        XCTAssertEqual(json["s"], .string("1"))
         XCTAssertEqual(json["n"], .null)
     }
 
@@ -89,7 +86,6 @@ final class JSONValueParseTests: XCTestCase {
         XCTAssertEqual(
             nested["a"]?.arrayValue?.first?["x"],
             .array([.number(1), .bool(true), .string("y"), .null]))
-        // Top-level fragments parse (JSONDecoder parity).
         XCTAssertEqual(try JSONValue.parse(Data("[1,2]".utf8)), .array([.number(1), .number(2)]))
         XCTAssertEqual(try JSONValue.parse(Data(#""hi""#.utf8)), .string("hi"))
         XCTAssertEqual(try JSONValue.parse(Data("true".utf8)), .bool(true))
@@ -137,7 +133,7 @@ final class FrameDecodeTests: XCTestCase {
         let frame = try XCTUnwrap(
             InboundFrame.parse(
                 #"{"type":"ui_render","components":[{"type":"text","content":"x"}]}"#))
-        XCTAssertNil(frame.speech)  // absent field ⇒ silent delivery
+        XCTAssertNil(frame.speech)
     }
 
     func testUpsertOpsAndErrorNormalization() throws {
@@ -153,7 +149,6 @@ final class FrameDecodeTests: XCTestCase {
         XCTAssertEqual(upsert.upsertOps[0].component?.message, "done")
         XCTAssertEqual(upsert.upsertOps[1].op, "remove")
 
-        // 044 error normalization: message | payload.message | error
         for text in [
             #"{"type":"error","message":"boom"}"#,
             #"{"type":"error","payload":{"message":"boom"}}"#,

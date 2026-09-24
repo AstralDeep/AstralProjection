@@ -1,31 +1,7 @@
-// Feature 060 T110 — Apple release-evidence producer (iOS + macOS destinations).
-//
-// Drives the SHIPPING AstralDeep app against the exact release-readiness staging
-// endpoint and emits one schema-valid `platform_evidence` report ({ios|macos}.json)
-// plus per-check raw JSON references, mirroring the web producer
-// (tooling/web-ci/tests/release-060.spec.js). Local/CI evidence is diagnostic only —
-// protected CI re-validates every byte (`protected_release_authorization: false`).
-//
-// Environment contract (values reach this runner through xcodebuild
-// `TEST_RUNNER_`-prefixed variables; identity names match the web producer):
-//   ASTRAL_STAGING_URL                 staged candidate base URL; absent => XCTSkip
-//   ASTRAL_RELEASE_EVIDENCE_OUTPUT     absolute path of the platform report JSON
-//   ASTRAL_RELEASE_PLATFORM            "ios" | "macos" (must match this build)
-//   ASTRAL_RELEASE_CANDIDATE_SHA / ASTRAL_RELEASE_ID / ASTRAL_RELEASE_VERSION
-//   ASTRAL_RELEASE_STAGING_FILE        trusted stage-deploy outputs JSON (stage-owned
-//                                      staging identity; endpoint must equal the base URL)
-//   ASTRAL_RELEASE_ARTIFACT_REFERENCE / ASTRAL_RELEASE_ARTIFACT_SHA256
-//     (+ optional ASTRAL_RELEASE_ARTIFACT_NAME, ASTRAL_RELEASE_ARTIFACT_BUILD_IDENTITY)
-//   ASTRAL_RELEASE_USERNAME / ASTRAL_RELEASE_PASSWORD   staging Keycloak identity
-//                                      (pre-provisioned with an LLM configuration)
-//   RUNNER_OS / RUNNER_ARCH / RUNNER_NAME / ASTRAL_RUNNER_IMAGE / ASTRAL_RUNNER_ENVIRONMENT
-//   GITHUB_WORKFLOW / GITHUB_RUN_ID / GITHUB_RUN_ATTEMPT / GITHUB_JOB
-//   ASTRAL_STAGING_AUTHORITY           optional Keycloak authority launch override
-//   ASTRAL_RELEASE_LIFECYCLE_AGENT_ID  optional agent display-name fragment that must
-//                                      appear among the observed lifecycle labels
-//   ASTRAL_STAGING_CAPABILITY_FILE     macOS only: candidate-owned capability map JSON.
-//                                      Missing or malformed records a FAILED
-//                                      macos_personal_agent_host check — never N/A.
+// Drives the shipping app against a staging endpoint and emits a schema-valid platform_evidence report
+// (ios/macos.json) with per-check raw JSON, run by release CI alongside the web producer's
+// release-060.spec.js.
+
 import CryptoKit
 import Foundation
 import XCTest
@@ -84,9 +60,6 @@ private struct EvidenceFailure: Error, CustomStringConvertible {
     var description: String { "\(code): \(message)" }
 }
 
-/// One check's produced facts. `applicabilityReason` wins over `failureCode`;
-/// both nil means the check passed. Measurements survive a failed floor so the
-/// report stays quantitative either way.
 private struct CheckProduction {
     var raw: [String: Any] = [:]
     var measurements: [[String: Any]] = []
@@ -119,7 +92,6 @@ private func isSHA256(_ value: Any?) -> Bool {
     }
 }
 
-/// Validate the secret-free stage identity without rebuilding or overriding it.
 private func validateVoiceRuntime(_ value: Any) throws {
     guard let runtime = value as? [String: Any], Set(runtime.keys) == voiceRuntimeProjectionKeys,
         let profile = runtime["speech_profile"] as? [String: Any],
@@ -162,8 +134,6 @@ private func validateVoiceRuntime(_ value: Any) throws {
     }
 }
 
-/// Pretty sorted-key JSON with a trailing newline, written atomically
-/// (temp + rename); returns the byte digest — the web producer's `atomicJson`.
 @discardableResult
 private func writeCanonicalJSON(_ object: [String: Any], to path: String) throws -> String {
     let data = try JSONSerialization.data(
@@ -184,7 +154,6 @@ private func writeCanonicalJSON(_ object: [String: Any], to path: String) throws
     return sha256Hex(bytes)
 }
 
-/// Ceil-rank percentile over a sorted sample (sibling continuity convention).
 private func percentile(_ fraction: Double, sorted: [Double]) -> Double {
     guard !sorted.isEmpty else { return 0 }
     let rank = max(0, min(sorted.count - 1, Int(ceil(fraction * Double(sorted.count))) - 1))
@@ -227,8 +196,6 @@ private func normalizedBaseURL(_ raw: String) throws -> String {
     return trimmed
 }
 
-/// Reads the full environment contract once, owns the raw-evidence directory,
-/// and assembles check records plus the final `platform_evidence` report.
 private final class EvidenceRecorder {
     let baseURL: String
     let platform: String
@@ -446,8 +413,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         failedCheckIds = []
         var checks: [[String: Any]] = []
 
-        // apple_first_login_llm runs first: its 30 fixture-driven launches are
-        // independent of the live staging session and must not disturb it.
         checks.append(
             runCheck("apple_first_login_llm", recorder: recorder) {
                 try self.runFirstLoginTrials()
@@ -521,8 +486,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         }
     }
 
-    // MARK: - Check harness
-
     private func runCheck(
         _ id: String,
         recorder: EvidenceRecorder,
@@ -555,9 +518,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
             return recorder.checkRecord(id: id, production: production, startedAt: started)
         }
     }
-
-    // MARK: - apple_first_login_llm (30 fixture trials; helpers duplicated from
-    // LLMFirstLoginUITests by design — that file is owned by T072 and not edited)
 
     private func runFirstLoginTrials() throws -> CheckProduction {
         var acknowledgementMs: [Double] = []
@@ -596,8 +556,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
             let acknowledgementLatency = acknowledgedAt.timeIntervalSince(tappedAt) * 1000
             acknowledgementMs.append(acknowledgementLatency)
 
-            // Responsiveness while the operation is active: one accessibility
-            // round trip through the app's main run loop must stay prompt.
             let probeStart = Date()
             _ = apiKey.isEnabled
             responsiveMs.append(Date().timeIntervalSince(probeStart) * 1000)
@@ -651,8 +609,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         }
         return production
     }
-
-    // MARK: - sign_in (live Keycloak, ASWebAuthenticationSession)
 
     private func launchLiveApp(recorder: EvidenceRecorder) {
         if app == nil { app = XCUIApplication() }
@@ -738,8 +694,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         #endif
     }
 
-    // MARK: - rendered_chat
-
     private func userPromptElement() -> XCUIElement {
         app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "Roll exactly six")
@@ -779,8 +733,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         ]
         return production
     }
-
-    // MARK: - reconnect_resume (>= 20 relaunch trials with counters)
 
     private func runResumeTrials() throws -> CheckProduction {
         var latenciesMs: [Double] = []
@@ -828,8 +780,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         }
         return production
     }
-
-    // MARK: - agent_lifecycle (surfaced lifecycle labels, no reload)
 
     private func openSettingsMenuItem(_ label: String) throws {
         let settings = app.buttons["Settings"]
@@ -888,8 +838,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         return production
     }
 
-    // MARK: - personal_agent (five-phase Analyze-gated authoring, native SDUI surface)
-
     private func firstEmptyOrType(_ element: XCUIElement, _ text: String) {
         let current = (element.value as? String) ?? ""
         if current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -920,7 +868,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
             "Greet only its owner using a deterministic local tool and no network access.")
         app.buttons["param-action-chrome_author_start"].tap()
 
-        // Specify — assistant-drafted on the owner's LLM; keep or seed the artifact.
         let specification = app.textViews["param-field-specification"]
         guard specification.waitForExistence(timeout: 180) else {
             throw EvidenceFailure(
@@ -931,7 +878,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
             "Greet the owner on request. Use one local greet tool and return a short plain-text greeting.")
         app.buttons["param-action-chrome_author_advance"].tap()
 
-        // Clarify — the HARD GATE: every question must carry an answer.
         let answers = app.textViews.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", "param-field-q"))
         guard waitUntil(timeout: 180, condition: { answers.count > 0 }) else {
@@ -945,7 +891,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         }
         app.buttons["param-action-chrome_author_clarify"].tap()
 
-        // Plan
         let tools = app.textViews["param-field-tools"]
         guard tools.waitForExistence(timeout: 180) else {
             throw EvidenceFailure(
@@ -955,7 +900,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         firstEmptyOrType(app.textFields["param-field-scopes"], "tools:read")
         app.buttons["param-action-chrome_author_advance"].tap()
 
-        // Tasks
         let tasks = app.textViews["param-field-tasks"]
         guard tasks.waitForExistence(timeout: 180) else {
             throw EvidenceFailure(
@@ -964,7 +908,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         firstEmptyOrType(tasks, "Validate the request\nCall greet once\nReturn the greeting")
         app.buttons["param-action-chrome_author_advance"].tap()
 
-        // Analyze — a violation produces no code; only an explicit pass counts.
         let analyze = app.buttons["Run Analyze"]
         guard analyze.waitForExistence(timeout: 180) else {
             throw EvidenceFailure(
@@ -992,8 +935,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         ]
         return production
     }
-
-    // MARK: - accessibility_semantics
 
     private func runAccessibilityInspection() throws -> CheckProduction {
         let started = Date()
@@ -1050,8 +991,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
         }
         return production
     }
-
-    // MARK: - macos_personal_agent_host (branched ONLY from the recorded candidate capability)
 
     private func macOSPersonalAgentHostProduction(
         recorder: EvidenceRecorder,
@@ -1110,9 +1049,6 @@ final class ReleaseEvidenceUITests: XCTestCase {
             return production
         }
 
-        // supported == true: the exercised macOS artifact must complete the
-        // structured v2 registration and the server must acknowledge with
-        // agent_host_registered; anything unobserved is a host FAILURE.
         let versions = versionsRaw.compactMap { $0 as? Int }
         guard versions.contains(2), capability["source_feature"] as? String == "059" else {
             production.failureCode = "capability_map_malformed"

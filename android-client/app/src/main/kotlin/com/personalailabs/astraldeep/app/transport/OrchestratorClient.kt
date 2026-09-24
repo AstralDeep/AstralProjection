@@ -1,3 +1,7 @@
+// The reconnecting WebSocket transport: connects to /ws, sends register_ui first on every connection, decodes
+// frames via Wire, and queues outbound sends while offline for replay on reconnect. Used by MainActivity and
+// AppViewModel.
+
 package com.personalailabs.astraldeep.app.transport
 
 import android.util.Log
@@ -45,11 +49,6 @@ enum class ConnectionState { Connecting, Connected, Disconnected, AuthRequired }
 /** The fixed purpose bound to one UUID4 request generation. */
 enum class ConversationRequestPurpose { HYDRATION, COMMIT }
 
-/**
- * Client-side equality fence opened before a registration/load/turn is sent.
- * A connection-only binding has null chat/request/purpose and is used when no
- * account-scoped resume locator exists.
- */
 data class ConversationGenerationBinding(
     val connectionGeneration: String,
     val chatId: String?,
@@ -57,17 +56,11 @@ data class ConversationGenerationBinding(
     val purpose: ConversationRequestPurpose?,
 )
 
-/** Exact registration bytes paired with the fence that must be installed first. */
 internal data class RegistrationAttempt(
     val binding: ConversationGenerationBinding,
     val frame: String,
 )
 
-/**
- * Client-owned identity for one outbound attempt. The server may replace the
- * local `submitting` projection only after it durably accepts this exact
- * request generation, while transport queueing preserves both UUIDs verbatim.
- */
 data class LocalSubmission(
     val action: String,
     val chatId: String?,
@@ -75,13 +68,11 @@ data class LocalSubmission(
     val requestGeneration: String,
 )
 
-/** One queued submission that could not be retained or safely replayed. */
 data class QueuedSubmissionFailure(
     val submission: LocalSubmission,
     val reason: String,
 )
 
-/** Pure exponential backoff schedule (base·2^(attempt-1), capped). Unit-tested. */
 fun backoffDelayMs(
     attempt: Int,
     baseMs: Long = 1_000L,
@@ -93,16 +84,6 @@ fun backoffDelayMs(
     return if (raw <= 0L || raw > maxMs) maxMs else raw
 }
 
-/**
- * The WebSocket transport: connects to the orchestrator's `/ws`, sends
- * `register_ui` on open, decodes inbound frames via [Wire] into [Inbound], and
- * exposes them as a reconnecting cold [Flow]. [state] reflects the live
- * connection; reconnect uses [backoffDelayMs] (reset on each successful open).
- *
- * Outbound resilience (FR-012): frames sent while disconnected are queued (bounded)
- * and flushed on the next open, so user input is not lost across a blip; an
- * already-sent frame leaves the queue, so a reconnect does not resend it.
- */
 class OrchestratorClient(
     private val url: String,
     private val client: OkHttpClient = defaultClient(),
@@ -122,7 +103,6 @@ class OrchestratorClient(
                 }.build()
         }
 
-    /** An outbound frame queued while offline (its `action` kept for the drop notice). */
     private data class Queued(
         val action: String,
         val frame: String,
@@ -130,7 +110,6 @@ class OrchestratorClient(
         val request: ConversationRequest? = null,
     )
 
-    /** Request identity can be queued before the next connection generation exists. */
     private data class ConversationRequest(
         val chatId: String?,
         val requestGeneration: String,
@@ -155,13 +134,10 @@ class OrchestratorClient(
             onBufferOverflow = BufferOverflow.DROP_OLDEST,
         )
 
-    /** The `action` of each frame dropped from the full offline queue — overflow is never silent (T014). */
     val dropped: SharedFlow<String> = _dropped.asSharedFlow()
 
-    /** Identity-bearing failures let the UI settle the exact local projection. */
     val queuedFailures: SharedFlow<QueuedSubmissionFailure> = _queuedFailures.asSharedFlow()
 
-    /** Explicit logout/account replacement discards all unsent owner frames. */
     fun clearOwnerSession() {
         synchronized(pending) {
             ownerEpoch += 1
@@ -175,12 +151,6 @@ class OrchestratorClient(
         }
     }
 
-    /**
-     * Reconnecting inbound stream. Collect this for the life of the session.
-     * [sessionId] is a provider, read at each (re)connect, so `register_ui`
-     * always carries the chat active NOW — not the one open when the session
-     * started (cross-device continuity, audit item 12).
-     */
     fun stream(
         token: String,
         device: DeviceCapabilities,
@@ -261,15 +231,9 @@ class OrchestratorClient(
                                         webSocket.cancel()
                                         return@synchronized
                                     }
-                                    // register_ui MUST be the first frame on the socket:
-                                    // only after it is enqueued may the offline queue flush
-                                    // and Connected-reactive sends (the reconnect load_chat
-                                    // refresh) flow, or the server would refuse them as
-                                    // unregistered.
+                                    // register_ui must be the first frame or the server refuses the rest
                                     val registration = createRegistrationAttempt(token, device, sessionId())
                                     connectionGeneration = registration.binding.connectionGeneration
-                                    // Install the equality fence before register_ui can produce
-                                    // a hydration response on this socket.
                                     onGeneration(registration.binding)
                                     webSocket.send(registration.frame)
                                     open = true
@@ -344,10 +308,6 @@ class OrchestratorClient(
         flushPending(onGeneration, onQueuedSubmission, webSocket::send)
     }
 
-    /**
-     * Re-install a queued frame's request and local-operation fences before
-     * handing its exact bytes to the newly opened socket.
-     */
     private fun flushPending(
         onGeneration: (ConversationGenerationBinding) -> Unit,
         onQueuedSubmission: (LocalSubmission) -> Unit,
@@ -376,9 +336,7 @@ class OrchestratorClient(
         val s = socket
         if (open && s != null) {
             request?.let { bindRequest(it, onGeneration) }
-            // OkHttp returns false only when the frame was not accepted into
-            // its outbound queue, so retaining it here cannot duplicate an
-            // accepted send and closes the open/close race without data loss.
+            // OkHttp send() false = never enqueued; safe to retry without dupes
             if (s.send(frame)) return
         }
         if (!validQueuedIdentity(frame, submission)) {
@@ -411,8 +369,7 @@ class OrchestratorClient(
         onSubmission: (LocalSubmission) -> Unit = {},
     ): LocalSubmission {
         val submission = newSubmission("chat_message", chatId)
-        // Install the local-only projection before queueing or socket I/O. A
-        // fast accepted frame must never race ahead of its correlation map.
+        // Register the submission before any I/O — a fast reply must find it
         onSubmission(submission)
         val request = conversationRequest(submission, ConversationRequestPurpose.COMMIT)
         enqueueOrSend(
@@ -431,13 +388,6 @@ class OrchestratorClient(
         return submission
     }
 
-    /**
-     * Submit one proof-bearing final ASR transcript through the ordinary chat
-     * dispatcher. Unlike typed input this is deliberately never placed in the
-     * generic offline queue: the voice controller owns exactly one bounded,
-     * unacknowledged final and replays those same immutable identifiers only
-     * after a fresh UI binding is installed.
-     */
     fun sendVoiceTranscript(
         transcript: VoiceTranscript,
         expectedConnectionGeneration: String,
@@ -461,10 +411,6 @@ class OrchestratorClient(
         return currentSocket.send(frame)
     }
 
-    /**
-     * Report a local render observation only on its still-current UI socket.
-     * Playout evidence is intentionally not queued or replayed after reconnect.
-     */
     fun sendVoicePlayoutEvent(value: VoicePlayoutEvent): Boolean {
         val currentSocket = socket
         if (
@@ -477,11 +423,6 @@ class OrchestratorClient(
         return currentSocket.send(frame)
     }
 
-    /**
-     * Create the initial chat for an explicit voice tap with the strict C1
-     * correlation envelope. This handshake is live-only and never enters the
-     * generic offline message queue.
-     */
     fun createChatForVoice(): LocalSubmission? {
         val currentSocket = socket
         val currentGeneration = connectionGeneration
@@ -496,10 +437,8 @@ class OrchestratorClient(
         return submission.takeIf { currentSocket.send(frame) }
     }
 
-    /** Current registered UI generation, exposed only for voice equality fencing. */
     fun currentConnectionGeneration(): String? = connectionGeneration.takeIf { open }
 
-    /** Current component decisions must never enter the generic reconnect queue. */
     internal fun sendCurrentEvent(
         action: String,
         sessionId: String,
@@ -526,7 +465,6 @@ class OrchestratorClient(
                     submissionId = submission.submissionId,
                 )
             if (!validQueuedIdentity(frame, submission)) return@synchronized false
-            // Preserve normal local-operation registration before a fast server response.
             onSubmission(submission)
             if (!open || socket !== currentSocket || connectionGeneration != generation || ownerEpoch != epoch ||
                 !isCurrent() || !currentSocket.send(frame)
@@ -537,7 +475,6 @@ class OrchestratorClient(
             true
         }
 
-    /** Owner surfaces and note commands are current-only; even failed writes never join replay. */
     internal fun sendCurrentSurfaceEvent(
         surface: String,
         action: String,
@@ -578,8 +515,6 @@ class OrchestratorClient(
     ): LocalSubmission {
         val payloadChat = (payload["chat_id"] as? JsonPrimitive)?.contentOrNull
         val submission = newSubmission(action, payloadChat ?: sessionId)
-        // See sendChat: local acknowledgement is synchronous and precedes
-        // both the offline queue and any live WebSocket send.
         onSubmission(submission)
         if (isGuidanceNoteAction(action) ||
             action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
@@ -610,10 +545,6 @@ class OrchestratorClient(
         return submission
     }
 
-    /**
-     * Build one connection attempt. Production calls this immediately inside
-     * `onOpen`; tests use it to prove locator/generation registration bytes.
-     */
     internal fun createRegistrationAttempt(
         token: String,
         device: DeviceCapabilities,
@@ -646,7 +577,6 @@ class OrchestratorClient(
     @Volatile
     private var generationObserver: (ConversationGenerationBinding) -> Unit = {}
 
-    /** Install the observer used by sends that happen outside the stream call stack. */
     internal fun observeConversationGenerations(observer: (ConversationGenerationBinding) -> Unit) {
         generationObserver = observer
     }
@@ -699,7 +629,6 @@ class OrchestratorClient(
         return value
     }
 
-    /** Validate the replay metadata against the exact serialized UI event. */
     internal fun validQueuedIdentity(
         frame: String,
         submission: LocalSubmission,
@@ -736,7 +665,6 @@ class OrchestratorClient(
             (submission.chatId == null || canonicalUuid4(submission.chatId) != null)
     }
 
-    /** Deterministic reconnect seam used by JVM tests without a real socket. */
     internal fun replayPendingForTest(
         connectionGeneration: String,
         onGeneration: (ConversationGenerationBinding) -> Unit,
@@ -748,16 +676,13 @@ class OrchestratorClient(
         flushPending(onGeneration, onQueuedSubmission, send)
     }
 
-    /** Install a deterministic open socket for the send-failure race test. */
     internal fun installOpenSocketForTest(webSocket: WebSocket) {
         socket = webSocket
         open = true
     }
 
-    /** The actions currently queued offline — a test seam to assert what was (not) sent. */
     internal fun pendingActions(): List<String> = synchronized(pending) { pending.map { it.action } }
 
-    /** Raw queued frames for protocol tests; never exposed by the shipping API. */
     internal fun pendingFrames(): List<String> = synchronized(pending) { pending.map { it.frame } }
 
     companion object {
@@ -774,7 +699,7 @@ class OrchestratorClient(
         private fun defaultClient(): OkHttpClient =
             OkHttpClient.Builder()
                 .pingInterval(20, TimeUnit.SECONDS)
-                .readTimeout(0, TimeUnit.MILLISECONDS) // streaming socket
+                .readTimeout(0, TimeUnit.MILLISECONDS)
                 .build()
     }
 }

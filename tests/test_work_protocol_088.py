@@ -1,10 +1,8 @@
-"""Canonical Work fixtures bind additive negotiated presentation contracts.
-
-``work_read_088`` is the read-only surface; feature 088 T043/T044 add
-``work_save_088`` (the one closed non-navigation Work action),
-``recurring_work_088`` and ``saved_results_088``. Every fixture frame is the
-exact output of its shared builder and every new action is manifested once.
+"""Tests binding the Work fixtures (backend/rote/work.py,
+src/astralprojection/chrome/work.py) to their shared builders: exact frame shapes,
+save-command bodies, recurring-work outcomes, and which surfaces are menu-reachable.
 """
+
 import json
 from pathlib import Path
 
@@ -25,10 +23,6 @@ BUILDERS = {
     "saved_results_088": ("saved_results_v1", "saved_results", build_saved_results_view),
 }
 NEW_ACTIONS = {SAVE_ACTION, "chrome_job_stop"}
-# 132 (T037 guidance) + chrome_work_result_save + chrome_job_stop.
-# 136 = 134 + the two closed feature-088 T048 Connections actions.
-# 138 = 136 + the two feature-089 TypeSafe credential actions
-# (chrome_typesafe_save, chrome_typesafe_clear).
 ACTION_COUNT = 138
 
 
@@ -62,7 +56,6 @@ def test_work_contract_matches_actual_shared_frames_and_navigation():
         assert frame["region"] == "modal" and frame["mode"] == "replace"
         assert frame["admin_only"] is False
         assert validate_work_components(frame["components"]) == frame["components"]
-        # The read-only golden is untouched by T043: no Save action rides it.
         assert SAVE_ACTION not in json.dumps(frame)
     model = menu_model_dict(work_enabled=True)
     projected = project_watch_menu_model(model)
@@ -171,8 +164,6 @@ def test_recurring_fixture_covers_terminal_stop_unknown_allowance_and_every_outc
 
 
 def test_new_088_surfaces_are_not_yet_menu_destinations():
-    # ui.md's "Saved results"/"Recurring work" destinations ride menu_model.py (outside
-    # these builders); until that lands no client is offered an unregistered entry.
     model = menu_model_dict(work_enabled=True, export_enabled=True)
     encoded = json.dumps(model)
     assert "saved_results" not in encoded and "recurring" not in encoded

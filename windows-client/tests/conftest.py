@@ -1,9 +1,7 @@
-"""Test bootstrap — path setup + (optional) headless Qt.
-
-The Qt import is guarded so pure-Python tests (the codegen tools, phi_gate,
-audit_log) can run without PySide6 installed. Tests that actually need Qt use
-the ``qapp`` fixture, which skips gracefully when PySide6 is unavailable.
+"""Pytest bootstrap for the Windows client suite: fixes sys.path and provides the qapp
+fixture, a headless QApplication that skips gracefully when PySide6 is unavailable.
 """
+
 import os
 import sys
 
@@ -15,7 +13,7 @@ import pytest  # noqa: E402
 try:
     from PySide6.QtWidgets import QApplication  # noqa: E402
     _HAS_QT = True
-except Exception:  # noqa: BLE001 — Qt is optional for non-renderer tests
+except Exception:  # noqa: BLE001
     QApplication = None  # type: ignore[assignment]
     _HAS_QT = False
 

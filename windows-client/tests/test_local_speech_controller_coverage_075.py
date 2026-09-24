@@ -1,4 +1,7 @@
-"""Focused failure-path coverage for the Windows client-local speech controller."""
+"""Tests for astral_client/voice.py: focused failure-path coverage for the local speech
+controller — activation fencing, recognition and playout failure handling, and local
+session/chat update rejection.
+"""
 
 from __future__ import annotations
 

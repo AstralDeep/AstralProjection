@@ -1,3 +1,6 @@
+// Tests for AppViewModel and ConversationResumeStore: the durable chat locator surviving process recreation,
+// and the reduce() continuity fence across socket loss and snapshot replay.
+
 package com.personalailabs.astraldeep.app
 
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore
@@ -39,7 +42,6 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Spec 060 T048/T054 — Android's durable locator and atomic continuity reducer. */
 class ConversationContinuityTest {
     private val chatId = "11111111-1111-4111-8111-111111111111"
     private val otherChatId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
@@ -78,7 +80,6 @@ class ConversationContinuityTest {
         assertFalse(raw.contains("user-17"))
         assertFalse(raw.contains("id.example"))
 
-        // A new Store instance represents Android process recreation.
         val recreated = ConversationResumeStore(storage) { now.plusSeconds(1) }
         assertEquals(chatId, recreated.load(account)?.chatId)
         assertNull(recreated.load(AccountIdentity(account.issuer, "other-user")))
@@ -137,7 +138,6 @@ class ConversationContinuityTest {
         val storage = MemoryStorage()
         val store = ConversationResumeStore(storage) { now }
         assertTrue(store.save(account, chatId))
-        // Socket loss, process death, timeouts, and provider failures do not call clear.
         assertEquals(chatId, ConversationResumeStore(storage) { now }.load(account)?.chatId)
     }
 
@@ -284,8 +284,6 @@ class ConversationContinuityTest {
                 commitBinding(),
             )
 
-        // Foreground work already has its locally opened request fence. The
-        // server intentionally sends its snapshot without a server-work prelude.
         val applied = vm.reduce(old, snapshot(4UL, "commit", request = commitRequest))
         assertEquals("The result is 21.", applied.turns.single().text)
         assertEquals("new", applied.canvas.single().id)

@@ -1,8 +1,6 @@
-"""Actual frozen Windows candidate smoke tests (T059).
-
-The source-contract test runs everywhere. Artifact tests require the reusable
-Windows candidate job to set ``ASTRAL_WINDOWS_EXE``; the connected clean-window
-check additionally uses its short-lived staging access token.
+"""Tests for the frozen Windows candidate exe: profile/validation resolution before Qt
+import, the packaged speech-runtime allowlist, the frozen helper's ready/shutdown
+pipe smoke, and a rendered chat round trip against one profile.
 """
 
 from __future__ import annotations
@@ -56,8 +54,6 @@ def _clean_env(tmp_path: Path) -> dict[str, str]:
 
 
 def _clear_native_windows_settings() -> None:
-    """Give each GUI smoke the same absent-HKCU starting state as a new user."""
-
     if sys.platform != "win32":
         return
     result = subprocess.run(
@@ -304,18 +300,8 @@ def test_fresh_hkcu_connected_launch_has_no_configure_dialog_and_terminates(tmp_
     try:
         user32 = ctypes.windll.user32
 
+        # Popen's pid is the bootloader; the Qt window is a child
         def _owned_pids() -> set[int]:
-            """Every PID this launch owns, not just the one we spawned.
-
-            ``AstralDeep.exe`` is packaged ONEFILE (``AstralDeep.spec`` passes
-            ``a.binaries`` inline and has no ``COLLECT``), so the process we
-            Popen is PyInstaller's bootloader: it unpacks to a temp dir and
-            re-executes the real application as a CHILD. The Qt window therefore
-            belongs to a descendant PID, and matching only ``process.pid`` found
-            no windows at all — which is exactly how this test failed the first
-            time it was ever executed. Recomputed each poll because the child
-            does not exist yet on the first pass.
-            """
             pids = {process.pid}
             try:
                 import psutil
@@ -325,8 +311,6 @@ def test_fresh_hkcu_connected_launch_has_no_configure_dialog_and_terminates(tmp_
                     for child in psutil.Process(process.pid).children(recursive=True)
                 )
             except Exception:
-                # Never let inspection failure masquerade as a missing window:
-                # the assertion below still fails honestly on the root pid.
                 pass
             return pids
 
@@ -360,9 +344,6 @@ def test_fresh_hkcu_connected_launch_has_no_configure_dialog_and_terminates(tmp_
         assert "AstralDeep — Windows" in titles
         assert all("Configure AstralDeep" not in title for title in titles)
     finally:
-        # Same onefile consequence: terminating the bootloader does not
-        # necessarily take the extracted child with it, and a surviving GUI
-        # process would outlive the job. Stop descendants first, then the root.
         try:
             import psutil
 

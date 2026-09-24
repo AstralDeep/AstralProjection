@@ -1,11 +1,8 @@
-"""Tests for the push-streaming consumer (``astral_client.streaming``).
-
-Pure logic — no Qt/PySide6 required, so these run in the lean test env. They
-verify the structured (non-HTML) rendering, the ``session_id`` filter, monotonic
-``seq`` dedupe, terminal final/forget, error rendering, and the legacy poll
-fallback — i.e. the behaviour that makes live tool output appear in the native
-canvas in place.
+"""Tests for astral_client/streaming.py: structured (non-html) stream-frame rendering,
+session_id filtering, monotonic seq dedupe, terminal final/forget, error rendering,
+and the legacy poll-frame fallback.
 """
+
 from astral_client.streaming import (
     stream_error_ops,
     stream_frame_to_ops,
@@ -49,7 +46,6 @@ def test_renders_structured_components_not_html():
         _frame(html="<b>web only</b>", components=[{"type": "text", "content": "native"}]),
         active_chat=None, seq_state={},
     )
-    # The native client must use `components`, never the web `html`.
     assert ops[0]["component"] == {"type": "text", "content": "native"}
 
 
@@ -102,7 +98,7 @@ def test_terminal_with_payload_renders_then_forgets_stream():
         active_chat=None, seq_state=seq,
     )
     assert ops[0]["component"]["content"] == "final"
-    assert "s1" not in seq  # forgotten
+    assert "s1" not in seq
 
 
 def test_bare_terminal_frame_yields_no_ops_but_forgets():
@@ -140,5 +136,4 @@ def test_stream_error_control_push_shape_targets_node():
 
 
 def test_stream_error_control_without_node_is_empty():
-    # No stream_id/tool_name -> caller surfaces this as a status line instead.
     assert stream_error_ops({"type": "stream_error", "payload": {"code": "params_invalid", "message": "bad"}}) == []

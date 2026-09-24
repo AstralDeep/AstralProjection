@@ -1,9 +1,6 @@
-"""Feature 065 canonical C0-C6 journey through the real Windows reducers.
-
-This is a deterministic offscreen/native contract journey.  It exercises the
-shipping Qt widget, controller, transport serializers, and frozen-package
-inputs while deliberately making no claim about Windows audio hardware from a
-macOS or hosted test runner.
+"""Tests for astral_client/voice.py: the canonical fixture journey through composer
+rendering, chat binding, ack/rejection, language policy, and session teardown, run
+offscreen against the real reducers.
 """
 
 from __future__ import annotations
@@ -76,8 +73,6 @@ def test_feature_075_local_fixture_is_available_to_the_windows_consumer() -> Non
 
 
 class _FixtureDateTime(datetime):
-    """Hold expiry-sensitive canonical vectors at their documented instant."""
-
     @classmethod
     def now(cls, tz=None):
         value = cls(2026, 7, 31, 12, 0, tzinfo=timezone.utc)

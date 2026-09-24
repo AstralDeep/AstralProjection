@@ -1,9 +1,6 @@
-"""Feature 089 (T039): the fallback ladders keep the data, not just the topic.
-
-The point of a ladder is that a target which cannot draw a gauge still tells
-the user the number. A substitution that produced "Humidity" with no reading
-would be a worse answer than the unsupported placeholder it replaced, so every
-test here checks the values survive the step down.
+"""Tests for the fallback ladders in backend/rote/fallback.py: every ladder terminates
+in text, and each step down (gauge, stat_group, pipeline_stepper, donut, radar,
+action_group) keeps the underlying data and component identity.
 """
 
 from __future__ import annotations
@@ -33,9 +30,6 @@ def _degrade(component: dict, supported: set) -> dict:
     return ComponentAdapter._degrade_unsupported(component, supported)
 
 
-# -- the ladders themselves ----------------------------------------------
-
-
 @pytest.mark.parametrize(
     "wire_type,expected",
     [
@@ -61,9 +55,6 @@ def test_a_supporting_target_keeps_the_type(wire_type: str) -> None:
     assert fallback.first_supported(wire_type, {wire_type}) == wire_type
 
 
-# -- explicit field mappings ---------------------------------------------
-
-
 def test_gauge_becomes_a_progress_bar_with_its_value() -> None:
     out = _degrade(
         {"type": "gauge", "label": "Humidity", "value": 0.62, "display_value": "62%"},
@@ -72,8 +63,6 @@ def test_gauge_becomes_a_progress_bar_with_its_value() -> None:
     assert out["type"] == "progress"
     assert out["value"] == 0.62
     assert "Humidity" in out["label"] and "62%" in out["label"]
-    # The reading is already in the label; showing a second percentage would
-    # contradict it whenever display_value is not a percentage.
     assert out["show_percentage"] is False
 
 
@@ -218,9 +207,6 @@ def test_action_group_becomes_a_container_of_buttons() -> None:
     assert out["content"][0]["action"] == "save_result"
 
 
-# -- the text terminal ----------------------------------------------------
-
-
 @pytest.mark.parametrize(
     "component,expected_fragments",
     [
@@ -259,7 +245,6 @@ def test_action_group_becomes_a_container_of_buttons() -> None:
 def test_a_text_only_target_still_gets_the_numbers(
     component: dict, expected_fragments: list
 ) -> None:
-    """The watch and voice case. An empty text node would lose the answer."""
     out = _degrade(component, TEXT_ONLY)
     assert out["type"] == "text"
     for fragment in expected_fragments:
@@ -282,12 +267,8 @@ def test_no_new_type_ever_degrades_to_an_empty_node(wire_type: str) -> None:
     assert out["content"].strip() != ""
 
 
-# -- identity survives ----------------------------------------------------
-
-
 @pytest.mark.parametrize("wire_type", NEW_TYPES)
 def test_component_identity_survives_substitution(wire_type: str) -> None:
-    """The designer's morph anchors depend on the id outliving the swap."""
     components = {
         "gauge": {"type": "gauge", "value": 0.5},
         "stat_group": {"type": "stat_group", "items": []},

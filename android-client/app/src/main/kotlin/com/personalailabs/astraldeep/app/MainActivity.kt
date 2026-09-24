@@ -1,3 +1,6 @@
+// The sign-in Activity and root Compose host: resumes cached sessions via AuthAttemptFence, silently
+// refreshes tokens through OidcAuth/ServerSession, and hosts AdaptiveShell once connected.
+
 package com.personalailabs.astraldeep.app
 
 import android.content.Intent
@@ -235,13 +238,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         workspaceActions.invalidateStale()
         componentActions.invalidateStale()
-        // Resume a cached session. Per the sign-in-once-a-year policy: if credentials
-        // are found on the device, go straight to the home screen — show it right away
-        // with the cached access token, then refresh silently and PERSIST the (rotated)
-        // refresh token so the session survives future cold starts. A DEFINITIVE
-        // refresh rejection routes to the sign-in screen with an explanation, never a
-        // dead app (T016); a transient failure (offline, IdP briefly down) keeps the
-        // cached token so a valid year-long session is never kicked out offline.
         val initial = authFence.capture()
         lifecycleScope.launch(Dispatchers.IO) {
             try {
@@ -272,8 +268,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: AppViewModel =
                 viewModel(factory = AppViewModel.factory(client, rest, conversationResumeStore, voiceController))
-            // Collect once at the top so the theme can restyle live (US5): the palette
-            // drives AstralTheme, and recomposition repaints the whole tree.
             val uiState by vm.state.collectAsStateWithLifecycle()
             AstralTheme(palette = uiState.themePalette) {
                 val renderer =
@@ -314,9 +308,7 @@ class MainActivity : ComponentActivity() {
                                 ),
                         )
                     }
-                    // Mid-session token expiry: silently refresh and reconnect; if the
-                    // refresh fails, drop to the sign-in screen WITH an explanation
-                    // (FR-012/T016) — never a silent dead session.
+                    // Refresh failure must reach sign-in with an explanation, never fail silent
                     LaunchedEffect(uiState.connection) {
                         if (uiState.connection == ConnectionState.AuthRequired) {
                             val ticket = authFence.capture()
@@ -410,7 +402,7 @@ class MainActivity : ComponentActivity() {
         pendingSignIn = null
         lifecycleScope.launch {
             try {
-                // A failed HTTPS capability probe never authorizes a legacy fallback.
+                // A failed HTTPS probe never authorizes a legacy fallback
                 val transport = serverTransport ?: throw ServerSessionException(ServerSessionException.Reason.UNAVAILABLE)
                 val selected = withContext(Dispatchers.IO) { transport.probe() }
                 ensureActive()
@@ -442,12 +434,6 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    /**
-     * Sign out (T019): capture the session's tokens, clear local state immediately
-     * (the sign-in screen never waits on the network), then best-effort server-side
-     * revocation — the backend `/api/auth/logout` first, direct Keycloak logout as
-     * the fallback — so the refresh token dies even when the backend is down.
-     */
     private fun signOut(vm: AppViewModel) {
         val custodyMode = authFence.currentMode() == AuthAttemptFence.Mode.SERVER
         authFence.retire()
@@ -456,11 +442,7 @@ class MainActivity : ComponentActivity() {
         workspaceActions.clear()
         componentActions.clear()
         voiceController.logout()
-        // Clear the LOCAL session SYNCHRONOUSLY on the main thread first, so
-        // sign-out is durable even if the Activity is destroyed an instant later.
-        // (Doing the clear inside a cancellable lifecycleScope coroutine risked
-        // cancellation before store.clear() ran → the user silently still signed
-        // in on the next cold start.) Capture the refresh token BEFORE clearing.
+        // Clear session synchronously first; async clear risked a stuck sign-in
         val st = runCatching { store.load() }.getOrNull()
         val access = authToken.value ?: st?.accessToken
         val refresh = st?.refreshToken
@@ -492,8 +474,6 @@ class MainActivity : ComponentActivity() {
             return
         }
         if (refresh.isNullOrBlank()) return
-        // Best-effort server-side revocation off the main thread — fine to be
-        // cancelled at onDestroy, the local session is already gone.
         lifecycleScope.launch(Dispatchers.IO) {
             val viaBackend =
                 access != null &&
@@ -520,12 +500,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/**
- * The sign-in landing. Painted on its own [Surface] so content color resolves to
- * the theme's on-background (the earlier bare Column rendered text in the default
- * black, which was invisible on the dark backdrop). The AstralDeep wordmark is the
- * hero; a single gradient "Sign in" launches the Keycloak PKCE flow.
- */
 @Composable
 private fun SignInScreen(
     error: String?,
@@ -576,7 +550,6 @@ private fun SignInScreen(
     }
 }
 
-/** The signature indigo→purple pill button used for the primary sign-in action. */
 @Composable
 private fun GradientButton(
     text: String,

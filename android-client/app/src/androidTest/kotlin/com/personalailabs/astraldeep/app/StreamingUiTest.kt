@@ -1,3 +1,6 @@
+// Instrumented test verifying a streamed response's later frame replaces the earlier one in place within the
+// canvas, rather than appending duplicates.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.runtime.LaunchedEffect
@@ -19,7 +22,6 @@ import com.personalailabs.astraldeep.core.streaming.streamFrameToOps
 import org.junit.Rule
 import org.junit.Test
 
-/** US2 (T037): a stream's later frame replaces the earlier one in place. */
 class StreamingUiTest {
     @get:Rule val rule = createComposeRule()
 

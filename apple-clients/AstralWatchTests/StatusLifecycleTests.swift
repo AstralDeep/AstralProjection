@@ -1,3 +1,7 @@
+// Tests for the watch's operation status lifecycle rendering: reload-free updates, activity-indicator gating
+// on nonterminal progress, surface-fence retention before terminal, disconnect clearing, and reconnect
+// projection restoration.
+
 import AstralCore
 import XCTest
 

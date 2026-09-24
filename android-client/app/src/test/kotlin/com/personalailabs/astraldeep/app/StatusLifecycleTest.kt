@@ -1,3 +1,6 @@
+// Tests for AppViewModel's reduce(): canonical OperationStatus/AgentLifecycle projection — status
+// transitions, terminal retention, and stale-update rejection.
+
 package com.personalailabs.astraldeep.app
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -20,7 +23,6 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Feature 060 canonical operation/lifecycle reducer coverage for Android. */
 class StatusLifecycleTest {
     private val vm =
         AppViewModel(

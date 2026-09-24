@@ -1,3 +1,7 @@
+// Tests for CanvasCapture's offline snapshot pipeline: private metadata is filtered before posting,
+// image/chart capture uses measured current pixels, and stale or cancelled leases cannot overwrite newer
+// state.
+
 import AstralCore
 import SwiftUI
 import WebKit
@@ -224,7 +228,6 @@ final class CanvasCapture088Tests: XCTestCase {
         let first = try JSONValue.parse(await registry.capture(tree, isCurrent: { true }))
         XCTAssertEqual(first["images"]?.arrayValue?.count, 1)
         XCTAssertEqual(registry.state(for: tabNode), .array([.number(1)]))
-        // A late completion from the removed image must not refill the budget.
         registry.retain(Data(repeating: 4, count: 4 * 1024 * 1024), for: oldNode)
         XCTAssertFalse(registry.accepts(oldNode))
         registry.record(tabNode, state: .array([.number(0)]))
@@ -440,8 +443,6 @@ final class CanvasCapture088Tests: XCTestCase {
             }
             try await Task.sleep(for: .milliseconds(50))
         }
-        // Each successful call freezes this chart at that moment, like the web
-        // finalizer. Later interaction changes only the next captured image.
         let before = try await coordinator.capturePixels(webView)
         let _: Any? = try await withCheckedThrowingContinuation { continuation in
             webView.callAsyncJavaScript(

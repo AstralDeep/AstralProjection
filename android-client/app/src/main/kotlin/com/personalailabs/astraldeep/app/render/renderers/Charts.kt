@@ -1,3 +1,6 @@
+// A sandboxed WebView hosting the shared Plotly chart renderer, fed data only; backs offline chart export and
+// CanvasCapture's chart pixel snapshots.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import android.annotation.SuppressLint
@@ -98,7 +101,7 @@ private object OfflineChartAssets {
     }
 }
 
-/** The shared Plotly renderer receives data only; the WebView has no app bridge or network. */
+// Sandboxed: no app JS bridge and no network access, data only
 internal class ChartWebView(context: Context) : WebView(context) {
     @Volatile var chartDocument: ByteArray? = null
     internal var exportPixels: CurrentChartPixels? = null

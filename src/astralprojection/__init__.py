@@ -1,4 +1,7 @@
-"""Stable metadata boundary for the independent AstralProjection package."""
+"""Stable metadata boundary (CONTRACT_VERSION) for the independent AstralProjection
+package, built on protocol.py and resources.py; imported by AstralDeep's
+orchestrator.py and web_auth.py.
+"""
 
 from __future__ import annotations
 

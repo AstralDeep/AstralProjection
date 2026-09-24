@@ -1,3 +1,6 @@
+// Tests for VoiceSessionController: session lifecycle, LiveKit media handling, terminal-notice reduction, and
+// the REST voice-control contract.
+
 package com.personalailabs.astraldeep.app.voice
 
 import com.personalailabs.astraldeep.core.protocol.Inbound

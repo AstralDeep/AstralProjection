@@ -1,3 +1,6 @@
+// Tests for the offline chart rendering fallback used when a chart component can't reach its live data
+// source.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import com.personalailabs.astraldeep.core.sdui.Component

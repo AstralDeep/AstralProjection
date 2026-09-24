@@ -1,3 +1,7 @@
+// UI tests for watch Work-surface navigation: the real timeout/retry/detail/back read lifecycle, and
+// back-navigation cancelling a pending read while rejecting its late response, via a scripted
+// WatchNavigationPeer.
+
 import Foundation
 import Network
 import XCTest
@@ -206,7 +210,7 @@ private final class WatchNavigationPeer: @unchecked Sendable {
                         ],
                     ], to: connection)
             } else if value["type"] as? String == "ui_event", value["action"] as? String == "get_history" {
-                // Ordinary connection hook; canonical history was delivered above.
+                // Connection hook only; history was sent above.
             } else if ["chrome_open", "chrome_close"].contains(value["action"] as? String ?? "") {
                 self.received.append(value)
             } else {

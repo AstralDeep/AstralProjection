@@ -1,24 +1,8 @@
-"""Feature 076 — this desktop as a *computer host* the owner drives from their
-other signed-in devices (spec: specs/076-remote-computer-control in AstralDeep).
-
-What lives here (GUI thread unless noted):
-
-- :class:`RemoteControlSettings` — the persistent consent switch ("Allow remote
-  control"), the stable ``host_id`` and the display name (``QSettings``).
-- :func:`build_descriptor` — the ``register_ui.computer_host`` object.
-- :class:`RemoteControlBanner` — the always-on-top "someone is controlling this
-  computer" pill with Pause/Resume and Stop (the local kill switch).
-- :class:`RemoteControlController` — consent announce/withdraw, the session
-  state mirrored from ``computer_session`` frames, heartbeats, the presence
-  detector (local mouse/keyboard ⇒ pause), and execution of
-  ``computer_request`` frames through :class:`win_agent.computer_use.Executor`
-  (screenshots inline on the GUI thread; everything else on a worker thread,
-  one request at a time), answered with ``computer_response`` ui_events.
-
-Nothing here decides *authorization*: the orchestrator gates every verb before
-a request is built; this side enforces only its own consent, its announced
-verb list, and the active session id (transport.md §3).
+"""Lets this desktop be driven remotely from the owner's other devices: consent switch,
+on-screen banner, and a controller that mirrors session frames, heartbeats, pauses on
+local input, and executes requests via win_agent.computer_use.Executor.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +26,6 @@ NAME_KEY = "astraldeep.remote_control.name.v1"
 BANNER_TITLE = "AstralDeep remote control"
 HEARTBEAT_S = 30
 PRESENCE_POLL_MS = 500
-#: Human input newer than our own last injection by more than this is a person.
 PRESENCE_GRACE_MS = 400
 PROTOCOL = 1
 
@@ -54,8 +37,6 @@ def _default_name() -> str:
 
 
 class RemoteControlSettings:
-    """Persistent consent + identity. ``host_id`` is minted once per install."""
-
     def __init__(self, settings: Optional[QSettings] = None):
         self._settings = settings if settings is not None else QSettings("AstralDeep", "WindowsClient")
 
@@ -99,11 +80,10 @@ class RemoteControlSettings:
 
 def build_descriptor(settings: RemoteControlSettings,
                      screens: Optional[list] = None) -> Dict[str, Any]:
-    """The exact ``computer_host`` object (transport.md §1)."""
     if screens is None:
         try:
             screens = computer_use.screens_descriptor()
-        except Exception:  # noqa: BLE001 — no QGuiApplication (tests) ⇒ a nominal screen
+        except Exception:  # noqa: BLE001
             screens = []
     if not screens:
         screens = [{"index": 0, "width": 1920, "height": 1080, "scale": 1.0, "primary": True}]
@@ -119,10 +99,6 @@ def build_descriptor(settings: RemoteControlSettings,
 
 
 class RemoteControlBanner(QWidget):
-    """A small always-on-top pill at the bottom-centre of the primary screen.
-    Visible for the whole life of a session (spec FR-007); its Stop button is
-    the local kill switch and its Pause/Resume mirrors the session state."""
-
     def __init__(self, on_pause: Callable[[], None], on_resume: Callable[[], None],
                  on_stop: Callable[[], None]):
         super().__init__(None, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
@@ -185,11 +161,7 @@ class RemoteControlBanner(QWidget):
 
 
 class RemoteControlController(QObject):
-    """Owns consent, the mirrored session, the banner and request execution."""
-
-    #: (payload) — a worker-thread verb finished; delivered on the GUI thread.
     _finished = Signal(dict)
-    #: session state changed — for the app's own status line / tests.
     session_changed = Signal(object)
 
     def __init__(self, *, send_event: Callable[[str, dict], Any],
@@ -219,8 +191,6 @@ class RemoteControlController(QObject):
         self._presence.timeout.connect(self._poll_presence)
         self._finished.connect(self._deliver)
 
-    # ── consent ───────────────────────────────────────────────────────────
-
     @property
     def enabled(self) -> bool:
         return self.settings.enabled
@@ -230,12 +200,9 @@ class RemoteControlController(QObject):
         return self.settings.host_id
 
     def descriptor(self) -> Optional[Dict[str, Any]]:
-        """What ``register_ui`` should carry: the descriptor when consent is on."""
         return build_descriptor(self.settings) if self.enabled else None
 
     def set_enabled(self, enabled: bool) -> None:
-        """The client-local ``computer_host_consent`` action: persist, then
-        announce/withdraw on the live socket (transport.md §2)."""
         enabled = bool(enabled)
         if enabled == self.settings.enabled:
             return
@@ -250,11 +217,7 @@ class RemoteControlController(QObject):
             self._send("computer_event", {"host_id": self.host_id, "event": "withdraw"})
             self._notify("Remote control is off.", "info")
 
-    # ── transport state ────────────────────────────────────────────────────
-
     def on_transport_status(self, status: str) -> None:
-        """Socket loss ends the mirrored session: the server ends it as
-        ``host_offline`` on its side, so the banner must not outlive the socket."""
         if status == "connected":
             self._connected = True
             return
@@ -262,8 +225,6 @@ class RemoteControlController(QObject):
             self._connected = False
             if self.session is not None:
                 self._end_local("host_offline")
-
-    # ── inbound frames ─────────────────────────────────────────────────────
 
     def handle_frame(self, msg: dict) -> bool:
         kind = msg.get("type")
@@ -277,7 +238,7 @@ class RemoteControlController(QObject):
 
     def _on_session_frame(self, msg: dict) -> None:
         if msg.get("host_id") != self.host_id:
-            return  # about another of the owner's computers
+            return
         state = str(msg.get("state") or "")
         session_id = str(msg.get("session_id") or "")
         if state == "ended":
@@ -288,8 +249,6 @@ class RemoteControlController(QObject):
                     self._notify(f"Remote control session ended ({reason.replace('_', ' ')}).", "info")
             return
         if not self.enabled:
-            # A stale session frame after the switch went off: refuse by silence
-            # (the server's withdraw handling ends it; requests are refused).
             return
         fresh = self.session is None or self.session["session_id"] != session_id
         resumed = (not fresh and self.session["state"] == "paused" and state == "active")
@@ -297,14 +256,12 @@ class RemoteControlController(QObject):
                         "controller_label": str(msg.get("controller_label") or "other device"),
                         "pause_reason": msg.get("pause_reason")}
         if fresh or resumed:
-            # A remote resume must re-baseline the presence detector exactly
-            # like a local one, or the input that caused the pause re-pauses
-            # the session on the next poll, forever.
+            # Must re-baseline on resume, or local input re-pauses forever
             self._session_start_tick = self._tick()
         if fresh:
             self._heartbeat.start()
             self._presence.start()
-            self._beat()  # the acknowledgement the server waits for
+            self._beat()
             self._notify(f"Your {self.session['controller_label']} started controlling this computer.", "info")
         self._show_banner()
         self.session_changed.emit(dict(self.session))
@@ -333,7 +290,7 @@ class RemoteControlController(QObject):
                 result = self.executor.screenshot(args)
             except computer_use.VerbError as exc:
                 self._respond(request_id, error=(exc.code, exc.message))
-            except Exception as exc:  # noqa: BLE001 — typed, never a crash
+            except Exception as exc:  # noqa: BLE001
                 logger.exception("screenshot failed")
                 self._respond(request_id, error=("failed", f"screenshot failed: {exc}"))
             else:
@@ -378,8 +335,6 @@ class RemoteControlController(QObject):
             payload = {"request_id": request_id, "ok": True, "result": result or {}}
         self._send("computer_response", payload)
 
-    # ── banner / local controls ────────────────────────────────────────────
-
     def _show_banner(self) -> None:
         if self.session is None:
             return
@@ -419,8 +374,6 @@ class RemoteControlController(QObject):
         self._clear_session()
 
     def stop_all(self) -> None:
-        """Application shutdown / sign-out: never leave a banner or a live
-        session behind (spec FR-007)."""
         self.stop_locally()
 
     def _end_local(self, reason: str) -> None:
@@ -438,8 +391,6 @@ class RemoteControlController(QObject):
             self._banner.hide()
         self.session_changed.emit(None)
 
-    # ── heartbeat + presence ───────────────────────────────────────────────
-
     def _beat(self) -> None:
         if self.session is None:
             return
@@ -456,7 +407,6 @@ class RemoteControlController(QObject):
         return int(time.monotonic() * 1000)
 
     def _poll_presence(self) -> None:
-        """Local mouse/keyboard while a session is active ⇒ pause (FR-008)."""
         if self.session is None or self.session["state"] != "active":
             return
         system = self._system
@@ -471,10 +421,8 @@ class RemoteControlController(QObject):
             return
         self.pause_locally("local_input")
 
-    # ── plumbing ───────────────────────────────────────────────────────────
-
     def _send(self, action: str, payload: dict) -> None:
         try:
             self._send_event(action, payload)
-        except Exception:  # noqa: BLE001 — a dead socket never kills the controller
+        except Exception:  # noqa: BLE001
             logger.debug("076: %s send failed", action, exc_info=True)

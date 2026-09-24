@@ -1,3 +1,6 @@
+// Instrumented test for conversation continuity using Android's real SharedPreferences-backed
+// ConversationResumeStore, not a fake.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.test.core.app.ApplicationProvider
@@ -12,7 +15,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** Connected Spec 060 continuity trials using Android's real preference implementation. */
 @RunWith(AndroidJUnit4::class)
 class ConversationContinuityInstrumentedTest {
     private val context = ApplicationProvider.getApplicationContext<android.content.Context>()

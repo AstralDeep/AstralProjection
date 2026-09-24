@@ -1,8 +1,6 @@
-"""P0 lifecycle contract for the Windows client-local speech path.
-
-These tests deliberately keep time, scheduling, permission resolution, and HTTP
-work under caller control.  The web client implements the same lifecycle, so
-these assertions are parity guards rather than Windows-specific policy.
+"""Tests for astral_client/protocol.py and voice.py: the client-local speech lifecycle
+contract under controlled time/scheduling/HTTP fakes — recognition start, capability
+negotiation, and foreground lease — parity guards with the web client.
 """
 
 from __future__ import annotations
@@ -933,7 +931,6 @@ def test_local_final_retries_exact_frame_until_exact_message_ack() -> None:
     assert len(harness.speech.cycles) == 2
     assert secret not in repr(pending)
 
-    # The already-scheduled retry owns only the scrubbed object and is inert.
     harness.scheduler.run_first(LOCAL_FINAL_RETRY_MS)
     assert len(_frames(harness, "voice_local_final")) == 2
 

@@ -1,3 +1,6 @@
+// Tests for the DeviceCapabilities payload sent in register_ui, reporting supported primitive types and media
+// capabilities.
+
 package com.personalailabs.astraldeep.app.transport
 
 import kotlin.test.Test

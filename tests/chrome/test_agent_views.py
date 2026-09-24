@@ -1,3 +1,7 @@
+"""Tests for src/astralprojection/chrome/agents.py: agent list/detail, permissions
+boundaries, authoring phases, drafts and attachment library states.
+"""
+
 from __future__ import annotations
 
 from astralprojection.chrome import render_html

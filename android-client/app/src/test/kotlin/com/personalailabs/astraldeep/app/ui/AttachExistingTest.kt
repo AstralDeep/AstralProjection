@@ -1,3 +1,6 @@
+// Tests that attach_existing (the attachments-library Attach button) stages a file as a ready chip locally
+// and is never forwarded to the server as a wire event.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -8,11 +11,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
-/**
- * Feature 044 T047 — `attach_existing` is a CLIENT-LOCAL action (ui_protocol.json
- * client_local_actions): it stages the already-uploaded file as a ready chip and is
- * never forwarded to the server.
- */
 class AttachExistingTest {
     private val client = OrchestratorClient("ws://localhost:9/ws")
     private val vm = AppViewModel(client, AstralRest("http://localhost:9"))
@@ -33,7 +31,6 @@ class AttachExistingTest {
         assertEquals("report.pdf", staged.first().filename)
         assertEquals("document", staged.first().category)
         assertEquals("ready", staged.first().state)
-        // A client-local action never reaches the socket / offline queue.
         assertTrue(client.pendingActions().isEmpty())
     }
 
@@ -58,7 +55,6 @@ class AttachExistingTest {
 
     @Test
     fun attach_from_the_library_returns_to_the_chat_with_a_banner() {
-        // The user is ON the attachments surface (paperclip → "Your files").
         vm.openSurface("attachments")
         assertEquals(Screen.Surface, vm.state.value.screen)
         vm.sendEvent(
@@ -69,9 +65,6 @@ class AttachExistingTest {
                 put("category", "spreadsheet")
             },
         )
-        // Attach navigates back to the composer (the web modal closes on Attach)
-        // and confirms what was staged — staying on the surface read as a dead
-        // button, and leaving via "+ New" would wipe the staged chip.
         assertEquals(Screen.Chat, vm.state.value.screen)
         assertEquals(1, vm.state.value.staged.size)
         assertTrue(vm.state.value.banner.orEmpty().contains("data.csv"))
@@ -86,11 +79,11 @@ class AttachExistingTest {
                 put("filename", "a.pdf")
                 put("category", "document")
             }
-        vm.sendEvent("attach_existing", payload) // staged from the chat
+        vm.sendEvent("attach_existing", payload)
         vm.openSurface("attachments")
-        vm.sendEvent("attach_existing", payload) // duplicate, from the library
+        vm.sendEvent("attach_existing", payload)
         assertEquals(1, vm.state.value.staged.size)
-        assertEquals(Screen.Chat, vm.state.value.screen) // intent satisfied → composer
+        assertEquals(Screen.Chat, vm.state.value.screen)
     }
 
     @Test

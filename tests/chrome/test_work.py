@@ -1,4 +1,6 @@
-"""Shared Work views consume public snapshots without granting actions."""
+"""Tests for src/astralprojection/chrome/work.py: result and operation rendering,
+usage/cost disclosure, and fail-closed handling of malformed evidence.
+"""
 
 from copy import deepcopy
 import json
@@ -448,8 +450,6 @@ def test_source_size_time_and_url_shape_bounds(change):
 
 @pytest.mark.parametrize("layout", ["compact", "standard", "wide", "watch"])
 def test_actual_producer_maximum_size_golden_is_fully_renderable(layout):
-    # Actual Deep build_page_result output reproduced by the retained producer
-    # compatibility probe. These hashes are input facts, not UI authentication.
     value = state()
     page = value["result"]["result"]["content"]
     page["source"].update(
@@ -480,8 +480,6 @@ def test_actual_producer_maximum_size_golden_is_fully_renderable(layout):
 def test_available_result_cannot_override_incompatible_public_metadata(change):
     unavailable(state(operation=operation(**change)))
 
-
-# ── Feature 088 T043: exact Save bindings and the review layout ────────────────
 
 SUBMISSION = "48873d61-2e9b-4f38-bc36-bbfa81d78580"
 PUBLICATION = "7c3d5a9e-1f2b-4c6d-8e7f-0a1b2c3d4e5f"
@@ -676,7 +674,6 @@ def test_review_shows_complete_exact_content_destination_expiry_and_bound_approv
     navigation = [b["payload"]["params"] for b in buttons(view) if b["action"] == "chrome_open"]
     assert navigation == [{"mode": "result", "operation_id": ID}, {"mode": "list"}]
     assert "Refresh" not in html
-    # Digests bind the command only; they are never explanatory copy or forwarded.
     texts = [
         node.get("content") or node.get("value")
         for node in nodes(view.to_dict())
@@ -819,11 +816,6 @@ def test_review_honours_the_maximum_reviewable_payload_exactly():
     assert save_buttons(build_work_view(value))
     content.append(_text("x" * 2048))
     unavailable(value)
-
-
-# ---------------------------------------------------------------------------
-# Feature 088 T052 -- charge basis, quoted currency and the measurements view.
-# ---------------------------------------------------------------------------
 
 
 def measurements(**values):

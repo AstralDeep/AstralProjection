@@ -1,8 +1,8 @@
-"""Feature 033 (capability C-D9) — accessibility as a render constraint.
-
-Covers the WCAG landmark role/label computation, the deterministic a11y audit,
-and the labelled-landmark wrapper in render_component_fragment.
+"""Tests for backend/webrender/a11y.py (with backend/webrender/renderer.py): landmark
+role/label computation, the deterministic accessibility audit, and the
+labelled-landmark wrapper in render_component_fragment.
 """
+
 from __future__ import annotations
 
 import sys
@@ -18,8 +18,6 @@ from webrender import a11y  # noqa: E402
 from webrender.renderer import render_component_fragment  # noqa: E402
 
 
-# ───────────────────────── flag ──────────────────────────────────────────────
-
 def test_a11y_enabled_default_on(monkeypatch):
     monkeypatch.delenv("FF_A11Y", raising=False)
     assert a11y.a11y_enabled() is True
@@ -30,8 +28,6 @@ def test_a11y_flag_off(monkeypatch, v):
     monkeypatch.setenv("FF_A11Y", v)
     assert a11y.a11y_enabled() is False
 
-
-# ───────────────────────── landmark role/label ───────────────────────────────
 
 @pytest.mark.parametrize("ctype,role", [
     ("card", "region"), ("container", "region"), ("table", "region"),
@@ -53,8 +49,6 @@ def test_landmark_label_derives_when_no_title():
     assert a11y.landmark_label({"type": "keyvalue"}) == "keyvalue"
 
 
-# ───────────────────────── audit ─────────────────────────────────────────────
-
 def test_audit_clean_tree_is_empty():
     assert a11y.a11y_audit([{"type": "card", "title": "OK", "content": [
         {"type": "text", "content": "hi"}]}]) == []
@@ -67,7 +61,7 @@ def test_audit_flags_image_without_alt():
 
 def test_audit_flags_unlabelled_action_and_landmark():
     issues = a11y.a11y_audit([
-        {"type": "card", "content": [{"type": "button"}]}])  # card no title, button no label
+        {"type": "card", "content": [{"type": "button"}]}])
     kinds = {(i["type"]) for i in issues}
     assert "card" in kinds and "button" in kinds
 
@@ -82,11 +76,9 @@ def test_audit_flags_empty_heading_and_tab():
 
 def test_audit_recurses_and_never_raises():
     assert a11y.a11y_audit([None, "x", {"type": "grid", "children": [
-        {"type": "image"}]}])  # nested image w/o alt
+        {"type": "image"}]}])
     assert a11y.a11y_audit(None) == []
 
-
-# ───────────────────────── wrapper integration ───────────────────────────────
 
 def test_fragment_adds_landmark_role_and_label():
     out = render_component_fragment({"type": "card", "component_id": "c1", "title": "Status"})

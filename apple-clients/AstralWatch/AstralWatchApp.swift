@@ -1,7 +1,7 @@
+// watchOS app entry point wiring WatchModel into the signed-in/signed-out navigation shell (DeviceLoginView,
+// WatchHomeView) with the shared AstralDeep tint.
+
 import AstralCore
-// Feature 051 — watchOS client (US3 QR sign-in, US4 voice + TTS, US5
-// degraded rendering). Independent watch app; the server pre-degrades every
-// payload via the `watch` ROTE profile and attaches the spoken rendition.
 import SwiftUI
 
 @main
@@ -37,7 +37,7 @@ struct AstralWatchApp: App {
                     return .systemAction(destination)
                 }
             )
-            .tint(Color(red: 99 / 255, green: 102 / 255, blue: 241 / 255))  // AstralDeep indigo
+            .tint(Color(red: 99 / 255, green: 102 / 255, blue: 241 / 255))
             .task { await model.bootstrap() }
             .onChange(of: scenePhase) { _, phase in
                 model.handleVoiceScenePhase(phase)

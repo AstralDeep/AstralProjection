@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Build a network-free native chart shell from the authoritative web options.
-
-No runtime dependency is added. Native builds bundle this template and the
-already-pinned Plotly asset separately, then substitute only exact vendor bytes
-and a base64-encoded JSON envelope. Run with --check in drift verification.
+"""Generates the native chart shell HTML by adapting the web renderer's authoritative
+options into a single-chart, network-free template bundled with the pinned Plotly
+asset.
 """
 
 from __future__ import annotations
@@ -26,14 +24,11 @@ def build() -> str:
     start = client.index("      var layout = {", client.index("  function initCharts(root)"))
     end = client.index("      try {\n        el._astralPlotReady", start)
     options = client[start:end].replace("window.innerWidth", "viewportWidth")
-    # The copied block is normally inside a loop; this shell renders one chart.
     options = options.replace("else continue;", "else throw new Error('Unsupported chart type');")
     vendor = (ROOT / "backend/webrender/static/vendor/plotly.min.js").read_text()
     if "</script" in vendor.lower():
         raise ValueError("Plotly cannot be embedded without changing its exact bytes")
     fonts = []
-    # Feature 089: the web stack self-hosts one family for everything, so the
-    # embedded chart document carries exactly that one and nothing else.
     for family, filename, weight in (
         ("Open Sans", "open-sans-latin.woff2", "400 800"),
     ):

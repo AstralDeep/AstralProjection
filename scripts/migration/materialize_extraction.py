@@ -1,10 +1,7 @@
 #!/usr/bin/env python3
-"""Materialize an extraction manifest from immutable Git blobs.
-
-The command never reads source bytes from a working tree.  It validates the
-entire manifest, immutable source tree, destination identity, every Git tuple,
-and every destination before it creates the first leaf.  Interrupted runs are
-safe to resume only when an existing leaf is byte-for-byte identical.
+"""CLI that materializes an extraction manifest's files from immutable Git blobs,
+validating every source, destination and Git identity before writing, and allowing
+safe resume.
 """
 
 from __future__ import annotations
@@ -37,7 +34,7 @@ APPLE_FIXTURE_SYMLINK = "apple-clients/AstralCore/Tests/AstralCoreTests/Fixtures
 
 
 class MaterializationError(RuntimeError):
-    """Raised when extraction cannot be proven safe."""
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -332,8 +329,6 @@ def build_plan(
     expected_head: str,
     allowed_symlinks: Mapping[str, str],
 ) -> MaterializationPlan:
-    """Validate every source and destination and return an immutable plan."""
-
     manifest = _load_manifest(manifest_path)
     source = manifest.get("source")
     destination = manifest.get("destination")
@@ -523,8 +518,6 @@ def _write_regular_atomically(path: Path, entry: ManifestEntry) -> None:
 
 
 def materialize(plan: MaterializationPlan) -> dict[str, int | str]:
-    """Materialize a fully validated plan and verify every resulting leaf."""
-
     created = 0
     resumed = 0
     for entry in plan.entries:
@@ -566,8 +559,6 @@ def materialize(plan: MaterializationPlan) -> dict[str, int | str]:
 
 
 def stage_entries(plan: MaterializationPlan) -> None:
-    """Stage only manifest destinations and enforce their Git index modes."""
-
     pathspec = b"\0".join(entry.destination_path.encode("utf-8") for entry in plan.entries) + b"\0"
     _run_git(
         plan.destination_root,

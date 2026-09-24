@@ -1,4 +1,8 @@
-"""Guidance frames and negotiated menu entries come from the same shared source."""
+"""Tests binding guidance frames and menu entries to one shared source
+(backend/webrender/chrome/menu_model.py, src/astralprojection/chrome/guidance.py):
+fixture shapes and per-device adaptation of the notes surface.
+"""
+
 import json
 from pathlib import Path
 
@@ -80,7 +84,6 @@ def test_exact_guidance_fixtures_match_shared_forms_and_safe_html(name):
 def test_new_088_actions_are_manifested_once_and_nowhere_else():
     document = manifest()
     actions = document["accept_actions"]
-    # 138 = 136 at 088 + the two feature-089 TypeSafe credential actions.
     assert NEW_088_ACTIONS <= set(actions) and len(actions) == len(set(actions)) == 138
     declared = set()
     for name, (_, _) in GUIDANCE_CONTRACTS.items():
@@ -138,8 +141,6 @@ def test_notes_entry_has_one_shared_label_and_action(enabled):
     notes = [item for group in model["menu"] for item in group["items"]
              if item["surface"] == "guidance"]
     assert len(notes) == int(enabled)
-    # The notes entry is a menu item, so the web renders it in the settings
-    # dialog's rail; the account row carries the gear alone.
     from webrender.chrome.settings_nav import render_settings_nav
 
     web = render_settings_nav(build_menu_model(notes_enabled=enabled))
@@ -154,7 +155,6 @@ def test_notes_entry_has_one_shared_label_and_action(enabled):
 
 
 def test_menu_model_exposes_no_entry_for_the_unwired_088_views():
-    """No client gets a skills/agents/selection destination until the host wires one (T011/T032)."""
     model = menu_model_dict(notes_enabled=True, work_enabled=True)
     params = [item.get("params", {}) for group in model["menu"] for item in group["items"]]
     params += [item.get("action", {}).get("params", {}) for item in model["topbar"] if item.get("action")]
@@ -189,15 +189,13 @@ def test_host_constraints_refuse_a_partial_notes_form(constraint):
     elif constraint == "read_only":
         profile.supports_interactivity = False
     else:
-        profile.max_actions = 1  # Back and Save both count.
+        profile.max_actions = 1
     with pytest.raises(ValueError, match="guidance_surface_unavailable"):
         ComponentAdapter.adapt_guidance_surface(document_fixture["states"]["edit"], profile)
 
 
 @pytest.mark.parametrize("name", ["guidance_skills_088", "guidance_agents_088", "guidance_selection_088"])
 def test_rote_guidance_adapter_still_serves_notes_only_for_new_view_states(name):
-    """Pinned gap: rote.adapter.adapt_guidance_surface is bound to build_notes_view. A skills,
-    agents or selection state therefore adapts to the notes refusal, never to a partial form."""
     document_fixture = fixture(manifest()["presentation_contracts"][name])
     profile = DeviceProfile.default()
     view = "agents" if name == "guidance_agents_088" else name.split("_")[1]

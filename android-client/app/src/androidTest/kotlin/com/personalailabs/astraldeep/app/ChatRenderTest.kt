@@ -1,3 +1,6 @@
+// Instrumented test verifying a basic chat response renders natively in AdaptiveShell's CanvasHost,
+// exercising the Renderer registry end to end.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.compose.ui.test.assertIsDisplayed
@@ -10,7 +13,6 @@ import com.personalailabs.astraldeep.app.render.renderers.registerAllRenderers
 import org.junit.Rule
 import org.junit.Test
 
-/** US1 (T027): a basic response renders natively in the canvas. */
 class ChatRenderTest {
     @get:Rule val rule = createComposeRule()
 

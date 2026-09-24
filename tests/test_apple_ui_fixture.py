@@ -1,4 +1,6 @@
-"""Keep the first-login UI transport entirely outside Release compilation."""
+"""Tests confirming the first-login UI transport fixture is compiled only into Debug
+builds, never Release.
+"""
 
 from pathlib import Path
 

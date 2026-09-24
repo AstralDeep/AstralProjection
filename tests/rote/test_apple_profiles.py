@@ -1,13 +1,9 @@
-"""051 — the `ios` and `macos` ROTE device profiles.
-
-The native Apple clients register ``device_type: "ios"`` / ``"macos"`` and
-render structured components natively (SwiftUI), so they receive FULL-capability
-profiles (the 041 ``android`` / ``windows`` pattern) plus ``supported_types``
-capability-negotiation. Feature 088 shares web grid density while preserving
-native content capabilities and full text/table content. The watch target reuses
-the existing ``watch`` profile unchanged: it is the degradation authority for
-feature 051. Pure Python.
+"""Tests for the ROTE ios/macos device profiles (backend/rote/adapter.py,
+backend/rote/capabilities.py): full native capability parity with windows/android,
+viewport-independent typing, supported_types negotiation, and watch-profile
+stability.
 """
+
 from __future__ import annotations
 
 import sys
@@ -33,7 +29,6 @@ def test_apple_host_configs_are_full_capability():
     for key in ("ios", "macos"):
         assert key in cfg
         a = cfg[key]
-        # Full native capability, mirroring `windows`/`android` (NOT web limits).
         assert a["supports_code"] is True
         assert a["supports_charts"] is True
         assert a["supports_tables"] is True
@@ -55,9 +50,6 @@ def test_apple_profiles_derive_full_capability():
 
 
 def test_named_apple_types_bypass_viewport_downgrade():
-    # A named native type must NOT be re-derived to mobile/tablet/watch from a
-    # small viewport: native content capabilities remain even when the server
-    # caps its grid density to match the web at the same width (feature 088).
     prof = DeviceProfile.from_dict({"device_type": "ios", "viewport_width": 390})
     assert prof.device_type is DeviceType.IOS
     assert prof.max_grid_columns == 1
@@ -77,8 +69,6 @@ def test_apple_carries_supported_types_negotiation():
 
 
 def test_watch_profile_unchanged_as_degradation_authority():
-    # 051 relies on the existing watch bounds; pin them so a drive-by tune is a
-    # deliberate act (ROTE_HOST_CONFIG) rather than an accident.
     cfg = load_host_config()
     w = cfg["watch"]
     assert w["max_grid_columns"] == 1
@@ -108,7 +98,6 @@ def test_apple_profiles_respect_env_override(monkeypatch):
     cfg = load_host_config()
     assert cfg["ios"]["max_grid_columns"] == 2
     assert cfg["macos"]["supports_code"] is False
-    # untouched fields keep their defaults
     assert cfg["ios"]["supports_code"] is True
 
 

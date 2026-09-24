@@ -1,13 +1,8 @@
-"""Feature 055 (US4 T039 + US5 T045, web lane) — per-component chrome row.
-
-The renderer emits a small affordance row after the provenance footer of every
-identified, non-decorative component on an interactive host profile: refine +
-version history (FF_COMPONENT_REFINE), a CSV export link for tables
-(FF_ARTIFACT_EXPORT), and share (FF_ARTIFACT_SHARING, fail-closed default
-off). Each entry is server-side flag-gated so every off state is
-byte-identical to pre-055 markup; ``render_workspace`` additionally stamps the
-export/share data-flags on the canvas root for the client's toolbar.
+"""Tests for the per-component chrome row in backend/webrender/renderer.py:
+refine/version-history, CSV export, and share affordances are flag-gated, identity-
+and host-gated, and byte-identical to legacy markup when off.
 """
+
 from __future__ import annotations
 
 import sys
@@ -42,13 +37,10 @@ def _table(**extra):
 
 @pytest.fixture(autouse=True)
 def default_flags(monkeypatch):
-    # Pin the shipped defaults regardless of the ambient environment.
     monkeypatch.delenv("FF_COMPONENT_REFINE", raising=False)
     monkeypatch.delenv("FF_ARTIFACT_EXPORT", raising=False)
     monkeypatch.delenv("FF_ARTIFACT_SHARING", raising=False)
 
-
-# ───────────────────────── default-flag chrome ───────────────────────────────
 
 def test_table_gets_refine_history_and_csv():
     out = render_component_fragment(_table(), _profile())
@@ -56,7 +48,6 @@ def test_table_gets_refine_history_and_csv():
     assert "astral-refine-btn" in out
     assert "astral-vhistory-btn" in out
     assert 'href="/api/export/component/wc_t1.csv"' in out
-    # sharing is fail-closed default OFF
     assert "astral-share-btn" not in out
 
 
@@ -74,8 +65,6 @@ def test_share_appears_only_when_flag_on(monkeypatch):
     assert 'data-share-scope="component"' in out
 
 
-# ───────────────────────── flag-off byte parity ──────────────────────────────
-
 def test_all_flags_off_is_byte_identical_to_chromeless(monkeypatch):
     monkeypatch.setenv("FF_COMPONENT_REFINE", "false")
     monkeypatch.setenv("FF_ARTIFACT_EXPORT", "false")
@@ -83,7 +72,6 @@ def test_all_flags_off_is_byte_identical_to_chromeless(monkeypatch):
     comp = _table()
     with_profile = render_component_fragment(comp, _profile())
     assert "astral-component-chrome" not in with_profile
-    # identical to the pre-055 fragment (chrome never rendered for None).
     assert with_profile == render_component_fragment(comp, None)
 
 
@@ -92,7 +80,7 @@ def test_refine_flag_off_drops_refine_and_history(monkeypatch):
     out = render_component_fragment(_table(), _profile())
     assert "astral-refine-btn" not in out
     assert "astral-vhistory-btn" not in out
-    assert "astral-export-csv" in out  # export flag still default-on
+    assert "astral-export-csv" in out
 
 
 def test_export_flag_off_drops_csv(monkeypatch):
@@ -102,10 +90,7 @@ def test_export_flag_off_drops_csv(monkeypatch):
     assert "astral-refine-btn" in out
 
 
-# ───────────────────────── host gating ───────────────────────────────────────
-
 def test_no_profile_means_no_chrome():
-    # Static renditions (exports, share snapshots, legacy calls) stay bare.
     assert "astral-component-chrome" not in render_component_fragment(_table())
 
 
@@ -119,8 +104,6 @@ def test_watch_and_voice_get_no_chrome():
         out = render_component_fragment(_table(), _profile(device_type=dt))
         assert "astral-component-chrome" not in out
 
-
-# ───────────────────────── identity gating ───────────────────────────────────
 
 def test_no_component_id_means_no_chrome():
     comp = {"type": "table", "headers": ["a"], "rows": [["1"]]}
@@ -146,8 +129,6 @@ def test_csv_href_encodes_hostile_id():
     assert 'href="/api/export/component/a/b' not in out
 
 
-# ───────────────────────── version history payload ───────────────────────────
-
 def test_versions_attr_bounded_and_whitelisted():
     versions = [{"version_no": i, "reason": "refine",
                  "created_at": f"2026-07-1{i}T00:00:00",
@@ -155,8 +136,7 @@ def test_versions_attr_bounded_and_whitelisted():
     out = render_component_fragment(_table(versions=versions), _profile())
     assert "data-versions=" in out
     assert "<script>" not in out
-    assert "junk" not in out  # only whitelisted fields survive
-    # bounded to the newest-5 retain window (first five list entries)
+    assert "junk" not in out
     assert "&quot;version_no&quot;: 5" in out
     assert "&quot;version_no&quot;: 6" not in out
 
@@ -167,12 +147,10 @@ def test_versions_attr_absent_for_junk_values():
         assert "data-versions" not in out
 
 
-# ───────────────────────── canvas root data-flags ────────────────────────────
-
 def test_workspace_root_stamps_export_flag_for_interactive_profile():
     out = render_workspace([_table()], _profile())
     assert out.startswith('<div class="dynamic-renderer space-y-3" data-astral-export="1">')
-    assert "data-astral-share" not in out  # sharing default off
+    assert "data-astral-share" not in out
 
 
 def test_workspace_root_stamps_share_flag_when_on(monkeypatch):

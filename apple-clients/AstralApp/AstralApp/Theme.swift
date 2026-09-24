@@ -1,12 +1,10 @@
+// Apple's design-system tokens and live ThemeStore, ported 1:1 from the web renderer (radii, spacing,
+// palette) so Android, Windows, web, and Apple stay visually identical; ThemeStore applies theme_apply pushes
+// live via AppModel.
+
 import AstralCore
-// Feature 051 — the AstralDeep design system, shared 1:1 with the web,
-// Android, and Windows clients (same palette, radii, spacing). Dark-first.
-// The server can restyle live via `user_preferences` / `theme_apply`
-// (channel colors or a named preset) exactly like the other clients.
 import SwiftUI
 
-/// Canonical palette. Hex values match backend/webrender/static/astral.css
-/// and the Windows/Android defaults (the "midnight" preset).
 struct AstralPalette: Equatable {
     var bg = Color(hex: 0x0F1221)
     var surface = Color(hex: 0x1A1E2E)
@@ -24,15 +22,12 @@ struct AstralPalette: Equatable {
 
     static let midnight = AstralPalette()
 
-    /// Gradient used for hero bands and primary buttons (primary → secondary,
-    /// 135° diagonal — matches the web `--accent-grad` and Windows GRAD).
     var gradient: LinearGradient {
         LinearGradient(
             colors: [primary, secondary],
             startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    /// Semantic accent color for a component `variant`.
     func variant(_ v: String?) -> Color {
         switch v {
         case "error", "danger": return error
@@ -45,15 +40,12 @@ struct AstralPalette: Equatable {
     }
 }
 
-/// Radii + spacing tokens (parity with the web `--radius-*` / `--space-*`).
 enum AstralRadius {
     static let sm: CGFloat = 6
     static let md: CGFloat = 10
     static let lg: CGFloat = 14
 }
 
-/// Resting primitive styles from the web renderer and its responsive CSS.
-/// Breakpoints use the viewport, even when a card occupies a narrow grid slot.
 enum AstralWebStyle {
     static func canvasInset(_ width: CGFloat) -> CGFloat { width < 700 ? 12 : 16 }
     static func chartInset(_ width: CGFloat) -> CGFloat { width < 700 ? 8 : 12 }
@@ -69,9 +61,7 @@ enum AstralWebStyle {
 }
 
 #if os(macOS)
-    /// WKWebView does not expose transparent page painting on macOS. Track the
-    /// actual opaque backdrop through translucent native containers so its
-    /// isolated document can paint the same color using public APIs only.
+    // WKWebView can't paint transparent on macOS; this tracks the backdrop
     struct AstralChartBackdrop: Equatable {
         let red: Double
         let green: Double
@@ -147,8 +137,6 @@ extension View {
             .astralChartBackdrop(palette, color: palette.surface, opacity: 0.45)
     }
 
-    /// CSS outer shadows never paint under a translucent surface. Clipping the
-    /// interior avoids SwiftUI's ordinary shadow darkening the card fill.
     func astralWebShadow(radius: CGFloat) -> some View {
         background {
             Canvas { context, size in
@@ -166,22 +154,16 @@ extension View {
     }
 }
 
-/// Holds the live palette so the server can restyle without a relaunch
-/// (feature 044 US5 parity). Observed by the renderer and chrome.
 @MainActor
 @Observable
 final class ThemeStore {
     var palette = AstralPalette.midnight
 
-    /// A `user_preferences` frame payload (`{preferences:{theme:…}}` or a bare
-    /// theme spec). Fail-open: unknown shapes are ignored.
     func applyPreferences(_ json: JSONValue?) {
         let theme = json?["preferences"]?["theme"] ?? json?["theme"] ?? json
         apply(spec: theme)
     }
 
-    /// A theme spec: `{preset}`, `{colors:{channel:hex}}`,
-    /// `{color_key,color_value}`, or a flat `{channel:hex}` map.
     func apply(spec: JSONValue?) {
         guard let spec else { return }
         if let preset = spec["preset"]?.stringValue { apply(preset: preset) }
@@ -221,10 +203,6 @@ final class ThemeStore {
         }
     }
 
-    /// Named presets — channel-for-channel copies of the canonical tables in
-    /// backend webrender / Windows theme.py / Android Theme.kt. A preset name
-    /// arrives alone in `user_preferences`, so EVERY themed channel must be
-    /// set here (not just the accents) or the client drifts from its twins.
     func apply(preset: String) {
         switch preset {
         case "daylight":
@@ -268,7 +246,6 @@ extension Color {
             opacity: 1)
     }
 
-    /// Parse `#rrggbb` / `rrggbb` (the wire format used by the theme spec).
     init?(cssHex raw: String) {
         var s = raw.trimmingCharacters(in: .whitespaces)
         if s.hasPrefix("#") { s.removeFirst() }

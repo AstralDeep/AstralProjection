@@ -1,3 +1,7 @@
+// Dedicated HTTPS session-exchange transport: fixed endpoints, no redirects/cookie-jar/retry/authenticator;
+// probe() checks protocol support only and never authorizes a legacy fallback. Used by
+// ServerSessionCoordinator.
+
 package com.personalailabs.astraldeep.app.auth
 
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -15,7 +19,6 @@ import java.io.IOException
 import java.time.Instant
 import java.util.concurrent.TimeUnit
 
-/** Dedicated transport: fixed HTTPS endpoints, no redirects, cookie jar, retry or token authenticator. */
 class ServerSessionTransport(
     val scope: ServerSessionScope,
     client: OkHttpClient = OkHttpClient(),
@@ -31,7 +34,6 @@ class ServerSessionTransport(
                 networkInterceptors().clear()
             }.build()
 
-    /** Protocol support only; a failed probe never authorizes a fallback exchange. */
     suspend fun probe(): Boolean {
         val result = request(Request.Builder().url(scope.endpoint("/auth/session")).get().build())
         val body = sessionObject(result.body)
@@ -74,7 +76,6 @@ class ServerSessionTransport(
                 Request.Builder().url(scope.endpoint("/auth/session"))
                     .header("Cookie", session.cookie).get().build(),
             )
-        // The qualified server refreshes credentials under the same SID. There is no cookie adoption path.
         if (result.cookies.isNotEmpty()) sessionInvalid()
         val body = sessionObject(result.body)
         if (!body.boolean("authenticated")) {

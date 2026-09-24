@@ -1,3 +1,6 @@
+// Tests for AppViewModel: the conversation commit-ready deadline — snapshot arrival before and after the
+// fence expires, and retry targeting once it does.
+
 package com.personalailabs.astraldeep.app
 
 import androidx.lifecycle.viewModelScope
@@ -145,8 +148,6 @@ class ConversationCommitDeadline088Test {
             marker: String,
         ) {
             assertTrue(socket.get().send(frame.toString()))
-            // The following unscoped notification is observed by the same real
-            // collector, proving the preceding frame's side effects have run.
             val notification =
                 buildJsonObject {
                     put("type", "notification")

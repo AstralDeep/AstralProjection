@@ -1,3 +1,6 @@
+// Tests for the Android auth routing rule: a definitive refresh rejection routes to sign-in, while a
+// transient failure (offline, IdP down) keeps the cached session.
+
 package com.personalailabs.astraldeep.app.auth
 
 import net.openid.appauth.AuthorizationException
@@ -6,11 +9,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/**
- * Feature 044 T016 — a DEFINITIVE refresh rejection routes to sign-in (never a
- * log-only stall); a TRANSIENT failure (offline, IdP down) keeps the cached
- * session instead of kicking a valid year-long session out at cold start.
- */
 class AuthRoutingTest {
     @Test
     fun successful_refresh_keeps_the_session() {

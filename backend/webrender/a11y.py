@@ -1,26 +1,13 @@
-"""Accessibility as a render constraint.
-
-Two deterministic, dependency-free pieces:
-
-* :func:`landmark_role` / :func:`landmark_label` — WCAG-by-construction: each
-  top-level canvas component is wrapped as an ARIA landmark with a computed
-  label, so a screen-reader user can navigate *between* components ("region:
-  System Status", "region: Recent activity") rather than hearing one
-  undifferentiated blob. Applied in ``render_component_fragment``.
-* :func:`a11y_audit` — a deterministic post-validator over a component tree
-  that flags WCAG issues (image without alt text, an action with no accessible
-  label, an unlabelled landmark/tab, an empty heading). Pure; usable as a
-  designer check or a CI gate. Never raises.
-
-Kept renderer-independent (no import of the renderer) so the renderer can import
-this without a cycle; escaping happens at the call site.
+"""Accessibility render helpers: landmark_role/landmark_label wrap each top-level canvas
+component as a labelled ARIA landmark in render_component_fragment, and a11y_audit is
+a pure WCAG-issue scanner usable as a CI gate.
 """
+
 from __future__ import annotations
 
 import os
 from typing import Any, Dict, List, Optional
 
-#: Component type → ARIA landmark role for its top-level wrapper.
 _LANDMARK_ROLES = {
     "card": "region", "container": "region", "collapsible": "region",
     "tabs": "region", "hero": "region", "timeline": "region", "list": "region",
@@ -30,22 +17,17 @@ _LANDMARK_ROLES = {
 
 
 def a11y_enabled() -> bool:
-    """FF_A11Y feature flag (default ON). When on, top-level components render as
-    labelled ARIA landmarks. Off restores the bare identity wrapper."""
     return os.getenv("FF_A11Y", "true").strip().lower() not in ("0", "false", "no", "off")
 
 
 def landmark_role(component: Dict[str, Any]) -> Optional[str]:
-    """The ARIA landmark role for a top-level component, or None (decorative
-    types — divider/skeleton/text — get no landmark)."""
     if not isinstance(component, dict):
         return None
     return _LANDMARK_ROLES.get(str(component.get("type", "")).strip().lower())
 
 
+# Caller must HTML-escape this; it is not escaped here
 def landmark_label(component: Dict[str, Any]) -> str:
-    """A human label for the landmark: the explicit title, else a type-derived
-    name (so the landmark is never anonymous). Caller escapes."""
     if not isinstance(component, dict):
         return "section"
     title = component.get("title")
@@ -69,8 +51,6 @@ def _label_present(value: Any) -> bool:
 
 
 def a11y_audit(components: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    """Deterministic WCAG-ish audit over a component tree. Returns a list of
-    ``{"type", "issue"}`` findings (empty when clean). Pure; never raises."""
     issues: List[Dict[str, str]] = []
 
     def walk(c: Any) -> None:

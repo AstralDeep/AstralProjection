@@ -1,5 +1,6 @@
-// Actual packaged classic client with controlled socket replies. This proves
-// read correlation/retirement, not institutional IAM or live staging.
+// Browser tests for the notes guidance surface against the packaged classic client with controlled
+// socket replies: read correlation and retirement, not live backend behavior.
+
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { expect, test } from "@playwright/test";

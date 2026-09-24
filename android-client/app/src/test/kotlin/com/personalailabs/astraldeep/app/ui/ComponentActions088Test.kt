@@ -1,3 +1,5 @@
+// Tests for resolving a component action's context and leasing it against stale or duplicate identities.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.AccountIdentity

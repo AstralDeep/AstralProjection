@@ -1,3 +1,6 @@
+// Tests for AppModel's token-storage bootstrap and sign-out: an empty bootstrap reads only its injected
+// in-memory store, and sign-out wipes only that fixture's tokens, never another model's.
+
 import AstralCore
 import XCTest
 
@@ -5,8 +8,6 @@ import XCTest
 
 @MainActor
 final class AppModelTokenStorageTests: XCTestCase {
-    /// This spy delegates exclusively to the existing in-memory store. Even
-    /// the regression's failure path must never construct or query Keychain.
     private final class MemoryStore: TokenStorage, @unchecked Sendable {
         private let memory = InMemoryTokenStore()
         private let lock = NSLock()
@@ -69,8 +70,6 @@ final class AppModelTokenStorageTests: XCTestCase {
         model.signedIn = true
         otherModel.signedIn = true
 
-        // Match the former dangerous paths: these models never bootstrapped
-        // credentials, but sign-out still performs a durable storage wipe.
         await model.signOut(revokeRemote: false)
         XCTAssertEqual(first.counts, [0, 1, 1])
         XCTAssertEqual(second.counts, [0, 1, 0])
@@ -79,7 +78,6 @@ final class AppModelTokenStorageTests: XCTestCase {
         XCTAssertFalse(model.signedIn)
         XCTAssertTrue(otherModel.signedIn)
 
-        // A second memory-only test session remains independent on reuse.
         first.save(firstFixture)
         XCTAssertEqual(first.load(), firstFixture)
         await otherModel.signOut(revokeRemote: false)

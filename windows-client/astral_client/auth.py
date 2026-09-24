@@ -1,20 +1,8 @@
-"""Native desktop OIDC login (Authorization-Code + PKCE, loopback redirect).
-
-The production posture (default) uses a **dedicated public Keycloak client**
-(`astral-desktop`): the by-the-book native-app flow (RFC 8252 / OAuth 2.0 for
-Native Apps). The client is *public* (no client_secret), so the desktop
-exchanges the authorization code and refreshes tokens **directly against
-Keycloak's token endpoint** — it does not depend on the orchestrator, and the
-web/desktop auth surfaces stay isolated. The orchestrator accepts the desktop
-client's `azp` via its `KEYCLOAK_ALLOWED_AZP` allow-list.
-
-A legacy **BFF reuse** mode (`bff_base` set) is kept for environments that have
-not provisioned a dedicated client yet: it reuses the web's *confidential*
-`astral-frontend` client by proxying the code/refresh exchange through the
-orchestrator's `POST {bff}/auth/token` (which injects the secret server-side).
-
-See `docs/keycloak-windows-client-setup.md` for the one-time Keycloak setup.
+"""Native desktop OIDC login (Authorization-Code + PKCE via a loopback redirect), used
+by app.py's resolve_auth(); the default dedicated public client talks to Keycloak
+directly, or proxies through the orchestrator's BFF in legacy mode.
 """
+
 from __future__ import annotations
 
 import base64
@@ -35,7 +23,7 @@ logger = logging.getLogger("astral.auth")
 
 
 class LoginCancelled(RuntimeError):
-    """The user aborted an in-flight interactive login (loopback wait)."""
+    pass
 
 _DEFAULT_SCOPES = "openid profile email offline_access"
 _DONE_HTML = (b"<html><body style='font-family:sans-serif;background:#0F1221;color:#F3F4F6;"
@@ -55,12 +43,6 @@ def _post_form(url: str, fields: dict, timeout: int = 20) -> dict:
 
 @dataclass
 class Session:
-    """A logged-in session — current access token + silent refresh.
-
-    ``token_url`` is where refreshes are POSTed: Keycloak's token endpoint
-    directly (dedicated public client) or the orchestrator's BFF proxy (legacy
-    reuse mode). A public client refreshes with just ``client_id`` (no secret);
-    the BFF injects the confidential secret server-side."""
     access_token: str
     refresh_token: Optional[str]
     token_url: str
@@ -85,25 +67,6 @@ def oidc_login(authority: str, *, client_id: str = "astral-desktop",
                bff_base: Optional[str] = None, scopes: str = _DEFAULT_SCOPES,
                timeout: int = 300,
                cancel_event: Optional[threading.Event] = None) -> Session:
-    """Interactive PKCE loopback login (RFC 8252).
-
-    ``authority`` — the Keycloak realm URL (its discovery document supplies the
-    authorize + token endpoints). ``client_id`` — the OIDC client; the default
-    ``astral-desktop`` is the dedicated *public* client.
-
-    ``cancel_event`` — optional: setting it while the loopback wait is pending
-    aborts the login promptly with :class:`LoginCancelled` (a completed
-    callback wins over a late cancel).
-
-    Token exchange mode:
-
-    * ``bff_base is None`` (default) — **direct**: the code/refresh exchange
-      POSTs to Keycloak's own ``token_endpoint``. Requires ``client_id`` to be a
-      *public* Keycloak client (no secret).
-    * ``bff_base`` set — **BFF reuse**: the exchange POSTs to
-      ``{bff_base}/auth/token`` (the orchestrator injects a confidential
-      client's secret server-side). Used to reuse the web's ``astral-frontend``.
-    """
     conf = json.load(urlopen(f"{authority.rstrip('/')}/.well-known/openid-configuration", timeout=15))
     auth_ep = conf["authorization_endpoint"]
     token_url = (f"{bff_base.rstrip('/')}/auth/token" if bff_base
@@ -138,7 +101,7 @@ def oidc_login(authority: str, *, client_id: str = "astral-desktop",
     })
     url = f"{auth_ep}?{params}"
     logger.info("opening browser for OIDC login (client=%s)", client_id)
-    try:  # guarded: a windowed (no-console) PyInstaller build may have no stdout
+    try:
         print("\n[AstralDeep] Opening your browser to sign in…\n"
               "If it doesn't open automatically, paste this URL into your browser:\n"
               f"  {url}\n", flush=True)

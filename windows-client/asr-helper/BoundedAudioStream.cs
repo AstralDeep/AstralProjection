@@ -1,3 +1,6 @@
+// Thread-safe, capacity-bounded (256 KB) in-memory Stream that queues live PCM audio for
+// System.Speech to read; Program.cs writes incoming audio chunks into it as they arrive.
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -31,9 +34,7 @@ namespace AstralSpeechHelper
             }
         }
 
-        // System.Speech wraps this stream as a COM IStream and snapshots Length
-        // before recognition starts. The maximum value represents a live source;
-        // Read still blocks until bounded PCM is available or Complete is called.
+        // COM IStream snapshots this once; MaxValue marks it unbounded/live
         public override long Length => long.MaxValue;
 
         public override long Position

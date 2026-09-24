@@ -1,3 +1,6 @@
+// Tests for BoundedAudioStream (asr-helper/BoundedAudioStream.cs): bounded PCM capacity, queue
+// draining on Complete, and monotonic non-seekable read position.
+
 using System;
 using System.IO;
 using System.Threading.Tasks;

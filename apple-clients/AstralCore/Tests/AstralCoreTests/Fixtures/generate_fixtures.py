@@ -1,3 +1,8 @@
+"""Regenerates AstralCoreTests' astralprims-fixtures.json known-answer fixtures from the
+live astralprims Python package; run manually before PrimitivesTests.swift checks the
+Swift mirror against it.
+"""
+
 import argparse
 import json
 from pathlib import Path

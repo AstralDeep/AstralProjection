@@ -1,3 +1,7 @@
+// Derives presentation-only action and version metadata for a rendered component from its server-stamped
+// chrome fields; identity() resolves the canonical id that ComponentActions and WorkspaceActions key leases
+// and events on.
+
 package com.personalailabs.astraldeep.core.chrome
 
 import com.personalailabs.astraldeep.core.sdui.Component
@@ -6,7 +10,6 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
-/** Closed presentation metadata. These descriptors never authorize a server operation. */
 data class ComponentAction(val kind: String, val label: String, val icon: String, val title: String, val context: String)
 
 data class ComponentVersion(val versionNo: Long, val reason: String, val createdAt: String, val title: String) {
@@ -43,7 +46,6 @@ object ComponentChrome {
         return contexts.keys.filterNot { it in duplicates }.mapNotNull(valid::get)
     }
 
-    /** Only bounded server rows are shown. No local component body becomes a version. */
     fun versions(component: Component): List<ComponentVersion> {
         val rows = component.attributes["versions"] as? JsonArray ?: return emptyList()
         val first = rows.take(5).mapNotNull { it as? JsonObject }
@@ -60,7 +62,6 @@ object ComponentChrome {
         }
     }
 
-    /** The endpoint identity is the canonical server component_id, never a layout id alias. */
     fun identity(component: Component): String? {
         val id = component.attributes.string("component_id", 128)?.takeIf { it.isNotBlank() } ?: return null
         return id.takeIf { component.id == id && id.none(Char::isISOControl) }

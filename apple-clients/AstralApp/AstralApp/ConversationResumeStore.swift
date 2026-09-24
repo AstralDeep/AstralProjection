@@ -1,7 +1,10 @@
+// Account-scoped, non-secret persistence for the active chat locator only, never transcript, canvas, or
+// tokens; Android's ConversationResumeStore.kt twin, read by AppModel to resume a conversation after launch
+// or reconnect.
+
 import AstralCore
 import Foundation
 
-/// The only events allowed to erase a durable conversation locator.
 enum ConversationResumeClearReason: Sendable {
     case newChat
     case signOut
@@ -9,11 +12,6 @@ enum ConversationResumeClearReason: Sendable {
     case confirmedDeletion
 }
 
-/// Account-scoped, non-secret active-chat persistence for iOS and macOS.
-///
-/// The value is intentionally only a locator. Transcript, canvas, tokens, and
-/// server URLs remain outside this store; the server re-authorizes and
-/// hydrates the chat after every launch or reconnect.
 final class ConversationResumeStore: @unchecked Sendable {
     private let defaults: UserDefaults
     private let now: @Sendable () -> Date
@@ -54,8 +52,6 @@ final class ConversationResumeStore: @unchecked Sendable {
         return ConversationResumeLocator(chatId: chatId, updatedAt: updatedAt)
     }
 
-    /// Unknown or malformed schemas are retained for forward compatibility.
-    /// Confirmed deletion is additionally fenced to the stored chat id.
     @discardableResult
     func clear(
         _ reason: ConversationResumeClearReason,

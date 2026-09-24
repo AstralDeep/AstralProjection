@@ -1,57 +1,23 @@
-"""Feature 027 — static User-guide content for the ``guide`` chrome surface.
-
-Ported from the former React panel
-(``frontend/src/components/guide/UserGuidePanel.tsx`` at commit ``29de624``).
-Every section of the source panel is carried over; wording that described
-chrome that no longer exists is adapted to the current server-rendered UI.
-Two rounds of that so far: the React era (a left sidebar, draggable floating
-chat, URL-persisted filters, instant-save permissions), and the a8p console
-(feature 089 plus the 2026-09-18 refinements — the frame is a left sidebar
-and a main column again, there is no top bar, and the settings gear at the
-sidebar's bottom opens a dialog whose left rail IS the menu).
-
-Keep this file honest when the chrome moves: a guide that names a control by a
-place it no longer occupies is worse than one that does not mention it.
-
-The guide is intentionally static content (no live data, no DB access).
-``SECTIONS`` is an ordered list of ``{"slug", "title", "body_html"}`` dicts
-(the admin section additionally carries ``"admin_only": True``). ``body_html``
-is built exclusively from the literal strings below via the escape-by-default
-helpers in this module — all plain text passes through ``esc()``; only the
-helpers themselves emit markup.
+"""Static content and section list for the in-app User Guide surface, built with small
+escape-by-default HTML helpers; rendered by webrender/chrome/surfaces/guide.py.
 """
+
 from webrender import esc
 
 
 class _H(str):
-    """Marker type for an already-escaped, trusted HTML fragment.
-
-    ``_frag`` passes ``_H`` instances through verbatim and escapes every other
-    value, which keeps the escape-by-default discipline mechanical: helpers
-    return ``_H``; raw strings are always escaped.
-    """
+    pass
 
 
 def _frag(parts) -> str:
-    """Join mixed parts, escaping anything that is not a trusted fragment.
-
-    Args:
-        parts: Iterable of strings; ``_H`` members are trusted HTML, all
-            other values are escaped via ``esc()``.
-
-    Returns:
-        The concatenated HTML string.
-    """
     return "".join(p if isinstance(p, _H) else esc(p) for p in parts)
 
 
 def _h1(text) -> _H:
-    """Section heading (one per section)."""
     return _H(f'<h1 class="text-xl font-semibold mb-3 leading-tight text-astral-text">{esc(text)}</h1>')
 
 
 def _h2(text) -> _H:
-    """Sub-heading within a section body."""
     return _H(
         f'<h2 class="text-base font-semibold mt-6 mb-2 text-astral-text border-b border-white/5 pb-1">'
         f"{esc(text)}</h2>"
@@ -59,17 +25,14 @@ def _h2(text) -> _H:
 
 
 def _p(*parts) -> _H:
-    """Body paragraph; plain-string parts are escaped, ``_H`` parts trusted."""
     return _H(f'<p class="text-sm text-astral-muted leading-relaxed mb-3">{_frag(parts)}</p>')
 
 
 def _li(*parts) -> _H:
-    """List item for use inside :func:`_ul`."""
     return _H(f"<li>{_frag(parts)}</li>")
 
 
 def _ul(*items) -> _H:
-    """Bulleted list of :func:`_li` items."""
     return _H(
         '<ul class="text-sm text-astral-muted leading-relaxed mb-3 list-disc pl-5 space-y-1">'
         + "".join(items)
@@ -78,7 +41,6 @@ def _ul(*items) -> _H:
 
 
 def _tip(*parts) -> _H:
-    """Highlighted tip callout (the panel's ``Tip`` block)."""
     return _H(
         '<div class="my-3 border border-astral-primary/20 bg-astral-primary/5 rounded-lg p-3 '
         f'text-sm text-astral-muted leading-relaxed">{_frag(parts)}</div>'
@@ -86,17 +48,14 @@ def _tip(*parts) -> _H:
 
 
 def _strong(text) -> _H:
-    """Inline emphasis rendered in the primary text color."""
     return _H(f'<strong class="text-astral-text font-semibold">{esc(text)}</strong>')
 
 
 def _em(text) -> _H:
-    """Inline italics (UI labels, entry names)."""
     return _H(f"<em>{esc(text)}</em>")
 
 
 def _kbd(text) -> _H:
-    """Inline keyboard-key chip."""
     return _H(
         '<kbd class="bg-white/5 border border-white/10 rounded px-1.5 py-0.5 text-[10px] '
         f'font-mono text-astral-text">{esc(text)}</kbd>'
@@ -104,7 +63,6 @@ def _kbd(text) -> _H:
 
 
 def _code(text) -> _H:
-    """Inline code token."""
     return _H(
         '<code class="bg-white/5 border border-white/10 rounded px-1 py-0.5 text-[11px] '
         f'font-mono text-astral-text">{esc(text)}</code>'
@@ -690,8 +648,6 @@ _ADMIN = "".join([
     ),
 ])
 
-#: Ordered guide sections — slug/title parity with the former React panel's
-#: SECTIONS inventory; the ``admin`` section keeps its admin-only gating.
 SECTIONS = [
     {"slug": "intro", "title": "Welcome", "body_html": _INTRO},
     {"slug": "signing-in", "title": "Signing in", "body_html": _SIGNING_IN},

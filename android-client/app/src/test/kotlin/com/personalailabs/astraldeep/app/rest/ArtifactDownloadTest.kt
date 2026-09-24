@@ -1,3 +1,6 @@
+// Tests for ArtifactDownload's bearer-token REST client against a loopback MockWebServer, including refusal
+// of non-bearer public URLs.
+
 package com.personalailabs.astraldeep.app.rest
 
 import okhttp3.HttpUrl
@@ -36,7 +39,6 @@ class ArtifactDownloadTest {
         for (bad in listOf("http://github.com/app.apk", "https://user:token@github.com/app.apk", "https://github.com/app.apk#frag", "https://github.com/\\evil")) {
             assertFails { publicDownloadBrowserUrl("https://astral.example", bad) }
         }
-        // The bearer-capable downloader continues to deny the public URL before a request.
         assertFails { ArtifactDownload("https://astral.example").copyTo(public, "", ByteArrayOutputStream()) }
         assertFails { ArtifactDownload("https://astral.example").copyTo(public, "private-token", ByteArrayOutputStream()) }
     }
@@ -84,9 +86,4 @@ class ArtifactDownloadTest {
     }
 }
 
-/**
- * MockWebServer's own `url()` builds on the machine's reverse-DNS host name, which is not
- * always a loopback literal, so the product's local-HTTP allowance would reject it. Pin the
- * explicit loopback host the way ServerSession088Test does.
- */
 private fun MockWebServer.localUrl(path: String): HttpUrl = url(path).newBuilder().host("localhost").build()

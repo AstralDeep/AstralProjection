@@ -1,4 +1,6 @@
-// Exact offline native assets, real Plotly, and a real browser CSP boundary.
+// Browser tests confirming native chart export assets load under the real CSP with real Plotly,
+// entirely offline.
+
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";

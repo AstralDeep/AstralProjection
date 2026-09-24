@@ -1,9 +1,10 @@
+// Renders Plotly charts inside an isolated, network-blocked WKWebView and captures the result as a pixel
+// snapshot for the native chart component. Used by ComponentView's ChartComponent.
+
 import AstralCore
 import SwiftUI
 import WebKit
 
-/// One data-only document with the approved, hash-pinned Plotly bytes. This
-/// web view has no identity, action bridge, persistent store, or navigation.
 private struct AstralViewportWidthKey: EnvironmentKey {
     static let defaultValue: CGFloat = 1024
 }
@@ -15,7 +16,6 @@ extension EnvironmentValues {
 }
 
 enum OfflineChartDocument {
-    /// Host colors are numeric, never authored CSS or executable chart data.
     struct Appearance: Equatable {
         let background: UInt32
         let text: UInt32
@@ -141,8 +141,6 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         loadedGeneration = nil
         webView.navigationDelegate = self
         webView.uiDelegate = self
-        // The CSP already blocks fetch, frames, remote images, fonts, and
-        // workers. WebKit's content blocker adds a second network boundary.
         WKContentRuleListStore.default().compileContentRuleList(
             forIdentifier: "astral-offline-chart-network-deny-v1",
             encodedContentRuleList:
@@ -214,8 +212,6 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         if let currentNavigation, currentNavigation === navigation { loadedGeneration = generation }
     }
 
-    /// Query the existing chart, preserving its current zoom/pan/legend. No
-    /// raw component is replayed and no new media request is made.
     func capturePixels(_ webView: WKWebView) async throws -> Data {
         try Task.checkCancellation()
         let current = generation

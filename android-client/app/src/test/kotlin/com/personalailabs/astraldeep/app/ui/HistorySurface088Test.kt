@@ -1,3 +1,6 @@
+// Tests for the native History surface's data loading and row presentation from the server-owned history
+// list.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest

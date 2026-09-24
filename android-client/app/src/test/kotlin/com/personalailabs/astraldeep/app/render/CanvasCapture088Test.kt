@@ -1,3 +1,6 @@
+// Tests for the Android canvas-capture pipeline (CanvasHost/CanvasPixels): rendering the committed canvas to
+// a bitmap for export and share.
+
 package com.personalailabs.astraldeep.app.render
 
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore

@@ -1,4 +1,7 @@
-"""Feature 060 Windows conversation continuity contract tests (T047/T053)."""
+"""Tests for astral_client/app.py, protocol.py, and protocol_manifest.py: the QSettings
+chat locator's retention rules, connection-generation rebinding, hydration/commit
+sequencing, and transcript snapshot decoding.
+"""
 
 from __future__ import annotations
 
@@ -307,8 +310,6 @@ def test_commit_ready_cannot_steal_unfinished_commit_or_transient_sequence(clien
     assert reducer.reduce_snapshot(_snapshot(
         snapshot_id=SNAPSHOT_3, request=DETACHED_COMMIT, purpose="commit", revision=9,
     )) == "wrong_scope"
-    # Local commits require no server prelude, while detached commits bind the
-    # expected revision. Neither unfinished request may lose its own result.
     assert reducer.reduce_snapshot(_snapshot(
         snapshot_id=SNAPSHOT_2, request=COMMIT, purpose="commit", revision=8,
     )) == "snapshot_applied"
@@ -384,8 +385,6 @@ def test_semantic_decoder_preserves_parts_components_structured_recovery_and_att
 
 
 def test_text_part_variant_is_bounded_and_carried() -> None:
-    """066 T023 contract extension: optional bounded variant on text parts."""
-
     def _message(part: dict) -> list[dict]:
         return [
             {
@@ -397,7 +396,6 @@ def test_text_part_variant_is_bounded_and_carried() -> None:
             }
         ]
 
-    # Drift pin against the backend's closed set.
     assert CANONICAL_TEXT_PART_VARIANTS == frozenset({"caption"})
 
     decoded = decode_semantic_transcript(

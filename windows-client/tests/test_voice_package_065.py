@@ -1,4 +1,7 @@
-"""Feature 065 frozen-Windows media closure and offline manifest evidence."""
+"""Tests for windows-client frozen-build packaging: the PyInstaller spec collects the
+QtMultimedia/LiveKit native closure and Qt text-to-speech plugins, and the offline
+manifest binds the locked LiveKit release.
+"""
 
 from __future__ import annotations
 

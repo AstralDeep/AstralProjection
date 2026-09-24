@@ -1,7 +1,8 @@
+// The wrist conversation view: crown-scrollable adapted components, dictation-first input with
+// confirm-before-send, and voice controls wired to WatchModel and Speaker; mirrors ChatView.swift's markdown
+// and icon handling.
+
 import AstralCore
-// Feature 051 US4 — the conversation on the wrist: crown-scrollable adapted
-// components, dictation-first input with confirm-before-send, and speech
-// controls (stop/replay; navigation away stops playback).
 import SwiftUI
 
 struct WatchChatView: View {
@@ -22,9 +23,6 @@ struct WatchChatView: View {
                         ForEach(model.visibleEntries) { entry in
                             entryView(entry).id(entry.id)
                         }
-                        // The live canvas: identity-keyed in the MODEL (upserts
-                        // morph components in place); watch views are stateless,
-                        // so positional ForEach identity is safe here.
                         ForEach(Array(model.workspaceCanvas.enumerated()), id: \.offset) { _, comp in
                             WatchComponentView(component: comp)
                         }
@@ -45,9 +43,6 @@ struct WatchChatView: View {
         }
         .navigationTitle("Chat")
         .toolbar {
-            // Speech controls (FR-030). Explicit white glyphs: the app-wide
-            // indigo tint colors the bottom-bar button circles, and a tinted
-            // glyph on a tinted circle disappears into a plain dot.
             ToolbarItemGroup(placement: .bottomBar) {
                 Button {
                     model.speaker.replay()
@@ -77,7 +72,7 @@ struct WatchChatView: View {
                 .disabled(model.voiceSession != nil)
             }
         }
-        .onDisappear { model.speaker.stop() }  // navigation stops playback
+        .onDisappear { model.speaker.stop() }
     }
 
     @ViewBuilder
@@ -125,8 +120,6 @@ struct WatchChatView: View {
                             WatchBrand.primary.opacity(0.25),
                             in: RoundedRectangle(cornerRadius: 8))
                 }
-                // Read-only name chips (FR-033): no upload affordance exists
-                // on the watch — these only mirror what the turn carried.
                 ForEach(attachments, id: \.self) { name in
                     Label(name, systemImage: "paperclip")
                         .font(AstralTypography.caption2)
@@ -137,9 +130,6 @@ struct WatchChatView: View {
             }
             .frame(maxWidth: .infinity, alignment: .trailing)
         case .status(_, let text):
-            // Loaded assistant narrative arrives as raw markdown (parity with
-            // the phone's ChatBubble) — flatten blocks and parse inline spans;
-            // never show asterisks or `##`/fence syntax.
             Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(text)))
                 .font(AstralTypography.footnote).foregroundStyle(.secondary)
         case .turn(_, let components):
@@ -151,9 +141,6 @@ struct WatchChatView: View {
         }
     }
 
-    /// Dictation-first (TextFieldLink opens the system dictation/scribble
-    /// sheet); the dictated text lands in a pending row with explicit
-    /// Send/Discard — garbled dictation never auto-sends (FR-029).
     @ViewBuilder
     private var inputArea: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -198,14 +185,7 @@ struct WatchChatView: View {
     @ViewBuilder
     private var voiceConversationControls: some View {
         if model.voiceComposer == nil, model.voiceTerminalNotice == nil {
-            // 066/P5: before the first composer_state of a connection (and
-            // after a reset clears it) the server model is absent — show a
-            // disabled default mic instead of nothing, matching web's
-            // pre-rendered voice-start control. The first real frame
-            // replaces it. Gate on FRAME PRESENCE (composer), not on a
-            // visible primary control: an owning-but-suspended session has a
-            // real composer with zero visible session controls, and it must
-            // read "suspended", never "checking availability".
+            // Gate on composer presence, not a visible control
             Button {
             } label: {
                 Label("Start voice conversation", systemImage: "mic.fill")
@@ -222,9 +202,6 @@ struct WatchChatView: View {
                 .font(AstralTypography.caption2)
                 .foregroundStyle(.secondary)
         } else if model.primaryVoiceControl == nil, model.voiceComposer != nil {
-            // Composer present but no visible primary (e.g. this watch owns a
-            // suspended session): surface the honest state label instead of
-            // nothing.
             Text(model.voiceStatusLabel)
                 .font(AstralTypography.caption2)
                 .foregroundStyle(.secondary)
@@ -297,9 +274,6 @@ struct WatchChatView: View {
         }
     }
 
-    // P11: one SF Symbol per server icon semantic, identical to the
-    // iOS/macOS map in ChatView.swift (and the same glyph semantics as
-    // Windows' _CONTROL_GLYPHS and web's VOICE_ICONS).
     private func voiceIcon(_ serverIcon: String) -> String {
         switch serverIcon {
         case "microphone": return "mic.fill"
@@ -314,9 +288,6 @@ struct WatchChatView: View {
     }
 }
 
-/// Compact wrist presentation for the shared terminal voice notice. The
-/// triangle and explicit title are non-color cues; validated server text stays
-/// inert in `Text`, and dictation controls remain independent below it.
 private struct WatchVoiceTerminalNoticeView: View {
     let notice: VoiceTerminalNotice
 

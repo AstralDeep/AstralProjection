@@ -1,4 +1,7 @@
-"""Feature 065 Windows composer, registration, and transcript contracts."""
+"""Tests for astral_client/app.py, protocol.py, and voice.py: composer, registration,
+and transcript contracts — client-local v2 fixture validation, server-owned composer
+accessibility, and terminal voice/speech notice precedence across turns.
+"""
 
 from __future__ import annotations
 

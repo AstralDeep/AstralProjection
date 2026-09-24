@@ -1,3 +1,6 @@
+// Registers layout/content primitives (grid, hero, badge, metric, key-value, timeline, rating, progress,
+// collapsible), matching the web renderer's presentation.
+
 package com.personalailabs.astraldeep.app.render.renderers
 
 import androidx.compose.foundation.background
@@ -58,7 +61,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 
-/** Register the layout/content primitives (US2). */
 fun Renderer.registerLayoutRenderers(): Renderer =
     apply {
         register("grid") { c -> GridPrimitive(c) { render(it) } }
@@ -89,9 +91,6 @@ private fun GridPrimitive(
     }
     val capture = LocalCanvasCapture.current
     val cols = (c.int("columns") ?: 2).coerceAtLeast(1)
-    // The authored column count is a wide-screen hint: honoring it verbatim on
-    // a phone gives each cell width/N and wraps content character-by-character.
-    // Clamp to how many ~150 dp cells actually fit, so 4-up becomes 2×2.
     BoxWithConstraints {
         val fit = (maxWidth / 150.dp).toInt().coerceAtLeast(1)
         val effective = cols.coerceAtMost(fit)
@@ -106,12 +105,6 @@ private fun GridPrimitive(
     }
 }
 
-/**
- * The hero banner. Mirrors the web renderer (`render_hero`): optional uppercase
- * `eyebrow` caption above the title, optional string `badges` capsule row below
- * the subtitle, and a `gradient` variant that adds a diagonal primary→secondary
- * wash plus an AccentBrush top bar; the default variant stays a plain card.
- */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun HeroPrimitive(c: Component) {

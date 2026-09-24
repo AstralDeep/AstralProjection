@@ -1,3 +1,7 @@
+// The type→Composable renderer registry (Android twin of the Windows REGISTRY): renderers register per
+// primitive type and emit events, downloads, or live theme changes; unknown types fall back to a labeled
+// Placeholder.
+
 package com.personalailabs.astraldeep.app.render
 
 import androidx.compose.foundation.layout.padding
@@ -12,7 +16,6 @@ import com.personalailabs.astraldeep.app.ui.WorkspaceContext
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
 
-/** Emits a `ui_event` back to the orchestrator (e.g. a rendered button's action). */
 fun interface Emit {
     fun event(
         action: String,
@@ -20,7 +23,6 @@ fun interface Emit {
     )
 }
 
-/** Downloads an authed backend file (a `file_download`/`download_card`) to the device. */
 fun interface Download {
     fun file(
         url: String,
@@ -28,28 +30,12 @@ fun interface Download {
     )
 }
 
-/**
- * Applies a theme spec locally (feature 044 US5). A `theme_apply` component or an
- * interactive `color_picker` calls this with the raw spec object
- * (`preset`|`colors`|`color_key`+`color_value`) so the whole app restyles live,
- * without waiting for a server round-trip.
- */
 fun interface ThemeSink {
     fun apply(spec: JsonObject)
 }
 
-/**
- * A renderer for one primitive type — an extension composable on [Renderer] so it
- * can render children via `render(child)` and emit events via `emit`.
- */
 typealias ComponentRenderer = @Composable Renderer.(Component) -> Unit
 
-/**
- * The type→Composable registry (the Android twin of the Windows renderer
- * `REGISTRY`). Renderers register per primitive type; an unknown type falls back
- * to a labeled [Placeholder] (FR-005). [supportedTypes] is exactly what the
- * client advertises to ROTE in `register_ui`.
- */
 class Renderer(
     val emit: Emit,
     val download: Download = Download { _, _ -> },
@@ -85,7 +71,6 @@ class Renderer(
     }
 }
 
-/** Labeled placeholder for an unsupported/unknown component type. */
 @Composable
 fun Placeholder(component: Component) {
     Text(

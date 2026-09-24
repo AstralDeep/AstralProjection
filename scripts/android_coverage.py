@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Source-bound Android JVM/device coverage collection; never merges XML counters."""
+"""CLI that collects and validates Android JVM/device coverage strictly from
+source-tracked files, refusing to merge XML counters or leak paths/commands in
+diagnostic output.
+"""
 
 from __future__ import annotations
 
@@ -46,7 +49,7 @@ STAGING_KEYS = {
 
 
 class InvalidCoverage(ValueError):
-    """A closed diagnostic failure; no credentials are included in errors."""
+    pass
 
 
 def require(condition: bool, code: str) -> None:
@@ -55,13 +58,6 @@ def require(condition: bool, code: str) -> None:
 
 
 def failure_token(error: BaseException) -> str:
-    """A diagnostic token that can never carry a path, command line or secret.
-
-    `InvalidCoverage` messages are a closed vocabulary chosen by this module, so
-    they are printed verbatim. Every other exception (OSError, ValueError,
-    ET.ParseError, subprocess errors) can embed a filename or an argument
-    vector, so only the exception class name is disclosed.
-    """
     if isinstance(error, InvalidCoverage):
         return str(error)
     return type(error).__name__
@@ -424,7 +420,7 @@ def _device(
     for key, value in sorted(values.items()):
         instrument += ["-e", key, value]
     instrument.append(TEST_PACKAGE)
-    # adb shell executes a shell string: quote every value, including private IAM inputs.
+    # adb shell runs one string — quote every value, even IAM input
     try:
         result = subprocess.run(
             adb_command(adb, serial, "shell", shlex.join(instrument)),
@@ -511,8 +507,6 @@ def device(
                     "version": VERSION,
                     "lane": lane,
                     "status": "failed",
-                    # Closed token only: a later reader must learn WHY without
-                    # inheriting any path or command line from the failure.
                     "reason": failure_token(error),
                     "started_sha256": digest(started),
                 },

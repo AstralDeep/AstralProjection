@@ -1,3 +1,6 @@
+// Thin REST client for surfaces the SDUI WebSocket doesn't carry: audit log reads (tolerant of a few response
+// shapes), attachment upload, logout, and per-tool permission toggles.
+
 package com.personalailabs.astraldeep.app.rest
 
 import kotlinx.coroutines.Dispatchers
@@ -17,7 +20,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 
-/** One row of `GET /api/audit` (the per-user, hash-chained audit log). */
 data class AuditEvent(
     val id: String?,
     val eventClass: String?,
@@ -25,7 +27,6 @@ data class AuditEvent(
     val outcome: String?,
     val recordedAt: String?,
     val outcomeDetail: String? = null,
-    /** Compact inputs/outputs metadata for the expanded detail view. */
     val detail: String? = null,
 )
 
@@ -35,11 +36,6 @@ private val auditJson =
         isLenient = true
     }
 
-/**
- * Tolerant shaping of the `/api/audit` body — accepts a top-level array or an
- * object wrapping the rows under `events`/`items`/`data`, and reads each row's
- * fields under a few likely key spellings. Pure → unit-tested.
- */
 fun parseAudit(raw: String): List<AuditEvent> {
     val root = runCatching { auditJson.parseToJsonElement(raw) }.getOrNull() ?: return emptyList()
     val arr: JsonArray =
@@ -69,25 +65,17 @@ private fun metaSummary(o: JsonObject): String? {
     return parts.joinToString("\n").ifBlank { null }
 }
 
-/** Metadata returned by `POST /api/upload` for a staged attachment (feature 031). */
 data class AttachmentUpload(
     val attachmentId: String,
     val filename: String,
     val category: String,
-    /** covered | preparing | pending_admin_approval | unavailable */
     val parserStatus: String?,
 )
 
-/** Thin REST client for the read-only surfaces the SDUI wire does not carry. */
 class AstralRest(
     private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient(),
 ) {
-    /**
-     * Upload a single file to `POST /api/upload` (multipart `file` field, Bearer
-     * auth) — the exact contract the web client uses. Returns the new
-     * attachment's metadata (id/category/parser_status) or null on any failure.
-     */
     suspend fun uploadAttachment(
         token: String,
         filename: String,
@@ -135,12 +123,6 @@ class AstralRest(
             }
         }
 
-    /**
-     * Sign-out ladder rung 1 (feature 044): server-side revocation via
-     * `POST /api/auth/logout` (Bearer auth, `{refresh_token, client_id}` JSON
-     * body) — the backend revokes at Keycloak or queues offline-tolerantly.
-     * Best-effort: true on a 2xx, false on any failure (never throws).
-     */
     suspend fun logout(
         token: String,
         refreshToken: String,
@@ -161,12 +143,6 @@ class AstralRest(
             runCatching { client.newCall(request).execute().use { it.isSuccessful } }.getOrDefault(false)
         }
 
-    /**
-     * Toggle one tool's permission for the current user (feature-013 per-(tool,
-     * kind) shape): PUT /api/agents/{id}/permissions
-     * `{per_tool_permissions: {tool: {kind: enabled}}}`. Granular — does not touch
-     * the agent's other tools. Returns true on a 2xx.
-     */
     suspend fun setToolPermission(
         token: String,
         agentId: String,

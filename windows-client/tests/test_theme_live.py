@@ -1,10 +1,8 @@
-"""Feature 044 (T049) — live theming.
-
-The palette is mutable and the stylesheet rebuildable: `apply_theme` mutates the
-active PALETTE from a preset / colors map / single channel, `build_stylesheet`
-re-renders the QSS, and the `color_picker` primitive is interactive (emits
-`save_theme` + applies locally). The five presets mirror the backend.
+"""Tests for astral_client/theme.py and renderer.py: live theming — apply_theme from
+preset/colors-map/single-channel specs, the five presets, and the interactive
+color_picker routed through RenderContext.
 """
+
 import os
 
 import pytest
@@ -19,8 +17,6 @@ from astral_client.renderer import RenderContext, render  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _restore_theme():
-    """Snapshot + restore the module-level palette so a test's theme change does
-    not leak into the shared qapp session."""
     snap = dict(T.PALETTE)
     yield
     T.PALETTE.clear()
@@ -32,7 +28,7 @@ def _restore_theme():
 def test_build_stylesheet_nonempty_contains_palette():
     s = T.build_stylesheet()
     assert isinstance(s, str) and len(s) > 100
-    assert T.PRIMARY in s          # palette colors appear in the QSS
+    assert T.PRIMARY in s
     assert T.TEXT in s
     assert T.SURFACE_2 in s
 
@@ -43,7 +39,6 @@ def test_apply_preset_changes_palette_and_stylesheet():
     assert T.PALETTE["bg"] == T.PRESETS["daylight"]["bg"]
     assert T.PRIMARY == T.PRESETS["daylight"]["primary"]
     assert T.build_stylesheet() != before
-    # idempotent — re-applying the same preset changes nothing
     assert T.apply_theme("daylight") is False
 
 
@@ -60,10 +55,6 @@ def test_apply_colors_map():
 
 
 def test_colors_map_overrides_preset_name():
-    """W7: a spec carrying BOTH a preset name and a resolved ``colors`` map
-    applies the colors — the server always sends the resolved channel map
-    alongside the preset, and it is authoritative; the local preset table is
-    only a fallback for old servers that send the name alone."""
     assert T.apply_theme({"preset": "midnight",
                           "colors": dict(T.PRESETS["ocean"])}) is True
     assert T.PALETTE == T.PRESETS["ocean"]
@@ -107,7 +98,6 @@ def test_color_picker_renders(qapp):
 def test_color_picker_emits_save_theme_and_applies(qapp, monkeypatch):
     from PySide6.QtWidgets import QPushButton
 
-    # Stub the modal colour chooser so the emit path is drivable headlessly.
     monkeypatch.setattr(rmod, "_choose_color", lambda *a, **k: "#FF8800")
     seen = []
     ctx = RenderContext(emit=lambda a, p: seen.append((a, p)))
@@ -116,14 +106,13 @@ def test_color_picker_emits_save_theme_and_applies(qapp, monkeypatch):
     w.findChild(QPushButton).click()
     assert seen[-1][0] == "save_theme"
     assert seen[-1][1]["theme"] == {"color_key": "accent", "color_value": "#FF8800"}
-    # applied locally too
     assert T.PALETTE["accent"] == "#FF8800"
 
 
 def test_color_picker_cancel_emits_nothing(qapp, monkeypatch):
     from PySide6.QtWidgets import QPushButton
 
-    monkeypatch.setattr(rmod, "_choose_color", lambda *a, **k: None)  # cancelled
+    monkeypatch.setattr(rmod, "_choose_color", lambda *a, **k: None)
     seen = []
     w = render({"type": "color_picker", "color_key": "primary", "value": "#6366F1"},
                RenderContext(emit=lambda a, p: seen.append((a, p))))
@@ -137,20 +126,14 @@ def test_theme_apply_component_applies_live(qapp):
     assert T.PALETTE["primary"] == T.PRESETS["forest"]["primary"]
 
 
-# --- W5: renderer theme path routes through the app's single implementation --
-
 def test_theme_apply_routes_through_ctx_callback(qapp):
-    """The renderer's theme path must call the app-injected
-    ``RenderContext.apply_theme`` (wired to MainWindow._apply_theme_pref — the
-    single theme-apply implementation, which also restyles the canvas) instead
-    of a private duplicate. The callback owns the palette mutation."""
     seen = []
     before = dict(T.PALETTE)
     render({"type": "theme_apply", "preset": "ocean"},
            RenderContext(emit=lambda *a: None,
                          apply_theme=lambda spec: seen.append(spec)))
     assert seen and seen[0]["preset"] == "ocean"
-    assert T.PALETTE == before        # the app callback owns the mutation
+    assert T.PALETTE == before
 
 
 def test_color_picker_routes_through_ctx_callback(qapp, monkeypatch):

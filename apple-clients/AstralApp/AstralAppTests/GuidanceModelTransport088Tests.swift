@@ -1,3 +1,7 @@
+// Tests for the notes-surface transport (Chrome/GuidanceSurface.swift): reads, navigation, and close stay on
+// one socket without queueing, and connection or ownership changes before a send cannot leak or replay an old
+// read.
+
 import AstralCore
 import Foundation
 import Network
@@ -105,7 +109,6 @@ final class GuidanceModelTransport088Tests: XCTestCase {
                 if case .frame(let frame) = event { model.handleFrame(frame) }
             }
         }
-        // Synthetic peer exercises transport and current-view checks, never real IAM/bootstrap.
         await socket.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
         await fulfillment(of: [ready], timeout: 3)
         model.connected = true
@@ -214,7 +217,6 @@ final class GuidanceModelTransport088Tests: XCTestCase {
         fields["request_generation"] = .string(generation)
         return String(decoding: try! JSONValue.object(fields).encoded(), as: UTF8.self)
     }
-    // Exact shared producer fixture; synthetic text only, not a product fixture.
     private static let editFrame =
         #"{"type":"chrome_surface","region":"modal","surface_key":"guidance","title":"Private notes","admin_only":false,"components":[{"type":"button","label":"Back to notes","action":"chrome_open","payload":{"surface":"guidance","params":{"mode":"list"}},"variant":"secondary","disabled":false,"local":false},{"type":"text","content":"Current note","variant":"h3"},{"type":"badge","label":"Enabled","variant":"default"},{"type":"text","content":"Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private","variant":"body"},{"type":"text","content":"No expiry","variant":"caption"},{"type":"param_picker","title":"Edit note","description":"","fields":[{"name":"category","label":"Category","kind":"select","default":"Preference","options":["Profession","Goal","Preference","Workflow tag","Context"]},{"name":"value","label":"Note","kind":"textarea","default":"Use complete source text: **literal** <script>alert(1)</script> https://example.invalid/private","help":"Describe your preferences or context. Do not include patient information."},{"name":"enabled","label":"Enabled","kind":"boolean","default":true},{"name":"expiry","label":"Expiry","kind":"select","default":"Keep current expiry","options":["Keep current expiry","No expiry","Set a date"]},{"name":"expiry_date","label":"Expiry date (UTC)","kind":"text","default":"","help":"Use a UTC date and time, for example 2026-12-31T23:59:00Z.","visible_when":{"expiry":"Set a date"}}],"submit_label":"Save note","submit_action":"chrome_note_save","submit_payload":{"note_id":"5106d0c8-09a0-47cf-910f-0cc1408b73a4","expected_revision":3}}],"mode":"replace","request_generation":"8c7c08ee-0d23-43db-9156-ea3e4e729f89"}"#
 

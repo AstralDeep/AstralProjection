@@ -1,3 +1,6 @@
+// Tests for component action requests: fixed-endpoint share scoping, CSV export requiring a fresh credential,
+// malformed-identity rejection, and closed-socket action requirements.
+
 import Foundation
 import XCTest
 

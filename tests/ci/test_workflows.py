@@ -1,3 +1,7 @@
+"""Tests for the repository's GitHub Actions workflows: active-vs-inert status, coverage
+gates, pinned dependencies, and cross-platform release contracts.
+"""
+
 from pathlib import Path
 import json
 import os
@@ -98,8 +102,6 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
     assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in web
     assert 'for name in ("service-worker.js", "offline-registration.js")' in web
     assert "len(counts) >= .90" in web
-    # Every tracked 088 browser spec runs in hosted CI: an 088 spec that only
-    # ever ran locally left the shipped client.js changes unexercised here.
     assert (
         "tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js "
         "tests/native-export-088.spec.js tests/work-reads-088.spec.js "
@@ -108,7 +110,6 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
         "tests/selection-088.spec.js "
         "--browser=chromium"
     ) in web
-    # Tracked files only: an untracked local scratch spec must never fail this guard.
     listed = subprocess.run(
         ["git", "ls-files", "tooling/web-ci/tests/*-088.spec.js"],
         cwd=ROOT, capture_output=True, text=True, check=True,
@@ -771,8 +772,6 @@ def test_apple_aggregate_rejects_missing_pinned_marker_download_action(
 
 
 def test_android_ci_wrapper_is_committed_executable() -> None:
-    # Windows has no POSIX executable mode. CI receives the Git index mode,
-    # which is the contract this check is intended to verify on every host.
     indexed = subprocess.run(
         ["git", "ls-files", "--stage", "--", "android-client/gradlew"],
         cwd=ROOT, capture_output=True, text=True, check=True,
@@ -853,7 +852,6 @@ def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, n
 @pytest.mark.parametrize("platform", ["macos", "ios"])
 @pytest.mark.parametrize("lane", ["unit", "ui"])
 def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, lane):
-    """Execute the real step using command recorders, never Xcode or a device."""
     bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
     if bash is None:
         pytest.skip("Apple workflow shell contract requires Bash")

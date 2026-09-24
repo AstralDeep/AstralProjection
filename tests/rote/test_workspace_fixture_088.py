@@ -1,4 +1,8 @@
-"""Cross-client fixture preserves all server welcome content and prompt payloads."""
+"""Tests confirming the cross-client welcome fixture (backend/rote/adapter.py,
+backend/rote/capabilities.py) survives native adaptation with its permissions,
+prompts, and identified/nested components intact.
+"""
+
 import json
 from pathlib import Path
 

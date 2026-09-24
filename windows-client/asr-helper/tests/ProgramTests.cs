@@ -1,3 +1,6 @@
+// Tests for the speech helper's Program.cs session orchestration: capability probing and the
+// start/feed/stop/dispose lifecycle, driven through a fake IRecognitionSession.
+
 using System;
 using System.Collections.Generic;
 using System.IO;

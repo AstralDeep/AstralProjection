@@ -1,3 +1,6 @@
+// Tests for AppViewModel's native Work surface: request/response correlation and generation-fenced
+// stale-response rejection.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest

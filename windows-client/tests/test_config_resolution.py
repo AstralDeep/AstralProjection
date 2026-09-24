@@ -1,9 +1,8 @@
-"""Feature 039 (C-6): deployment config resolution for a bare-downloaded exe.
-
-Precedence: env > persisted QSettings > first-run prompt. Without this a
-double-clicked exe silently fell back to a dev token the real-auth orchestrator
-rejects, so the app "did nothing".
+"""Tests for astral_client/app.py: deployment config precedence for a bare-downloaded
+exe — env var, persisted QSettings, then first-run prompt, so a double-clicked exe
+never silently falls back to a rejected dev token.
 """
+
 import os
 
 import pytest
@@ -81,4 +80,4 @@ def test_no_prompt_when_token_present(monkeypatch):
     monkeypatch.delenv("KEYCLOAK_AUTHORITY", raising=False)
     a = _Args(token="dev-token")
     app._resolve_config(a, settings=_FakeSettings(), prompt=_no_prompt)
-    assert a.authority == ""  # stays empty; no prompt with an explicit token
+    assert a.authority == ""

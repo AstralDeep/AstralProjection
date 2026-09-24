@@ -853,6 +853,28 @@ select.astral-field { color-scheme: dark; }
   transform: rotate(225deg) translateY(-1px);
 }
 .astral-tab > div { padding: 0 var(--space-3) var(--space-3); }
+.astral-reasoning {
+  max-width: 76ch;
+  background: transparent;
+  border-radius: var(--radius-sm);
+}
+.astral-reasoning > summary {
+  padding: 6px 10px;
+  min-height: 32px;
+}
+.astral-reasoning > summary > span {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
+.astral-reasoning > div {
+  max-height: 160px;
+  padding: 8px 10px;
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  overscroll-behavior: contain;
+}
 
 /* progress bars: rounded track with an inner shadow; fill keeps its
    accent-gradient utilities */
@@ -1834,11 +1856,26 @@ details > summary::-webkit-details-marker { display: none; }
 /* The two views of the main column. "start" shows the a8p landing — the
    page header, the overview and the example grid — and "work" shows the
    conversation feed in its place. The composer bar is in both, pinned to the
-   bottom, so a question can be asked from either one. */
+   bottom, so a question can be asked from either one.
+   The top overview bar (#astral-response-top-nav) is pinned at the top across views. */
+#astral-response-top-nav { display: flex !important; }
+
+body[data-astral-view="start"] #astral-landing { display: flex !important; }
 body[data-astral-view="start"] #astral-chat,
-body[data-astral-view="start"] #astral-canvas-empty { display: none; }
-body[data-astral-view="work"] #astral-landing { display: none; }
-body[data-astral-view="work"] #astral-chat { display: flex; }
+body[data-astral-view="start"] #astral-canvas-empty { display: none !important; }
+
+/* When no chat is active (0 turns / empty feed), always show the landing examples */
+body:not(.astral-chat-active) #astral-landing,
+body[data-astral-view="work"]:not(.astral-chat-active) #astral-landing { display: flex !important; }
+body:not(.astral-chat-active) #astral-chat,
+body:not(.astral-chat-active) #astral-canvas-empty,
+body[data-astral-view="work"]:not(.astral-chat-active) #astral-chat,
+body[data-astral-view="work"]:not(.astral-chat-active) #astral-canvas-empty { display: none !important; }
+
+/* When a conversation is active in work view, show the chat feed */
+body[data-astral-view="work"].astral-chat-active #astral-landing { display: none !important; }
+body[data-astral-view="work"].astral-chat-active #astral-chat { display: flex !important; }
+body[data-astral-view="work"].astral-chat-active #astral-canvas-empty { display: none !important; }
 
 /* The welcome components are server-rendered SDUI and keep arriving; the
    web console landing hides them in favor of the scenario cards. */
@@ -2230,85 +2267,322 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
   overflow-wrap: anywhere;
 }
 .astral-turn-assistant { align-items: stretch; }
-.astral-response-card {
-  width: 100%;
-  border-radius: var(--radius-lg);
-  border: 1px solid rgb(var(--astral-text) / 0.1);
-  background: rgb(var(--astral-surface) / 0.62);
-  box-shadow: var(--shadow-2);
-  overflow: hidden;
-  position: relative;
-}
-.astral-card-head {
+/* Response View Top Nav (a8p style) - pinned to top of main pane */
+.response-top-nav {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 14px;
-  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
-  background: rgb(var(--astral-text) / 0.02);
+  gap: 12px;
+  flex: 0 0 auto;
+  width: 100%;
+  padding: 10px 32px;
+  background: rgb(var(--astral-surface) / 0.98);
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.12);
+  z-index: 25;
 }
-.astral-card-head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.astral-card-head-right { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
-.astral-card-head-right .astral-page-action {
-  min-height: 28px;
-  min-width: 28px;
-  padding: 5px;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-  color: var(--text-muted);
-}
-.astral-card-head-right .astral-page-action:hover {
-  color: var(--text-primary);
-  background: rgb(var(--astral-text) / 0.06);
-}
-.astral-card-head-right svg { width: 15px; height: 15px; }
-.astral-card-agent-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: rgb(var(--astral-primary) / 0.18);
-  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
-  font-size: var(--font-xs);
-  font-weight: var(--weight-bold);
-}
-.astral-card-agent-name {
-  font-size: var(--font-sm);
-  font-weight: var(--weight-bold);
-  color: var(--text-primary);
-}
-.astral-card-agent-sub { font-size: 11px; color: var(--text-muted); }
-.astral-meta-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--astral-text) / 0.12);
-  background: rgb(var(--astral-text) / 0.04);
+.btn-back-dash {
+  background: var(--surface-2);
   color: var(--text-secondary);
-  font-size: 11px;
-  font-weight: var(--weight-semibold);
-}
-.astral-card-body { padding: 16px; min-height: 40px; }
-.astral-expand-chip {
+  border: 1px solid rgb(var(--astral-text) / 0.16);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid rgb(var(--astral-primary) / 0.45);
-  border-radius: 999px;
-  background: rgb(var(--astral-surface) / 0.95);
+}
+.btn-back-dash:hover {
+  background: rgb(var(--astral-primary));
   color: var(--text-primary);
-  font-family: var(--astral-font);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
+  border-color: rgb(var(--astral-primary));
+}
+.response-query-chip {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-family: inherit;
+  background: rgb(var(--astral-bg));
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid rgb(var(--astral-text) / 0.08);
+  display: inline-flex;
+  align-items: center;
+}
+.astral-turns-chip {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  color: rgb(var(--astral-accent));
+  font-weight: 600;
+}
+.response-top-nav-right {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: auto;
+}
+.btn-new-chat {
+  background: rgb(var(--astral-primary) / 0.18);
+  color: rgb(var(--astral-accent));
+  border: 1px solid rgb(var(--astral-primary) / 0.4);
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+.btn-new-chat:hover {
+  background: rgb(var(--astral-primary) / 0.25);
+  color: var(--text-primary);
+  border-color: rgb(var(--astral-primary));
+}
+
+/* Assistant Meta Bar */
+.chat-assistant-meta-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding: 0 4px;
+  width: 100%;
+}
+.chat-agent-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.chat-agent-icon-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgb(var(--astral-primary) / 0.18);
+  border: 1px solid rgb(var(--astral-primary) / 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.88rem;
+  color: rgb(var(--astral-accent));
+}
+.chat-agent-name-text {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.chat-agent-sub-text {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* SDUI Encapsulated Container in Turn (a8p style) */
+.astral-response-card,
+.sdui-widget-container {
+  width: 100%;
+  background: rgb(var(--astral-surface));
+  border: 1px solid rgb(var(--astral-text) / 0.16);
+  border-radius: 10px;
+  box-shadow: none;
+  overflow: hidden;
+  cursor: default;
+  transition: border-color var(--motion-fast) ease;
+  position: relative;
+  max-height: 440px;
+}
+.sdui-widget-container.is-collapsed {
+  max-height: none;
+}
+.sdui-widget-container.is-collapsed .sdui-widget-body {
+  display: none !important;
+}
+.astral-response-card:hover,
+.sdui-widget-container:hover {
+  border-color: rgb(var(--astral-text) / 0.24);
+}
+.sdui-widget-header,
+.astral-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: rgb(var(--astral-text) / 0.025);
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.12);
+}
+.sdui-widget-header-left,
+.astral-card-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.sdui-widget-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.sdui-widget-chip {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgb(var(--astral-text) / 0.04);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  color: var(--text-muted);
+}
+.btn-sdui-expand,
+.astral-expand-chip {
+  background: rgb(var(--astral-text) / 0.04);
+  border: 1px solid rgb(var(--astral-text) / 0.18);
+  color: var(--text-primary);
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+}
+.btn-sdui-expand:hover,
+.astral-expand-chip:hover {
+  background: rgb(var(--astral-text) / 0.09);
+  color: var(--text-primary);
+}
+
+.sdui-widget-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn-sdui-collapse {
+  background: rgb(var(--astral-text) / 0.05);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+.btn-sdui-collapse:hover {
+  background: rgb(var(--astral-primary) / 0.22);
+  border-color: rgb(var(--astral-primary) / 0.45);
+  color: var(--text-primary);
+}
+.btn-sdui-collapse svg {
+  transition: transform 0.25s ease;
+}
+.btn-sdui-collapse.collapsed svg,
+.sdui-widget-container.is-collapsed .btn-sdui-collapse svg {
+  transform: rotate(-90deg);
+}
+
+.sdui-widget-body,
+.astral-card-body {
+  position: relative;
+  padding: 16px;
+  max-height: 380px;
+  overflow: hidden;
+  min-height: 40px;
+  overflow-anchor: none;
+}
+.sdui-widget-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 90px;
+  background: linear-gradient(to bottom, rgb(var(--astral-surface) / 0) 0%, rgb(var(--astral-surface) / 0.88) 55%, rgb(var(--astral-surface) / 0.98) 100%);
+  display: none;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 14px;
+  transition: all 0.25s ease;
+  pointer-events: auto;
+  cursor: pointer;
+  z-index: 5;
+}
+.sdui-widget-body.has-overflow .sdui-widget-overlay {
+  display: flex;
+}
+.astral-response-card:hover .sdui-widget-overlay,
+.sdui-widget-container:hover .sdui-widget-overlay {
+  background: linear-gradient(to bottom, rgb(var(--astral-surface) / 0) 0%, rgb(var(--astral-surface) / 0.88) 55%, rgb(var(--astral-surface) / 0.98) 100%);
+}
+.sdui-widget-expand-chip {
+  background: rgb(var(--astral-surface));
+  border: 1px solid rgb(var(--astral-text) / 0.24);
+  box-shadow: none;
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto;
+  cursor: pointer;
+}
+.sdui-widget-expand-chip:hover {
+  background: var(--surface-2);
+  border-color: rgb(var(--astral-text) / 0.4);
+}
+
+/* Text summary bubble / block */
+.chat-text-summary {
+  margin-top: 4px;
+  max-width: min(84ch, 100%);
+  padding: 14px 16px;
+  background: var(--surface-1);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+/* Query Evaluating Loading Card (a8p style) */
+.eval-loading-turn {
+  margin-bottom: 16px;
+}
+.eval-loading-msg {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: rgb(var(--astral-surface) / 0.75);
+  border: 1px solid rgb(var(--astral-text) / 0.12);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.eval-loading-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgb(var(--astral-primary) / 0.25);
+  border-top-color: rgb(var(--astral-primary));
+  border-radius: 50%;
+  animation: astral-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes astral-spin {
+  to { transform: rotate(360deg); }
 }
 .astral-pending {
   display: flex;
@@ -2353,7 +2627,9 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
   z-index: 60;
   display: flex;
   flex-direction: column;
-  background: var(--surface-0);
+  background: rgb(var(--astral-surface) / 0.98);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
 }
 .astral-fullscreen[hidden] { display: none; }
 .astral-fs-header {
@@ -2362,27 +2638,29 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  padding: 10px 24px;
-  border-bottom: 1px solid rgb(var(--astral-text) / 0.08);
-  background: rgb(var(--astral-surface) / 0.6);
+  padding: 12px 32px;
+  border-bottom: 1px solid rgb(var(--astral-text) / 0.16);
+  background: rgb(var(--astral-surface) / 0.88);
 }
-.astral-fs-header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.astral-fs-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .astral-fs-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-md);
-  background: rgb(var(--astral-primary) / 0.18);
-  color: color-mix(in srgb, rgb(var(--astral-primary)) 55%, rgb(var(--astral-text)));
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgb(var(--astral-primary) / 0.2);
+  border: 1px solid rgb(var(--astral-primary) / 0.45);
+  color: rgb(var(--astral-accent));
   font-size: var(--font-lg);
 }
 .astral-fs-title-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .astral-fs-title {
-  font-size: var(--font-base);
-  font-weight: var(--weight-bold);
+  font-size: 1.05rem;
+  font-weight: 600;
   color: var(--text-primary);
+  letter-spacing: -0.01em;
 }
 .astral-badge {
   padding: 2px 8px;
@@ -2394,40 +2672,59 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
   font-weight: var(--weight-semibold);
 }
 .astral-badge-accent {
-  border-color: rgb(var(--astral-secondary) / 0.5);
-  background: rgb(var(--astral-secondary) / 0.2);
-  color: var(--text-primary);
+  border-color: rgb(var(--astral-primary) / 0.5);
+  background: rgb(var(--astral-primary) / 0.2);
+  color: rgb(var(--astral-accent));
 }
-.astral-fs-sub { margin-top: 2px; font-size: var(--font-xs); color: var(--text-muted); }
+.astral-fs-sub {
+  margin-top: 2px;
+  font-size: 0.74rem;
+  color: rgb(var(--astral-accent));
+  font-family: var(--astral-font);
+}
 .astral-fs-exit {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid rgb(var(--astral-text) / 0.14);
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-secondary);
+  padding: 0 16px;
+  border: 1px solid rgb(var(--color-error) / 0.35);
+  border-radius: 8px;
+  background: rgb(var(--color-error) / 0.12);
+  color: rgb(var(--color-error));
   font-family: var(--astral-font);
-  font-size: var(--font-xs);
-  font-weight: var(--weight-semibold);
+  font-size: 0.82rem;
+  font-weight: 700;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+.astral-fs-exit:hover {
+  background: rgb(var(--color-error));
+  color: var(--text-primary);
+  border-color: rgb(var(--color-error));
+  box-shadow: 0 0 16px rgb(var(--color-error) / 0.4);
 }
 .astral-fs-kbd {
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  border: 1px solid rgb(var(--astral-text) / 0.16);
-  background: rgb(var(--astral-text) / 0.05);
-  font-size: 10px;
-  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid rgb(var(--astral-text) / 0.2);
+  background: rgb(var(--astral-bg) / 0.3);
+  color: var(--text-secondary);
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  font-family: var(--astral-font);
 }
 .astral-fs-canvas {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 24px 32px;
+  padding: 28px 36px;
   overflow-y: auto;
   scrollbar-width: thin;
+}
+.astral-fs-canvas > * {
+  max-width: 1400px;
+  margin-left: auto;
+  margin-right: auto;
 }
 .astral-fs-canvas::-webkit-scrollbar { width: 6px; }
 .astral-fs-canvas::-webkit-scrollbar-thumb {
@@ -3252,4 +3549,46 @@ body[data-astral-view="start"] .astral-start-slot:empty { display: none !importa
   .astral-scenario-card,
   .astral-expand-chip,
   .astral-recent-chevron { animation: none !important; transition: none !important; }
+}
+
+.astral-fs-canvas > .sdui-widget-body {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+}
+.astral-fs-canvas .sdui-widget-body .sdui-widget-overlay { display: none; }
+.astral-fs-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.astral-fullscreen-open .astral-main { overflow: hidden; }
+.sdui-widget-body:focus-within { scroll-margin-block: 16px; }
+@media (max-width: 1023px) {
+  .response-top-nav { padding: 8px 12px 8px 64px; gap: 8px; flex-wrap: wrap; }
+  .btn-back-dash, .btn-new-chat, .astral-turns-chip, .btn-sdui-expand,
+  .btn-sdui-collapse, .sdui-widget-expand-chip, .astral-fs-exit { min-height: 44px; }
+  .btn-sdui-collapse { min-width: 44px; }
+  .sdui-widget-header { padding: 8px; gap: 8px; flex-wrap: wrap; }
+  .sdui-widget-chip { white-space: nowrap; }
+  .sdui-widget-header-left { flex: 1 1 100%; }
+  .sdui-widget-header-right { margin-left: auto; }
+  .sdui-widget-container { display: flex; flex-direction: column; }
+  .sdui-widget-header { flex-shrink: 0; }
+  .sdui-widget-body { min-height: 0; }
+  .astral-fs-header { padding: 12px; flex-wrap: wrap; }
+  .astral-fs-header-left { max-width: 100%; }
+  .astral-fs-title { overflow-wrap: anywhere; }
+  .astral-canvas-panel { padding-top: 24px; }
+}
+@media (max-width: 479px) {
+  .response-top-nav { padding-right: 8px; gap: 6px; }
+  .btn-back-dash, .btn-new-chat { padding-inline: 8px; }
+  .response-query-chip { padding-inline: 8px; }
+  .sdui-widget-title { white-space: normal; overflow-wrap: anywhere; }
+  .sdui-widget-chip { flex-shrink: 0; }
+  .sdui-widget-expand-chip { padding: 8px 12px; max-width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sdui-widget-container, .btn-sdui-collapse, .btn-sdui-collapse svg,
+  .sdui-widget-overlay, .sdui-widget-expand-chip, .eval-loading-spinner {
+    animation: none !important;
+    transition: none !important;
+  }
 }

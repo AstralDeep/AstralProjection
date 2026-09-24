@@ -1,4 +1,8 @@
-"""Actual watch descriptor/ROTE outputs also consumed by SwiftCore CLI tests."""
+"""Tests cross-checking real watch descriptor/ROTE output (backend/rote/adapter.py,
+backend/rote/capabilities.py) against fixtures SwiftCore's CLI tests also consume,
+covering history enrichment and passive-detail adaptation.
+"""
+
 import copy
 import json
 from pathlib import Path

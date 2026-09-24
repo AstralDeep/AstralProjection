@@ -1,3 +1,7 @@
+// Resolves the action context (refine/restore/export) for a tapped canvas component and leases in-flight
+// actions so a stale duplicate never re-fires. Used by ComponentActionController and mirrored by Apple's
+// ComponentActionContext.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.auth.ConversationResumeStore.AccountIdentity
@@ -26,7 +30,6 @@ internal fun componentActionContext(
     if (owner == null || state.screen != Screen.Chat || state.mandatorySurface) return null
     val chat = state.activeChatId?.takeIf { it.isNotBlank() } ?: return null
     val id = ComponentChrome.identity(component) ?: return null
-    // A stale footer or duplicate ID is never a current action target.
     val matches = state.visibleCanvas.filter { ComponentChrome.identity(it) == id }
     if (matches.size != 1 || matches.single() != component) return null
     val actions =

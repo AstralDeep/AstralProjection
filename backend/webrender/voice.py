@@ -1,15 +1,8 @@
-"""VOICE renderer — 033 Wave-3 (C-D4), the highest-novelty empty target.
-
-ROTE has always collapsed a component tree to a flat string for audio surfaces;
-this is a real renderer for the ``voice`` target that speaks the *structure* —
-a metric as "Revenue: 9 million", a table row by row, a timeline as a sequence
-of events — and emits well-formed **SSML** (`<speak>` with `<s>` sentences and
-`<break>` between sections) so a TTS engine gets prosody and pacing.
-
-Registered via ``webrender.register_target('voice', render_voice)`` — additive,
-no change to astralprims or agents (Constitution II / FR-011). Pure, escape-by-
-default, bounded. No new dependency.
+"""Renders an astralprims component list to SSML for the 'voice' target, speaking
+structure (metrics, table rows, timeline events) instead of flattening to a string;
+registered via webrender.register_target.
 """
+
 from __future__ import annotations
 
 import html as _html
@@ -21,17 +14,15 @@ _MAX_TABLE_ROWS = 8
 _MAX_TIMELINE_ITEMS = 10
 
 _CHILD_KEYS = ("content", "children")
-_MD = _re.compile(r"[*_`#~\[\]]")  # strip inline markdown punctuation for speech
-                                   # (NOT < or > — those must reach SSML escaping)
+# Excludes < > on purpose — SSML escaping still needs them
+_MD = _re.compile(r"[*_`#~\[\]]")
 
 
 def _esc(value: Any) -> str:
-    """SSML-escape (& < >). Quotes are fine inside text content."""
     return _html.escape("" if value is None else str(value), quote=False)
 
 
 def _say(text: Any) -> str:
-    """A single spoken sentence, or '' when empty."""
     t = _MD.sub("", str("" if text is None else text)).strip()
     return f"<s>{_esc(t)}</s>" if t else ""
 
@@ -110,7 +101,6 @@ def _speak_one(comp: Dict[str, Any]) -> str:
         return _join(out)
     if t in ("card", "container", "collapsible", "grid"):
         return _join([_say(title), _children_ssml(comp)])
-    # Unknown type: best-effort spoken title/content.
     return _join([_say(title), _say(comp.get("content"))])
 
 
@@ -130,6 +120,5 @@ def _say_table(comp: Dict[str, Any]) -> str:
 
 
 def render_voice(components: List[Dict[str, Any]], profile: Any = None) -> str:
-    """Render a component list to an SSML document for a TTS target."""
     body = _join(_speak_one(c) for c in (components or []) if isinstance(c, dict))
     return f"<speak>{body}</speak>"

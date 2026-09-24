@@ -1,3 +1,7 @@
+// Converts raw Playwright/browser and Node V8 coverage entries into the canonical executable-line
+// format, validating the pinned token/line converter and source paths; used by browser-v8-cli.mjs
+// and coverage-conversion-cli.mjs.
+
 import { parse } from "espree";
 import v8ToIstanbul from "v8-to-istanbul";
 
@@ -10,7 +14,7 @@ const COVERAGE_PRODUCER_BASE = Object.freeze({
 
 export const NODE_COVERAGE_PRODUCER = Object.freeze({
   ...COVERAGE_PRODUCER_BASE,
-  // v3 resolves each observed execution before combining executable-line hits.
+  // v3: resolves each execution before combining hits
   producer_version: 3,
   producer: "astralprojection-node-v8-executable-lines",
   coverage_lane: "node-v8",
@@ -155,7 +159,6 @@ function validateSourcePath(sourcePath) {
   }
 }
 
-/** Convert one Playwright V8 source entry into one executable-line record. */
 export async function convertPlaywrightV8Entry(entry, { sourcePath } = {}) {
   validateSourcePath(sourcePath);
   const source = isObject(entry) ? entry.source : undefined;
@@ -181,7 +184,6 @@ export async function convertPlaywrightV8Entry(entry, { sourcePath } = {}) {
       };
       line.startColumn = Math.min(line.startColumn, segment.startColumn);
       line.endColumn = Math.max(line.endColumn, segment.endColumn);
-      // A physical line is covered when any executable token on it is covered.
       line.covered ||= count > 0;
       lines.set(segment.line, line);
     }
@@ -221,7 +223,6 @@ async function convertV8Coverage(entries, resolveSourcePath, producerIdentity) {
   return { ...producerIdentity, coverage };
 }
 
-/** Convert Playwright/Chromium V8 entries with the exact browser-lane identity. */
 export async function convertPlaywrightV8Coverage(entries, resolveSourcePath) {
   return convertV8Coverage(
     entries,
@@ -230,7 +231,6 @@ export async function convertPlaywrightV8Coverage(entries, resolveSourcePath) {
   );
 }
 
-/** Convert Node runtime V8 entries with the exact Node-lane identity. */
 export async function convertNodeV8Coverage(entries, resolveSourcePath) {
   return convertV8Coverage(entries, resolveSourcePath, NODE_COVERAGE_PRODUCER);
 }

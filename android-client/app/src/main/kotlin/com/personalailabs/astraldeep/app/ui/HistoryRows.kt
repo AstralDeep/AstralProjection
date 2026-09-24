@@ -1,3 +1,6 @@
+// Compose rows for the History screen: a section header, a tappable chat-summary row, and an empty-state
+// placeholder. Rendered by Screens.kt's HistoryScreen from the server-owned history list.
+
 package com.personalailabs.astraldeep.app.ui
 
 import androidx.compose.foundation.background

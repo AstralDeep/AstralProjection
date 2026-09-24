@@ -1,3 +1,6 @@
+// Tests for component chrome affordances: the shared action/version corpora, decorative-identity exclusion
+// from actions, and version metadata text formatting.
+
 import Foundation
 import XCTest
 

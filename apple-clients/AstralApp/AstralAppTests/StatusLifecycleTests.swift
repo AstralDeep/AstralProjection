@@ -1,3 +1,7 @@
+// Tests for StatusLifecycleReducer (Protocol/StatusLifecycle.swift): monotonic operation and agent-lifecycle
+// projections, admission refusals clearing only their correlated submission, and terminal outcomes never
+// clobbering another operation.
+
 import AstralCore
 import XCTest
 

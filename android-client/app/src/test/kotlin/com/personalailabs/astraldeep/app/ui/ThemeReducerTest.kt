@@ -1,3 +1,5 @@
+// Tests that AppViewModel's reducer folds boot-time and live theme_apply updates into UiState.themePalette.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -10,7 +12,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
-/** Feature 044 T050 — the reducer folds theme boot + live restyle into UiState.themePalette. */
 class ThemeReducerTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 

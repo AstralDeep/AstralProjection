@@ -1,3 +1,6 @@
+// Tests for AppViewModel.reduce(): error, progress, and notification handling, and that a mid-turn state
+// resolves fully on error rather than getting stuck.
+
 package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
@@ -9,11 +12,9 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
-/** Feature 044 US1 — the reducer's error/progress/notification behavior (T012/T021). */
 class AppViewModelReducerTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
 
-    /** A turn in flight — the state an error must fully resolve (SC-006). */
     private val midTurn =
         UiState(
             turnActive = true,
@@ -124,7 +125,6 @@ class AppViewModelReducerTest {
     @Test
     fun unknown_frame_is_a_state_noop() {
         assertEquals(midTurn, vm.reduce(midTurn, Inbound.Unknown("mystery_frame")))
-        // A classified-ignored type (parity matrix) is also a quiet state noop.
         assertEquals(midTurn, vm.reduce(midTurn, Inbound.Unknown("heartbeat")))
     }
 }

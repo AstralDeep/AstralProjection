@@ -1,3 +1,7 @@
+// Test fixture driving real local HTTP/WebSocket transport with an in-memory synthetic account and resume
+// locator, using AndroidX's real Activity lifecycle for result delivery; used across the workspace UI
+// instrumented tests.
+
 package com.personalailabs.astraldeep.app.workspace
 
 import android.app.Activity
@@ -61,7 +65,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
-/** Registration and result delivery still use AndroidX's real Activity lifecycle. */
 internal class WorkspaceResultRegistry : ActivityResultRegistry() {
     data class Launch(val code: Int, val intent: Intent)
 
@@ -84,7 +87,6 @@ internal class WorkspaceResultRegistry : ActivityResultRegistry() {
     }
 }
 
-/** Real local HTTP/WebSocket bytes, with an in-memory synthetic account and resume locator. */
 internal class WorkspaceControllerFixture(
     callTimeoutMillis: Long = 30_000,
     private val canvasText: String = "Synthetic visible canvas",

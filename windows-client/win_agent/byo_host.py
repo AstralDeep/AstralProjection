@@ -1,28 +1,8 @@
-"""BYO agent host and v3 protected-runtime coordinator (058/060/074).
-
-This is the desktop half of `specs/058-byo-agents-runtime/contracts/host-bundle.md`.
-The orchestrator generates a self-contained 4-file bundle and pushes it down the
-owner's authenticated UI socket; this module writes it to disk, runs it as a
-**separate child process**, and pumps frames between that child and the socket:
-
-    orchestrator ──ws(agent_tunnel)──► client ──stdin (json lines)──► child
-                 ◄─ws(agent_tunnel)───        ◄─stdout (json lines)──
-
-Feature 060 adds a server-issued session/delivery/revision/runtime fence. The
-host validates that structural fence and bounded child protocol locally before
-forwarding it; the orchestrator remains the authorization boundary and repeats
-all owner, permission, delegation, PHI, generation, and selection checks.
-
-Why a child process and not a thread (unlike `win_agent/agent.py`, the built-in
-Windows tools agent, which is an in-process aiohttp server the orchestrator
-dials INTO): the code is LLM-written and user-owned. It gets its own process so
-a crash, a `sys.exit()`, a runaway loop or a blocking C call cannot take the GUI
-with it, and so termination is a real kill rather than a cooperative request.
-
-No Qt in this module — the child pump runs on plain threads, so it is testable
-without a QApplication and cannot touch a widget from the wrong thread. Callers
-pass a `notify` callable that marshals to the GUI thread (a Qt signal's `.emit`).
+"""Desktop host for BYO agents: installs orchestrator-pushed bundles, runs each via
+process_supervision.py as a child process, and relays frames between the owner's UI
+socket and those children.
 """
+
 from __future__ import annotations
 
 import json
@@ -48,7 +28,6 @@ from win_agent.process_supervision import (
 
 logger = logging.getLogger("astral.client.byo")
 
-#: The frame types this host owns on the inbound UI socket.
 HOST_FRAME_TYPES = (
     "agent_host_registered",
     "agent_host_registration_refused",
@@ -91,9 +70,6 @@ _CHILD_ENV_ALLOWLIST = {
     "USERPROFILE",
     "WINDIR",
 }
-# Non-secret operator configuration needed by the public LETS executor.  The
-# server-owned authority binding is never inherited: it is validated against
-# the launch fence and injected explicitly by ``_launch_v3`` below.
 _PROTECTED_EXECUTOR_ENV_ALLOWLIST = {
     "ASTRAL_ENV",
     "FF_LETS_EXTERNAL_WARDEN",
@@ -109,32 +85,17 @@ _PROTECTED_EXECUTOR_ENV_ALLOWLIST = {
     "LETS_EXECUTOR_AUTHORITY_ROOT",
 }
 
-#: How long to wait for the server's `agent_registered` ack after starting a
-#: child. THE SILENCE TRAP (contract §6): a REFUSED registration produces no
-#: frame at all — the orchestrator closes a `TunnelSocket`, whose `close()` is a
-#: parity no-op, and there is no NAK in the protocol. Waiting forever on a frame
-#: that will never come would leave a zombie child and a permanently "starting"
-#: agent, so silence is treated as failure.
+# A refusal sends no frame; this timeout is the only signal
 REGISTER_TIMEOUT_S = float(os.getenv("BYO_REGISTER_TIMEOUT_S", "20"))
 HOST_ACK_TIMEOUT_S = 2.0
 
-#: An agent_id is used as a DIRECTORY NAME under the agents root, so the charset
-#: alone is not enough: `.` and `..` match it and would escape (or clobber) the
-#: root. Anything starting with a dot is refused, and the resolved path is
-#: re-checked against the root before a single byte is written (`_agent_dir`).
 _SAFE_ID = re.compile(r"^[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$")
 
-#: A revision reuses the SAME agent_id, so its new bundle is staged under
-#: `<agent_id>.pending` beside the live one: the revised child runs from there
-#: and the directories are swapped only once it has registered inward (T027
-#: host-side rollover). A failed revision therefore never touches the version the
-#: owner is relying on. rehydrate() skips these — a staging dir is not an agent id,
-#: and a crash mid-revision must not resurrect a half-written one on next launch.
 _PENDING_SUFFIX = ".pending"
 
 
 class HostIdentityError(RuntimeError):
-    """The persisted installation identity is unreadable or malformed."""
+    pass
 
 
 def _canonical_uuid4(value: object, name: str) -> str:
@@ -163,14 +124,10 @@ def _validate_utc(value: object, name: str) -> str:
 
 
 def _fsync_directory(directory: str) -> None:
-    """Flush directory metadata where the host OS exposes a directory handle."""
-
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     try:
         descriptor = os.open(directory, flags)
     except OSError:
-        # Windows may refuse directory opens through os.open. Atomic replacement
-        # is still used, and each file itself has already been flushed.
         return
     try:
         os.fsync(descriptor)
@@ -179,9 +136,7 @@ def _fsync_directory(directory: str) -> None:
 
 
 def _atomic_install_rename(staging: str, destination: str) -> None:
-    """Create-only atomic revision rename, write-through on Windows."""
-
-    if os.name == "nt":  # pragma: no cover - exercised by Windows CI
+    if os.name == "nt":  # pragma: no cover
         import ctypes
 
         movefile_write_through = 0x00000008
@@ -195,20 +150,10 @@ def _atomic_install_rename(staging: str, destination: str) -> None:
         if not kernel32.MoveFileExW(staging, destination, movefile_write_through):
             raise ctypes.WinError(ctypes.get_last_error())
         return
-    # A non-empty immutable destination cannot be replaced by a directory
-    # rename on POSIX, so this remains create-only under a racing duplicate.
     os.rename(staging, destination)
 
 
 def load_or_create_host_id(base_dir: Optional[str] = None) -> str:
-    """Return one UUID4 persisted for this desktop installation.
-
-    Creation uses a same-directory temporary plus a create-only hard link so
-    concurrent application starts cannot each leave with a different identity.
-    A malformed existing identity fails closed instead of silently changing the
-    machine's selection identity.
-    """
-
     root = os.path.realpath(base_dir or agents_root())
     os.makedirs(root, exist_ok=True)
     path = os.path.join(root, _HOST_IDENTITY_FILE)
@@ -244,9 +189,6 @@ def load_or_create_host_id(base_dir: Optional[str] = None) -> str:
         except FileExistsError:
             pass
         except OSError:
-            # Same-filesystem hard links are available on supported Windows and
-            # POSIX release targets. This create-only fallback retains safety on
-            # restricted filesystems without replacing an existing identity.
             try:
                 target = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             except FileExistsError:
@@ -266,8 +208,6 @@ def load_or_create_host_id(base_dir: Optional[str] = None) -> str:
 
 
 def canonical_bundle_sha256(files: dict[str, str]) -> str:
-    """Digest the complete v3 four-file mapping as canonical UTF-8 JSON."""
-
     if set(files) != set(BUNDLE_FILE_NAMES) or any(
         not isinstance(name, str) or not isinstance(source, str)
         for name, source in files.items()
@@ -285,8 +225,6 @@ def canonical_bundle_sha256(files: dict[str, str]) -> str:
 def check_runtime_compatibility(
     runtime_contract_version: object, required_runtime_lock_sha256: object
 ) -> Optional[str]:
-    """Return the canonical refusal code, or None for the packaged runtime."""
-
     if runtime_contract_version in LEGACY_RUNTIME_DISPOSITIONS:
         return "legacy_runtime_dispatch_mediated_only"
     if runtime_contract_version != BYO_RUNTIME_CONTRACT_VERSION:
@@ -297,8 +235,6 @@ def check_runtime_compatibility(
 
 
 def _child_environment() -> dict[str, str]:
-    """Minimal OS and executor config; never inherit credentials into code."""
-
     return {
         key: value
         for key, value in os.environ.items()
@@ -308,8 +244,6 @@ def _child_environment() -> dict[str, str]:
 
 
 def _local_lets_mode() -> str:
-    """Return the host-selected local posture, including an explicit off."""
-
     mode = os.getenv("LETS_MODE", "off").strip().lower() or "off"
     if mode not in {"off", "shadow", "enforce"}:
         raise ValueError("local LETS mode is invalid")
@@ -317,8 +251,6 @@ def _local_lets_mode() -> str:
 
 
 def _authority_identifier(value: object, name: str) -> str:
-    """Validate one opaque authority identifier without ever logging its value."""
-
     if (
         not isinstance(value, str)
         or not value
@@ -335,8 +267,6 @@ def _authority_identifier(value: object, name: str) -> str:
 
 
 def derive_executor_audience(host_id: object, host_session_id: object) -> str:
-    """Derive the immutable executor audience from the authenticated host fence."""
-
     canonical_host_id = _canonical_uuid4(host_id, "host_id")
     canonical_session_id = _canonical_uuid4(host_session_id, "host_session_id")
     material = (
@@ -350,8 +280,6 @@ def _runtime_authority(
     *,
     fence: dict[str, Any],
 ) -> dict[str, Any]:
-    """Validate the server-owned v3 authority binding against its launch fence."""
-
     expected = {
         "owner_id",
         "binding_id",
@@ -397,8 +325,6 @@ def _runtime_authority(
 
 
 def agents_root() -> str:
-    """`%LOCALAPPDATA%/AstralDeep/agents` (contract §5); `~/.astraldeep/agents`
-    where LOCALAPPDATA is absent, so the module imports and tests on any OS."""
     base = os.getenv("BYO_AGENTS_DIR") or os.getenv("LOCALAPPDATA")
     if base:
         return os.path.join(base, "AstralDeep", "agents")
@@ -406,14 +332,6 @@ def agents_root() -> str:
 
 
 def worker_argv(agent_dir: str) -> List[str]:
-    """The command that re-invokes THIS application as a worker (contract §4).
-
-    Frozen (PyInstaller onefile, `console=False`), `sys.executable` IS
-    AstralDeep.exe, so the flag goes straight to it — and `main.py` must branch
-    on it before Qt loads or every worker would raise a second GUI. Run from
-    source, `sys.executable` is python.exe, which would treat `--byo-worker` as
-    its own (unknown) option, so the script path has to be passed explicitly.
-    """
     if getattr(sys, "frozen", False):
         return [sys.executable, "--byo-worker", agent_dir]
     main_py = os.path.join(
@@ -423,10 +341,6 @@ def worker_argv(agent_dir: str) -> List[str]:
 
 
 def _root_has_bundle(directory: str) -> bool:
-    """True when an agent root still holds code: a legacy flat bundle
-    (``agent_main.py`` beside the root) or at least one v3 revision directory
-    under ``revisions/``. An empty ``revisions/`` shell — what is left after
-    the last revision was deleted at reconciliation — is not an agent."""
     if os.path.isfile(os.path.join(directory, "agent_main.py")):
         return True
     revisions = os.path.join(directory, "revisions")
@@ -438,9 +352,6 @@ def _root_has_bundle(directory: str) -> bool:
 
 
 def _bundle_display_name(directory: Optional[str]) -> str:
-    """The agent's display name from its bundle manifest (``manifest.json``
-    ``name``), searched one level down too for a v3 revision root. Best effort:
-    "" when nothing readable is there."""
     if not directory:
         return ""
     candidates = [os.path.join(directory, "manifest.json")]
@@ -462,17 +373,12 @@ def _bundle_display_name(directory: Optional[str]) -> str:
 
 
 class _Child:
-    """One supervised user agent."""
-
     def __init__(self, agent_id: str, proc, directory: str, supervised=None) -> None:
         self.agent_id = agent_id
         self.proc = proc
         self.supervised = supervised
         self.dir = directory
         self.registered = False
-        #: Last `register_agent` the child emitted — replayed on socket
-        #: reconnect, because the server pops `self.agents[agent_id]` on teardown
-        #: and would otherwise never route to this (still running) child again.
         self.register_frame: Optional[str] = None
         self.timer: Optional[threading.Timer] = None
         self.threads: List[threading.Thread] = []
@@ -520,8 +426,6 @@ class _RuntimeChild:
 
 
 class ByoAgentHost:
-    """Supervises the user's BYO agents for one client session."""
-
     def __init__(
         self,
         send_event: Optional[Callable[[str, dict], None]] = None,
@@ -571,17 +475,12 @@ class ByoAgentHost:
         self.host_id = _canonical_uuid4(
             host_id or load_or_create_host_id(self._base_dir), "host_id"
         )
-        # Identifies this host process to the server for the life of the client
-        # (stamped on `user_agent.host_session_id` at registration).
         self.host_session_id = uuid.uuid4().hex
         self._accepted_host_session_id: Optional[str] = None
         self._inventory_id: Optional[str] = None
         self._inventory_entries: dict[tuple[str, str], _InstalledRevision] = {}
         self._inventory_completed = False
         self._children: Dict[str, _Child] = {}
-        #: In-flight revisions, keyed by the same agent_id as the live child they
-        #: will replace. A pending child runs from a `.pending` staging dir and is
-        #: promoted into `_children` (retiring the old one) only on its ack.
         self._pending: Dict[str, _Child] = {}
         self._runtime_children: Dict[str, _RuntimeChild] = {}
         self._launching_runtime_instances: set[str] = set()
@@ -589,11 +488,6 @@ class ByoAgentHost:
         self._rehydrated = False
 
     def _installed_agent_ids(self) -> List[str]:
-        """Agent ids with a bundle on disk (legacy flat dirs and v3 revision
-        roots alike); staging dirs are never agents, and neither is a v3 root
-        whose last revision has been deleted (an empty ``revisions/`` shell —
-        rig finding 2026-09-03: two of them showed up as installed, offline
-        agents in "Agents on this PC")."""
         try:
             entries = sorted(os.listdir(self._base_dir))
         except OSError:
@@ -610,10 +504,6 @@ class ByoAgentHost:
         return out
 
     def _prune_empty_agent_root(self, agent_id: str) -> None:
-        """After the last v3 revision of ``agent_id`` is deleted, remove the
-        now-empty ``revisions/`` shell and the agent root — otherwise the root
-        outlives the agent as a ghost entry. Never touches a root that still
-        holds a revision or a legacy bundle."""
         directory = self._agent_dir(agent_id)
         if directory is None or not os.path.isdir(directory) or _root_has_bundle(directory):
             return
@@ -625,13 +515,6 @@ class ByoAgentHost:
         _fsync_directory(self._base_dir)
 
     def _agent_dir(self, agent_id: str) -> Optional[str]:
-        """The on-disk directory for one agent, or None if the id cannot own one.
-
-        Defence in depth: the delivering server is trusted and namespaces the id,
-        but this path is the one place a bad id turns into a WRITE — so the id is
-        charset+dot checked AND the resolved target is asserted to sit under the
-        agents root before anything is created.
-        """
         if not _SAFE_ID.match(agent_id or ""):
             return None
         base = os.path.realpath(self._base_dir)
@@ -639,14 +522,11 @@ class ByoAgentHost:
         try:
             if target == base or os.path.commonpath([base, target]) != base:
                 return None
-        except ValueError:  # different drives on Windows: not under the root
+        except ValueError:
             return None
         return os.path.join(self._base_dir, agent_id)
 
-    # --- inbound (server -> host) ----------------------------------------- #
-
     def handle_frame(self, msg: dict) -> bool:
-        """Route one server frame. Returns True if this host consumed it."""
         t = msg.get("type")
         if t == "agent_host_registered":
             self.on_host_registered(msg)
@@ -658,8 +538,6 @@ class ByoAgentHost:
             if "fence" in msg or "runtime_contract_version" in msg:
                 self._deliver_v3(msg)
             elif self._spawn is not None:
-                # Test-only/feature-058 compatibility path. Production hosting
-                # advertises only v3 and never silently treats v1 as v3.
                 self.deliver(
                     msg.get("agent_id") or "",
                     msg.get("files") or {},
@@ -676,21 +554,14 @@ class ByoAgentHost:
             if isinstance(msg.get("fence"), dict):
                 self._stop_runtime_fence(msg["fence"])
             else:
-                # A legacy server stop is terminal and removes its mutable v1
-                # bundle. V3 immutable revision deletion arrives via inventory.
                 self.remove(msg.get("agent_id") or "")
         elif t == "agent_offline":
-            # The server dropped routing for one of this owner's agents (its host
-            # socket went away). Informational here — another device may have
-            # been hosting it; our own children are supervised locally.
             logger.info("server reports agent offline: %s", msg.get("agent_id"))
         else:
             return False
         return True
 
     def on_transport_connected(self) -> None:
-        """A transport is open, but it is not yet an eligible agent host."""
-
         with self._lock:
             self._accepted_host_session_id = None
             self._inventory_id = None
@@ -719,8 +590,6 @@ class ByoAgentHost:
         )
 
     def on_transport_disconnected(self) -> None:
-        """Fence and settle every v3 child tied to the lost server session."""
-
         with self._lock:
             children = list(self._runtime_children.values())
             if self._host_ack_timer is not None:
@@ -734,8 +603,6 @@ class ByoAgentHost:
             self._kill_runtime(child, exit_kind="explicit_stop", send_exit=False)
 
     def on_host_registration_refused(self, msg: dict[str, Any]) -> None:
-        """A refusal never creates a session and never starts retained code."""
-
         try:
             if set(msg) != {"type", "code", "retryable", "details", "refused_at"}:
                 raise ValueError("refusal fields are invalid")
@@ -786,8 +653,6 @@ class ByoAgentHost:
             return
 
         with self._lock:
-            # One accepted acknowledgement is authoritative for the connection;
-            # a delayed refusal cannot unbind it or strand its running children.
             if self._accepted_host_session_id is not None:
                 return
             if self._host_ack_timer is not None:
@@ -801,8 +666,6 @@ class ByoAgentHost:
         self._notify("This PC cannot host personal agents with the installed runtime.", "error")
 
     def on_host_registered(self, msg: dict[str, Any]) -> bool:
-        """Bind the server-issued session, then inventory before retained start."""
-
         try:
             if set(msg) != {
                 "type",
@@ -865,11 +728,6 @@ class ByoAgentHost:
         return True
 
     def on_agent_registered(self, agent_id: str) -> None:
-        """The server accepted a registration — disarm the silence timeout (see
-        REGISTER_TIMEOUT_S). If a revision was in flight for this id, the ack is
-        the rollover signal: promote the revised child and retire the old one
-        (T027). The swap + kill run OFF-lock — `_kill` closes the old child's
-        stdin, whose stdout pump then re-enters `_on_child_exit` and the lock."""
         promote = None
         timer = None
         with self._lock:
@@ -879,7 +737,7 @@ class ByoAgentHost:
                 pending.registered = True
                 ptimer, pending.timer = pending.timer, None
                 self._pending.pop(agent_id, None)
-                self._children[agent_id] = pending  # inbound now routes to the new child
+                self._children[agent_id] = pending
                 promote = (old, pending, ptimer)
             else:
                 child = self._children.get(agent_id)
@@ -891,9 +749,9 @@ class ByoAgentHost:
             old, pending, ptimer = promote
             if ptimer is not None:
                 ptimer.cancel()
-            self._swap_dirs(pending)   # live dir now holds the revised bundle
+            self._swap_dirs(pending)
             if old is not None:
-                self._kill(old)        # retire the old version only now
+                self._kill(old)
             logger.info("byo agent %s revised — rolled over to the new version", agent_id)
             self._notify(f"Your agent “{agent_id}” was updated to the new version.", "info")
             return
@@ -903,23 +761,9 @@ class ByoAgentHost:
         self._notify(f"Your agent “{agent_id}” is running on this PC.", "info")
 
     def on_ui_connected(self) -> None:
-        """Re-send every running child's `register_agent` after a (re)connect —
-        the server pops its `agents` entry on socket teardown, so without this
-        the child stays alive but unreachable (contract §5).
-
-        On the FIRST connect of a process there are no children yet: the bundles
-        are on disk from an earlier session and nothing re-delivers them (the
-        server only pushes `agent_bundle_deliver` from the generation path), so
-        without `rehydrate()` every agent the user ever made would be permanently
-        offline after the client restarts."""
         self.on_transport_connected()
         if self._spawn is None:
-            # Production v3: wait for agent_host_registered and, when retained
-            # entries exist, agent_host_inventory_reconciled. No disk code is
-            # started merely because the WebSocket transport opened.
             return
-        # Feature-058 injected-process compatibility for the existing local
-        # tests only; production construction never provides a raw spawn hook.
         self.rehydrate()
         with self._lock:
             children = [c for c in self._children.values() if c.alive() and c.register_frame]
@@ -931,18 +775,6 @@ class ByoAgentHost:
             logger.info("re-registered %d byo agent(s) after reconnect", len(children))
 
     def rehydrate(self) -> List[str]:
-        """Start every bundle already on disk (once per host process).
-
-        The host does NOT decide whether an agent is still allowed to run: the
-        server re-authorizes at registration, so a soft-deleted or deauthorized
-        agent is simply refused, goes silent, and the REGISTER_TIMEOUT_S reaper
-        removes the child. That is the safe direction — refuse-by-server, not
-        trust-the-disk.
-
-        Once only: after a mid-session reconnect a child that has already exited
-        must stay offline (contract §5 — "do not auto-respawn"), and a child that
-        is still running is re-registered by `on_ui_connected` above.
-        """
         with self._lock:
             if self._rehydrated:
                 return []
@@ -953,14 +785,11 @@ class ByoAgentHost:
         try:
             entries = sorted(os.listdir(self._base_dir))
         except OSError:
-            return started  # no agents root yet: nothing was ever delivered
+            return started
         for agent_id in entries:
             if agent_id in known:
                 continue
             if agent_id.endswith(_PENDING_SUFFIX):
-                # A staging dir orphaned by a crash mid-revision: its name is not a
-                # real agent id, and running it would resurrect a half-written
-                # revision. Clean it up, never start it.
                 self._discard_staging(os.path.join(self._base_dir, agent_id))
                 continue
             directory = self._agent_dir(agent_id)
@@ -971,8 +800,6 @@ class ByoAgentHost:
         if started:
             logger.info("rehydrated %d byo agent(s) from disk: %s", len(started), started)
         return started
-
-    # --- v3 durable inventory / immutable installation ------------------- #
 
     def _revision_dir(self, agent_id: str, revision_id: str) -> Optional[str]:
         agent_dir = self._agent_dir(agent_id)
@@ -1027,10 +854,6 @@ class ByoAgentHost:
         if compatibility is not None or not isinstance(digest, str) or _SHA256.fullmatch(digest) is None:
             return None
         try:
-            # Python writes __pycache__ into the bundle directory the first
-            # time the worker imports the agent; that is byte-code cache, not
-            # bundle content. Treating it as corruption deleted every personal
-            # agent that had ever run on the next reconnect (077 live finding).
             present = {name for name in os.listdir(directory) if name != "__pycache__"}
             if present != set(BUNDLE_FILE_NAMES) | {_RUNTIME_METADATA_FILE}:
                 return None
@@ -1071,14 +894,10 @@ class ByoAgentHost:
                 if installed is not None:
                     entries.append(installed)
                 else:
-                    # Corrupt/partial v3 revisions are never asserted as valid
-                    # inventory and can never become executable after reconnect.
                     candidate = os.path.join(revisions_dir, revision_id)
                     if os.path.isdir(candidate):
                         shutil.rmtree(candidate, ignore_errors=True)
                         _fsync_directory(revisions_dir)
-            # A root left with no revision at all (an earlier deletion, or the
-            # sweep above) is a ghost: prune it so it never reads as installed.
             self._prune_empty_agent_root(agent_id)
         return entries
 
@@ -1163,10 +982,6 @@ class ByoAgentHost:
         }
         if not isinstance(value, dict):
             raise ValueError("pre-launch fence fields are invalid")
-        # The server's canonical RuntimeFence serializes with process_id=None
-        # before launch (its dataclass to_dict); a pre-launch fence carries no
-        # process yet, so an explicit null IS the pre-launch shape. A non-null
-        # process_id here would be a post-launch fence on the wrong frame.
         value = dict(value)
         if "process_id" in value and value["process_id"] is None:
             value.pop("process_id")
@@ -1332,8 +1147,6 @@ class ByoAgentHost:
         return dict(value, authority=authority)
 
     def _reconcile_inventory(self, msg: dict[str, Any]) -> bool:
-        """Validate the complete action set before deleting or starting anything."""
-
         with self._lock:
             session_id = self._accepted_host_session_id
             inventory_id = self._inventory_id
@@ -1395,7 +1208,6 @@ class ByoAgentHost:
             logger.warning("discarding invalid BYO inventory reconciliation", exc_info=True)
             return False
 
-        # Apply all stop/delete decisions before launching any selected entry.
         for installed, decision, _selected in validated:
             with self._lock:
                 running = [
@@ -1430,14 +1242,10 @@ class ByoAgentHost:
             self._launch_v3(installed, fence, selected["authority"])
         return True
 
-    # --- v3 launch, child protocol, heartbeat, and exit ------------------ #
-
     def _send_v3_frame(self, frame: dict[str, Any]) -> None:
         try:
             self._send_frame(frame)
-        except Exception as exc:  # noqa: BLE001 - transport loss triggers host teardown
-            # WARNING, not debug: a frame that dies here (a result, a state, a
-            # heartbeat) is invisible on the server except as a timeout.
+        except Exception as exc:  # noqa: BLE001
             logger.warning("BYO v3 frame send failed: %s (%s)", frame.get("type"), exc)
 
     def _prelaunch_failure(
@@ -1448,8 +1256,6 @@ class ByoAgentHost:
         bundle_sha256: str,
         reason_code: str,
     ) -> None:
-        """Report a valid selected delivery that failed before process bind."""
-
         with self._lock:
             if self._accepted_host_session_id != fence.get("host_session_id"):
                 return
@@ -1564,8 +1370,6 @@ class ByoAgentHost:
         fence = dict(prelaunch_fence, process_id=str(process_id))
         environment.update(
             {
-                # Keep the immutable revision directory byte-for-byte the
-                # delivered bundle: no __pycache__ beside the audited files.
                 "PYTHONDONTWRITEBYTECODE": "1",
                 "ASTRAL_RUNTIME_FENCE_JSON": json.dumps(
                     fence, sort_keys=True, separators=(",", ":")
@@ -1574,9 +1378,6 @@ class ByoAgentHost:
                     installed.runtime_contract_version
                 ),
                 "ASTRAL_RUNTIME_BUNDLE_SHA256": installed.bundle_sha256,
-                # Always explicit: an off launch does not synthesize or inherit
-                # any authority/binding identity, while shadow/enforce below
-                # receive their server-owned binding outside bundle bytes.
                 "LETS_MODE": mode,
             }
         )
@@ -1611,7 +1412,7 @@ class ByoAgentHost:
                 on_stream_eof=stream_eof,
                 on_exit=exited,
             )
-        except Exception:  # noqa: BLE001 - spawn failure is user-visible
+        except Exception:  # noqa: BLE001
             logger.exception("could not start v3 BYO worker %s", installed.agent_id)
             self._notify("Couldn't start a personal-agent worker on this PC.", "error")
             self._prelaunch_failure(
@@ -1726,7 +1527,6 @@ class ByoAgentHost:
             self._runtime_state(child, "ready")
             return
         if frame.get("type") == "agent_runtime_register":
-            # Exact repeats are idempotent; mismatched repeats are stale.
             if (
                 set(frame) == {
                     "type",
@@ -1773,8 +1573,6 @@ class ByoAgentHost:
         self._send_v3_frame(frame)
 
     def _emit_runtime_heartbeat(self, child: _RuntimeChild) -> None:
-        """Emit and re-arm the host-owned monotonic liveness heartbeat."""
-
         with self._lock:
             if (
                 self._runtime_children.get(child.fence["process_id"]) is not child
@@ -1896,9 +1694,6 @@ class ByoAgentHost:
         return True
 
     def _to_runtime_child(self, msg: dict[str, Any]) -> None:
-        # Every drop below is logged: a request that vanishes here surfaces on
-        # the server only as a timeout, which is indistinguishable from a
-        # hung agent (feature 077 live finding).
         try:
             fence = self._full_fence(msg.get("fence"))
         except ValueError as exc:
@@ -1944,16 +1739,7 @@ class ByoAgentHost:
             return
         logger.info("BYO %s request %s forwarded", child.agent_id, parsed.get("request_id"))
 
-    # --- lifecycle --------------------------------------------------------- #
-
     def deliver(self, agent_id: str, files: dict, constitution_version=None) -> Optional[str]:
-        """Write a delivered bundle and start it. Returns the agent dir, or None.
-
-        A delivery for an agent that is CURRENTLY RUNNING is a revision: the new
-        bundle is staged and started alongside the live one, which keeps serving
-        until the revised child registers (T027, `_deliver_revision`). Otherwise
-        (first delivery, or the previous child already exited) it replaces in place.
-        """
         directory = self._agent_dir(agent_id)
         if directory is None:
             logger.warning("refusing bundle with unusable agent_id %r", agent_id)
@@ -1968,8 +1754,8 @@ class ByoAgentHost:
         if is_revision:
             return self._deliver_revision(agent_id, files, directory)
 
-        self.stop(agent_id)              # replace a dead/leftover child, if any
-        self._discard_pending(agent_id)  # drop any stray in-flight revision
+        self.stop(agent_id)
+        self._discard_pending(agent_id)
         if not self._write_bundle(agent_id, directory, files):
             return None
         logger.info("wrote %d bundle file(s) for %s -> %s", len(files), agent_id, directory)
@@ -1977,12 +1763,9 @@ class ByoAgentHost:
         return directory
 
     def _deliver_revision(self, agent_id: str, files: dict, live_dir: str) -> Optional[str]:
-        """Stage a revision beside the running agent and start it WITHOUT touching
-        the live child; the swap happens later, on the revised child's ack
-        (`on_agent_registered`), or is discarded on timeout (T027)."""
-        self._discard_pending(agent_id)      # supersede an earlier in-flight revision
+        self._discard_pending(agent_id)
         staging = live_dir + _PENDING_SUFFIX
-        self._discard_staging(staging)       # clear a leftover staging dir
+        self._discard_staging(staging)
         if not self._write_bundle(agent_id, staging, files):
             return None
         logger.info("staged a revision of %s (%d file(s)) -> %s", agent_id, len(files), staging)
@@ -1990,12 +1773,9 @@ class ByoAgentHost:
         return staging
 
     def _write_bundle(self, agent_id: str, directory: str, files: dict) -> bool:
-        """Write a flat {filename: source} bundle into `directory`. Returns success."""
         try:
             os.makedirs(directory, exist_ok=True)
             for name, source in files.items():
-                # The bundle is a FLAT {filename: source} map; anything that tries
-                # to escape the agent's own directory is not a filename.
                 if not isinstance(name, str) or not isinstance(source, str):
                     continue
                 if os.path.basename(name) != name or name in (".", ".."):
@@ -2046,7 +1826,7 @@ class ByoAgentHost:
                 on_stream_eof=lambda _stream: None,
                 on_exit=exited,
             )
-        except Exception:  # noqa: BLE001 — a failed spawn is a user-visible failure
+        except Exception:  # noqa: BLE001
             logger.exception("could not start the worker for %s", agent_id)
             self._notify(f"Couldn't start your agent “{agent_id}”.", "error")
             bound.set()
@@ -2062,8 +1842,7 @@ class ByoAgentHost:
         with self._lock:
             (self._pending if pending else self._children)[agent_id] = child
 
-        # Armed at spawn, not at the first stdout frame: a child that dies before
-        # it ever writes `register_agent` must fail here too, not hang forever.
+        # Armed at spawn so a child that never registers still fails
         self._arm_register_timeout(child)
         bound.set()
         logger.info("started byo agent %s (pid=%s)%s", agent_id,
@@ -2071,7 +1850,6 @@ class ByoAgentHost:
                     " [revision, staged]" if pending else "")
 
     def stop(self, agent_id: str) -> bool:
-        """Terminate one child and forget it. Idempotent."""
         with self._lock:
             child = self._children.pop(agent_id, None)
         if child is None:
@@ -2081,12 +1859,7 @@ class ByoAgentHost:
         return True
 
     def remove(self, agent_id: str) -> bool:
-        """Terminate one child AND delete its bundle from disk (server `agent_stop`).
-
-        Distinct from `stop()`, which is the internal "replace this child" used by
-        re-delivery and by client shutdown — those must KEEP the bundle.
-        """
-        self._discard_pending(agent_id)  # a deleted agent kills any in-flight revision too
+        self._discard_pending(agent_id)
         stopped = self.stop(agent_id)
         directory = self._agent_dir(agent_id)
         if directory and os.path.isdir(directory):
@@ -2098,10 +1871,6 @@ class ByoAgentHost:
         return stopped
 
     def stop_all(self) -> None:
-        """Client is closing: every user agent dies with it (contract §5) — the
-        server sees the socket drop and takes them honestly offline. In-flight
-        revision children die too (else a mid-revision close orphans one), and
-        their staging dirs are cleaned up; live bundles stay on disk."""
         with self._lock:
             if self._host_ack_timer is not None:
                 self._host_ack_timer.cancel()
@@ -2133,11 +1902,6 @@ class ByoAgentHost:
         return list(dict.fromkeys(legacy + runtime))
 
     def inventory(self) -> List[Dict[str, Any]]:
-        """Feature 077 — what this PC hosts, for the client-local "Agents on
-        this PC" view: one entry per installed personal agent with its DERIVED
-        status (``online`` registered and alive · ``starting`` alive, not yet
-        registered · ``offline`` installed, no live child), pid, directory and
-        revision. Read-only; never touches a child."""
         entries: Dict[str, Dict[str, Any]] = {}
         with self._lock:
             for agent_id, child in self._children.items():
@@ -2163,8 +1927,6 @@ class ByoAgentHost:
                     "directory": installed.directory,
                     "revision": installed.revision_id,
                 }
-        # Installed-but-not-running bundles (a stopped agent, or one waiting for
-        # its next start) are still "on this PC".
         try:
             for agent_id in self._installed_agent_ids():
                 if agent_id not in entries:
@@ -2175,16 +1937,11 @@ class ByoAgentHost:
                         "status": "offline", "pid": None,
                         "directory": directory, "revision": "",
                     }
-        except Exception:  # noqa: BLE001 — a listing failure hides nothing that runs
+        except Exception:  # noqa: BLE001
             logger.debug("077: installed-agent listing failed", exc_info=True)
         return sorted(entries.values(), key=lambda e: (e["status"] != "online", e["name"].lower()))
 
-    # --- revision staging (T027) ------------------------------------------- #
-
     def _discard_pending(self, agent_id: str) -> None:
-        """Drop any in-flight revision for `agent_id`: kill its child and remove
-        the staging dir. Used when a newer revision supersedes it, on delete, and
-        before a fresh (non-revision) delivery."""
         with self._lock:
             child = self._pending.pop(agent_id, None)
         if child is None:
@@ -2193,8 +1950,6 @@ class ByoAgentHost:
         self._discard_staging(child.dir)
 
     def _discard_staging(self, staging: str) -> None:
-        """Remove a `.pending` staging dir. The suffix guard is a safety net: this
-        must never be able to delete a live bundle."""
         if staging and staging.endswith(_PENDING_SUFFIX) and os.path.isdir(staging):
             try:
                 shutil.rmtree(staging)
@@ -2202,11 +1957,6 @@ class ByoAgentHost:
                 logger.exception("could not remove staging dir %s", staging)
 
     def _swap_dirs(self, pending: _Child) -> None:
-        """Promote the staged revision on disk: replace the live bundle dir with
-        the staging dir the (now registered) revised child runs from. The child
-        imported its code at start-up, so it holds no handle on the dir and the
-        rename is safe even while it runs; afterwards the live dir name matches
-        the agent_id again, so rehydrate() finds it on the next launch."""
         live_dir = self._agent_dir(pending.agent_id)
         staging = pending.dir
         if not live_dir or staging == live_dir:
@@ -2214,16 +1964,12 @@ class ByoAgentHost:
         try:
             if os.path.isdir(live_dir):
                 shutil.rmtree(live_dir)
-            os.replace(staging, live_dir)   # atomic within the agents root
+            os.replace(staging, live_dir)
             pending.dir = live_dir
         except OSError:
             logger.exception("byo %s: could not swap in the revised bundle", pending.agent_id)
 
-    # --- pipes ------------------------------------------------------------- #
-
     def _on_legacy_stdout_line(self, child: _Child, raw_line: bytes) -> None:
-        """One bounded feature-058 child line -> its legacy tunnel envelope."""
-
         line = raw_line.decode("utf-8", errors="replace").strip()
         if not line:
             return
@@ -2249,7 +1995,6 @@ class ByoAgentHost:
         self._tunnel_out(child.agent_id, json.dumps(frame))
 
     def _to_child(self, agent_id: str, frame) -> None:
-        """An inbound `agent_tunnel` push -> the child's stdin, one JSON line."""
         with self._lock:
             child = self._children.get(agent_id)
         if child is None or not child.alive() or child.supervised is None:
@@ -2264,17 +2009,14 @@ class ByoAgentHost:
             logger.warning("byo %s: stdin closed — dropping frame", agent_id)
 
     def _tunnel_out(self, agent_id: str, frame: str) -> None:
-        """Wrap one agent frame in the C->S `agent_tunnel` ui_event (contract §7)."""
         try:
             self._send_event("agent_tunnel", {
                 "agent_id": agent_id,
                 "frame": frame,
                 "host_session_id": self.host_session_id,
             })
-        except Exception:  # noqa: BLE001 — a dead socket must not kill the pump
+        except Exception:  # noqa: BLE001
             logger.debug("agent_tunnel send failed for %s", agent_id, exc_info=True)
-
-    # --- failure handling --------------------------------------------------- #
 
     def _arm_register_timeout(self, child: _Child) -> None:
         timer = threading.Timer(
@@ -2283,7 +2025,7 @@ class ByoAgentHost:
         timer.daemon = True
         with self._lock:
             if child.registered:
-                return  # already acked before we could arm
+                return
             child.timer = timer
         timer.start()
 
@@ -2299,12 +2041,9 @@ class ByoAgentHost:
                 self._children.pop(agent_id, None)
                 is_pending = False
             else:
-                return  # already removed / promoted / replaced deliberately
+                return
         self._kill(child)
         if is_pending:
-            # A revision that never registered: keep the version the owner is
-            # relying on, drop only the staged one (T027 — a failed revision must
-            # never take the running agent down).
             self._discard_staging(child.dir)
             logger.warning("byo %s: revision not accepted in time — kept the running version",
                            agent_id)
@@ -2322,8 +2061,6 @@ class ByoAgentHost:
         )
 
     def _on_child_exit(self, child: _Child) -> None:
-        """stdout closed: the child is gone. No auto-respawn in v1 — an agent
-        that is not running should look offline, not flap (contract §5)."""
         agent_id = child.agent_id
         with self._lock:
             if self._pending.get(agent_id) is child:
@@ -2335,13 +2072,11 @@ class ByoAgentHost:
                 timer, child.timer = child.timer, None
                 is_pending = False
             else:
-                return  # already stopped / replaced / promoted deliberately
+                return
         if timer is not None:
             timer.cancel()
         code = child.proc.poll()
         if is_pending:
-            # A revision child that died before registering: drop the staging dir,
-            # leave the running (old) version untouched.
             self._discard_staging(child.dir)
             logger.warning("byo %s: revision child exited before registering (code=%s)",
                            agent_id, code)
@@ -2359,6 +2094,6 @@ class ByoAgentHost:
             return
         try:
             child.supervised.terminate(reason=TerminationReason.QUIT)
-        except Exception:  # noqa: BLE001 — already dead / no such process
+        except Exception:  # noqa: BLE001
             logger.debug("supervised termination failed for %s", child.agent_id,
                          exc_info=True)

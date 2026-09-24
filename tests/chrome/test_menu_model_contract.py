@@ -1,4 +1,6 @@
-"""Serialization and policy contracts for Projection's server-owned menu."""
+"""Tests for backend/webrender/chrome/menu_model.py: role-filtered inventory and native
+serialization contracts.
+"""
 
 from webrender.chrome.menu_model import (
     MODEL_VERSION,
