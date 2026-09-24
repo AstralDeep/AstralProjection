@@ -93,11 +93,7 @@ function validatedRanges(entry, sourceLength) {
   return ranges;
 }
 
-function effectiveCount(token, ranges) {
-  const covering = ranges.filter(
-    (range) =>
-      range.startOffset <= token.range[0] && range.endOffset >= token.range[1],
-  );
+function effectiveCount(token, covering) {
   if (covering.length === 0) {
     fail(`no V8 range covers token at offset ${token.range[0]}`);
   }
@@ -165,7 +161,8 @@ export async function convertPlaywrightV8Entry(entry, { sourcePath } = {}) {
   if (typeof source !== "string") {
     fail("entry must contain its exact source text");
   }
-  const ranges = validatedRanges(entry, source.length);
+  const ranges = validatedRanges(entry, source.length)
+    .sort((left, right) => left.startOffset - right.startOffset);
   const tokens = parseTokens(source).filter((token) => token.type !== "Punctuator");
   if (tokens.length === 0) {
     fail("source has no executable tokens");
@@ -174,8 +171,15 @@ export async function convertPlaywrightV8Entry(entry, { sourcePath } = {}) {
   await validatePinnedConverter(entry, sourcePath);
 
   const lines = new Map();
+  let activeRanges = [];
+  let nextRange = 0;
   for (const token of tokens) {
-    const count = effectiveCount(token, ranges);
+    while (nextRange < ranges.length && ranges[nextRange].startOffset <= token.range[0]) {
+      activeRanges.push(ranges[nextRange]);
+      nextRange += 1;
+    }
+    activeRanges = activeRanges.filter((range) => range.endOffset >= token.range[1]);
+    const count = effectiveCount(token, activeRanges);
     for (const segment of tokenLineSegments(token)) {
       const line = lines.get(segment.line) ?? {
         startColumn: segment.startColumn,

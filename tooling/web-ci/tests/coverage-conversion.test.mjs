@@ -84,6 +84,23 @@ test("a line is covered when any executable token on it is covered", async () =>
   assert.deepEqual(converted.s, { 0: 1 });
 });
 
+test("range sweep preserves sparse hits across unsorted, disjoint observations at scale", async () => {
+  let source = "";
+  const ranges = [];
+  for (let index = 0; index < 2048; index += 1) {
+    const startOffset = source.length;
+    source += `const value${index} = ${index};\n`;
+    ranges.push({ startOffset, endOffset: source.length, count: index % 2 });
+  }
+  const converted = await convertPlaywrightV8Entry(entry(source, ranges.reverse()), {
+    sourcePath: "backend/webrender/static/client.js",
+  });
+  assert.equal(Object.keys(converted.s).length, 2048);
+  for (const [id, statement] of Object.entries(converted.statementMap)) {
+    assert.equal(converted.s[id], (statement.start.line - 1) % 2);
+  }
+});
+
 test("browser and Node collectors emit exact distinct lane identities", async () => {
   const source = "const value = 1;\n";
   const browser = await convertPlaywrightV8Coverage(
