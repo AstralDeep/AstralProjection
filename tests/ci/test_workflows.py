@@ -281,12 +281,17 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert 'xcrun simctl list runtimes available | grep -F "watchOS ${WATCHOS_RUNTIME}"' in watch
     assert "os.environ['WATCHOS_RUNTIME']" in watch
     assert "-scheme AstralWatch" in watch
-    assert (
-        '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"' in watch
-    )
-    assert watch.count("CODE_SIGNING_ALLOWED=NO") == 1
-    assert watch.count("-enableCodeCoverage YES") == 1
+    assert watch.count(
+        '-destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}"'
+    ) == 2
+    assert watch.count("CODE_SIGNING_ALLOWED=NO") == 2
+    assert watch.count("-enableCodeCoverage YES") == 2
     assert watch.count(exporter) == 1
+    assert "-scheme AstralWatchNavigation" in watch
+    assert "-only-testing:AstralWatchNavigationUITests" in watch
+    assert 'test "$unit_status" -eq 0' in watch
+    assert 'test "$navigation_status" -eq 0' in watch
+    assert 'xcrun xcresulttool merge --output-path "$result" "$unit_result" "$navigation_result"' in watch
     assert "--platform watchos" in watch
     assert '--output "$report"' in watch
 
@@ -932,3 +937,57 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
         assert exports[0][exports[0].index("--native-domain") + 1] == (
             f"coverage with spaces/apple-ios-{lane}-domain.json"
         )
+
+
+@pytest.mark.parametrize("failing_command", ["none", "AstralWatch", "AstralWatchNavigation", "merge"])
+def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_command):
+    bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
+    if bash is None:
+        pytest.skip("Apple workflow shell contract requires Bash")
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    script = textwrap.dedent(_step_block(
+        _job_block(text, "watch-continuity"),
+        "Run Watch continuity and navigation with coverage",
+    ).split("run: |\n", 1)[1]).replace("${{ steps.watch_sim.outputs.udid }}", "owned-watch")
+    recorder = tmp_path / "record_commands.py"
+    recorder.write_text(
+        "import json, os, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "raise SystemExit(65 if os.environ['FAILING_COMMAND'] in sys.argv[1:] else 0)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = "\n".join(
+        f'{name}() {{ {command} {name} "$@"; }}'
+        for name in ("xcodebuild", "xcrun", "python3")
+    ) + "\n"
+    record = tmp_path / "commands.jsonl"
+    result = subprocess.run(
+        [bash, "-c", prefix + script], cwd=tmp_path,
+        env={**os.environ, "COVERAGE_ROOT": "coverage with spaces",
+             "APP_PROJECT": "Owned Watch.xcodeproj", "COMMAND_RECORD": str(record),
+             "FAILING_COMMAND": failing_command},
+        capture_output=True, text=True, timeout=15,
+    )
+    assert (result.returncode == 0) == (failing_command == "none"), result.stderr
+    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    builds = [call for call in calls if call[0] == "xcodebuild"]
+    assert [call[call.index("-scheme") + 1] for call in builds] == [
+        "AstralWatch", "AstralWatchNavigation",
+    ]
+    for build in builds:
+        assert build[build.index("-project") + 1] == "Owned Watch.xcodeproj"
+        assert build[build.index("-destination") + 1] == "platform=watchOS Simulator,id=owned-watch"
+        assert "-enableCodeCoverage" in build and "CODE_SIGNING_ALLOWED=NO" in build
+    merges = [call for call in calls if call[0] == "xcrun"]
+    assert len(merges) == (1 if failing_command in {"none", "merge"} else 0)
+    if merges:
+        assert merges[0][1:] == [
+            "xcresulttool", "merge", "--output-path", "coverage with spaces/AstralWatch.xcresult",
+            "coverage with spaces/AstralWatch-unit.xcresult",
+            "coverage with spaces/AstralWatch-navigation.xcresult",
+        ]
+    exports = [call for call in calls if call[0] == "python3"]
+    assert len(exports) == (1 if failing_command == "none" else 0)
+    if exports:
+        assert exports[0][exports[0].index("--xcresult") + 1] == "coverage with spaces/AstralWatch.xcresult"
