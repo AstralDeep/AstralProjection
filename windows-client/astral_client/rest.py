@@ -71,7 +71,16 @@ def parse_chrome_menu(model: dict) -> dict:
         if items:
             sections.append({"label": str(g.get("label") or ""), "items": items})
     topbar_actions: List[dict] = []
+    workspace_actions: List[dict] = []
     for c in (model.get("topbar") or []):
+        if (isinstance(c, dict) and c.get("kind") == "workspace_action"
+                and c.get("context") == "live_canvas" and c.get("action") is None
+                and isinstance(c.get("operation"), str)
+                and c.get("operation") in {"export_canvas", "share_canvas"}):
+            workspace_actions.append({"label": str(c.get("label") or ""),
+                                      "icon": str(c.get("icon") or ""),
+                                      "operation": c["operation"]})
+            continue
         if not isinstance(c, dict) or c.get("kind") != "action":
             continue
         surface = str((c.get("action") or {}).get("surface") or "")
@@ -81,7 +90,8 @@ def parse_chrome_menu(model: dict) -> dict:
             )
     so = model.get("signout") or {}
     signout = {"label": str(so.get("label") or "Sign out"), "action": str(so.get("action") or "logout")}
-    return {"sections": sections, "topbar_actions": topbar_actions, "signout": signout}
+    return {"sections": sections, "topbar_actions": topbar_actions,
+            "workspace_actions": workspace_actions, "signout": signout}
 
 
 def export_component_csv_url(http_base: str, component_id: str, chat_id: str) -> str:

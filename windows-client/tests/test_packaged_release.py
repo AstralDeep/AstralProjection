@@ -139,6 +139,18 @@ def test_actual_frozen_archive_contains_only_qualified_local_speech_runtime():
     )
 
 
+def test_actual_frozen_console_font_and_license_match_shared_assets():
+    _exe, archive, names = _frozen_archive()
+    sources = {
+        "assets/fonts/open-sans-latin.ttf": ROOT.parent / "contracts/assets/fonts/open-sans-latin.ttf",
+        "assets/fonts/opensans-ofl.txt": ROOT.parent / "apple-clients/NativeAppearance/Resources/OpenSans-OFL.txt",
+    }
+    assert sources.keys() <= names
+    for bundled, source in sources.items():
+        entry = next(name for name in archive.toc if name.replace("\\", "/").lower() == bundled)
+        assert archive.extract(entry) == source.read_bytes()
+
+
 def test_actual_frozen_helper_completes_ready_shutdown_pipe_smoke(tmp_path):
     _exe, archive, _names = _frozen_archive()
     helper_entry = next(

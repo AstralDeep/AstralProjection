@@ -23,8 +23,10 @@ from typing import Any, ClassVar, Optional
 
 import websockets
 from PySide6.QtCore import QObject, QSettings, Signal
+from PySide6.QtGui import QGuiApplication, QInputDevice
 
 from . import __version__
+from .console import parse_turn_selection
 
 
 _MAX_UINT64 = (1 << 64) - 1
@@ -1862,23 +1864,90 @@ def device_caps(
     height: int = 860,
     supported_types=None,
     voice_capability: Optional[dict[str, Any]] = None,
+    *,
+    window=None,
+    console: bool = False,
 ) -> dict:
+    if window is not None:
+        width, height = window.width(), window.height()
+    width = width if type(width) is int and 1 <= width <= 16384 else 1280
+    height = height if type(height) is int and 1 <= height <= 16384 else 860
+    application = QGuiApplication.instance()
+    screen = window.screen() if window is not None else application.primaryScreen() if application else None
+    screen_width, screen_height, pixel_ratio = width, height, 1.0
+    if screen is not None:
+        try:
+            geometry, ratio = screen.geometry(), screen.devicePixelRatio()
+            if 1 <= geometry.width() <= 16384 and 1 <= geometry.height() <= 16384:
+                screen_width, screen_height = geometry.width(), geometry.height()
+            if type(ratio) in (int, float) and math.isfinite(ratio) and 0.1 <= ratio <= 16:
+                pixel_ratio = float(ratio)
+        except RuntimeError:
+            pass
+    inputs = set()
+    try:
+        devices = QInputDevice.devices() if application else []
+    except RuntimeError:
+        devices = []
+    for device in devices:
+        try:
+            inputs.add(device.type())
+        except RuntimeError:
+            continue
+    kinds = QInputDevice.DeviceType
+    fine_pointer = bool(inputs & {kinds.Mouse, kinds.TouchPad, kinds.Stylus, kinds.Airbrush, kinds.Puck})
+    touch = kinds.TouchScreen in inputs
     caps = {
         "device_type": "windows",
-        "screen_width": width,
-        "screen_height": height,
+        "screen_width": screen_width,
+        "screen_height": screen_height,
         "viewport_width": width,
         "viewport_height": height,
-        "pixel_ratio": 1.0,
-        "has_touch": False,
-        "user_agent": "AstralWindowsClient/0.1",
-        "connection_type": "wifi",
+        "pixel_ratio": pixel_ratio,
+        "has_touch": touch,
+        "has_keyboard": kinds.Keyboard in inputs,
+        "pointer_type": "fine" if fine_pointer else "coarse" if touch else "none",
+        "user_agent": f"AstralWindowsClient/{__version__}",
+        "connection_type": "unknown",
     }
-    if supported_types:
-        caps["supported_types"] = list(supported_types)
-    if voice_capability is not None:
-        caps["voice"] = dict(voice_capability)
+    if isinstance(supported_types, (list, tuple, set, frozenset)) and len(supported_types) <= 256:
+        caps["supported_types"] = sorted({
+            item for item in supported_types
+            if isinstance(item, str) and len(item) <= 64 and _SNAKE_CASE.fullmatch(item)
+        })
+    if isinstance(voice_capability, dict):
+        caps["voice"] = copy.deepcopy(voice_capability)
+    if console:
+        caps["console_contract"] = "console/v2"
     return caps
+
+
+def _is_guidance_event(action, payload) -> bool:
+    return (isinstance(action, str) and action.startswith("chrome_note_")) or (
+        action == "chrome_turn_selection_set"
+    ) or (action in {"chrome_open", "chrome_close"} and payload.get("surface") == "guidance")
+
+
+def _guidance_payload(action, payload) -> dict:
+    allowed = {"chrome_open", "chrome_close", "chrome_note_search", "chrome_note_save",
+               "chrome_note_toggle", "chrome_note_forget", "chrome_turn_selection_set"}
+    if not isinstance(action, str) or action not in allowed or not isinstance(payload, dict):
+        raise WindowsProtocolError("Guidance request is invalid")
+    reserved = {"submission_id", "request_generation", "connection_generation", "session_id",
+                "token", "owner_id", "user_id", "tenant_id"}
+    try:
+        result = copy.deepcopy({key: value for key, value in payload.items() if key not in reserved})
+        if len(json.dumps(result, allow_nan=False).encode("utf-8")) > 65536:
+            raise ValueError
+    except (ValueError, TypeError, RecursionError, UnicodeError):
+        raise WindowsProtocolError("Guidance request is invalid") from None
+    if action in {"chrome_open", "chrome_close"} and result.get("surface") != "guidance":
+        raise WindowsProtocolError("Guidance surface is invalid")
+    if action == "chrome_turn_selection_set":
+        result = parse_turn_selection(result)
+        if result is None:
+            raise WindowsProtocolError("Guidance selection is invalid")
+    return result
 
 
 class OrchestratorClient(QObject):
@@ -1904,6 +1973,8 @@ class OrchestratorClient(QObject):
         self.url = url
         self.work_reads = work_reads
         self._work_read_generation = None
+        self._guidance_generation = None
+        self._device_update_generation = 0
         self.token = token
         self.device = device or device_caps()
         self.device_id = _uuid4(
@@ -2129,6 +2200,7 @@ class OrchestratorClient(QObject):
 
     def _register_frame(self) -> dict:
         self.connection_generation = str(uuid.uuid4())
+        self._guidance_generation = None
         with self._voice_local_ack_lock:
             self._voice_local_pending_ack = None
         try:
@@ -2139,6 +2211,8 @@ class OrchestratorClient(QObject):
         capabilities = ["render", "stream", "agent_host"]
         if self.work_reads:
             capabilities.append("work_read_v1")
+        if self.device.get("console_contract") == "console/v2":
+            capabilities.extend(("guidance_notes_v1", "guidance_selection_v1"))
         if isinstance(self.device.get("voice"), dict):
             capabilities.append("voice")
         if self.computer_host_capable:
@@ -2269,6 +2343,8 @@ class OrchestratorClient(QObject):
             or _SNAKE_CASE.fullmatch(action) is None
             or not isinstance(payload, dict)
         ):
+            return None
+        if action == "update_device" or _is_guidance_event(action, payload):
             return None
         submission_id = frame.get("submission_id")
         request_generation = frame.get("request_generation")
@@ -2433,11 +2509,96 @@ class OrchestratorClient(QObject):
         )
         local.validate()
         self.submission.emit(local)
+        if _is_guidance_event(action, safe_payload) or action == "update_device":
+            self._safe_status("send_rejected:" + action)
+            return local
         if action == "chrome_open" and safe_payload.get("surface") == "work":
             self._safe_status("work_read_failed:" + request_generation)
             return local
         self._send(frame)
         return local
+
+    def _send_current_frame(self, frame: dict, *, is_current, failure_status: str) -> bool:
+        ws, loop, generation = self._ws, self._loop, self.connection_generation
+        if (self._stop or self._auth_hold or not self._connected or ws is None or loop is None
+                or not _is_uuid4(generation) or not is_current()):
+            return False
+        frame["connection_generation"] = generation
+        serialized = json.dumps(frame, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+
+        async def transmit():
+            if (not is_current() or self._stop or self._auth_hold or not self._connected or self._ws is not ws
+                    or self._loop is not loop or self.connection_generation != generation):
+                return False
+            await ws.send(serialized)
+            return True
+
+        def finished(future):
+            try:
+                sent = future.result() is True
+            except Exception:
+                sent = False
+            try:
+                current = (not self._stop and not self._auth_hold and self._connected
+                           and self._ws is ws and self._loop is loop
+                           and self.connection_generation == generation and is_current())
+            except Exception:
+                current = False
+            if not sent and current:
+                self._safe_status(failure_status)
+
+        pending = transmit()
+        try:
+            future = asyncio.run_coroutine_threadsafe(pending, loop)
+        except RuntimeError:
+            pending.close()
+            self._safe_status(failure_status)
+            return False
+        future.add_done_callback(finished)
+        return True
+
+    def update_device(self, device: dict) -> bool:
+        if not isinstance(device, dict) or device.get("device_type") != "windows":
+            raise WindowsProtocolError("Device capabilities are invalid")
+        try:
+            snapshot = copy.deepcopy(device)
+            if len(json.dumps(snapshot, allow_nan=False).encode("utf-8")) > 65536:
+                raise ValueError
+        except (ValueError, TypeError, RecursionError, UnicodeError):
+            raise WindowsProtocolError("Device capabilities are invalid") from None
+        self.device = snapshot
+        self._device_update_generation += 1
+        revision = self._device_update_generation
+        submission_id, request_generation = str(uuid.uuid4()), str(uuid.uuid4())
+        frame = {"type": "ui_event", "action": "update_device", "session_id": None,
+                 "submission_id": submission_id, "request_generation": request_generation,
+                 "payload": {"device": snapshot, "submission_id": submission_id,
+                             "request_generation": request_generation}}
+        return self._send_current_frame(
+            frame, is_current=lambda: self._device_update_generation == revision,
+            failure_status="device_update_failed",
+        )
+
+    def retire_guidance(self, request_generation: str) -> None:
+        if self._guidance_generation == request_generation:
+            self._guidance_generation = None
+
+    def send_current_guidance(
+        self, action: str, payload: dict, request_generation: str, *, is_current=lambda: True,
+    ) -> bool:
+        _uuid4(request_generation, "request_generation")
+        safe_payload = _guidance_payload(action, payload)
+        local = LocalOperationSubmission(str(uuid.uuid4()), request_generation, action, None)
+        safe_payload.update(submission_id=local.submission_id, request_generation=request_generation)
+        frame = {"type": "ui_event", "action": action, "session_id": None,
+                 "submission_id": local.submission_id, "request_generation": request_generation,
+                 "payload": safe_payload}
+        self._guidance_generation = request_generation
+        self.submission.emit(local)
+        return self._send_current_frame(
+            frame, is_current=lambda: is_current() and self._guidance_generation == request_generation,
+            failure_status="guidance_failed:" + request_generation,
+        )
 
     def retire_work_read(self, request_generation: str) -> None:
         if self._work_read_generation == request_generation:
@@ -2874,8 +3035,20 @@ class OrchestratorClient(QObject):
         attachments: Optional[list] = None,
         request_generation: Optional[str] = None,
         submission_id: Optional[str] = None,
+        selection: Optional[dict] = None,
+        background: bool = False,
     ) -> LocalOperationSubmission:
         payload: dict[str, Any] = {"message": message}
+        if type(background) is not bool:
+            raise WindowsProtocolError("Background mode must be a boolean")
+        if background:
+            payload["async_mode"] = True
+        if selection is not None:
+            chosen = parse_turn_selection(selection)
+            if chosen is None:
+                raise WindowsProtocolError("Turn selection is invalid")
+            if chosen["agent"] is not None or chosen["skills"] or chosen["notes"]:
+                payload["selection"] = chosen
         if chat_id:
             payload["chat_id"] = chat_id
         if chat_id is None or _is_uuid4(chat_id):

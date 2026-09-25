@@ -17,10 +17,11 @@ import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QSettings, QTimer, QUrl, Signal
+from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QSettings, QTimer, QUrl, Signal, QSignalBlocker
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QBoxLayout,
     QCheckBox,
     QComboBox,
     QCompleter,
@@ -41,6 +42,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QTableWidget,
     QTableWidgetItem,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
     QWidgetAction,
@@ -81,6 +83,8 @@ from .renderer import (
 )
 from .streaming import stream_error_ops, stream_frame_to_ops, subscribe_ack_ops
 from .chrome import chrome_render_notice
+from .console import parse_console_model, parse_console_presentation, parse_turn_selection
+from .console_widgets import ComposerEdit, ConsoleShell, ResponsiveComposer, button as console_button, clear_layout
 from .voice import QtAudioBackend, VoiceComposerWidget, VoiceController
 from . import rest
 from .remote_control import RemoteControlController
@@ -222,6 +226,8 @@ def _user_from_token(token: str) -> str:
 
 
 class ChatRail(QWidget):
+    content_changed = Signal()
+
     def __init__(self):
         super().__init__()
         outer = QVBoxLayout(self)
@@ -269,6 +275,12 @@ class ChatRail(QWidget):
                                0 if role == "user" else inset, 0)
         row.addWidget(bubble)
         self._lay.insertWidget(self._lay.count() - 1, wrap)
+        self.content_changed.emit()
+
+    def use_feed_layout(self) -> None:
+        self._scroll.takeWidget()
+        self._scroll.hide()
+        self.layout().addWidget(self._inner)
 
     def add(self, role: str, text: str) -> None:
         self._drop_hint()
@@ -393,6 +405,7 @@ class ChatRail(QWidget):
         layout.addWidget(label)
         self._lay.insertWidget(self._lay.count() - 1, frame)
         self._transient = frame
+        self.content_changed.emit()
 
     def clear_transient(self) -> None:
         frame = self._transient
@@ -408,6 +421,7 @@ class ChatRail(QWidget):
             item = self._lay.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        self.content_changed.emit()
 
     def add_note(self, text: str) -> None:
         self._drop_hint()
@@ -446,7 +460,51 @@ def _open_external(url: str) -> None:
     QDesktopServices.openUrl(QUrl(url))
 
 
+def _capture_controls(root):
+    focus = QApplication.focusWidget()
+    controls = [root, *root.findChildren(QWidget)]
+    saved = []
+    for control in controls:
+        if isinstance(control, QLineEdit):
+            saved.append(("text", control.text(), control.cursorPosition(), control is focus))
+        elif isinstance(control, QPlainTextEdit):
+            saved.append(("multiline", control.toPlainText(), control.textCursor().position(), control is focus))
+        elif isinstance(control, QComboBox):
+            saved.append(("choice", control.currentIndex(), None, control is focus))
+        elif isinstance(control, (QCheckBox, QPushButton)) and control.isCheckable():
+            saved.append(("checked", control.isChecked(), None, control is focus))
+        elif isinstance(control, QTabWidget):
+            saved.append(("tab", control.currentIndex(), None, control is focus))
+    return saved
+
+
+def _restore_controls(root, saved):
+    controls = [control for control in [root, *root.findChildren(QWidget)]
+                if isinstance(control, (QLineEdit, QPlainTextEdit, QComboBox, QTabWidget))
+                or isinstance(control, (QCheckBox, QPushButton)) and control.isCheckable()]
+    for control, (kind, value, position, was_focus) in zip(controls, saved):
+        with QSignalBlocker(control):
+            if kind == "text":
+                control.setText(value)
+                control.setCursorPosition(position)
+            elif kind == "multiline":
+                control.setPlainText(value)
+                cursor = control.textCursor()
+                cursor.setPosition(position)
+                control.setTextCursor(cursor)
+            elif kind in {"choice", "tab"}:
+                control.setCurrentIndex(value)
+            elif kind == "checked":
+                control.setChecked(value)
+        if was_focus:
+            control.setFocus()
+        if kind == "choice":
+            control.currentTextChanged.emit(control.currentText())
+
+
 class Canvas(QScrollArea):
+    content_changed = Signal()
+
     def __init__(self, ctx: RenderContext):
         super().__init__()
         self.ctx = ctx
@@ -530,6 +588,7 @@ class Canvas(QScrollArea):
             frame.deleteLater()
 
     def show_skeleton(self) -> None:
+        self.content_changed.emit()
         if self._skeleton is not None:
             return
         self._drop_empty()
@@ -619,13 +678,24 @@ class Canvas(QScrollArea):
         self._mutated_since_render = False
         if not components and not keep_loading:
             self.show_empty_state()
+        self.content_changed.emit()
 
     def restyle(self) -> None:
+        states = {}
+        for cid, root in self._by_id.items():
+            states[cid] = _capture_controls(root)
+        scroll_position = self.verticalScrollBar().value()
         comps = self._last_components
         self._by_id = {}
         self._rendered = {}
         self._mutated_since_render = True
         self.set_components(comps)
+        for cid, saved in states.items():
+            root = self._by_id.get(cid)
+            if root is None:
+                continue
+            _restore_controls(root, saved)
+        self.verticalScrollBar().setValue(scroll_position)
 
     def apply_ops(self, ops: list) -> None:
         if ops:
@@ -641,6 +711,8 @@ class Canvas(QScrollArea):
                 self._rendered.pop(cid, None)
                 if w:
                     w.deleteLater()
+                self._last_components = [component for component in self._last_components
+                                         if (component.get("component_id") or component.get("id")) != cid]
                 continue
             comp = op.get("component") or {}
             new_w = render(comp, self.ctx, top_level=True)
@@ -654,6 +726,15 @@ class Canvas(QScrollArea):
                 self._insert(new_w)
             self._by_id[cid] = new_w
             self._rendered[cid] = comp
+            stored = {**comp, "component_id": cid}
+            position = next((index for index, component in enumerate(self._last_components)
+                             if (component.get("component_id") or component.get("id")) == cid), None)
+            if position is None:
+                self._last_components = [*self._last_components, stored]
+            else:
+                self._last_components = list(self._last_components)
+                self._last_components[position] = stored
+        self.content_changed.emit()
 
     def _component_at(self, pos) -> tuple:
         w = self._inner.childAt(pos)
@@ -743,6 +824,7 @@ class SurfaceDialog(QDialog):
         self._status.setVisible(False)
         outer.addWidget(self._status)
         scroll = QScrollArea()
+        self._scroll = scroll
         scroll.setWidgetResizable(True)
         self._inner = QWidget()
         self._lay = QVBoxLayout(self._inner)
@@ -763,6 +845,42 @@ class SurfaceDialog(QDialog):
         self._timer.setSingleShot(True)
         self._timer.setInterval(self.LOAD_TIMEOUT_MS)
         self._timer.timeout.connect(self._on_timeout)
+        self._navigation = None
+        self._surface_payload = None
+
+    def set_navigation(self, menu, presentation, on_open) -> None:
+        if self._navigation is None:
+            self.layout().removeWidget(self._scroll)
+            self._navigation_body = QWidget()
+            self._navigation_box = QBoxLayout(QBoxLayout.Direction.LeftToRight, self._navigation_body)
+            self._navigation_box.setContentsMargins(0, 0, 0, 0)
+            self._navigation = QScrollArea()
+            self._navigation.setWidgetResizable(True)
+            self._navigation_inner = QWidget()
+            self._navigation_layout = QBoxLayout(QBoxLayout.Direction.TopToBottom, self._navigation_inner)
+            self._navigation_layout.setContentsMargins(0, 0, 0, 0)
+            self._navigation.setWidget(self._navigation_inner)
+            self._navigation_box.addWidget(self._navigation)
+            self._navigation_box.addWidget(self._scroll, 1)
+            self.layout().insertWidget(2, self._navigation_body, 1)
+        horizontal = presentation["settings_navigation_axis"] == "horizontal"
+        self._navigation_box.setDirection(QBoxLayout.Direction.TopToBottom if horizontal else QBoxLayout.Direction.LeftToRight)
+        self._navigation_layout.setDirection(QBoxLayout.Direction.LeftToRight if horizontal else QBoxLayout.Direction.TopToBottom)
+        self._navigation.setMinimumWidth(0)
+        self._navigation.setMaximumWidth(16777215 if horizontal else round(presentation["settings_navigation_width"]))
+        if not horizontal:
+            self._navigation.setMinimumWidth(round(presentation["settings_navigation_width"]))
+        self._navigation.setMaximumHeight(64 if horizontal else 16777215)
+        clear_layout(self._navigation_layout)
+        for section in menu.get("sections", []):
+            for item in section["items"]:
+                control = console_button(item["label"], lambda checked=False, selected=item: on_open(
+                    selected["surface"], selected["label"], selected.get("params", {})))
+                control.setCheckable(True)
+                control.setChecked(item["surface"] == self._surface)
+                self._navigation_layout.addWidget(control)
+        self._navigation_layout.addStretch(1)
+        self.resize(round(presentation["settings_width"]), round(presentation["settings_max_height"]))
 
     def set_mandatory(self, on: bool) -> None:
         on = bool(on)
@@ -815,12 +933,13 @@ class SurfaceDialog(QDialog):
         self._raw_emit(action, payload)
         if action == "chrome_open" and payload.get("surface") == "work":
             return
-        if action != "chat_message" and action not in _CLIENT_LOCAL_ACTIONS:
+        if action not in {"chat_message", "compose_prompt"} and action not in _CLIENT_LOCAL_ACTIONS:
             self._status.setText("Applying…")
             self._status.setVisible(True)
             self._timer.start()
 
     def begin_load(self, surface: str, params: dict, title: str = "") -> None:
+        self._surface_payload = None
         self._surface = surface or self._surface
         self._params = params or {}
         self.setWindowTitle(title or self._surface or "Settings")
@@ -836,7 +955,7 @@ class SurfaceDialog(QDialog):
 
     def _on_timeout(self) -> None:
         self._timer.stop()
-        if self._surface == "work" and callable(self._timeout_observer):
+        if callable(self._timeout_observer):
             self._timeout_observer()
         self._status.setVisible(False)
         self._clear_body()
@@ -866,6 +985,7 @@ class SurfaceDialog(QDialog):
             self._on_retry(self._surface, self._params)
 
     def set_surface(self, title: str, components: list) -> None:
+        self._surface_payload = components
         self._timer.stop()
         self._status.setVisible(False)
         self.setWindowTitle(title or "Settings")
@@ -873,6 +993,19 @@ class SurfaceDialog(QDialog):
         self._clear_body()
         for comp in components or []:
             self._lay.insertWidget(self._lay.count() - 1, render(comp, self._ctx))
+
+    def restyle(self) -> None:
+        self.setStyleSheet(f"QDialog {{ background:{T.SURFACE_2}; }}")
+        self._title.setStyleSheet(f"color:{T.TEXT}; font-size:15px; font-weight:600;")
+        self._status.setStyleSheet(f"color:{T.MUTED}; font-size:12px;")
+        if self._surface_payload is not None:
+            saved = _capture_controls(self._inner)
+            position = self._scroll.verticalScrollBar().value()
+            self._clear_body()
+            for component in self._surface_payload:
+                self._lay.insertWidget(self._lay.count() - 1, render(component, self._ctx))
+            _restore_controls(self._inner, saved)
+            self._scroll.verticalScrollBar().setValue(position)
 
 
 class TopBar(QFrame):
@@ -1517,6 +1650,19 @@ class MainWindow(QMainWindow):
         self._operation_banner_request_generation: Optional[str] = None
         self._operation_banner_operation_id: Optional[str] = None
         self._pending_voice_chat: Optional[dict[str, str]] = None
+        self._console_model = None
+        self._console_presentation = None
+        self._console_menu = {}
+        self._console_shell = None
+        self._turn_selection = None
+        self._background_mode = False
+        self._guidance_ticket = None
+        self._surface_owner = None
+        self._workspace_actions = None
+        self._viewport_timer = QTimer(self)
+        self._viewport_timer.setSingleShot(True)
+        self._viewport_timer.setInterval(120)
+        self._viewport_timer.timeout.connect(self._refresh_device)
 
         ctx = RenderContext(emit=self._emit, download=self._download,
                             apply_theme=self._apply_theme_pref)
@@ -1528,6 +1674,8 @@ class MainWindow(QMainWindow):
             device_caps(
                 supported_types=native_types(),
                 voice_capability=self._voice_audio.capability(),
+                window=self,
+                console=True,
             ),
             work_reads=True,
         )
@@ -1592,6 +1740,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if app is not None:
             app.aboutToQuit.connect(self._byo.stop_all)
+            app.aboutToQuit.connect(self._clear_workspace_actions)
         self._remote = RemoteControlController(
             send_event=lambda action, payload: self.client.send_event(action, payload),
             notify=self._byo_notice.emit,
@@ -1649,7 +1798,8 @@ class MainWindow(QMainWindow):
         self._chips_bar.setVisible(False)
 
         self._voice_widget = VoiceComposerWidget()
-        composer = QWidget()
+        composer = ResponsiveComposer()
+        self._composer = composer
         _scoped(
             composer,
             f"background:{T._rgba(T.BG, 0.45)};"
@@ -1660,6 +1810,7 @@ class MainWindow(QMainWindow):
         composer_lay.setSpacing(8)
         composer_lay.addWidget(self._input)
         controls = QHBoxLayout()
+        self._composer_controls = controls
         controls.setSpacing(8)
         controls.addWidget(self._attach_btn)
         controls.addWidget(self._voice_widget, 1)
@@ -1687,6 +1838,7 @@ class MainWindow(QMainWindow):
         rail_lay.addWidget(composer)
 
         split = QSplitter(Qt.Orientation.Horizontal)
+        self._legacy_split = split
         split.addWidget(self.canvas)
         split.addWidget(rail_col)
         split.setSizes([900, 380])
@@ -1715,7 +1867,7 @@ class MainWindow(QMainWindow):
             self._voice_controller.handle_action
         )
         self._voice_controller.status_changed.connect(
-            self._voice_widget.set_voice_status
+            self._on_voice_status
         )
         self._voice_controller.transcript_changed.connect(
             self._voice_widget.set_transcript
@@ -1751,6 +1903,7 @@ class MainWindow(QMainWindow):
         root = QWidget()
         root.setObjectName("root")
         rl = QVBoxLayout(root)
+        self._root_layout = rl
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(0)
         rl.addWidget(self.topbar)
@@ -1758,6 +1911,8 @@ class MainWindow(QMainWindow):
         rl.addWidget(split, 1)
         self.setCentralWidget(root)
         self._input.setFocus()
+        self.canvas.content_changed.connect(self._sync_console_conversation)
+        self.rail.content_changed.connect(self._sync_console_conversation)
 
         _confirm.BRIDGE.attach(self._show_confirm_dialog)
 
@@ -1779,8 +1934,292 @@ class MainWindow(QMainWindow):
         self._connected_once = False
         self._start_integrity_check()
 
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        timer = getattr(self, "_viewport_timer", None)
+        if timer is not None:
+            timer.start()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        handle = self.windowHandle()
+        if handle is not None and not getattr(self, "_screen_observed", False):
+            self._screen_observed = True
+            handle.screenChanged.connect(self._screen_changed)
+            self._screen_changed(handle.screen())
+
+    def _screen_changed(self, screen) -> None:
+        previous = getattr(self, "_observed_screen", None)
+        if previous is not None:
+            for signal in (previous.logicalDotsPerInchChanged, previous.geometryChanged):
+                try:
+                    signal.disconnect(self._queue_device_refresh)
+                except (RuntimeError, TypeError):
+                    pass
+        self._observed_screen = screen
+        if screen is not None:
+            screen.logicalDotsPerInchChanged.connect(self._queue_device_refresh)
+            screen.geometryChanged.connect(self._queue_device_refresh)
+        self._queue_device_refresh()
+
+    def _queue_device_refresh(self, *args) -> None:
+        self._viewport_timer.start()
+
+    def _refresh_device(self) -> None:
+        snapshot = device_caps(
+            supported_types=native_types(), voice_capability=self._voice_audio.capability(),
+            window=self, console=True)
+        updater = getattr(self.client, "update_device", None)
+        if callable(updater):
+            updater(snapshot)
+
+    def _accept_console(self, model) -> None:
+        if not isinstance(model, dict):
+            return
+        parsed = parse_console_model(model.get("console"))
+        if parsed is None:
+            if self._console_shell is not None:
+                self._console_model = None
+                self._console_shell.setEnabled(False)
+                self._show_banner("The console update could not be read. Reconnect to reload it.", "error")
+            return
+        self._console_model = parsed
+        self._console_menu = rest.parse_chrome_menu(model)
+        self._show_console()
+
+    def _show_console(self) -> None:
+        if self._console_model is None or self._console_presentation is None:
+            return
+        created = self._console_shell is None
+        if self._console_shell is None:
+            previous = self._input
+            self._input = ComposerEdit()
+            self._input.setText(previous.text())
+            self._input.setEnabled(previous.isEnabled())
+            self._input.returnPressed.connect(self._send)
+            self._input.setCompleter(build_slash_completer(self._input))
+            self._composer.layout().removeWidget(previous)
+            previous.setParent(None)
+            previous.deleteLater()
+            self.rail.use_feed_layout()
+            shell = ConsoleShell(self.rail, self.canvas, self._composer, self._chips_bar, self.topbar._mark, self)
+            self._console_shell = shell
+            shell.scenario_requested.connect(self._scenario)
+            shell.surface_requested.connect(self._console_open_surface)
+            shell.chat_requested.connect(self._load_chat)
+            shell.history_requested.connect(lambda: self.client.send_event("get_history", {}))
+            shell.new_chat_requested.connect(self._new_chat)
+            shell.signout_requested.connect(self._sign_out)
+            shell.background_changed.connect(self._set_background_mode)
+            shell.clear_selection_requested.connect(self._clear_turn_selection)
+            shell.results.workspace_requested.connect(self._perform_workspace_action)
+            self._composer_controls.insertWidget(self._composer_controls.count() - 1, shell.more_button)
+            self._composer_controls.insertWidget(0, self._input, 1)
+            self._composer_controls.setStretch(self._composer_controls.indexOf(self._voice_widget), 0)
+            self._composer.configure_controls(
+                self._composer_controls, self._input, self._voice_widget,
+                (self._attach_btn, shell.more_button, self._send_btn))
+            self._legacy_split.hide()
+            self.topbar.hide()
+            self._root_layout.addWidget(shell, 1)
+            self.rail._drop_hint()
+        shell = self._console_shell
+        shell.setEnabled(True)
+        if shell.model != self._console_model or shell.menu != self._console_menu:
+            shell.apply_model(self._console_model, self._console_menu)
+        if shell.presentation != self._console_presentation:
+            shell.apply_presentation(self._console_presentation)
+        labels = self._console_model["labels"]
+        self._voice_widget.set_availability_banner(self._console_model["show_voice_availability_banner"])
+        self._input.setPlaceholderText(labels["message_placeholder"])
+        self._input.setAccessibleName(labels["message_placeholder"])
+        self._send_btn.setText("↑")
+        _icons.apply(self._send_btn, "send", T.TEXT, T.TEXT)
+        self._send_btn.setAccessibleName(labels["send"])
+        self._send_btn.setToolTip(labels["send"])
+        self._attach_btn.setAccessibleName(labels["attach"])
+        self._attach_btn.setToolTip(labels["attach"])
+        self._sync_console_conversation(update_navigation=created)
+        self._configure_surface_navigation()
+
+    def _sync_console_conversation(self, *, update_navigation=True) -> None:
+        shell = getattr(self, "_console_shell", None)
+        if shell is None:
+            return
+        rows = list(self.canvas._rendered.values()) or self.canvas._last_components
+        meaningful = [row for row in rows if not (
+            isinstance(row, dict) and str(row.get("component_id") or row.get("id") or "").startswith("wel_"))]
+        result = bool(meaningful or self.canvas.turn_active)
+        active = bool(self.active_chat or self._transient_chat_lines or result)
+        if update_navigation:
+            shell.update_conversation(active, result)
+        shell._size_controls()
+        agent_id = next((row.get("source_agent") or row.get("_source_agent") or row.get("agent_id") or row.get("agent")
+                         for row in rows if isinstance(row, dict) and any(row.get(key) for key in
+                         ("source_agent", "_source_agent", "agent_id", "agent"))), None)
+        agent = next((row["name"] for row in (self._console_model or {}).get("catalog", {}).get("agents", [])
+                      if row["id"] == agent_id), None)
+        snapshot = self._continuity.committed_snapshot
+        turns = sum(1 for row in snapshot.transcript if row.get("role") == "user") if snapshot else 0
+        shell.results.set_metadata(agent, turns)
+        context = self._workspace_context()
+        for control in shell.results.findChildren(QPushButton):
+            operation = control.property("workspaceOperation")
+            if operation:
+                control.setEnabled(operation in context["operations"])
+        if self._workspace_actions is not None:
+            self._workspace_actions.invalidate_stale()
+
+    def _workspace_context(self) -> dict:
+        operations = {item["operation"] for item in self._console_menu.get("workspace_actions", [])}
+        if (self._console_model is None or self._timeline_mode or self._turn_active
+                or self._continuity.committed_snapshot is None):
+            operations = set()
+        return {"owner": self._resume_store.storage_key,
+                "connection": getattr(self.client, "connection_generation", None),
+                "chat_id": self.active_chat,
+                "render_revision": self._continuity.last_committed_render_revision,
+                "operations": operations}
+
+    def _perform_workspace_action(self, operation: str) -> None:
+        if self._workspace_actions is None:
+            from .workspace_actions import WorkspaceActions
+            self._workspace_actions = WorkspaceActions(
+                parent=self, context_provider=self._workspace_context, token_provider=self._current_token,
+                http_base=_http_base(self._url), notify=self._show_banner)
+        self._workspace_actions.perform(operation)
+
+    def _clear_workspace_actions(self) -> None:
+        if self._workspace_actions is not None:
+            self._workspace_actions.clear()
+
+    def _on_voice_status(self, state: str, message: str) -> None:
+        self._voice_widget.set_voice_status(state, message)
+        if state == "error":
+            self._show_banner(str(message or "Voice could not connect. End voice and retry.")[:240], "error")
+
+    def _scenario(self, identity: str, run: bool) -> None:
+        if self._console_model is None or not self._input.isEnabled():
+            return
+        scenario = next((row for row in self._console_model["catalog"]["scenarios"] if row["id"] == identity), None)
+        if scenario is None:
+            return
+        self._input.setText(scenario["prompt"])
+        if run:
+            self._emit("chat_message", {"message": scenario["prompt"]})
+        else:
+            self._input.setFocus()
+
+    def _set_background_mode(self, enabled: bool) -> None:
+        self._background_mode = enabled
+
+    def _clear_turn_selection(self) -> None:
+        self._turn_selection = None
+        if self._console_shell is not None:
+            self._console_shell.set_selection(None)
+
+    def _configure_surface_navigation(self) -> None:
+        if self._surface_dialog is not None and self._console_presentation is not None:
+            self._surface_dialog._on_close = self._surface_closed
+            self._surface_dialog._timeout_observer = self._surface_timeout
+            self._surface_dialog.set_navigation(self._console_menu, self._console_presentation, self._console_open_surface)
+
+    def _surface_closed(self) -> None:
+        self._retire_work_read()
+        self._retire_guidance()
+        self._surface_owner = None
+
+    def _console_open_surface(self, surface: str, title: str, params: dict) -> None:
+        if self._console_model is None:
+            return
+        if surface == "work":
+            self._retire_guidance()
+            self._request_work_surface(params)
+            self._configure_surface_navigation()
+            return
+        self._retire_work_read()
+        self._retire_guidance()
+        if self._surface_dialog is None:
+            self._surface_dialog = SurfaceDialog(
+                self, self._emit, self._download, on_retry=self._retry_surface,
+                apply_theme=self._apply_theme_pref, on_sign_out=self._sign_out,
+                on_close=self._surface_closed, on_timeout=self._surface_timeout)
+        self._surface_dialog.begin_load(surface, params, title)
+        self._surface_owner = (self.client, getattr(self.client, "connection_generation", None), self._resume_store.storage_key)
+        self._configure_surface_navigation()
+        self._surface_dialog.show()
+        self._surface_dialog.raise_()
+        if surface == "guidance":
+            self._send_guidance("chrome_open", {"surface": surface, "params": params})
+        else:
+            self.client.send_event("chrome_open", {"surface": surface, "params": params})
+
+    def _surface_timeout(self) -> None:
+        self._finish_work_read()
+        self._retire_guidance()
+        self._surface_owner = None
+
+    def _retire_guidance(self) -> None:
+        ticket, self._guidance_ticket = self._guidance_ticket, None
+        if ticket is not None:
+            retire = getattr(ticket[0], "retire_guidance", None)
+            if callable(retire):
+                retire(ticket[3])
+            self._finish_local_submission_by_generation(ticket[3])
+
+    def _guidance_current(self, ticket) -> bool:
+        dialog = self._surface_dialog
+        return (self._guidance_ticket is ticket and ticket[0] is self.client
+                and ticket[1] == getattr(self.client, "connection_generation", None)
+                and ticket[2] == self._resume_store.storage_key and ticket[5] == self.active_chat
+                and dialog is not None and dialog.isVisible() and dialog._surface == "guidance")
+
+    def _send_guidance(self, action: str, payload: dict) -> None:
+        self._retire_guidance()
+        sender = getattr(self.client, "send_current_guidance", None)
+        connection = getattr(self.client, "connection_generation", None)
+        owner = self._resume_store.storage_key
+        if not callable(sender) or not _canonical_uuid4(connection) or not owner:
+            if self._surface_dialog is not None:
+                self._surface_dialog._on_timeout()
+            return
+        ticket = (self.client, connection, owner, str(uuid.uuid4()), action, self.active_chat)
+        self._guidance_ticket = ticket
+        try:
+            sent = sender(action, payload, ticket[3], is_current=lambda: self._guidance_current(ticket))
+        except (WindowsProtocolError, ValueError, TypeError):
+            sent = False
+        if not sent:
+            self._retire_guidance()
+            if self._surface_dialog is not None:
+                self._surface_dialog._on_timeout()
+
+    def _compose_surface_prompt(self, payload: dict) -> None:
+        dialog = self._surface_dialog
+        current = (self.client, getattr(self.client, "connection_generation", None), self._resume_store.storage_key)
+        if (dialog is None or not dialog.isVisible() or dialog._surface != "agent_intro"
+                or self._surface_owner != current or not self._input.isEnabled()):
+            return
+        def contains(components):
+            for component in components or []:
+                if not isinstance(component, dict):
+                    continue
+                if (component.get("action") == "compose_prompt" and component.get("payload") == payload
+                        and not component.get("disabled")):
+                    return True
+                for key in ("content", "children"):
+                    if isinstance(component.get(key), list) and contains(component[key]):
+                        return True
+            return False
+        message = payload.get("message")
+        if isinstance(message, str) and 0 < len(message) <= 8000 and contains(dialog._surface_payload):
+            self._input.setText(message)
+            dialog.close()
+            self._input.setFocus()
+
     def closeEvent(self, event) -> None:
         self._retire_work_read()
+        self._clear_workspace_actions()
         try:
             self._byo.stop_all()
         except Exception:  # noqa: BLE001
@@ -1840,10 +2279,15 @@ class MainWindow(QMainWindow):
         topbar = getattr(self, "topbar", None)
         if topbar is not None and hasattr(topbar, "apply_icons"):
             topbar.apply_icons()
+        if self._console_shell is not None:
+            self._console_shell.restyle()
+        self._voice_widget.restyle()
         attach = getattr(self, "_attach_btn", None)
         if attach is not None:
             _icons.apply(attach, "paperclip", T.MUTED, T.TEXT)
         self.canvas.restyle()
+        if self._surface_dialog is not None:
+            self._surface_dialog.restyle()
 
     def _show_banner(
         self,
@@ -1892,13 +2336,23 @@ class MainWindow(QMainWindow):
     def _set_composer_enabled(self, enabled: bool) -> None:
         self._input.setEnabled(enabled)
         self._send_btn.setEnabled(enabled)
+        self._attach_btn.setEnabled(enabled)
+        if self._console_shell is not None:
+            self._console_shell.more_button.setEnabled(enabled)
         self._voice_widget.set_composer_enabled(enabled)
         self._input.setPlaceholderText(
-            "Message AstralDeep…  (type / for commands)" if enabled
+            (self._console_model["labels"]["message_placeholder"] if self._console_model
+             else "Message AstralDeep…  (type / for commands)") if enabled
             else "Viewing workspace history — return to live to send messages"
         )
 
     def _set_active_chat(self, chat_id: Optional[str], *, persist: bool = True) -> None:
+        if self.active_chat is not None and self.active_chat != chat_id:
+            self._retire_guidance()
+            self._clear_turn_selection()
+            self._surface_owner = None
+            if self._console_shell is not None:
+                self._console_shell.dismiss()
         if chat_id is not None and _canonical_uuid4(chat_id) and persist:
             self._resume_store.set_active_chat(chat_id)
         self.active_chat = chat_id
@@ -1917,6 +2371,7 @@ class MainWindow(QMainWindow):
         voice = getattr(self, "_voice_controller", None)
         if voice is not None:
             voice.visible_chat_changed(chat_id)
+        self._sync_console_conversation()
 
     def _voice_chat_required(self, action: str, activation_id: str) -> None:
         if _canonical_uuid4(self.active_chat):
@@ -2087,9 +2542,20 @@ class MainWindow(QMainWindow):
         kwargs: dict[str, Any] = {"attachments": attachments}
         if request_generation is not None and accepts_generation:
             kwargs["request_generation"] = request_generation
+        names = {parameter.name for parameter in parameters}
+        if self._turn_selection is not None and "selection" in names:
+            kwargs["selection"] = self._turn_selection
+        if self._background_mode and "background" in names:
+            kwargs["background"] = True
         sender(message, chat_id, **kwargs)
 
     def _new_chat(self) -> None:
+        self._clear_workspace_actions()
+        self._retire_guidance()
+        self._clear_turn_selection()
+        self._surface_owner = None
+        self._clear_transient_conversation()
+        self._set_turn_active(False)
         self._retire_work_read()
         old_chat = self.active_chat
         self._resume_store.clear("explicit_new_chat", old_chat)
@@ -2102,6 +2568,7 @@ class MainWindow(QMainWindow):
         self.canvas.set_components([])
         self._stream_seq.clear()
         self.client.send_event("new_chat", {})
+        self._sync_console_conversation()
 
     def _open_agents(self) -> None:
         self._retire_work_read()
@@ -2117,6 +2584,11 @@ class MainWindow(QMainWindow):
         self._agents_dialog.raise_()
 
     def _open_surface(self, surface: str, label: str) -> None:
+        if self._console_model is not None:
+            item = next((item for section in self._console_menu.get("sections", [])
+                         for item in section["items"] if item["surface"] == surface), None)
+            self._console_open_surface(surface, label, item.get("params", {}) if item else {})
+            return
         s = (surface or "").strip()
         if s == "work":
             self._request_work_surface({})
@@ -2138,6 +2610,9 @@ class MainWindow(QMainWindow):
             self.client.send_event("chrome_open", {"surface": s, "params": {}})
 
     def _retry_surface(self, surface: str, params: dict) -> None:
+        if self._console_model is not None:
+            self._console_open_surface(surface, self._surface_dialog._title.text(), params)
+            return
         if surface == "work":
             self._request_work_surface(params or {})
             return
@@ -2197,6 +2672,10 @@ class MainWindow(QMainWindow):
         dialog.activateWindow()
 
     def _open_history(self) -> None:
+        if self._console_shell is not None:
+            self._console_shell.history_button.setChecked(True)
+            self._console_shell._toggle_history()
+            return
         self._retire_work_read()
         if self._history_dialog is None:
             self._history_dialog = HistoryDialog(self, self._load_chat)
@@ -2214,6 +2693,30 @@ class MainWindow(QMainWindow):
 
     def _on_chrome_surface(self, msg: dict) -> None:
         dialog = self._surface_dialog
+        if msg.get("surface_key") == "guidance" and self._console_model is not None:
+            ticket = self._guidance_ticket
+            if (ticket is None or msg.get("request_generation") != ticket[3]
+                    or not self._guidance_current(ticket) or msg.get("mode", "replace") != "replace"
+                    or not isinstance(msg.get("components"), list)):
+                return
+            if "selection" in msg:
+                selection = parse_turn_selection(msg["selection"])
+                if ticket[4] != "chrome_turn_selection_set" or selection is None:
+                    return
+                self._turn_selection = selection
+                self._console_shell.set_selection(selection)
+            self._retire_guidance()
+            dialog.set_surface(msg.get("title") or dialog._title.text(), msg["components"])
+            return
+        if self._console_model is not None and dialog is not None and dialog.isVisible():
+            if (msg.get("mode") != "mandatory" and msg.get("surface_key")
+                    and msg.get("surface_key") != dialog._surface):
+                return
+        if (self._console_model is not None and msg.get("mode") != "mandatory"
+                and msg.get("surface_key") not in (None, "", "work")):
+            current = (self.client, getattr(self.client, "connection_generation", None), self._resume_store.storage_key)
+            if dialog is None or not dialog.isVisible() or self._surface_owner != current:
+                return
         if (dialog is not None and dialog.isVisible() and dialog._surface == "work"
                 and msg.get("surface_key") != "work"):
             return
@@ -2244,8 +2747,10 @@ class MainWindow(QMainWindow):
                 apply_theme=self._apply_theme_pref, on_sign_out=self._sign_out,
                 on_close=self._retire_work_read, on_timeout=self._finish_work_read)
         self._surface_dialog.set_mandatory(mode == "mandatory")
+        self._surface_dialog._surface = msg.get("surface_key") or self._surface_dialog._surface
         self._surface_dialog.set_surface(
             msg.get("title") or "Settings", components)
+        self._configure_surface_navigation()
         self._surface_dialog.show()
         self._surface_dialog.raise_()
 
@@ -2452,6 +2957,10 @@ class MainWindow(QMainWindow):
             self._audit_dialog.add_page(result.get("rows") or [], result.get("next_cursor"))
 
     def _load_chat(self, chat_id: str) -> None:
+        self._clear_workspace_actions()
+        self._retire_guidance()
+        self._clear_turn_selection()
+        self._surface_owner = None
         self._retire_work_read()
         if not _canonical_uuid4(chat_id):
             self.rail.clear()
@@ -2482,6 +2991,10 @@ class MainWindow(QMainWindow):
         ):
             return
         self._retire_work_read()
+        self._retire_guidance()
+        self._clear_turn_selection()
+        self._surface_owner = None
+        self._clear_workspace_actions()
         old_chat = self.active_chat
         self._resume_store.clear("definitive_sign_out", old_chat)
         self._continuity.clear_chat(old_chat, all_accounts=True)
@@ -2679,6 +3192,8 @@ class MainWindow(QMainWindow):
         self._pending_submissions_by_id.clear()
 
     def _send(self) -> None:
+        if not self._input.isEnabled():
+            return
         text = self._input.text().strip()
         atts = self._sendable_attachments()
         if not text and not atts:
@@ -2717,6 +3232,19 @@ class MainWindow(QMainWindow):
         self._clear_sent_attachments()
 
     def _emit(self, action: str, payload: dict) -> None:
+        if action == "compose_prompt":
+            self._compose_surface_prompt(payload)
+            return
+        if self._console_model is not None:
+            if action == "chrome_open":
+                self._console_open_surface(payload.get("surface", ""), payload.get("surface", ""), payload.get("params") or {})
+                return
+            if action == "chrome_turn_selection_set" or action.startswith("chrome_note_"):
+                if self._surface_dialog is not None and self._surface_dialog._surface == "guidance" and self._surface_dialog.isVisible():
+                    self._send_guidance(action, payload)
+                return
+            if action == "chrome_close":
+                self._surface_closed()
         if action == "chrome_open" and payload.get("surface") == "work":
             params = payload.get("params")
             self._request_work_surface(params if isinstance(params, dict) else {})
@@ -2732,6 +3260,8 @@ class MainWindow(QMainWindow):
             self.client.send_event("chrome_open", {"surface": "my_computers", "params": {}})
             return
         if action == "chat_message":
+            if not self._input.isEnabled():
+                return
             msg = payload.get("message", "")
             generation = (
                 self._begin_conversation_request("commit", self.active_chat)
@@ -2779,12 +3309,25 @@ class MainWindow(QMainWindow):
         self.client.send_event(action, payload, session_id=self.active_chat)
 
     def _on_status(self, s: str) -> None:
+        if s == "device_update_failed":
+            self._show_banner("Window layout could not update. Check your connection and resize the window to retry.", "warning")
+            return
+        if s.startswith("guidance_failed:"):
+            ticket = self._guidance_ticket
+            if ticket is not None and s.partition(":")[2] == ticket[3]:
+                self._retire_guidance()
+                if self._surface_dialog is not None:
+                    self._surface_dialog._on_timeout()
+            return
         if s.startswith("work_read_failed:"):
             if self._work_read is not None and self._work_read[3] == s.partition(":")[2]:
                 self._retire_work_read()
             return
         if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
             self._retire_work_read()
+            self._retire_guidance()
+            self._surface_owner = None
+            self._clear_workspace_actions()
         remote = getattr(self, "_remote", None)
         if remote is not None:
             remote.on_transport_status(s)
@@ -2849,6 +3392,7 @@ class MainWindow(QMainWindow):
         self.topbar.set_status(nice, color)
         if s == "connected":
             self._sync_transport_scope()
+            self._refresh_device()
             self._reauth_tries = 0
             self._connected_once = True
             self._hide_banner()
@@ -2876,6 +3420,7 @@ class MainWindow(QMainWindow):
         self.canvas.turn_active = active
         if not active:
             self._turn_phase_active = False
+        self._sync_console_conversation()
 
     def _begin_silent_refresh(self) -> None:
         if self._silent_refresh_active:
@@ -2905,6 +3450,8 @@ class MainWindow(QMainWindow):
 
     def _reconnect(self, token: str) -> None:
         self._retire_work_read()
+        self._retire_guidance()
+        self._surface_owner = None
         if self._byo_enabled:
             self._byo.on_transport_disconnected()
         try:
@@ -2920,6 +3467,15 @@ class MainWindow(QMainWindow):
         if self._resume_store.bind_token(token):
             next_account_key = self._resume_store.storage_key
             if previous_account_key and next_account_key != previous_account_key:
+                self._clear_turn_selection()
+                self._console_model = None
+                self._console_menu = {}
+                self._background_mode = False
+                if self._console_shell is not None:
+                    self._console_shell.clear_private_state()
+                if self._surface_dialog is not None:
+                    self._surface_dialog.set_mandatory(False)
+                    self._surface_dialog.close()
                 self._continuity.clear_chat(all_accounts=True)
                 self._clear_transient_conversation()
                 self.rail.clear()
@@ -2938,7 +3494,8 @@ class MainWindow(QMainWindow):
         self.client = OrchestratorClient(
             self._url,
             token,
-            device_caps(supported_types=native_types()),
+            device_caps(supported_types=native_types(), window=self, console=True,
+                        voice_capability=self._voice_audio.capability()),
             work_reads=True,
         )
         configure_host = getattr(self.client, "configure_agent_host", None)
@@ -3393,6 +3950,13 @@ class MainWindow(QMainWindow):
 
     def _on_message(self, msg: dict) -> None:
         t = msg.get("type")
+        if t == "rote_config":
+            profile = msg.get("device_profile")
+            parsed = parse_console_presentation(profile.get("console") if isinstance(profile, dict) else None)
+            if parsed is not None:
+                self._console_presentation = parsed
+                self._show_console()
+            return
         if t == "composer_state":
             connection = getattr(self.client, "connection_generation", None)
             if isinstance(connection, str):
@@ -3554,6 +4118,8 @@ class MainWindow(QMainWindow):
                 self._agents_dialog.set_agents(self._agents)
         elif t == "history_list":
             chats = msg.get("chats") or []
+            if self._console_shell is not None:
+                self._console_shell.set_history(chats)
             if self._history_dialog is not None:
                 self._history_dialog.set_chats(chats)
         elif t == "ui_stream_data" and (
@@ -3572,6 +4138,7 @@ class MainWindow(QMainWindow):
             self._on_chrome_render(msg)
         elif t == "chrome_menu":
             self.topbar.set_menu_model(msg.get("model") or {})
+            self._accept_console(msg.get("model") or {})
         elif t == "chrome_surface":
             self._on_chrome_surface(msg)
         elif t == "operation_status":
@@ -3993,14 +4560,9 @@ def _flatten_text(components: list) -> str:
 
 
 def configure(app: QApplication) -> None:
-    from PySide6.QtGui import QFont, QFontDatabase, QIcon
+    from PySide6.QtGui import QIcon
 
-    families = set(QFontDatabase.families())
-    family = next(
-        (f for f in ("Inter", "Segoe UI", "Arial") if f in families),
-        app.font().family(),
-    )
-    app.setFont(QFont(family, 10))
+    T.configure_fonts(app)
     app.setStyleSheet(T.APP_STYLESHEET + T.ROOT_BG_STYLE)
 
     try:

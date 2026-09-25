@@ -43,6 +43,8 @@ _requirements_input_path = _root / "requirements.in"
 _helper_path = _root / "asr-helper" / "publish" / "AstralSpeechHelper.exe"
 _helper_provenance_path = _root / "asr-helper" / "publish" / "helper-build-provenance.json"
 _helper_source_manifest_path = _root / "asr-helper" / "helper-source-hashes.json"
+_console_font_path = _root.parent / "contracts" / "assets" / "fonts" / "open-sans-latin.ttf"
+_console_font_license_path = _root.parent / "apple-clients" / "NativeAppearance" / "Resources" / "OpenSans-OFL.txt"
 for _required in (
     _profile_path,
     _runtime_manifest_path,
@@ -51,6 +53,8 @@ for _required in (
     _helper_path,
     _helper_provenance_path,
     _helper_source_manifest_path,
+    _console_font_path,
+    _console_font_license_path,
 ):
     if not _required.is_file():
         raise SystemExit(f"required Windows release input is missing: {_required.name}")
@@ -227,6 +231,8 @@ a = Analysis(
     # its window/taskbar icon (assets resolve via sys._MEIPASS when frozen).
     datas=[
         ("assets/astraldeep.ico", "assets"),
+        (str(_console_font_path), "assets/fonts"),
+        (str(_console_font_license_path), "assets/fonts"),
         ("deployment/release-profile.json", "deployment"),
         ("deployment/runtime-manifest.json", "deployment"),
         ("requirements-release.lock.txt", "deployment"),

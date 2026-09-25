@@ -243,6 +243,12 @@ class DeviceProfile:
         profile = DeviceProfile._derive(caps)
         if data.get("console_contract") == CONSOLE_CONTRACT:
             profile.console_contract = CONSOLE_CONTRACT
+            if profile.device_type == DeviceType.WINDOWS:
+                width = caps.viewport_width or caps.screen_width
+                density_type = "mobile" if width <= 480 else "tablet" if width <= 1024 else "browser"
+                profile.max_grid_columns = min(
+                    profile.max_grid_columns, load_host_config()[density_type]["max_grid_columns"]
+                )
         st = data.get("supported_types")
         if isinstance(st, (list, tuple, set, frozenset)) and len(st) <= 256:
             cleaned = frozenset(

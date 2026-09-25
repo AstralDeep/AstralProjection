@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import theme as T
+from .composites import build_composite
 
 
 @dataclass
@@ -1374,6 +1375,12 @@ REGISTRY: Dict[str, Callable[[dict, RenderContext], QWidget]] = {
     "image": _r_image,
     "chat_history": _r_chat_history,
     "skeleton": _r_skeleton,
+    "action_group": build_composite,
+    "stat_group": build_composite,
+    "gauge": build_composite,
+    "pipeline_stepper": build_composite,
+    "donut_chart": build_composite,
+    "radar_chart": build_composite,
 }
 
 

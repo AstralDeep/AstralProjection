@@ -33,6 +33,7 @@ from PySide6.QtCore import (
     QObject,
     QTimer,
     Qt,
+    QSize,
     Signal,
     Slot,
 )
@@ -45,8 +46,10 @@ from PySide6.QtMultimedia import (
     QMediaDevices,
 )
 from PySide6.QtTextToSpeech import QTextToSpeech
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
+from . import icons, theme as T
+from .composites import FlowLayout
 from .helper_integrity import HelperIntegrityResult, verify_helper_integrity
 from .protocol import (
     VOICE_TRANSCRIPT_TOPIC,
@@ -83,15 +86,6 @@ _CONTROL_ORDER = (
     "voice-chat-context",
     "voice-sensitive-recap",
 )
-_CONTROL_GLYPHS = {
-    "microphone": "🎙",
-    "device-transfer": "🔄",
-    "stop": "⏹",
-    "speaker-stop": "🔇",
-    "speaker-muted": "🔈",
-    "chat": "💬",
-    "speaker-consent": "🔊",
-}
 _QUIET_VOICE_MESSAGES = frozenset({"", "off", "ready"})
 _CONTROL_ACTIONS = {
     "voice-start": "voice_session_start",
@@ -1011,6 +1005,7 @@ class VoiceHttpError(RuntimeError):
 
 
 _REFUSAL_REASON_TEXT = {
+    "network_interrupted": "Voice connection was interrupted. Check your connection, then start voice again.",
     "worker_unavailable": "No voice worker is available right now. You can keep typing.",
     "asr_unavailable": "The speech recognition service is unavailable right now. You can keep typing.",
     "tts_unavailable": "The speech synthesis service is unavailable right now. You can keep typing.",
@@ -2034,30 +2029,47 @@ class LiveKitRoomSession:
             self._on_state(state, message)
 
 
+class _VoiceControlsLayout(FlowLayout):
+    def sizeHint(self):
+        return QSize(sum(item.sizeHint().width() for item in self.items)
+                     + self.spacing() * max(0, len(self.items) - 1),
+                     max((item.sizeHint().height() for item in self.items), default=0))
+
+
 class VoiceComposerWidget(QWidget):
     action_requested = Signal(str)
+    geometry_changed = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setObjectName("voiceComposer")
         self._connection: Optional[str] = None
         self._revision = -1
+        self._show_availability_banner = True
+        self._status_state = "unavailable"
+        self._status_message = "Voice controls are loading"
+        self._control_minimum = 0
+        self._composer_enabled = True
+        self.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Preferred)
         self._buttons: dict[str, QPushButton] = {}
         self._request_notice_turn_id: Optional[str] = None
         self._request_notice_occurred_at: Optional[datetime] = None
-        self._controls = QHBoxLayout()
+        self._controls = _VoiceControlsLayout()
         self._controls.setContentsMargins(0, 0, 0, 0)
         self._controls.setSpacing(6)
         self.status_label = QLabel("Voice: unavailable")
         self.status_label.setObjectName("voiceConversationStatus")
         self.status_label.setAccessibleName("Voice conversation status")
         self.status_label.setAccessibleDescription("Voice controls are loading")
+        self.status_label.setWordWrap(True)
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.status_label.setVisible(False)
         self.transcript_label = QLabel("")
         self.transcript_label.setObjectName("voiceTranscriptPreview")
         self.transcript_label.setAccessibleName("Voice transcript preview")
         self.transcript_label.setAccessibleDescription("")
         self.transcript_label.setWordWrap(True)
+        self.transcript_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.transcript_label.setVisible(False)
         self.request_notice_label = QLabel("")
         self.request_notice_label.setObjectName("voiceRequestTerminalNotice")
@@ -2068,19 +2080,71 @@ class VoiceComposerWidget(QWidget):
             Qt.TextInteractionFlag.TextSelectableByMouse
         )
         self.request_notice_label.setWordWrap(True)
+        self.request_notice_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.request_notice_label.setAccessibleName("Voice request outcome")
         self.request_notice_label.setAccessibleDescription("")
         self.request_notice_label.setVisible(False)
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.addLayout(self._controls)
-        top.addWidget(self.status_label, 1)
+        self.feedback_scroll = QScrollArea()
+        self.feedback_scroll.setWidgetResizable(True)
+        self.feedback_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self.feedback_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.feedback_scroll.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        feedback = QWidget()
+        feedback_layout = QVBoxLayout(feedback)
+        feedback_layout.setContentsMargins(0, 0, 0, 0)
+        feedback_layout.addWidget(self.request_notice_label)
+        feedback_layout.addWidget(self.transcript_label)
+        self.feedback_scroll.setWidget(feedback)
+        self.feedback_scroll.hide()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
-        layout.addLayout(top)
-        layout.addWidget(self.request_notice_label)
-        layout.addWidget(self.transcript_label)
+        layout.addLayout(self._controls)
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.feedback_scroll)
+
+    def inline_width(self) -> int:
+        return max([self._controls.sizeHint().width(), *(
+            label.sizeHint().width() for label in (self.status_label, self.request_notice_label, self.transcript_label)
+            if not label.isHidden())])
+
+    def set_control_minimum(self, minimum: int) -> None:
+        self._control_minimum = max(0, minimum)
+        for button in self._buttons.values():
+            self._size_control(button)
+        self._geometry_changed()
+
+    def _size_control(self, button) -> None:
+        minimum = self._control_minimum
+        style = f"min-height:{minimum}px;" if minimum else ""
+        if minimum and button.property("iconOnly"):
+            style += f"min-width:{minimum}px;max-width:{minimum}px;"
+        button.setStyleSheet(style)
+        button.setMinimumHeight(minimum)
+
+    def restyle(self) -> None:
+        for button in self._buttons.values():
+            icons.apply(button, button.property("voiceIcon"), T.MUTED, T.TEXT)
+        self._geometry_changed()
+
+    def _geometry_changed(self) -> None:
+        self._controls.invalidate()
+        self._resize_feedback()
+        self.updateGeometry()
+        self.geometry_changed.emit()
+
+    def _resize_feedback(self) -> None:
+        labels = [label for label in (self.request_notice_label, self.transcript_label) if not label.isHidden()]
+        self.feedback_scroll.setVisible(bool(labels))
+        if labels:
+            width = max(1, self.width() - self.style().pixelMetric(self.style().PixelMetric.PM_ScrollBarExtent))
+            height = sum(max(label.fontMetrics().height(), label.heightForWidth(width)) for label in labels)
+            height += self.feedback_scroll.widget().layout().spacing() * (len(labels) - 1)
+            self.feedback_scroll.setFixedHeight(min(192, height + 2))
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._resize_feedback()
 
     def apply_composer_state(self, frame: dict[str, Any], connection: str) -> bool:
         if not _valid_composer_frame(frame, connection):
@@ -2091,16 +2155,19 @@ class VoiceComposerWidget(QWidget):
         self._connection = connection
         self._revision = revision
         voice = frame["voice"]
+        focused = QApplication.focusWidget()
+        focused_key = next((key for key, button in self._buttons.items() if button is focused), None)
         self._clear_buttons()
         controls = {control["key"]: control for control in voice["controls"]}
         for key in _CONTROL_ORDER:
             control = controls.get(key)
             if control is None or not control["visible"]:
                 continue
-            glyph = _CONTROL_GLYPHS.get(control["icon"], "")
-            button = QPushButton(glyph or control["label"])
+            button = QPushButton(control["label"])
             button.setObjectName("voiceComposerControl")
-            button.setProperty("iconOnly", bool(glyph))
+            button.setProperty("voiceIcon", control["icon"])
+            button.setProperty("iconOnly", icons.apply(button, control["icon"], T.MUTED, T.TEXT))
+            self._size_control(button)
             button.setProperty("voiceControlKey", key)
             button.setProperty("voiceAction", control["action"])
             button.setProperty("pressed", control["pressed"])
@@ -2114,7 +2181,7 @@ class VoiceComposerWidget(QWidget):
             button.setAccessibleDescription(", ".join(states) or "Voice control")
             button.setToolTip(control["label"])
             button.setProperty("serverEnabled", control["enabled"] and not control["busy"])
-            button.setEnabled(control["enabled"] and not control["busy"])
+            button.setEnabled(self._composer_enabled and control["enabled"] and not control["busy"])
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             action = control["action"]
@@ -2123,6 +2190,12 @@ class VoiceComposerWidget(QWidget):
             )
             self._buttons[key] = button
             self._controls.addWidget(button)
+        if focused_key is not None:
+            replacement = self._buttons.get(focused_key)
+            if replacement is None or not replacement.isEnabled():
+                replacement = next((button for button in self._buttons.values() if button.isEnabled()), None)
+            if replacement is not None:
+                replacement.setFocus()
         message = voice.get("message") or voice["reason"]
         if voice["reason"] == "speech_error":
             self.set_speech_error(message)
@@ -2130,6 +2203,7 @@ class VoiceComposerWidget(QWidget):
             self.set_voice_status(voice["state"], message)
         if voice["state"] == "off" and voice.get("session_id") is None:
             self.clear_request_notice()
+        self._geometry_changed()
         return True
 
     def _request_action(self, action: str) -> None:
@@ -2140,12 +2214,25 @@ class VoiceComposerWidget(QWidget):
     def set_voice_status(self, state: str, message: str) -> None:
         safe_state = state if state in _VOICE_STATES else "error"
         safe_message = str(message or safe_state).strip()[:240]
+        self._status_state = safe_state
+        self._status_message = safe_message
         self.status_label.setText(f"Voice: {safe_state.replace('_', ' ')}")
         self.status_label.setAccessibleDescription(safe_message)
+        self.setAccessibleDescription(safe_message)
         self.status_label.setVisible(
             not (safe_state == "off" and safe_message.lower() in _QUIET_VOICE_MESSAGES)
+            and (self._show_availability_banner or safe_state not in {"off", "unavailable"})
         )
+        if safe_state in {"off", "unavailable"}:
+            for control in self._buttons.values():
+                control.setAccessibleDescription(safe_message)
+                control.setToolTip(f"{control.accessibleName()}: {safe_message}")
         self.setProperty("voiceState", safe_state)
+        self._geometry_changed()
+
+    def set_availability_banner(self, visible: bool) -> None:
+        self._show_availability_banner = visible
+        self.set_voice_status(self._status_state, self._status_message)
 
     def set_voice_turn_status(
         self,
@@ -2239,6 +2326,7 @@ class VoiceComposerWidget(QWidget):
         self.request_notice_label.setAccessibleName("Voice request outcome")
         self.request_notice_label.setAccessibleDescription("")
         self.request_notice_label.setVisible(False)
+        self._geometry_changed()
 
     def _clear_request_notice_for_newer_turn(
         self,
@@ -2302,6 +2390,7 @@ class VoiceComposerWidget(QWidget):
         alert = getattr(QAccessible.Event, "Alert", None)
         if alert is not None:
             QAccessible.updateAccessibility(QAccessibleEvent(self.request_notice_label, alert))
+        self._geometry_changed()
 
     def set_transcript(self, text: str, final: bool) -> None:
         bounded = str(text or "")[:8000]
@@ -2311,8 +2400,10 @@ class VoiceComposerWidget(QWidget):
         )
         self.transcript_label.setProperty("final", bool(final))
         self.transcript_label.setVisible(bool(bounded))
+        self._geometry_changed()
 
     def set_composer_enabled(self, enabled: bool) -> None:
+        self._composer_enabled = enabled
         for button in self._buttons.values():
             button.setEnabled(enabled and bool(button.property("serverEnabled")))
 
@@ -2321,6 +2412,8 @@ class VoiceComposerWidget(QWidget):
             item = self._controls.takeAt(0)
             widget = item.widget()
             if widget is not None:
+                widget.hide()
+                widget.setParent(None)
                 widget.deleteLater()
         self._buttons.clear()
 
@@ -4563,7 +4656,23 @@ class VoiceController(QObject):
         elif state == "reconnecting":
             self._set_status("reconnecting", "Voice media is reconnecting…")
         elif state in {"error", "disconnected"}:
+            session = (self.session_id, self.generation, self.media_grant_revision)
+            try:
+                scope = self._scope() if self._has_session() else None
+            except WindowsProtocolError:
+                scope = None
             self._teardown("error", message or "Voice media disconnected.")
+            if scope is not None:
+                def release_failed_session() -> None:
+                    try:
+                        with self._session_update_lock:
+                            if self._closed or scope["connection_generation"] != self.connection_provider():
+                                return
+                            self.http.end(*session, scope)
+                    except VoiceHttpError:
+                        pass
+
+                self._run_async(release_failed_session)
 
     def _on_media_data(self, topic: str, sender: str, frame: dict[str, Any]) -> None:
         if topic == VOICE_ANNOUNCEMENT_TOPIC:
@@ -5412,7 +5521,7 @@ class VoiceController(QObject):
 
     def _set_status(self, state: str, message: str) -> None:
         self.state = state if state in _VOICE_STATES else "error"
-        self.status_changed.emit(self.state, str(message or self.state)[:240])
+        self.status_changed.emit(self.state, _refusal_line(message or self.state)[:240])
 
 
 __all__ = [
