@@ -13,24 +13,35 @@ struct WatchChatView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     if !model.workspaceStarted {
-                        welcome(.intro)
-                        welcome(.permission)
-                        notices
-                        inputArea
-                        welcome(.examples)
-                        welcome(.more)
+                        if let console = model.console {
+                            Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)
+                            Text(verbatim: console.labels["subtitle"] ?? "").font(ConsoleTypography.footnote)
+                            notices
+                            inputArea
+                            NavigationLink(console.labels["start_here"] ?? "") { WatchConsoleCatalogView() }
+                        } else {
+                            welcome(.intro)
+                            welcome(.permission)
+                            notices
+                            inputArea
+                            welcome(.examples)
+                            welcome(.more)
+                        }
                     } else {
                         ForEach(model.visibleEntries) { entry in
                             entryView(entry).id(entry.id)
                         }
-                        ForEach(Array(model.workspaceCanvas.enumerated()), id: \.offset) { _, comp in
-                            WatchComponentView(component: comp)
+                        if model.console != nil, !model.workspaceCanvas.isEmpty {
+                            resultPreview(model.workspaceCanvas, entryID: nil).id("canvas")
+                        } else {
+                            ForEach(Array(model.workspaceCanvas.enumerated()), id: \.offset) { _, comp in
+                                WatchComponentView(component: comp)
+                            }.id("canvas")
                         }
-                        .id("canvas")
                         notices
                         inputArea
                     }
-                }
+                }.padding(model.consoleContentInsets)
             }
             .onChange(of: model.visibleEntries.count) { _, _ in
                 if let last = model.visibleEntries.last {
@@ -84,7 +95,7 @@ struct WatchChatView: View {
                     ProgressView().controlSize(.mini)
                 }
                 Text(InlineMarkdown.attributed(status))
-                    .font(AstralTypography.footnote).foregroundStyle(.secondary)
+                    .font(ConsoleTypography.footnote).foregroundStyle(.secondary)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier(accessibility.identifier)
@@ -94,8 +105,8 @@ struct WatchChatView: View {
         }
         if let banner = model.errorBanner {
             Label(banner, systemImage: "exclamationmark.triangle")
-                .font(AstralTypography.footnote)
-                .foregroundStyle(WatchBrand.warning)
+                .font(ConsoleTypography.footnote)
+                .foregroundStyle(model.theme.palette.warning)
         }
     }
 
@@ -113,16 +124,16 @@ struct WatchChatView: View {
             VStack(alignment: .trailing, spacing: 3) {
                 if !text.isEmpty {
                     Text(text)
-                        .font(AstralTypography.footnote)
+                        .font(ConsoleTypography.footnote)
                         .padding(6)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                         .background(
-                            WatchBrand.primary.opacity(0.25),
+                            model.theme.palette.primary.opacity(0.25),
                             in: RoundedRectangle(cornerRadius: 8))
                 }
                 ForEach(attachments, id: \.self) { name in
                     Label(name, systemImage: "paperclip")
-                        .font(AstralTypography.caption2)
+                        .font(ConsoleTypography.caption2)
                         .lineLimit(1)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.gray.opacity(0.25), in: Capsule())
@@ -131,14 +142,37 @@ struct WatchChatView: View {
             .frame(maxWidth: .infinity, alignment: .trailing)
         case .status(_, let text):
             Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(text)))
-                .font(AstralTypography.footnote).foregroundStyle(.secondary)
-        case .turn(_, let components):
-            VStack(alignment: .leading, spacing: 6) {
-                ForEach(Array(components.enumerated()), id: \.offset) { _, comp in
-                    WatchComponentView(component: comp)
+                .font(ConsoleTypography.footnote).foregroundStyle(.secondary)
+        case .turn(let id, let components):
+            if model.console != nil {
+                resultPreview(components, entryID: id)
+            } else {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(components.enumerated()), id: \.offset) { _, comp in
+                        WatchComponentView(component: comp)
+                    }
                 }
             }
         }
+    }
+
+    private func resultPreview(_ components: [AstralComponent], entryID: String?) -> some View {
+        NavigationLink {
+            WatchConsoleResultView(entryID: entryID)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: model.consoleLabel("result_default_agent", fallback: "AstralDeep"))
+                    .font(ConsoleTypography.headline)
+                Text(verbatim: String(components.map(\.fallbackText).joined(separator: "\n").prefix(500)))
+                    .font(ConsoleTypography.footnote).lineLimit(5)
+                Label(model.consoleLabel("fullscreen"), systemImage: "arrow.up.left.and.arrow.down.right")
+                    .font(ConsoleTypography.caption)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxHeight: model.consolePresentation.map { CGFloat($0.resultPreviewMaxHeight) })
+            .padding(8)
+            .background(model.theme.palette.surface, in: RoundedRectangle(cornerRadius: 12))
+        }.buttonStyle(.plain)
     }
 
     @ViewBuilder
@@ -148,6 +182,17 @@ struct WatchChatView: View {
                 WatchVoiceTerminalNoticeView(notice: notice)
             }
             voiceConversationControls
+            if model.console != nil {
+                NavigationLink(model.consoleLabel("more")) { WatchConsoleActionsView() }
+                    .frame(minHeight: model.consolePresentation?.minimumControlHeight ?? 44)
+                if !model.turnSelection.isEmpty {
+                    Label(
+                        model.console?.selectionSummary(model.turnSelection) ?? model.consoleLabel("advanced"),
+                        systemImage: "checkmark.circle.fill"
+                    )
+                    .font(ConsoleTypography.caption)
+                }
+            }
             if model.pendingDictation.isEmpty {
                 TextFieldLink(prompt: Text("Dictate one message")) {
                     Label("Dictate", systemImage: "text.bubble")
@@ -161,10 +206,15 @@ struct WatchChatView: View {
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("“\(model.pendingDictation)”")
-                        .font(AstralTypography.footnote)
+                        .font(ConsoleTypography.footnote)
                         .italic()
+                    TextFieldLink(prompt: Text(model.consoleLabel("message_placeholder", fallback: "Edit message"))) {
+                        Label("Edit", systemImage: "pencil")
+                    } onSubmit: {
+                        model.pendingDictation = $0
+                    }
                     HStack {
-                        Button("Send") { model.sendPending() }
+                        Button(model.consoleLabel("send", fallback: "Send")) { model.sendPending() }
                             .buttonStyle(.borderedProminent)
                             .accessibilityIdentifier(WatchAccessibility060.send.identifier)
                             .accessibilityLabel(WatchAccessibility060.send.name)
@@ -176,10 +226,10 @@ struct WatchChatView: View {
                         .accessibilityLabel(WatchAccessibility060.discard.name)
                         .accessibilityValue(WatchAccessibility060.discard.state)
                     }
-                    .font(AstralTypography.footnote)
+                    .font(ConsoleTypography.footnote)
                 }
             }
-        }
+        }.padding(model.consoleComposerInsets)
     }
 
     @ViewBuilder
@@ -193,17 +243,14 @@ struct WatchChatView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(WatchBrand.primary)
+            .tint(model.theme.palette.primary)
             .disabled(true)
             .accessibilityIdentifier("voice.conversation.primary")
             .accessibilityLabel("Start voice conversation")
             .accessibilityValue("Checking voice availability")
-            Text("Checking voice availability…")
-                .font(AstralTypography.caption2)
-                .foregroundStyle(.secondary)
-        } else if model.primaryVoiceControl == nil, model.voiceComposer != nil {
+        } else if model.primaryVoiceControl == nil, model.voiceComposer != nil, model.showsVoiceStatus {
             Text(model.voiceStatusLabel)
-                .font(AstralTypography.caption2)
+                .font(ConsoleTypography.caption2)
                 .foregroundStyle(.secondary)
                 .accessibilityIdentifier("voice.conversation.state")
                 .accessibilityLabel("Voice conversation")
@@ -218,7 +265,7 @@ struct WatchChatView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .tint(model.voiceState.active ? WatchBrand.warning : WatchBrand.primary)
+            .tint(model.voiceState.active ? model.theme.palette.warning : model.theme.palette.primary)
             .disabled(!primary.enabled || primary.busy || model.voiceActivationBusy)
             .accessibilityIdentifier("voice.conversation.primary")
             .accessibilityLabel(primary.label)
@@ -249,24 +296,26 @@ struct WatchChatView: View {
                 }
             }
 
-            HStack(spacing: 4) {
-                if [.connecting, .speechDetected, .transcribing, .processing, .reconnecting]
-                    .contains(model.voiceState)
-                {
-                    ProgressView().controlSize(.mini)
+            if model.showsVoiceStatus {
+                HStack(spacing: 4) {
+                    if [.connecting, .speechDetected, .transcribing, .processing, .reconnecting]
+                        .contains(model.voiceState)
+                    {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Text(model.voiceStatusLabel)
+                        .font(ConsoleTypography.caption2)
+                        .foregroundStyle(.secondary)
                 }
-                Text(model.voiceStatusLabel)
-                    .font(AstralTypography.caption2)
-                    .foregroundStyle(.secondary)
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("voice.conversation.state")
+                .accessibilityLabel("Voice conversation")
+                .accessibilityValue(model.voiceStatusLabel)
             }
-            .accessibilityElement(children: .ignore)
-            .accessibilityIdentifier("voice.conversation.state")
-            .accessibilityLabel("Voice conversation")
-            .accessibilityValue(model.voiceStatusLabel)
 
             if let partial = model.voicePartialTranscript, !partial.isEmpty {
                 Text(partial)
-                    .font(AstralTypography.caption2)
+                    .font(ConsoleTypography.caption2)
                     .italic()
                     .lineLimit(3)
                     .accessibilityLabel("Voice transcript: \(partial)")
@@ -289,29 +338,30 @@ struct WatchChatView: View {
 }
 
 private struct WatchVoiceTerminalNoticeView: View {
+    @Environment(WatchModel.self) private var model
     let notice: VoiceTerminalNotice
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Label(notice.title, systemImage: "exclamationmark.triangle.fill")
-                .font(AstralTypography.caption.bold())
-                .foregroundStyle(WatchBrand.error)
+                .font(ConsoleTypography.caption.bold())
+                .foregroundStyle(model.theme.palette.error)
             Text(notice.serverMessage)
-                .font(AstralTypography.caption2)
+                .font(ConsoleTypography.caption2)
             if let guidance = notice.guidance {
                 Text(guidance)
-                    .font(AstralTypography.caption2)
+                    .font(ConsoleTypography.caption2)
             }
         }
         .padding(7)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            WatchBrand.error.opacity(0.14),
+            model.theme.palette.error.opacity(0.14),
             in: RoundedRectangle(cornerRadius: 8)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(WatchBrand.error.opacity(0.8), lineWidth: 1)
+                .stroke(model.theme.palette.error.opacity(0.8), lineWidth: 1)
         )
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("voice.request.terminal.notice")

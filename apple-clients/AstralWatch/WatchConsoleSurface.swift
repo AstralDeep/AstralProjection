@@ -20,7 +20,9 @@ struct WatchConsoleSurface: Equatable {
             p["admin_only"]?.boolValue == false,
             let title = p["title"]?.stringValue, title.utf8.count <= 4096,
             let generation = p["request_generation"]?.stringValue,
-            UUID(uuidString: generation)?.uuidString.lowercased() == generation,
+            generation.range(
+                of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", options: .regularExpression
+            ) != nil,
             let rows = p["components"]?.arrayValue,
             let encoded = try? frame.payload.encoded(), encoded.count <= 1024 * 1024
         else { return nil }
@@ -66,6 +68,10 @@ struct WatchConsoleSurface: Equatable {
                 && !text.contains("\0")
         }
         return action == "chrome_open" && Set(payload.keys) == ["surface", "params"]
-            && payload["surface"]?.stringValue == "agents" && payload["params"]?.objectValue != nil
+            && payload["surface"]?.stringValue == "agents"
+            && payload["params"]?.objectValue.map { Set($0.keys) == ["agent_id"] } == true
+            && payload["params"]?["agent_id"]?.stringValue.map {
+                !$0.isEmpty && $0.utf8.count <= 800 && !$0.contains("\0")
+            } == true
     }
 }

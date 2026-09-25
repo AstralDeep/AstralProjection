@@ -3,6 +3,7 @@
 
 package com.personalailabs.astraldeep.app
 
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
@@ -11,13 +12,22 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToIndex
+import androidx.compose.ui.unit.dp
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
 import androidx.test.runner.lifecycle.Stage
@@ -34,6 +44,7 @@ import com.personalailabs.astraldeep.app.render.renderers.ChartWebView
 import com.personalailabs.astraldeep.app.render.renderers.registerAllRenderers
 import com.personalailabs.astraldeep.app.ui.WorkspaceContext
 import com.personalailabs.astraldeep.app.ui.theme.AstralTheme
+import com.personalailabs.astraldeep.app.ui.theme.THEME_PRESETS
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -71,6 +82,58 @@ class PortableCanvasExport088UiTest {
             is WebView -> listOf(view)
             is ViewGroup -> (0 until view.childCount).flatMap { webViews(view.getChildAt(it)) }
             else -> emptyList()
+        }
+
+    @Test fun chartResizePreservesZoomAndDocumentWhileThemeReloadsCurrentAppearance() =
+        runBlocking {
+            var width by mutableStateOf(300)
+            var viewport by mutableStateOf(1000)
+            var preset by mutableStateOf("midnight")
+            val component = Component.fromJson(Json.parseToJsonElement("""{"type":"line_chart","id":"resize-chart","labels":["A","B","C"],"datasets":[{"data":[2,5,3]}]}""").jsonObject)
+            rule.setContent {
+                val config = Configuration(LocalConfiguration.current).apply { screenWidthDp = viewport }
+                CompositionLocalProvider(LocalConfiguration provides config) {
+                    AstralTheme(THEME_PRESETS.getValue(preset)) {
+                        val renderer = remember { Renderer(Emit { _, _ -> }).registerAllRenderers() }
+                        Box { Box(Modifier.width(width.dp)) { renderer.render(component) } }
+                    }
+                }
+            }
+            val web = withContext(Dispatchers.Main) { webViews(activity().window.decorView).single() }
+
+            suspend fun settled() {
+                withTimeout(15000) {
+                    while (!web.exportScript("document.documentElement.dataset.nativeLayout || ''").matches(Regex("\"[0-9]+\""))) delay(50)
+                }
+            }
+            settled()
+            val generation = web.exportScript("document.querySelector('meta[name=astral-native-chart-generation]').content")
+            val originalWidth = web.exportScript("document.getElementById('chart')._fullLayout.width").toDouble()
+            web.exportScript("Plotly.relayout(document.getElementById('chart'), {'xaxis.range':[0.5,1.5]});true")
+            delay(200)
+            rule.runOnIdle {
+                width = 230
+                viewport = 320
+            }
+            rule.waitForIdle()
+            runCatching {
+                withTimeout(10000) {
+                    while (web.exportScript("document.getElementById('chart')._fullLayout.width").toDouble() >= originalWidth) delay(50)
+                }
+            }.getOrElse {
+                throw AssertionError("Chart width $originalWidth did not resize: " + web.exportScript("[innerWidth,document.getElementById('chart')._fullLayout.width,document.documentElement.dataset.nativeLayout]"), it)
+            }
+            settled()
+            assertEquals(generation, web.exportScript("document.querySelector('meta[name=astral-native-chart-generation]').content"))
+            assertEquals("[0.5,1.5]", web.exportScript("document.getElementById('chart').layout.xaxis.range"))
+            assertEquals("260", web.exportScript("document.getElementById('chart').layout.height"))
+            rule.runOnIdle { preset = "daylight" }
+            rule.waitForIdle()
+            withTimeout(10000) {
+                while (web.exportScript("document.querySelector('meta[name=astral-native-chart-generation]').content") == generation) delay(50)
+            }
+            settled()
+            assertEquals("\"rgb(255, 255, 255)\"", web.exportScript("getComputedStyle(document.body).backgroundColor"))
         }
 
     @Test fun chartPixelsCaptureActualZoomAndClearWithOwner() =

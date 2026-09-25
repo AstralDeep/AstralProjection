@@ -27,7 +27,10 @@ import com.personalailabs.astraldeep.app.voice.VoiceMediaCapability
 import com.personalailabs.astraldeep.app.voice.VoiceSessionController
 import com.personalailabs.astraldeep.app.voice.VoiceUiState
 import com.personalailabs.astraldeep.core.chrome.ChromeMenuModel
+import com.personalailabs.astraldeep.core.chrome.ConsolePresentation
+import com.personalailabs.astraldeep.core.chrome.ConsoleScenario
 import com.personalailabs.astraldeep.core.chrome.MenuItem
+import com.personalailabs.astraldeep.core.chrome.TurnSelection
 import com.personalailabs.astraldeep.core.protocol.Agent
 import com.personalailabs.astraldeep.core.protocol.ChatAttachment
 import com.personalailabs.astraldeep.core.protocol.ChatSummary
@@ -107,7 +110,12 @@ data class StagedAttachment(
 data class CanvasSnapshot(val label: String, val components: List<Component>)
 
 @Immutable
-data class PrivateSurfaceRequest(val requestGeneration: String, val connectionGeneration: String, val surfaceKey: String)
+data class PrivateSurfaceRequest(
+    val requestGeneration: String,
+    val connectionGeneration: String,
+    val surfaceKey: String,
+    val action: String = "chrome_open",
+)
 
 data class UiState(
     val connection: ConnectionState = ConnectionState.Disconnected,
@@ -159,6 +167,12 @@ data class UiState(
     val historyLoading: Boolean = false,
     val auditLoading: Boolean = false,
     val chromeMenu: ChromeMenuModel? = null,
+    val consolePresentation: ConsolePresentation? = null,
+    val consoleDashboardVisible: Boolean = true,
+    val consoleDrawerOpen: Boolean = false,
+    val consoleFullscreen: Boolean = false,
+    val consoleResultCollapsed: Boolean = false,
+    val turnSelection: TurnSelection? = null,
     val pendingSurfaceKey: String = "",
     val pendingSurfaceParams: JsonObject = JsonObject(emptyMap()),
     val pendingSurface: Inbound.ChromeSurface? = null,
@@ -172,6 +186,30 @@ data class UiState(
         get() = viewingIndex?.let { canvasHistory.getOrNull(it)?.components } ?: (transientCanvas ?: canvas)
 
     val visibleTurns: List<ChatTurn> get() = turns + pendingTurns
+
+    val console get() = chromeMenu?.console
+
+    val workspaceCanvas: List<Component>
+        get() =
+            if (console != null || workspaceStarted) {
+                visibleCanvas.filterNot {
+                    it.id?.startsWith("wel_") == true || welcomePlacementRole(it) != null
+                }
+            } else {
+                visibleCanvas
+            }
+
+    val consoleResultAgent: String
+        get() {
+            for (component in workspaceCanvas) {
+                val identifier =
+                    listOf("source_agent", "_source_agent", "agent_id", "agent").firstNotNullOfOrNull {
+                        (component.attributes[it] as? JsonPrimitive)?.contentOrNull
+                    }
+                console?.catalog?.agents?.firstOrNull { it.id == identifier }?.let { return it.name }
+            }
+            return console?.labels?.get("result_default_agent").orEmpty()
+        }
 
     val isViewingHistory: Boolean get() = viewingIndex != null
 
@@ -230,6 +268,9 @@ class AppViewModel(
         val action: String,
         val capability: VoiceMediaCapability,
         val submission: LocalSubmission,
+        val connectionGeneration: String,
+        val preparationToken: Any,
+        val chatId: String? = null,
     )
 
     private val _state = MutableStateFlow(UiState())
@@ -254,8 +295,10 @@ class AppViewModel(
     private var attachSeq: Long = 0
     private val seqState = mutableMapOf<String, Int>()
     private var pendingVoiceActivation: PendingVoiceActivation? = null
+    private var voicePreparationTimeout: Job? = null
 
     init {
+        client.observeConversationGenerations(::installConversationGeneration)
         voiceController?.setTranscriptSubmitter { transcript, connectionGeneration ->
             client.sendVoiceTranscript(transcript, connectionGeneration) { submission ->
                 _state.update { current ->
@@ -281,6 +324,11 @@ class AppViewModel(
         token: String,
         device: DeviceCapabilities,
     ) {
+        if (this.token == token && session?.isActive == true) {
+            updateDeviceCapabilities(device)
+            return
+        }
+        cancelVoicePreparation()
         _state.update { retirePrivateSurface(it) }
         this.token = token
         this.device = device
@@ -318,12 +366,9 @@ class AppViewModel(
                             onGeneration = ::installConversationGeneration,
                             onQueuedSubmission = ::installQueuedSubmission,
                         ).collect { msg ->
-                            voiceController?.handleInbound(msg)
                             val before = _state.value
                             val retryChat = snapshotRetryTarget(before, msg)
-                            val after = reduceWithPersistence(before, msg)
-                            _state.value = after
-                            handleVoiceAfterReduction(before, after, msg)
+                            val after = receiveInbound(msg)
                             when {
                                 retryChat != null -> {
                                     snapshotTimeout?.cancel()
@@ -362,7 +407,12 @@ class AppViewModel(
                 launch {
                     client.state.collect { c ->
                         _state.update { current -> reduceConnectionState(current, c) }
+                        if (c == ConnectionState.Connected) {
+                            this@AppViewModel.device?.let { client.updateDevice(it, _state.value.activeChatId) }
+                        }
+                        if (c == ConnectionState.AuthRequired) cancelVoicePreparation()
                         if (c == ConnectionState.Disconnected) {
+                            cancelVoicePreparation()
                             snapshotTimeout?.cancel()
                             voiceController?.connectionLost()
                         }
@@ -417,7 +467,13 @@ class AppViewModel(
                 backgroundNextSend = false,
             )
         val attachments = ready.map { ChatAttachment(it.attachmentId!!, it.filename, it.category) }
-        client.sendChat(text, _state.value.activeChatId, attachments, asyncMode = s.backgroundNextSend) { submission ->
+        client.sendChat(
+            text,
+            _state.value.activeChatId,
+            attachments,
+            asyncMode = s.backgroundNextSend,
+            selection = s.turnSelection,
+        ) { submission ->
             _state.update { current -> projectLocalSubmission(current, submission) }
         }
     }
@@ -428,23 +484,42 @@ class AppViewModel(
     ) {
         val controller = voiceController ?: return
         if (!control.visible || !control.enabled || _state.value.timelineReadOnly) return
-        if (control.action in setOf("voice_session_start", "voice_session_takeover") && _state.value.activeChatId == null) {
-            controller.awaitingChat()
-            val submission = client.createChatForVoice()
-            if (submission == null) {
+        device?.let {
+            updateDeviceCapabilities(
+                it.copy(
+                    hasMicrophone = capability.hasMicrophone,
+                    hasAudioOutput = capability.hasAudioOutput,
+                    microphonePermission = capability.microphonePermission,
+                    fullDuplex = capability.fullDuplex,
+                ),
+            )
+        }
+        if (voiceControlNeedsChatPreflight(control.action)) {
+            cancelVoicePreparation()
+            val connection = _state.value.connectionGeneration
+            if (connection == null || client.currentConnectionGeneration() != connection) {
                 controller.activationFailed("network_interrupted", "Voice needs a live connection. You can keep typing.")
+                return
+            }
+            controller.awaitingChat()
+            val preparation = controller.preparationToken
+            val chat = _state.value.activeChatId
+            if (chat == null) {
+                val submission = client.createChatForVoice()
+                if (submission == null) {
+                    controller.activationFailed("network_interrupted", "Voice needs a live connection. You can keep typing.")
+                } else {
+                    pendingVoiceActivation = PendingVoiceActivation(control.action, capability, submission, connection, preparation)
+                    scheduleVoicePreparationTimeout()
+                }
             } else {
-                pendingVoiceActivation = PendingVoiceActivation(control.action, capability, submission)
+                prepareVoiceChat(control.action, capability, connection, preparation, chat)
             }
             return
         }
-        if (voiceControlNeedsChatPreflight(control.action)) {
-            _state.value.activeChatId?.let(controller::updateVisibleChatLocally)
-        }
+        if (control.action == "voice_session_end") cancelVoicePreparation()
         viewModelScope.launch {
             when (control.action) {
-                "voice_session_start" -> controller.activate(capability)
-                "voice_session_takeover" -> controller.takeOver(capability)
                 "voice_session_end" -> controller.end()
                 "voice_microphone_set" -> controller.setMicrophoneEnabled(!control.pressed)
                 "voice_speech_stop" -> controller.stopSpeech()
@@ -461,9 +536,87 @@ class AppViewModel(
         }
     }
 
-    fun reportVoiceCapability(capability: VoiceMediaCapability) {
+    fun appForegroundChanged(active: Boolean) {
+        if (!active) cancelVoicePreparation()
+        voiceController?.appForegroundChanged(active)
+    }
+
+    fun updateDeviceCapabilities(observed: DeviceCapabilities) {
+        val current = device ?: return
+        if (observed.deviceId != current.deviceId || observed == current) return
+        device = observed
+        client.updateDevice(observed, _state.value.activeChatId)
+    }
+
+    private fun prepareVoiceChat(
+        action: String,
+        capability: VoiceMediaCapability,
+        connection: String,
+        preparation: Any,
+        chatId: String,
+    ) {
         val controller = voiceController ?: return
-        viewModelScope.launch { controller.activate(capability) }
+        if (!controller.preparationIsCurrent(preparation)) {
+            cancelVoicePreparation()
+            return
+        }
+        if (!persistActiveChat(chatId)) {
+            cancelVoicePreparation()
+            controller.activationFailed("chat_context_unavailable", "The selected conversation could not be saved. You can keep typing.")
+            return
+        }
+        controller.updateVisibleChatLocally(chatId)
+        val sent =
+            client.loadChatForVoice(chatId, connection) { submission ->
+                pendingVoiceActivation = PendingVoiceActivation(action, capability, submission, connection, preparation, chatId)
+                _state.update { projectLocalSubmission(it, submission) }
+            }
+        if (sent == null) {
+            cancelVoicePreparation()
+            controller.activationFailed("network_interrupted", "The conversation could not be loaded. You can keep typing.")
+        } else {
+            scheduleVoicePreparationTimeout()
+        }
+    }
+
+    private fun scheduleVoicePreparationTimeout() {
+        voicePreparationTimeout?.cancel()
+        val pending = pendingVoiceActivation ?: return
+        voicePreparationTimeout =
+            viewModelScope.launch {
+                delay(10_000)
+                if (pendingVoiceActivation === pending) {
+                    cancelVoicePreparation()
+                    if (voiceController?.preparationIsCurrent(pending.preparationToken) == true) {
+                        voiceController.activationFailed(
+                            "chat_context_unavailable", "The conversation did not finish loading. Try voice again.",
+                        )
+                    }
+                }
+            }
+    }
+
+    private fun cancelVoicePreparation() {
+        pendingVoiceActivation = null
+        voicePreparationTimeout?.cancel()
+        voicePreparationTimeout = null
+    }
+
+    internal fun receiveInbound(message: Inbound): UiState {
+        if (message is Inbound.AuthRequired) cancelVoicePreparation()
+        if (message is Inbound.ChatDeleted && message.chatId == _state.value.activeChatId) {
+            cancelVoicePreparation()
+            workspaceEpoch++
+            snapshotTimeout?.cancel()
+            seqState.clear()
+            voiceController?.updateVisibleChatLocally(null)
+        }
+        voiceController?.handleInbound(message)
+        val before = _state.value
+        val after = reduceWithPersistence(before, message)
+        _state.value = after
+        handleVoiceAfterReduction(before, after, message)
+        return _state.value
     }
 
     private fun handleVoiceAfterReduction(
@@ -474,30 +627,46 @@ class AppViewModel(
         val controller = voiceController ?: return
         if (before.activeChatId != after.activeChatId) controller.updateVisibleChatLocally(after.activeChatId)
         val pending = pendingVoiceActivation ?: return
-        if (
-            message is Inbound.ChatCreated &&
-            before.activeChatId != null &&
-            message.connectionGeneration == before.connectionGeneration &&
-            message.submissionId == pending.submission.submissionId &&
-            message.requestGeneration == pending.submission.requestGeneration
-        ) {
-            pendingVoiceActivation = null
-            controller.activationFailed(
-                "chat_context_unavailable",
-                "Voice start was cancelled because you changed conversations.",
-            )
+        if (!controller.preparationIsCurrent(pending.preparationToken) || after.connectionGeneration != pending.connectionGeneration) {
+            cancelVoicePreparation()
             return
         }
-        if (
-            message !is Inbound.ChatCreated || message.chatId == null || message.chatId != after.activeChatId ||
-            message.fromMessage != false || message.connectionGeneration != after.connectionGeneration ||
-            message.submissionId != pending.submission.submissionId ||
+        if (pending.chatId == null) {
+            if (message is Inbound.ChatCreated && isExpectedVoiceChatCreation(before, pending.submission, message) &&
+                message.chatId == after.activeChatId
+            ) {
+                prepareVoiceChat(
+                    pending.action,
+                    pending.capability,
+                    pending.connectionGeneration,
+                    pending.preparationToken,
+                    message.chatId!!,
+                )
+            } else if (after.activeChatId != null) {
+                cancelVoicePreparation()
+            }
+            return
+        }
+        if (after.activeChatId != pending.chatId || after.requestGeneration != pending.submission.requestGeneration) {
+            cancelVoicePreparation()
+            return
+        }
+        if (message !is Inbound.ConversationSnapshot || message.snapshotPurpose != "hydration" ||
+            after.acceptedSnapshot != message || !after.hydrationApplied ||
+            message.chatId != pending.chatId || message.connectionGeneration != pending.connectionGeneration ||
             message.requestGeneration != pending.submission.requestGeneration
         ) {
             return
         }
-        pendingVoiceActivation = null
+        cancelVoicePreparation()
         viewModelScope.launch {
+            if (!controller.preparationIsCurrent(pending.preparationToken) ||
+                _state.value.activeChatId != pending.chatId ||
+                _state.value.connectionGeneration != pending.connectionGeneration ||
+                _state.value.requestGeneration != pending.submission.requestGeneration
+            ) {
+                return@launch
+            }
             when (pending.action) {
                 "voice_session_start" -> controller.activate(pending.capability)
                 "voice_session_takeover" -> controller.takeOver(pending.capability)
@@ -531,6 +700,31 @@ class AppViewModel(
         payload: JsonObject = JsonObject(emptyMap()),
     ) {
         val surface = (payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        if (action == "compose_prompt" || action == "chat_message" && _state.value.pendingSurfaceKey == "agent_intro") {
+            val state = _state.value
+            if (state.screen != Screen.Surface || state.pendingSurfaceKey != "agent_intro" ||
+                !surfaceOffers(state.pendingSurface, action, payload)
+            ) {
+                return
+            }
+            val text = (payload["message"] as? JsonPrimitive)?.contentOrNull ?: return
+            if (action == "compose_prompt") {
+                loadConsolePrompt(text)
+            } else {
+                goTo(Screen.Chat)
+                sendChat(text)
+            }
+            return
+        }
+        if (action == "chrome_turn_selection_set") {
+            val state = _state.value
+            if (state.screen == Screen.Surface && state.pendingSurfaceKey == "guidance" &&
+                TurnSelection.fromJson(payload)?.isGuidanceSelection == true && surfaceOffers(state.pendingSurface, action, payload)
+            ) {
+                requestPrivateSurface("guidance", state.pendingSurfaceParams, action, payload)
+            }
+            return
+        }
         if (action == "chrome_open" && isPrivateChromeSurface(surface)) {
             openSurface(surface, payload["params"] as? JsonObject ?: JsonObject(emptyMap()))
             return
@@ -639,6 +833,8 @@ class AppViewModel(
             preTurnCanvas = live,
             turnOpsApplied = false,
             turnActive = true,
+            consoleDashboardVisible = false,
+            consoleDrawerOpen = false,
             pendingReplace = !background,
             backgroundRequested = background,
             pendingCanvas = emptyList(),
@@ -650,6 +846,7 @@ class AppViewModel(
     }
 
     fun newChat() {
+        cancelVoicePreparation()
         _state.update { retirePrivateSurface(it) }
         workspaceEpoch++
         if (!clearResumeLocator(ClearReason.EXPLICIT_NEW_CHAT)) {
@@ -668,6 +865,11 @@ class AppViewModel(
                 composerDraft = "",
                 backgroundNextSend = false,
                 workspaceStarted = false,
+                turnSelection = null,
+                consoleDashboardVisible = true,
+                consoleDrawerOpen = false,
+                consoleFullscreen = false,
+                consoleResultCollapsed = false,
                 turns = emptyList(),
                 pendingTurns = emptyList(),
                 canvas = emptyList(),
@@ -765,7 +967,97 @@ class AppViewModel(
         }
     }
 
-    fun openMenuItem(item: MenuItem) = openSurface(item.surface, item.params)
+    fun openMenuItem(item: MenuItem) {
+        if (item.availability?.mode == "handoff") {
+            _state.update { it.copy(banner = item.availability?.message, bannerKind = "info") }
+        } else {
+            openSurface(item.surface, item.params)
+        }
+    }
+
+    fun showConsoleDashboard() {
+        if (_state.value.mandatorySurface) return
+        _state.update { retirePrivateSurface(it).copy(screen = Screen.Chat, consoleDashboardVisible = true, consoleDrawerOpen = false) }
+    }
+
+    fun openConsoleAgent(agent: com.personalailabs.astraldeep.core.chrome.ConsoleAgent) {
+        val state = _state.value
+        if (state.mandatorySurface || state.connection != ConnectionState.Connected ||
+            state.console?.catalog?.agents?.contains(agent) != true
+        ) {
+            return
+        }
+        setConsoleDrawer(false)
+        if (agent.availability?.mode == "handoff") {
+            _state.update { it.copy(banner = agent.availability?.message, bannerKind = "info") }
+        } else {
+            openSurface("agent_intro", buildJsonObject { put("agent_id", agent.id) })
+        }
+    }
+
+    fun invokeConsoleAction(action: com.personalailabs.astraldeep.core.chrome.ConsoleComposerAction) {
+        val state = _state.value
+        if (state.mutationsLocked || state.mandatorySurface || state.console?.composerActions?.contains(action) != true) return
+        when {
+            action.availability?.mode == "handoff" -> _state.update { it.copy(banner = action.availability?.message, bannerKind = "info") }
+            action.kind == "toggle" && action.key == "background" -> toggleBackgroundNextSend()
+            action.action != null -> openSurface(action.action!!.surface, action.action!!.params)
+        }
+    }
+
+    fun setConsoleDrawer(open: Boolean) {
+        _state.update { it.copy(consoleDrawerOpen = open) }
+    }
+
+    fun setConsoleFullscreen(fullscreen: Boolean) {
+        _state.update { it.copy(consoleFullscreen = fullscreen) }
+    }
+
+    fun setConsoleResultCollapsed(collapsed: Boolean) {
+        _state.update { it.copy(consoleResultCollapsed = collapsed) }
+    }
+
+    fun showConsoleConversation() {
+        if (_state.value.mandatorySurface) return
+        _state.update { retirePrivateSurface(it).copy(screen = Screen.Chat, consoleDashboardVisible = false, consoleDrawerOpen = false) }
+    }
+
+    fun clearTurnSelection() {
+        _state.update { it.copy(turnSelection = null) }
+    }
+
+    fun runConsoleScenario(
+        scenario: ConsoleScenario,
+        run: Boolean,
+    ) {
+        if (_state.value.mutationsLocked || _state.value.mandatorySurface || _state.value.connection != ConnectionState.Connected ||
+            _state.value.console?.catalog?.scenarios?.contains(scenario) != true
+        ) {
+            return
+        }
+        if (run) {
+            goTo(Screen.Chat)
+            sendChat(scenario.prompt)
+        } else {
+            loadConsolePrompt(scenario.prompt)
+        }
+    }
+
+    private fun loadConsolePrompt(text: String) {
+        _state.update { retirePrivateSurface(it).copy(screen = Screen.Chat, composerDraft = text, consoleDrawerOpen = false) }
+    }
+
+    private fun surfaceOffers(
+        surface: Inbound.ChromeSurface?,
+        action: String,
+        payload: JsonObject,
+    ): Boolean {
+        fun offered(component: Component): Boolean =
+            component.type == "button" && component.attributes["action"] == JsonPrimitive(action) &&
+                component.attributes["payload"] == payload && component.attributes["disabled"] != JsonPrimitive(true) ||
+                component.children.any(::offered)
+        return surface?.components?.any(::offered) == true
+    }
 
     fun openSurface(
         surface: String,
@@ -838,7 +1130,7 @@ class AppViewModel(
                 account == owner && workspaceEpoch == epoch && _state.value.screen == Screen.Surface &&
                     _state.value.pendingSurfaceKey == surface && _state.value.privateSurfaceRequest == issued
             }) { submission, connection ->
-                issued = PrivateSurfaceRequest(submission.requestGeneration, connection, surface)
+                issued = PrivateSurfaceRequest(submission.requestGeneration, connection, surface, action)
                 _state.update { projectLocalSubmission(it, submission).copy(privateSurfaceRequest = issued) }
             }
         if (!sent && _state.value.privateSurfaceRequest == issued && _state.value.pendingSurfaceKey == surface) {
@@ -884,7 +1176,25 @@ class AppViewModel(
         _state.value = _state.value.copy(themePalette = themePaletteForSpec(_state.value.themePalette, spec))
     }
 
+    fun deleteChat(chatId: String) {
+        val ownerToken = token ?: return
+        val owner = account
+        val current = _state.value
+        if (current.mandatorySurface || current.mutationsLocked || current.history.none { it.id == chatId }) return
+        viewModelScope.launch {
+            val deleted = rest.deleteChat(ownerToken, chatId)
+            if (token != ownerToken || account != owner) return@launch
+            if (deleted) {
+                receiveInbound(Inbound.ChatDeleted(chatId))
+                sendEvent("get_history")
+            } else {
+                _state.update { it.copy(banner = "Could not delete the conversation. Try again.", bannerKind = "error") }
+            }
+        }
+    }
+
     fun openChat(chatId: String) {
+        cancelVoicePreparation()
         _state.update { retirePrivateSurface(it) }
         workspaceEpoch++
         if (!persistActiveChat(chatId)) {
@@ -899,6 +1209,11 @@ class AppViewModel(
         _state.value =
             _state.value.copy(
                 activeChatId = chatId,
+                turnSelection = if (switching) null else _state.value.turnSelection,
+                consoleDashboardVisible = false,
+                consoleDrawerOpen = false,
+                consoleFullscreen = false,
+                consoleResultCollapsed = false,
                 composerDraft = if (switching) "" else _state.value.composerDraft,
                 backgroundNextSend = if (switching) false else _state.value.backgroundNextSend,
                 screen = Screen.Chat,
@@ -989,10 +1304,11 @@ class AppViewModel(
         connection: ConnectionState,
     ): UiState =
         when (connection) {
-            ConnectionState.AuthRequired -> retirePrivateSurface(s).copy(connection = connection)
+            ConnectionState.AuthRequired -> retirePrivateSurface(s).copy(connection = connection, consolePresentation = null)
             ConnectionState.Disconnected ->
                 retirePrivateSurface(s).copy(
                     connection = connection,
+                    consolePresentation = null,
                     turnActive = false, backgroundRequested = false,
                     pendingReplace = false,
                     pendingCanvas = emptyList(),
@@ -1028,8 +1344,17 @@ class AppViewModel(
             is Inbound.UiRender -> reduceUiRender(s, msg)
             is Inbound.UiUpsert -> reduceUiUpsert(s, msg)
             is Inbound.ChatCreated -> {
-                val pendingVoice = pendingVoiceActivation?.submission
-                if (pendingVoice != null && !isExpectedVoiceChatCreation(s, pendingVoice, msg)) {
+                val pendingVoice = pendingVoiceActivation
+                val voiceCreation =
+                    pendingVoice?.takeIf { it.chatId == null && voiceController?.preparationIsCurrent(it.preparationToken) == true }
+                        ?.let { isExpectedVoiceChatCreation(s, it.submission, msg) } == true
+                val submitted =
+                    s.pendingSubmissions[msg.requestGeneration]?.let {
+                        it.submissionId == msg.submissionId && it.action in setOf("new_chat", "chat_message")
+                    } == true
+                if (pendingVoice != null && !voiceCreation || msg.requestGeneration != null &&
+                    (msg.connectionGeneration != s.connectionGeneration || !voiceCreation && !submitted)
+                ) {
                     s
                 } else {
                     bindAcknowledgedChat(s, msg.chatId)
@@ -1047,6 +1372,21 @@ class AppViewModel(
             is Inbound.ConversationCommitReady -> reduceConversationCommitReady(s, msg)
             is Inbound.ChatStatus -> reduceStatus(s, msg)
             is Inbound.AgentList -> s.copy(agents = msg.agents, agentsLoading = false)
+            is Inbound.ChatDeleted -> {
+                val retained = s.copy(history = s.history.filterNot { it.id == msg.chatId })
+                if (s.activeChatId == msg.chatId) {
+                    clearConversationState(retirePrivateSurface(retained)).copy(
+                        screen = Screen.Chat,
+                        workspaceStarted = false,
+                        composerDraft = "",
+                        staged = emptyList(),
+                        backgroundNextSend = false,
+                        pendingSubmissions = emptyMap(),
+                    )
+                } else {
+                    retained
+                }
+            }
             is Inbound.HistoryList -> s.copy(history = msg.chats, historyTitle = "Recent chats", historyLoading = false)
             is Inbound.UiStreamData -> reduceUiStreamData(s, msg)
             is Inbound.StreamSubscribed ->
@@ -1065,6 +1405,7 @@ class AppViewModel(
                     applyCanvasOps(s, streamErrorOps(msg))
                 }
             is Inbound.ChromeMenu -> s.copy(chromeMenu = msg.model)
+            is Inbound.RoteConfig -> s.copy(consolePresentation = msg.console)
             is Inbound.ChromeSurface ->
                 when {
                     s.screen == Screen.Surface && isPrivateChromeSurface(s.pendingSurfaceKey) && msg.surfaceKey != s.pendingSurfaceKey -> s
@@ -1074,11 +1415,17 @@ class AppViewModel(
                             request.surfaceKey != msg.surfaceKey ||
                             msg.requestGeneration != request.requestGeneration ||
                             request.connectionGeneration != s.connectionGeneration ||
+                            msg.selection != null && request.action != "chrome_turn_selection_set" ||
                             s.screen != Screen.Surface || s.pendingSurfaceKey != request.surfaceKey
                         ) {
                             s
                         } else {
-                            finishPrivateSurface(s).copy(pendingSurface = msg, privateSurfaceFailed = false)
+                            finishPrivateSurface(s).copy(
+                                pendingSurface = msg,
+                                privateSurfaceFailed = false,
+                                turnSelection =
+                                    if (msg.selection == null) s.turnSelection else msg.selection?.takeUnless { it.isEmpty },
+                            )
                         }
                     }
                     msg.surfaceKey.isBlank() && msg.components.isEmpty() ->
@@ -1222,7 +1569,14 @@ class AppViewModel(
         )
     }
 
-    private fun installConversationGeneration(binding: ConversationGenerationBinding) {
+    internal fun installConversationGeneration(binding: ConversationGenerationBinding) {
+        pendingVoiceActivation?.let { pending ->
+            if (binding.connectionGeneration != pending.connectionGeneration ||
+                binding.requestGeneration != pending.submission.requestGeneration
+            ) {
+                cancelVoicePreparation()
+            }
+        }
         _state.update { current -> bindConversationGeneration(current, binding) }
         val currentToken = token
         val currentDevice = device
@@ -1260,6 +1614,14 @@ class AppViewModel(
                         current.expectedCommitRenderRevision == expectedCommitRevision &&
                         !(binding.purpose == ConversationRequestPurpose.HYDRATION && current.hydrationApplied)
                 if (!stillWaiting) return@launch
+                pendingVoiceActivation?.takeIf { it.submission.requestGeneration == requestGeneration }?.let { pending ->
+                    cancelVoicePreparation()
+                    if (voiceController?.preparationIsCurrent(pending.preparationToken) == true) {
+                        voiceController.activationFailed(
+                            "chat_context_unavailable", "The conversation did not finish loading. Try voice again.",
+                        )
+                    }
+                }
                 _state.value =
                     current.copy(
                         statusText = "Conversation restore timed out; retrying…",
@@ -1291,6 +1653,9 @@ class AppViewModel(
         s: UiState,
         msg: Inbound,
     ): UiState {
+        if (msg is Inbound.ChatDeleted && msg.chatId == s.activeChatId && !clearResumeLocator(ClearReason.CONFIRMED_DELETION)) {
+            return s.copy(banner = "Conversation was removed, but local recovery state could not be cleared.", bannerKind = "error")
+        }
         if (msg is Inbound.ErrorFrame && isDefinitiveCurrentChatMiss(s, msg)) {
             if (!clearResumeLocator(ClearReason.CONFIRMED_DELETION)) {
                 return s.copy(
@@ -1347,6 +1712,7 @@ class AppViewModel(
     }
 
     fun clearConversationForSignOut(): Boolean {
+        cancelVoicePreparation()
         workspaceEpoch++
         voiceController?.logout()
         viewModelScope.coroutineContext.cancelChildren()
@@ -1377,6 +1743,11 @@ class AppViewModel(
     private fun clearConversationState(s: UiState): UiState =
         s.copy(
             activeChatId = null,
+            turnSelection = null,
+            consoleDashboardVisible = true,
+            consoleDrawerOpen = false,
+            consoleFullscreen = false,
+            consoleResultCollapsed = false,
             turns = emptyList(),
             pendingTurns = emptyList(),
             canvas = emptyList(),
@@ -1522,6 +1893,7 @@ class AppViewModel(
         val hydration = s.requestPurpose == ConversationRequestPurpose.HYDRATION
         return s.copy(
             activeChatId = snapshot.chatId,
+            consoleDashboardVisible = false,
             turns = transcript,
             pendingTurns = emptyList(),
             canvas = snapshot.canvas.components,

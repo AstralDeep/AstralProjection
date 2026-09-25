@@ -4,6 +4,9 @@
 
 package com.personalailabs.astraldeep.core.protocol
 
+import com.personalailabs.astraldeep.core.chrome.ConsoleModel
+import com.personalailabs.astraldeep.core.chrome.ConsolePresentation
+import com.personalailabs.astraldeep.core.chrome.TurnSelection
 import com.personalailabs.astraldeep.core.sdui.CanvasOp
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.Json
@@ -43,6 +46,8 @@ object Wire {
 
     fun decode(root: JsonObject): Inbound =
         when (val type = root.str("type").orEmpty()) {
+            "rote_config" ->
+                Inbound.RoteConfig(ConsolePresentation.fromJson(root.obj("device_profile")?.get("console")))
             "ui_render" -> uiRenderFromJson(root, type)
             "ui_upsert" -> uiUpsertFromJson(root, type)
             "ui_stream_data", "stream_data" -> uiStreamDataFromJson(root, type)
@@ -79,6 +84,7 @@ object Wire {
                 voiceAnnouncementFromJson(root)?.let(Inbound::VoiceAnnouncementMediaFrame) ?: Inbound.Unknown(type)
             "voice_local_announcement", "voice_local_final_rejected", "voice_local_session_ready", "voice_local_turn_bound" ->
                 LocalVoiceFrame.fromJson(root)?.let(Inbound::LocalVoiceFrame) ?: Inbound.Unknown(type)
+            "chat_deleted" -> canonicalUuid4(root.strictString("chat_id"))?.let(Inbound::ChatDeleted) ?: Inbound.Unknown(type)
             "chat_loaded" -> Inbound.ChatLoaded(transcriptFromJson(root.obj("chat")))
             "conversation_snapshot" -> conversationSnapshotFromJson(root) ?: Inbound.Unknown(type)
             "conversation_commit_ready" -> conversationCommitReadyFromJson(root) ?: Inbound.Unknown(type)
@@ -96,7 +102,8 @@ object Wire {
                 val request = root.strictString("request_generation")
                 if ((key == "guidance" && !GuidanceNotes.validSurface(root)) ||
                     (isPrivateChromeSurface(key) && (canonicalUuid4(request) == null || (root.str("mode") ?: "replace") != "replace")) ||
-                    (!isPrivateChromeSurface(key) && "request_generation" in root)
+                    (!isPrivateChromeSurface(key) && "request_generation" in root) ||
+                    (key != "guidance" && "selection" in root)
                 ) {
                     Inbound.Unknown(type)
                 } else {
@@ -106,6 +113,7 @@ object Wire {
                         components = Component.listFromJson(root.arr("components")),
                         mode = root.str("mode") ?: "replace",
                         requestGeneration = request,
+                        selection = TurnSelection.fromJson(root["selection"]),
                     )
                 }
             }
@@ -207,25 +215,12 @@ object Wire {
                 add("stream")
                 if (workReads) add("work_read_v1")
                 if (guidanceNotes) add("guidance_notes_v1")
+                if (device.consoleContract == ConsoleModel.CONTRACT) add("guidance_selection_v1")
                 if (device.hasMicrophone && device.hasAudioOutput) add("voice")
             }
             put("session_id", sessionId)
             device.deviceId?.let { put("device_id", it) }
-            putJsonObject("device") {
-                put("device_type", device.deviceType)
-                put("screen_width", device.screenWidth)
-                put("screen_height", device.screenHeight)
-                put("viewport_width", device.viewportWidth)
-                put("viewport_height", device.viewportHeight)
-                put("pixel_ratio", device.pixelRatio)
-                put("has_touch", device.hasTouch)
-                put("has_microphone", device.hasMicrophone)
-                put("has_audio_output", device.hasAudioOutput)
-                put("microphone_permission", device.microphonePermission)
-                put("full_duplex", device.fullDuplex)
-                put("voice_transport", device.voiceTransport)
-                putJsonArray("supported_types") { device.supportedTypes.forEach { add(it) } }
-            }
+            put("device", deviceJson(device))
             put("resumed", false)
             if (connectionGeneration != null) put("connection_generation", connectionGeneration)
             if (resume != null) {
@@ -237,6 +232,34 @@ object Wire {
             }
         }.toString()
     }
+
+    fun deviceJson(device: DeviceCapabilities): JsonObject =
+        buildJsonObject {
+            put("device_type", device.deviceType)
+            put("screen_width", device.screenWidth)
+            put("screen_height", device.screenHeight)
+            put("viewport_width", device.viewportWidth)
+            put("viewport_height", device.viewportHeight)
+            put("pixel_ratio", device.pixelRatio)
+            put("has_touch", device.hasTouch)
+            put("has_microphone", device.hasMicrophone)
+            put("has_audio_output", device.hasAudioOutput)
+            put("microphone_permission", device.microphonePermission)
+            put("full_duplex", device.fullDuplex)
+            put("voice_transport", device.voiceTransport)
+            put("has_camera", device.hasCamera)
+            put("has_file_system", device.hasFileSystem)
+            put("connection_type", device.connectionType)
+            put("reduced_motion", device.reducedMotion)
+            put("pointer_type", device.pointerType)
+            if (device.consoleContract == ConsoleModel.CONTRACT) put("console_contract", ConsoleModel.CONTRACT)
+            putJsonArray("supported_types") { device.supportedTypes.forEach { add(it) } }
+        }
+
+    fun encodeUpdateDevice(
+        device: DeviceCapabilities,
+        sessionId: String?,
+    ): String = encodeUiEvent("update_device", sessionId, buildJsonObject { put("device", deviceJson(device)) })
 
     fun encodeUiEvent(
         action: String,
@@ -274,6 +297,7 @@ object Wire {
         requestGeneration: String? = null,
         submissionId: String? = null,
         asyncMode: Boolean = false,
+        selection: TurnSelection? = null,
     ): String =
         encodeUiEvent(
             action = "chat_message",
@@ -281,6 +305,7 @@ object Wire {
             payload =
                 buildJsonObject {
                     put("message", message)
+                    if (selection != null && !selection.isEmpty) put("selection", selection.json)
                     if (asyncMode) put("async_mode", true)
                     if (chatId != null) put("chat_id", chatId)
                     if (attachments.isNotEmpty()) {

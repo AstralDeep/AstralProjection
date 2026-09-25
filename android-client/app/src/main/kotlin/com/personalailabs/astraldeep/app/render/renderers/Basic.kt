@@ -189,11 +189,12 @@ private fun ButtonPrimitive(
 ) {
     val action = c.str("action")
     val label = c.str("label") ?: "Button"
-    val onClick = { if (action != null) emit.event(action, c.payload()) }
+    val enabled = action != null && c.bool("disabled") != true
+    val onClick = { if (enabled && action != null) emit.event(action, c.payload()) }
     if (c.str("data-welcome") == "example" && c.id?.startsWith("wel_") != false) {
         OutlinedButton(
             onClick = onClick,
-            enabled = action != null,
+            enabled = enabled,
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
             modifier = Modifier.heightIn(min = 48.dp),
@@ -202,11 +203,11 @@ private fun ButtonPrimitive(
     }
     when (c.str("variant") ?: "primary") {
         "secondary" ->
-            FilledTonalButton(onClick = onClick, enabled = action != null) { Text(label) }
+            FilledTonalButton(onClick = onClick, enabled = enabled) { Text(label) }
         "danger" ->
             Button(
                 onClick = onClick,
-                enabled = action != null,
+                enabled = enabled,
                 colors =
                     ButtonDefaults.buttonColors(
                         containerColor = Color(0xFFEF4444),
@@ -217,7 +218,7 @@ private fun ButtonPrimitive(
             val shape = ButtonDefaults.shape
             Button(
                 onClick = onClick,
-                enabled = action != null,
+                enabled = enabled,
                 shape = shape,
                 colors =
                     ButtonDefaults.buttonColors(

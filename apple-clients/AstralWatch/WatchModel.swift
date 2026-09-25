@@ -4,6 +4,7 @@
 
 import AstralCore
 import Foundation
+import Network
 import SwiftUI
 
 #if os(watchOS)
@@ -33,6 +34,36 @@ final class WatchModel {
             }
         }
     }
+
+    let theme = ThemeStore()
+    private(set) var chromeMenu: ChromeMenuModel?
+    private(set) var consolePresentation: ConsolePresentation?
+    var console: ConsoleModel? {
+        guard consolePresentation?.navigationMode == .stack,
+            consolePresentation?.settingsPresentation == .push
+        else { return nil }
+        return chromeMenu?.console
+    }
+    var consoleChatVisible = false
+    var consoleSurfaceVisible = false
+    private(set) var consoleSurface: WatchConsoleSurface?
+    private(set) var consoleSurfaceFailed = false
+    private(set) var consoleSurfaceGeneration: String?
+    private var consoleAgentID: String?
+    private var consoleSurfaceEpoch = UUID().uuidString.lowercased()
+    @ObservationIgnored private var consoleSurfaceTask: Task<Void, Never>?
+    private(set) var turnSelection = TurnSelection.empty
+    var handoffMessage: String?
+    private var guidanceReadSelection = GuidanceRequest.list
+    @ObservationIgnored var audioHardwareProvider: () -> (microphone: Bool, output: Bool) = {
+        WatchDeviceCapabilities.audio
+    }
+    @ObservationIgnored private var reportedDevice: DeviceDescriptor?
+    @ObservationIgnored private var reportedViewport: (Int, Int)?
+    @ObservationIgnored private var reportedScale: Double?
+    @ObservationIgnored private var reducedMotion = false
+    @ObservationIgnored private var connectionType = "unknown"
+    @ObservationIgnored private var networkMonitor: NWPathMonitor?
 
     var phase: Phase = .signedOut
     var login: DeviceLoginStart?
@@ -205,6 +236,9 @@ final class WatchModel {
     @ObservationIgnored var voiceSession: WatchVoiceSession?
     @ObservationIgnored var voiceGrant: WatchVoiceBridgeGrant?
     @ObservationIgnored private var pendingVoiceActivation: PendingVoiceActivation?
+    @ObservationIgnored private var pendingVoiceHydration: PendingVoiceActivation?
+    @ObservationIgnored private var voiceHydrationTask: Task<Void, Never>?
+    @ObservationIgnored var voiceHydrationTimeout: Duration = .seconds(10)
     @ObservationIgnored private var pendingVoiceSubmissions: [String: PendingVoiceSubmission] = [:]
     @ObservationIgnored private var voiceTranscriptSequences: [String: UInt64] = [:]
     @ObservationIgnored private var voiceTurnSequences: [String: Int] = [:]
@@ -244,6 +278,8 @@ final class WatchModel {
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
             ownerSurfaceControls = []
+            chromeMenu = nil
+            consolePresentation = nil
             continuity.clear()
             resetConversationState()
             resetRecents()
@@ -274,13 +310,8 @@ final class WatchModel {
                     requestGeneration: request)
             }
         }
-        let (width, height) = viewport
-        var device = DeviceDescriptor.watch(viewportWidth: width, viewportHeight: height)
-        device.deviceId = voiceDeviceId
-        device.hasAudioOutput = true
-        device.microphonePermission = voiceBridge.microphonePermission.rawValue
-        device.fullDuplex = false
-        device.voiceTransport = "watch_pcm_websocket"
+        let device = currentDevice
+        reportedDevice = device
         return Outbound.registerUI(
             token: token,
             sessionId: activeChatId,
@@ -292,6 +323,9 @@ final class WatchModel {
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
+        invalidateConsoleSurface()
+        chromeMenu = nil
+        consolePresentation = nil
         invalidateWorkRead()
         if workVisible { workReadFailed = true }
         clearPendingOperationSubmissions()
@@ -299,6 +333,7 @@ final class WatchModel {
         transientCanvas = nil
         guard continuity.beginConnection(generation) else { return false }
         reframePendingVoiceSubmissions(for: generation)
+        cancelVoiceHydration()
         voiceControlBinding = nil
         pendingVoiceActivation = nil
         voiceResumeTask?.cancel()
@@ -481,6 +516,8 @@ final class WatchModel {
         store.wipe()
         tokens = nil
         conversationAccount = nil
+        chromeMenu = nil
+        consolePresentation = nil
         continuity.clear()
         resetConversationState()
         clearPendingOperationSubmissions()
@@ -514,6 +551,8 @@ final class WatchModel {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
         conversationAccount = nil
+        chromeMenu = nil
+        consolePresentation = nil
         continuity.clear()
         resetConversationState()
         resetRecents()
@@ -570,6 +609,9 @@ final class WatchModel {
             connected = true
             rawSend(Outbound.uiEvent(action: "get_history", sessionId: nil, payload: .object([:])))
         case .disconnected:
+            invalidateConsoleSurface()
+            chromeMenu = nil
+            consolePresentation = nil
             invalidateWorkRead()
             if workVisible { workReadFailed = true }
             ownerSurfaceControls = []
@@ -607,6 +649,30 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        if frame.name == "rote_config" {
+            consolePresentation = ConsolePresentation(frame: frame)
+            return
+        }
+        if frame.name == "user_preferences" {
+            theme.applyPreferences(frame.payload)
+            return
+        }
+        if frame.name == "theme_apply" {
+            theme.apply(spec: frame.payload["theme"] ?? frame.payload)
+            return
+        }
+        if frame.name == "chrome_surface", frame.payload["surface_key"]?.stringValue == "agent_intro" {
+            guard connected, conversationAccount != nil, consoleSurfaceVisible,
+                let update = WatchConsoleSurface(frame: frame),
+                update.generation == consoleSurfaceGeneration
+            else { return }
+            consoleSurfaceTask?.cancel()
+            consoleSurfaceTask = nil
+            consoleSurface = update
+            consoleSurfaceGeneration = nil
+            consoleSurfaceFailed = false
+            return
+        }
         if guidanceState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
             let generation = guidanceState.generation
         {
@@ -625,15 +691,18 @@ final class WatchModel {
                 let controls = raw["topbar"]?.arrayValue, controls.count <= 32
             {
                 let menu = ChromeMenuModel.fromJSON(raw)
+                chromeMenu = menu
                 let guidance = GuidanceRequest.controls(in: menu)
                 let work = WorkReadRequest.watchControls(in: menu)
                 ownerSurfaceControls = (menu?.topbarActions ?? []).filter {
-                    work.contains($0) || guidance.contains($0)
+                    (work.contains($0) || guidance.contains($0))
+                        && (raw["console"] == nil || $0.availability?.mode == .native)
                 }
             } else {
+                chromeMenu = nil
                 ownerSurfaceControls = []
             }
-            if guidanceControls.isEmpty {
+            if guidanceControls.isEmpty && !hasNativeGuidance {
                 invalidateGuidance()
                 guidanceVisible = false
             }
@@ -647,6 +716,7 @@ final class WatchModel {
             guard connected, conversationAccount != nil, guidanceVisible,
                 let update = GuidanceSurfaceUpdate(frame: frame), guidanceState.accepts(update)
             else { return }
+            if let selection = update.selection { turnSelection = selection }
             retireGuidanceTicket()
             if update.components.isEmpty {
                 invalidateGuidance()
@@ -933,6 +1003,7 @@ final class WatchModel {
         statusText = nil
         statusShowsActivity = false
         pendingCommitRequestGeneration = nil
+        finishVoiceHydration(snapshot)
     }
 
     private func reduceTransient(_ frame: InboundFrame) {
@@ -1109,6 +1180,9 @@ final class WatchModel {
     }
 
     private func resetConversationState() {
+        invalidateConsoleSurface()
+        turnSelection = .empty
+        handoffMessage = nil
         invalidateWorkRead()
         guidanceVisible = false
         workReadSelection = nil
@@ -1134,7 +1208,7 @@ final class WatchModel {
 
     func retryGuidance() {
         guard guidanceVisible else { return }
-        _ = sendGuidanceRequest(action: "chrome_open", payload: GuidanceRequest.list.payload)
+        _ = sendGuidanceRequest(action: "chrome_open", payload: guidanceReadSelection.payload)
     }
 
     private func retireGuidanceTicket() {
@@ -1159,14 +1233,19 @@ final class WatchModel {
     @discardableResult
     func sendGuidanceRequest(action: String, payload: JSONValue) -> Bool {
         guard let request = GuidanceRequest(action: action, payload: payload), request.action != "chrome_close",
-            guidanceUpdate?.permits(request) == true || (guidanceVisible && request == .list)
+            guidanceUpdate?.permits(request) == true || (guidanceVisible && request == guidanceReadSelection)
+                || nativeGuidanceRequests.contains(request)
                 || guidanceControls.contains(where: {
                     GuidanceRequest(action: "chrome_open", payload: .object($0.chromeOpenPayload)) == request
                 })
         else { return false }
+        invalidateConsoleSurface()
         invalidateWorkRead()
         workVisible = false
         workReadSelection = nil
+        if request.action == "chrome_open" {
+            guidanceReadSelection = request == .selection ? .selection : .list
+        }
         guidanceVisible = true
         guidanceFailed = false
         let generation = guidanceEpoch
@@ -1259,6 +1338,7 @@ final class WatchModel {
             request == workReadSelection || workUpdate?.permits(request) == true
                 || workControls.contains(where: { WorkReadRequest(payload: .object($0.chromeOpenPayload)) == request })
         else { return }
+        invalidateConsoleSurface()
         invalidateWorkRead()
         workReadSelection = request
         guidanceVisible = false
@@ -1397,6 +1477,7 @@ final class WatchModel {
     }
 
     func newConversation() {
+        cancelVoiceHydration()
         pendingVoiceActivation = nil
         if voiceSession != nil {
             voiceBridge.setCaptureEnabled(false)
@@ -1421,6 +1502,9 @@ final class WatchModel {
     }
 
     func openChat(_ chat: ChatSummary) {
+        cancelVoiceHydration()
+        invalidateConsoleSurface()
+        turnSelection = .empty
         invalidateGuidance()
         guidanceVisible = false
         workspaceStarted = true
@@ -1502,6 +1586,7 @@ final class WatchModel {
             Outbound.chatMessage(
                 text,
                 sessionId: activeChatId,
+                selection: turnSelection,
                 submissionId: identity.submissionId,
                 requestGeneration: request))
     }
@@ -1546,6 +1631,8 @@ final class WatchModel {
             scheduleVoiceResume()
         case .inactive, .background:
             guard voiceForegroundActive else { return }
+            cancelVoiceHydration()
+            pendingVoiceActivation = nil
             voiceForegroundActive = false
             voiceResumeTask?.cancel()
             voiceResumeTask = nil
@@ -1750,12 +1837,8 @@ final class WatchModel {
             return true
         }
         adoptChat(chatId)
-        Task {
-            await self.activateVoiceSession(
-                chatId: chatId,
-                activationId: pending.activationId,
-                takeover: pending.takeover)
-        }
+        requestVoiceHydration(
+            chatId: chatId, activationId: pending.activationId, takeover: pending.takeover)
         return true
     }
 
@@ -1773,6 +1856,7 @@ final class WatchModel {
         voiceState = .connecting
         voiceMessage = "Preparing voice conversation…"
         let permission = await voiceBridge.requestMicrophonePermission()
+        reportDeviceCapabilities()
         guard permission == .authorized else {
             voiceActivationBusy = false
             voiceState = .unavailable
@@ -1817,10 +1901,68 @@ final class WatchModel {
             voiceMessage = "Creating a chat for voice…"
             return
         }
-        await activateVoiceSession(
-            chatId: chatId,
-            activationId: activationId,
-            takeover: takeover)
+        requestVoiceHydration(chatId: chatId, activationId: activationId, takeover: takeover)
+    }
+
+    private func cancelVoiceHydration() {
+        pendingVoiceHydration = nil
+        voiceHydrationTask?.cancel()
+        voiceHydrationTask = nil
+        voiceActivationBusy = false
+    }
+
+    private func requestVoiceHydration(chatId: String, activationId: String, takeover: Bool) {
+        guard let connection = continuity.connectionGeneration else { return }
+        let identity = ClientOperationIdentity.fresh()
+        guard
+            openConversationRequest(
+                chatId: chatId, requestGeneration: identity.requestGeneration, purpose: .hydration)
+        else {
+            voiceActivationBusy = false
+            voiceState = .error
+            voiceMessage = "Open the conversation before starting voice."
+            return
+        }
+        pendingVoiceHydration = PendingVoiceActivation(
+            activationId: activationId, submissionId: identity.submissionId,
+            requestGeneration: identity.requestGeneration, connectionGeneration: connection,
+            selectedChatAtRequest: chatId, takeover: takeover)
+        voiceMessage = "Loading the conversation for voice…"
+        voiceHydrationTask?.cancel()
+        let timeout = voiceHydrationTimeout
+        voiceHydrationTask = Task { [weak self] in
+            do { try await Task.sleep(for: timeout) } catch { return }
+            guard let self, self.pendingVoiceHydration?.activationId == activationId else { return }
+            self.cancelVoiceHydration()
+            self.voiceState = .error
+            self.voiceReason = "chat_context_unavailable"
+            self.voiceMessage = "The conversation did not load. Please try again."
+        }
+        beginLocalOperationSubmission(
+            identity: identity, action: "load_chat", surface: "chat", chatId: chatId)
+        rawSend(
+            Outbound.loadChat(
+                sessionId: chatId, chatId: chatId, submissionId: identity.submissionId,
+                requestGeneration: identity.requestGeneration))
+    }
+
+    private func finishVoiceHydration(_ snapshot: ConversationSnapshot) {
+        guard let pending = pendingVoiceHydration,
+            snapshot.snapshotPurpose == "hydration",
+            snapshot.requestGeneration == pending.requestGeneration,
+            snapshot.connectionGeneration == pending.connectionGeneration,
+            snapshot.chatId == pending.selectedChatAtRequest
+        else { return }
+        voiceHydrationTask?.cancel()
+        voiceHydrationTask = Task { [weak self] in
+            guard let self, self.pendingVoiceHydration?.activationId == pending.activationId,
+                self.continuity.connectionGeneration == pending.connectionGeneration,
+                self.activeChatId == snapshot.chatId, self.voiceForegroundActive, self.connected
+            else { return }
+            self.pendingVoiceHydration = nil
+            await self.activateVoiceSession(
+                chatId: snapshot.chatId, activationId: pending.activationId, takeover: pending.takeover)
+        }
     }
 
     private func activateVoiceSession(
@@ -2137,6 +2279,7 @@ final class WatchModel {
         if !enabled { voiceBridge.setCaptureEnabled(false) }
         if enabled {
             let permission = await voiceBridge.requestMicrophonePermission()
+            reportDeviceCapabilities()
             guard permission == .authorized else {
                 voiceState = .unavailable
                 voiceReason = "permission_denied"
@@ -2240,6 +2383,7 @@ final class WatchModel {
     private func resumeVoiceInForeground() async {
         guard let session = voiceSession, let client = makeVoiceRESTClient() else { return }
         let permission = await voiceBridge.requestMicrophonePermission()
+        reportDeviceCapabilities()
         guard permission == .authorized else {
             voiceState = .unavailable
             voiceReason = "permission_denied"
@@ -2314,6 +2458,7 @@ final class WatchModel {
     }
 
     private func endVoiceConversation(reason: String) {
+        cancelVoiceHydration()
         let session = voiceSession
         let client = makeVoiceRESTClient()
         voiceBridge.disconnect(reason: reason)
@@ -2337,6 +2482,7 @@ final class WatchModel {
     }
 
     private func resetVoiceState(reason: String) {
+        cancelVoiceHydration()
         voiceRetryTask?.cancel()
         voiceRetryTask = nil
         voiceBridge.disconnect(reason: reason)
@@ -2427,5 +2573,236 @@ private actor WatchRegistrationResumeState {
         let value = next
         next = true
         return value
+    }
+}
+
+extension WatchModel {
+    var showsVoiceStatus: Bool {
+        voiceState.active || [.suspended, .reconnecting, .error, .ended].contains(voiceState)
+    }
+
+    func consoleLabel(_ key: String, fallback: String = "") -> String {
+        console?.labels[key] ?? fallback
+    }
+
+    var currentDevice: DeviceDescriptor {
+        let (width, height) = reportedViewport ?? viewport
+        var device = DeviceDescriptor.watch(viewportWidth: width, viewportHeight: height)
+        device.consoleContract = ConsoleModel.contract
+        device.deviceId = voiceDeviceId
+        device.pixelRatio = reportedScale ?? WatchDeviceCapabilities.scale
+        device.connectionType = connectionType
+        device.reducedMotion = reducedMotion
+        device.hasCamera = false
+        let audio = audioHardwareProvider()
+        device.hasMicrophone = audio.microphone
+        device.hasAudioOutput = audio.output
+        device.microphonePermission = voiceBridge.microphonePermission.rawValue
+        device.fullDuplex = false
+        device.voiceTransport = "watch_pcm_websocket"
+        return device
+    }
+
+    func viewportChanged(width: Int, height: Int, scale: Double, reducedMotion: Bool) {
+        guard (1...16384).contains(width), (1...16384).contains(height),
+            scale.isFinite, (0.1...16).contains(scale)
+        else { return }
+        reportedViewport = (width, height)
+        reportedScale = scale
+        self.reducedMotion = reducedMotion
+        reportDeviceCapabilities()
+    }
+
+    func networkCapabilitiesChanged(_ value: String) {
+        connectionType = ["wifi", "cellular", "ethernet", "none"].contains(value) ? value : "unknown"
+        reportDeviceCapabilities()
+    }
+
+    func observeDeviceCapabilities() {
+        guard networkMonitor == nil else { return }
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            let connection =
+                path.status != .satisfied
+                ? "none"
+                : path.usesInterfaceType(.wifi)
+                    ? "wifi"
+                    : path.usesInterfaceType(.cellular)
+                        ? "cellular"
+                        : path.usesInterfaceType(.wiredEthernet) ? "ethernet" : "unknown"
+            Task { @MainActor [weak self] in self?.networkCapabilitiesChanged(connection) }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.personalailabs.astraldeep.watch.network"))
+        networkMonitor = monitor
+    }
+
+    func reportDeviceCapabilities() {
+        let device = currentDevice
+        guard reportedDevice != device else { return }
+        reportedDevice = device
+        guard connected, conversationAccount != nil else { return }
+        rawSend(Outbound.updateDevice(sessionId: nil, device: device))
+    }
+
+    private var nativeGuidanceRequests: [GuidanceRequest] {
+        let items = chromeMenu?.allItems.filter { $0.availability?.mode == .native } ?? []
+        let references =
+            items.map { SurfaceRef(surface: $0.surface, params: $0.params) }
+            + (console?.composerActions.filter { $0.availability?.mode == .native }.compactMap(\.action) ?? [])
+        return references.compactMap {
+            GuidanceRequest(
+                action: "chrome_open", payload: .object(["surface": .string($0.surface), "params": $0.params]))
+        }
+    }
+
+    private var hasNativeGuidance: Bool { !nativeGuidanceRequests.isEmpty }
+
+    func openMenuItem(_ item: ChromeMenuItem) {
+        guard chromeMenu?.allItems.contains(item) == true else { return }
+        guard item.availability?.mode == .native else {
+            handoffMessage = item.availability?.message
+            return
+        }
+        openConsoleReference(SurfaceRef(surface: item.surface, params: item.params))
+    }
+
+    func performComposerAction(_ action: ConsoleComposerAction) {
+        guard console?.composerActions.contains(action) == true else { return }
+        guard action.availability?.mode == .native, let reference = action.action else {
+            handoffMessage = action.availability?.message
+            return
+        }
+        openConsoleReference(reference)
+    }
+
+    private func openConsoleReference(_ reference: SurfaceRef) {
+        let payload = JSONValue.object(["surface": .string(reference.surface), "params": reference.params])
+        if reference.surface == "guidance" {
+            _ = sendGuidanceRequest(action: "chrome_open", payload: payload)
+        } else if reference.surface == "work" {
+            beginWorkRead(payload)
+        }
+    }
+
+    @discardableResult
+    func useScenario(_ scenario: ConsoleScenario, run: Bool) -> Bool {
+        guard console?.catalog.scenarios.contains(scenario) == true else { return false }
+        useConsolePrompt(scenario.prompt, run: run)
+        return true
+    }
+
+    private func useConsolePrompt(_ prompt: String, run: Bool) {
+        if run {
+            let draft = pendingDictation
+            pendingDictation = prompt
+            sendPending()
+            pendingDictation = draft
+        } else {
+            pendingDictation = prompt
+        }
+        consoleChatVisible = true
+    }
+
+    func openAgent(_ agent: ConsoleAgent) {
+        guard console?.catalog.agents.contains(agent) == true else { return }
+        guard agent.availability?.mode == .native else {
+            handoffMessage = agent.availability?.message
+            return
+        }
+        invalidateConsoleSurface()
+        invalidateWorkRead()
+        guidanceVisible = false
+        workVisible = false
+        consoleAgentID = agent.id
+        consoleSurfaceVisible = true
+        consoleSurfaceFailed = false
+        let generation = consoleSurfaceEpoch
+        consoleSurfaceGeneration = generation
+        guard connected, let account = conversationAccount, let socket = ws else {
+            consoleSurfaceFailed = true
+            return
+        }
+        let session = sessionGeneration
+        let connection = continuity.connectionGeneration
+        let text = Outbound.uiEvent(
+            action: "chrome_open", sessionId: nil,
+            payload: .object(["surface": .string("agent_intro"), "params": .object(["agent_id": .string(agent.id)])]),
+            requestGeneration: generation)
+        consoleSurfaceTask = Task { [weak self] in
+            let sent = await socket.sendCurrentChromeEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.consoleSurfaceEpoch == generation && self.consoleSurfaceVisible && self.connected
+                        && self.ws === socket && self.conversationAccount == account
+                        && self.sessionGeneration == session && self.continuity.connectionGeneration == connection
+                }
+            }
+            guard let self, !Task.isCancelled, self.consoleSurfaceEpoch == generation else { return }
+            if sent {
+                do { try await Task.sleep(nanoseconds: 10_000_000_000) } catch { return }
+            }
+            guard !Task.isCancelled, self.consoleSurfaceGeneration == generation, self.consoleSurface == nil else {
+                return
+            }
+            self.consoleSurfaceFailed = true
+            self.consoleSurfaceGeneration = nil
+        }
+    }
+
+    func retryConsoleSurface() {
+        guard let agent = console?.catalog.agents.first(where: { $0.id == consoleAgentID }) else { return }
+        openAgent(agent)
+    }
+
+    private func invalidateConsoleSurface() {
+        consoleSurfaceTask?.cancel()
+        consoleSurfaceTask = nil
+        consoleSurfaceEpoch = UUID().uuidString.lowercased()
+        consoleSurfaceGeneration = nil
+        consoleSurface = nil
+        consoleSurfaceFailed = false
+        consoleSurfaceVisible = false
+        consoleAgentID = nil
+    }
+
+    func closeConsoleSurface() {
+        guard consoleSurfaceVisible else { return }
+        invalidateConsoleSurface()
+        let generation = consoleSurfaceEpoch
+        guard connected, let account = conversationAccount, let socket = ws else { return }
+        let session = sessionGeneration
+        let connection = continuity.connectionGeneration
+        let text = Outbound.uiEvent(
+            action: "chrome_close", sessionId: nil,
+            payload: .object(["surface": .string("agent_intro")]), requestGeneration: generation)
+        consoleSurfaceTask = Task { [weak self] in
+            _ = await socket.sendCurrentChromeEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.consoleSurfaceEpoch == generation && self.connected && self.ws === socket
+                        && self.conversationAccount == account && self.sessionGeneration == session
+                        && self.continuity.connectionGeneration == connection
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    func sendConsoleComponent(_ component: AstralComponent) -> Bool {
+        guard connected, consoleSurfaceVisible, consoleSurface?.permits(component) == true,
+            let action = component.raw["action"]?.stringValue
+        else { return false }
+        if action == "chrome_open" {
+            guard component.raw["payload"]?["params"]?["agent_id"]?.stringValue == consoleAgentID,
+                let item = chromeMenu?.allItems.first(where: { $0.surface == "agents" }),
+                item.availability?.mode == .handoff
+            else { return false }
+            handoffMessage = item.availability?.message
+            return true
+        }
+        guard let prompt = component.raw["payload"]?["message"]?.stringValue else { return false }
+        closeConsoleSurface()
+        useConsolePrompt(prompt, run: action == "chat_message")
+        return true
     }
 }

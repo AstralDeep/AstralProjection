@@ -9,6 +9,21 @@ import kotlin.test.assertFailsWith
 
 class DeviceCapsTest {
     @Test
+    fun runtimeInputAndAccessibilityFactsAreReportedWithoutInventingCapabilities() {
+        val voice = RuntimeVoiceCapability(false, true, "denied", false)
+        for ((touch, fine, pointer) in listOf(Triple(true, false, "coarse"), Triple(false, false, "none"), Triple(false, true, "fine"), Triple(true, true, "fine"))) {
+            val facts = RuntimeDeviceFacts(touch, fine, "ethernet", true, voice)
+            assertEquals(pointer, facts.pointerType)
+            val caps = deviceCapabilities(1200, 800, 2.0, listOf("text"), voice = voice, hasTouch = touch, pointerType = facts.pointerType, connectionType = facts.connectionType, reducedMotion = facts.reducedMotion)
+            assertEquals(touch, caps.hasTouch)
+            assertEquals(pointer, caps.pointerType)
+            assertEquals("ethernet", caps.connectionType)
+            assertEquals(true, caps.reducedMotion)
+            assertEquals(null, caps.consoleContract)
+        }
+    }
+
+    @Test
     fun builds_android_capabilities() {
         val caps = deviceCapabilities(widthPx = 1080, heightPx = 2340, pixelRatio = 2.75, supportedTypes = listOf("text", "card"))
         assertEquals("android", caps.deviceType)

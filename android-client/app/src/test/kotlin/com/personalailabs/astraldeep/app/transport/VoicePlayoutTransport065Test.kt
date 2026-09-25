@@ -35,6 +35,45 @@ class VoicePlayoutTransport065Test {
         assertTrue(client.pendingActions().isEmpty())
     }
 
+    @Test fun voiceHydrationUsesOrdinaryCorrelatedLoadAndNeverQueuesOffline() {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val socket = RecordingWebSocket()
+        assertEquals(null, client.loadChatForVoice(SESSION_ID, CONNECTION_ID) {})
+        client.replayPendingForTest(CONNECTION_ID, {}, {}, { true })
+        client.installOpenSocketForTest(socket)
+        val bindings = mutableListOf<ConversationGenerationBinding>()
+        client.observeConversationGenerations { bindings += it }
+        var projected: LocalSubmission? = null
+        assertEquals(null, client.loadChatForVoice(SESSION_ID, OTHER_CONNECTION_ID) {})
+        val sent = client.loadChatForVoice(SESSION_ID, CONNECTION_ID) { projected = it }
+        assertEquals(sent, projected)
+        assertTrue(sent != null)
+        val frame = Json.parseToJsonElement(socket.frames.single()).jsonObject
+        assertEquals("ui_event", frame.getValue("type").jsonPrimitive.content)
+        assertEquals("load_chat", frame.getValue("action").jsonPrimitive.content)
+        assertEquals(sent?.requestGeneration, frame.getValue("request_generation").jsonPrimitive.content)
+        assertEquals(sent?.submissionId, frame.getValue("submission_id").jsonPrimitive.content)
+        assertEquals(ConversationRequestPurpose.HYDRATION, bindings.single().purpose)
+        assertEquals(SESSION_ID, bindings.single().chatId)
+        assertTrue(client.pendingActions().isEmpty())
+        client.clearOwnerSession()
+        assertEquals(null, client.loadChatForVoice(SESSION_ID, CONNECTION_ID) {})
+        assertTrue(client.pendingActions().isEmpty())
+    }
+
+    @Test fun voiceHydrationRefusesOwnerRetirementAndSocketSendFailureWithoutReplay() {
+        for (retire in listOf(false, true)) {
+            val client = OrchestratorClient("ws://localhost:9/ws")
+            val socket = RecordingWebSocket().apply { accepted = false }
+            client.replayPendingForTest(CONNECTION_ID, {}, {}, { true })
+            client.installOpenSocketForTest(socket)
+            val result = client.loadChatForVoice(SESSION_ID, CONNECTION_ID) { if (retire) client.clearOwnerSession() }
+            assertEquals(null, result)
+            assertEquals(if (retire) 0 else 1, socket.frames.size)
+            assertTrue(client.pendingActions().isEmpty())
+        }
+    }
+
     private fun event() =
         VoicePlayoutEvent(
             deviceId = DEVICE_ID,
@@ -56,6 +95,7 @@ class VoicePlayoutTransport065Test {
 
     private class RecordingWebSocket : WebSocket {
         val frames = mutableListOf<String>()
+        var accepted = true
 
         override fun request(): Request = Request.Builder().url("ws://localhost:9/ws").build()
 
@@ -63,7 +103,7 @@ class VoicePlayoutTransport065Test {
 
         override fun send(text: String): Boolean {
             frames += text
-            return true
+            return accepted
         }
 
         override fun send(bytes: ByteString): Boolean = false

@@ -4,10 +4,17 @@
 import AstralCore
 import SwiftUI
 
+struct ConsoleCanvasBounds {
+    var result: Anchor<CGRect>?
+    var viewport: Anchor<CGRect>?
+}
+
 struct ConsoleCanvasBoundsKey: PreferenceKey {
-    static var defaultValue: Anchor<CGRect>?
-    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
-        value = nextValue() ?? value
+    static var defaultValue = ConsoleCanvasBounds()
+    static func reduce(value: inout ConsoleCanvasBounds, nextValue: () -> ConsoleCanvasBounds) {
+        let next = nextValue()
+        value.result = next.result ?? value.result
+        value.viewport = next.viewport ?? value.viewport
     }
 }
 
@@ -67,17 +74,35 @@ struct ConsoleConversation: View {
                             }
                             Color.clear
                                 .frame(height: model.consoleResultCollapsed ? 54 : presentation.resultPreviewMaxHeight)
-                                .anchorPreference(key: ConsoleCanvasBoundsKey.self, value: .bounds) { $0 }
+                                .anchorPreference(key: ConsoleCanvasBoundsKey.self, value: .bounds) {
+                                    ConsoleCanvasBounds(result: $0)
+                                }
                         }
                         .id("console-result")
                     }
+                    Color.clear.frame(height: 1).id("console-bottom")
                 }
                 .padding(presentation.contentPadding.edgeInsets)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .accessibilityIdentifier("conversation-message-scroll")
             .scrollDismissesKeyboard(.immediately)
-            .onChange(of: model.activeChatId) { _, _ in proxy.scrollTo(turns.last?.id, anchor: .top) }
+            .transformAnchorPreference(key: ConsoleCanvasBoundsKey.self, value: .bounds) { value, anchor in
+                value.viewport = anchor
+            }
+            .onAppear { scrollToLatest(proxy) }
+            .onChange(of: model.activeChatId) { _, _ in scrollToLatest(proxy) }
+            .onChange(of: turns) { _, _ in scrollToLatest(proxy) }
+            .onChange(of: model.workspaceCanvas) { _, _ in scrollToLatest(proxy) }
+            .onChange(of: model.showSkeleton) { _, _ in scrollToLatest(proxy) }
+            .onChange(of: model.statusText) { _, _ in scrollToLatest(proxy) }
+        }
+    }
+
+    private func scrollToLatest(_ proxy: ScrollViewProxy) {
+        Task { @MainActor in
+            await Task.yield()
+            proxy.scrollTo("console-bottom", anchor: .bottom)
         }
     }
 }

@@ -6,6 +6,8 @@
 package com.personalailabs.astraldeep.core.protocol
 
 import com.personalailabs.astraldeep.core.chrome.ChromeMenuModel
+import com.personalailabs.astraldeep.core.chrome.ConsolePresentation
+import com.personalailabs.astraldeep.core.chrome.TurnSelection
 import com.personalailabs.astraldeep.core.sdui.CanvasOp
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonArray
@@ -32,6 +34,12 @@ data class DeviceCapabilities(
     val microphonePermission: String = "not_determined",
     val fullDuplex: Boolean = false,
     val voiceTransport: String = "livekit",
+    val hasCamera: Boolean = false,
+    val hasFileSystem: Boolean = true,
+    val connectionType: String = "unknown",
+    val reducedMotion: Boolean = false,
+    val pointerType: String = "coarse",
+    val consoleContract: String? = null,
 )
 
 data class VoiceControl(
@@ -655,6 +663,8 @@ sealed interface Inbound {
 
     data class AgentList(val agents: List<Agent>) : Inbound
 
+    data class ChatDeleted(val chatId: String) : Inbound
+
     data class HistoryList(val chats: List<ChatSummary>) : Inbound
 
     data class ChatStatus(val status: String?, val message: String?) : Inbound
@@ -693,12 +703,15 @@ sealed interface Inbound {
 
     data class ChromeMenu(val model: ChromeMenuModel) : Inbound
 
+    data class RoteConfig(val console: ConsolePresentation?) : Inbound
+
     data class ChromeSurface(
         val surfaceKey: String,
         val title: String,
         val components: List<Component>,
         val mode: String = "replace",
         val requestGeneration: String? = null,
+        val selection: TurnSelection? = null,
     ) : Inbound
 
     data class AuthRequired(val reason: String?) : Inbound
@@ -767,7 +780,7 @@ sealed interface Inbound {
     data class Unknown(val type: String) : Inbound
 }
 
-fun isPrivateChromeSurface(surface: String): Boolean = surface == "work" || surface == "guidance"
+fun isPrivateChromeSurface(surface: String): Boolean = surface in setOf("work", "guidance", "agent_intro")
 
 fun isGuidanceNoteAction(action: String): Boolean =
     action in setOf("chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget")

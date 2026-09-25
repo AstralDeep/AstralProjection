@@ -168,17 +168,7 @@ public actor WSClient {
     public func sendCurrentChromeEvent(
         _ text: String, isCurrent: @Sendable () async -> Bool
     ) async -> Bool {
-        guard let replay = QueuedOperationReplay(frameText: text),
-            ["chrome_open", "chrome_close"].contains(replay.action),
-            let frame = InboundFrame.parse(text), frame.payload["session_id"] == .null,
-            let payload = frame.payload["payload"]?.objectValue,
-            let surface = payload["surface"]?.stringValue,
-            surface.range(of: "^[a-z][a-z0-9_]{0,79}$", options: .regularExpression) != nil,
-            Set(payload.keys)
-                == Set(
-                    ["surface", "submission_id", "request_generation"]
-                        + (replay.action == "chrome_open" ? ["params"] : [])),
-            replay.action == "chrome_close" || payload["params"]?.objectValue != nil,
+        guard ConsoleSurfaceRequest(frameText: text) != nil,
             established, let current = task, current.state == .running
         else { return false }
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)

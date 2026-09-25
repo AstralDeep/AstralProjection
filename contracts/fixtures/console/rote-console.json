@@ -280,6 +280,42 @@
         "fullscreen_inset": 0,
         "minimum_control_height": 0
       }
+    },
+    {
+      "name": "watch198",
+      "device_type": "watch",
+      "viewport": [
+        198,
+        242
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "stack",
+        "sidebar_width": 0,
+        "content_padding": {
+          "top": 8,
+          "right": 8,
+          "bottom": 8,
+          "left": 8
+        },
+        "composer_padding": {
+          "top": 8,
+          "right": 8,
+          "bottom": 8,
+          "left": 8
+        },
+        "scenario_columns": 1,
+        "settings_presentation": "push",
+        "settings_navigation_axis": "vertical",
+        "settings_width": 198,
+        "dialog_width": 198,
+        "settings_max_height": 242,
+        "settings_navigation_width": 0,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 44
+      }
     }
   ]
 }

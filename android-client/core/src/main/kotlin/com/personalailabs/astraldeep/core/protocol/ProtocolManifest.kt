@@ -9,7 +9,7 @@ object ProtocolManifest {
 
     val classification: Map<String, String> =
         mapOf(
-            "rote_config" to IGNORED,
+            "rote_config" to HANDLED,
             "chrome_menu" to HANDLED,
             "user_preferences" to HANDLED,
             "system_config" to IGNORED,
@@ -30,7 +30,7 @@ object ProtocolManifest {
             "chat_step" to HANDLED,
             "chat_created" to HANDLED,
             "chat_loaded" to HANDLED,
-            "chat_deleted" to IGNORED,
+            "chat_deleted" to HANDLED,
             "history_list" to HANDLED,
             "user_message_acked" to HANDLED,
             "task_started" to HANDLED,

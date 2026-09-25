@@ -269,6 +269,7 @@ fun SurfaceScreen(
     requestGeneration: String? = null,
     loadFailed: Boolean = false,
     onTimeout: (String?) -> Unit = {},
+    showTitle: Boolean = true,
 ) {
     var attempt by remember(surfaceKey, requestGeneration) { mutableStateOf(0) }
     var timedOut by remember(surfaceKey, requestGeneration) { mutableStateOf(false) }
@@ -282,7 +283,7 @@ fun SurfaceScreen(
         }
     }
     when (surfaceViewState(hasSurface, timedOut || loadFailed)) {
-        SurfaceViewState.Loaded -> SurfaceContent(surface!!, renderer)
+        SurfaceViewState.Loaded -> SurfaceContent(surface!!, renderer, showTitle)
         SurfaceViewState.Loading -> SkeletonList()
         SurfaceViewState.TimedOut ->
             SurfaceTimeout(
@@ -300,6 +301,7 @@ private val surfaceRevision = AtomicInteger()
 private fun SurfaceContent(
     surface: Inbound.ChromeSurface,
     renderer: Renderer,
+    showTitle: Boolean,
 ) {
     // Keys items by revision: equal content would else keep stale state
     val revision = remember(surface) { surfaceRevision.incrementAndGet() }
@@ -310,12 +312,14 @@ private fun SurfaceContent(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item(key = "$revision-title") {
-            Text(
-                surface.title.ifBlank { "Settings" },
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
+        if (showTitle) {
+            item(key = "$revision-title") {
+                Text(
+                    surface.title.ifBlank { "Settings" },
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+            }
         }
         itemsIndexed(surface.components, key = { i, _ -> "$revision-$i" }) { _, comp ->
             CompositionLocalProvider(

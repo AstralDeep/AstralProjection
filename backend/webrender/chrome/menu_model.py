@@ -260,6 +260,7 @@ def project_watch_menu_model(model: Dict, *, profile=None, client_capabilities=(
     if (getattr(getattr(profile, "device_type", None), "value", None) == "watch"
             and getattr(profile, "console_contract", None) == CONSOLE_CONTRACT):
         result = deepcopy(model)
+        result["topbar"] = [control for control in result["topbar"] if control.get("kind") != "workspace_action"]
         for control in result["topbar"]:
             action = control.get("action")
             if isinstance(action, dict):

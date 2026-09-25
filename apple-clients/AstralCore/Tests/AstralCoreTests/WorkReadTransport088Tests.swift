@@ -37,6 +37,30 @@ final class WorkReadTransport088Tests: XCTestCase {
         consume.cancel()
     }
 
+    func testConsoleReadCloseAndStaleOrDisconnectedRefusal() async throws {
+        let open = Outbound.uiEvent(
+            action: "chrome_open", sessionId: nil,
+            payload: .object(["surface": .string("agent_intro"), "params": .object(["agent_id": .string("dice")])]))
+        let close = Outbound.uiEvent(
+            action: "chrome_close", sessionId: nil,
+            payload: .object(["surface": .string("agent_intro")]))
+        try await connected { client, peer in
+            let invalid = await client.sendCurrentChromeEvent("{}") { true }
+            let stale = await client.sendCurrentChromeEvent(open) { false }
+            XCTAssertFalse(invalid)
+            XCTAssertFalse(stale)
+            let opened = await client.sendCurrentChromeEvent(open) { true }
+            let closed = await client.sendCurrentChromeEvent(close) { true }
+            XCTAssertTrue(opened)
+            XCTAssertTrue(closed)
+            await fulfillment(of: [peer.twoReads], timeout: 3)
+            XCTAssertEqual(peer.reads, [open, close])
+            await client.stop()
+            let disconnected = await client.sendCurrentChromeEvent(open) { true }
+            XCTAssertFalse(disconnected)
+        }
+    }
+
     func testOnlyClosedReadAndCloseReachRegisteredLoopbackOnce() async throws {
         try await connected { client, peer in
             let request = WorkReadRequest(

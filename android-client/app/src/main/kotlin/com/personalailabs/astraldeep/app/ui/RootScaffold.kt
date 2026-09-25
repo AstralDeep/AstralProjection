@@ -34,6 +34,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -67,6 +68,12 @@ fun RootScaffold(
     onWorkspaceAction: (TopBarControl) -> Unit,
 ) {
     val state by vm.state.collectAsStateWithLifecycle()
+    if (state.console != null && state.consolePresentation != null) {
+        CompositionLocalProvider(LocalConsoleControlHeight provides maxOf(32.0, state.consolePresentation!!.minimumControlHeight).dp) {
+            ConsoleShell(vm, renderer, onSignOut, onWorkspaceAction)
+        }
+        return
+    }
     // Intentionally empty: blocks Back while the mandatory surface is pinned
     BackHandler(enabled = state.mandatorySurface) {}
     Scaffold(
@@ -122,7 +129,7 @@ fun RootScaffold(
 }
 
 @Composable
-private fun ConnectionStrip(label: String) {
+internal fun ConnectionStrip(label: String) {
     Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
         Text(
             label,
@@ -134,7 +141,7 @@ private fun ConnectionStrip(label: String) {
 }
 
 @Composable
-private fun BannerBar(
+internal fun BannerBar(
     text: String,
     isError: Boolean,
     onDismiss: () -> Unit,

@@ -114,6 +114,12 @@ final class AppModel: NSObject {
         let surfaceKey: String
         let title: String
         let components: [AstralComponent]
+
+        var subtitle: String? {
+            components.first {
+                $0.type == "text" && $0.raw["console_role"]?.stringValue == "surface_subtitle"
+            }?.textContent
+        }
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -137,7 +143,7 @@ final class AppModel: NSObject {
     #endif
     let redirectURI = AstralConfig.redirectURI
     let voiceDeviceId: String
-    @ObservationIgnored let voice = AppleVoiceSessionController()
+    @ObservationIgnored let voice: AppleVoiceSessionController
 
     var signedIn = false
     var accountName = ""
@@ -239,7 +245,7 @@ final class AppModel: NSObject {
         return transientCanvas ?? canvas
     }
     var workspaceCanvas: [AstralComponent] {
-        workspaceStarted ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
+        workspaceStarted || console != nil ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
     }
     var visibleTurns: [ChatTurn] { turns + transientTurns }
     var isViewingHistory: Bool { viewingIndex != nil }
@@ -329,8 +335,10 @@ final class AppModel: NSObject {
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
-        webSocket: WSClient? = nil
+        webSocket: WSClient? = nil,
+        voiceController: AppleVoiceSessionController? = nil
     ) {
+        self.voice = voiceController ?? AppleVoiceSessionController()
         self.store = tokenStore
         self.ws = webSocket
         self.conversationResumeStore = conversationResumeStore
@@ -374,6 +382,7 @@ final class AppModel: NSObject {
         }
         voice.setChatAdopter { [weak self] chatId in
             self?.adoptChat(chatId)
+            return self?.refreshActiveChat()
         }
         #if os(iOS)
             WatchOverrideSync.shared.activate()
@@ -796,7 +805,6 @@ final class AppModel: NSObject {
         requestGeneration: String,
         purpose: ConversationGenerationPurpose
     ) -> Bool {
-        workspaceStarted = true
         let resetRevision =
             continuity.activeChatId != nil
             && continuity.activeChatId != chatId
@@ -806,6 +814,8 @@ final class AppModel: NSObject {
                 requestGeneration: requestGeneration,
                 purpose: purpose)
         else { return false }
+        workspaceStarted = true
+        consoleDashboardVisible = false
         activeChatId = chatId
         transientTurns = []
         transientCanvas = nil
@@ -994,6 +1004,12 @@ final class AppModel: NSObject {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
         conversationAccount = nil
+        invalidateGuidance()
+        pendingSurface = nil
+        pendingSurfaceKey = ""
+        pendingSurfaceParams = .object([:])
+        mandatorySurface = false
+        screen = .chat
         chromeMenu = nil
         consolePresentation = nil
         continuity.clear()
@@ -1779,6 +1795,7 @@ final class AppModel: NSObject {
         stepTrail = []
         asyncDetached = false
         pendingCommitRequestGeneration = nil
+        voice.conversationDidHydrate(snapshot)
     }
 
     private func chatPreviewTurn(
@@ -1875,8 +1892,9 @@ final class AppModel: NSObject {
         return chatId == activeChatId
     }
 
-    private func refreshActiveChat() {
-        guard let chatId = activeChatId, !chatId.isEmpty else { return }
+    @discardableResult
+    private func refreshActiveChat() -> String? {
+        guard let chatId = activeChatId, !chatId.isEmpty else { return nil }
         let identity = ClientOperationIdentity.fresh()
         let request = identity.requestGeneration
         if continuity.connectionGeneration != nil {
@@ -1885,7 +1903,7 @@ final class AppModel: NSObject {
                     chatId: chatId,
                     requestGeneration: request,
                     purpose: .hydration)
-            else { return }
+            else { return nil }
         }
         beginLocalOperationSubmission(
             identity: identity,
@@ -1898,6 +1916,7 @@ final class AppModel: NSObject {
                 chatId: chatId,
                 submissionId: identity.submissionId,
                 requestGeneration: request))
+        return request
     }
 
     private func reduceUiRender(_ frame: InboundFrame) {
@@ -2397,7 +2416,7 @@ final class AppModel: NSObject {
     }
 
     func useConsoleScenario(_ scenario: ConsoleScenario, run: Bool) {
-        guard signedIn, !mandatorySurface, !mutationsLocked,
+        guard signedIn, connected, !mandatorySurface, !mutationsLocked,
             console?.catalog.scenarios.contains(scenario) == true
         else { return }
         closeSurface()
@@ -2408,11 +2427,11 @@ final class AppModel: NSObject {
         }
     }
 
-    private func permitsComposePrompt(_ component: AstralComponent, payload: JSONValue) -> Bool {
-        if component.raw["action"]?.stringValue == "compose_prompt", component.raw["payload"] == payload {
+    private func permitsIntroPrompt(_ component: AstralComponent, action: String, payload: JSONValue) -> Bool {
+        if component.raw["action"]?.stringValue == action, component.raw["payload"] == payload {
             return true
         }
-        return component.children.contains { permitsComposePrompt($0, payload: payload) }
+        return component.children.contains { permitsIntroPrompt($0, action: action, payload: payload) }
     }
 
     func sendChat(_ text: String) {
@@ -2497,14 +2516,21 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
-        if action == "compose_prompt" {
-            guard signedIn, !mandatorySurface, !mutationsLocked, pendingSurfaceKey == "agent_intro",
+        if action == "compose_prompt" || (action == "chat_message" && pendingSurfaceKey == "agent_intro") {
+            guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
+                pendingSurfaceKey == "agent_intro",
                 let message = payload["message"]?.stringValue, !message.isEmpty, message.count <= 8000,
                 Set(payload.objectValue?.keys.map { $0 } ?? []) == ["message"],
-                pendingSurface?.components.contains(where: { permitsComposePrompt($0, payload: payload) }) == true
+                pendingSurface?.components.contains(where: { permitsIntroPrompt($0, action: action, payload: payload) })
+                    == true
             else { return }
-            composerDraft = message
             closeSurface()
+            if action == "chat_message" {
+                sendChat(message)
+                composerDraft = ""
+            } else {
+                composerDraft = message
+            }
             return
         }
         if action.hasPrefix("chrome_note_")
@@ -2740,6 +2766,8 @@ final class AppModel: NSObject {
                             text: message))
                 }
                 turnActive = true
+                workspaceStarted = true
+                consoleDashboardVisible = false
                 pendingReplace = true
                 pendingCanvas = []
                 liveOpsThisTurn = false

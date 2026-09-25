@@ -20,6 +20,163 @@ final class VoiceSessionController065Tests: XCTestCase {
     private let submission = "00000000-0000-4000-8000-000000000007"
     private let request = "00000000-0000-4000-8000-000000000008"
 
+    func testNewVoiceChatLoadsBeforeMediaAndReceivesCommittedTextAndCanvas() async throws {
+        let api = FakeVoiceAPI()
+        api.startOutcome = .started(restSession(synced: true), grant())
+        let media = FakeVoiceMedia()
+        let controller = makeController(api: api, media: media)
+        let model = AppModel(tokenStore: InMemoryTokenStore(), voiceController: controller)
+        defer { controller.close() }
+        model.signedIn = true
+        model.connected = true
+        model.currentConnectionVoiceSendOverride = { _ in }
+        var wires: [InboundFrame] = []
+        model.outboundTap = { if let value = InboundFrame.parse($0) { wires.append(value) } }
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        install(controller, replaceSender: false)
+        controller.updateVisibleChatLocally(nil)
+
+        await model.activateVoice()
+        XCTAssertEqual(wires.last?.payload["action"]?.stringValue, "new_chat")
+        XCTAssertEqual(api.startCount, 0)
+        model.handleFrame(newVoiceChatFrame())
+        let load = try XCTUnwrap(wires.last)
+        XCTAssertEqual(load.payload["action"]?.stringValue, "load_chat")
+        XCTAssertEqual(load.payload["payload"]?["chat_id"]?.stringValue, chat)
+        let generation = try XCTUnwrap(load.payload["request_generation"]?.stringValue)
+        XCTAssertEqual(api.startCount, 0)
+        model.handleFrame(hydrationFrame(request: request))
+        XCTAssertEqual(api.startCount, 0)
+        model.handleFrame(hydrationFrame(request: generation))
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(api.startCount, 1)
+        XCTAssertTrue(controller.mediaConnected)
+
+        model.handleFrame(
+            frame(
+                """
+                {"type":"conversation_commit_ready","schema_version":1,
+                 "chat_id":"\(chat)","connection_generation":"\(connection)",
+                 "request_generation":"\(request)","render_revision":1}
+                """))
+        model.handleFrame(hydrationFrame(request: request, purpose: "commit", revision: 1))
+        XCTAssertEqual(model.turns.map(\.text), ["Rolled six dice: total 21"])
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Dice total: 21"])
+        XCTAssertFalse(model.consoleDashboardVisible)
+    }
+
+    func testExistingChatActivationRequiresMatchingHydrationBeforePermissionAndMedia() async throws {
+        let api = FakeVoiceAPI()
+        api.startOutcome = .started(restSession(synced: true), grant())
+        let controller = makeController(api: api, media: FakeVoiceMedia())
+        defer { controller.close() }
+        install(controller)
+        var loads: [String] = []
+        controller.setChatAdopter {
+            loads.append($0)
+            return self.request
+        }
+        await controller.activate()
+        XCTAssertEqual(loads, [chat])
+        XCTAssertEqual(api.startCount, 0)
+        controller.conversationDidHydrate(
+            try XCTUnwrap(
+                ConversationSnapshot(
+                    frame:
+                        hydrationFrame(request: submission))))
+        controller.conversationDidHydrate(
+            try XCTUnwrap(
+                ConversationSnapshot(
+                    frame:
+                        hydrationFrame(request: request, purpose: "commit", revision: 1))))
+        controller.sceneBecameActive()
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(api.startCount, 0)
+        controller.conversationDidHydrate(
+            try XCTUnwrap(
+                ConversationSnapshot(
+                    frame:
+                        hydrationFrame(request: request))))
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(api.startCount, 1)
+    }
+
+    func testHydrationCannotActivateAfterEndChatSwitchOrReconnect() async throws {
+        for action in ["end", "chat", "connection"] {
+            let api = FakeVoiceAPI()
+            let controller = makeController(api: api, media: FakeVoiceMedia())
+            install(controller)
+            controller.setChatAdopter { _ in self.request }
+            await controller.activate()
+            switch action {
+            case "end": await controller.perform(.end)
+            case "chat": controller.updateVisibleChatLocally(submission)
+            default:
+                controller.installUIConnection(
+                    token: "access-token", serverBase: URL(string: "https://example.test/")!,
+                    deviceId: device, deviceKind: "ios", connectionGeneration: otherConnection,
+                    visibleChatId: chat)
+            }
+            controller.conversationDidHydrate(
+                try XCTUnwrap(
+                    ConversationSnapshot(
+                        frame:
+                            hydrationFrame(request: request))))
+            for _ in 0..<10 { await Task.yield() }
+            XCTAssertEqual(api.startCount, 0, action)
+            controller.close()
+        }
+    }
+
+    func testUnavailableOrTimedOutHydrationFailsWithoutStartingMedia() async throws {
+        for available in [false, true] {
+            let api = FakeVoiceAPI()
+            let controller = AppleVoiceSessionController(
+                api: api, media: FakeVoiceMedia(), hydrationTimeoutNanoseconds: 5_000_000)
+            install(controller)
+            controller.setChatAdopter { _ in available ? self.request : nil }
+            await controller.activate()
+            try await Task.sleep(nanoseconds: 30_000_000)
+            XCTAssertEqual(controller.phase, "error")
+            XCTAssertEqual(controller.reason, "chat_context_unavailable")
+            XCTAssertEqual(api.startCount, 0)
+            controller.conversationDidHydrate(
+                try XCTUnwrap(
+                    ConversationSnapshot(
+                        frame:
+                            hydrationFrame(request: request))))
+            for _ in 0..<10 { await Task.yield() }
+            XCTAssertEqual(api.startCount, 0)
+            controller.close()
+        }
+    }
+
+    private func newVoiceChatFrame() -> InboundFrame {
+        let correlation = "00000000-0000-4000-8000-00000000000f"
+        return frame(
+            """
+            {"type":"chat_created","schema_version":"1",
+             "connection_generation":"\(connection)","submission_id":"\(correlation)",
+             "request_generation":"\(correlation)","payload":{"schema_version":"1",
+             "chat_id":"\(chat)","from_message":false,"connection_generation":"\(connection)",
+             "submission_id":"\(correlation)","request_generation":"\(correlation)"}}
+            """)
+    }
+
+    private func hydrationFrame(request: String, purpose: String = "hydration", revision: Int = 0) -> InboundFrame {
+        frame(
+            """
+            {"type":"conversation_snapshot","schema_version":1,
+             "snapshot_id":"\(UUID().uuidString.lowercased())","chat_id":"\(chat)",
+             "connection_generation":"\(connection)","request_generation":"\(request)",
+             "snapshot_purpose":"\(purpose)","render_revision":\(revision),
+             "committed_at":"2026-09-25T12:00:00Z",
+             "transcript":[{"message_id":"answer","role":"assistant","created_at":"2026-09-25T12:00:00Z",
+                "parts":[{"type":"text","text":"Rolled six dice: total 21"}],"attachments":[]}],
+             "canvas":{"target":"canvas","components":[{"type":"text","content":"Dice total: 21"}]}}
+            """)
+    }
+
     #if os(macOS)
         func testMacOSAudioHardwareProbeUsesDefaultRouteWithoutAVCaptureDiscovery() {
             XCTAssertFalse(AppleVoicePermission.hasUsableAudioInputDevice(nil))
@@ -288,7 +445,10 @@ final class VoiceSessionController065Tests: XCTestCase {
             VoiceTranscript(frame: try XCTUnwrap(InboundFrame.parse(finalTranscript()))))
         let voiceChat = Outbound.voiceChatMessage(
             transcript: transcript, connectionGeneration: connection)
+        model.consoleDashboardVisible = true
         XCTAssertTrue(model.sendVoiceWire(voiceChat))
+        XCTAssertFalse(model.consoleDashboardVisible)
+        XCTAssertTrue(model.workspaceStarted)
         XCTAssertTrue(model.sendVoiceWire(voiceChat), "an exact controller retry remains live-only")
 
         let playout =
@@ -1282,7 +1442,7 @@ final class VoiceSessionController065Tests: XCTestCase {
             .refreshed(restSession(synced: true, revision: 4), grant(revision: 4)),
         ]
         let media = FakeVoiceMedia()
-        let controller = makeController(api: api, media: media)
+        let controller = makeController(api: api, media: media, retryNanoseconds: 5_000_000)
         install(controller)
         await controller.activate()
 

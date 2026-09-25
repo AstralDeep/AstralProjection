@@ -20,6 +20,41 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CanvasCapture088Test {
+    @Test fun compositesExportVisiblePixelsAndNeverRawPayloads() =
+        runTest {
+            for (type in CanvasCaptureRegistry.COMPOSITES) {
+                val registry = CanvasCaptureRegistry()
+                bind(registry, """[{"type":"$type","id":"visual","title":"Visible","data":[1,2],"unused":"PRIVATE","action":"unsafe"}]""")
+                kotlin.test.assertFailsWith<CanvasCaptureUnavailable> { registry.freeze(context) }
+                registry.pixels("/components/0", CanvasPixels { "data:image/png;base64,cGl4ZWxz" })
+                kotlin.test.assertFailsWith<CanvasCaptureUnavailable> { registry.freeze(context) }
+                registry.imageSize("/components/0", 160.0, 192.0)
+                val exported = registry.freeze(context).presentation
+                val visual = (exported["components"] as JsonArray).single() as JsonObject
+                assertEquals("image", (visual["type"] as JsonPrimitive).content)
+                assertEquals(JsonPrimitive(160.0), visual["width"])
+                assertEquals(JsonPrimitive(192.0), visual["height"])
+                assertEquals(JsonPrimitive("Visible"), visual["alt"])
+                assertFalse(exported.toString().contains("PRIVATE"))
+                assertFalse(visual.containsKey("data"))
+                assertFalse(visual.containsKey("action"))
+                assertEquals(1, (exported["images"] as JsonArray).size)
+            }
+        }
+
+    @Test fun actionGroupsExportOnlyTheirVisibleLabel() =
+        runTest {
+            val registry = CanvasCaptureRegistry()
+            bind(registry, """[{"type":"action_group","label":"Actions","buttons":[{"label":"Run","action":"PRIVATE","payload":{"secret":1}}]}]""")
+            val exported = registry.freeze(context).presentation
+            assertEquals(
+                JsonObject(mapOf("type" to JsonPrimitive("text"), "content" to JsonPrimitive("Actions"))),
+                (exported["components"] as JsonArray).single(),
+            )
+            assertFalse(exported.toString().contains("PRIVATE"))
+            assertFalse(exported.toString().contains("secret"))
+        }
+
     private val context = WorkspaceContext(ConversationResumeStore.AccountIdentity("issuer", "owner"), 1, "chat", 2u, setOf("export_canvas"))
     private val theme = listOf("bg", "surface", "surface2", "border", "primary", "secondary", "accent", "text", "muted", "success", "warning", "error", "info").associateWith { "#112233" }
 

@@ -100,6 +100,19 @@ def test_non_watch_or_unnegotiated_menu_retains_exact_legacy_projection():
         assert project_watch_menu_model(source, profile=profile, client_capabilities=CAPABILITIES) == expected
 
 
+def test_negotiated_watch_keeps_file_workspace_controls_omitted_by_server():
+    source = menu_model_dict(export_enabled=True, share_enabled=True)
+    result = project_watch_menu_model(source, profile=watch(), client_capabilities=CAPABILITIES)
+    assert any(item["kind"] == "workspace_action" for item in source["topbar"])
+    assert not any(item["kind"] == "workspace_action" for item in result["topbar"])
+
+
+@pytest.mark.parametrize("missing", ["text", "alert", "badge", "card", "container", "button"])
+def test_agent_intro_requires_its_complete_rendering_vocabulary(missing):
+    profile = watch(supported_types=[kind for kind in TYPES if kind != missing])
+    assert watch_availability("agent_intro", {}, profile)["mode"] == "handoff"
+
+
 def test_watch_type_aggregation_readapts_at_the_same_dimensions():
     rote = ROTE()
     client = object()

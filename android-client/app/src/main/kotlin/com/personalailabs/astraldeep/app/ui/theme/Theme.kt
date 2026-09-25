@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import com.personalailabs.astraldeep.app.R
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -43,29 +44,29 @@ object AstralColors {
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 val AstralSans =
     FontFamily(
-        listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold).map { weight ->
-            Font(R.font.inter_latin, weight = weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
+        listOf(FontWeight.Normal, FontWeight.Medium, FontWeight.SemiBold, FontWeight.Bold, FontWeight.ExtraBold).map { weight ->
+            Font(R.font.open_sans_latin, weight = weight, variationSettings = FontVariation.Settings(FontVariation.weight(weight.weight)))
         },
     )
 val AstralMono = FontFamily(Font(R.font.jetbrains_mono_latin))
 private val baseTypography = Typography()
 private val astralTypography =
     Typography(
-        displayLarge = baseTypography.displayLarge.copy(fontFamily = AstralSans),
-        displayMedium = baseTypography.displayMedium.copy(fontFamily = AstralSans),
-        displaySmall = baseTypography.displaySmall.copy(fontFamily = AstralSans),
-        headlineLarge = baseTypography.headlineLarge.copy(fontFamily = AstralSans),
-        headlineMedium = baseTypography.headlineMedium.copy(fontFamily = AstralSans),
-        headlineSmall = baseTypography.headlineSmall.copy(fontFamily = AstralSans),
-        titleLarge = baseTypography.titleLarge.copy(fontFamily = AstralSans),
-        titleMedium = baseTypography.titleMedium.copy(fontFamily = AstralSans),
-        titleSmall = baseTypography.titleSmall.copy(fontFamily = AstralSans),
-        bodyLarge = baseTypography.bodyLarge.copy(fontFamily = AstralSans),
-        bodyMedium = baseTypography.bodyMedium.copy(fontFamily = AstralSans),
-        bodySmall = baseTypography.bodySmall.copy(fontFamily = AstralSans),
-        labelLarge = baseTypography.labelLarge.copy(fontFamily = AstralSans),
-        labelMedium = baseTypography.labelMedium.copy(fontFamily = AstralSans),
-        labelSmall = baseTypography.labelSmall.copy(fontFamily = AstralSans),
+        displayLarge = baseTypography.displayLarge.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        displayMedium = baseTypography.displayMedium.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        displaySmall = baseTypography.displaySmall.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        headlineLarge = baseTypography.headlineLarge.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        headlineMedium = baseTypography.headlineMedium.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        headlineSmall = baseTypography.headlineSmall.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        titleLarge = baseTypography.titleLarge.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        titleMedium = baseTypography.titleMedium.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        titleSmall = baseTypography.titleSmall.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        bodyLarge = baseTypography.bodyLarge.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        bodyMedium = baseTypography.bodyMedium.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        bodySmall = baseTypography.bodySmall.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        labelLarge = baseTypography.labelLarge.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        labelMedium = baseTypography.labelMedium.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
+        labelSmall = baseTypography.labelSmall.copy(fontFamily = AstralSans, letterSpacing = 0.sp),
     )
 
 private val AstralDarkColors =

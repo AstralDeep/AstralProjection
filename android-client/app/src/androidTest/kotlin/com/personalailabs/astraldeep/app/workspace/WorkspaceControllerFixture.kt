@@ -250,7 +250,7 @@ internal class WorkspaceControllerFixture(
     fun reconnect(revision: Int = model.state.value.lastCommittedRenderRevision.toInt()) {
         val previous = model.state.value.connectionGeneration
         val previousSocket = socket.get()
-        main { model.start(checkNotNull(token), DeviceCapabilities(400, 800)) }
+        check(previousSocket.close(1012, "Synthetic server restart"))
         await { socket.get() !== previousSocket && model.state.value.connectionGeneration != previous && model.state.value.requestGeneration != null }
         hydrate(revision)
     }

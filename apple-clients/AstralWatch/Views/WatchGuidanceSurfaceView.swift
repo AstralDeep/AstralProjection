@@ -11,18 +11,18 @@ struct WatchGuidanceSurfaceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 if let update = model.guidanceUpdate {
-                    Text(verbatim: update.title).font(AstralTypography.headline)
+                    Text(verbatim: update.title).font(ConsoleTypography.headline)
                     ForEach(Array(update.components.enumerated()), id: \.offset) { _, component in
                         WatchComponentView(component: component, guidance: true)
                             .id(update.generation)
                     }
                 } else if model.guidanceFailed || !model.connected {
-                    Text("Private notes are unavailable. Reconnect and open the current list.")
+                    Text("This view is unavailable. Reconnect and retry.")
                     Button("Retry") { model.retryGuidance() }.disabled(!model.connected)
                 } else {
                     ProgressView("Loading…")
                 }
-            }.padding(6)
+            }.padding(model.consoleContentInsets)
         }
         .task(id: model.guidanceState.generation) {
             guard let generation = model.guidanceState.generation else { return }

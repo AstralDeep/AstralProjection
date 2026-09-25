@@ -3,6 +3,28 @@
 
 import Foundation
 
+public struct ChromeAvailability: Equatable, Sendable {
+    public enum Mode: String, Sendable { case native, handoff }
+    public let mode: Mode
+    public let message: String?
+
+    public init?(json: JSONValue?) {
+        guard let object = json?.objectValue, let raw = object["mode"]?.stringValue,
+            let mode = Mode(rawValue: raw)
+        else { return nil }
+        if mode == .native {
+            guard Set(object.keys) == ["mode"] else { return nil }
+            message = nil
+        } else {
+            guard Set(object.keys) == ["mode", "message"],
+                let value = ConsoleDecoding.text(object["message"], maximum: 500)
+            else { return nil }
+            message = value
+        }
+        self.mode = mode
+    }
+}
+
 public struct ConsoleIdentity: Equatable, Sendable {
     public let name: String
     public let role: String
@@ -27,6 +49,7 @@ public struct ConsoleAgent: Equatable, Sendable, Identifiable {
     public let description: String
     public let state: State
     public let owned: Bool
+    public let availability: ChromeAvailability?
 }
 
 public struct ConsoleCatalog: Equatable, Sendable {
@@ -59,9 +82,13 @@ public struct ConsoleCatalog: Equatable, Sendable {
                 let name = ConsoleDecoding.text(row["name"], maximum: 200),
                 let description = ConsoleDecoding.text(row["description"], maximum: 2000, empty: true),
                 let rawState = row["state"]?.stringValue, let state = ConsoleAgent.State(rawValue: rawState),
-                let owned = row["owned"]?.boolValue
+                let owned = row["owned"]?.boolValue,
+                row["availability"] == nil || ChromeAvailability(json: row["availability"]) != nil
             else { return nil }
-            agents.append(ConsoleAgent(id: id, name: name, description: description, state: state, owned: owned))
+            agents.append(
+                ConsoleAgent(
+                    id: id, name: name, description: description, state: state, owned: owned,
+                    availability: ChromeAvailability(json: row["availability"])))
         }
         guard Set(scenarios.map(\.id)).count == scenarios.count,
             Set(agents.map(\.id)).count == agents.count
@@ -82,13 +109,15 @@ public struct ConsoleComposerAction: Equatable, Sendable, Identifiable {
     public let label: String
     public let icon: String
     public let action: SurfaceRef?
+    public let availability: ChromeAvailability?
     public var id: String { key }
 
     init?(json: JSONValue) {
         guard let key = ConsoleDecoding.text(json["key"], maximum: 80),
             let rawKind = json["kind"]?.stringValue, let kind = Kind(rawValue: rawKind),
             let label = ConsoleDecoding.text(json["label"], maximum: 200),
-            let icon = ConsoleDecoding.text(json["icon"], maximum: 80)
+            let icon = ConsoleDecoding.text(json["icon"], maximum: 80),
+            json["availability"] == nil || ChromeAvailability(json: json["availability"]) != nil
         else { return nil }
         if kind == .toggle {
             guard key == "background", json["action"] == nil else { return nil }
@@ -106,6 +135,7 @@ public struct ConsoleComposerAction: Equatable, Sendable, Identifiable {
         self.kind = kind
         self.label = label
         self.icon = icon
+        availability = ChromeAvailability(json: json["availability"])
     }
 }
 
@@ -146,6 +176,20 @@ public struct ConsoleModel: Equatable, Sendable {
         self.catalog = catalog
         self.composerActions = composerActions
         self.showVoiceAvailabilityBanner = showVoiceAvailabilityBanner
+    }
+
+    public func selectionSummary(_ selection: TurnSelection) -> String? {
+        guard !selection.isEmpty, let template = labels["selection_summary"] else { return nil }
+        var parts: [String] = []
+        for (kind, count) in [
+            ("agent", selection.agent == nil ? 0 : 1),
+            ("skill", selection.skills.count), ("note", selection.notes.count),
+        ] where count > 0 {
+            let key = "selection_\(kind)_\(count == 1 ? "singular" : "plural")"
+            guard let label = labels[key] else { return nil }
+            parts.append(label.replacingOccurrences(of: "{count}", with: String(count)))
+        }
+        return template.replacingOccurrences(of: "{selection}", with: parts.joined(separator: ", "))
     }
 
     private static let requiredLabels: Set<String> = [

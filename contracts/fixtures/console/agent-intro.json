@@ -1,0 +1,129 @@
+{
+  "type": "chrome_surface",
+  "surface_key": "agent_intro",
+  "region": "modal",
+  "title": "Dice Roller",
+  "admin_only": false,
+  "components": [
+    {
+      "type": "text",
+      "content": "What it does, and what to ask it",
+      "variant": "caption",
+      "console_role": "surface_subtitle"
+    },
+    {
+      "type": "badge",
+      "label": "Available",
+      "variant": "success"
+    },
+    {
+      "type": "text",
+      "content": "Rolls dice and reports every roll and the total — the smallest honest end-to-end test of routing, permissions and rendering.",
+      "variant": "body"
+    },
+    {
+      "type": "text",
+      "content": "Try one of these",
+      "variant": "h3"
+    },
+    {
+      "type": "card",
+      "title": "Six dice",
+      "content": [
+        {
+          "type": "text",
+          "content": "Roll exactly six six-sided dice and show the normalized results.",
+          "variant": "body"
+        },
+        {
+          "type": "container",
+          "children": [
+            {
+              "type": "button",
+              "label": "Run",
+              "action": "chat_message",
+              "payload": {
+                "message": "Roll exactly six six-sided dice and show the normalized results."
+              },
+              "variant": "primary"
+            },
+            {
+              "type": "button",
+              "label": "Load",
+              "action": "compose_prompt",
+              "payload": {
+                "message": "Roll exactly six six-sided dice and show the normalized results."
+              },
+              "variant": "secondary"
+            }
+          ],
+          "direction": "row"
+        }
+      ],
+      "variant": "default"
+    },
+    {
+      "type": "card",
+      "title": "Many rolls",
+      "content": [
+        {
+          "type": "text",
+          "content": "Roll 100 six-sided dice and chart how often each face came up",
+          "variant": "body"
+        },
+        {
+          "type": "container",
+          "children": [
+            {
+              "type": "button",
+              "label": "Run",
+              "action": "chat_message",
+              "payload": {
+                "message": "Roll 100 six-sided dice and chart how often each face came up"
+              },
+              "variant": "primary"
+            },
+            {
+              "type": "button",
+              "label": "Load",
+              "action": "compose_prompt",
+              "payload": {
+                "message": "Roll 100 six-sided dice and chart how often each face came up"
+              },
+              "variant": "secondary"
+            }
+          ],
+          "direction": "row"
+        }
+      ],
+      "variant": "default"
+    },
+    {
+      "type": "text",
+      "content": "Tools it can reach (1)",
+      "variant": "h3"
+    },
+    {
+      "type": "list",
+      "items": [
+        "roll_dice"
+      ],
+      "ordered": false,
+      "variant": "default"
+    },
+    {
+      "type": "button",
+      "label": "Permissions for this agent",
+      "action": "chrome_open",
+      "payload": {
+        "surface": "agents",
+        "params": {
+          "agent_id": "dice_roller"
+        }
+      },
+      "variant": "secondary"
+    }
+  ],
+  "mode": "replace",
+  "request_generation": "33333333-3333-4333-8333-333333333333"
+}

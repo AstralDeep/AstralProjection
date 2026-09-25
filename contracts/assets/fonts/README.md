@@ -13,7 +13,7 @@ Build tooling: `fonttools==4.65.0`, `brotli==1.2.0`. Open each source with `TTFo
 
 License notices: [Inter](https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt) and [JetBrains Mono](https://raw.githubusercontent.com/JetBrains/JetBrainsMono/master/OFL.txt), both SIL Open Font License 1.1; full notices are included beside the fonts. Inter retains family `Inter`, PostScript `Inter-Regular`, weight axis 100–900. JetBrains retains `JetBrains Mono`, PostScript `JetBrainsMono-Regular`. No names have changed.
 
-Open Sans supplies the app-target iPhone/iPad/macOS console typography; the watch keeps Inter/JetBrains Mono. Its unchanged SIL Open Font License is bundled with the app. Preparation dependencies are pinned in `tooling/fonts/requirements.txt`.
+Open Sans supplies iPhone/iPad/macOS and Android console typography; the watch keeps Inter/JetBrains Mono. Its unchanged SIL Open Font License is bundled with each app from `backend/webrender/static/fonts/OFL.txt`. Android packages it as `font-licenses/OpenSans-OFL.txt`. Preparation dependencies are pinned in `tooling/fonts/requirements.txt`.
 
 - `backend/webrender/static/fonts/open-sans-latin.woff2` SHA-256 `d8e4fe0452aa2076429a9bb5d8757d00a994dd95986cf950e9a1a371b9a072a0`.
 - `contracts/assets/fonts/open-sans-latin.ttf` SHA-256 `639fae9b17d4d7b01174d2105fbe90edf45e4838caeb0f43ef2570d3d49bad6a`.

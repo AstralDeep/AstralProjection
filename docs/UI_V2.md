@@ -1,6 +1,6 @@
-# AstralDeep web UI v2
+# AstralDeep UI v2
 
-Verified against the local source tree on 2026-09-21. The design started in
+Verified against the local source tree on 2026-09-25. The design started in
 feature 089 and incorporates the owner's subsequent console refinements.
 "UI v2" names this web experience, not Python package version `2.0`, a new
 wire-protocol version, or a claim of native-client parity. The package remains
@@ -45,13 +45,52 @@ The six feature-089 types (`action_group`, `stat_group`, `gauge`,
 `pipeline_stepper`, `donut_chart`, `radar_chart`) have server-side fallback
 ladders for clients that do not support them.
 
-Windows/PySide6, Android/Compose and Apple/SwiftUI have not adopted this web
-layout. Feature 089 explicitly scoped the redesign to web; native menu/frame
-contracts and their security/integrity checks remain meaningful. A refreshed
-bundled Apple HTML export resource is shared export freshness, not an Apple
-UI v2 redesign. Consult [`ui_protocol.json`](../contracts/ui_protocol.json),
+Apple/SwiftUI and Android/Compose now negotiate `console/v2` and consume the
+shared console catalog, labels, identity, selection and ROTE presentation.
+[`console_model.py`](../backend/webrender/chrome/console_model.py) defines the
+console data; [`console.py`](../backend/rote/console.py) adapts its geometry.
+The existing chrome menu still owns available settings and actions. Measured
+viewport, display scale, input, motion and voice capabilities update through
+the existing device transport. Clients retain owner, request and connection
+fences when navigating, reconnecting or applying delayed responses.
+
+The native shells implement the drawer/sidebar, category catalog, agent
+directory/introduction, conversation/result/full-screen view, selection,
+composer and settings. Scenario Load fills a draft; Run follows normal chat
+dispatch. The six composite types render natively with the shared data and
+accessible labels; Open Sans is packaged from the licensed contract asset.
+The passive web voice warning is excluded by the server-owned native
+disposition. Actionable native voice status and recovery remain visible.
+
+watchOS negotiates the same console with ROTE-selected navigation stacks,
+compact controls and explicit phone/desktop handoffs for unavailable actions.
+Opening an introduction or owner surface preserves the initiating screen on
+Back. Result detail retains the current conversation. Device login and voice
+continue through the existing authenticated paths.
+
+Windows implementation belongs to the separate Windows workstream. This
+change leaves its source untouched and preserves legacy non-negotiating
+behavior. Consult [`ui_protocol.json`](../contracts/ui_protocol.json),
 [`capabilities.py`](../backend/rote/capabilities.py) and the client READMEs for
-the actual supported contracts.
+supported contracts and native build requirements.
+
+## Native local qualification
+
+The September 25 source checks passed Android core161/app392 unit tests,
+all116 instrumented fixtures, ktlint, Android lint, Kover and debug assembly.
+Apple checks passed Core283, Mac294, iOS277 and31 iOS UI tests. Watch navigation
+passed10 tests; watch model/render checks passed104, with one protected-staging
+evidence test skipped because its producer URL was unavailable. Current-source
+changed-line diagnostics measured91.40% Swift and93.82% Kotlin.
+
+The owner confirmed Mac voice returned speech, response text and the dice UI;
+the corrected Mac composer was inspected at desktop width. Synthetic native
+fixtures cover responsive layouts and denied/stale operations. The
+[kos-wiki reference archive](https://github.com/Kentucky-Open-Science/kos-wiki/tree/main/assets/astral-native-ui-v2)
+contains the54 web references captured before resumed native edits and
+separately identified native captures. Complete backend CI, clean composed
+candidate qualification and authenticated mobile/watch audio acceptance remain
+open; these local checks do not establish release qualification.
 
 ## Test and CI maintenance
 
@@ -79,7 +118,8 @@ not mean it exercises the old UI. No workflow gate was disabled. The separate
 local a8p-reference comparison; owner-directed differences are recorded in
 AstralDeep's feature-089 layout contract, rather than rewriting reference images.
 
-Local evidence, distinct from hosted CI and live authenticated verification:
+Historical September 21 web evidence, distinct from current native checks,
+hosted CI and live authenticated verification:
 
 | Command/check | Result |
 | --- | --- |

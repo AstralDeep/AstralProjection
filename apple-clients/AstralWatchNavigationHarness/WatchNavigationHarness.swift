@@ -9,12 +9,20 @@ import SwiftUI
 struct WatchNavigationHarnessApp: App {
     @State private var session = WatchNavigationSession()
 
+    init() {
+        ConsoleTypography.registerFonts()
+    }
+
     var body: some Scene {
         WindowGroup {
-            Group {
+            ZStack {
                 if session.ready {
-                    NavigationStack { WatchHomeView() }
+                    WatchNavigationView()
                         .environment(session.model)
+                        .font(ConsoleTypography.body)
+                        .tint(session.model.theme.palette.primary)
+                        .foregroundStyle(session.model.theme.palette.text)
+                        .background(session.model.theme.palette.bg)
                 } else {
                     Text("Connecting test peer")
                 }

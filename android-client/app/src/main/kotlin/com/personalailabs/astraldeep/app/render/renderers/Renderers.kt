@@ -11,4 +11,5 @@ fun Renderer.registerAllRenderers(): Renderer =
         .registerDataRenderers()
         .registerInputRenderers()
         .registerChartRenderers()
+        .registerCompositeRenderers()
         .registerMediaRenderers()
