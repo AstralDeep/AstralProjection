@@ -23,7 +23,7 @@ from typing import Any, ClassVar, Optional
 
 import websockets
 from PySide6.QtCore import QObject, QSettings, Signal
-from PySide6.QtGui import QGuiApplication, QInputDevice
+from PySide6.QtGui import QGuiApplication, QInputDevice, QPointingDevice
 
 from . import __version__
 from .console import parse_turn_selection
@@ -1885,10 +1885,19 @@ def device_caps(
         except RuntimeError:
             pass
     inputs = set()
+    devices = []
+    if application and application.platformName() == "windows":
+        for query in (QInputDevice.primaryKeyboard, QPointingDevice.primaryPointingDevice):
+            try:
+                primary = query()
+            except RuntimeError:
+                continue
+            if primary is not None:
+                devices.append(primary)
     try:
-        devices = QInputDevice.devices() if application else []
+        devices.extend(QInputDevice.devices() if application else [])
     except RuntimeError:
-        devices = []
+        pass
     for device in devices:
         try:
             inputs.add(device.type())

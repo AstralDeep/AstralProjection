@@ -9,6 +9,7 @@ import pathlib
 import re
 import hashlib
 import json
+import os
 import sys
 
 from PyInstaller.utils.hooks import (
@@ -36,6 +37,11 @@ __version__ = re.search(
 ).group(1)
 
 _root = pathlib.Path(SPECPATH)
+from astral_client.freeze_environment import freeze_environment
+
+_freeze_environment = freeze_environment()
+os.environ.clear()
+os.environ.update(_freeze_environment)
 _profile_path = _root / "deployment" / "release-profile.json"
 _runtime_manifest_path = _root / "deployment" / "runtime-manifest.json"
 _release_lock_path = _root / "requirements-release.lock.txt"

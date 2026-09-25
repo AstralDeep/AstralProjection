@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QRect
-from PySide6.QtGui import QInputDevice
+from PySide6.QtGui import QGuiApplication, QInputDevice, QPointingDevice
 from PySide6.QtWidgets import QWidget
 
 from astral_client import protocol, theme
@@ -94,6 +94,90 @@ def test_unavailable_input_query_and_disconnected_device_fail_closed(qapp, monke
     window.screen = lambda: SimpleNamespace(geometry=unavailable)
     caps = device_caps(window=window)
     assert caps["screen_width"] == 390 and caps["pixel_ratio"] == 1
+
+
+def windows_input_providers(monkeypatch, keyboard, pointer):
+    monkeypatch.setattr(QGuiApplication, "platformName", staticmethod(lambda: "windows"))
+    monkeypatch.setattr(QInputDevice, "primaryKeyboard", keyboard)
+    monkeypatch.setattr(QPointingDevice, "primaryPointingDevice", pointer)
+
+
+def test_windows_initial_snapshot_uses_core_providers_before_device_events(qapp, monkeypatch):
+    keyboard = QInputDevice("Core keyboard", 1, QInputDevice.DeviceType.Keyboard)
+    pointer = QInputDevice("Core pointer", 2, QInputDevice.DeviceType.Mouse)
+    queries = []
+
+    def query(name, result):
+        queries.append(name)
+        return result
+
+    windows_input_providers(
+        monkeypatch, lambda: query("keyboard", keyboard), lambda: query("pointer", pointer))
+    monkeypatch.setattr(QInputDevice, "devices", lambda: query("devices", []))
+    caps = device_caps()
+    assert caps["has_keyboard"] and caps["pointer_type"] == "fine"
+    assert caps["has_touch"] is False
+    assert queries == ["keyboard", "pointer", "devices"]
+
+
+@pytest.mark.parametrize("keyboard_state", ["valid", "missing", "unavailable"])
+@pytest.mark.parametrize("pointer_state", ["valid", "missing", "unavailable"])
+def test_windows_core_providers_fail_independently(qapp, monkeypatch, keyboard_state, pointer_state):
+    keyboard = QInputDevice("Core keyboard", 1, QInputDevice.DeviceType.Keyboard)
+    pointer = QInputDevice("Core pointer", 2, QInputDevice.DeviceType.Mouse)
+
+    def query(state, device):
+        if state == "unavailable":
+            raise RuntimeError("Input provider is unavailable")
+        return device if state == "valid" else None
+
+    windows_input_providers(
+        monkeypatch, lambda: query(keyboard_state, keyboard), lambda: query(pointer_state, pointer))
+    input_devices(monkeypatch)
+    caps = device_caps()
+    assert caps["has_keyboard"] is (keyboard_state == "valid")
+    assert caps["pointer_type"] == ("fine" if pointer_state == "valid" else "none")
+    assert caps["has_touch"] is False
+
+
+def test_windows_core_inputs_survive_unavailable_registry(qapp, monkeypatch):
+    keyboard = QInputDevice("Core keyboard", 1, QInputDevice.DeviceType.Keyboard)
+    pointer = QInputDevice("Core pointer", 2, QInputDevice.DeviceType.Mouse)
+    windows_input_providers(monkeypatch, lambda: keyboard, lambda: pointer)
+
+    def unavailable():
+        raise RuntimeError("Input registry is unavailable")
+
+    monkeypatch.setattr(QInputDevice, "devices", unavailable)
+    caps = device_caps()
+    assert caps["has_keyboard"] and caps["pointer_type"] == "fine"
+    assert caps["has_touch"] is False
+
+
+@pytest.mark.parametrize("pointer_kind", ["TouchScreen", "Stylus"])
+def test_windows_core_and_registered_devices_are_aggregated(qapp, monkeypatch, pointer_kind):
+    kinds = QInputDevice.DeviceType
+    keyboard = QInputDevice("Core keyboard", 1, kinds.Keyboard)
+    pointer = QInputDevice("Core pointer", 2, getattr(kinds, pointer_kind))
+    windows_input_providers(monkeypatch, lambda: keyboard, lambda: pointer)
+    input_devices(monkeypatch, kinds.TouchScreen, kinds.Stylus)
+    caps = device_caps()
+    assert caps["has_keyboard"] and caps["has_touch"] and caps["pointer_type"] == "fine"
+
+
+@pytest.mark.parametrize("application_exists", [True, False])
+def test_non_windows_and_no_application_never_initialize_core_inputs(qapp, monkeypatch, application_exists):
+    def forbidden():
+        pytest.fail("Core providers must only initialize in a native Windows application")
+
+    windows_input_providers(monkeypatch, forbidden, forbidden)
+    input_devices(monkeypatch)
+    if application_exists:
+        monkeypatch.setattr(QGuiApplication, "platformName", staticmethod(lambda: "offscreen"))
+    else:
+        monkeypatch.setattr(protocol, "QGuiApplication", SimpleNamespace(instance=lambda: None))
+    caps = device_caps()
+    assert caps["has_keyboard"] is False and caps["pointer_type"] == "none"
 
 
 @pytest.mark.parametrize("ratio", [float("nan"), float("inf"), -1, 0, 17, True, "2"])

@@ -2599,9 +2599,9 @@
       "sourcePath": "windows-client/AstralDeep.spec",
       "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
       "sourceMode": "100644",
-      "resultSha256": "07e8c9aad4ccd2a0730289fab2fa38f3381812716c0e9470e8b3ac9eb1ca7770",
+      "resultSha256": "f1305f71ee45e237061a0c9d4b1042bd8dd20a77067e3b187d3b8e08158f150c",
       "task": "T166/T058/T059/T102",
-      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage."
     },
     {
       "path": "windows-client/Launch-AstralDeep.bat",
@@ -2617,9 +2617,9 @@
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "4948530f497bb17e4c3df371e1e4d78c2335c9304e25be2d0daee5e713f5105b",
+      "resultSha256": "786d1cfa19d7908dfff0b67bd667c8e888202704428b000b8263f5a60993de4f",
       "task": "T060/T062/T188/T056/T058/T104/T102",
-      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage."
     },
     {
       "path": "windows-client/Scripts/generate_win_icon.py",
@@ -2725,9 +2725,9 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "10e50ba1dd67f7fcf94b6ddb46d6f06075396e99ea48eeb768251adcb305e73f",
+      "resultSha256": "38b773cda66e7c4fa554865d8a6abf380b78e81a168d307feeca42860595cf9f",
       "task": "T166/T054/T071/T089/T040",
-      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Provide the Windows Work-only current-socket send with submission correlation and no offline replay. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Provide the Windows Work-only current-socket send with submission correlation and no offline replay. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Initialize native Windows Qt core input providers before device enumeration."
     },
     {
       "path": "windows-client/astral_client/protocol_manifest.py",
@@ -3103,9 +3103,9 @@
       "sourcePath": "windows-client/tests/test_release_lock_060.py",
       "sourceBlob": "d0609608eb814ed3705f4ef19b878b47bcf6fd07",
       "sourceMode": "100644",
-      "resultSha256": "657012fe7fcd4058f023df2fbbadfa02c5de9944dca4a082258339ba5ea90175",
+      "resultSha256": "236cada41672162f9366c0e7c3b02306f968fc989e4c4560ed8cf729a9b9ee98",
       "task": "T166",
-      "reason": "Verify the exact signed LETS wheel lock and protected-executor candidate inventory. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Verify the exact signed LETS wheel lock and protected-executor candidate inventory. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage."
     },
     {
       "path": "windows-client/tests/test_remote_machines_surface.py",

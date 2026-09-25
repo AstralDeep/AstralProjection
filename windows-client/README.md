@@ -135,6 +135,12 @@ dotnet publish asr-helper\AstralSpeechHelper.csproj `
 .\dist\AstralDeep.exe --validate-deployment
 ```
 
+The spec restricts native dependency discovery to the active Python interpreter,
+its base installation, and Windows system directories. It replaces ambient
+`PATH` entries and clears `PYTHONPATH` and `PYTHONHOME` for analysis subprocesses;
+locked package hooks still collect their own dependencies.
+Missing interpreter or Windows system directories stop the freeze.
+
 The reusable `build-windows-candidate.yml` workflow performs the authoritative
 unsigned build-once candidate run from two clean locked Python 3.11
 environments. It runs the actual frozen worker and GUI smokes, records coverage,
