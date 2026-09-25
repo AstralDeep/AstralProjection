@@ -1,0 +1,285 @@
+{
+  "contract": "console/v2",
+  "cases": [
+    {
+      "name": "320x740",
+      "viewport": [
+        320,
+        740
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "drawer",
+        "sidebar_width": 275.2,
+        "content_padding": {
+          "top": 24,
+          "right": 16,
+          "bottom": 16,
+          "left": 16
+        },
+        "composer_padding": {
+          "top": 8,
+          "right": 8,
+          "bottom": 8,
+          "left": 8
+        },
+        "scenario_columns": 1,
+        "settings_presentation": "sheet",
+        "settings_navigation_axis": "horizontal",
+        "settings_width": 320,
+        "dialog_width": 320,
+        "settings_max_height": 740,
+        "settings_navigation_width": 0,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 44
+      }
+    },
+    {
+      "name": "390x844",
+      "viewport": [
+        390,
+        844
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "drawer",
+        "sidebar_width": 320,
+        "content_padding": {
+          "top": 24,
+          "right": 16,
+          "bottom": 16,
+          "left": 16
+        },
+        "composer_padding": {
+          "top": 8,
+          "right": 8,
+          "bottom": 8,
+          "left": 8
+        },
+        "scenario_columns": 1,
+        "settings_presentation": "sheet",
+        "settings_navigation_axis": "horizontal",
+        "settings_width": 390,
+        "dialog_width": 390,
+        "settings_max_height": 844,
+        "settings_navigation_width": 0,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 44
+      }
+    },
+    {
+      "name": "768x1024",
+      "viewport": [
+        768,
+        1024
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "drawer",
+        "sidebar_width": 320,
+        "content_padding": {
+          "top": 24,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "composer_padding": {
+          "top": 12,
+          "right": 20,
+          "bottom": 12,
+          "left": 20
+        },
+        "scenario_columns": 2,
+        "settings_presentation": "dialog",
+        "settings_navigation_axis": "vertical",
+        "settings_width": 720,
+        "dialog_width": 640,
+        "settings_max_height": 860,
+        "settings_navigation_width": 216,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 44
+      }
+    },
+    {
+      "name": "834x1194",
+      "viewport": [
+        834,
+        1194
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "drawer",
+        "sidebar_width": 320,
+        "content_padding": {
+          "top": 24,
+          "right": 20,
+          "bottom": 20,
+          "left": 20
+        },
+        "composer_padding": {
+          "top": 12,
+          "right": 20,
+          "bottom": 12,
+          "left": 20
+        },
+        "scenario_columns": 2,
+        "settings_presentation": "dialog",
+        "settings_navigation_axis": "vertical",
+        "settings_width": 786,
+        "dialog_width": 640,
+        "settings_max_height": 860,
+        "settings_navigation_width": 216,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 44
+      }
+    },
+    {
+      "name": "1024x768",
+      "viewport": [
+        1024,
+        768
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "sidebar",
+        "sidebar_width": 288,
+        "content_padding": {
+          "top": 24,
+          "right": 24,
+          "bottom": 24,
+          "left": 24
+        },
+        "composer_padding": {
+          "top": 14,
+          "right": 24,
+          "bottom": 14,
+          "left": 24
+        },
+        "scenario_columns": 2,
+        "settings_presentation": "dialog",
+        "settings_navigation_axis": "vertical",
+        "settings_width": 940,
+        "dialog_width": 640,
+        "settings_max_height": 660.48,
+        "settings_navigation_width": 216,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 0
+      }
+    },
+    {
+      "name": "1280x800",
+      "viewport": [
+        1280,
+        800
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "sidebar",
+        "sidebar_width": 350,
+        "content_padding": {
+          "top": 32,
+          "right": 48,
+          "bottom": 32,
+          "left": 48
+        },
+        "composer_padding": {
+          "top": 18,
+          "right": 48,
+          "bottom": 18,
+          "left": 48
+        },
+        "scenario_columns": 2,
+        "settings_presentation": "dialog",
+        "settings_navigation_axis": "vertical",
+        "settings_width": 940,
+        "dialog_width": 640,
+        "settings_max_height": 688.0,
+        "settings_navigation_width": 216,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 0
+      }
+    },
+    {
+      "name": "1440x900",
+      "viewport": [
+        1440,
+        900
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "sidebar",
+        "sidebar_width": 350,
+        "content_padding": {
+          "top": 32,
+          "right": 48,
+          "bottom": 32,
+          "left": 48
+        },
+        "composer_padding": {
+          "top": 18,
+          "right": 48,
+          "bottom": 18,
+          "left": 48
+        },
+        "scenario_columns": 2,
+        "settings_presentation": "dialog",
+        "settings_navigation_axis": "vertical",
+        "settings_width": 940,
+        "dialog_width": 640,
+        "settings_max_height": 774.0,
+        "settings_navigation_width": 216,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 0
+      }
+    },
+    {
+      "name": "1920x1080",
+      "viewport": [
+        1920,
+        1080
+      ],
+      "presentation": {
+        "version": 2,
+        "navigation_mode": "sidebar",
+        "sidebar_width": 350,
+        "content_padding": {
+          "top": 32,
+          "right": 48,
+          "bottom": 32,
+          "left": 48
+        },
+        "composer_padding": {
+          "top": 18,
+          "right": 48,
+          "bottom": 18,
+          "left": 48
+        },
+        "scenario_columns": 4,
+        "settings_presentation": "dialog",
+        "settings_navigation_axis": "vertical",
+        "settings_width": 940,
+        "dialog_width": 640,
+        "settings_max_height": 860,
+        "settings_navigation_width": 216,
+        "result_preview_max_height": 440,
+        "result_body_max_height": 380,
+        "fullscreen_inset": 0,
+        "minimum_control_height": 0
+      }
+    }
+  ]
+}

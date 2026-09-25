@@ -202,6 +202,13 @@ final class AppModel: NSObject {
     var auditLoading = false
 
     var chromeMenu: ChromeMenuModel?
+    var consolePresentation: ConsolePresentation?
+    var consoleDashboardVisible = true
+    var consoleDrawerOpen = false
+    var consoleFullscreen = false
+    var consoleResultCollapsed = false
+    var turnSelection: TurnSelection?
+    var console: ConsoleModel? { chromeMenu?.console }
     var pendingSurfaceKey = ""
     var pendingSurfaceParams: JSONValue = .object([:])
     var pendingSurface: SurfaceContent?
@@ -968,6 +975,7 @@ final class AppModel: NSObject {
         operationStatuses = [:]
         agentLifecycles = [:]
         chromeMenu = nil
+        consolePresentation = nil
         mandatorySurface = false
         clearLLMFirstLoginOperation()
         agents = []
@@ -986,6 +994,8 @@ final class AppModel: NSObject {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
         conversationAccount = nil
+        chromeMenu = nil
+        consolePresentation = nil
         continuity.clear()
         resetChatState()
         clearPendingOperationSubmissions()
@@ -996,6 +1006,9 @@ final class AppModel: NSObject {
     }
 
     @ObservationIgnored private var lastReportedViewport: (width: Int, height: Int)?
+    @ObservationIgnored private var reportedDevice: DeviceDescriptor?
+    @ObservationIgnored private var reportedPixelRatio: Double?
+    @ObservationIgnored private var networkConnectionType = "unknown"
 
     private var device: DeviceDescriptor {
         #if os(macOS)
@@ -1007,6 +1020,9 @@ final class AppModel: NSObject {
             var descriptor = DeviceDescriptor.ios(viewportWidth: w, viewportHeight: h)
         #endif
         descriptor.deviceId = voiceDeviceId
+        descriptor.pixelRatio = reportedPixelRatio ?? descriptor.pixelRatio
+        descriptor.hasCamera = AVCaptureDevice.default(for: .video) != nil
+        descriptor.connectionType = networkConnectionType
         #if os(macOS)
             let audioAvailability = AppleVoicePermission.macOSHardwareAvailability(
                 AppleVoicePermission.currentAudioRouteSnapshot())
@@ -1028,12 +1044,27 @@ final class AppModel: NSObject {
         return descriptor
     }
 
-    func viewportChanged(width: Int, height: Int) {
+    func viewportChanged(width: Int, height: Int, pixelRatio: Double? = nil) {
         guard width > 0, height > 0 else { return }
-        if let last = lastReportedViewport, last == (width, height) { return }
-        let isFirst = lastReportedViewport == nil
         lastReportedViewport = (width, height)
-        guard signedIn, !isFirst else { return }
+        if let pixelRatio, pixelRatio.isFinite, pixelRatio > 0, pixelRatio <= 16 {
+            reportedPixelRatio = pixelRatio
+        }
+        reportDeviceCapabilities()
+    }
+
+    func networkCapabilitiesChanged(_ connectionType: String) {
+        networkConnectionType =
+            ["wifi", "cellular", "ethernet", "none"].contains(connectionType)
+            ? connectionType : "unknown"
+        reportDeviceCapabilities()
+    }
+
+    func reportDeviceCapabilities() {
+        let current = device
+        guard reportedDevice != current else { return }
+        reportedDevice = current
+        guard signedIn else { return }
         let identity = ClientOperationIdentity.fresh()
         beginLocalOperationSubmission(
             identity: identity,
@@ -1044,7 +1075,7 @@ final class AppModel: NSObject {
         rawSend(
             Outbound.updateDevice(
                 sessionId: nil,
-                device: device,
+                device: current,
                 submissionId: identity.submissionId,
                 requestGeneration: identity.requestGeneration))
     }
@@ -1243,6 +1274,8 @@ final class AppModel: NSObject {
                 invalidateWorkRead()
                 workReadFailed = true
             }
+        case "rote_config":
+            consolePresentation = ConsolePresentation(frame: frame)
         case "chrome_surface":
             reduceChromeSurface(frame)
         case "operation_status":
@@ -1934,6 +1967,9 @@ final class AppModel: NSObject {
             guard signedIn, connected, screen == .surface, pendingSurfaceKey == "guidance",
                 let update = GuidanceSurfaceUpdate(frame: frame), guidanceState.accepts(update)
             else { return }
+            if let selection = frame.payload["selection"], let decoded = TurnSelection(json: selection) {
+                turnSelection = decoded.isEmpty ? nil : decoded
+            }
             retireGuidanceTicket()
             if update.components.isEmpty {
                 invalidateGuidance()
@@ -2194,6 +2230,11 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        consoleFullscreen = false
+        consoleResultCollapsed = false
+        turnSelection = nil
+        consoleDashboardVisible = true
+        consoleDrawerOpen = false
         invalidateWorkRead()
         if pendingSurfaceKey == "work" {
             pendingSurfaceKey = ""
@@ -2345,6 +2386,35 @@ final class AppModel: NSObject {
 
     func dismissBanner() { errorBanner = nil }
 
+    func consoleLabel(_ key: String) -> String { console?.labels[key] ?? "" }
+
+    func showConsoleDashboard() {
+        guard !mandatorySurface else { return }
+        closeSurface()
+        screen = .chat
+        consoleDashboardVisible = true
+        consoleDrawerOpen = false
+    }
+
+    func useConsoleScenario(_ scenario: ConsoleScenario, run: Bool) {
+        guard signedIn, !mandatorySurface, !mutationsLocked,
+            console?.catalog.scenarios.contains(scenario) == true
+        else { return }
+        closeSurface()
+        composerDraft = scenario.prompt
+        if run {
+            sendChat(scenario.prompt)
+            composerDraft = ""
+        }
+    }
+
+    private func permitsComposePrompt(_ component: AstralComponent, payload: JSONValue) -> Bool {
+        if component.raw["action"]?.stringValue == "compose_prompt", component.raw["payload"] == payload {
+            return true
+        }
+        return component.children.contains { permitsComposePrompt($0, payload: payload) }
+    }
+
     func sendChat(_ text: String) {
         if timelineReadOnly { return }
         let ready = staged.filter { $0.state == "ready" && $0.attachmentId != nil }
@@ -2402,6 +2472,8 @@ final class AppModel: NSObject {
             chatId: activeChatId)
 
         var payload: [String: JSONValue] = ["message": .string(text)]
+        if let turnSelection, !turnSelection.isEmpty { payload["selection"] = turnSelection.json }
+        consoleDashboardVisible = false
         if background { payload["async_mode"] = .bool(true) }
         if let cid = activeChatId { payload["chat_id"] = .string(cid) }
         if !ready.isEmpty {
@@ -2425,7 +2497,18 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action == "compose_prompt" {
+            guard signedIn, !mandatorySurface, !mutationsLocked, pendingSurfaceKey == "agent_intro",
+                let message = payload["message"]?.stringValue, !message.isEmpty, message.count <= 8000,
+                Set(payload.objectValue?.keys.map { $0 } ?? []) == ["message"],
+                pendingSurface?.components.contains(where: { permitsComposePrompt($0, payload: payload) }) == true
+            else { return }
+            composerDraft = message
+            closeSurface()
+            return
+        }
         if action.hasPrefix("chrome_note_")
+            || action == "chrome_turn_selection_set"
             || (action == "chrome_open" && payload["surface"]?.stringValue == "guidance")
         {
             _ = sendGuidanceRequest(action: action, payload: payload)
@@ -2448,6 +2531,12 @@ final class AppModel: NSObject {
         }
         if timelineReadOnly && timelineMutations.contains(action) { return }
         if action == "chat_message" {
+            consoleDashboardVisible = false
+            if let turnSelection, !turnSelection.isEmpty {
+                var fields = payload.objectValue ?? [:]
+                fields["selection"] = turnSelection.json
+                payload = .object(fields)
+            }
             workspaceStarted = true
             let background = runInBackground
             runInBackground = false
@@ -2671,7 +2760,10 @@ final class AppModel: NSObject {
         await voice.perform(action)
     }
 
-    func voiceSceneBecameActive() { voice.sceneBecameActive() }
+    func voiceSceneBecameActive() {
+        voice.sceneBecameActive()
+        reportDeviceCapabilities()
+    }
 
     func voiceSceneBecameInactive() { voice.sceneBecameInactive() }
 
@@ -2679,7 +2771,10 @@ final class AppModel: NSObject {
 
     func voiceAudioSessionInterruptionEnded() { voice.audioSessionInterruptionEnded() }
 
-    func voiceAudioRouteChanged() { voice.audioRouteChanged() }
+    func voiceAudioRouteChanged() {
+        voice.audioRouteChanged()
+        reportDeviceCapabilities()
+    }
 
     func voiceAudioEngineConfigurationChanged() { voice.audioEngineConfigurationChanged() }
 
@@ -2727,7 +2822,12 @@ final class AppModel: NSObject {
     }
 
     func openChat(_ chatId: String) {
+        consoleFullscreen = false
+        consoleResultCollapsed = false
         invalidateGuidance()
+        turnSelection = nil
+        consoleDashboardVisible = false
+        consoleDrawerOpen = false
         workspaceStarted = true
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
@@ -2838,6 +2938,7 @@ final class AppModel: NSObject {
     private var guidanceMenuAvailable: Bool {
         chromeMenu?.allItems.contains { $0.surface == "guidance" } == true
             || !GuidanceRequest.controls(in: chromeMenu).isEmpty
+            || console?.composerActions.contains { $0.action?.surface == "guidance" } == true
     }
 
     private func retireGuidanceTicket() {
@@ -2862,7 +2963,11 @@ final class AppModel: NSObject {
 
     func retryGuidance() {
         guard pendingSurfaceKey == "guidance" else { return }
-        _ = sendGuidanceRequest(action: "chrome_open", payload: GuidanceRequest.list.payload)
+        _ = sendGuidanceRequest(
+            action: "chrome_open",
+            payload: .object([
+                "surface": .string("guidance"), "params": pendingSurfaceParams,
+            ]))
     }
 
     @discardableResult
@@ -2879,6 +2984,14 @@ final class AppModel: NSObject {
                 || GuidanceRequest.controls(in: chromeMenu).contains(where: {
                     GuidanceRequest(action: "chrome_open", payload: .object($0.chromeOpenPayload)) == request
                 })
+                || console?.composerActions.contains(where: {
+                    guard let action = $0.action else { return false }
+                    return GuidanceRequest(
+                        action: "chrome_open",
+                        payload: .object([
+                            "surface": .string(action.surface), "params": action.params,
+                        ])) == request
+                }) == true
         else { return false }
         invalidateWorkRead()
         let generation = guidanceEpoch
@@ -2886,7 +2999,9 @@ final class AppModel: NSObject {
         _ = guidanceState.begin(request, generation: generation)
         screen = .surface
         pendingSurfaceKey = "guidance"
-        pendingSurfaceParams = .object(["mode": .string("list")])
+        if action == "chrome_open" {
+            pendingSurfaceParams = payload["params"] ?? .object(["mode": .string("list")])
+        }
         pendingSurface = nil
         guard signedIn, connected, conversationAccount != nil, let socket = ws else {
             failGuidanceRequest(generation: generation)

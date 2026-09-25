@@ -9,6 +9,7 @@ from pathlib import Path
 
 import astralprims
 from astralprims import (
+    ActionGroup,
     Alert,
     Audio,
     Badge,
@@ -22,9 +23,11 @@ from astralprims import (
     ColorPicker,
     Container,
     Divider,
+    DonutChart,
     FileDownload,
     FileUpload,
     Grid,
+    Gauge,
     Hero,
     Image,
     Input,
@@ -34,9 +37,12 @@ from astralprims import (
     MetricCard,
     ParamPicker,
     PieChart,
+    PipelineStepper,
     PlotlyChart,
     ProgressBar,
+    RadarChart,
     Rating,
+    StatGroup,
     TabItem,
     Table,
     Tabs,
@@ -97,6 +103,12 @@ F["theme_apply"] = ThemeApply(preset="ocean", message="Applied").to_dict()
 F["metric_minimal"] = MetricCard().to_dict()
 F["attributes_override"] = Text(content="x", attributes={"variant": "h1", "data-test": "1"}).to_dict()
 F["envelope"] = create_ui_response([Text(content="hi"), Badge(label="ok")])
+F["action_group"] = ActionGroup(label="Actions", align="end", buttons=[Button(label="Run", action="chat", payload={"message": "Run"})]).to_dict()
+F["stat_group"] = StatGroup(title="Overview", columns=3, items=[{"label": "Total", "value": "12", "delta": "+2", "trend": "up", "hint": "Today", "variant": "success"}]).to_dict()
+F["gauge"] = Gauge(label="Capacity", value=0.75, display_value="75 / 100", subtitle="Available", thresholds=[{"at": 0.5, "variant": "warning"}]).to_dict()
+F["pipeline_stepper"] = PipelineStepper(title="Pipeline", orientation="vertical", steps=[{"label": "Load", "detail": "Ready", "status": "done"}]).to_dict()
+F["donut_chart"] = DonutChart(title="Share", labels=["A", "B"], data=[60, 40], center_label="Total", center_value="100").to_dict()
+F["radar_chart"] = RadarChart(title="Quality", axes=["Speed", "Accuracy", "Cost"], datasets=[{"label": "Run", "data": [1, 2, 3]}], max_value=4).to_dict()
 
 parser = argparse.ArgumentParser(description="Generate AstralCore primitive fixtures")
 parser.add_argument(

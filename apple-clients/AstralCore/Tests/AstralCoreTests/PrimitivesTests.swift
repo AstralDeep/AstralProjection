@@ -45,9 +45,65 @@ final class PrimitivesTests: XCTestCase {
 
     func testFixturesLoaded() {
         XCTAssertEqual(
-            Self.fixtureVersion, "0.3.0",
+            Self.fixtureVersion, "0.4.0",
             "fixtures generated from a different astralprims version — re-check the mirror")
-        XCTAssertEqual(Self.fixtures.count, 33)
+        XCTAssertEqual(Self.fixtures.count, 39)
+    }
+
+    func testCompositePrimitivesMatchPythonFixtures() {
+        assertMirrors(
+            AstralPrims.ActionGroup(
+                buttons: [AstralPrims.Button(label: "Run", action: "chat", payload: ["message": .string("Run")])],
+                align: "end", label: "Actions"), fixture: "action_group")
+        assertMirrors(
+            AstralPrims.StatGroup(
+                title: "Overview",
+                items: [
+                    [
+                        "label": .string("Total"), "value": .string("12"), "delta": .string("+2"),
+                        "trend": .string("up"), "hint": .string("Today"), "variant": .string("success"),
+                    ]
+                ], columns: 3), fixture: "stat_group")
+        assertMirrors(
+            AstralPrims.Gauge(
+                label: "Capacity", value: 0.75, displayValue: "75 / 100",
+                thresholds: [["at": .number(0.5), "variant": .string("warning")]], subtitle: "Available"),
+            fixture: "gauge")
+        assertMirrors(
+            AstralPrims.PipelineStepper(
+                title: "Pipeline",
+                steps: [["label": .string("Load"), "detail": .string("Ready"), "status": .string("done")]],
+                orientation: "vertical"), fixture: "pipeline_stepper")
+        assertMirrors(
+            AstralPrims.DonutChart(
+                title: "Share", labels: ["A", "B"], data: [60, 40], centerLabel: "Total", centerValue: "100"),
+            fixture: "donut_chart")
+        assertMirrors(
+            AstralPrims.RadarChart(
+                title: "Quality", axes: ["Speed", "Accuracy", "Cost"],
+                datasets: [["label": .string("Run"), "data": .array([.number(1), .number(2), .number(3)])]], maxValue: 4
+            ), fixture: "radar_chart")
+    }
+
+    func testCompositeDefaultsOmitOptionalFields() {
+        let primitives: [AstralPrims.Primitive] = [
+            AstralPrims.ActionGroup(), AstralPrims.StatGroup(), AstralPrims.Gauge(), AstralPrims.PipelineStepper(),
+            AstralPrims.DonutChart(), AstralPrims.RadarChart(),
+        ]
+        for primitive in primitives {
+            let raw = primitive.toDict()
+            XCTAssertFalse(raw.objectValue?.values.contains(.null) ?? true)
+            XCTAssertNil(raw["max_value"])
+            XCTAssertNil(raw["subtitle"])
+            XCTAssertNil(raw["center_value"])
+            XCTAssertEqual(AstralComponent(json: raw)?.type, primitive.type)
+        }
+        XCTAssertEqual(AstralPrims.ActionGroup().toDict()["buttons"], .array([]))
+        XCTAssertEqual(AstralPrims.StatGroup().toDict()["columns"], .number(4))
+        XCTAssertEqual(AstralPrims.Gauge().toDict()["value"], .number(0))
+        XCTAssertEqual(AstralPrims.PipelineStepper().toDict()["orientation"], .string("horizontal"))
+        XCTAssertEqual(AstralPrims.DonutChart().toDict()["data"], .array([]))
+        XCTAssertEqual(AstralPrims.RadarChart().toDict()["axes"], .array([]))
     }
 
     func testContainerNested() {

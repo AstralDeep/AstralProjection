@@ -89,7 +89,7 @@ public struct ClientDispositions: Sendable {
                 "components_combined", "components_condensed", "history_list",
                 "notification", "saved_components_list", "stream_data",
                 "stream_subscribed", "task_completed", "task_started",
-                "tool_progress", "user_preferences", "workspace_timeline_mode",
+                "rote_config", "tool_progress", "user_preferences", "workspace_timeline_mode",
             ],
             extraIgnored: [
                 "agent_creation_progress": "agentic-creation drafting UX is web-only for now (matches Android)"
@@ -112,7 +112,7 @@ public struct ClientDispositions: Sendable {
     public static let watch = ClientDispositions(
         client: "watch",
         frames: frames(
-            extraHandled: ["notification", "chrome_menu", "chrome_surface"],
+            extraHandled: ["notification", "chrome_menu", "chrome_surface", "rote_config", "user_preferences"],
             extraIgnored: [
                 "agent_creation_progress": "no drafting UX on the wrist",
                 "agent_list": "agent management happens on phone/desktop/web",
@@ -130,7 +130,6 @@ public struct ClientDispositions: Sendable {
                 "task_completed": "async detachment is a larger-screen affordance",
                 "task_started": "async detachment is a larger-screen affordance",
                 "tool_progress": "chat_status text is the wrist progress channel",
-                "user_preferences": "the wrist is system-styled (no live theming)",
                 "workspace_timeline_mode": "timeline is a larger-screen surface",
             ]),
         components: watchComponentSet(),
@@ -160,6 +159,7 @@ public struct ClientDispositions: Sendable {
     }
 
     public static let allComponentTypes: [String] = [
+        "action_group", "donut_chart", "gauge", "pipeline_stepper", "radar_chart", "stat_group",
         "alert", "audio", "badge", "bar_chart", "button", "card",
         "chat_history", "code", "collapsible", "color_picker", "container",
         "divider", "download_card", "file_download", "file_upload",

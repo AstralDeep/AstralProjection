@@ -253,8 +253,23 @@ def menu_model_dict(
     ).to_dict()
 
 
-def project_watch_menu_model(model: Dict) -> Dict:
+def project_watch_menu_model(model: Dict, *, profile=None, client_capabilities=()) -> Dict:
     from copy import deepcopy
+    from rote.console import CONSOLE_CONTRACT, watch_availability
+
+    if (getattr(getattr(profile, "device_type", None), "value", None) == "watch"
+            and getattr(profile, "console_contract", None) == CONSOLE_CONTRACT):
+        result = deepcopy(model)
+        for control in result["topbar"]:
+            action = control.get("action")
+            if isinstance(action, dict):
+                control["availability"] = watch_availability(
+                    action.get("surface"), action.get("params"), profile, client_capabilities)
+        for group in result["menu"]:
+            for item in group["items"]:
+                item["availability"] = watch_availability(
+                    item.get("surface"), item.get("params"), profile, client_capabilities)
+        return result
 
     canonical = next(control.to_dict() for control in build_menu_model(
         work_enabled=True).topbar if control.key == "work")

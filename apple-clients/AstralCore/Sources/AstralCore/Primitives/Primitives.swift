@@ -79,6 +79,7 @@ public enum AstralPrims {
     }
 
     public static let allTypes: Set<String> = [
+        "action_group", "donut_chart", "gauge", "pipeline_stepper", "radar_chart", "stat_group",
         "alert", "audio", "badge", "bar_chart", "button", "card",
         "chat_history", "code", "collapsible", "color_picker", "container",
         "divider", "file_download", "file_upload", "grid", "hero", "image",

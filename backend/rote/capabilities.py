@@ -6,9 +6,12 @@ enforces, with per-device-type defaults overridable via ROTE_HOST_CONFIG.
 import json
 import logging
 import os
+import re
 from enum import Enum
 from dataclasses import dataclass, asdict
 from typing import Any, Dict, FrozenSet, Optional
+
+from rote.console import CONSOLE_CONTRACT, presentation
 
 logger = logging.getLogger("rote.capabilities")
 
@@ -151,9 +154,11 @@ class DeviceProfile:
     max_actions: int = 0
     supports_interactivity: bool = True
     supported_types: Optional[FrozenSet[str]] = None
+    console_contract: str = ""
 
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "DeviceProfile":
+        data = data if isinstance(data, dict) else {}
         valid_keys = DeviceCapabilities.__dataclass_fields__.keys()
         normalized = {k: v for k, v in data.items() if k in valid_keys}
         voice = data.get("voice")
@@ -173,6 +178,19 @@ class DeviceProfile:
         ):
             if name not in normalized and name in voice:
                 normalized[name] = voice[name]
+        defaults = DeviceCapabilities()
+        for name, value in list(normalized.items()):
+            default = getattr(defaults, name)
+            if isinstance(default, bool):
+                normalized[name] = value if isinstance(value, bool) else default
+            elif isinstance(default, str):
+                limit = 1024 if name == "user_agent" else 64
+                normalized[name] = value if isinstance(value, str) and len(value) <= limit else default
+            elif isinstance(default, int):
+                lower = 0 if name.startswith("viewport_") else 1
+                normalized[name] = value if type(value) is int and lower <= value <= 16384 else default
+            elif not (type(value) in (int, float) and 0.1 <= value <= 16):
+                normalized[name] = default
         contract = normalized.get("voice_contract", voice.get("contract"))
         normalized["voice_contract"] = contract if contract == "client_local/v1" else ""
 
@@ -184,7 +202,7 @@ class DeviceProfile:
             ),
         )
         normalized["voice_transport"] = (
-            transport if transport in _VOICE_TRANSPORTS else ""
+            transport if isinstance(transport, str) and transport in _VOICE_TRANSPORTS else ""
         )
         permission = normalized.get("microphone_permission")
         normalized["microphone_permission"] = (
@@ -223,9 +241,16 @@ class DeviceProfile:
 
         caps = DeviceCapabilities(**normalized)
         profile = DeviceProfile._derive(caps)
+        if data.get("console_contract") == CONSOLE_CONTRACT:
+            profile.console_contract = CONSOLE_CONTRACT
         st = data.get("supported_types")
-        if isinstance(st, (list, tuple, set, frozenset)):
-            cleaned = frozenset(str(t).strip().lower() for t in st if str(t).strip())
+        if isinstance(st, (list, tuple, set, frozenset)) and len(st) <= 256:
+            cleaned = frozenset(
+                t if profile.console_contract else t.strip().lower()
+                for t in st
+                if isinstance(t, str) and len(t) <= 64 and t.strip()
+                and (not profile.console_contract or re.fullmatch(r"[a-z][a-z0-9_]*", t))
+            )
             if cleaned:
                 profile.supported_types = cleaned
         return profile
@@ -262,4 +287,8 @@ class DeviceProfile:
         d["device_type"] = self.device_type.value
         if d.get("supported_types") is not None:
             d["supported_types"] = sorted(d["supported_types"])
+        if self.console_contract == CONSOLE_CONTRACT:
+            d["console"] = presentation(self.capabilities, watch=self.device_type == DeviceType.WATCH)
+        else:
+            d.pop("console_contract", None)
         return d

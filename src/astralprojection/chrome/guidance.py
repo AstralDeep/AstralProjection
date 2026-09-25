@@ -787,7 +787,8 @@ GUIDANCE_VIEWS = {"skills": build_skills_view, "agents": build_declarative_agent
 
 def build_guidance_view(state: Mapping[str, object], *, theme: ThemeView | None = None,
                         layout: LayoutView | None = None) -> ChromeViewModel:
-    if isinstance(state, Mapping) and state.get("view") in GUIDANCE_VIEWS:
+    if (isinstance(state, Mapping) and isinstance(state.get("view"), str)
+            and state["view"] in GUIDANCE_VIEWS):
         builder = GUIDANCE_VIEWS[state["view"]]
         return builder({key: value for key, value in state.items() if key != "view"},
                        theme=theme, layout=layout)

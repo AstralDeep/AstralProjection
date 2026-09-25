@@ -1,4 +1,4 @@
-// Client model and reducer for the server-owned notes surface: request/form decode, per-connection
+// Client model and reducer for server-owned notes and selection surfaces: request/form decode, per-connection
 // correlation, and atomic acceptance of surface updates. Read by AppModel and rendered by Screens and
 // WatchGuidanceSurfaceView.
 
@@ -17,8 +17,10 @@ public struct GuidanceRequest: Equatable, Sendable {
         switch action {
         case "chrome_open":
             guard Set(p.keys) == ["surface", "params"], p["surface"]?.stringValue == "guidance",
-                let params = p["params"]?.objectValue, let mode = params["mode"]?.stringValue
+                let params = p["params"]?.objectValue
             else { return nil }
+            if params == ["view": .string("selection")] { break }
+            guard let mode = params["mode"]?.stringValue else { return nil }
             switch mode {
             case "list":
                 guard Set(params.keys).isSubset(of: ["mode", "search", "after_id"]),
@@ -33,6 +35,8 @@ public struct GuidanceRequest: Equatable, Sendable {
             default: return nil
             }
         case "chrome_close": guard p == ["surface": .string("guidance")] else { return nil }
+        case "chrome_turn_selection_set":
+            guard TurnSelection(json: payload)?.isGuidanceSelection == true else { return nil }
         case "chrome_note_search":
             guard Set(p.keys) == ["fields"], let fields = p["fields"]?.objectValue,
                 Set(fields.keys) == ["search"], Self.text(fields["search"], max: 256)
@@ -87,6 +91,12 @@ public struct GuidanceRequest: Equatable, Sendable {
             payload: .object(["surface": .string("guidance"), "params": .object(["mode": .string("list")])]))!
     }
 
+    public static var selection: GuidanceRequest {
+        GuidanceRequest(
+            action: "chrome_open",
+            payload: .object(["surface": .string("guidance"), "params": .object(["view": .string("selection")])]))!
+    }
+
     public init?(component: AstralComponent) {
         guard component.type == "button", component.raw["disabled"]?.boolValue == false,
             component.raw["local"]?.boolValue == false, let action = component.raw["action"]?.stringValue,
@@ -117,6 +127,7 @@ public struct GuidanceRequest: Equatable, Sendable {
             let action = frame.payload["action"]?.stringValue
         else { return false }
         return action.hasPrefix("chrome_note_")
+            || action == "chrome_turn_selection_set"
             || (["chrome_open", "chrome_close"].contains(action)
                 && frame.payload["payload"]?["surface"]?.stringValue == "guidance")
     }
@@ -228,9 +239,10 @@ public struct GuidanceSurfaceUpdate: Equatable, Sendable {
     public let generation: String
     public let title: String
     public let components: [AstralComponent]
+    public let selection: TurnSelection?
     public init?(frame: InboundFrame) {
         guard frame.name == "chrome_surface", let p = frame.payload.objectValue,
-            Set(p.keys) == [
+            Set(p.keys).subtracting(["selection"]) == [
                 "type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation",
             ],
             p["type"]?.stringValue == "chrome_surface", p["surface_key"]?.stringValue == "guidance",
@@ -240,6 +252,12 @@ public struct GuidanceSurfaceUpdate: Equatable, Sendable {
             GuidanceRequest.text(p["title"], max: 4096),
             let raw = p["components"]?.arrayValue, let bytes = try? frame.payload.encoded(), bytes.count <= 1024 * 1024
         else { return nil }
+        if let rawSelection = p["selection"] {
+            guard let selection = TurnSelection(json: rawSelection), selection.isGuidanceSelection else { return nil }
+            self.selection = selection
+        } else {
+            selection = nil
+        }
         var count = 0
         guard raw.allSatisfy({ Self.valid($0, count: &count) }) else { return nil }
         let components = raw.compactMap(AstralComponent.init(json:))
@@ -288,7 +306,8 @@ public struct GuidanceSurfaceUpdate: Equatable, Sendable {
         case "button":
             guard p["local"]?.boolValue == false, p["disabled"]?.boolValue != nil,
                 let action = p["action"]?.stringValue,
-                ["chrome_open", "chrome_note_toggle", "chrome_note_forget"].contains(action),
+                ["chrome_open", "chrome_note_toggle", "chrome_note_forget", "chrome_turn_selection_set"].contains(
+                    action),
                 let payload = p["payload"]
             else { return false }
             return GuidanceRequest(action: action, payload: payload) != nil
@@ -325,6 +344,7 @@ public struct GuidanceRequestState: Equatable, Sendable {
     }
     public func accepts(_ update: GuidanceSurfaceUpdate) -> Bool {
         generation != nil && generation == update.generation
+            && (update.selection == nil || action == "chrome_turn_selection_set")
     }
     public func matchesFailure(_ frame: InboundFrame, connectionGeneration: String?) -> Bool {
         guard generation != nil else { return false }

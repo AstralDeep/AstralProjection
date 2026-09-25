@@ -1,0 +1,244 @@
+{
+  "version": 2,
+  "topbar": [
+    {
+      "key": "brand",
+      "kind": "brand"
+    },
+    {
+      "key": "status",
+      "kind": "status"
+    },
+    {
+      "key": "pulse",
+      "kind": "action",
+      "label": "Pulse digest",
+      "icon": "sparkle",
+      "action": {
+        "surface": "pulse",
+        "params": {}
+      }
+    },
+    {
+      "key": "work",
+      "kind": "action",
+      "label": "Recent work",
+      "icon": "briefcase",
+      "action": {
+        "surface": "work",
+        "params": {
+          "mode": "list"
+        }
+      }
+    },
+    {
+      "key": "timeline",
+      "kind": "action",
+      "label": "Workspace timeline",
+      "icon": "history",
+      "action": {
+        "surface": "workspace_timeline",
+        "params": {}
+      }
+    },
+    {
+      "key": "settings",
+      "kind": "menu",
+      "label": "Settings",
+      "icon": "gear"
+    }
+  ],
+  "menu": [
+    {
+      "key": "account",
+      "label": "Account",
+      "admin_only": false,
+      "items": [
+        {
+          "key": "agents",
+          "label": "Agents & permissions",
+          "surface": "agents",
+          "params": {},
+          "admin_only": false
+        },
+        {
+          "key": "llm",
+          "label": "LLM settings",
+          "surface": "llm",
+          "params": {},
+          "admin_only": false
+        },
+        {
+          "key": "personalization",
+          "label": "Personalization",
+          "surface": "personalization",
+          "params": {},
+          "admin_only": false
+        },
+        {
+          "key": "audit",
+          "label": "Audit log",
+          "surface": "audit",
+          "params": {},
+          "admin_only": false
+        },
+        {
+          "key": "theme",
+          "label": "Theme",
+          "surface": "theme",
+          "params": {},
+          "admin_only": false
+        },
+        {
+          "key": "guidance",
+          "label": "Private notes",
+          "surface": "guidance",
+          "params": {
+            "mode": "list"
+          },
+          "admin_only": false
+        }
+      ]
+    },
+    {
+      "key": "help",
+      "label": "Help",
+      "admin_only": false,
+      "items": [
+        {
+          "key": "guide",
+          "label": "User guide",
+          "surface": "guide",
+          "params": {},
+          "admin_only": false
+        }
+      ]
+    }
+  ],
+  "signout": {
+    "key": "signout",
+    "label": "Sign out",
+    "style": "danger",
+    "action": "logout"
+  },
+  "console": {
+    "version": 2,
+    "labels": {
+      "brand": "AstralDeep",
+      "title": "AstralDeep Console",
+      "subtitle": "Multi-agent orchestrator and server-driven UI workspace",
+      "start_here": "Start here",
+      "history": "History",
+      "agent_directory": "Agent Directory",
+      "search_agents": "Search agents",
+      "dashboard": "Dashboard",
+      "dashboard_suffix": " Overview",
+      "new_chat": "New Chat",
+      "all_categories": "All",
+      "example": "Example",
+      "run": "Run",
+      "load_prompt": "Load prompt",
+      "empty_title": "Your results appear here",
+      "empty_subtitle": "Ask a question to get started.",
+      "message_placeholder": "Ask anything…",
+      "attach": "Attach files",
+      "more": "More options",
+      "send": "Send message",
+      "background": "Run in background",
+      "advanced": "Advanced settings",
+      "fullscreen": "Full Screen",
+      "exit_fullscreen": "Exit Full Screen",
+      "collapse": "Collapse container",
+      "expand": "Expand container",
+      "clear_selection": "Clear the selection for this chat",
+      "result_title": "{agent} Interface",
+      "result_default_agent": "AstralDeep Specialist",
+      "result_agent_role": "Active Specialist",
+      "result_preview_action": "Click to interact in Full Screen",
+      "turn_singular": "turn",
+      "turn_plural": "turns"
+    },
+    "identity": {
+      "name": "Operator",
+      "role": "Member",
+      "initials": "O"
+    },
+    "catalog": {
+      "categories": [
+        "Utilities"
+      ],
+      "scenarios": [
+        {
+          "id": "dice",
+          "description": "Six rolls",
+          "title": "Roll dice",
+          "prompt": "Roll six dice",
+          "category": "Utilities"
+        }
+      ],
+      "agents": [
+        {
+          "id": "dice",
+          "description": "Rolls dice",
+          "name": "Dice Roller",
+          "state": "ready",
+          "owned": true
+        }
+      ]
+    },
+    "composer_actions": [
+      {
+        "key": "background",
+        "kind": "toggle",
+        "label": "Run in background",
+        "icon": "clock"
+      },
+      {
+        "key": "advanced",
+        "kind": "action",
+        "label": "Advanced settings",
+        "icon": "sliders",
+        "action": {
+          "surface": "guidance",
+          "params": {
+            "view": "selection"
+          }
+        }
+      },
+      {
+        "key": "timeline",
+        "kind": "action",
+        "label": "Workspace timeline",
+        "icon": "history",
+        "action": {
+          "surface": "workspace_timeline",
+          "params": {}
+        }
+      },
+      {
+        "key": "pulse",
+        "kind": "action",
+        "label": "Pulse digest",
+        "icon": "sparkle",
+        "action": {
+          "surface": "pulse",
+          "params": {}
+        }
+      },
+      {
+        "key": "work",
+        "kind": "action",
+        "label": "Recent work",
+        "icon": "briefcase",
+        "action": {
+          "surface": "work",
+          "params": {
+            "mode": "list"
+          }
+        }
+      }
+    ],
+    "show_voice_availability_banner": false
+  },
+  "type": "chrome_menu"
+}

@@ -26,14 +26,14 @@ struct AstralApp: App {
             _model = State(initialValue: AppModel())
         #endif
         NoStoreHTTP.prepareForLaunch()
-        AstralTypography.registerFonts()
+        ConsoleTypography.registerFonts()
     }
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(model)
-                .font(AstralTypography.body)
+                .font(ConsoleTypography.body)
                 .environment(model.themeStore)
                 .tint(model.themeStore.palette.primary)
                 .environment(
@@ -130,7 +130,7 @@ struct AstralApp: App {
                     }
                 #endif
                 #if os(macOS)
-                    .frame(minWidth: 900, minHeight: 600)
+                    .frame(minWidth: 320, minHeight: 480)
                 #endif
         }
         #if os(macOS)

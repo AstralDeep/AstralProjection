@@ -69,6 +69,10 @@ struct CanvasComponentChildren: View {
 
 @MainActor
 final class CanvasCaptureRegistry {
+    static let compositePixelTypes: Set<String> = [
+        "stat_group", "gauge", "pipeline_stepper", "donut_chart", "radar_chart",
+    ]
+
     struct Entry {
         let node: CanvasCaptureNode
         var state: JSONValue?
@@ -136,6 +140,11 @@ final class CanvasCaptureRegistry {
             result.removeValue(forKey: "direction")
         }
         switch component.type {
+        case "action_group":
+            let group = ActionGroupPresentation(component.raw)
+            result["type"] = .string("text")
+            result["content"] = .string(group.label)
+            result["variant"] = .string("caption")
         case "text":
             result["content"] = .string(component.textContent ?? component.fallbackText)
             result.removeValue(forKey: "text")
@@ -379,7 +388,7 @@ final class CanvasCaptureRegistry {
                 object["gap"] = .number(8)
                 object.removeValue(forKey: "direction")
             }
-            if type == "image" || charts.contains(type) {
+            if type == "image" || charts.contains(type) || Self.compositePixelTypes.contains(type) {
                 let pixels: Data
                 if let provider = saved?.provider {
                     pixels = try await provider()
@@ -398,7 +407,17 @@ final class CanvasCaptureRegistry {
                         "path": .string(path), "component_id": node.identity,
                         "data_url": .string("data:image/png;base64," + pixels.base64EncodedString()),
                     ]))
-                if charts.contains(type) {
+                if Self.compositePixelTypes.contains(type) {
+                    guard let size = saved?.imageSize, size.width.isFinite, size.height.isFinite,
+                        size.width > 0, size.height > 0, size.width <= 16384, size.height <= 16384
+                    else { throw CanvasCaptureError.unavailable }
+                    object = object.filter { ["component_id", "id"].contains($0.key) }
+                    object["type"] = .string("image")
+                    object["width"] = .number(size.width)
+                    object["height"] = .number(size.height)
+                    object["alt"] = .string("Rendered result")
+                    object["caption"] = .string("")
+                } else if charts.contains(type) {
                     object = object.filter { ["type", "component_id", "id", "title", "css", "style"].contains($0.key) }
                 } else {
                     if let size = saved?.imageSize {
@@ -514,6 +533,63 @@ extension AstralPalette {
                     .joined())
         }
         return .object(colors)
+    }
+}
+
+struct CanvasCompositeCapture<Content: View>: View {
+    let component: AstralComponent
+    let node: CanvasCaptureNode?
+    let registry: CanvasCaptureRegistry
+    let palette: AstralPalette
+    let layoutWidth: CGFloat
+    @ViewBuilder let content: () -> Content
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var size: CGSize = .zero
+
+    var body: some View {
+        if CanvasCaptureRegistry.compositePixelTypes.contains(component.type), node != nil {
+            content()
+                .background {
+                    GeometryReader { geometry in
+                        Color.clear.onAppear { update(geometry.size) }
+                            .onChange(of: geometry.size) { _, value in update(value) }
+                    }
+                }
+                .onChange(of: component) { _, _ in retain() }
+                .onChange(of: node) { _, _ in retain() }
+                .onChange(of: palette) { _, _ in retain() }
+                .onChange(of: layoutWidth) { _, _ in retain() }
+                .onChange(of: dynamicTypeSize) { _, _ in retain() }
+        } else {
+            content()
+        }
+    }
+
+    private func update(_ value: CGSize) {
+        size = value
+        retain()
+    }
+
+    private func retain() {
+        guard let node, registry.accepts(node), size.width.isFinite, size.height.isFinite,
+            size.width > 0, size.height > 0, size.width <= 16384, size.height <= 16384
+        else { return }
+        let renderer = ImageRenderer(
+            content: content().environment(\.canvasCapturePath, nil).environment(\.dynamicTypeSize, dynamicTypeSize)
+                .frame(width: size.width, height: size.height))
+        renderer.scale = min(2, 4096 / max(size.width, size.height))
+        guard let cgImage = renderer.cgImage, cgImage.width > 0, cgImage.height > 0,
+            cgImage.width <= 4096, cgImage.height <= 4096
+        else {
+            registry.retain(nil, for: node)
+            return
+        }
+        #if os(macOS)
+            let pixels = NSBitmapImageRep(cgImage: cgImage).representation(using: .png, properties: [:])
+        #else
+            let pixels = UIImage(cgImage: cgImage).pngData()
+        #endif
+        registry.retain(pixels, for: node, imageSize: size)
     }
 }
 

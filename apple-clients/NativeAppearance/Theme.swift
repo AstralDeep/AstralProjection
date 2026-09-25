@@ -1,6 +1,5 @@
-// Apple's design-system tokens and live ThemeStore, ported 1:1 from the web renderer (radii, spacing,
-// palette) so Android, Windows, web, and Apple stay visually identical; ThemeStore applies theme_apply pushes
-// live via AppModel.
+// Shares the web palette, surface styling and live theme interpretation across Apple clients.
+// AppModel and WatchModel apply authenticated theme updates through ThemeStore.
 
 import AstralCore
 import SwiftUI

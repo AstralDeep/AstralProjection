@@ -37,13 +37,7 @@ class ROTE:
         new_profile = DeviceProfile.from_dict(device_info) if device_info else DeviceProfile.default()
         self._profiles[websocket] = new_profile
 
-        changed = (
-            old_profile is None
-            or old_profile.device_type != new_profile.device_type
-            or old_profile.max_grid_columns != new_profile.max_grid_columns
-            or old_profile.capabilities.viewport_width != new_profile.capabilities.viewport_width
-            or old_profile.capabilities.viewport_height != new_profile.capabilities.viewport_height
-        )
+        changed = old_profile != new_profile
 
         logger.info(
             f"ROTE: device update — type={new_profile.device_type.value} "

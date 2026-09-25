@@ -53,7 +53,7 @@ struct WelcomeExampleButtonStyle: ButtonStyle {
     let palette: AstralPalette
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(AstralTypography.subheadline)
+            .font(ConsoleTypography.subheadline)
             .foregroundStyle(palette.muted)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 16)

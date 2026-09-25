@@ -66,6 +66,7 @@ public struct ChromeMenuModel: Equatable, Sendable {
     public let topbar: [TopBarControl]
     public let menu: [ChromeMenuGroup]
     public let signout: SignOutItem
+    public let console: ConsoleModel?
 
     public var topbarActions: [TopBarControl] {
         topbar.filter { $0.kind == "action" || $0.workspaceAction != nil }
@@ -126,7 +127,8 @@ public struct ChromeMenuModel: Equatable, Sendable {
             action: so?["action"]?.stringValue ?? "logout")
         return ChromeMenuModel(
             version: Int(root["version"]?.numberValue ?? 1),
-            topbar: topbar, menu: menu, signout: signout)
+            topbar: topbar, menu: menu, signout: signout,
+            console: ConsoleModel(json: root["console"]))
     }
 }
 

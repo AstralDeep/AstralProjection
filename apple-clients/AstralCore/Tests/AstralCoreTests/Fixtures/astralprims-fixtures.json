@@ -1,6 +1,22 @@
 {
- "astralprims_version": "0.3.0",
+ "astralprims_version": "0.4.0",
  "fixtures": {
+  "action_group": {
+   "align": "end",
+   "buttons": [
+    {
+     "action": "chat",
+     "label": "Run",
+     "payload": {
+      "message": "Run"
+     },
+     "type": "button",
+     "variant": "primary"
+    }
+   ],
+   "label": "Actions",
+   "type": "action_group"
+  },
   "alert": {
    "message": "ok",
    "type": "alert",
@@ -131,6 +147,20 @@
    "type": "divider",
    "variant": "dashed"
   },
+  "donut_chart": {
+   "center_label": "Total",
+   "center_value": "100",
+   "data": [
+    60.0,
+    40.0
+   ],
+   "labels": [
+    "A",
+    "B"
+   ],
+   "title": "Share",
+   "type": "donut_chart"
+  },
   "envelope": {
    "_data": null,
    "_ui_components": [
@@ -157,6 +187,19 @@
    "action": "upload_csv",
    "label": "Up",
    "type": "file_upload"
+  },
+  "gauge": {
+   "display_value": "75 / 100",
+   "label": "Capacity",
+   "subtitle": "Available",
+   "thresholds": [
+    {
+     "at": 0.5,
+     "variant": "warning"
+    }
+   ],
+   "type": "gauge",
+   "value": 0.75
   },
   "grid": {
    "children": [
@@ -277,6 +320,18 @@
    "title": "Pie",
    "type": "pie_chart"
   },
+  "pipeline_stepper": {
+   "orientation": "vertical",
+   "steps": [
+    {
+     "detail": "Ready",
+     "label": "Load",
+     "status": "done"
+    }
+   ],
+   "title": "Pipeline",
+   "type": "pipeline_stepper"
+  },
   "plotly_chart": {
    "config": {
     "displayModeBar": false
@@ -304,6 +359,26 @@
    "value": 0.4,
    "variant": "info"
   },
+  "radar_chart": {
+   "axes": [
+    "Speed",
+    "Accuracy",
+    "Cost"
+   ],
+   "datasets": [
+    {
+     "data": [
+      1,
+      2,
+      3
+     ],
+     "label": "Run"
+    }
+   ],
+   "max_value": 4.0,
+   "title": "Quality",
+   "type": "radar_chart"
+  },
   "rating": {
    "label": "CSAT",
    "max_value": 5,
@@ -311,6 +386,21 @@
    "subtitle": "n=100",
    "type": "rating",
    "value": 4.5
+  },
+  "stat_group": {
+   "columns": 3,
+   "items": [
+    {
+     "delta": "+2",
+     "hint": "Today",
+     "label": "Total",
+     "trend": "up",
+     "value": "12",
+     "variant": "success"
+    }
+   ],
+   "title": "Overview",
+   "type": "stat_group"
   },
   "table_paginated": {
    "headers": [

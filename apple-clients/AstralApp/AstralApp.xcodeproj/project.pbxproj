@@ -110,6 +110,7 @@
 		};
 		AD0881000000000000000005 /* ../AstralWatchNavigationHarness */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../AstralWatchNavigationHarness; sourceTree = "<group>"; };
 		AD0881000000000000000006 /* ../AstralWatchNavigationUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../AstralWatchNavigationUITests; sourceTree = "<group>"; };
+		AD0900000000000000000001 /* ../NativeAppearance */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../NativeAppearance; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -161,6 +162,7 @@
 			children = (
 				AA00000000000000000000D4 /* Config */,
 				222F50292FFD60D80016B0D6 /* AstralApp */,
+				AD0900000000000000000001 /* ../NativeAppearance */,
 				AA00000000000000000000E1 /* AstralAppTests */,
 				AB0000000000000000000003 /* AstralAppUITests */,
 				AA00000000000000000000B2 /* ../AstralWatch */,
@@ -214,6 +216,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				222F50292FFD60D80016B0D6 /* AstralApp */,
+				AD0900000000000000000001 /* ../NativeAppearance */,
 			);
 			name = AstralApp;
 			packageProductDependencies = (
@@ -238,6 +241,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				AA00000000000000000000B2 /* ../AstralWatch */,
+				AD0900000000000000000001 /* ../NativeAppearance */,
 			);
 			name = AstralWatch;
 			packageProductDependencies = (
@@ -321,7 +325,7 @@
 			buildPhases = (AD088100000000000000000A, AD088100000000000000000E, AD088100000000000000000C, );
 			buildRules = ();
 			dependencies = ();
-			fileSystemSynchronizedGroups = (AA00000000000000000000B2, AD0881000000000000000005, );
+			fileSystemSynchronizedGroups = (AA00000000000000000000B2, AD0881000000000000000005, AD0900000000000000000001 /* ../NativeAppearance */, );
 			name = AstralWatchNavigationHarness;
 			packageProductDependencies = (AD0881000000000000000002, );
 			productName = AstralWatchNavigationHarness;
