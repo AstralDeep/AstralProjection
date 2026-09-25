@@ -607,3 +607,95 @@ def test_private_shell_state_is_erased_at_owner_boundary(win):
     assert shell.model is None and not shell.isEnabled()
     assert shell.history_layout.count() == 1
     assert shell.scenario_layout.count() == 0
+
+
+@pytest.mark.parametrize("next_subject", ["alice", "bob", "unreadable"])
+def test_reauthentication_preserves_only_current_owner_composer_and_uploads(win, tmp_path, next_subject):
+    from PySide6.QtCore import QSettings
+    from astral_client.protocol import ConversationResumeStore
+    from test_workspace_actions import _token
+
+    win._resume_store = ConversationResumeStore(QSettings(
+        str(tmp_path / "resume.ini"), QSettings.Format.IniFormat))
+    win._resume_store.bind_token(_token("alice"))
+    win._token = _token("alice")
+    win._input.setText("Alice private draft")
+    win._attachments = [
+        {"chip_id": "ready-alice", "attachment_id": "alice-file", "filename": "alice-ready.txt",
+         "category": "text", "parser_status": "covered", "status": "staged"},
+        {"chip_id": "uploading-alice", "attachment_id": None, "filename": "alice-pending.txt",
+         "category": "file", "parser_status": None, "status": "uploading"},
+    ]
+    win._render_chips()
+    win._reconnect("unreadable-token" if next_subject == "unreadable" else _token(next_subject))
+    if next_subject == "alice":
+        assert win._input.text() == "Alice private draft"
+        assert len(win._attachments) == 2
+    else:
+        assert win._input.text() == ""
+        assert win._attachments == []
+        assert win._chips_bar.isHidden()
+    win._on_attachment_uploaded({"chip_id": "uploading-alice", "error": None, "result": {
+        "attachment_id": "alice-late-file", "filename": "alice-pending.txt", "category": "text"}})
+    if next_subject == "alice":
+        assert win._attachments[1]["attachment_id"] == "alice-late-file"
+    else:
+        win._on_message({"type": "chrome_menu", "model": copy.deepcopy(MENU)})
+        assert win._input.text() == ""
+        assert win._sendable_attachments() == []
+        assert win._attachments == []
+        assert win._chips_bar.isHidden()
+
+
+@pytest.mark.parametrize("operation", ["export_canvas", "share_canvas"])
+@pytest.mark.parametrize("target", [CHAT, OTHER], ids=["same-chat", "cached-other-chat"])
+def test_cached_chat_workspace_actions_wait_for_matching_rendered_hydration(win, operation, target):
+    import uuid
+    from astral_client.protocol import ConversationResumeStore
+    from astral_client.workspace_actions import WorkspaceActions
+    from test_conversation_continuity_060 import _snapshot
+    from test_workspace_actions import Transport, _token
+
+    win._token = _token()
+    win._resume_store.storage_key = ConversationResumeStore.account_key("https://identity.test", "alice")
+    model = copy.deepcopy(MENU)
+    model["topbar"].append({"key": "workspace", "kind": "workspace_action", "label": "Workspace",
+                            "operation": operation, "context": "live_canvas"})
+    win._on_message({"type": "chrome_menu", "model": model})
+
+    def hydrate(chat, text):
+        win._load_chat(chat)
+        frame = _snapshot(chat=chat, request=win._continuity.request_generation,
+                          snapshot_id=str(uuid.uuid4()), text=text)
+        win._on_message(frame)
+        assert win.canvas._last_components == frame["canvas"]["components"]
+
+    hydrate(OTHER, "Cached B canvas")
+    hydrate(CHAT, "Visible A canvas")
+    assert win.canvas._last_components == [{"type": "text", "content": "Visible A canvas"}]
+    win._load_chat(target)
+    assert win._continuity.committed_snapshot.chat_id == target
+    queued = []
+    controller = WorkspaceActions(parent=win, context_provider=win._workspace_context,
+                                  token_provider=win._current_token, http_base="https://server.test",
+                                  notify=lambda *_: None, transport=Transport(), start_worker=queued.append)
+    assert not win._workspace_context()["operations"]
+    assert all(not control.isEnabled() for control in controls(win._console_shell, "workspaceOperation"))
+    assert controller.perform(operation) is False
+    assert not queued
+    win._on_message({"type": "error", "message": "The conversation could not be restored."})
+    assert not win._workspace_context()["operations"]
+    assert controller.perform(operation) is False
+    win._load_chat(target)
+    assert not win._workspace_context()["operations"]
+    win._on_message(_snapshot(chat=target, request=win._continuity.request_generation,
+                              snapshot_id=str(uuid.uuid4()), text="Hydrated requested canvas"))
+    assert win.canvas._last_components == [{"type": "text", "content": "Hydrated requested canvas"}]
+    assert operation in win._workspace_context()["operations"]
+    assert controller.perform(operation) is True
+    assert len(queued) == 1
+    controller.clear()
+    win.client.connection_generation = str(uuid.uuid4())
+    assert not win._workspace_context()["operations"]
+    assert controller.perform(operation) is False
+    assert len(queued) == 1

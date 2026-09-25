@@ -1659,6 +1659,7 @@ class MainWindow(QMainWindow):
         self._guidance_ticket = None
         self._surface_owner = None
         self._workspace_actions = None
+        self._rendered_snapshot = None
         self._viewport_timer = QTimer(self)
         self._viewport_timer.setSingleShot(True)
         self._viewport_timer.setInterval(120)
@@ -2072,8 +2073,11 @@ class MainWindow(QMainWindow):
 
     def _workspace_context(self) -> dict:
         operations = {item["operation"] for item in self._console_menu.get("workspace_actions", [])}
+        snapshot = self._continuity.committed_snapshot
         if (self._console_model is None or self._timeline_mode or self._turn_active
-                or self._continuity.committed_snapshot is None):
+                or snapshot is None or snapshot is not self._rendered_snapshot
+                or snapshot.chat_id != self.active_chat
+                or snapshot.connection_generation != getattr(self.client, "connection_generation", None)):
             operations = set()
         return {"owner": self._resume_store.storage_key,
                 "connection": getattr(self.client, "connection_generation", None),
@@ -2347,6 +2351,8 @@ class MainWindow(QMainWindow):
         )
 
     def _set_active_chat(self, chat_id: Optional[str], *, persist: bool = True) -> None:
+        if self.active_chat != chat_id:
+            self._rendered_snapshot = None
         if self.active_chat is not None and self.active_chat != chat_id:
             self._retire_guidance()
             self._clear_turn_selection()
@@ -2491,6 +2497,7 @@ class MainWindow(QMainWindow):
         if not _canonical_uuid4(connection):
             return
         if self._continuity.connection_generation != connection:
+            self._rendered_snapshot = None
             self._continuity.bind_connection(connection)
             self._clear_transient_conversation()
         if (
@@ -2501,6 +2508,8 @@ class MainWindow(QMainWindow):
                 or self._continuity.request_purpose != purpose
             )
         ):
+            if purpose == "hydration":
+                self._rendered_snapshot = None
             try:
                 self._continuity.open_request(purpose, generation)
             except WindowsProtocolError:
@@ -2511,6 +2520,8 @@ class MainWindow(QMainWindow):
     ) -> Optional[str]:
         if chat_id is not None and not _canonical_uuid4(chat_id):
             return None
+        if purpose == "hydration":
+            self._rendered_snapshot = None
         connection = getattr(self.client, "connection_generation", None)
         if _canonical_uuid4(connection) and self._continuity.connection_generation != connection:
             self._continuity.bind_connection(connection)
@@ -2522,6 +2533,7 @@ class MainWindow(QMainWindow):
         )
         self._continuity.open_request(purpose, generation)
         self._clear_transient_conversation()
+        self._sync_console_conversation()
         return generation
 
     def _send_chat_transport(
@@ -2957,13 +2969,17 @@ class MainWindow(QMainWindow):
             self._audit_dialog.add_page(result.get("rows") or [], result.get("next_cursor"))
 
     def _load_chat(self, chat_id: str) -> None:
+        self._rendered_snapshot = None
         self._clear_workspace_actions()
         self._retire_guidance()
         self._clear_turn_selection()
         self._surface_owner = None
         self._retire_work_read()
+        self._clear_transient_conversation()
+        self.rail.clear()
+        self.canvas.set_components([])
+        self.canvas.show_skeleton()
         if not _canonical_uuid4(chat_id):
-            self.rail.clear()
             self._stream_seq.clear()
             self.client.send_event("load_chat", {"chat_id": chat_id})
             return
@@ -2995,6 +3011,10 @@ class MainWindow(QMainWindow):
         self._clear_turn_selection()
         self._surface_owner = None
         self._clear_workspace_actions()
+        self._rendered_snapshot = None
+        self._input.clear()
+        self._clear_attachments()
+        self._set_composer_enabled(False)
         old_chat = self.active_chat
         self._resume_store.clear("definitive_sign_out", old_chat)
         self._continuity.clear_chat(old_chat, all_accounts=True)
@@ -3464,29 +3484,32 @@ class MainWindow(QMainWindow):
         except (RuntimeError, TypeError, AttributeError):
             pass
         previous_account_key = self._resume_store.storage_key
-        if self._resume_store.bind_token(token):
-            next_account_key = self._resume_store.storage_key
-            if previous_account_key and next_account_key != previous_account_key:
-                self._clear_turn_selection()
-                self._console_model = None
-                self._console_menu = {}
-                self._background_mode = False
-                if self._console_shell is not None:
-                    self._console_shell.clear_private_state()
-                if self._surface_dialog is not None:
-                    self._surface_dialog.set_mandatory(False)
-                    self._surface_dialog.close()
-                self._continuity.clear_chat(all_accounts=True)
-                self._clear_transient_conversation()
-                self.rail.clear()
-                self.canvas.set_components([])
-                self.active_chat = self._resume_store.active_chat()
-                if self.active_chat is None:
-                    self.rail.show_empty_hint()
-                else:
-                    self.rail.add_note("Restoring conversation…")
-                    self._continuity.activate_chat(self.active_chat)
-                    self.canvas.show_skeleton()
+        self._resume_store.bind_token(token)
+        if self._resume_store.storage_key != previous_account_key:
+            self._clear_workspace_actions()
+            self._rendered_snapshot = None
+            self._input.clear()
+            self._clear_attachments()
+            self._clear_turn_selection()
+            self._console_model = None
+            self._console_menu = {}
+            self._background_mode = False
+            if self._console_shell is not None:
+                self._console_shell.clear_private_state()
+            if self._surface_dialog is not None:
+                self._surface_dialog.set_mandatory(False)
+                self._surface_dialog.close()
+            self._continuity.clear_chat(all_accounts=True)
+            self._clear_transient_conversation()
+            self.rail.clear()
+            self.canvas.set_components([])
+            self.active_chat = self._resume_store.active_chat()
+            if self.active_chat is None:
+                self.rail.show_empty_hint()
+            else:
+                self.rail.add_note("Restoring conversation…")
+                self._continuity.activate_chat(self.active_chat)
+                self.canvas.show_skeleton()
         if self.active_chat and _canonical_uuid4(self.active_chat):
             self._resume_store.set_active_chat(self.active_chat)
         self._token = token
@@ -3641,6 +3664,7 @@ class MainWindow(QMainWindow):
         self._clear_transient_conversation()
         self.rail.replace_semantic(messages, self.canvas.ctx)
         self.canvas.set_components(components)
+        self._rendered_snapshot = snapshot
         self._set_turn_active(False)
         self.canvas.resolve_loading()
         self._reset_status_line()

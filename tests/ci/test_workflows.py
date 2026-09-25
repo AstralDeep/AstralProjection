@@ -429,7 +429,9 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
         assert ".[dev]" not in job
 
     python_job = _job_block(text, "python")
-    assert "PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build" in python_job
+    build = "PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation"
+    assert build in python_job
+    assert python_job.index(install) < python_job.index(build)
     assert 'requires = ["setuptools==83.0.0"]' in (ROOT / "pyproject.toml").read_text(
         encoding="utf-8"
     )

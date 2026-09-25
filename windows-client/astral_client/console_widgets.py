@@ -22,6 +22,8 @@ def clear_layout(layout):
         item = layout.takeAt(0)
         widget = item.widget()
         if widget is not None:
+            widget.setEnabled(False)
+            widget.hide()
             widget.setParent(None)
             widget.deleteLater()
         elif item.layout() is not None:
@@ -219,6 +221,11 @@ class ResultPanel(QFrame):
         self.apply_state()
 
     def toggle_fullscreen(self):
+        if not self.fullscreen:
+            opener = self.sender()
+            if opener not in (self.preview_button, self.fullscreen_button):
+                opener = self.fullscreen_button
+            opener.setFocus()
         self.fullscreen_requested.emit(not self.fullscreen)
 
     def apply_state(self):
@@ -727,6 +734,7 @@ class ConsoleShell(QWidget):
             self.sidebar.setEnabled(True)
             self.feed_layout.insertWidget(self.feed_layout.count() - 1, self.results)
             self.results.show()
+            self.results.apply_state()
             if self._return_focus is not None:
                 try:
                     self._return_focus.setFocus()
