@@ -161,6 +161,28 @@ def test_scenario_load_preserves_draft_until_run_dispatches_once(win):
     assert win._input.placeholderText() == MENU["console"]["labels"]["message_placeholder"]
 
 
+def test_scenario_run_sends_staged_attachments_once_and_preserves_uploads(win):
+    sent = []
+    win.client.send_chat = lambda message, chat_id, **kwargs: sent.append((message, kwargs))
+    win._attachments = [
+        {"chip_id": "ready", "attachment_id": "file-1", "filename": "synthetic.csv",
+         "category": "data", "status": "staged"},
+        {"chip_id": "pending", "filename": "pending.csv", "status": "uploading"},
+    ]
+    row = MENU["console"]["catalog"]["scenarios"][0]
+    win._scenario(row["id"], False)
+    assert len(win._attachments) == 2 and sent == []
+    win._scenario(row["id"], True)
+    assert len(sent) == 1 and sent[0][0] == row["prompt"]
+    assert sent[0][1]["attachments"] == [
+        {"attachment_id": "file-1", "filename": "synthetic.csv", "category": "data"}]
+    assert win._input.text() == row["prompt"]
+    assert [row["chip_id"] for row in win._attachments] == ["pending"]
+    win._input.clear()
+    win._send()
+    assert len(sent) == 1
+
+
 def test_categories_agent_search_and_intro_use_shared_catalog(win):
     shell = win._console_shell
     shell.select_category("Utilities")
@@ -488,6 +510,20 @@ def test_voice_transport_error_is_visible_and_unavailability_remains_control_fee
     assert win._banner.isVisible()
     assert "End voice and retry" in win._banner.text()
     assert win._banner_kind == "error"
+
+
+@pytest.mark.parametrize("missing, expected", [("has_microphone", "No microphone"),
+                                             ("has_audio_output", "No audio output")])
+def test_user_voice_attempt_reports_missing_device_without_passive_footer(win, monkeypatch, missing, expected):
+    capability = {"has_microphone": True, "has_audio_output": True}
+    capability[missing] = False
+    monkeypatch.setattr(win._voice_audio, "capability", lambda: capability)
+    win._hide_banner()
+    win._voice_widget.action_requested.emit("voice_session_start")
+    assert win._banner.isVisible() and expected in win._banner.text()
+    assert win._banner_kind == "warning"
+    assert win._voice_widget.status_label.isHidden()
+    assert not win._voice_user_requested
 
 
 def test_theme_rebuild_keeps_current_input_choices_and_upserted_values(win):

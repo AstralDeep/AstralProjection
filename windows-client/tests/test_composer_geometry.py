@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from test_console_shell import CONNECTION, GEOMETRY, MENU
 from test_console_shell import win as shell_window  # noqa: F401
@@ -75,6 +75,66 @@ def resize(win, geometry):
     win.resize(*geometry["viewport"])
     win._on_message({"type": "rote_config", "device_profile": {"console": geometry["presentation"]}})
     settle()
+
+
+@pytest.mark.parametrize("geometry", GEOMETRY)
+def test_long_attachment_names_keep_narrow_window_and_remove_targets(request, geometry):
+    win = request.getfixturevalue("shell_window")
+    for index in range(10):
+        win._stage_existing({"attachment_id": f"synthetic-{index}",
+                             "filename": f"{index}-" + "long-filename-" * 20 + ".csv"})
+    resize(win, geometry)
+    win.activateWindow()
+    settle()
+    assert (win.width(), win.height()) == tuple(geometry["viewport"])
+    buttons = win._chips_bar.findChildren(QPushButton)
+    assert len(buttons) == 10
+    for button in buttons:
+        assert button.accessibleName().startswith("Remove attachment ")
+        assert button.width() >= 32 and button.height() >= 32
+        assert button.width() >= geometry["presentation"]["minimum_control_height"]
+        assert button.height() >= geometry["presentation"]["minimum_control_height"]
+        button.setFocus()
+        settle()
+        assert QApplication.focusWidget() is button
+        assert button.visibleRegion().boundingRect().contains(button.rect())
+    QTest.keyClick(buttons[-1], Qt.Key.Key_Space)
+    settle()
+    assert len(win._attachments) == 9
+    assert win._chips_bar.isAncestorOf(QApplication.focusWidget())
+
+
+def test_attachment_refresh_retains_focus_and_plain_filename(request):
+    win = request.getfixturevalue("shell_window")
+    filename = "<b>synthetic.csv</b>"
+    win._stage_existing({"attachment_id": "synthetic", "filename": filename})
+    resize(win, GEOMETRY[0])
+    button = win._chips_bar.findChild(QPushButton)
+    button.setFocus()
+    settle()
+    identity = button.property("attachmentChipId")
+    win._render_chips()
+    settle()
+    assert QApplication.focusWidget().property("attachmentChipId") == identity
+    label = win._chips_bar.findChild(QLabel)
+    assert label.textFormat() == Qt.TextFormat.PlainText
+    assert label.accessibleName() == filename
+    assert filename in label.toolTip()
+    QTest.keyClick(QApplication.focusWidget(), Qt.Key.Key_Space)
+    settle()
+    assert win._attachments == [] and QApplication.focusWidget() is win._attach_btn
+
+
+@pytest.mark.parametrize("geometry", GEOMETRY)
+def test_category_labels_fit_styled_controls_including_desktop_zero_minimum(request, geometry):
+    win = request.getfixturevalue("shell_window")
+    resize(win, geometry)
+    shell = win._console_shell
+    for control in shell.categories_body.findChildren(QPushButton):
+        shell.categories_scroll.ensureWidgetVisible(control, 0, 0)
+        settle()
+        assert control.visibleRegion().boundingRect().contains(control.rect())
+        assert control.height() >= control.sizeHint().height()
 
 
 @pytest.mark.parametrize("geometry", [GEOMETRY[0], GEOMETRY[1], GEOMETRY[5]])
@@ -245,9 +305,10 @@ def test_voice_icons_match_authoritative_web_paths():
         assert path in icons.svg_markup(name, "#FFFFFF")
 
 
-def test_overflowing_categories_keep_complete_touch_targets_visible(request):
+@pytest.mark.parametrize("geometry", GEOMETRY)
+def test_overflowing_categories_keep_complete_touch_targets_visible(request, geometry):
     win = request.getfixturevalue("shell_window")
-    resize(win, GEOMETRY[0])
+    resize(win, geometry)
     menu = copy.deepcopy(MENU)
     menu["console"]["catalog"]["categories"] += [f"Category {index}" for index in range(12)]
     win._on_message({"type": "chrome_menu", "model": menu})
@@ -259,7 +320,8 @@ def test_overflowing_categories_keep_complete_touch_targets_visible(request):
         top = button.mapTo(viewport, button.rect().topLeft()).y()
         assert top >= 0
         assert top + button.height() <= viewport.height()
-        assert button.height() >= GEOMETRY[0]["presentation"]["minimum_control_height"]
+        assert button.height() >= geometry["presentation"]["minimum_control_height"]
+        assert button.height() >= button.sizeHint().height()
 
 
 def test_new_result_controls_and_fullscreen_keep_targets_and_keyboard_scope(request):

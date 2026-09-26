@@ -664,7 +664,7 @@ def test_silent_refresh_done_reconnects_on_token(win, monkeypatch):
     reconnected = []
     monkeypatch.setattr(win, "_reconnect", lambda tok: reconnected.append(tok))
     win._silent_refresh_active = True
-    win._on_silent_refresh_done("NEWTOKEN")
+    win._on_silent_refresh_done(win._auth_generation, "NEWTOKEN")
     assert reconnected == ["NEWTOKEN"]
     assert win._silent_refresh_active is False
 
@@ -673,7 +673,7 @@ def test_silent_refresh_done_prompts_on_failure(win, monkeypatch):
     prompted = []
     monkeypatch.setattr(win, "_prompt_reauth", lambda: prompted.append(True))
     win._silent_refresh_active = True
-    win._on_silent_refresh_done(None)
+    win._on_silent_refresh_done(win._auth_generation, None)
     assert prompted == [True]
     assert win._silent_refresh_active is False
 

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from . import theme as T
 from . import icons
+from .composites import FlowLayout
 
 
 def clear_layout(layout):
@@ -50,6 +51,35 @@ def button(text, callback, *, name=None):
     widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     widget.clicked.connect(callback)
     return widget
+
+
+class AttachmentTray(QScrollArea):
+    def __init__(self):
+        super().__init__()
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setAccessibleName("Staged attachments")
+        self.body = QWidget()
+        self.flow = FlowLayout(self.body)
+        self.flow.setSpacing(6)
+        self.setWidget(self.body)
+        QApplication.instance().focusChanged.connect(self._reveal_focus)
+
+    def _reveal_focus(self, previous, current):
+        if current is not None and self.body.isAncestorOf(current):
+            self.ensureWidgetVisible(current, 0, 0)
+
+    def refresh(self):
+        height = self.flow.heightForWidth(self.viewport().width())
+        if self.body.minimumHeight() != height:
+            self.body.setMinimumHeight(height)
+        if self.height() != min(160, height):
+            self.setFixedHeight(min(160, height))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.refresh()
 
 
 class ComposerEdit(QPlainTextEdit):
@@ -537,9 +567,14 @@ class ConsoleShell(QWidget):
                 style += f"min-height:{minimum}px;"
                 if style != control.styleSheet():
                     control.setStyleSheet(style)
+        categories = self.categories_body.findChildren(QPushButton)
+        for control in categories:
+            control.ensurePolished()
+        height = max((max(control.minimumHeight(), control.sizeHint().height())
+                      for control in categories), default=minimum)
         margins = self.categories_layout.contentsMargins()
         self.categories_scroll.setFixedHeight(
-            minimum + margins.top() + margins.bottom() + self.categories_scroll.frameWidth() * 2
+            height + margins.top() + margins.bottom() + self.categories_scroll.frameWidth() * 2
             + self.categories_scroll.horizontalScrollBar().sizeHint().height())
         if isinstance(self.composer, ResponsiveComposer):
             self.composer.set_control_minimum(minimum)

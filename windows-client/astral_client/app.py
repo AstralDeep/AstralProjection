@@ -1,6 +1,5 @@
-"""Native Qt main window for the Windows client: top bar, chat rail, and SDUI canvas
-driven by protocol.py's WebSocket events; renders via renderer.render and
-reimplements web chrome (agents, history, audit) as native Qt dialogs.
+"""Native Qt main window consuming server-owned chrome, conversation and SDUI frames.
+It binds protocol.py's authenticated transport to native rendering, composition and settings.
 """
 
 from __future__ import annotations
@@ -84,7 +83,7 @@ from .renderer import (
 from .streaming import stream_error_ops, stream_frame_to_ops, subscribe_ack_ops
 from .chrome import chrome_render_notice
 from .console import parse_console_model, parse_console_presentation, parse_turn_selection
-from .console_widgets import ComposerEdit, ConsoleShell, ResponsiveComposer, button as console_button, clear_layout
+from .console_widgets import AttachmentTray, ComposerEdit, ConsoleShell, ResponsiveComposer, button as console_button, clear_layout
 from .voice import QtAudioBackend, VoiceComposerWidget, VoiceController
 from . import rest
 from .remote_control import RemoteControlController
@@ -1587,9 +1586,9 @@ class MainWindow(QMainWindow):
     _download_done = Signal(object)
     _attachment_uploaded = Signal(object)
     _signed_out = Signal(str)
-    _reauth_done = Signal(object)
-    _silent_refresh_done = Signal(object)
-    _login_resolved = Signal(object)
+    _reauth_done = Signal(int, object)
+    _silent_refresh_done = Signal(int, object)
+    _login_resolved = Signal(int, object)
     _byo_notice = Signal(str, str)
 
     def __init__(self, url: str, token: str, session=None, login_params=None,
@@ -1621,6 +1620,9 @@ class MainWindow(QMainWindow):
         self._auth_session = session
         self._login_params = login_params or {}
         self._reauth_tries = 0
+        self._auth_generation = 0
+        self._auth_stopped = False
+        self._reauth_active = False
         self._silent_refresh_active = False
         self._login_active = False
         self._login_cancel: Optional[threading.Event] = None
@@ -1650,6 +1652,7 @@ class MainWindow(QMainWindow):
         self._operation_banner_request_generation: Optional[str] = None
         self._operation_banner_operation_id: Optional[str] = None
         self._pending_voice_chat: Optional[dict[str, str]] = None
+        self._voice_user_requested = False
         self._console_model = None
         self._console_presentation = None
         self._console_menu = {}
@@ -1792,10 +1795,8 @@ class MainWindow(QMainWindow):
         act_ex.triggered.connect(lambda: self._open_surface("attachments", "Your files"))
         self._attach_btn.setMenu(attach_menu)
 
-        self._chips_bar = QWidget()
-        self._chips_lay = QHBoxLayout(self._chips_bar)
-        self._chips_lay.setContentsMargins(12, 6, 12, 0)
-        self._chips_lay.setSpacing(6)
+        self._chips_bar = AttachmentTray()
+        self._chips_lay = self._chips_bar.flow
         self._chips_bar.setVisible(False)
 
         self._voice_widget = VoiceComposerWidget()
@@ -1865,7 +1866,7 @@ class MainWindow(QMainWindow):
             parent=self,
         )
         self._voice_widget.action_requested.connect(
-            self._voice_controller.handle_action
+            self._request_voice_action
         )
         self._voice_controller.status_changed.connect(
             self._on_voice_status
@@ -2041,6 +2042,10 @@ class MainWindow(QMainWindow):
         self._attach_btn.setAccessibleName(labels["attach"])
         self._attach_btn.setToolTip(labels["attach"])
         self._sync_console_conversation(update_navigation=created)
+        minimum = max(32, round(self._console_presentation["minimum_control_height"]))
+        for control in self._chips_bar.findChildren(QPushButton):
+            control.setFixedSize(minimum, minimum)
+        self._chips_bar.refresh()
         self._configure_surface_navigation()
 
     def _sync_console_conversation(self, *, update_navigation=True) -> None:
@@ -2097,10 +2102,18 @@ class MainWindow(QMainWindow):
         if self._workspace_actions is not None:
             self._workspace_actions.clear()
 
+    def _request_voice_action(self, action: str) -> None:
+        self._voice_user_requested = True
+        self._voice_controller.handle_action(action)
+
     def _on_voice_status(self, state: str, message: str) -> None:
         self._voice_widget.set_voice_status(state, message)
         if state == "error":
             self._show_banner(str(message or "Voice could not connect. End voice and retry.")[:240], "error")
+        elif state == "unavailable" and self._voice_user_requested:
+            self._show_banner(str(message or "Voice is unavailable. Check your audio device and retry.")[:240], "warning")
+        if state in {"off", "ended", "unavailable", "error", "listening", "greeting"}:
+            self._voice_user_requested = False
 
     def _scenario(self, identity: str, run: bool) -> None:
         if self._console_model is None or not self._input.isEnabled():
@@ -2110,7 +2123,8 @@ class MainWindow(QMainWindow):
             return
         self._input.setText(scenario["prompt"])
         if run:
-            self._emit("chat_message", {"message": scenario["prompt"]})
+            self._send()
+            self._input.setText(scenario["prompt"])
         else:
             self._input.setFocus()
 
@@ -2222,6 +2236,7 @@ class MainWindow(QMainWindow):
             self._input.setFocus()
 
     def closeEvent(self, event) -> None:
+        self._stop_auth()
         self._retire_work_read()
         self._clear_workspace_actions()
         try:
@@ -2938,11 +2953,19 @@ class MainWindow(QMainWindow):
             glyph, tip = "✗", "upload failed"
         else:
             glyph, tip = parser_status_glyph(rec.get("parser_status"))
-        lbl = QLabel(f"{glyph} {rec.get('filename', 'file')}".strip())
-        lbl.setToolTip(tip)
+        filename = str(rec.get("filename", "file"))
+        lbl = QLabel()
+        lbl.setTextFormat(Qt.TextFormat.PlainText)
+        lbl.setText(lbl.fontMetrics().elidedText(f"{glyph} {filename}".strip(), Qt.TextElideMode.ElideMiddle, 160))
+        lbl.setAccessibleName(filename)
+        lbl.setToolTip(f"{filename} — {tip}")
         lbl.setStyleSheet(f"color:{T.TEXT}; font-size:12px; background:transparent;")
         rm = QPushButton("✕")
-        rm.setFixedSize(18, 18)
+        minimum = max(32, round((self._console_presentation or {}).get("minimum_control_height", 44)))
+        rm.setFixedSize(minimum, minimum)
+        rm.setAccessibleName(f"Remove attachment {filename}")
+        rm.setToolTip(f"Remove attachment {filename}")
+        rm.setProperty("attachmentChipId", rec.get("chip_id"))
         rm.setCursor(Qt.CursorShape.PointingHandCursor)
         rm.setStyleSheet("padding:0; border:none; background:transparent;")
         rm.clicked.connect(lambda _=False, cid=rec.get("chip_id"): self._remove_chip(cid))
@@ -2951,14 +2974,20 @@ class MainWindow(QMainWindow):
         return chip
 
     def _render_chips(self) -> None:
-        while self._chips_lay.count():
-            item = self._chips_lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        focused = QApplication.focusWidget()
+        restore = focused is not None and self._chips_bar.isAncestorOf(focused)
+        identity = focused.property("attachmentChipId") if restore else None
+        clear_layout(self._chips_lay)
         for rec in self._attachments:
             self._chips_lay.addWidget(self._chip_widget(rec))
-        self._chips_lay.addStretch(1)
+        self._chips_lay.invalidate()
         self._chips_bar.setVisible(bool(self._attachments))
+        self._chips_bar.refresh()
+        if restore:
+            controls = self._chips_bar.findChildren(QPushButton)
+            target = next((button for button in controls if button.property("attachmentChipId") == identity),
+                          controls[0] if controls else self._attach_btn)
+            target.setFocus()
 
     def _on_audit_loaded(self, result: object) -> None:
         if self._audit_dialog is None or not isinstance(result, dict):
@@ -3006,6 +3035,7 @@ class MainWindow(QMainWindow):
             != QMessageBox.StandardButton.Yes
         ):
             return
+        self._stop_auth()
         self._retire_work_read()
         self._retire_guidance()
         self._clear_turn_selection()
@@ -3050,6 +3080,7 @@ class MainWindow(QMainWindow):
         if getattr(self, "_signing_out_done", False):
             return
         self._signing_out_done = True
+        self._stop_auth()
         try:
             self.client.stop()
         except Exception:
@@ -3443,12 +3474,15 @@ class MainWindow(QMainWindow):
         self._sync_console_conversation()
 
     def _begin_silent_refresh(self) -> None:
-        if self._silent_refresh_active:
+        if (self._auth_stopped or self._silent_refresh_active
+                or self._reauth_active or self._login_active):
             return
         if not (self._auth_session and self._reauth_tries < 2):
             self._prompt_reauth()
             return
         self._reauth_tries += 1
+        self._invalidate_auth()
+        generation = self._auth_generation
         self._silent_refresh_active = True
         sess = self._auth_session
 
@@ -3457,11 +3491,26 @@ class MainWindow(QMainWindow):
                 token = sess.refresh()
             except Exception:  # noqa: BLE001
                 token = None
-            self._silent_refresh_done.emit(token)
+            self._silent_refresh_done.emit(generation, token)
 
         threading.Thread(target=_work, name="astral-silent-refresh", daemon=True).start()
 
-    def _on_silent_refresh_done(self, token: object) -> None:
+    def _invalidate_auth(self) -> None:
+        self._auth_generation += 1
+        self._silent_refresh_active = False
+        self._reauth_active = False
+        self._login_active = False
+        if self._login_cancel is not None:
+            self._login_cancel.set()
+            self._login_cancel = None
+
+    def _stop_auth(self) -> None:
+        self._auth_stopped = True
+        self._invalidate_auth()
+
+    def _on_silent_refresh_done(self, generation: int, token: object) -> None:
+        if self._auth_stopped or generation != self._auth_generation:
+            return
         self._silent_refresh_active = False
         if isinstance(token, str) and token:
             self._reconnect(token)
@@ -3469,6 +3518,9 @@ class MainWindow(QMainWindow):
             self._prompt_reauth()
 
     def _reconnect(self, token: str) -> None:
+        if self._auth_stopped:
+            return
+        self._invalidate_auth()
         self._retire_work_read()
         self._retire_guidance()
         self._surface_owner = None
@@ -3552,6 +3604,8 @@ class MainWindow(QMainWindow):
         self.client.start()
 
     def _prompt_reauth(self) -> None:
+        if self._auth_stopped or self._reauth_active:
+            return
         self.topbar.set_status("Signed out", T.VARIANT_COLORS["error"][0])
         self._show_banner("Your session expired.", "error")
         authority = self._login_params.get("authority")
@@ -3559,12 +3613,18 @@ class MainWindow(QMainWindow):
             self._show_banner(
                 "Your session expired. Restart the app to sign in again.", "error")
             return
-        if (
-            QMessageBox.question(self, "Session expired",
-                                 "Your session expired. Sign in again?")
-            != QMessageBox.StandardButton.Yes
-        ):
+        self._invalidate_auth()
+        generation = self._auth_generation
+        self._reauth_active = True
+        answer = QMessageBox.question(self, "Session expired",
+                                     "Your session expired. Sign in again?")
+        if self._auth_stopped or generation != self._auth_generation:
             return
+        if answer != QMessageBox.StandardButton.Yes:
+            self._reauth_active = False
+            return
+        self._login_cancel = threading.Event()
+        cancel = self._login_cancel
         self._show_banner("Opening your browser to sign in…")
 
         def _login() -> None:
@@ -3576,26 +3636,30 @@ class MainWindow(QMainWindow):
                     authority,
                     client_id=self._login_params.get("client_id", "astral-desktop"),
                     bff_base=bff_base,
+                    cancel_event=cancel,
                 )
-                self._reauth_done.emit(session)
+                self._reauth_done.emit(generation, session)
             except Exception:  # noqa: BLE001
                 logger.warning("interactive re-auth failed", exc_info=True)
-                self._reauth_done.emit(None)
+                self._reauth_done.emit(generation, None)
 
         threading.Thread(target=_login, daemon=True).start()
 
-    def _on_reauth_done(self, session: object) -> None:
+    def _on_reauth_done(self, generation: int, session: object) -> None:
+        if self._auth_stopped or generation != self._auth_generation:
+            return
+        self._reauth_active = False
         if session is None:
             self._show_banner("Sign-in failed. Try again from the menu.", "error")
             return
-        self._auth_session = session
-        self._reauth_tries = 0
-        self._reconnect(session.access_token)
+        self._apply_login(session.access_token, session)
         self._hide_banner()
 
     def begin_login(self, resolver) -> None:
-        if self._login_active:
+        if self._auth_stopped or self._login_active:
             return
+        self._invalidate_auth()
+        generation = self._auth_generation
         self._login_active = True
         self._login_resolver = resolver
         self._login_cancel = threading.Event()
@@ -3609,12 +3673,12 @@ class MainWindow(QMainWindow):
         def _work() -> None:
             try:
                 token, session = resolver(cancel)
-                self._login_resolved.emit({"token": token, "session": session})
+                self._login_resolved.emit(generation, {"token": token, "session": session})
             except LoginCancelled:
-                self._login_resolved.emit({"cancelled": True})
+                self._login_resolved.emit(generation, {"cancelled": True})
             except Exception as exc:  # noqa: BLE001
                 logger.warning("startup sign-in failed", exc_info=True)
-                self._login_resolved.emit({"error": str(exc)})
+                self._login_resolved.emit(generation, {"error": str(exc)})
 
         threading.Thread(target=_work, name="astral-login", daemon=True).start()
 
@@ -3623,9 +3687,13 @@ class MainWindow(QMainWindow):
             self._login_cancel.set()
             self.topbar.set_status("Cancelling sign-in…", T.MUTED)
 
-    def _on_login_resolved(self, result: object) -> None:
+    def _on_login_resolved(self, generation: int, result: object) -> None:
+        if self._auth_stopped or generation != self._auth_generation:
+            return
         self._login_active = False
         result = result if isinstance(result, dict) else {}
+        if self._login_cancel is not None and self._login_cancel.is_set():
+            result = {"cancelled": True}
         token = result.get("token")
         if isinstance(token, str) and token:
             self._hide_banner()
