@@ -661,10 +661,14 @@ def test_theme_apply_component_triggers_app_restyle(win, qapp, monkeypatch):
 
 
 def test_silent_refresh_done_reconnects_on_token(win, monkeypatch):
+    from types import SimpleNamespace
+
     reconnected = []
     monkeypatch.setattr(win, "_reconnect", lambda tok: reconnected.append(tok))
     win._silent_refresh_active = True
-    win._on_silent_refresh_done(win._auth_generation, "NEWTOKEN")
+    win._auth_session = SimpleNamespace(access_token="OLDTOKEN")
+    win._on_silent_refresh_done(win._auth_generation,
+                               (win._auth_session, SimpleNamespace(access_token="NEWTOKEN"), "NEWTOKEN"))
     assert reconnected == ["NEWTOKEN"]
     assert win._silent_refresh_active is False
 
@@ -673,7 +677,7 @@ def test_silent_refresh_done_prompts_on_failure(win, monkeypatch):
     prompted = []
     monkeypatch.setattr(win, "_prompt_reauth", lambda: prompted.append(True))
     win._silent_refresh_active = True
-    win._on_silent_refresh_done(win._auth_generation, None)
+    win._on_silent_refresh_done(win._auth_generation, (win._auth_session, win._auth_session, None))
     assert prompted == [True]
     assert win._silent_refresh_active is False
 

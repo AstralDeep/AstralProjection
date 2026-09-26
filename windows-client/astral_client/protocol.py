@@ -2009,7 +2009,13 @@ class OrchestratorClient(QObject):
         )
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._ws = None
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread: Optional[threading.Thread] = None
+        self._lifecycle_lock = threading.Lock()
+        self._worker_running = False
+        self._restart_after_exit = False
+        self._auth_revision = 0
+        self._registered_auth_revision = 0
+        self._authenticated_revision = None
         self._stop = False
         self._auth_hold = False
         self._connected = False
@@ -2050,7 +2056,7 @@ class OrchestratorClient(QObject):
         self.begin_conversation_request(purpose, chat_id, generation)
 
     def configure_agent_host(self, host_id: str) -> None:
-        if self._thread.is_alive() or self._connected or self._ws is not None:
+        if self._worker_running or self._connected or self._ws is not None:
             raise RuntimeError("agent host identity is immutable after client start")
         self.host_id = _uuid4(host_id, "host_id")
         self.host_session_id = None
@@ -2152,39 +2158,121 @@ class OrchestratorClient(QObject):
     def connected(self) -> bool:
         return self._connected
 
+    @property
+    def authenticated(self) -> bool:
+        with self._lifecycle_lock:
+            return (not self._stop and not self._auth_hold and self._connected
+                    and self._authenticated_revision == self._auth_revision
+                    and self._registered_auth_revision == self._auth_revision)
+
+    @property
+    def authentication_required(self) -> bool:
+        with self._lifecycle_lock:
+            return (self._auth_hold and not self._stop
+                    and self._registered_auth_revision == self._auth_revision)
+
     def start(self) -> None:
-        self._thread.start()
+        with self._lifecycle_lock:
+            if not self._stop and not self._worker_running:
+                self._start_worker_locked()
+
+    def _start_worker_locked(self) -> None:
+        self._worker_running = True
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        try:
+            self._thread.start()
+        except Exception:
+            self._worker_running = False
+            self._restart_after_exit = False
+            raise
+
+    def renew_credentials(self, token: str) -> bool:
+        if (not isinstance(token, str) or not token.strip() or len(token) > 16384
+                or any(ord(character) < 32 for character in token)):
+            return False
+        with self._lifecycle_lock:
+            if self._stop:
+                return False
+            loop, ws = self._loop, self._ws
+            self.token = token
+            self._auth_revision += 1
+            self._authenticated_revision = None
+            self._auth_hold = False
+            self._connected = False
+            self.connection_generation = None
+            self._restart_after_exit = True
+            if not self._worker_running:
+                self._start_worker_locked()
+        self._request_socket_close(loop, ws)
+        return True
 
     def stop(self) -> None:
-        self._stop = True
-        if self._loop and self._ws:
-            try:
-                asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
-            except RuntimeError:
-                pass
+        with self._lifecycle_lock:
+            self._stop = True
+            self._restart_after_exit = False
+        self._request_socket_close(self._loop, self._ws)
 
     def request_reconnect(self) -> None:
-        if self._loop and self._ws:
+        self._request_socket_close(self._loop, self._ws)
+
+    @staticmethod
+    def _request_socket_close(loop, ws) -> None:
+        if loop is not None and ws is not None:
+            closing = ws.close()
             try:
-                asyncio.run_coroutine_threadsafe(self._ws.close(), self._loop)
+                asyncio.run_coroutine_threadsafe(closing, loop)
             except RuntimeError:
-                pass
+                closing.close()
 
     def _should_reconnect(self) -> bool:
         return not self._stop and not self._auth_hold
 
     def _run(self) -> None:
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
+        loop = asyncio.new_event_loop()
+        self._loop = loop
+        asyncio.set_event_loop(loop)
+        try:
+            self._run_connections()
+        finally:
+            self._connected = False
+            self._ws = None
+            self._loop = None
+            try:
+                pending = asyncio.all_tasks(loop)
+                for task in pending:
+                    task.cancel()
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            finally:
+                try:
+                    loop.close()
+                finally:
+                    with self._lifecycle_lock:
+                        self._worker_running = False
+                        restart = self._restart_after_exit and not self._stop
+                        self._restart_after_exit = False
+                        if restart:
+                            try:
+                                self._start_worker_locked()
+                            except Exception:
+                                self._safe_status("closed:connection could not restart")
+
+    def _run_connections(self) -> None:
         attempt = 0
-        while True:
+        while not self._stop:
             self._had_session = False
+            revision = self._auth_revision
+            self._connection_auth_revision = None
             try:
                 self._loop.run_until_complete(self._main())
-                if not self._stop and not self._auth_hold:
+                if self._connection_auth_revision is not None:
+                    revision = self._connection_auth_revision
+                if not self._stop and not self._auth_hold and revision == self._auth_revision:
                     self._safe_status("closed:server")
             except Exception as exc:
-                if not self._stop:
+                if self._connection_auth_revision is not None:
+                    revision = self._connection_auth_revision
+                if not self._stop and revision == self._auth_revision:
                     self._safe_status(f"closed:{exc}")
             self._connected = False
             self._ws = None
@@ -2208,6 +2296,11 @@ class OrchestratorClient(QObject):
         return self._should_reconnect()
 
     def _register_frame(self) -> dict:
+        with self._lifecycle_lock:
+            self._registered_auth_revision = self._auth_revision
+            self._authenticated_revision = None
+            self._restart_after_exit = False
+            token = self.token
         self.connection_generation = str(uuid.uuid4())
         self._guidance_generation = None
         with self._voice_local_ack_lock:
@@ -2228,7 +2321,7 @@ class OrchestratorClient(QObject):
             capabilities.append("computer_host_capable")
         frame = {
             "type": "register_ui",
-            "token": self.token,
+            "token": token,
             "capabilities": capabilities,
             "device_id": self.device_id,
             "connection_generation": self.connection_generation,
@@ -2257,7 +2350,10 @@ class OrchestratorClient(QObject):
         async with websockets.connect(self.url, max_size=16 * 1024 * 1024, ping_interval=20) as ws:
             self._ws = ws
             self._had_session = True
-            await ws.send(json.dumps(self._register_frame()))
+            registration = self._register_frame()
+            revision = self._registered_auth_revision
+            self._connection_auth_revision = revision
+            await ws.send(json.dumps(registration))
             await self._finish_open(ws)
             async for raw in ws:
                 if self._stop:
@@ -2267,28 +2363,54 @@ class OrchestratorClient(QObject):
                 except (ValueError, TypeError):
                     continue
                 if isinstance(msg, dict):
+                    with self._lifecycle_lock:
+                        current = (not self._stop and self._ws is ws
+                                   and revision == self._auth_revision)
+                        if current and msg.get("type") == "auth_required":
+                            self._auth_hold = True
+                        if (current and not self._auth_hold and msg.get("type") == "rote_config"
+                                and isinstance(msg.get("device_profile"), dict)):
+                            self._authenticated_revision = revision
+                    if not current:
+                        await ws.close()
+                        break
                     if not self._handle_runtime_frame(msg):
                         continue
                     if msg.get("type") == "auth_required":
-                        self._auth_hold = True
                         self._safe_status(f"auth_required:{msg.get('reason', '')}")
                     self._safe_message(msg)
+                    if msg.get("type") == "auth_required":
+                        await ws.close()
+                        break
 
     async def _finish_open(self, ws) -> None:
         await self._flush_pending(ws)
+        if self._stop or self._auth_hold or self._registered_auth_revision != self._auth_revision:
+            raise ConnectionError("connection credentials changed")
         self._connected = True
         await self._flush_pending(ws)
         await self._resend_voice_pending(ws)
+        if self._stop or self._auth_hold or self._registered_auth_revision != self._auth_revision:
+            self._connected = False
+            raise ConnectionError("connection credentials changed")
         self._safe_status("connected")
 
     async def _flush_pending(self, ws) -> None:
+        revision = self._auth_revision
+        expected_socket = self._ws
+        if self._auth_hold or self._registered_auth_revision != revision:
+            raise ConnectionError("connection credentials changed")
         while self._pending and not self._stop:
-            frame = self._rebind_pending_conversation_frame(self._pending.popleft())
-            submission = self._queued_submission_from_frame(frame)
+            with self._lifecycle_lock:
+                if (self._auth_hold or self._auth_revision != revision
+                        or self._registered_auth_revision != revision or self._ws is not expected_socket):
+                    raise ConnectionError("connection credentials changed")
+                frame = self._rebind_pending_conversation_frame(self._pending.popleft())
+                submission = self._queued_submission_from_frame(frame)
+                preparation = self._queued_replay_preparation(frame, submission) if submission is not None else None
             if submission is None:
                 self._safe_status(f"send_rejected:{self._queued_action(frame)}")
                 continue
-            preparation = self._queued_replay_preparation(frame, submission)
             if preparation is None:
                 self._safe_status(f"send_rejected:{self._queued_action(frame)}")
                 continue
@@ -2299,12 +2421,19 @@ class OrchestratorClient(QObject):
                     "CLOSING",
                     "CLOSED",
                 }
-                if not acknowledged or self._stop or socket_closed:
+                if (not acknowledged or self._stop or self._auth_hold or socket_closed
+                        or self._auth_revision != revision or self._ws is not expected_socket
+                        or self._registered_auth_revision != revision
+                        or (expected_socket is not None and expected_socket is not ws)):
                     self._pending.appendleft(frame)
                     self._safe_status(f"replay_deferred:{submission.action}")
                     raise ConnectionError("queued replay preparation failed")
             else:
                 self.submission.emit(submission)
+            if (self._stop or self._auth_hold or self._auth_revision != revision
+                    or self._registered_auth_revision != revision or self._ws is not expected_socket):
+                self._pending.appendleft(frame)
+                raise ConnectionError("connection credentials changed")
             try:
                 await ws.send(frame)
             except BaseException:
@@ -2447,10 +2576,22 @@ class OrchestratorClient(QObject):
         ws = self._ws
         loop = self._loop
         if self._connected and loop and ws:
-            fut = asyncio.run_coroutine_threadsafe(ws.send(frame), loop)
+            delivery = self._send_on_connection(ws, self._auth_revision, frame)
+            try:
+                fut = asyncio.run_coroutine_threadsafe(delivery, loop)
+            except RuntimeError:
+                delivery.close()
+                self._queue_frame(frame)
+                return
             fut.add_done_callback(lambda f: self._on_fast_send_done(f, frame))
             return
         self._queue_frame(frame)
+
+    async def _send_on_connection(self, ws, revision: int, frame: str) -> None:
+        if (self._stop or self._auth_hold or self._ws is not ws
+                or self._auth_revision != revision or self._registered_auth_revision != revision):
+            raise ConnectionError("connection credentials changed")
+        await ws.send(frame)
 
     def _on_fast_send_done(self, fut, frame: str) -> None:
         try:
@@ -2777,9 +2918,13 @@ class OrchestratorClient(QObject):
         if not self._connected or loop is None or ws is None:
             self._safe_status("voice_activation_cancelled:connection_unavailable")
             return False
-        future = asyncio.run_coroutine_threadsafe(
-            ws.send(json.dumps(frame, separators=(",", ":"))), loop
-        )
+        delivery = self._send_on_connection(ws, self._auth_revision, json.dumps(frame, separators=(",", ":")))
+        try:
+            future = asyncio.run_coroutine_threadsafe(delivery, loop)
+        except RuntimeError:
+            delivery.close()
+            self._safe_status("voice_activation_cancelled:connection_unavailable")
+            return False
         future.add_done_callback(self._consume_host_send_result)
         return True
 
@@ -2789,12 +2934,12 @@ class OrchestratorClient(QObject):
         if not self._connected or loop is None or ws is None:
             self._safe_status("voice_submission_pending")
             return False
+        delivery = self._send_on_connection(
+            ws, self._auth_revision, json.dumps(frame, ensure_ascii=False, separators=(",", ":")))
         try:
-            future = asyncio.run_coroutine_threadsafe(
-                ws.send(json.dumps(frame, ensure_ascii=False, separators=(",", ":"))),
-                loop,
-            )
+            future = asyncio.run_coroutine_threadsafe(delivery, loop)
         except RuntimeError:
+            delivery.close()
             self._safe_status("voice_submission_pending")
             return False
         future.add_done_callback(self._consume_host_send_result)
@@ -2911,8 +3056,10 @@ class OrchestratorClient(QObject):
         return frames
 
     async def _resend_voice_pending(self, ws) -> None:
+        revision = self._auth_revision
         for frame in self._pending_voice_frames():
-            await ws.send(json.dumps(frame, ensure_ascii=False, separators=(",", ":")))
+            await self._send_on_connection(
+                ws, revision, json.dumps(frame, ensure_ascii=False, separators=(",", ":")))
 
     def settle_voice_submission(self, frame: dict[str, Any]) -> bool:
         if not isinstance(frame, dict):
@@ -3026,7 +3173,12 @@ class OrchestratorClient(QObject):
         if not self._connected or loop is None or ws is None:
             return
         serialized = json.dumps(frame)
-        future = asyncio.run_coroutine_threadsafe(ws.send(serialized), loop)
+        delivery = self._send_on_connection(ws, self._auth_revision, serialized)
+        try:
+            future = asyncio.run_coroutine_threadsafe(delivery, loop)
+        except RuntimeError:
+            delivery.close()
+            return
         future.add_done_callback(self._consume_host_send_result)
 
     @staticmethod

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+from copy import copy, deepcopy
 import hashlib
 import inspect
 import json
@@ -17,6 +18,7 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QSettings, QTimer, QUrl, Signal, QSignalBlocker
+from PySide6.QtCore import QObject, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -50,7 +52,7 @@ from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices
 
 from . import theme as T
 from . import icons as _icons
-from .auth import LoginCancelled
+from .auth import LoginCancelled, Session
 from . import confirm as _confirm
 from . import integrity as _integrity
 from . import __version__ as _APP_VERSION
@@ -69,6 +71,7 @@ from .protocol import (
     SemanticMessage,
     WindowsProtocolError,
     decode_semantic_transcript,
+    decode_token_account,
     device_caps,
     load_or_create_voice_device_id,
 )
@@ -83,7 +86,7 @@ from .renderer import (
 from .streaming import stream_error_ops, stream_frame_to_ops, subscribe_ack_ops
 from .chrome import chrome_render_notice
 from .console import parse_console_model, parse_console_presentation, parse_turn_selection
-from .console_widgets import AttachmentTray, ComposerEdit, ConsoleShell, ResponsiveComposer, button as console_button, clear_layout
+from .console_widgets import BannerViewport, WrappedBanner, AttachmentTray, ComposerEdit, ConsoleShell, ResponsiveComposer, button as console_button, clear_layout
 from .voice import QtAudioBackend, VoiceComposerWidget, VoiceController
 from . import rest
 from .remote_control import RemoteControlController
@@ -243,6 +246,7 @@ class ChatRail(QWidget):
         outer.addWidget(self._scroll, 1)
         self._hint: Optional[QWidget] = None
         self._transient: Optional[QWidget] = None
+        self._semantic_cache = None
 
     def _drop_hint(self) -> None:
         if self._hint is not None:
@@ -267,6 +271,7 @@ class ChatRail(QWidget):
         return bubble
 
     def _insert_bubble(self, bubble: QFrame, role: str) -> None:
+        self._semantic_cache = None
         wrap = QWidget()
         row = QHBoxLayout(wrap)
         inset = 36
@@ -377,6 +382,11 @@ class ChatRail(QWidget):
     def replace_semantic(
         self, messages: list[SemanticMessage], ctx: RenderContext
     ) -> None:
+        cache = self._semantic_cache
+        palette = tuple(T.PALETTE.items())
+        if (cache is not None and cache[0] == messages and cache[1] is ctx
+                and cache[2] == ctx.chat_id and cache[3] == palette):
+            return
         prepared = [
             (self._semantic_bubble(message, ctx), message.role)
             for message in messages
@@ -384,6 +394,7 @@ class ChatRail(QWidget):
         self.clear()
         for bubble, role in prepared:
             self._insert_bubble(bubble, role)
+        self._semantic_cache = (deepcopy(messages), ctx, ctx.chat_id, palette)
         if not prepared:
             return
         bar = self._scroll.verticalScrollBar()
@@ -414,6 +425,7 @@ class ChatRail(QWidget):
             frame.deleteLater()
 
     def clear(self) -> None:
+        self._semantic_cache = None
         self._hint = None
         self._transient = None
         while self._lay.count() > 1:
@@ -423,6 +435,7 @@ class ChatRail(QWidget):
         self.content_changed.emit()
 
     def add_note(self, text: str) -> None:
+        self._semantic_cache = None
         self._drop_hint()
         lbl = QLabel(str(text))
         lbl.setWordWrap(True)
@@ -1580,6 +1593,70 @@ class AuditDialog(QDialog):
             self._table.setItem(row, col, item)
 
 
+class _TransportBridge(QObject):
+    def __init__(self, window, client):
+        super().__init__(window)
+        self.window, self.client, self.active = window, client, True
+        self.bindings = (
+            ("message", self.message), ("status", self.status),
+            ("connection_generation_changed", self.connection),
+            ("submission", self.submission), ("submission_dropped", self.dropped),
+            ("queued_replay_preparation", self.replay),
+        )
+        for name, callback in self.bindings:
+            signal = getattr(client, name, None)
+            if signal is not None:
+                signal.connect(callback)
+
+    def current(self):
+        return (self.active and not self.window._auth_stopped
+                and self.window.client is self.client
+                and self.window._transport_bridge is self)
+
+    def retire(self):
+        self.active = False
+        for name, callback in self.bindings:
+            signal = getattr(self.client, name, None)
+            if signal is not None:
+                try:
+                    signal.disconnect(callback)
+                except (RuntimeError, TypeError, AttributeError):
+                    pass
+        self.deleteLater()
+
+    @Slot(dict)
+    def message(self, value):
+        if self.current():
+            self.window._on_message(value)
+
+    @Slot(str)
+    def status(self, value):
+        if self.current():
+            self.window._on_status(value)
+
+    @Slot(str)
+    def connection(self, value):
+        if self.current():
+            self.window._voice_connection_changed(value)
+
+    @Slot(object)
+    def submission(self, value):
+        if self.current():
+            self.window._project_local_submission(value)
+
+    @Slot(object)
+    def dropped(self, value):
+        if self.current():
+            self.window._discard_local_submission(value)
+
+    @Slot(object, object)
+    def replay(self, preparation, acknowledgement):
+        if self.current():
+            self.window._prepare_queued_replay(preparation, acknowledgement)
+        elif isinstance(acknowledgement, QueuedReplayAcknowledgement):
+            acknowledgement.complete(False, "connection was retired")
+
+
 class MainWindow(QMainWindow):
     _integrity_notice = Signal(str, str)
     _audit_loaded = Signal(object)
@@ -1588,6 +1665,7 @@ class MainWindow(QMainWindow):
     _signed_out = Signal(str)
     _reauth_done = Signal(int, object)
     _silent_refresh_done = Signal(int, object)
+    _auth_refresh_requested = Signal()
     _login_resolved = Signal(int, object)
     _byo_notice = Signal(str, str)
 
@@ -1624,6 +1702,10 @@ class MainWindow(QMainWindow):
         self._auth_stopped = False
         self._reauth_active = False
         self._silent_refresh_active = False
+        self._refresh_proactive = False
+        self._auth_refresh_timer = QTimer(self)
+        self._auth_refresh_timer.setSingleShot(True)
+        self._auth_refresh_timer.timeout.connect(self._refresh_expiring_session)
         self._login_active = False
         self._login_cancel: Optional[threading.Event] = None
         self._login_resolver = None
@@ -1640,6 +1722,7 @@ class MainWindow(QMainWindow):
         self._stream_seq: Dict[str, int] = {}
         self._token = token
         self._audit_dialog: Optional[AuditDialog] = None
+        self._audit_request: Optional[str] = None
         self._surface_dialog: Optional[SurfaceDialog] = None
         self._work_read = None
         self._turn_active = False
@@ -1689,27 +1772,8 @@ class MainWindow(QMainWindow):
         configure_resume = getattr(self.client, "configure_resume", None)
         if callable(configure_resume):
             configure_resume(self.active_chat)
-        self.client.message.connect(self._on_message)
-        self.client.status.connect(self._on_status)
-        submission_signal = getattr(self.client, "submission", None)
-        if submission_signal is not None and hasattr(submission_signal, "connect"):
-            submission_signal.connect(self._project_local_submission)
-        dropped_submission_signal = getattr(self.client, "submission_dropped", None)
-        if (
-            dropped_submission_signal is not None
-            and hasattr(dropped_submission_signal, "connect")
-        ):
-            dropped_submission_signal.connect(self._discard_local_submission)
-        replay_signal = getattr(self.client, "queued_replay_preparation", None)
-        if replay_signal is not None and hasattr(replay_signal, "connect"):
-            replay_signal.connect(self._prepare_queued_replay)
-            require_replay = getattr(
-                self.client,
-                "require_queued_replay_preparation",
-                None,
-            )
-            if callable(require_replay):
-                require_replay()
+        self._transport_bridge = None
+        self._bind_transport()
 
         if deployment_profile is not None:
             legacy_tools = deployment_profile.profile.agent_connection.legacy_tools
@@ -1875,17 +1939,10 @@ class MainWindow(QMainWindow):
             self._voice_widget.set_transcript
         )
         self._voice_controller.chat_required.connect(self._voice_chat_required)
-        voice_connection_signal = getattr(
-            self.client, "connection_generation_changed", None
-        )
-        if voice_connection_signal is not None and hasattr(
-            voice_connection_signal, "connect"
-        ):
-            voice_connection_signal.connect(self._voice_connection_changed)
         if app is not None:
             app.aboutToQuit.connect(self._voice_controller.close)
 
-        self._banner = QPushButton("")
+        self._banner = WrappedBanner()
         self._banner.setObjectName("statusBanner")
         self._banner.setProperty("astralAccessibilityControl", "status-banner")
         self._banner.setAccessibleName("Status message")
@@ -1899,6 +1956,7 @@ class MainWindow(QMainWindow):
             "padding:6px 14px; font-size:12px; text-align:left;"
         )
         self._banner.clicked.connect(self._on_banner_clicked)
+        self._banner_viewport = BannerViewport(self._banner)
 
         self.maybe_start_tools_agent()
 
@@ -1909,7 +1967,7 @@ class MainWindow(QMainWindow):
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(0)
         rl.addWidget(self.topbar)
-        rl.addWidget(self._banner)
+        rl.addWidget(self._banner_viewport)
         rl.addWidget(split, 1)
         self.setCentralWidget(root)
         self._input.setFocus()
@@ -1930,11 +1988,13 @@ class MainWindow(QMainWindow):
         self._signed_out.connect(self._finish_sign_out)
         self._reauth_done.connect(self._on_reauth_done)
         self._silent_refresh_done.connect(self._on_silent_refresh_done)
+        self._auth_refresh_requested.connect(self._refresh_expiring_session)
         self._login_resolved.connect(self._on_login_resolved)
         self._byo_notice.connect(self._show_banner)
         self._signing_out_done = False
         self._connected_once = False
         self._start_integrity_check()
+        self._schedule_auth_refresh()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -2419,6 +2479,8 @@ class MainWindow(QMainWindow):
             self._voice_controller.cancel_pending_activation()
 
     def _voice_connection_changed(self, connection: str) -> None:
+        if connection != getattr(self.client, "connection_generation", None):
+            return
         if self._work_read is not None and self._work_read[1] != connection:
             self._retire_work_read()
         pending = self._pending_voice_chat
@@ -2711,6 +2773,8 @@ class MainWindow(QMainWindow):
         self._history_dialog.raise_()
 
     def _open_audit(self) -> None:
+        if self._auth_stopped:
+            return
         self._retire_work_read()
         if self._audit_dialog is None:
             self._audit_dialog = AuditDialog(self, self._query_audit)
@@ -2782,13 +2846,24 @@ class MainWindow(QMainWindow):
         self._surface_dialog.raise_()
 
     def _current_token(self) -> str:
+        if self._auth_stopped:
+            return ""
+        session = self._auth_session
+        remaining = session.remaining() if isinstance(session, Session) else None
+        if remaining is not None and remaining <= 5:
+            self._auth_refresh_requested.emit()
+            return ""
         if self._auth_session is not None and getattr(self._auth_session, "access_token", ""):
             return self._auth_session.access_token
         return self._token
 
     def _query_audit(self, filters: dict, reset: bool) -> None:
-        if self._audit_dialog is not None:
-            self._audit_dialog.begin_load(reset)
+        dialog = self._audit_dialog
+        if self._auth_stopped or dialog is None:
+            return
+        dialog.begin_load(reset)
+        request = self._audit_request = str(uuid.uuid4())
+        owner = self._resume_store.storage_key
         url = rest.audit_url(
             _http_base(self._url),
             event_class=filters.get("event_class", ""),
@@ -2800,11 +2875,15 @@ class MainWindow(QMainWindow):
 
         def _work() -> None:
             try:
+                if not token:
+                    raise rest.RestError(401, "Sign-in is being renewed. Retry the action when connected.")
                 data = rest.fetch_json(url, token)
                 rows, nxt = rest.parse_audit_response(data)
-                self._audit_loaded.emit({"rows": rows, "next_cursor": nxt, "error": None})
+                self._audit_loaded.emit({"owner": owner, "dialog": dialog, "request": request,
+                                         "rows": rows, "next_cursor": nxt, "error": None})
             except Exception as exc:  # noqa: BLE001
-                self._audit_loaded.emit({"rows": [], "next_cursor": None, "error": str(exc)})
+                self._audit_loaded.emit({"owner": owner, "dialog": dialog, "request": request,
+                                         "rows": [], "next_cursor": None, "error": str(exc)})
 
         threading.Thread(target=_work, daemon=True).start()
 
@@ -2819,6 +2898,8 @@ class MainWindow(QMainWindow):
 
         def _work() -> None:
             try:
+                if not token:
+                    raise rest.RestError(401, "Sign-in is being renewed. Retry the action when connected.")
                 data = rest.fetch_bytes(full, token)
                 with open(save_path, "wb") as fh:
                     fh.write(data)
@@ -2867,6 +2948,8 @@ class MainWindow(QMainWindow):
             import mimetypes
 
             try:
+                if not token:
+                    raise rest.RestError(401, "Sign-in is being renewed. Retry the action when connected.")
                 with open(path, "rb") as fh:
                     data = fh.read()
                 mime = mimetypes.guess_type(path)[0] or "application/octet-stream"
@@ -2989,8 +3072,21 @@ class MainWindow(QMainWindow):
                           controls[0] if controls else self._attach_btn)
             target.setFocus()
 
+    def _retire_audit(self) -> None:
+        self._audit_request = None
+        dialog, self._audit_dialog = self._audit_dialog, None
+        if dialog is not None:
+            dialog.begin_load(True)
+            dialog._search.clear()
+            dialog._status_lbl.clear()
+            dialog.close()
+            dialog.deleteLater()
+
     def _on_audit_loaded(self, result: object) -> None:
-        if self._audit_dialog is None or not isinstance(result, dict):
+        if (self._auth_stopped or self._audit_dialog is None or not isinstance(result, dict)
+                or result.get("owner") != self._resume_store.storage_key
+                or result.get("dialog") is not self._audit_dialog
+                or self._audit_request is None or result.get("request") != self._audit_request):
             return
         if result.get("error"):
             self._audit_dialog.set_error(str(result["error"]))
@@ -3053,7 +3149,7 @@ class MainWindow(QMainWindow):
         refresh_token = getattr(sess, "refresh_token", None) if sess else None
         client_id = getattr(sess, "client_id", "astral-desktop") if sess else "astral-desktop"
         token_url = getattr(sess, "token_url", "") if sess else ""
-        access = self._current_token()
+        access = getattr(sess, "access_token", None) or self._token
         http_base = _http_base(self._url)
         self._show_banner("Signing out…")
 
@@ -3217,6 +3313,9 @@ class MainWindow(QMainWindow):
             if not isinstance(preparation, QueuedReplayPreparation):
                 raise WindowsProtocolError("queued replay preparation is invalid")
             preparation.validate()
+            if (self._auth_stopped or preparation.connection_generation
+                    != getattr(self.client, "connection_generation", None)):
+                raise WindowsProtocolError("queued replay belongs to a retired connection")
             if (
                 self._continuity.connection_generation
                 != preparation.connection_generation
@@ -3360,6 +3459,8 @@ class MainWindow(QMainWindow):
         self.client.send_event(action, payload, session_id=self.active_chat)
 
     def _on_status(self, s: str) -> None:
+        if s.startswith("auth_required") and getattr(self.client, "authentication_required", None) is False:
+            return
         if s == "device_update_failed":
             self._show_banner("Window layout could not update. Check your connection and resize the window to retry.", "warning")
             return
@@ -3424,6 +3525,7 @@ class MainWindow(QMainWindow):
             nice = "Disconnected"
             self._clear_local_submissions()
             self._pending_voice_chat = None
+            self._voice_controller.cancel_pending_activation()
             self._voice_controller.on_connection_rotated(None)
             self._win_agent_registered = False
             if self._byo_enabled:
@@ -3439,12 +3541,12 @@ class MainWindow(QMainWindow):
         elif s.startswith("auth_required"):
             nice = "Re-authenticating…"
             self._pending_voice_chat = None
+            self._voice_controller.cancel_pending_activation()
             self._voice_controller.on_connection_rotated(None)
         self.topbar.set_status(nice, color)
         if s == "connected":
             self._sync_transport_scope()
             self._refresh_device()
-            self._reauth_tries = 0
             self._connected_once = True
             self._hide_banner()
             if self._win_agent_enabled and not self._win_agent_registered:
@@ -3473,31 +3575,71 @@ class MainWindow(QMainWindow):
             self._turn_phase_active = False
         self._sync_console_conversation()
 
-    def _begin_silent_refresh(self) -> None:
-        if (self._auth_stopped or self._silent_refresh_active
-                or self._reauth_active or self._login_active):
+    def _bind_transport(self) -> None:
+        previous = getattr(self, "_transport_bridge", None)
+        if previous is not None and previous.active:
+            previous.retire()
+        self._transport_bridge = _TransportBridge(self, self.client)
+        require_replay = getattr(self.client, "require_queued_replay_preparation", None)
+        if callable(require_replay):
+            require_replay()
+
+    def _schedule_auth_refresh(self) -> None:
+        self._auth_refresh_timer.stop()
+        if (self._auth_stopped or self._reauth_tries >= 2
+                or not isinstance(self._auth_session, Session)):
+            return
+        delay = self._auth_session.refresh_delay_ms()
+        if delay is not None:
+            self._auth_refresh_timer.start(max(1000, delay))
+
+    def _refresh_expiring_session(self) -> None:
+        if (self._auth_stopped or self._reauth_tries >= 2
+                or not isinstance(self._auth_session, Session)):
+            return
+        delay = self._auth_session.refresh_delay_ms()
+        if delay is None:
+            return
+        if delay > 0:
+            self._schedule_auth_refresh()
+        else:
+            self._begin_silent_refresh(proactive=True)
+
+    def _begin_silent_refresh(self, *, proactive: bool = False) -> None:
+        if self._silent_refresh_active:
+            self._refresh_proactive = self._refresh_proactive and proactive
+            return
+        if self._auth_stopped or self._reauth_active or self._login_active:
             return
         if not (self._auth_session and self._reauth_tries < 2):
+            self._auth_refresh_timer.stop()
             self._prompt_reauth()
             return
         self._reauth_tries += 1
         self._invalidate_auth()
         generation = self._auth_generation
         self._silent_refresh_active = True
-        sess = self._auth_session
+        self._refresh_proactive = proactive
+        session = self._auth_session
+        candidate = copy(session)
 
         def _work() -> None:
             try:
-                token = sess.refresh()
+                token = candidate.refresh()
             except Exception:  # noqa: BLE001
                 token = None
-            self._silent_refresh_done.emit(generation, token)
+            self._silent_refresh_done.emit(generation, (session, candidate, token))
 
-        threading.Thread(target=_work, name="astral-silent-refresh", daemon=True).start()
+        try:
+            threading.Thread(target=_work, name="astral-silent-refresh", daemon=True).start()
+        except Exception:
+            self._on_silent_refresh_done(generation, (session, candidate, None))
 
     def _invalidate_auth(self) -> None:
+        self._auth_refresh_timer.stop()
         self._auth_generation += 1
         self._silent_refresh_active = False
+        self._refresh_proactive = False
         self._reauth_active = False
         self._login_active = False
         if self._login_cancel is not None:
@@ -3507,13 +3649,56 @@ class MainWindow(QMainWindow):
     def _stop_auth(self) -> None:
         self._auth_stopped = True
         self._invalidate_auth()
+        self._retire_audit()
+        bridge = getattr(self, "_transport_bridge", None)
+        if bridge is not None and bridge.active:
+            bridge.retire()
 
-    def _on_silent_refresh_done(self, generation: int, token: object) -> None:
-        if self._auth_stopped or generation != self._auth_generation:
+    def _on_silent_refresh_done(self, generation: int, result: object) -> None:
+        if (self._auth_stopped or generation != self._auth_generation
+                or not self._silent_refresh_active or not isinstance(result, tuple)
+                or len(result) != 3 or result[0] is not self._auth_session):
             return
+        _, candidate, token = result
+        remaining = candidate.remaining() if isinstance(candidate, Session) else None
+        if remaining is not None and remaining <= 5:
+            token = None
+        proactive = self._refresh_proactive
         self._silent_refresh_active = False
+        self._refresh_proactive = False
         if isinstance(token, str) and token:
-            self._reconnect(token)
+            self._auth_session = candidate
+            identity = decode_token_account(self._token)
+            renew = getattr(self.client, "renew_credentials", None)
+            if identity is not None and decode_token_account(token) == identity and callable(renew):
+                self._invalidate_auth()
+                self._pending_voice_chat = None
+                self._voice_controller.cancel_pending_activation()
+                self._voice_controller.on_connection_rotated(None)
+                self._on_status("reconnecting:1")
+                self._win_agent_registered = False
+                if self._byo_enabled:
+                    self._byo.on_transport_disconnected()
+                self._bind_transport()
+                self.client.configure_resume(self.active_chat if _canonical_uuid4(self.active_chat) else None)
+                self._token = token
+                try:
+                    renewed = renew(token)
+                except Exception:
+                    self._auth_refresh_timer.stop()
+                    self._show_banner("The connection could not restart. Restart the app to sign in again.", "error")
+                    return
+                if not renewed:
+                    self._reconnect(token)
+                self._schedule_auth_refresh()
+            else:
+                self._reconnect(token)
+        elif proactive:
+            if self._reauth_tries < 2:
+                self._auth_refresh_timer.start(10_000)
+            else:
+                self._auth_refresh_timer.stop()
+                self._prompt_reauth()
         else:
             self._prompt_reauth()
 
@@ -3530,14 +3715,14 @@ class MainWindow(QMainWindow):
             self.client.stop()
         except Exception:
             pass
-        try:
-            self.client.message.disconnect(self._on_message)
-            self.client.status.disconnect(self._on_status)
-        except (RuntimeError, TypeError, AttributeError):
-            pass
+        self._transport_bridge.retire()
+        self._pending_voice_chat = None
+        self._voice_controller.cancel_pending_activation()
+        self._voice_controller.on_connection_rotated(None)
         previous_account_key = self._resume_store.storage_key
         self._resume_store.bind_token(token)
         if self._resume_store.storage_key != previous_account_key:
+            self._retire_audit()
             self._clear_workspace_actions()
             self._rendered_snapshot = None
             self._input.clear()
@@ -3582,26 +3767,11 @@ class MainWindow(QMainWindow):
                 self.active_chat if _canonical_uuid4(self.active_chat) else None
             )
         self.client.session_id = self.active_chat or "win-client"
+        self._voice_controller.transport = self.client
         self._attach_remote_control()
-        self.client.message.connect(self._on_message)
-        self.client.status.connect(self._on_status)
-        submission_signal = getattr(self.client, "submission", None)
-        if submission_signal is not None and hasattr(submission_signal, "connect"):
-            submission_signal.connect(self._project_local_submission)
-        dropped_signal = getattr(self.client, "submission_dropped", None)
-        if dropped_signal is not None and hasattr(dropped_signal, "connect"):
-            dropped_signal.connect(self._discard_local_submission)
-        replay_signal = getattr(self.client, "queued_replay_preparation", None)
-        if replay_signal is not None and hasattr(replay_signal, "connect"):
-            replay_signal.connect(self._prepare_queued_replay)
-            require_replay = getattr(
-                self.client,
-                "require_queued_replay_preparation",
-                None,
-            )
-            if callable(require_replay):
-                require_replay()
+        self._bind_transport()
         self.client.start()
+        self._schedule_auth_refresh()
 
     def _prompt_reauth(self) -> None:
         if self._auth_stopped or self._reauth_active:
@@ -4043,6 +4213,9 @@ class MainWindow(QMainWindow):
     def _on_message(self, msg: dict) -> None:
         t = msg.get("type")
         if t == "rote_config":
+            if getattr(self.client, "authenticated", False):
+                self._reauth_tries = 0
+                self._schedule_auth_refresh()
             profile = msg.get("device_profile")
             parsed = parse_console_presentation(profile.get("console") if isinstance(profile, dict) else None)
             if parsed is not None:

@@ -48,6 +48,18 @@ authorized committed HTML and saves atomically to the user's chosen file. Share
 is offered only when the server declares it; neither action grants permission
 locally or substitutes an uncommitted native view for server export state.
 
+Normal Keycloak sessions renew before their reported expiry and register again
+through the existing connection protocol. Same-owner renewal retains the draft,
+attachments, pending submissions and unchanged result controls. Account changes
+clear private views and reject delayed responses from the previous account.
+Actions that encounter an expired credential ask for a retry after reconnection;
+uploads are never silently repeated.
+
+Result titles move above their action row when the measured width requires it.
+Status feedback wraps long words and remains keyboard reachable when it exceeds
+the available height: Page Up, Page Down, Home and End scroll the message while
+Space activates its existing dismiss or cancel action.
+
 The six additional native primitive renderers consume the existing manifest
 schemas. They reject invalid/non-finite chart data, bound collection sizes,
 preserve disabled actions and expose chart values as accessible text. They do

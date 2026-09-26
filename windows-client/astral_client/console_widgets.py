@@ -4,13 +4,15 @@ The application supplies authenticated actions and retains one canvas through re
 
 from __future__ import annotations
 
+import math
 import re
 
-from PySide6.QtCore import Qt, Signal, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QPointF, QRect, QSize, Qt, Signal, QTimer
+from PySide6.QtGui import QKeySequence, QPalette, QShortcut, QTextLayout, QTextOption
 from PySide6.QtWidgets import (
-    QApplication, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
-    QMenu, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QApplication, QBoxLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
+    QMenu, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QStyle, QStyleOptionButton,
+    QStylePainter, QVBoxLayout, QWidget,
 )
 
 from . import theme as T
@@ -51,6 +53,138 @@ def button(text, callback, *, name=None):
     widget.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
     widget.clicked.connect(callback)
     return widget
+
+
+class WrappedBanner(QPushButton):
+    geometry_changed = Signal()
+
+    def __init__(self):
+        super().__init__()
+        policy = QSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+        self._geometry_timer = QTimer(self)
+        self._geometry_timer.setSingleShot(True)
+        self._geometry_timer.timeout.connect(self._refresh_geometry)
+
+    def setText(self, text):
+        super().setText(text)
+        self._queue_geometry_update()
+
+    def _queue_geometry_update(self):
+        timer = getattr(self, "_geometry_timer", None)
+        if timer is not None:
+            timer.start(0)
+
+    def _refresh_geometry(self):
+        self.updateGeometry()
+        self.update()
+        self.geometry_changed.emit()
+
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange, QEvent.Type.LayoutDirectionChange):
+            self._queue_geometry_update()
+
+    def _text_layout(self, width):
+        layout = QTextLayout(self.text(), self.font())
+        option = QTextOption()
+        option.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+        option.setTextDirection(self.layoutDirection())
+        option.setAlignment(QStyle.visualAlignment(self.layoutDirection(), Qt.AlignmentFlag.AlignLeading))
+        layout.setTextOption(option)
+        layout.beginLayout()
+        height = 0.0
+        while True:
+            line = layout.createLine()
+            if not line.isValid():
+                break
+            line.setLineWidth(max(1, width))
+            line.setPosition(QPointF(0, height))
+            height += line.height()
+        layout.endLayout()
+        return layout, height
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        self.ensurePolished()
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.rect = QRect(0, 0, max(1, width), 100)
+        content = self.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, self)
+        _, height = self._text_layout(content.width())
+        return math.ceil(height + option.rect.height() - content.height())
+
+    def sizeHint(self):
+        return QSize(0, self.heightForWidth(self.width()))
+
+    def minimumSizeHint(self):
+        return QSize(0, self.fontMetrics().height())
+
+    def paintEvent(self, event):
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.text = ""
+        painter = QStylePainter(self)
+        painter.drawControl(QStyle.ControlElement.CE_PushButton, option)
+        content = self.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, self)
+        layout, height = self._text_layout(content.width())
+        painter.setPen(option.palette.color(QPalette.ColorRole.ButtonText))
+        layout.draw(painter, QPointF(content.left(), content.top() + max(0, (content.height() - height) / 2)))
+
+
+class BannerViewport(QScrollArea):
+    def __init__(self, button):
+        super().__init__()
+        self.button = button
+        self._last_text = None
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self._refresh)
+        visible = not button.isHidden()
+        self.setWidgetResizable(True)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.setWidget(button)
+        button.setVisible(visible)
+        self.setVisible(visible)
+        button.installEventFilter(self)
+        button.geometry_changed.connect(lambda: self._refresh_timer.start(0))
+
+    def _refresh(self):
+        height = self.button.heightForWidth(self.viewport().width())
+        self.button.setMinimumHeight(height)
+        limit = max(self.button.minimumSizeHint().height(), self.window().height() // 3)
+        self.setFixedHeight(min(height, limit))
+        if self._last_text != self.button.text():
+            self._last_text = self.button.text()
+            self.verticalScrollBar().setValue(0)
+
+    def eventFilter(self, watched, event):
+        if watched is self.button and event.type() in (QEvent.Type.ShowToParent, QEvent.Type.HideToParent):
+            self.setVisible(not self.button.isHidden())
+            self._refresh_timer.start(0)
+        elif watched is self.button and event.type() == QEvent.Type.KeyPress and event.key() in (
+            Qt.Key.Key_PageUp, Qt.Key.Key_PageDown, Qt.Key.Key_Home, Qt.Key.Key_End,
+        ):
+            self.verticalScrollBar().keyPressEvent(event)
+            return event.isAccepted()
+        elif watched is self.window() and event.type() == QEvent.Type.Resize:
+            self._refresh_timer.start(0)
+        return super().eventFilter(watched, event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.window() is not self:
+            self.window().installEventFilter(self)
+        self._refresh_timer.start(0)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._refresh_timer.start(0)
 
 
 class AttachmentTray(QScrollArea):
@@ -198,18 +332,24 @@ class ResultPanel(QFrame):
         self._layout.setContentsMargins(16, 12, 16, 12)
         self.role = label("")
         self._layout.addWidget(self.role)
-        self.header = QHBoxLayout()
+        self.header = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.header_actions = QHBoxLayout()
+        self._header_reflow_timer = QTimer(self)
+        self._header_reflow_timer.setSingleShot(True)
+        self._header_reflow_timer.timeout.connect(self._reflow_header)
         self.title = label("", heading=True)
         self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.header.addWidget(self.title, 1)
         self.turn_badge = label("")
-        self.header.addWidget(self.turn_badge)
+        self.header_actions.addWidget(self.turn_badge)
+        self.header_actions.addStretch(1)
         self.workspace_layout = QHBoxLayout()
-        self.header.addLayout(self.workspace_layout)
+        self.header_actions.addLayout(self.workspace_layout)
         self.collapse_button = button("", self.toggle_collapsed)
         self.fullscreen_button = button("", self.toggle_fullscreen)
-        self.header.addWidget(self.collapse_button)
-        self.header.addWidget(self.fullscreen_button)
+        self.header_actions.addWidget(self.collapse_button)
+        self.header_actions.addWidget(self.fullscreen_button)
+        self.header.addLayout(self.header_actions)
         self._layout.addLayout(self.header)
         self._layout.addWidget(canvas, 1)
         self.preview_button = button("", self.toggle_fullscreen)
@@ -236,6 +376,7 @@ class ResultPanel(QFrame):
         self.title.setText(self.labels["result_title"].replace("{agent}", agent or self.labels["result_default_agent"]))
         self.turn_badge.setText(f"{turns} {self.labels['turn_singular' if turns == 1 else 'turn_plural']}")
         self.turn_badge.setVisible(turns > 0)
+        self._header_reflow_timer.start(0)
 
     def set_workspace_actions(self, actions):
         clear_layout(self.workspace_layout)
@@ -245,6 +386,7 @@ class ResultPanel(QFrame):
             control.setObjectName("iconGhost")
             icons.apply(control, action["icon"], T.MUTED, T.TEXT)
             self.workspace_layout.addWidget(control)
+        self._header_reflow_timer.start(0)
 
     def toggle_collapsed(self):
         self.collapsed = not self.collapsed
@@ -277,10 +419,30 @@ class ResultPanel(QFrame):
         self.canvas.setMaximumHeight(16777215 if self.fullscreen else self.preview_height)
         self.preview_cover.setGeometry(self.canvas.rect())
         self.preview_cover.raise_()
+        self._header_reflow_timer.start(0)
+
+    def _reflow_header(self):
+        controls = [self.workspace_layout.itemAt(index).widget()
+                    for index in range(self.workspace_layout.count())]
+        controls.extend((self.collapse_button, self.fullscreen_button))
+        if not self.turn_badge.isHidden():
+            controls.insert(0, self.turn_badge)
+        for control in (self.title, *controls):
+            control.ensurePolished()
+        needed = self.title.fontMetrics().horizontalAdvance(self.title.text())
+        needed += sum(max(control.minimumWidth(), control.sizeHint().width()) for control in controls)
+        needed += self.header_actions.spacing() * max(0, len(controls) - 1) + self.header.spacing()
+        margins = self._layout.contentsMargins()
+        stacked = needed > self.width() - margins.left() - margins.right()
+        direction = QBoxLayout.Direction.TopToBottom if stacked else QBoxLayout.Direction.LeftToRight
+        if self.header.direction() != direction:
+            self.header.setDirection(direction)
+            self.header.setStretch(0, 0 if stacked else 1)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.preview_cover.setGeometry(self.canvas.rect())
+        self._header_reflow_timer.start(0)
 
 
 class ConsoleShell(QWidget):

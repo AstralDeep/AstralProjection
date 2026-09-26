@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import secrets
 import threading
 import time
@@ -47,6 +48,41 @@ class Session:
     refresh_token: Optional[str]
     token_url: str
     client_id: str
+    expires_at: Optional[float] = None
+    monotonic_expires_at: Optional[float] = None
+    refresh_margin: float = 60.0
+
+    @classmethod
+    def from_response(cls, response: dict, *, token_url: str, client_id: str,
+                      refresh_token: Optional[str] = None) -> "Session":
+        token = response.get("access_token")
+        rotated = response.get("refresh_token", refresh_token)
+        if (not isinstance(token, str) or not token.strip()
+                or (rotated is not None and (not isinstance(rotated, str) or not rotated.strip()))):
+            raise ValueError("The identity provider returned invalid credentials.")
+        result = cls(token, rotated, token_url, client_id)
+        lifetime = response.get("expires_in")
+        if "expires_in" in response:
+            if (type(lifetime) not in (int, float) or not 0 < lifetime <= 31_536_000
+                    or not math.isfinite(lifetime)):
+                raise ValueError("The identity provider returned invalid token expiry.")
+            result.expires_at = time.time() + lifetime
+            result.monotonic_expires_at = time.monotonic() + lifetime
+            if not math.isfinite(result.expires_at) or not math.isfinite(result.monotonic_expires_at):
+                raise ValueError("The identity provider returned invalid token expiry.")
+            result.refresh_margin = min(60.0, lifetime / 10)
+        return result
+
+    def remaining(self) -> Optional[float]:
+        if self.expires_at is None or self.monotonic_expires_at is None:
+            return None
+        return min(self.expires_at - time.time(), self.monotonic_expires_at - time.monotonic())
+
+    def refresh_delay_ms(self) -> Optional[int]:
+        remaining = self.remaining()
+        if not self.refresh_token or remaining is None:
+            return None
+        return int(min(60_000, max(0.0, (remaining - self.refresh_margin) * 1000)))
 
     def refresh(self) -> Optional[str]:
         if not self.refresh_token:
@@ -55,11 +91,16 @@ class Session:
             r = _post_form(self.token_url, {"grant_type": "refresh_token",
                                             "refresh_token": self.refresh_token,
                                             "client_id": self.client_id}, timeout=15)
-            self.access_token = r["access_token"]
-            self.refresh_token = r.get("refresh_token", self.refresh_token)
+            renewed = Session.from_response(r, token_url=self.token_url,
+                                            client_id=self.client_id, refresh_token=self.refresh_token)
+            self.access_token = renewed.access_token
+            self.refresh_token = renewed.refresh_token
+            self.expires_at = renewed.expires_at
+            self.monotonic_expires_at = renewed.monotonic_expires_at
+            self.refresh_margin = renewed.refresh_margin
             return self.access_token
         except Exception:  # noqa: BLE001
-            logger.warning("token refresh failed", exc_info=True)
+            logger.warning("token refresh failed")
             return None
 
 
@@ -131,5 +172,4 @@ def oidc_login(authority: str, *, client_id: str = "astral-desktop",
         "grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri,
         "client_id": client_id, "code_verifier": verifier,
     })
-    return Session(access_token=tok["access_token"], refresh_token=tok.get("refresh_token"),
-                   token_url=token_url, client_id=client_id)
+    return Session.from_response(tok, token_url=token_url, client_id=client_id)

@@ -351,3 +351,167 @@ def test_new_result_controls_and_fullscreen_keep_targets_and_keyboard_scope(requ
     assert shell.main.isEnabled() and shell.sidebar.isEnabled()
     assert QApplication.focusWidget() == shell.results.preview_button
     assert not next(button for button in actions if button.text() == "Unavailable action").isEnabled()
+
+
+@pytest.mark.parametrize("geometry", [GEOMETRY[0], GEOMETRY[1], GEOMETRY[6]])
+def test_result_metadata_and_workspace_actions_fit_actual_narrow_header(request, geometry):
+    win = request.getfixturevalue("shell_window")
+    menu = copy.deepcopy(MENU)
+    menu["topbar"].append({"key": "export", "kind": "workspace_action", "label": "Export page",
+                           "icon": "download", "operation": "export_canvas", "context": "live_canvas"})
+    win._on_message({"type": "chrome_menu", "model": menu})
+    win.canvas.set_components([{"type": "text", "component_id": "dice-result", "content": "1, 2, 3, 4, 5, 6"}])
+    win._sync_console_conversation()
+    resize(win, geometry)
+    win.activateWindow()
+    result = win._console_shell.results
+    result.set_metadata("Dice Roller", 2)
+    settle()
+    title = result.title
+    assert title.text() == "Dice Roller Interface"
+    assert title.width() >= max(title.fontMetrics().horizontalAdvance(word) for word in title.text().split())
+    assert title.height() >= title.heightForWidth(title.width())
+    assert title.visibleRegion().boundingRect().contains(title.rect())
+    controls = [result.workspace_layout.itemAt(0).widget(), result.collapse_button, result.fullscreen_button]
+    for control in controls:
+        assert control.visibleRegion().boundingRect().contains(control.rect())
+        assert control.height() >= geometry["presentation"]["minimum_control_height"]
+    if geometry["viewport"][0] < 500:
+        assert title.mapTo(result, title.rect().bottomRight()).y() < min(
+            control.mapTo(result, control.rect().topLeft()).y() for control in controls)
+    result.fullscreen_button.setFocus()
+    settle()
+    assert QApplication.focusWidget() is result.fullscreen_button
+    other = GEOMETRY[6] if geometry["viewport"][0] < 500 else GEOMETRY[0]
+    resize(win, other)
+    result.set_metadata("Dice Roller", 2)
+    settle()
+    assert QApplication.focusWidget() is result.fullscreen_button
+    QTest.keyClick(result.fullscreen_button, Qt.Key.Key_Space)
+    settle()
+    assert result.fullscreen
+    QTest.keyClick(result.fullscreen_button, Qt.Key.Key_Escape)
+    settle()
+    assert not result.fullscreen and QApplication.focusWidget() is result.fullscreen_button
+
+
+@pytest.mark.parametrize("geometry", [GEOMETRY[0], GEOMETRY[1], GEOMETRY[6]])
+def test_long_actionable_status_banner_wraps_and_keeps_keyboard_role(request, geometry):
+    from PySide6.QtGui import QAccessible
+    win = request.getfixturevalue("shell_window")
+    resize(win, geometry)
+    win.activateWindow()
+    message = ("Couldn't upload synthetic-report.csv: upload refused (401). Sign in again, "
+               "then retry this file. Your typed draft remains available.")
+    win._show_banner(message, "warning")
+    settle()
+    banner = win._banner
+    assert (win.width(), win.height()) == tuple(geometry["viewport"])
+    assert banner.text() == message and banner.accessibleDescription() == message
+    assert QAccessible.queryAccessibleInterface(banner).role() == QAccessible.Role.Button
+    assert banner.height() >= banner.heightForWidth(banner.width())
+    assert banner.visibleRegion().boundingRect().contains(banner.rect())
+    banner.setFocus()
+    settle()
+    assert QApplication.focusWidget() is banner
+    QTest.keyClick(banner, Qt.Key.Key_Space)
+    settle()
+    assert banner.isHidden()
+
+
+def test_wrapped_signin_banner_keeps_cancel_action(request):
+    import threading
+    win = request.getfixturevalue("shell_window")
+    resize(win, GEOMETRY[0])
+    win.activateWindow()
+    win._login_active = True
+    win._login_cancel = threading.Event()
+    win._show_banner("Signing in — complete the sign-in in your browser. Click here to cancel.")
+    settle()
+    win._banner.setFocus()
+    QTest.keyClick(win._banner, Qt.Key.Key_Space)
+    settle()
+    assert win._login_cancel.is_set() and win._banner.isHidden()
+
+
+@pytest.mark.parametrize("direction", [Qt.LayoutDirection.LeftToRight, Qt.LayoutDirection.RightToLeft])
+@pytest.mark.parametrize("message", ["https://example.invalid/" + "abcdef0123456789" * 32,
+                                     "synthetic-" + "a" * 512 + ".csv"])
+def test_unbroken_status_feedback_wraps_completely_in_both_directions(request, direction, message):
+    from PySide6.QtWidgets import QStyle, QStyleOptionButton
+    win = request.getfixturevalue("shell_window")
+    resize(win, GEOMETRY[0])
+    win._banner.setLayoutDirection(direction)
+    win._show_banner(message, "warning")
+    settle()
+    banner = win._banner
+    assert win.width() == 320
+    option = QStyleOptionButton()
+    banner.initStyleOption(option)
+    content = banner.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, banner)
+    layout, text_height = banner._text_layout(content.width())
+    assert layout.lineCount() > 1
+    assert layout.textOption().textDirection() == direction
+    assert layout.textOption().alignment() == QStyle.visualAlignment(direction, Qt.AlignmentFlag.AlignLeading)
+    assert sum(layout.lineAt(index).textLength() for index in range(layout.lineCount())) == len(message)
+    assert all(layout.lineAt(index).naturalTextWidth() <= content.width() + 1
+               for index in range(layout.lineCount()))
+    assert text_height <= content.height()
+    assert banner.accessibleDescription() == message
+
+
+def test_visible_status_remeasures_after_text_font_and_style_changes(request):
+    from PySide6.QtWidgets import QStyle, QStyleOptionButton
+    win = request.getfixturevalue("shell_window")
+    resize(win, GEOMETRY[0])
+    win.activateWindow()
+    win._show_banner("Ready.")
+    settle()
+    banner = win._banner
+    small_height = banner.height()
+    message = "Reconnect your account and retry the pending attachment. " * 5
+    banner.setText(message)
+    settle()
+    assert banner.height() > small_height
+    wrapped_height = banner.height()
+    banner.setStyleSheet("font-size:24px;padding:10px 16px;border:1px solid red;")
+    settle()
+    assert banner.height() > wrapped_height
+    option = QStyleOptionButton()
+    banner.initStyleOption(option)
+    content = banner.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, banner)
+    _, text_height = banner._text_layout(content.width())
+    assert text_height <= content.height()
+    viewport = win._banner_viewport
+    assert viewport.height() <= win.height() // 3
+    assert viewport.verticalScrollBar().maximum() > 0
+    assert (win.width(), win.height()) == tuple(GEOMETRY[0]["viewport"])
+    banner.setFocus()
+    settle()
+    assert QApplication.focusWidget() is banner
+    QTest.keyClick(banner, Qt.Key.Key_PageDown)
+    settle()
+    assert viewport.verticalScrollBar().value() > 0
+    QTest.keyClick(banner, Qt.Key.Key_PageUp)
+    settle()
+    assert viewport.verticalScrollBar().value() == 0
+    QTest.keyClick(banner, Qt.Key.Key_End)
+    settle()
+    assert viewport.verticalScrollBar().value() == viewport.verticalScrollBar().maximum()
+    assert banner.mapTo(viewport.viewport(), content.bottomRight()).y() <= viewport.viewport().height()
+    QTest.keyClick(banner, Qt.Key.Key_Home)
+    settle()
+    assert viewport.verticalScrollBar().value() == 0
+    win.resize(320, 640)
+    settle()
+    assert viewport.height() <= win.height() // 3
+    assert win.height() == 640
+    banner.setText("Ready.")
+    settle()
+    assert banner.height() < wrapped_height
+    assert win.width() == 320
+    assert viewport.verticalScrollBar().value() == 0
+    assert not viewport.verticalScrollBar().isVisible()
+    QTest.keyClick(banner, Qt.Key.Key_Space)
+    settle()
+    assert banner.isHidden() and viewport.isHidden()
