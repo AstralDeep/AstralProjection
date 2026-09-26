@@ -4,11 +4,63 @@
 import AstralCore
 import SwiftUI
 
+struct WatchNavigationView: View {
+    @Environment(WatchModel.self) private var model
+
+    var body: some View {
+        NavigationStack { WatchHomeView() }
+            .alert(
+                model.consoleLabel("brand", fallback: "AstralDeep"),
+                isPresented: Binding(
+                    get: { model.handoffMessage != nil }, set: { if !$0 { model.handoffMessage = nil } }
+                )
+            ) {
+            } message: {
+                Text(verbatim: model.handoffMessage ?? "")
+            }
+    }
+}
+
+struct WatchOwnerSurfaceNavigation: ViewModifier {
+    @Environment(WatchModel.self) private var model
+
+    func body(content: Content) -> some View {
+        @Bindable var model = model
+        content
+            .navigationDestination(isPresented: $model.workVisible) { WatchWorkSurfaceView() }
+            .navigationDestination(
+                isPresented: Binding(
+                    get: { model.guidanceVisible },
+                    set: { if !$0 { model.closeGuidance() } }
+                )
+            ) { WatchGuidanceSurfaceView() }
+    }
+}
+
 struct WatchHomeView: View {
     @Environment(WatchModel.self) var model
 
     var body: some View {
         @Bindable var model = model
+        Group {
+            if model.console != nil {
+                WatchConsoleHome()
+            } else {
+                legacyHome
+                    .modifier(WatchOwnerSurfaceNavigation())
+            }
+        }
+        .navigationDestination(isPresented: $model.consoleChatVisible) { WatchChatView() }
+        .task { await model.refreshRecents() }
+        .overlay(alignment: .bottom) {
+            if !model.connected {
+                Text("Reconnecting…").font(ConsoleTypography.footnote).padding(4)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
+        }
+    }
+
+    private var legacyHome: some View {
         List {
             Section {
                 NavigationLink {
@@ -16,7 +68,7 @@ struct WatchHomeView: View {
                         .onAppear { model.newConversation() }
                 } label: {
                     Label("New conversation", systemImage: "plus.bubble.fill")
-                        .font(AstralTypography.headline)
+                        .font(ConsoleTypography.headline)
                 }
             }
 
@@ -29,7 +81,7 @@ struct WatchHomeView: View {
                     }
                 } label: {
                     Label(control.label ?? control.key, systemImage: control.icon ?? "square.grid.2x2")
-                        .font(AstralTypography.headline)
+                        .font(ConsoleTypography.headline)
                 }
                 .disabled(!model.connected)
             }
@@ -38,7 +90,7 @@ struct WatchHomeView: View {
                 Section {
                     if model.recentsLoading && model.recents.isEmpty {
                         ProgressView("Loading your chats…")
-                            .font(AstralTypography.footnote)
+                            .font(ConsoleTypography.footnote)
                     }
                     ForEach(model.recents) { chat in
                         NavigationLink {
@@ -61,7 +113,7 @@ struct WatchHomeView: View {
                     } icon: {
                         Image(systemName: "waveform.path.ecg")
                     }
-                    .font(AstralTypography.footnote)
+                    .font(ConsoleTypography.footnote)
                     .foregroundStyle(.secondary)
                     .accessibilityElement(children: .ignore)
                     .accessibilityIdentifier(accessibility.identifier)
@@ -76,7 +128,7 @@ struct WatchHomeView: View {
                     model.accountName.isEmpty ? "Signed in" : model.accountName,
                     systemImage: "person.crop.circle"
                 )
-                .font(AstralTypography.footnote)
+                .font(ConsoleTypography.footnote)
                 .foregroundStyle(.secondary)
                 Button(role: .destructive) {
                     Task { await model.signOut() }
@@ -86,23 +138,7 @@ struct WatchHomeView: View {
             }
         }
         .navigationTitle("AstralDeep")
-        .navigationDestination(isPresented: $model.workVisible) { WatchWorkSurfaceView() }
-        .navigationDestination(
-            isPresented: Binding(
-                get: { model.guidanceVisible },
-                set: { presented in
-                    if !presented { model.closeGuidance() }
-                })
-        ) { WatchGuidanceSurfaceView() }
-        .task { await model.refreshRecents() }
-        .overlay(alignment: .bottom) {
-            if !model.connected {
-                Text("Reconnecting…")
-                    .font(AstralTypography.footnote)
-                    .padding(4)
-                    .background(.ultraThinMaterial, in: Capsule())
-            }
-        }
+
     }
 }
 
@@ -114,13 +150,13 @@ struct WatchWorkSurfaceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 8) {
                 if let update = model.workUpdate {
-                    Text(verbatim: update.title).font(AstralTypography.headline)
+                    Text(verbatim: update.title).font(ConsoleTypography.headline)
                     ForEach(Array(update.components.enumerated()), id: \.offset) { _, component in
                         WatchComponentView(component: component, workRead: true)
                     }
                 } else if timedOut || model.workReadFailed || !model.connected {
                     Text("This view is unavailable. Reconnect and retry.")
-                        .font(AstralTypography.footnote)
+                        .font(ConsoleTypography.footnote)
                     Button("Retry") { model.retryWorkRead() }.disabled(!model.connected)
                 } else {
                     ProgressView("Loading…")
@@ -144,27 +180,16 @@ struct WatchHistoryRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            if !chat.icon.isEmpty {
-                Text(verbatim: chat.icon)
-                    .font(AstralTypography.footnote)
-                    .accessibilityHidden(true)
-            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: chat.displayTitle)
-                    .font(AstralTypography.footnote)
+                    .font(ConsoleTypography.footnote)
                     .lineLimit(2)
                 let time = chat.relativeTime()
                 if !time.isEmpty {
                     Text(verbatim: time)
-                        .font(AstralTypography.caption2)
+                        .font(ConsoleTypography.caption2)
                         .foregroundStyle(.secondary)
                 }
-            }
-            if chat.hasSavedComponents {
-                Image(systemName: "star.fill")
-                    .font(AstralTypography.caption2)
-                    .foregroundStyle(WatchBrand.warning)
-                    .accessibilityLabel("Has saved components")
             }
         }
         .accessibilityElement(children: .combine)

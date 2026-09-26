@@ -1,0 +1,375 @@
+{
+  "version": 2,
+  "topbar": [
+    {
+      "key": "brand",
+      "kind": "brand"
+    },
+    {
+      "key": "status",
+      "kind": "status"
+    },
+    {
+      "key": "pulse",
+      "kind": "action",
+      "label": "Pulse digest",
+      "icon": "sparkle",
+      "action": {
+        "surface": "pulse",
+        "params": {}
+      },
+      "availability": {
+        "mode": "handoff",
+        "message": "Continue on your phone or desktop."
+      }
+    },
+    {
+      "key": "work",
+      "kind": "action",
+      "label": "Recent work",
+      "icon": "briefcase",
+      "action": {
+        "surface": "work",
+        "params": {
+          "mode": "list"
+        }
+      },
+      "availability": {
+        "mode": "native"
+      }
+    },
+    {
+      "key": "timeline",
+      "kind": "action",
+      "label": "Workspace timeline",
+      "icon": "history",
+      "action": {
+        "surface": "workspace_timeline",
+        "params": {}
+      },
+      "availability": {
+        "mode": "handoff",
+        "message": "Continue on your phone or desktop."
+      }
+    },
+    {
+      "key": "settings",
+      "kind": "menu",
+      "label": "Settings",
+      "icon": "gear"
+    }
+  ],
+  "menu": [
+    {
+      "key": "account",
+      "label": "Account",
+      "admin_only": false,
+      "items": [
+        {
+          "key": "agents",
+          "label": "Agents & permissions",
+          "surface": "agents",
+          "params": {},
+          "admin_only": false,
+          "availability": {
+            "mode": "handoff",
+            "message": "Continue on your phone or desktop."
+          }
+        },
+        {
+          "key": "llm",
+          "label": "LLM settings",
+          "surface": "llm",
+          "params": {},
+          "admin_only": false,
+          "availability": {
+            "mode": "handoff",
+            "message": "Continue on your phone or desktop."
+          }
+        },
+        {
+          "key": "personalization",
+          "label": "Personalization",
+          "surface": "personalization",
+          "params": {},
+          "admin_only": false,
+          "availability": {
+            "mode": "handoff",
+            "message": "Continue on your phone or desktop."
+          }
+        },
+        {
+          "key": "audit",
+          "label": "Audit log",
+          "surface": "audit",
+          "params": {},
+          "admin_only": false,
+          "availability": {
+            "mode": "handoff",
+            "message": "Continue on your phone or desktop."
+          }
+        },
+        {
+          "key": "theme",
+          "label": "Theme",
+          "surface": "theme",
+          "params": {},
+          "admin_only": false,
+          "availability": {
+            "mode": "handoff",
+            "message": "Continue on your phone or desktop."
+          }
+        },
+        {
+          "key": "guidance",
+          "label": "Private notes",
+          "surface": "guidance",
+          "params": {
+            "mode": "list"
+          },
+          "admin_only": false,
+          "availability": {
+            "mode": "native"
+          }
+        },
+        {
+          "key": "connections",
+          "label": "Connections",
+          "surface": "connections",
+          "params": {},
+          "admin_only": false,
+          "availability": {
+            "mode": "handoff",
+            "message": "Continue on your phone or desktop."
+          }
+        }
+      ]
+    },
+    {
+      "key": "help",
+      "label": "Help",
+      "admin_only": false,
+      "items": [
+        {
+          "key": "guide",
+          "label": "User guide",
+          "surface": "guide",
+          "params": {},
+          "admin_only": false,
+          "availability": {
+            "mode": "handoff",
+            "message": "Continue on your phone or desktop."
+          }
+        }
+      ]
+    }
+  ],
+  "signout": {
+    "key": "signout",
+    "label": "Sign out",
+    "style": "danger",
+    "action": "logout"
+  },
+  "console": {
+    "version": 2,
+    "labels": {
+      "brand": "AstralDeep",
+      "title": "AstralDeep Console",
+      "subtitle": "Multi-agent orchestrator and server-driven UI workspace",
+      "start_here": "Start here",
+      "history": "History",
+      "agent_directory": "Agent Directory",
+      "search_agents": "Search agents",
+      "dashboard": "Dashboard",
+      "dashboard_suffix": " Overview",
+      "new_chat": "New Chat",
+      "all_categories": "All",
+      "example": "Example",
+      "run": "Run",
+      "load_prompt": "Load prompt",
+      "empty_title": "Your results appear here",
+      "empty_subtitle": "Ask a question to get started.",
+      "message_placeholder": "Ask anything\u2026",
+      "attach": "Attach files",
+      "more": "More options",
+      "send": "Send message",
+      "background": "Run in background",
+      "advanced": "Advanced settings",
+      "fullscreen": "Full Screen",
+      "exit_fullscreen": "Exit Full Screen",
+      "collapse": "Collapse container",
+      "expand": "Expand container",
+      "clear_selection": "Clear the selection for this chat",
+      "selection_summary": "Using {selection} for this chat",
+      "selection_agent_singular": "{count} agent",
+      "selection_agent_plural": "{count} agents",
+      "selection_skill_singular": "{count} skill",
+      "selection_skill_plural": "{count} skills",
+      "selection_note_singular": "{count} note",
+      "selection_note_plural": "{count} notes",
+      "result_title": "{agent} Interface",
+      "result_default_agent": "AstralDeep Specialist",
+      "result_agent_role": "Active Specialist",
+      "result_preview_action": "Click to interact in Full Screen",
+      "turn_singular": "turn",
+      "turn_plural": "turns"
+    },
+    "identity": {
+      "name": "Operator",
+      "role": "Guest",
+      "initials": "O"
+    },
+    "catalog": {
+      "categories": [
+        "Dashboards",
+        "Research",
+        "Live data",
+        "Utilities"
+      ],
+      "scenarios": [
+        {
+          "id": "build_a_business_dashboard",
+          "description": "A hero, live metrics, two charts and today's schedule, arranged by the adaptive designer rather than a fixed template.",
+          "title": "Build a business dashboard",
+          "prompt": "Build a rich dashboard for a dog grooming business \u2014 booking requests, monthly revenue line chart, most popular services pie chart, and today's schedule as a table",
+          "category": "Dashboards"
+        },
+        {
+          "id": "brief_me_with_citations",
+          "description": "Web research read and distilled into a multi-part brief that cites only the pages it actually opened.",
+          "title": "Brief me, with citations",
+          "prompt": "Research the latest developments in small modular reactors and give me a cited brief",
+          "category": "Research"
+        },
+        {
+          "id": "read_a_page_for_me",
+          "description": "The TL;DR, the key points and the quotable lines from any URL.",
+          "title": "Read a page for me",
+          "prompt": "Summarize https://en.wikipedia.org/wiki/Dog_grooming \u2014 give me a TL;DR and key points",
+          "category": "Research"
+        },
+        {
+          "id": "weather_for_the_week_ahead",
+          "description": "Seven days of forecast for any city, drawn rather than described.",
+          "title": "Weather for the week ahead",
+          "prompt": "What's the weather forecast for Lexington, KY this week? Show it with charts",
+          "category": "Live data"
+        },
+        {
+          "id": "check_on_this_machine",
+          "description": "CPU, memory and disk read live from the host and laid out as KPI tiles and gauges.",
+          "title": "Check on this machine",
+          "prompt": "Show current system status with CPU and memory metrics",
+          "category": "Live data"
+        },
+        {
+          "id": "choose_a_journal_for_a_paper",
+          "description": "A domain specialist at work: match a paper to venues, then compare the shortlist on impact, fit and review time.",
+          "title": "Choose a journal for a paper",
+          "prompt": "Find journals that fit a paper on self-supervised learning for chest CT, then compare the top three on impact and review time",
+          "category": "Research"
+        },
+        {
+          "id": "roll_some_dice",
+          "description": "Six six-sided rolls, normalized \u2014 the shortest honest path from a sentence to a rendered, audited result.",
+          "title": "Roll some dice",
+          "prompt": "Roll exactly six six-sided dice and show the normalized results.",
+          "category": "Utilities"
+        }
+      ],
+      "agents": [
+        {
+          "id": "alpha",
+          "description": "Reads and writes data for analysis pipelines.",
+          "name": "Alpha Agent",
+          "state": "ready",
+          "owned": true,
+          "availability": {
+            "mode": "native"
+          }
+        },
+        {
+          "id": "beta",
+          "description": "A public helper agent.",
+          "name": "Beta Agent",
+          "state": "ready",
+          "owned": false,
+          "availability": {
+            "mode": "native"
+          }
+        }
+      ]
+    },
+    "composer_actions": [
+      {
+        "key": "background",
+        "kind": "toggle",
+        "label": "Run in background",
+        "icon": "clock",
+        "availability": {
+          "mode": "handoff",
+          "message": "Continue on your phone or desktop."
+        }
+      },
+      {
+        "key": "advanced",
+        "kind": "action",
+        "label": "Advanced settings",
+        "icon": "sliders",
+        "action": {
+          "surface": "guidance",
+          "params": {
+            "view": "selection"
+          }
+        },
+        "availability": {
+          "mode": "native"
+        }
+      },
+      {
+        "key": "timeline",
+        "kind": "action",
+        "label": "Workspace timeline",
+        "icon": "history",
+        "action": {
+          "surface": "workspace_timeline",
+          "params": {}
+        },
+        "availability": {
+          "mode": "handoff",
+          "message": "Continue on your phone or desktop."
+        }
+      },
+      {
+        "key": "pulse",
+        "kind": "action",
+        "label": "Pulse digest",
+        "icon": "sparkle",
+        "action": {
+          "surface": "pulse",
+          "params": {}
+        },
+        "availability": {
+          "mode": "handoff",
+          "message": "Continue on your phone or desktop."
+        }
+      },
+      {
+        "key": "work",
+        "kind": "action",
+        "label": "Recent work",
+        "icon": "briefcase",
+        "action": {
+          "surface": "work",
+          "params": {
+            "mode": "list"
+          }
+        },
+        "availability": {
+          "mode": "native"
+        }
+      }
+    ],
+    "show_voice_availability_banner": false
+  }
+}

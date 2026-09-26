@@ -3,7 +3,12 @@
 
 package com.personalailabs.astraldeep.app.voice
 
+import com.personalailabs.astraldeep.app.rest.AstralRest
+import com.personalailabs.astraldeep.app.transport.ConversationGenerationBinding
+import com.personalailabs.astraldeep.app.transport.OrchestratorClient
+import com.personalailabs.astraldeep.app.ui.AppViewModel
 import com.personalailabs.astraldeep.core.protocol.Inbound
+import com.personalailabs.astraldeep.core.protocol.SnapshotCanvas
 import com.personalailabs.astraldeep.core.protocol.VoiceComposerModel
 import com.personalailabs.astraldeep.core.protocol.VoiceControl
 import com.personalailabs.astraldeep.core.protocol.VoiceControlBinding
@@ -12,19 +17,29 @@ import com.personalailabs.astraldeep.core.protocol.VoiceSessionState
 import com.personalailabs.astraldeep.core.protocol.VoiceSpeechOutcome
 import com.personalailabs.astraldeep.core.protocol.VoiceSubmissionRejected
 import com.personalailabs.astraldeep.core.protocol.VoiceTurnState
+import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import okhttp3.Request
+import okhttp3.WebSocket
+import okio.ByteString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -1481,6 +1496,244 @@ class VoiceSessionController065Test {
             assertFalse(fixture.controller.state.value.mediaConnected)
         }
 
+    @Test fun viewModelLoadsNewVoiceChatBeforeActivatingAndAcceptsOnlyItsHydration() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            val fixture = fixture(this)
+            val (vm, socket) = voiceModel(fixture)
+            try {
+                vm.invokeVoiceControl(composer("off").controls.single(), capability())
+                val creation = socket.frames.single()
+                assertEquals("new_chat", creation["action"]?.jsonPrimitive?.content)
+                assertEquals(0, fixture.api.startCalls)
+                vm.receiveInbound(
+                    Inbound.ChatCreated(
+                        CHAT_ID,
+                        CONNECTION_ID,
+                        creation.getValue("submission_id").jsonPrimitive.content,
+                        creation.getValue("request_generation").jsonPrimitive.content,
+                        false,
+                    ),
+                )
+                val load = socket.frames.last()
+                assertEquals("load_chat", load["action"]?.jsonPrimitive?.content)
+                assertEquals(CHAT_ID, vm.state.value.activeChatId)
+                assertEquals(0, fixture.api.startCalls)
+                val snapshot = voiceSnapshot(load)
+                vm.receiveInbound(snapshot.copy(connectionGeneration = OTHER_CONNECTION_ID))
+                vm.receiveInbound(snapshot.copy(snapshotPurpose = "commit"))
+                runCurrent()
+                assertEquals(0, fixture.api.startCalls)
+                vm.receiveInbound(snapshot)
+                runCurrent()
+                assertEquals(1, fixture.api.startCalls)
+                assertEquals(1, fixture.media.connectCalls)
+                assertEquals("dice-result", vm.state.value.canvas.single().id)
+                vm.receiveInbound(snapshot)
+                runCurrent()
+                assertEquals(1, fixture.api.startCalls)
+            } finally {
+                vm.clearConversationForSignOut()
+                Dispatchers.resetMain()
+            }
+        }
+
+    @Test fun existingVoiceChatAlsoWaitsForFreshHydrationAndExpires() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            val fixture = fixture(this)
+            val (vm, socket) = voiceModel(fixture)
+            try {
+                vm.openChat(CHAT_ID)
+                vm.invokeVoiceControl(composer("off").controls.single(), capability())
+                assertEquals(2, socket.frames.size)
+                val snapshot = voiceSnapshot(socket.frames.last())
+                runCurrent()
+                assertEquals(0, fixture.api.startCalls)
+                advanceTimeBy(10_001)
+                runCurrent()
+                assertEquals("chat_context_unavailable", fixture.controller.state.value.reason)
+                vm.receiveInbound(snapshot)
+                runCurrent()
+                assertEquals(0, fixture.api.startCalls)
+            } finally {
+                vm.clearConversationForSignOut()
+                Dispatchers.resetMain()
+            }
+        }
+
+    @Test fun endChatSwitchBackgroundReconnectAndLogoutFenceLateVoiceHydration() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                for (cancel in listOf("end", "new", "switch", "background", "reconnect", "logout", "typed")) {
+                    val fixture = fixture(this)
+                    val (vm, socket) = voiceModel(fixture)
+                    vm.openChat(CHAT_ID)
+                    vm.invokeVoiceControl(composer("off").controls.single(), capability())
+                    val snapshot = voiceSnapshot(socket.frames.last())
+                    when (cancel) {
+                        "end" -> vm.invokeVoiceControl(composer("off").controls.single().copy(action = "voice_session_end"), capability())
+                        "new" -> vm.newChat()
+                        "switch" -> vm.openChat(OTHER_CHAT_ID)
+                        "background" -> {
+                            fixture.controller.appForegroundChanged(false)
+                            fixture.controller.appForegroundChanged(true)
+                        }
+                        "reconnect" -> vm.installConversationGeneration(ConversationGenerationBinding(OTHER_CONNECTION_ID, CHAT_ID, null, null))
+                        "logout" -> vm.clearConversationForSignOut()
+                        "typed" -> vm.sendChat("A typed request")
+                    }
+                    runCurrent()
+                    vm.receiveInbound(snapshot)
+                    runCurrent()
+                    assertEquals(0, fixture.api.startCalls, cancel)
+                    assertEquals(0, fixture.media.connectCalls, cancel)
+                    vm.clearConversationForSignOut()
+                }
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @Test fun ordinaryNewChatAndTypedAcknowledgementsKeepTheirCurrentSubmissionAuthority() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                for (typed in listOf(false, true)) {
+                    val fixture = fixture(this)
+                    val (vm, socket) = voiceModel(fixture)
+                    if (typed) vm.sendChat("A typed request") else vm.newChat()
+                    val frame = socket.frames.last()
+                    val created =
+                        Inbound.ChatCreated(
+                            CHAT_ID,
+                            CONNECTION_ID,
+                            frame.getValue("submission_id").jsonPrimitive.content,
+                            frame.getValue("request_generation").jsonPrimitive.content,
+                            typed,
+                        )
+                    vm.receiveInbound(created.copy(submissionId = java.util.UUID.randomUUID().toString()))
+                    assertEquals(null, vm.state.value.activeChatId)
+                    vm.receiveInbound(created.copy(connectionGeneration = OTHER_CONNECTION_ID))
+                    assertEquals(null, vm.state.value.activeChatId)
+                    vm.receiveInbound(created)
+                    assertEquals(CHAT_ID, vm.state.value.activeChatId)
+                    assertEquals(0, fixture.api.startCalls)
+                    vm.clearConversationForSignOut()
+                }
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @Test fun abandonedNewVoiceChatNeverReplacesTheVisibleConversation() =
+        runTest {
+            Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+            try {
+                for (cancel in listOf("timeout", "typed", "background", "new", "auth")) {
+                    val fixture = fixture(this)
+                    val (vm, socket) = voiceModel(fixture)
+                    vm.invokeVoiceControl(composer("off").controls.single(), capability())
+                    val creation = socket.frames.single()
+                    when (cancel) {
+                        "timeout" -> {
+                            runCurrent()
+                            advanceTimeBy(10_001)
+                            runCurrent()
+                        }
+                        "typed" -> vm.sendChat("A typed request")
+                        "background" -> fixture.controller.appForegroundChanged(false)
+                        "new" -> vm.newChat()
+                        "auth" -> vm.receiveInbound(Inbound.AuthRequired("session_required"))
+                    }
+                    vm.receiveInbound(
+                        Inbound.ChatCreated(
+                            CHAT_ID,
+                            CONNECTION_ID,
+                            creation.getValue("submission_id").jsonPrimitive.content,
+                            creation.getValue("request_generation").jsonPrimitive.content,
+                            false,
+                        ),
+                    )
+                    runCurrent()
+                    assertEquals(null, vm.state.value.activeChatId, cancel)
+                    assertEquals(0, fixture.api.startCalls, cancel)
+                    assertFalse(socket.frames.any { it["action"]?.jsonPrimitive?.content == "load_chat" }, cancel)
+                    vm.clearConversationForSignOut()
+                }
+            } finally {
+                Dispatchers.resetMain()
+            }
+        }
+
+    @Test fun backgroundBlocksActivationAndRetiresAnAlreadyPendingAcquisition() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.controller.appForegroundChanged(false)
+            fixture.controller.activate(capability())
+            assertEquals(0, fixture.api.startCalls)
+            fixture.controller.appForegroundChanged(true)
+            val release = CompletableDeferred<Unit>()
+            fixture.api.releaseStart = release
+            val activation = launch { fixture.controller.activate(capability()) }
+            runCurrent()
+            assertEquals(1, fixture.api.startCalls)
+            fixture.controller.appForegroundChanged(false)
+            fixture.controller.appForegroundChanged(true)
+            release.complete(Unit)
+            activation.join()
+            assertEquals(0, fixture.media.connectCalls)
+            assertEquals(1, fixture.api.endCalls)
+        }
+
+    private fun voiceModel(fixture: Fixture): Pair<AppViewModel, VoiceSocket> {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val vm = AppViewModel(client, AstralRest("http://localhost:9"), voiceController = fixture.controller)
+        client.replayPendingForTest(CONNECTION_ID, {}, {}, { true })
+        val socket = VoiceSocket()
+        client.installOpenSocketForTest(socket)
+        vm.installConversationGeneration(ConversationGenerationBinding(CONNECTION_ID, null, null, null))
+        return vm to socket
+    }
+
+    private fun voiceSnapshot(frame: JsonObject) =
+        Inbound.ConversationSnapshot(
+            1, java.util.UUID.randomUUID().toString(), CHAT_ID, CONNECTION_ID,
+            frame.getValue("request_generation").jsonPrimitive.content, "hydration", 1u,
+            "2026-07-31T12:00:00Z", emptyList(),
+            SnapshotCanvas(
+                "canvas",
+                listOf(
+                    Component.fromJson(
+                        Json.parseToJsonElement("""{"type":"text","id":"dice-result","content":"Total: 23"}""").jsonObject,
+                    ),
+                ),
+            ),
+        )
+
+    private class VoiceSocket : WebSocket {
+        val frames = mutableListOf<JsonObject>()
+
+        override fun request(): Request = Request.Builder().url("ws://localhost:9/ws").build()
+
+        override fun queueSize(): Long = 0
+
+        override fun send(text: String): Boolean {
+            frames += Json.parseToJsonElement(text).jsonObject
+            return true
+        }
+
+        override fun send(bytes: ByteString): Boolean = false
+
+        override fun close(
+            code: Int,
+            reason: String?,
+        ): Boolean = true
+
+        override fun cancel() = Unit
+    }
+
     private fun fixture(scope: TestScope): Fixture {
         val api = FakeApi()
         val media = FakeMedia()
@@ -1521,6 +1774,7 @@ class VoiceSessionController065Test {
         var startOutcome: VoiceStartOutcome = VoiceStartOutcome.Started(session(), grant())
         var takeoverOutcome: VoiceStartOutcome = VoiceStartOutcome.Started(session(), grant())
         var startCalls = 0
+        var releaseStart: CompletableDeferred<Unit>? = null
         var takeoverCalls = 0
         var stopCalls = 0
         var endCalls = 0
@@ -1535,6 +1789,7 @@ class VoiceSessionController065Test {
             capability: VoiceMediaCapability,
         ): VoiceStartOutcome {
             startCalls += 1
+            releaseStart?.await()
             return startOutcome
         }
 

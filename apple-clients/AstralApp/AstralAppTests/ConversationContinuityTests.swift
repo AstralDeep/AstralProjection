@@ -129,6 +129,7 @@ final class ConversationContinuityTests: XCTestCase {
                 of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
                 options: .regularExpression))
         XCTAssertEqual(relaunched.activeChatId, chat)
+        XCTAssertFalse(relaunched.consoleDashboardVisible)
         XCTAssertTrue(relaunched.turns.isEmpty)
         XCTAssertTrue(relaunched.canvas.isEmpty)
     }
@@ -158,6 +159,7 @@ final class ConversationContinuityTests: XCTestCase {
         XCTAssertEqual(model.turns[1].components.map(\.fallbackText), ["Component answer"])
         XCTAssertEqual(model.canvas.map(\.fallbackText), ["Restored canvas"])
         XCTAssertEqual(model.lastCommittedRenderRevision, 0)
+        XCTAssertFalse(model.consoleDashboardVisible)
     }
 
     func testHydrationReplayConflictEqualCommitAndOldGenerationAreNoOps() {

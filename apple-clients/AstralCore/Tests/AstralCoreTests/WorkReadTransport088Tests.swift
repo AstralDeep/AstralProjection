@@ -1,11 +1,10 @@
 // Tests for Work-surface read transport: closed read/close delivery exactly once, cancellation and
 // stopped-socket suppression, guidance-open isolation from replay, and post-refusal send refusal.
 
+@testable import AstralCore
 import Foundation
 import Network
 import XCTest
-
-@testable import AstralCore
 
 final class WorkReadTransport088Tests: XCTestCase {
     private let generation = "33333333-3333-4333-8333-333333333333"
@@ -35,6 +34,75 @@ final class WorkReadTransport088Tests: XCTestCase {
         }
         await client.stop()
         consume.cancel()
+    }
+
+    private func viewportFrame() -> String {
+        let generation = "33333333-3333-4333-8333-333333333333"
+        let submission = "44444444-4444-4444-8444-444444444444"
+        return """
+            {"type":"ui_event","action":"update_device","connection_generation":"\(generation)",
+            "request_generation":"\(generation)","submission_id":"\(submission)","payload":{
+            "device":{"viewport_width":400},"chat_id":"11111111-1111-4111-8111-111111111111",
+            "base_render_revision":3,"snapshot_purpose":"hydration","connection_generation":"\(generation)",
+            "request_generation":"\(generation)","submission_id":"\(submission)"}}
+            """
+    }
+
+    func testViewportReadOnlyUsesLiveCurrentTransportAndGenericSendRejectsIt() async throws {
+        try await connected { client, peer in
+            let text = viewportFrame()
+            await client.send(text)
+            let malformed = await client.sendCurrentViewportEvent("{}") { true }
+            let stale = await client.sendCurrentViewportEvent(text) { false }
+            XCTAssertFalse(malformed)
+            XCTAssertFalse(stale)
+            peer.expectSingleRead()
+            let sent = await client.sendCurrentViewportEvent(text) { true }
+            XCTAssertTrue(sent)
+            await fulfillment(of: [peer.twoReads], timeout: 3)
+            XCTAssertEqual(peer.reads, [text])
+            await client.stop()
+            let stopped = await client.sendCurrentViewportEvent(text) { true }
+            XCTAssertFalse(stopped)
+        }
+    }
+
+    func testOfflineViewportHydrationIsNeverQueued() async throws {
+        let client = WSClient(url: URL(string: "ws://127.0.0.1:9/ws")!)
+        let stream = await client.events()
+        await client.send(viewportFrame())
+        var iterator = stream.makeAsyncIterator()
+        guard case .sendRejected(let action) = await iterator.next() else {
+            return XCTFail("Viewport hydration must reject generic queued send")
+        }
+        XCTAssertEqual(action, "update_device")
+        let sent = await client.sendCurrentViewportEvent(viewportFrame()) { true }
+        XCTAssertFalse(sent)
+        await client.stop()
+    }
+
+    func testConsoleReadCloseAndStaleOrDisconnectedRefusal() async throws {
+        let open = Outbound.uiEvent(
+            action: "chrome_open", sessionId: nil,
+            payload: .object(["surface": .string("agent_intro"), "params": .object(["agent_id": .string("dice")])]))
+        let close = Outbound.uiEvent(
+            action: "chrome_close", sessionId: nil,
+            payload: .object(["surface": .string("agent_intro")]))
+        try await connected { client, peer in
+            let invalid = await client.sendCurrentChromeEvent("{}") { true }
+            let stale = await client.sendCurrentChromeEvent(open) { false }
+            XCTAssertFalse(invalid)
+            XCTAssertFalse(stale)
+            let opened = await client.sendCurrentChromeEvent(open) { true }
+            let closed = await client.sendCurrentChromeEvent(close) { true }
+            XCTAssertTrue(opened)
+            XCTAssertTrue(closed)
+            await fulfillment(of: [peer.twoReads], timeout: 3)
+            XCTAssertEqual(peer.reads, [open, close])
+            await client.stop()
+            let disconnected = await client.sendCurrentChromeEvent(open) { true }
+            XCTAssertFalse(disconnected)
+        }
     }
 
     func testOnlyClosedReadAndCloseReachRegisteredLoopbackOnce() async throws {

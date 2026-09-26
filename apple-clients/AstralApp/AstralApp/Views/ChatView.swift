@@ -708,6 +708,9 @@ struct InputBar: View {
             if !model.staged.isEmpty {
                 AttachmentChips(staged: model.staged) { model.removeAttachment($0) }
             }
+            if let selection = model.turnSelection, let summary = model.console?.selectionSummary(selection) {
+                selectionSummary(summary)
+            }
             if input.hasPrefix("/") && !input.contains(" ") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -720,18 +723,12 @@ struct InputBar: View {
             }
             VoiceComposerNotices()
             if model.console != nil {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .bottom, spacing: 2) {
-                        messageField.lineLimit(1...3).frame(minWidth: 96)
-                            .padding(.horizontal, 12).padding(.vertical, 10)
-                            .background(p.surface, in: RoundedRectangle(cornerRadius: 10))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(focused ? p.primary : p.border))
-                        controls.fixedSize(horizontal: true, vertical: false)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        messageField.lineLimit(1...5).padding(10)
-                        controls
-                    }
+                ComposerInputLayout {
+                    messageField.lineLimit(1...3)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(p.surface, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(focused ? p.primary : p.border))
+                    controls
                 }
             } else {
                 messageField.lineLimit(2...8).padding(.horizontal, 4).padding(.vertical, 8)
@@ -745,6 +742,7 @@ struct InputBar: View {
         )
         .background(model.console != nil ? p.bg : framed ? p.surface : .clear)
         .overlay(alignment: .top) { if model.console != nil { p.border.frame(height: 1) } }
+        .onChange(of: showImporter) { _, shown in model.composerAccessoryPresented = shown }
         .fileImporter(
             isPresented: $showImporter, allowedContentTypes: [.item],
             allowsMultipleSelection: true
@@ -756,6 +754,7 @@ struct InputBar: View {
         }
         #if os(iOS)
             .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+            .onChange(of: showPhotoPicker) { _, shown in model.composerAccessoryPresented = shown }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 Task {
@@ -772,6 +771,24 @@ struct InputBar: View {
         #endif
     }
 
+    private func selectionSummary(_ summary: String) -> some View {
+        HStack(spacing: 8) {
+            Text(summary).font(ConsoleTypography.caption).foregroundStyle(p.text)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                model.turnSelection = nil
+            } label: {
+                Image(systemName: "xmark").frame(width: 44, height: 44)
+            }
+            .buttonStyle(.plain).foregroundStyle(p.muted)
+            .accessibilityLabel(model.consoleLabel("clear_selection"))
+            .accessibilityIdentifier("console-selection-clear")
+        }
+        .padding(.leading, 12)
+        .background(p.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("console-selection-summary")
+    }
+
     private var messageField: some View {
         TextField(
             model.console == nil ? "Ask anything…" : model.consoleLabel("message_placeholder"), text: $input,
@@ -785,7 +802,7 @@ struct InputBar: View {
     }
 
     private var controls: some View {
-        ComposerControlsLayout(spacing: 2) {
+        ComposerControlsLayout(spacing: 6) {
             Menu {
                 Button("Upload a file") { showImporter = true }
                 #if os(iOS)
@@ -796,7 +813,8 @@ struct InputBar: View {
                 Image(systemName: "paperclip").font(.system(size: 18)).foregroundStyle(p.muted)
                     .frame(width: 44, height: 44)
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden)
+            .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+            .frame(width: 44, height: 44)
             .disabled(model.mutationsLocked).accessibilityLabel("Attach files")
             VoiceComposerControls()
             if let console = model.console {
@@ -817,7 +835,8 @@ struct InputBar: View {
                             model.runInBackground ? p.primary.opacity(0.16) : .clear,
                             in: RoundedRectangle(cornerRadius: 8))
                 }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden)
+                .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
+                .frame(width: 44, height: 44)
                 .disabled(model.mutationsLocked).accessibilityLabel(console.labels["more"] ?? "More options")
             } else {
                 Button {
@@ -1065,11 +1084,53 @@ private struct GlyphButton: View {
     }
 }
 
+private struct ComposerInputLayout: Layout {
+    private let gap: CGFloat = 10
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        let width = max(0, proposal.width ?? 600)
+        let controls = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let horizontal = usesHorizontal(width: width, controls: controls, input: subviews[0])
+        let input = subviews[0].sizeThatFits(
+            ProposedViewSize(width: horizontal ? width - controls.width - gap : width, height: nil))
+        return CGSize(
+            width: width, height: horizontal ? max(input.height, controls.height) : input.height + gap + controls.height
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let controls = subviews[1].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        let horizontal = usesHorizontal(width: bounds.width, controls: controls, input: subviews[0])
+        let inputWidth = horizontal ? bounds.width - controls.width - gap : bounds.width
+        let input = subviews[0].sizeThatFits(ProposedViewSize(width: inputWidth, height: nil))
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX, y: horizontal ? bounds.midY - input.height / 2 : bounds.minY),
+            proposal: ProposedViewSize(width: inputWidth, height: input.height))
+        subviews[1].place(
+            at: CGPoint(
+                x: bounds.maxX - controls.width,
+                y: horizontal ? bounds.midY - controls.height / 2 : bounds.maxY - controls.height),
+            proposal: ProposedViewSize(width: controls.width, height: controls.height))
+    }
+
+    private func usesHorizontal(width: CGFloat, controls: CGSize, input: LayoutSubview) -> Bool {
+        guard width >= controls.width + gap + 120 else { return false }
+        let height = input.sizeThatFits(ProposedViewSize(width: width - controls.width - gap, height: nil)).height
+        return height <= max(44, controls.height)
+    }
+
+}
+
 private struct ComposerControlsLayout: Layout {
     var spacing: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 320
+        let idealWidth =
+            subviews.reduce(CGFloat.zero) { $0 + $1.sizeThatFits(.unspecified).width }
+            + CGFloat(max(0, subviews.count - 1)) * spacing
+        let width = min(proposal.width ?? idealWidth, idealWidth)
         return CGSize(width: width, height: positions(width: width, subviews: subviews).height)
     }
 
@@ -1085,23 +1146,29 @@ private struct ComposerControlsLayout: Layout {
     }
 
     private func positions(width: CGFloat, subviews: Subviews) -> (points: [CGPoint], height: CGFloat) {
+        let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
         var x: CGFloat = 0
-        var y: CGFloat = 0
-        var rowHeight: CGFloat = 0
-        var points: [CGPoint] = []
-        for (index, subview) in subviews.enumerated() {
-            let size = subview.sizeThatFits(.unspecified)
+        var rows: [[Int]] = [[]]
+        for (index, size) in sizes.enumerated() {
             if x > 0, x + size.width > width {
                 x = 0
-                y += rowHeight + spacing
-                rowHeight = 0
+                rows.append([])
             }
-            if index == subviews.count - 1 { x = max(x, width - size.width) }
-            points.append(CGPoint(x: x, y: y))
+            rows[rows.count - 1].append(index)
             x += size.width + spacing
-            rowHeight = max(rowHeight, size.height)
         }
-        return (points, y + rowHeight)
+        var points = Array(repeating: CGPoint.zero, count: sizes.count)
+        var y: CGFloat = 0
+        for row in rows {
+            let height = row.map { sizes[$0].height }.max() ?? 0
+            x = 0
+            for index in row {
+                points[index] = CGPoint(x: x, y: y + (height - sizes[index].height) / 2)
+                x += sizes[index].width + spacing
+            }
+            y += height + spacing
+        }
+        return (points, max(0, y - spacing))
     }
 }
 

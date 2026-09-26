@@ -139,7 +139,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             defer { app.terminate() }
             app.buttons["Settings"].tap()
             app.buttons["Appearance"].tap()
-            let failure = app.staticTexts["Couldn't load this settings screen"]
+            let failure = app.staticTexts["Couldn't load this screen"]
             XCTAssertTrue(failure.waitForExistence(timeout: 14))
             app.buttons["Retry"].tap()
             XCTAssertTrue(failure.waitForNonExistence(timeout: 3))

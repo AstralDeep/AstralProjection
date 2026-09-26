@@ -56,6 +56,7 @@ struct RootView: View {
             if let banner = model.errorBanner {
                 BannerBar(text: banner, isError: model.bannerIsError) { model.dismissBanner() }
             }
+            ViewportRefreshNotice()
             surface
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -352,6 +353,26 @@ struct ConnectionStrip: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14).padding(.vertical, 5)
             .background(theme.palette.surface2)
+    }
+}
+
+struct ViewportRefreshNotice: View {
+    @Environment(AppModel.self) var model
+    @Environment(ThemeStore.self) var theme
+
+    var body: some View {
+        if model.viewportRefreshFailed {
+            HStack(spacing: 8) {
+                Text("The layout could not update. Your result is still available.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Retry layout") { model.retryViewportRefresh() }
+                    .disabled(!model.connected)
+                    .accessibilityIdentifier("viewport-refresh-retry")
+            }
+            .font(ConsoleTypography.footnote).foregroundStyle(theme.palette.text)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(theme.palette.warning.opacity(0.16))
+        }
     }
 }
 

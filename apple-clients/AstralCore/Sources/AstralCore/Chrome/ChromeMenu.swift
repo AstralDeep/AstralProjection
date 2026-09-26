@@ -19,6 +19,7 @@ public enum WorkspaceAction: String, Equatable, Sendable {
 }
 
 public struct TopBarControl: Equatable, Sendable, Identifiable {
+    public let availability: ChromeAvailability?
     public let key: String
     public let kind: String
     public let label: String?
@@ -29,6 +30,7 @@ public struct TopBarControl: Equatable, Sendable, Identifiable {
 }
 
 public struct ChromeMenuItem: Equatable, Sendable, Identifiable {
+    public let availability: ChromeAvailability?
     public let key: String
     public let label: String
     public let surface: String
@@ -77,7 +79,9 @@ public struct ChromeMenuModel: Equatable, Sendable {
     public static func fromJSON(_ root: JSONValue?) -> ChromeMenuModel? {
         guard let root else { return nil }
         let topbar: [TopBarControl] = (root["topbar"]?.arrayValue ?? []).compactMap { el in
-            guard let key = el["key"]?.stringValue else { return nil }
+            guard let key = el["key"]?.stringValue,
+                el["availability"] == nil || ChromeAvailability(json: el["availability"]) != nil
+            else { return nil }
             var action: SurfaceRef?
             if let a = el["action"], a.objectValue != nil {
                 action = SurfaceRef(
@@ -102,16 +106,19 @@ public struct ChromeMenuModel: Equatable, Sendable {
                 workspaceAction = known
             }
             return TopBarControl(
-                key: key, kind: kind,
+                availability: ChromeAvailability(json: el["availability"]), key: key, kind: kind,
                 label: el["label"]?.stringValue, icon: el["icon"]?.stringValue,
                 action: action, workspaceAction: workspaceAction)
         }
         let menu: [ChromeMenuGroup] = (root["menu"]?.arrayValue ?? []).compactMap { g in
             guard let key = g["key"]?.stringValue else { return nil }
             let items: [ChromeMenuItem] = (g["items"]?.arrayValue ?? []).compactMap { i in
-                guard let ik = i["key"]?.stringValue, let surface = i["surface"]?.stringValue else { return nil }
+                guard let ik = i["key"]?.stringValue, let surface = i["surface"]?.stringValue,
+                    i["availability"] == nil || ChromeAvailability(json: i["availability"]) != nil
+                else { return nil }
                 return ChromeMenuItem(
-                    key: ik, label: i["label"]?.stringValue ?? "",
+                    availability: ChromeAvailability(json: i["availability"]), key: ik,
+                    label: i["label"]?.stringValue ?? "",
                     surface: surface, params: i["params"] ?? .object([:]),
                     adminOnly: i["admin_only"]?.boolValue ?? false)
             }

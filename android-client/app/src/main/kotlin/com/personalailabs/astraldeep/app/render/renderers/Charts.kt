@@ -24,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -42,6 +43,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.put
 import java.io.ByteArrayInputStream
 import java.util.Base64
+import java.util.Locale
 import java.util.UUID
 
 fun Renderer.registerChartRenderers(): Renderer =
@@ -105,6 +107,68 @@ private object OfflineChartAssets {
 internal class ChartWebView(context: Context) : WebView(context) {
     @Volatile var chartDocument: ByteArray? = null
     internal var exportPixels: CurrentChartPixels? = null
+    private var layoutRevision = 0
+    private var preferredHeight: Int? = null
+    private var layoutFailure: () -> Unit = {}
+
+    override fun onSizeChanged(
+        w: Int,
+        h: Int,
+        oldw: Int,
+        oldh: Int,
+    ) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0 && (w != oldw || h != oldh) && tag != null) {
+            preferredHeight?.let { updateChartLayout(it, layoutFailure) }
+        }
+    }
+
+    fun updateChartLayout(
+        preferredHeight: Int,
+        onFailure: () -> Unit,
+    ) {
+        this.preferredHeight = preferredHeight
+        this.layoutFailure = onFailure
+        val revision = ++layoutRevision
+        val content = tag
+        var applied = false
+
+        fun check(attempt: Int) {
+            postDelayed({
+                if (tag != content || tag == null || revision != layoutRevision) return@postDelayed
+                evaluateJavascript(
+                    "[document.documentElement.dataset.chartState,document.documentElement.dataset.nativeLayout].join(':')",
+                ) { result ->
+                    if (tag != content || revision != layoutRevision) return@evaluateJavascript
+                    when {
+                        result.startsWith("\"empty:") || result == "\"ready:$revision\"" -> Unit
+                        result.startsWith("\"error:") || result.endsWith(":error\"") || attempt >= 100 -> onFailure()
+                        else -> {
+                            if (!applied && result.startsWith("\"ready:")) {
+                                applied = true
+                                evaluateJavascript(
+                                    """
+                                    (function(){
+                                      var chart=document.getElementById('chart');
+                                      var height=chart.getBoundingClientRect().width<500?260:$preferredHeight;
+                                      document.documentElement.dataset.nativeLayout='pending';
+                                      Promise.resolve(Plotly.relayout(chart,{height:height,width:chart.getBoundingClientRect().width}))
+                                        .then(function(){return Plotly.Plots.resize(chart);})
+                                        .then(function(){document.documentElement.dataset.nativeLayout='$revision';})
+                                        .catch(function(){document.documentElement.dataset.nativeLayout='error';});
+                                    })();
+                                    """.trimIndent(),
+                                    null,
+                                )
+                            }
+                            check(attempt + 1)
+                        }
+                    }
+                }
+            }, 100)
+        }
+        check(0)
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -155,9 +219,23 @@ private fun OfflineChart(component: Component) {
     val capture = LocalCanvasCapture.current
     val context = LocalContext.current
     val viewport = LocalConfiguration.current.screenWidthDp
-    val payload = remember(component, viewport) { offlineChartPayload(component, viewport) }
-    val document = remember(payload) { runCatching { OfflineChartAssets.document(context, payload) } }
-    var failed by remember(payload) { mutableStateOf(document.isFailure) }
+    val colors = MaterialTheme.colorScheme
+    val appearance =
+        listOf(colors.surface, colors.onSurface, colors.onSurfaceVariant).map {
+            String.format(Locale.ROOT, "#%06X", it.toArgb() and 0xFFFFFF)
+        }
+    val payload = remember(component, appearance) { offlineChartPayload(component, viewport) }
+    val content = payload to appearance
+    val document =
+        remember(content) {
+            runCatching {
+                OfflineChartAssets.document(context, payload).replace(
+                    "</head>",
+                    "<style>html,body{background:${appearance[0]};color:${appearance[1]}}#status{color:${appearance[2]}}</style></head>",
+                )
+            }
+        }
+    var failed by remember(content) { mutableStateOf(document.isFailure) }
     if (failed) {
         Text("Chart could not be displayed. Reopen this result to try again.", color = MaterialTheme.colorScheme.error)
         return
@@ -178,34 +256,18 @@ private fun OfflineChart(component: Component) {
                 factory = ::isolatedChartWebView,
                 modifier = Modifier.fillMaxWidth().height(chartHeight),
                 update = { web ->
-                    if (web.tag != payload) {
+                    if (web.tag != content) {
                         val generation = UUID.randomUUID().toString()
                         web.exportPixels = CurrentChartPixels(web, generation)
                         capture?.registry?.pixels(capture.path, web.exportPixels)
-                        web.tag = payload
+                        web.tag = content
                         web.chartDocument =
                             document.getOrThrow().replace(
                                 "<head>", "<head><meta name=\"astral-native-chart-generation\" content=\"$generation\">",
                             ).toByteArray(Charsets.UTF_8)
                         web.loadUrl(CHART_ORIGIN)
-
-                        fun checkState(attempt: Int) {
-                            web.postDelayed({
-                                if (web.tag == payload) {
-                                    web.evaluateJavascript(
-                                        "document.documentElement.dataset.chartState",
-                                    ) { result ->
-                                        when {
-                                            result in setOf("\"ready\"", "\"empty\"") -> Unit
-                                            result == "\"error\"" || attempt >= 100 -> failed = true
-                                            else -> checkState(attempt + 1)
-                                        }
-                                    }
-                                }
-                            }, 100)
-                        }
-                        checkState(0)
                     }
+                    web.updateChartLayout(offlineChartHeight(component, 500, viewport)) { failed = true }
                 },
                 onRelease = { web ->
                     web.tag = null

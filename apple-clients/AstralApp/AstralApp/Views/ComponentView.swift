@@ -625,7 +625,7 @@ struct ComponentView: View {
                         }
                     }
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(12)
                     .background(p.text.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(p.text.opacity(0.1)))
@@ -1274,6 +1274,9 @@ struct InputComponent: View {
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
     @State private var value = ""
+    @State private var editingOwner = UUID()
+    @State private var initialValue = ""
+    @FocusState private var editingFocused: Bool
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -1284,11 +1287,22 @@ struct InputComponent: View {
             HStack {
                 TextField(component.raw["placeholder"]?.stringValue ?? "", text: $value)
                     .textFieldStyle(.roundedBorder)
+                    .focused($editingFocused)
                     .onSubmit(submit)
                 Button("Send", action: submit).tint(p.primary)
             }
         }
-        .onAppear { value = component.raw["value"]?.stringValue ?? "" }
+        .onAppear {
+            initialValue = component.raw["value"]?.stringValue ?? ""
+            value = initialValue
+        }
+        .onChange(of: value) { _, _ in updateEditing() }
+        .onChange(of: editingFocused) { _, _ in updateEditing() }
+        .onDisappear { model.setDirectEditing(editingOwner, active: false) }
+    }
+
+    private func updateEditing() {
+        model.setDirectEditing(editingOwner, active: editingFocused || value != initialValue)
     }
 
     private func submit() {
@@ -1309,6 +1323,8 @@ struct ParamPickerComponent: View {
     @Environment(AppModel.self) var model
     @State private var values: [String: String] = [:]
     @State private var flags: [String: Bool] = [:]
+    @State private var editingOwner = UUID()
+    @FocusState private var editingFocused: Bool
     private var p: AstralPalette { theme.palette }
 
     private var fields: [JSONValue] { component.raw["fields"]?.arrayValue ?? [] }
@@ -1374,6 +1390,14 @@ struct ParamPickerComponent: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(p.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: AstralRadius.lg))
         .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(p.border))
+        .onChange(of: values) { _, _ in updateEditing() }
+        .onChange(of: flags) { _, _ in updateEditing() }
+        .onChange(of: editingFocused) { _, _ in updateEditing() }
+        .onDisappear { model.setDirectEditing(editingOwner, active: false) }
+    }
+
+    private func updateEditing() {
+        model.setDirectEditing(editingOwner, active: editingFocused || !values.isEmpty || !flags.isEmpty)
     }
 
     private func formText(_ text: String) -> Text {
@@ -1468,6 +1492,7 @@ struct ParamPickerComponent: View {
                         set: { values[name] = $0 })
                 )
                 .textFieldStyle(.roundedBorder)
+                .focused($editingFocused)
                 #if os(iOS)
                     .keyboardType(.decimalPad)
                 #endif
@@ -1481,6 +1506,7 @@ struct ParamPickerComponent: View {
                         set: { values[name] = $0 })
                 )
                 .textFieldStyle(.roundedBorder)
+                .focused($editingFocused)
                 .accessibilityIdentifier("param-field-\(name)")
                 .accessibilityLabel(label)
             case "textarea":
@@ -1504,6 +1530,7 @@ struct ParamPickerComponent: View {
                         set: { values[name] = $0 })
                 )
                 .textFieldStyle(.roundedBorder)
+                .focused($editingFocused)
                 .autocorrectionDisabled(true)
                 #if os(iOS)
                     .textInputAutocapitalization(.never)

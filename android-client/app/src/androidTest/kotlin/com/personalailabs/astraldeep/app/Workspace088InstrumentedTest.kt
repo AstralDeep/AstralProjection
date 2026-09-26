@@ -313,7 +313,7 @@ class Workspace088InstrumentedTest {
     fun adapted_phone_welcome_container_keeps_examples_in_centered_wrapping_rows() {
         val adapted = welcome.first { it.type == "grid" }.copy(type = "container")
         val renderer = Renderer(Emit { _, _ -> }).registerAllRenderers()
-        val width = mutableStateOf(320)
+        val width = mutableStateOf(240)
         rule.setContent {
             CompositionLocalProvider(LocalDensity provides Density(0.75f, fontScale = 1f)) {
                 FixtureTheme {
@@ -329,6 +329,15 @@ class Workspace088InstrumentedTest {
         assertTrue(narrow[1].top > narrow[0].bottom)
         assertTrue(narrow[2].top > narrow[1].bottom)
         narrow.forEach { assertEquals(narrowBox.center.x, it.center.x, 1f) }
+        rule.runOnIdle { width.value = 320 }
+        val phone = bounds()
+        val phoneBox = rule.onNodeWithTag("welcome-example-box").fetchSemanticsNode().boundsInRoot
+        assertTrue(phone.last().top > phone.first().bottom)
+        phone.forEach { assertTrue(it.left >= phoneBox.left && it.right <= phoneBox.right) }
+        phone.groupBy { it.center.y }.values.forEach { row ->
+            assertEquals(phoneBox.center.x, (row.first().left + row.last().right) / 2, 1f)
+            row.zipWithNext().forEach { (left, right) -> assertTrue(right.left > left.right) }
+        }
         rule.runOnIdle { width.value = 400 }
         val wide = bounds()
         val wideBox = rule.onNodeWithTag("welcome-example-box").fetchSemanticsNode().boundsInRoot

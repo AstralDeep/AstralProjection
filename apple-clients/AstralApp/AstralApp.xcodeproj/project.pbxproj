@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AD0900000000000000000013 /* WorkspaceActionLoopback.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0900000000000000000014; };
+		AD0900000000000000000011 /* WatchConsoleFixtures.json in Resources */ = {isa = PBXBuildFile; fileRef = AD0900000000000000000012; };
 		AA00000000000000000000A4 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A2 /* AstralCore */; };
 		AA00000000000000000000A5 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A3 /* AstralCore */; };
 		AA00000000000000000000C1 /* AstralWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000B1 /* AstralWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -61,6 +63,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		AD0900000000000000000014 /* WorkspaceActionLoopback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstralAppUITests/WorkspaceActionLoopback.swift; sourceTree = SOURCE_ROOT; };
+		AD0900000000000000000012 /* WatchConsoleFixtures.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = ../AstralWatchTests/WatchConsoleFixtures.json; sourceTree = SOURCE_ROOT; };
 		222F50272FFD60D80016B0D6 /* AstralDeep.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AstralDeep.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000000000000000000B1 /* AstralWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AstralWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA00000000000000000000D1 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Base.xcconfig; path = ../Config/Base.xcconfig; sourceTree = "<group>"; };
@@ -111,6 +115,7 @@
 		AD0881000000000000000005 /* ../AstralWatchNavigationHarness */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../AstralWatchNavigationHarness; sourceTree = "<group>"; };
 		AD0881000000000000000006 /* ../AstralWatchNavigationUITests */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../AstralWatchNavigationUITests; sourceTree = "<group>"; };
 		AD0900000000000000000001 /* ../NativeAppearance */ = {isa = PBXFileSystemSynchronizedRootGroup; path = ../NativeAppearance; sourceTree = "<group>"; };
+		AD0900000000000000000002 /* ConsoleFixtures */ = {isa = PBXFileSystemSynchronizedRootGroup; name = ConsoleFixtures; path = ../../contracts/fixtures/console; sourceTree = "<group>"; };
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -164,6 +169,7 @@
 				222F50292FFD60D80016B0D6 /* AstralApp */,
 				AD0900000000000000000001 /* ../NativeAppearance */,
 				AA00000000000000000000E1 /* AstralAppTests */,
+				AD0900000000000000000002 /* ConsoleFixtures */,
 				AB0000000000000000000003 /* AstralAppUITests */,
 				AA00000000000000000000B2 /* ../AstralWatch */,
 				AB0000000000000000000004 /* ../AstralWatchTests */,
@@ -257,6 +263,7 @@
 			buildPhases = (
 				AA00000000000000000000E4 /* Sources */,
 				AA00000000000000000000E5 /* Frameworks */,
+				AD0900000000000000000003 /* Test Resources */,
 			);
 			buildRules = (
 			);
@@ -265,6 +272,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				AA00000000000000000000E1 /* AstralAppTests */,
+				AD0900000000000000000002 /* ConsoleFixtures */,
 			);
 			name = AstralAppTests;
 			packageProductDependencies = (
@@ -405,6 +413,7 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		AD0900000000000000000003 /* Test Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 		222F50252FFD60D80016B0D6 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -434,7 +443,7 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		AD088100000000000000000C /* Navigation test PBXResourcesBuildPhase */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
-		AD088100000000000000000D /* Navigation test PBXResourcesBuildPhase */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+		AD088100000000000000000D /* Navigation test PBXResourcesBuildPhase */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (AD0900000000000000000011, ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -456,6 +465,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AD0900000000000000000013 /* WorkspaceActionLoopback.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

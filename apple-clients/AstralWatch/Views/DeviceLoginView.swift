@@ -45,11 +45,11 @@ struct DeviceLoginView: View {
                     .font(.system(.title3, design: .monospaced).bold())
                     .accessibilityLabel("Sign-in code \(login.userCode)")
                 Text("Scan with your phone camera, or enter the code at")
-                    .font(AstralTypography.footnote)
+                    .font(ConsoleTypography.footnote)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 Text(login.verificationURI)
-                    .font(AstralTypography.footnote.weight(.medium))
+                    .font(ConsoleTypography.footnote.weight(.medium))
                     .multilineTextAlignment(.center)
                 CountdownLine(until: model.loginExpiresAt)
             } else {
@@ -61,11 +61,11 @@ struct DeviceLoginView: View {
     private func failure(title: String, message: String) -> some View {
         VStack(spacing: 8) {
             Image(systemName: "exclamationmark.circle")
-                .font(AstralTypography.title2)
-                .foregroundStyle(WatchBrand.warning)
-            Text(title).font(AstralTypography.headline)
+                .font(ConsoleTypography.title2)
+                .foregroundStyle(model.theme.palette.warning)
+            Text(title).font(ConsoleTypography.headline)
             Text(message)
-                .font(AstralTypography.footnote)
+                .font(ConsoleTypography.footnote)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
             Button("Try again") { model.beginDeviceLogin() }
@@ -80,7 +80,7 @@ struct CountdownLine: View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let remaining = max(0, Int(until.timeIntervalSince(context.date)))
             Text(remaining > 0 ? "Code refreshes in \(remaining)s" : "Refreshing…")
-                .font(AstralTypography.footnote)
+                .font(ConsoleTypography.footnote)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
         }

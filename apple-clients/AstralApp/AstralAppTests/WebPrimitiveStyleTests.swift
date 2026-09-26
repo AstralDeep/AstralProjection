@@ -143,6 +143,16 @@ final class WebPrimitiveStyleTests: XCTestCase {
         }
     }
 
+    func testStatisticCellsStretchToTheSameRowHeight() throws {
+        let image = try render(
+            #"{"type":"stat_group","title":"Overview","columns":2,"items":[{"label":"First","value":"12","hint":"Extra detail"},{"label":"Second","value":"0"}]}"#
+        )
+        let first = try rgb(image, x: 26, y: 57)
+        let second = try rgb(image, x: 194, y: 57)
+        assertRGB(first, second)
+        XCTAssertNotEqual(first, [15, 18, 33])
+    }
+
     func testCompositeNarrowSlotsAndAccessibleTextKeepAllContentReachable() throws {
         for raw in [
             #"{"type":"action_group","label":"A longer group label","buttons":[{"label":"An action with a long description that must wrap","action":"open"},{"label":"Continue","action":"go"}]}"#,

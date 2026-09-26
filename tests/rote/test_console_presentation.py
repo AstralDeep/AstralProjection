@@ -45,7 +45,7 @@ def descriptor(device="ios", width=1440, height=900, **updates):
     (Path(__file__).parents[2] / "contracts/fixtures/console/rote-console.json").read_text()
 )["cases"], ids=lambda case: case["name"])
 def test_console_presentation_matches_reference_dimensions(device, case):
-    report = descriptor(device, case["viewport"][0], case["viewport"][1])
+    report = descriptor(case.get("device_type", device), case["viewport"][0], case["viewport"][1])
     profile = DeviceProfile.from_dict(report)
     assert profile.console_contract == "console/v2"
     assert profile.to_dict()["console_contract"] == "console/v2"

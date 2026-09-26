@@ -69,10 +69,8 @@ import com.personalailabs.astraldeep.app.rest.publicDownloadBrowserUrl
 import com.personalailabs.astraldeep.app.rest.safeDownloadFilename
 import com.personalailabs.astraldeep.app.transport.ConnectionState
 import com.personalailabs.astraldeep.app.transport.OrchestratorClient
-import com.personalailabs.astraldeep.app.transport.deviceCapabilities
-import com.personalailabs.astraldeep.app.transport.runtimeVoiceCapability
-import com.personalailabs.astraldeep.app.transport.voiceDeviceId
 import com.personalailabs.astraldeep.app.ui.AppViewModel
+import com.personalailabs.astraldeep.app.ui.DeviceObservation
 import com.personalailabs.astraldeep.app.ui.RootScaffold
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
 import com.personalailabs.astraldeep.app.ui.theme.AstralTheme
@@ -118,7 +116,7 @@ class MainActivity : ComponentActivity() {
     private val voiceController by lazy {
         VoiceSessionController(
             api = OkHttpVoiceControlApi(AppConfig.API_BASE),
-            media = LiveKitVoiceMediaClient(this, voiceScope),
+            media = LiveKitVoiceMediaClient(applicationContext, voiceScope),
             scope = voiceScope,
         )
     }
@@ -293,21 +291,6 @@ class MainActivity : ComponentActivity() {
                 if (token == null) {
                     SignInScreen(error = error, onSignIn = ::startSignIn)
                 } else {
-                    LaunchedEffect(token) {
-                        val dm = resources.displayMetrics
-                        vm.start(
-                            token = token!!,
-                            device =
-                                deviceCapabilities(
-                                    widthPx = dm.widthPixels,
-                                    heightPx = dm.heightPixels,
-                                    pixelRatio = dm.density.toDouble(),
-                                    supportedTypes = renderer.supportedTypes.toList(),
-                                    deviceId = voiceDeviceId(this@MainActivity),
-                                    voice = runtimeVoiceCapability(this@MainActivity),
-                                ),
-                        )
-                    }
                     // Refresh failure must reach sign-in with an explanation, never fail silent
                     LaunchedEffect(uiState.connection) {
                         if (uiState.connection == ConnectionState.AuthRequired) {
@@ -345,7 +328,9 @@ class MainActivity : ComponentActivity() {
                             onDismiss = { componentActions.dismiss(link) },
                         )
                     }
-                    RootScaffold(vm, renderer, onSignOut = { signOut(vm) }, onWorkspaceAction = { workspaceActions.perform(it, vm) })
+                    DeviceObservation(vm, token!!, renderer.supportedTypes.toList()) {
+                        RootScaffold(vm, renderer, onSignOut = { signOut(vm) }, onWorkspaceAction = { workspaceActions.perform(it, vm) })
+                    }
                 }
             }
         }
@@ -422,16 +407,6 @@ class MainActivity : ComponentActivity() {
                 authFailure(ticket, "Could not start secure sign-in. Try again.")
             }
         }
-    }
-
-    override fun onStart() {
-        super.onStart()
-        voiceController.appForegroundChanged(active = true)
-    }
-
-    override fun onStop() {
-        voiceController.appForegroundChanged(active = false, reason = "backgrounded")
-        super.onStop()
     }
 
     private fun signOut(vm: AppViewModel) {

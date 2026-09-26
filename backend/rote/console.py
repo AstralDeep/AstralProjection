@@ -75,7 +75,7 @@ def watch_availability(surface, params, profile, client_capabilities=()) -> dict
         required_types.add("keyvalue")
     elif surface == "agent_intro":
         required = None
-        required_types = {"text", "card", "container", "button"}
+        required_types.add("container")
     else:
         return handoff
     return ({"mode": "native"} if required_types <= supported

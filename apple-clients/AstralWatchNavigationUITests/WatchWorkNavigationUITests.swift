@@ -129,7 +129,7 @@ final class WatchWorkNavigationUITests: XCTestCase {
     }
 }
 
-private final class WatchNavigationPeer: @unchecked Sendable {
+final class WatchNavigationPeer: @unchecked Sendable {
     let ready = XCTestExpectation(description: "private loopback peer ready")
     private let listener: NWListener
     private let queue = DispatchQueue(label: "astral.watch-navigation.test-peer")
@@ -137,11 +137,14 @@ private final class WatchNavigationPeer: @unchecked Sendable {
     private var received: [[String: Any]] = []
     private var failures: [String] = []
     private var count = 0
+    private let consoleFixture: [String: Any]?
+    private var connectionGeneration: String?
     var port: UInt16? { listener.port?.rawValue }
     var frames: [[String: Any]] { queue.sync { received } }
     var errors: [String] { queue.sync { failures } }
 
-    init() throws {
+    init(consoleFixture: [String: Any]? = nil) throws {
+        self.consoleFixture = consoleFixture
         let options = NWProtocolWebSocket.Options()
         options.autoReplyPing = true
         let parameters = NWParameters.tcp
@@ -187,19 +190,27 @@ private final class WatchNavigationPeer: @unchecked Sendable {
                     return
                 }
                 self.send(["type": "ready"], to: connection)
-                self.send(
-                    [
-                        "type": "chrome_menu",
-                        "model": [
-                            "version": 2,
-                            "topbar": [
-                                [
-                                    "key": "work", "kind": "action", "label": "Work records", "icon": "briefcase",
-                                    "action": ["surface": "work", "params": ["mode": "list"]],
-                                ]
-                            ], "menu": [],
-                        ],
-                    ], to: connection)
+                self.connectionGeneration = value["connection_generation"] as? String
+                if let consoleFixture = self.consoleFixture {
+                    self.send(
+                        ["type": "rote_config", "device_profile": ["console": consoleFixture["presentation"]!]],
+                        to: connection)
+                    self.send(["type": "chrome_menu", "model": consoleFixture["menu"]!], to: connection)
+                } else {
+                    self.send(
+                        [
+                            "type": "chrome_menu",
+                            "model": [
+                                "version": 2,
+                                "topbar": [
+                                    [
+                                        "key": "work", "kind": "action", "label": "Work records", "icon": "briefcase",
+                                        "action": ["surface": "work", "params": ["mode": "list"]],
+                                    ]
+                                ], "menu": [],
+                            ],
+                        ], to: connection)
+                }
                 self.send(
                     [
                         "type": "ui_render", "target": "history",
@@ -212,6 +223,10 @@ private final class WatchNavigationPeer: @unchecked Sendable {
             } else if value["type"] as? String == "ui_event", value["action"] as? String == "get_history" {
                 // Connection hook only; history was sent above.
             } else if ["chrome_open", "chrome_close"].contains(value["action"] as? String ?? "") {
+                self.received.append(value)
+            } else if self.consoleFixture != nil,
+                ["chat_message", "new_chat", "load_chat"].contains(value["action"] as? String ?? "")
+            {
                 self.received.append(value)
             } else {
                 self.failures.append("Unexpected non-Work frame")
@@ -229,7 +244,7 @@ private final class WatchNavigationPeer: @unchecked Sendable {
             content: data, contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
     }
 
-    func respond(to request: [String: Any], title: String, detailButton: Bool = false) {
+    func respond(to request: [String: Any], title: String, detailButton: Bool = false, surface: String = "work") {
         queue.async {
             guard let connection = self.connections.first else { return }
             var components: [[String: Any]] = [
@@ -250,9 +265,26 @@ private final class WatchNavigationPeer: @unchecked Sendable {
             }
             self.send(
                 [
-                    "type": "chrome_surface", "surface_key": "work", "region": "modal", "title": title,
+                    "type": "chrome_surface", "surface_key": surface, "region": "modal", "title": title,
                     "mode": "replace", "admin_only": false, "request_generation": request["request_generation"]!,
                     "components": components,
+                ], to: connection)
+        }
+    }
+
+    func renderResult(for request: [String: Any], text: String) {
+        queue.async {
+            guard let connection = self.connections.first, let generation = self.connectionGeneration,
+                let requestGeneration = request["request_generation"] as? String
+            else { return }
+            let chat = "11111111-1111-4111-8111-111111111111"
+            self.send(["type": "chat_created", "chat_id": chat], to: connection)
+            self.send(
+                [
+                    "type": "ui_render", "target": "canvas", "chat_id": chat,
+                    "connection_generation": generation, "request_generation": requestGeneration,
+                    "base_render_revision": 0, "frame_sequence": 1,
+                    "components": [["type": "text", "content": text]],
                 ], to: connection)
         }
     }

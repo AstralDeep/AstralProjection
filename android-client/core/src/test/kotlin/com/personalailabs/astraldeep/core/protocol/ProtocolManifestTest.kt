@@ -90,7 +90,7 @@ class ProtocolManifestTest {
     fun feature_088_guidance_actions_are_closed_and_contracted_without_new_frames() {
         val root = manifestRoot()
         val actions = root.getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(136, actions.size, "129 + chrome_declarative_view/command + chrome_turn_selection_set + chrome_work_result_save + chrome_job_stop + chrome_connection_issue/revoke")
+        assertEquals(138, actions.size, "Closed accepted-action inventory including native prompt loading")
         assertEquals(actions.size, actions.toSet().size)
         assertTrue(actions.containsAll(listOf("chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set")))
         val contracts = root.getValue("presentation_contracts").jsonObject
@@ -111,7 +111,7 @@ class ProtocolManifestTest {
     fun feature_088_save_recurring_and_saved_results_are_closed_and_contracted_without_new_frames() {
         val root = manifestRoot()
         val actions = root.getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(136, actions.size, "132 + chrome_work_result_save + chrome_job_stop + chrome_connection_issue/revoke")
+        assertEquals(138, actions.size, "Closed accepted-action inventory including native prompt loading")
         assertEquals(actions.size, actions.toSet().size)
         assertTrue(actions.containsAll(listOf("chrome_work_result_save", "chrome_job_stop")))
         val contracts = root.getValue("presentation_contracts").jsonObject

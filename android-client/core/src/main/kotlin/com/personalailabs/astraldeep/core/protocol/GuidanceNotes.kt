@@ -3,6 +3,7 @@
 
 package com.personalailabs.astraldeep.core.protocol
 
+import com.personalailabs.astraldeep.core.chrome.TurnSelection
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -14,7 +15,10 @@ internal object GuidanceNotes {
     private val categories = listOf("Profession", "Goal", "Preference", "Workflow tag", "Context")
 
     fun validSurface(root: JsonObject): Boolean {
-        if (!root.shape(setOf("type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation")) ||
+        if (!root.shape(
+                setOf("type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation"),
+                setOf("selection"),
+            ) ||
             root.string("type") != "chrome_surface" || root.string("surface_key") != "guidance" ||
             root.string("region") != "modal" || root.string("mode") != "replace" ||
             root.boolean("admin_only") != false || !text(root["title"], 4096) ||
@@ -22,6 +26,7 @@ internal object GuidanceNotes {
         ) {
             return false
         }
+        if ("selection" in root && TurnSelection.fromJson(root["selection"])?.isGuidanceSelection != true) return false
         val components = root["components"] as? JsonArray ?: return false
         val pending = ArrayDeque<Pair<JsonElement, Int>>()
         pending.addAll(components.map { it to 0 })
@@ -65,6 +70,7 @@ internal object GuidanceNotes {
         if (node.boolean("local") != false || node.boolean("disabled") == null) return false
         val payload = node["payload"] as? JsonObject ?: return false
         return when (node.string("action")) {
+            "chrome_turn_selection_set" -> TurnSelection.fromJson(payload)?.isGuidanceSelection == true
             "chrome_note_toggle" ->
                 payload.shape(setOf("note_id", "expected_revision", "enabled")) &&
                     identity(payload) && payload.boolean("enabled") != null
@@ -72,6 +78,7 @@ internal object GuidanceNotes {
             "chrome_open" -> {
                 if (!payload.shape(setOf("surface", "params")) || payload.string("surface") != "guidance") return false
                 val params = payload["params"] as? JsonObject ?: return false
+                if (params == JsonObject(mapOf("view" to JsonPrimitive("selection")))) return true
                 when (params.string("mode")) {
                     "list" ->
                         params.shape(setOf("mode"), setOf("search", "after_id")) &&

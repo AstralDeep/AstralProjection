@@ -2,9 +2,8 @@
 // malformed or mixed-purpose parts, revision equality rules, commit-ready fencing, and transient-frame
 // sequencing.
 
-import XCTest
-
 @testable import AstralCore
+import XCTest
 
 final class ConversationSnapshotTests: XCTestCase {
     private let chat = "11111111-1111-4111-8111-111111111111"
@@ -363,4 +362,81 @@ final class ConversationSnapshotTests: XCTestCase {
             newChat["payload"]?["request_generation"]?.stringValue,
             freshChatRequest)
     }
+    func testViewportHydrationRequiresSettledSnapshotAndExactRevision() throws {
+        var reducer = ConversationContinuityReducer()
+        XCTAssertTrue(reducer.beginConnection(connection))
+        XCTAssertTrue(reducer.openRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+        let settled = try snapshot(revision: 7)
+        let request = try XCTUnwrap(
+            ViewportSnapshotRequest(device: .macos(viewportWidth: 1000, viewportHeight: 800), snapshot: settled))
+        XCTAssertFalse(reducer.beginViewportHydration(request))
+        XCTAssertEqual(reducer.apply(settled), .applied)
+        XCTAssertTrue(reducer.beginViewportHydration(request))
+        XCTAssertTrue(request.isCurrent(in: reducer))
+        XCTAssertFalse(reducer.beginViewportHydration(request))
+        XCTAssertEqual(
+            reducer.apply(try snapshot(request: request.requestGeneration, revision: 8)), .rejected(.unexpectedRevision)
+        )
+        let refreshed = try snapshot(request: request.requestGeneration, revision: 7)
+        XCTAssertTrue(request.matches(refreshed))
+        XCTAssertEqual(reducer.apply(refreshed), .applied)
+        XCTAssertFalse(reducer.cancelViewportHydration(request, restoring: settled))
+        XCTAssertEqual(reducer.apply(refreshed), .replay)
+    }
+
+    func testViewportCancellationRestoresSettledStateWithoutReusingGeneration() throws {
+        var reducer = ConversationContinuityReducer()
+        _ = reducer.beginConnection(connection)
+        _ = reducer.openRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration)
+        let settled = try snapshot(revision: 3)
+        XCTAssertEqual(reducer.apply(settled), .applied)
+        let request = try XCTUnwrap(
+            ViewportSnapshotRequest(device: .macos(viewportWidth: 1000, viewportHeight: 800), snapshot: settled))
+        XCTAssertTrue(reducer.beginViewportHydration(request))
+        XCTAssertTrue(reducer.cancelViewportHydration(request, restoring: settled))
+        XCTAssertEqual(reducer.acceptedSnapshot, settled)
+        XCTAssertFalse(reducer.beginViewportHydration(request))
+        XCTAssertEqual(
+            reducer.apply(try snapshot(request: request.requestGeneration, revision: 3)), .rejected(.scopeMismatch))
+        let next = try XCTUnwrap(
+            ViewportSnapshotRequest(device: .macos(viewportWidth: 1000, viewportHeight: 800), snapshot: settled))
+        XCTAssertTrue(reducer.beginViewportHydration(next))
+        _ = reducer.openRequest(chatId: chat, requestGeneration: commit, purpose: .commit)
+        XCTAssertFalse(reducer.cancelViewportHydration(next, restoring: settled))
+        XCTAssertEqual(reducer.requestGeneration, commit)
+        _ = reducer.beginConnection(UUID().uuidString.lowercased())
+        XCTAssertFalse(reducer.cancelViewportHydration(next, restoring: settled))
+    }
+
+    func testViewportRequestEnvelopeAndCorrelatedFailureValidation() throws {
+        let request = try XCTUnwrap(
+            ViewportSnapshotRequest(
+                device: .macos(viewportWidth: 1000, viewportHeight: 800), snapshot: snapshot(revision: 3)))
+        let root = try JSONValue.parse(Data(request.frameText.utf8))
+        XCTAssertEqual(root["connection_generation"], root["payload"]?["connection_generation"])
+        XCTAssertEqual(root["request_generation"], root["payload"]?["request_generation"])
+        XCTAssertEqual(root["submission_id"], root["payload"]?["submission_id"])
+        XCTAssertTrue(ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: request.frameText))
+        for (key, value) in [
+            ("connection_generation", JSONValue.string(hydration)), ("base_render_revision", .number(-1)),
+            ("snapshot_purpose", .string("commit")), ("chat_id", .string("invalid")),
+        ] {
+            var object = try XCTUnwrap(root.objectValue)
+            var payload = try XCTUnwrap(object["payload"]?.objectValue)
+            payload[key] = value
+            object["payload"] = .object(payload)
+            let text = Outbound.encode(.object(object))
+            XCTAssertNil(ViewportSnapshotRequest(frameText: text))
+            XCTAssertTrue(ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text))
+        }
+        let error = try frame(
+            """
+            {"type":"error","code":"viewport_snapshot_retryable","chat_id":"\(chat)",
+            "connection_generation":"\(connection)","request_generation":"\(request.requestGeneration)","retryable":true}
+            """)
+        XCTAssertTrue(request.matchesFailure(error))
+        XCTAssertFalse(
+            request.matchesFailure(try frame("{\"type\":\"error\",\"code\":\"viewport_snapshot_retryable\"}")))
+    }
+
 }

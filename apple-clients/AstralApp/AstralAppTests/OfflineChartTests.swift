@@ -107,6 +107,68 @@ final class OfflineChartTests: XCTestCase {
         XCTAssertEqual(safe as? Bool, true)
     }
 
+    func testViewportResizePreservesZoomAndDocumentWhileContentChangesReload() async throws {
+        let chart = try component(
+            #"{"type":"bar_chart","component_id":"same-chart","labels":["A","B"],"datasets":[{"data":[2,5]}]}"#)
+        let changed = try component(
+            #"{"type":"bar_chart","component_id":"same-chart","labels":["A","B"],"datasets":[{"data":[8,9]}]}"#)
+        let coordinator = OfflineChartCoordinator()
+        let view = OfflineChartCoordinator.webView()
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 260)
+        defer { coordinator.dismantle(view) }
+        coordinator.update(view, component: chart, viewportWidth: 390)
+        _ = try await waitForState(view, expected: "ready")
+        let origin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
+        XCTAssertNotNil(origin)
+        _ = try await view.evaluateJavaScript("Plotly.relayout('chart', {'yaxis.range': [1,4]}); true")
+        view.frame.size = CGSize(width: 700, height: 320)
+        coordinator.update(view, component: chart, viewportWidth: 1440)
+        try await waitForJavaScript(view, "document.getElementById('chart')._fullLayout.height === 320")
+        let resizedOrigin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
+        let range =
+            try await view.evaluateJavaScript("document.getElementById('chart').layout.yaxis.range") as? [Double]
+        XCTAssertEqual(resizedOrigin, origin)
+        XCTAssertEqual(range, [1, 4])
+        coordinator.update(view, component: changed, viewportWidth: 1440)
+        try await waitForJavaScript(view, "document.getElementById('chart').data[0].y[0] === 8")
+        let updatedOrigin = try await view.evaluateJavaScript("performance.timeOrigin") as? Double
+        XCTAssertNotEqual(updatedOrigin, origin)
+        view.frame.size = CGSize(width: 390, height: 260)
+        coordinator.update(view, component: changed, viewportWidth: 390)
+        try await waitForJavaScript(view, "document.getElementById('chart')._fullLayout.height === 260")
+    }
+
+    func testResizeFailureShowsActionableErrorAndNewContentRecovers() async throws {
+        let chart = try component(#"{"type":"bar_chart","labels":["A"],"datasets":[{"data":[2]}]}"#)
+        let coordinator = OfflineChartCoordinator()
+        let view = OfflineChartCoordinator.webView()
+        view.frame = CGRect(x: 0, y: 0, width: 390, height: 260)
+        defer { coordinator.dismantle(view) }
+        coordinator.update(view, component: chart, viewportWidth: 390)
+        _ = try await waitForState(view, expected: "ready")
+        _ = try await view.evaluateJavaScript(
+            "Plotly.relayout = () => Promise.reject(new Error('Synthetic failure')); true")
+        coordinator.update(view, component: chart, viewportWidth: 1440)
+        try await waitForJavaScript(view, "document.querySelector('p[role=alert]') !== null")
+        XCTAssertFalse(coordinator.readyForCapture)
+        let message =
+            try await view.evaluateJavaScript("document.querySelector('p[role=alert]').textContent") as? String
+        XCTAssertEqual(message, "This chart could not be displayed. Open it in the web client.")
+        coordinator.update(
+            view, component: try component(#"{"type":"bar_chart","labels":["B"],"datasets":[{"data":[3]}]}"#),
+            viewportWidth: 1440)
+        _ = try await waitForState(view, expected: "ready")
+        XCTAssertTrue(coordinator.readyForCapture)
+    }
+
+    private func waitForJavaScript(_ view: WKWebView, _ expression: String) async throws {
+        for _ in 0..<100 {
+            if (try? await view.evaluateJavaScript(expression)) as? Bool == true { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTFail("Chart did not satisfy \(expression)")
+    }
+
     #if os(macOS)
         private let barChart =
             ##"{"type":"plotly_chart","title":"Alpha vs Beta","data":[{"marker":{"color":"#6366F1"},"type":"bar","x":["Alpha","Beta"],"y":[2,5]}],"layout":{"height":260}}"##

@@ -51,9 +51,26 @@ val prepareWorkspace088Charts =
             include("*-OFL.txt")
             into("font-licenses")
         }
+        from(rootProject.file("../backend/webrender/static/fonts/OFL.txt")) {
+            rename { "OpenSans-OFL.txt" }
+            into("font-licenses")
+        }
         into(layout.buildDirectory.dir("generated/workspace088/assets"))
     }
-tasks.named("preBuild") { dependsOn(prepareWorkspace088Resources, prepareWorkspace088Charts) }
+val prepareConsoleBranding =
+    tasks.register<Sync>("prepareConsoleBranding") {
+        from(rootProject.file("../backend/webrender/static/img/AstralDeep.png")) { rename { "astral_wordmark.png" } }
+        from(rootProject.file("../backend/webrender/static/img/user-avatar.png")) { rename { "astral_account_avatar.png" } }
+        into(layout.buildDirectory.dir("generated/workspace088/res/drawable-nodpi"))
+    }
+val prepareConsoleFixtures =
+    tasks.register<Sync>("prepareConsoleFixtures") {
+        from(rootProject.file("../contracts/fixtures/console")) { include("*.json") }
+        into(layout.buildDirectory.dir("generated/consoleFixtures/assets/console"))
+    }
+tasks.named("preBuild") {
+    dependsOn(prepareWorkspace088Resources, prepareWorkspace088Charts, prepareConsoleBranding, prepareConsoleFixtures)
+}
 
 @CacheableTask
 abstract class CopyCanonicalVoiceFixture065Task : DefaultTask() {
@@ -222,6 +239,7 @@ android {
     sourceSets {
         getByName("main").res.directories.add("build/generated/workspace088/res")
         getByName("main").assets.directories.add("build/generated/workspace088/assets")
+        getByName("androidTest").assets.directories.add("build/generated/consoleFixtures/assets")
         getByName("androidTest").assets.directories.add("../../contracts/fixtures/workspace_088")
         getByName("test").resources.directories.add(
             "build/generated/voice-fixture-065/testResources",
