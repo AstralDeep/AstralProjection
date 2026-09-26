@@ -198,6 +198,43 @@ final class AppModelViewportSnapshotTests: XCTestCase {
         }
     }
 
+    func testRetiredAdmissionAndOperationFailureCannotEraseNewerOperation() async {
+        let (model, frames) = model()
+        resize(model, width: 400)
+        await model.flushViewportRefresh()
+        let request = frames.values.last!["request_generation"]!.stringValue!
+        let submission = frames.values.last!["submission_id"]!.stringValue!
+        XCTAssertTrue(
+            model.openConversationRequest(
+                chatId: chat, requestGeneration: UUID().uuidString.lowercased(), purpose: .commit))
+        model.errorBanner = "Newer notice"
+        model.transientCanvas = [
+            AstralComponent(type: "text", raw: .object(["type": .string("text"), "content": .string("Newer result")]))
+        ]
+        let refusal = InboundFrame.parse(
+            """
+            {"type":"error","submission_id":"\(submission)","accepted":false,
+            "code":"capacity_exceeded","message":"Old refusal","retryable":true,"retry_after_ms":null}
+            """)!
+        model.handleFrame(refusal)
+        model.handleFrame(
+            InboundFrame.parse(
+                """
+                {"type":"operation_status","operation_id":"44444444-4444-4444-8444-444444444444",
+                "action":"update_device","surface":"operation","chat_id":"\(chat)",
+                "connection_generation":"\(connection)","request_generation":"\(request)",
+                "sequence":3,"state":"failed","phase":"failed","label":"Old failure",
+                "terminal":true,"retryable":false,"error":{"code":"operation_failed","message":"Old failure"},
+                "retry_after_ms":null,"updated_at":"2026-09-26T01:00:00Z"}
+                """)!)
+        XCTAssertEqual(model.errorBanner, "Newer notice")
+        XCTAssertEqual(model.transientCanvas?.first?.fallbackText, "Newer result")
+        model.handleFrame(InboundFrame.parse(#"{"type":"auth_required"}"#)!)
+        model.handleFrame(refusal)
+        XCTAssertEqual(model.errorBanner, "Newer notice")
+        XCTAssertEqual(model.transientCanvas?.first?.fallbackText, "Newer result")
+    }
+
     func testLatestViewportCoalescesAndSnapshotPreservesPresentation() async {
         let (model, frames) = model()
         model.composerDraft = "Unsent words"
