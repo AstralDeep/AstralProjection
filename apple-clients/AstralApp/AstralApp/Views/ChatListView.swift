@@ -77,22 +77,6 @@ struct HistoryRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(verbatim: chat.icon)
-                .font(.system(size: 15))
-                .frame(width: 28, height: 28)
-                .background(
-                    LinearGradient(
-                        colors: chat.icon.isEmpty
-                            ? [p.text.opacity(0.05), p.text.opacity(0.05)]
-                            : [p.primary.opacity(0.22), p.secondary.opacity(0.14)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8).strokeBorder(
-                        chat.icon.isEmpty ? p.text.opacity(0.08) : p.primary.opacity(0.2), lineWidth: 1)
-                )
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(verbatim: chat.displayTitle)
@@ -109,10 +93,6 @@ struct HistoryRow: View {
                     Text(verbatim: chat.displayPreview).font(ConsoleTypography.sans(12, relativeTo: .caption))
                         .foregroundStyle(p.muted).lineLimit(1)
                 }
-            }
-            if chat.hasSavedComponents {
-                Text("★").font(ConsoleTypography.sans(11, relativeTo: .caption)).foregroundStyle(p.accent)
-                    .accessibilityLabel("Has saved components")
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 7)

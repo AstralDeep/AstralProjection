@@ -176,16 +176,10 @@ struct WatchWorkSurfaceView: View {
 }
 
 struct WatchHistoryRow: View {
-    @Environment(WatchModel.self) private var model
     let chat: ChatSummary
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            if !chat.icon.isEmpty {
-                Text(verbatim: chat.icon)
-                    .font(ConsoleTypography.footnote)
-                    .accessibilityHidden(true)
-            }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: chat.displayTitle)
                     .font(ConsoleTypography.footnote)
@@ -196,12 +190,6 @@ struct WatchHistoryRow: View {
                         .font(ConsoleTypography.caption2)
                         .foregroundStyle(.secondary)
                 }
-            }
-            if chat.hasSavedComponents {
-                Image(systemName: "star.fill")
-                    .font(ConsoleTypography.caption2)
-                    .foregroundStyle(model.theme.palette.warning)
-                    .accessibilityLabel("Has saved components")
             }
         }
         .accessibilityElement(children: .combine)

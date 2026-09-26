@@ -11,13 +11,11 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,11 +25,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -114,22 +110,6 @@ internal fun HistoryRow(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        val icon = chat.serverIcon.orEmpty()
-        val iconShape = RoundedCornerShape(8.dp)
-        val iconBackground =
-            if (icon.isNotEmpty()) {
-                Brush.linearGradient(listOf(colors.primary.copy(alpha = 0.22f), colors.secondary.copy(alpha = 0.14f)))
-            } else {
-                Brush.linearGradient(List(2) { colors.onSurface.copy(alpha = 0.05f) })
-            }
-        Box(
-            Modifier.size(28.dp).background(iconBackground, iconShape)
-                .border(1.dp, if (icon.isEmpty()) colors.onSurface.copy(alpha = 0.08f) else colors.primary.copy(alpha = 0.20f), iconShape)
-                .clearAndSetSemantics {},
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(icon, style = HistoryTextStyle, fontSize = 15.sp, lineHeight = 15.sp)
-        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -163,16 +143,6 @@ internal fun HistoryRow(
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-        }
-        if (chat.hasSavedComponents) {
-            Text(
-                "★",
-                style = HistoryTextStyle,
-                fontSize = 11.sp,
-                lineHeight = 11.sp,
-                color = colors.tertiary,
-                modifier = Modifier.clearAndSetSemantics { contentDescription = "Has saved components" },
-            )
         }
     }
 }
