@@ -115,7 +115,8 @@ public actor WSClient {
 
     public func send(_ text: String) {
         guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text)
+            !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text),
+            !ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text)
         else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
             return
@@ -179,6 +180,16 @@ public actor WSClient {
         _ text: String, isCurrent: @Sendable () async -> Bool
     ) async -> Bool {
         guard GuidanceRequest(frameText: text) != nil,
+            established, let current = task, current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
+    }
+
+    @discardableResult
+    public func sendCurrentViewportEvent(
+        _ text: String, isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard ViewportSnapshotRequest(frameText: text) != nil,
             established, let current = task, current.state == .running
         else { return false }
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)

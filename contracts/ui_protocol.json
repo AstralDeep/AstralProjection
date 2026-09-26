@@ -2887,6 +2887,27 @@
         "components": "Existing text, badge, card, container, list and button primitives. Only console/v2 introductions include text.console_role=surface_subtitle; render its server-owned content in the dialog header.",
         "layout": "ROTE settings_presentation selects stacked phone scenarios or compact desktop rows; introductions use content height bounded by settings_max_height. Tool names render as wrapping chips.",
         "authority": "Presentation roles grant no authority. Every Run/Load payload must match the exact currently offered server component."
+      },
+      "viewport_refresh": {
+        "negotiation": "rote_config.viewport_snapshot_supported == true",
+        "action": "update_device",
+        "payload_fields": [
+          "device",
+          "chat_id",
+          "base_render_revision",
+          "snapshot_purpose"
+        ],
+        "snapshot_purpose": "hydration",
+        "identity": "Fresh canonical UUID4 submission_id and request_generation; exact current connection_generation; active authenticated owner and chat. Current-connection delivery only, never queued across reconnect.",
+        "response": "Existing conversation_snapshot for the same chat, connection and fresh request generation at exactly base_render_revision; canonical server-owned content is adapted to the current ROTE profile without advancing semantic revision. An advanced canonical revision receives correlated retryable refusal and remains the responsibility of ordinary semantic commit/hydration delivery.",
+        "admission": "The prior conversation scope must be completed at the declared base_render_revision. Pending commits, ordinary hydration, wrong owner/chat/connection, stale revisions and replaced scopes fail closed before and after asynchronous reads.",
+        "client_state": "Coalesce capability changes, defer during active operations or direct editing, retain the committed view until a matching snapshot validates, and preserve composer, selection and presentation state. Timeout or a correlated refusal retires only the exact refresh and permits an explicit retry.",
+        "errors": [
+          "viewport_snapshot_rejected",
+          "viewport_snapshot_retryable"
+        ],
+        "legacy": "Clients without negotiation keep ordinary capability updates. No client may accept post-snapshot transient frames or equal-revision replacements in a completed generation.",
+        "layout_ack": "The scoped rote_config carries matching chat_id, connection_generation and request_generation; clients apply its layout only with the matching accepted snapshot."
       }
     }
   },
@@ -4228,6 +4249,16 @@
         "chrome_surface"
       ],
       "scope": "Negotiated successful guidance selection confirmation only; binds the original request generation and current surface/owner/connection.",
+      "introduced_by": "090-native-ui-v2",
+      "contract": "console_v2"
+    },
+    {
+      "field": "viewport_snapshot_supported",
+      "shape": "boolean",
+      "carried_on": [
+        "rote_config"
+      ],
+      "scope": "Optional server capability for a fresh scoped hydration on update_device; absence or false retains legacy capability delivery.",
       "introduced_by": "090-native-ui-v2",
       "contract": "console_v2"
     }

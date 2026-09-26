@@ -72,8 +72,12 @@ class ROTE:
     def get_cached_components(self, websocket: Any) -> Optional[List[Dict]]:
         return copy.deepcopy(self._last_components.get(websocket))
 
-    def adapt(self, websocket: Any, components: List[Dict]) -> List[Dict]:
+    def remember_components(self, websocket: Any, components: List[Dict]) -> None:
         self._last_components[websocket] = components
+
+    def adapt(self, websocket: Any, components: List[Dict], *, cache: bool = True) -> List[Dict]:
+        if cache:
+            self.remember_components(websocket, components)
 
         profile = self.get_profile(websocket)
 

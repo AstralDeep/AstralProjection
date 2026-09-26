@@ -69,6 +69,36 @@ class DeviceUpdateTest {
         assertEquals("true", frame.getValue("device").jsonObject.getValue("has_touch").jsonPrimitive.content)
     }
 
+    @Test fun viewportHydrationUsesFreshIdentityAndNeverEntersOfflineQueue() {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val socket = Socket()
+        val chat = "00000000-0000-4000-8000-000000000010"
+        var binding: ConversationGenerationBinding? = null
+        assertFalse(client.refreshViewport(initial, chat, ULong.MAX_VALUE, connection, { true }, {}))
+        client.replayPendingForTest(connection, {}, {}, { true })
+        client.installOpenSocketForTest(socket)
+        client.observeConversationGenerations { binding = it }
+        var submission: LocalSubmission? = null
+        assertTrue(client.refreshViewport(initial, chat, ULong.MAX_VALUE, connection, { true }) { submission = it })
+        val frame = socket.frames.single()
+        val payload = frame.getValue("payload").jsonObject
+        assertEquals("update_device", frame.getValue("action").jsonPrimitive.content)
+        assertEquals("hydration", payload.getValue("snapshot_purpose").jsonPrimitive.content)
+        assertEquals(connection, payload.getValue("connection_generation").jsonPrimitive.content)
+        assertEquals(ULong.MAX_VALUE.toString(), payload.getValue("base_render_revision").jsonPrimitive.content)
+        assertEquals(submission!!.requestGeneration, binding!!.requestGeneration)
+        assertEquals(submission!!.requestGeneration, payload.getValue("request_generation").jsonPrimitive.content)
+        assertEquals(ConversationRequestPurpose.HYDRATION, binding!!.purpose)
+        assertTrue(client.pendingFrames().isEmpty())
+        assertFalse(client.refreshViewport(initial, chat, 1UL, chat, { true }, {}))
+        assertFalse(client.refreshViewport(initial, chat, 1UL, connection, { false }, {}))
+        assertFalse(client.refreshViewport(initial, chat, 1UL, connection, { true }) { client.clearOwnerSession() })
+        assertTrue(client.pendingFrames().isEmpty())
+        assertEquals(1, socket.frames.size)
+        client.sendEvent("update_device", chat, payload)
+        assertTrue(client.pendingFrames().isEmpty())
+    }
+
     private class Socket : WebSocket {
         val frames = mutableListOf<JsonObject>()
         var accepted = true

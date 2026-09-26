@@ -46,8 +46,23 @@ object Wire {
 
     fun decode(root: JsonObject): Inbound =
         when (val type = root.str("type").orEmpty()) {
-            "rote_config" ->
-                Inbound.RoteConfig(ConsolePresentation.fromJson(root.obj("device_profile")?.get("console")))
+            "rote_config" -> {
+                val scoped = listOf("chat_id", "connection_generation", "request_generation").any(root::containsKey)
+                val chat = canonicalUuid4(root.strictString("chat_id"))
+                val connection = canonicalUuid4(root.strictString("connection_generation"))
+                val request = canonicalUuid4(root.strictString("request_generation"))
+                if (scoped && (chat == null || connection == null || request == null)) {
+                    Inbound.Unknown(type)
+                } else {
+                    Inbound.RoteConfig(
+                        ConsolePresentation.fromJson(root.obj("device_profile")?.get("console")),
+                        root["viewport_snapshot_supported"] == JsonPrimitive(true),
+                        chat,
+                        connection,
+                        request,
+                    )
+                }
+            }
             "ui_render" -> uiRenderFromJson(root, type)
             "ui_upsert" -> uiUpsertFromJson(root, type)
             "ui_stream_data", "stream_data" -> uiStreamDataFromJson(root, type)

@@ -134,6 +134,10 @@ data class UiState(
     val lastCommittedRenderRevision: ULong = 0UL,
     val lastTransientFrameSequence: ULong = 0UL,
     val hydrationApplied: Boolean = false,
+    val viewportSnapshotSupported: Boolean = false,
+    val viewportRefresh: ViewportRefresh? = null,
+    val pendingViewportConfig: Inbound.RoteConfig? = null,
+    val viewportRefreshFailed: Boolean = false,
     val acceptedSnapshotId: String? = null,
     val acceptedSnapshot: Inbound.ConversationSnapshot? = null,
     val pendingCanvas: List<Component> = emptyList(),
@@ -280,6 +284,9 @@ class AppViewModel(
 
     private var session: Job? = null
     private var snapshotTimeout: Job? = null
+    private var viewportRefreshJob: Job? = null
+    private var desiredViewport: DeviceCapabilities? = null
+    private val viewportInteractions = mutableSetOf<Any>()
     private var token: String? = null
     private var device: DeviceCapabilities? = null
 
@@ -329,6 +336,7 @@ class AppViewModel(
             return
         }
         cancelVoicePreparation()
+        cancelViewportRefresh()
         _state.update { retirePrivateSurface(it) }
         this.token = token
         this.device = device
@@ -409,6 +417,10 @@ class AppViewModel(
                         _state.update { current -> reduceConnectionState(current, c) }
                         if (c == ConnectionState.Connected) {
                             this@AppViewModel.device?.let { client.updateDevice(it, _state.value.activeChatId) }
+                        }
+                        if (c == ConnectionState.AuthRequired || c == ConnectionState.Disconnected) {
+                            cancelViewportRefresh()
+                            snapshotTimeout?.cancel()
                         }
                         if (c == ConnectionState.AuthRequired) cancelVoicePreparation()
                         if (c == ConnectionState.Disconnected) {
@@ -545,7 +557,93 @@ class AppViewModel(
         val current = device ?: return
         if (observed.deviceId != current.deviceId || observed == current) return
         device = observed
-        client.updateDevice(observed, _state.value.activeChatId)
+        client.observeDevice(observed)
+        if (!_state.value.viewportSnapshotSupported || _state.value.activeChatId == null) {
+            client.updateDevice(observed, _state.value.activeChatId)
+            return
+        }
+        desiredViewport = observed
+        scheduleViewportRefresh()
+    }
+
+    internal fun viewportInteraction(
+        key: Any,
+        active: Boolean,
+    ) {
+        if (active) {
+            viewportInteractions.add(key)
+            deferPendingViewport()
+        } else {
+            viewportInteractions.remove(key)
+        }
+    }
+
+    private fun deferPendingViewport() {
+        val current = _state.value
+        val pending = current.viewportRefresh ?: return
+        if (!pending.owns(current)) return
+        _state.value =
+            restoreViewportRefresh(current, pending).copy(
+                viewportRefreshFailed = false, banner = current.banner, bannerKind = current.bannerKind,
+            )
+        desiredViewport = device
+        scheduleViewportRefresh()
+    }
+
+    fun retryViewportRefresh() {
+        if (!_state.value.viewportRefreshFailed) return
+        desiredViewport = device
+        _state.update { it.copy(viewportRefreshFailed = false, banner = null) }
+        scheduleViewportRefresh()
+    }
+
+    private fun cancelViewportRefresh() {
+        viewportRefreshJob?.cancel()
+        viewportRefreshJob = null
+        desiredViewport = null
+    }
+
+    private fun scheduleViewportRefresh() {
+        if (viewportRefreshJob?.isActive == true || desiredViewport == null) return
+        val owner = account
+        val epoch = workspaceEpoch
+        val connection = _state.value.connectionGeneration ?: return
+        val chat = _state.value.activeChatId ?: return
+        viewportRefreshJob =
+            viewModelScope.launch {
+                while (desiredViewport != null) {
+                    delay(200)
+                    val settled = _state.value
+                    if (account != owner || workspaceEpoch != epoch || settled.connectionGeneration != connection ||
+                        settled.activeChatId != chat || client.currentConnectionGeneration() != connection
+                    ) {
+                        desiredViewport = null
+                        return@launch
+                    }
+                    if (!viewportRefreshReady(
+                            settled, voiceState.value.active || pendingVoiceActivation != null, viewportInteractions.isNotEmpty(),
+                        )
+                    ) {
+                        continue
+                    }
+                    val observed = desiredViewport ?: return@launch
+                    desiredViewport = null
+                    var pending: ViewportRefresh? = null
+                    val sent =
+                        client.refreshViewport(
+                            observed, chat, settled.lastCommittedRenderRevision, connection,
+                            {
+                                account == owner && workspaceEpoch == epoch && _state.value.activeChatId == chat &&
+                                    _state.value.connectionGeneration == connection &&
+                                    (pending?.owns(_state.value) ?: (_state.value == settled))
+                            },
+                        ) { submission ->
+                            pending = ViewportRefresh(submission.requestGeneration, submission.submissionId, observed, settled)
+                            _state.update { it.copy(viewportRefresh = pending, viewportRefreshFailed = false) }
+                        }
+                    if (!sent) pending?.let { refresh -> _state.update { restoreViewportRefresh(it, refresh) } }
+                }
+            }
     }
 
     private fun prepareVoiceChat(
@@ -603,7 +701,12 @@ class AppViewModel(
     }
 
     internal fun receiveInbound(message: Inbound): UiState {
-        if (message is Inbound.AuthRequired) cancelVoicePreparation()
+        if (message is Inbound.AuthRequired) {
+            cancelVoicePreparation()
+            cancelViewportRefresh()
+            snapshotTimeout?.cancel()
+            _state.update { reduceConnectionState(it, ConnectionState.AuthRequired) }
+        }
         if (message is Inbound.ChatDeleted && message.chatId == _state.value.activeChatId) {
             cancelVoicePreparation()
             workspaceEpoch++
@@ -612,10 +715,21 @@ class AppViewModel(
             voiceController?.updateVisibleChatLocally(null)
         }
         voiceController?.handleInbound(message)
+        _state.value.viewportRefresh?.let { pending ->
+            val current = _state.value
+            val settledRequest =
+                current.copy(
+                    viewportRefresh = null,
+                    requestPurpose = pending.settled.requestPurpose,
+                    hydrationApplied = pending.settled.hydrationApplied,
+                )
+            if (!viewportRefreshReady(settledRequest, voiceState.value.active, viewportInteractions.isNotEmpty())) deferPendingViewport()
+        }
         val before = _state.value
         val after = reduceWithPersistence(before, message)
         _state.value = after
         handleVoiceAfterReduction(before, after, message)
+        scheduleViewportRefresh()
         return _state.value
     }
 
@@ -891,6 +1005,9 @@ class AppViewModel(
                 requestGeneration = null,
                 requestChatId = null,
                 requestPurpose = null,
+                viewportRefresh = null,
+                pendingViewportConfig = null,
+                viewportRefreshFailed = false,
                 expectedCommitRenderRevision = null,
                 lastCommittedRenderRevision = 0UL,
                 lastTransientFrameSequence = 0UL,
@@ -898,6 +1015,8 @@ class AppViewModel(
                 acceptedSnapshotId = null,
                 acceptedSnapshot = null,
             )
+        cancelViewportRefresh()
+        device?.let { client.updateDevice(it, null) }
         voiceController?.updateVisibleChatLocally(null)
         sendEvent("new_chat")
     }
@@ -1238,6 +1357,8 @@ class AppViewModel(
                 )
             return
         }
+        cancelViewportRefresh()
+        device?.let { client.updateDevice(it, chatId) }
         sendEvent("load_chat", buildJsonObject { put("chat_id", chatId) })
     }
 
@@ -1304,11 +1425,22 @@ class AppViewModel(
         connection: ConnectionState,
     ): UiState =
         when (connection) {
-            ConnectionState.AuthRequired -> retirePrivateSurface(s).copy(connection = connection, consolePresentation = null)
+            ConnectionState.AuthRequired ->
+                retirePrivateSurface(s.viewportRefresh?.let { restoreViewportRefresh(s, it) } ?: s).copy(
+                    connection = connection,
+                    consolePresentation = null,
+                    viewportSnapshotSupported = false,
+                    viewportRefresh = null,
+                    pendingViewportConfig = null,
+                )
             ConnectionState.Disconnected ->
                 retirePrivateSurface(s).copy(
                     connection = connection,
                     consolePresentation = null,
+                    viewportSnapshotSupported = false,
+                    viewportRefresh = null,
+                    pendingViewportConfig = null,
+                    viewportRefreshFailed = false,
                     turnActive = false, backgroundRequested = false,
                     pendingReplace = false,
                     pendingCanvas = emptyList(),
@@ -1405,7 +1537,17 @@ class AppViewModel(
                     applyCanvasOps(s, streamErrorOps(msg))
                 }
             is Inbound.ChromeMenu -> s.copy(chromeMenu = msg.model)
-            is Inbound.RoteConfig -> s.copy(consolePresentation = msg.console)
+            is Inbound.RoteConfig -> {
+                if (msg.requestGeneration == null && msg.connectionGeneration == null && msg.chatId == null) {
+                    s.copy(consolePresentation = msg.console, viewportSnapshotSupported = msg.viewportSnapshotSupported)
+                } else if (s.viewportRefresh?.owns(s) == true && msg.requestGeneration == s.requestGeneration &&
+                    msg.connectionGeneration == s.connectionGeneration && msg.chatId == s.activeChatId
+                ) {
+                    s.copy(pendingViewportConfig = msg)
+                } else {
+                    s
+                }
+            }
             is Inbound.ChromeSurface ->
                 when {
                     s.screen == Screen.Surface && isPrivateChromeSurface(s.pendingSurfaceKey) && msg.surfaceKey != s.pendingSurfaceKey -> s
@@ -1566,6 +1708,12 @@ class AppViewModel(
             hydrationApplied = false,
             acceptedSnapshotId = null,
             acceptedSnapshot = null,
+            pendingViewportConfig = null,
+            viewportRefresh =
+                s.viewportRefresh?.takeIf {
+                    it.requestGeneration == binding.requestGeneration && it.settled.activeChatId == binding.chatId &&
+                        it.settled.connectionGeneration == binding.connectionGeneration
+                },
         )
     }
 
@@ -1607,13 +1755,17 @@ class AppViewModel(
                 delay(SNAPSHOT_TIMEOUT_MS)
                 val current = _state.value
                 val stillWaiting =
-                    current.activeChatId == chatId &&
+                    current.connection == ConnectionState.Connected && current.activeChatId == chatId &&
                         current.connectionGeneration == binding.connectionGeneration &&
                         current.requestGeneration == requestGeneration &&
                         current.requestPurpose == binding.purpose &&
                         current.expectedCommitRenderRevision == expectedCommitRevision &&
                         !(binding.purpose == ConversationRequestPurpose.HYDRATION && current.hydrationApplied)
                 if (!stillWaiting) return@launch
+                current.viewportRefresh?.takeIf { it.owns(current) }?.let { pending ->
+                    _state.value = restoreViewportRefresh(current, pending)
+                    return@launch
+                }
                 pendingVoiceActivation?.takeIf { it.submission.requestGeneration == requestGeneration }?.let { pending ->
                     cancelVoicePreparation()
                     if (voiceController?.preparationIsCurrent(pending.preparationToken) == true) {
@@ -1638,7 +1790,7 @@ class AppViewModel(
         msg: Inbound,
     ): String? {
         val error = msg as? Inbound.ErrorFrame ?: return null
-        if (error.code != SNAPSHOT_RETRYABLE_CODE || !error.retryable) return null
+        if (s.viewportRefresh != null || error.code != SNAPSHOT_RETRYABLE_CODE || !error.retryable) return null
         val chatId = error.chatId ?: return null
         return chatId.takeIf {
             s.requestPurpose != null &&
@@ -1669,6 +1821,16 @@ class AppViewModel(
             )
         }
 
+        val pending = s.viewportRefresh
+        if (msg is Inbound.ErrorFrame && msg.code in setOf("viewport_snapshot_rejected", "viewport_snapshot_retryable")) {
+            return if (pending?.owns(s) == true && msg.chatId == s.activeChatId &&
+                msg.connectionGeneration == s.connectionGeneration && msg.requestGeneration == pending.requestGeneration
+            ) {
+                restoreViewportRefresh(s, pending)
+            } else {
+                s
+            }
+        }
         val candidate = reduce(s, msg)
         val acknowledgedChat =
             when (msg) {
@@ -1713,6 +1875,7 @@ class AppViewModel(
 
     fun clearConversationForSignOut(): Boolean {
         cancelVoicePreparation()
+        cancelViewportRefresh()
         workspaceEpoch++
         voiceController?.logout()
         viewModelScope.coroutineContext.cancelChildren()
@@ -1767,6 +1930,9 @@ class AppViewModel(
             requestGeneration = null,
             requestChatId = null,
             requestPurpose = null,
+            viewportRefresh = null,
+            pendingViewportConfig = null,
+            viewportRefreshFailed = false,
             expectedCommitRenderRevision = null,
             lastCommittedRenderRevision = 0UL,
             lastTransientFrameSequence = 0UL,
@@ -1859,6 +2025,7 @@ class AppViewModel(
             Log.w(TAG, "conversation snapshot ignored: commit-ready revision mismatch")
             return s
         }
+        if (s.viewportRefresh?.owns(s) == true && snapshot.renderRevision != s.viewportRefresh.settled.lastCommittedRenderRevision) return s
         if (snapshot.renderRevision < s.lastCommittedRenderRevision) {
             Log.i(TAG, "stale_frame_ignored")
             return s
@@ -1891,6 +2058,7 @@ class AppViewModel(
             return s
         }
         val hydration = s.requestPurpose == ConversationRequestPurpose.HYDRATION
+        val viewport = s.viewportRefresh?.owns(s) == true
         return s.copy(
             activeChatId = snapshot.chatId,
             consoleDashboardVisible = false,
@@ -1901,15 +2069,19 @@ class AppViewModel(
             pendingCanvas = emptyList(),
             preTurnCanvas = emptyList(),
             turnOpsApplied = false,
-            canvasHistory = emptyList(),
-            viewingIndex = null,
+            canvasHistory = if (viewport) s.canvasHistory else emptyList(),
+            viewingIndex = if (viewport) s.viewingIndex else null,
             turnActive = false, backgroundRequested = false,
             pendingReplace = false,
-            canvasLabel = "",
+            canvasLabel = if (viewport) s.canvasLabel else "",
             pendingLabel = "",
             statusText = null,
             stepTrail = emptyList(),
             asyncDetached = false,
+            consolePresentation = if (viewport) s.pendingViewportConfig?.console ?: s.consolePresentation else s.consolePresentation,
+            viewportRefresh = null,
+            pendingViewportConfig = null,
+            viewportRefreshFailed = false,
             lastCommittedRenderRevision = snapshot.renderRevision,
             lastTransientFrameSequence = 0UL,
             hydrationApplied = hydration,
@@ -2033,6 +2205,9 @@ class AppViewModel(
         s: UiState,
         refusal: Inbound.AdmissionRefusal,
     ): UiState {
+        s.viewportRefresh?.takeIf { it.owns(s) && it.submissionId == refusal.submissionId }?.let {
+            return restoreViewportRefresh(s, it)
+        }
         val pending =
             s.pendingSubmissions.entries.firstOrNull { (_, submission) ->
                 submission.submissionId == refusal.submissionId
@@ -2076,6 +2251,16 @@ class AppViewModel(
     ): UiState {
         if (status.connectionGeneration != s.connectionGeneration) {
             return s
+        }
+        if (status.action == "update_device") {
+            val viewport = s.viewportRefresh
+            return if (viewport?.owns(s) == true && status.chatId == s.activeChatId &&
+                status.requestGeneration == viewport.requestGeneration && status.terminal && status.state != "completed"
+            ) {
+                restoreViewportRefresh(s, viewport)
+            } else {
+                s
+            }
         }
         val pendingOperation = s.pendingSubmissions[status.requestGeneration]
         val inScope =
@@ -2173,7 +2358,8 @@ class AppViewModel(
         s: UiState,
         scope: com.personalailabs.astraldeep.core.protocol.TransientFrameScope,
     ): Boolean =
-        scope.chatId == s.activeChatId &&
+        !s.hydrationApplied && s.viewportRefresh == null &&
+            scope.chatId == s.activeChatId &&
             scope.connectionGeneration == s.connectionGeneration &&
             scope.requestGeneration == s.requestGeneration &&
             scope.baseRenderRevision == s.lastCommittedRenderRevision &&

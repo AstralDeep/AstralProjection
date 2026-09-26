@@ -484,6 +484,10 @@ class OrchestratorClient(
             submission
         }
 
+    internal fun observeDevice(device: DeviceCapabilities) {
+        synchronized(pending) { observedDevice = device }
+    }
+
     fun updateDevice(
         device: DeviceCapabilities,
         sessionId: String?,
@@ -494,6 +498,45 @@ class OrchestratorClient(
             if (!open || current == null) return@synchronized false
             if (advertisedDevice == device) return@synchronized true
             if (!current.send(Wire.encodeUpdateDevice(device, sessionId))) return@synchronized false
+            advertisedDevice = device
+            true
+        }
+
+    internal fun refreshViewport(
+        device: DeviceCapabilities,
+        chatId: String,
+        baseRevision: ULong,
+        expectedConnection: String,
+        isCurrent: () -> Boolean,
+        onSubmission: (LocalSubmission) -> Unit,
+    ): Boolean =
+        synchronized(pending) {
+            val liveSocket = socket
+            val epoch = ownerEpoch
+            if (!open || liveSocket == null || connectionGeneration != expectedConnection || !isCurrent()) return@synchronized false
+            val submission = newSubmission("update_device", chatId)
+            val frame =
+                Wire.encodeUiEvent(
+                    "update_device",
+                    chatId,
+                    buildJsonObject {
+                        put("device", Wire.deviceJson(device))
+                        put("chat_id", chatId)
+                        put("base_render_revision", JsonPrimitive(baseRevision.toString().toBigInteger()))
+                        put("snapshot_purpose", "hydration")
+                        put("connection_generation", expectedConnection)
+                    },
+                    submission.requestGeneration,
+                    submission.submissionId,
+                )
+            onSubmission(submission)
+            bindRequest(conversationRequest(submission, ConversationRequestPurpose.HYDRATION), generationObserver)
+            if (!open || socket !== liveSocket || connectionGeneration != expectedConnection || ownerEpoch != epoch ||
+                !isCurrent() || !liveSocket.send(frame)
+            ) {
+                return@synchronized false
+            }
+            observedDevice = device
             advertisedDevice = device
             true
         }
@@ -579,7 +622,8 @@ class OrchestratorClient(
         val payloadChat = (payload["chat_id"] as? JsonPrimitive)?.contentOrNull
         val submission = newSubmission(action, payloadChat ?: sessionId)
         onSubmission(submission)
-        if (isGuidanceNoteAction(action) || action == "chrome_turn_selection_set" ||
+        if (action == "update_device" && payload["snapshot_purpose"] != null ||
+            isGuidanceNoteAction(action) || action == "chrome_turn_selection_set" ||
             action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
         ) {
             _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Private surface request requires a current connection"))

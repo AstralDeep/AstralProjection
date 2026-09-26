@@ -703,7 +703,13 @@ sealed interface Inbound {
 
     data class ChromeMenu(val model: ChromeMenuModel) : Inbound
 
-    data class RoteConfig(val console: ConsolePresentation?) : Inbound
+    data class RoteConfig(
+        val console: ConsolePresentation?,
+        val viewportSnapshotSupported: Boolean = false,
+        val chatId: String? = null,
+        val connectionGeneration: String? = null,
+        val requestGeneration: String? = null,
+    ) : Inbound
 
     data class ChromeSurface(
         val surfaceKey: String,

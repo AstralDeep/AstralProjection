@@ -54,6 +54,15 @@ viewport, display scale, input, motion and voice capabilities update through
 the existing device transport. Clients retain owner, request and connection
 fences when navigating, reconnecting or applying delayed responses.
 
+Settled result layouts refresh through a negotiated `update_device` hydration.
+The client opens a fresh request tied to the current owner, connection, chat and
+semantic revision. The server returns the existing canonical conversation
+snapshot after re-adapting it through ROTE. This does not navigate History,
+re-execute agents, advance content revision or admit stale transient frames.
+Rapid viewport changes coalesce; active operations and editing defer refresh.
+A refused or timed-out refresh retains the committed view and can be retried.
+Older servers and clients retain ordinary capability-update behavior.
+
 The native shells implement the drawer/sidebar, category catalog, agent
 directory/introduction, conversation/result/full-screen view, selection,
 composer and settings. Scenario Load fills a draft; Run follows normal chat

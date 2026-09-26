@@ -723,18 +723,12 @@ struct InputBar: View {
             }
             VoiceComposerNotices()
             if model.console != nil {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .center, spacing: 10) {
-                        messageField.lineLimit(1...3).frame(minWidth: 96)
-                            .padding(.horizontal, 12).padding(.vertical, 10)
-                            .background(p.surface, in: RoundedRectangle(cornerRadius: 10))
-                            .overlay(RoundedRectangle(cornerRadius: 10).stroke(focused ? p.primary : p.border))
-                        controls.fixedSize(horizontal: true, vertical: false)
-                    }
-                    VStack(alignment: .leading, spacing: 6) {
-                        messageField.lineLimit(1...5).padding(10)
-                        controls.frame(maxWidth: .infinity, alignment: .trailing)
-                    }
+                ComposerInputLayout {
+                    messageField.lineLimit(1...3)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .background(p.surface, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(focused ? p.primary : p.border))
+                    controls
                 }
             } else {
                 messageField.lineLimit(2...8).padding(.horizontal, 4).padding(.vertical, 8)
@@ -748,6 +742,7 @@ struct InputBar: View {
         )
         .background(model.console != nil ? p.bg : framed ? p.surface : .clear)
         .overlay(alignment: .top) { if model.console != nil { p.border.frame(height: 1) } }
+        .onChange(of: showImporter) { _, shown in model.composerAccessoryPresented = shown }
         .fileImporter(
             isPresented: $showImporter, allowedContentTypes: [.item],
             allowsMultipleSelection: true
@@ -759,6 +754,7 @@ struct InputBar: View {
         }
         #if os(iOS)
             .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+            .onChange(of: showPhotoPicker) { _, shown in model.composerAccessoryPresented = shown }
             .onChange(of: photoItem) { _, item in
                 guard let item else { return }
                 Task {
@@ -1086,6 +1082,45 @@ private struct GlyphButton: View {
         .buttonStyle(.plain)
         .disabled(!enabled)
     }
+}
+
+private struct ComposerInputLayout: Layout {
+    private let gap: CGFloat = 10
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return .zero }
+        let width = max(0, proposal.width ?? 600)
+        let controls = subviews[1].sizeThatFits(ProposedViewSize(width: width, height: nil))
+        let horizontal = usesHorizontal(width: width, controls: controls, input: subviews[0])
+        let input = subviews[0].sizeThatFits(
+            ProposedViewSize(width: horizontal ? width - controls.width - gap : width, height: nil))
+        return CGSize(
+            width: width, height: horizontal ? max(input.height, controls.height) : input.height + gap + controls.height
+        )
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard subviews.count == 2 else { return }
+        let controls = subviews[1].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+        let horizontal = usesHorizontal(width: bounds.width, controls: controls, input: subviews[0])
+        let inputWidth = horizontal ? bounds.width - controls.width - gap : bounds.width
+        let input = subviews[0].sizeThatFits(ProposedViewSize(width: inputWidth, height: nil))
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX, y: horizontal ? bounds.midY - input.height / 2 : bounds.minY),
+            proposal: ProposedViewSize(width: inputWidth, height: input.height))
+        subviews[1].place(
+            at: CGPoint(
+                x: bounds.maxX - controls.width,
+                y: horizontal ? bounds.midY - controls.height / 2 : bounds.maxY - controls.height),
+            proposal: ProposedViewSize(width: controls.width, height: controls.height))
+    }
+
+    private func usesHorizontal(width: CGFloat, controls: CGSize, input: LayoutSubview) -> Bool {
+        guard width >= controls.width + gap + 120 else { return false }
+        let height = input.sizeThatFits(ProposedViewSize(width: width - controls.width - gap, height: nil)).height
+        return height <= max(44, controls.height)
+    }
+
 }
 
 private struct ComposerControlsLayout: Layout {

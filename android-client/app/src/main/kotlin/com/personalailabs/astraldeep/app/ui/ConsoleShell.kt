@@ -113,7 +113,14 @@ internal fun ConsoleShell(
             Column(Modifier.weight(1f).fillMaxSize()) {
                 ConsoleHeader(state, console, presentation, vm)
                 connectionStripLabel(state.connection, state.everConnected)?.let { ConnectionStrip(it) }
-                state.banner?.let { BannerBar(it, state.bannerKind == "error", vm::dismissBanner) }
+                state.banner?.let {
+                    BannerBar(
+                        it,
+                        state.bannerKind == "error",
+                        vm::dismissBanner,
+                        if (state.viewportRefreshFailed) vm::retryViewportRefresh else null,
+                    )
+                }
                 Box(
                     Modifier.weight(
                         1f,

@@ -5,8 +5,39 @@ noop/cache/raw/adapted result classification.
 
 from __future__ import annotations
 
+import pytest
+
 from rote.capabilities import DeviceType
 from rote.rote import ROTE
+
+
+@pytest.mark.parametrize("device_type,width,expected", [
+    ("browser", 1280, "grid"), ("mobile", 320, "container"), ("macos", 320, "container"),
+    ("android", 320, "container"), ("watch", 320, "container"),
+])
+@pytest.mark.parametrize("has_committed", [False, True])
+def test_preview_adaptation_only_updates_cache_after_explicit_delivery(device_type, width, expected, has_committed):
+    runtime, socket, other = ROTE(), object(), object()
+    profile = {"device_type": device_type, "viewport_width": width}
+    runtime.register_device(socket, profile)
+    committed = [{"type": "text", "content": "Committed"}]
+    runtime.remember_components(other, committed)
+    if has_committed:
+        runtime.remember_components(socket, committed)
+    candidate = [{"type": "grid", "component_id": "result", "columns": 3,
+                  "children": [{"type": "text", "content": "Canonical result"}]}]
+    adapted = runtime.adapt(socket, candidate, cache=False)
+    assert adapted[0]["component_id"] == "result"
+    assert adapted[0]["type"] == expected
+    assert runtime.get_cached_components(socket) == (committed if has_committed else None)
+    assert runtime.get_cached_components(other) == committed
+    assert candidate[0]["columns"] == 3
+    runtime.remember_components(socket, candidate)
+    assert runtime.get_cached_components(socket) == candidate
+    profile["viewport_width"] = 1440
+    _, refreshed, changed = runtime.update_device(socket, profile)
+    assert changed and refreshed[0]["component_id"] == "result"
+    assert runtime.get_cached_components(socket)[0]["columns"] == 3
 
 
 def test_registration_lookup_and_cleanup_are_connection_scoped() -> None:

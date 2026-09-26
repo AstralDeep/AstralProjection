@@ -100,6 +100,7 @@ struct ConsoleShell: View {
             if let banner = model.errorBanner {
                 BannerBar(text: banner, isError: model.bannerIsError) { model.dismissBanner() }
             }
+            ViewportRefreshNotice()
             ZStack {
                 ConsoleConversation(presentation: presentation)
                     .opacity(model.consoleDashboardVisible ? 0 : 1)

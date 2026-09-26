@@ -225,6 +225,18 @@ final class WatchModel {
     @ObservationIgnored private var hasCanonicalRecents = false
     @ObservationIgnored private var recentsGeneration = UUID()
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
+    private(set) var viewportRefreshFailed = false
+    private var viewportSnapshotSupported = false
+    private var pendingViewportDevice: DeviceDescriptor?
+    private var viewportRequest: ViewportSnapshotRequest?
+    private var viewportSettledSnapshot: ConversationSnapshot?
+    private var viewportPresentation: ConsolePresentation?
+    private var viewportDeadline = Date.distantFuture
+    private var viewportRetryBudget = 0
+    @ObservationIgnored private var viewportRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var viewportRefreshInterval: UInt64 = 250_000_000
+    @ObservationIgnored var viewportRefreshTimeout: TimeInterval = 10
+    @ObservationIgnored var viewportSendOverride: ((String) async -> Bool)?
     @ObservationIgnored private var pendingCommitRequestGeneration: String?
     @ObservationIgnored private var seqState: [String: Int] = [:]
     @ObservationIgnored private var statusLifecycle = StatusLifecycleReducer()
@@ -280,6 +292,7 @@ final class WatchModel {
             ownerSurfaceControls = []
             chromeMenu = nil
             consolePresentation = nil
+            resetViewportRefresh()
             continuity.clear()
             resetConversationState()
             resetRecents()
@@ -323,6 +336,7 @@ final class WatchModel {
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
+        resetViewportRefresh()
         invalidateConsoleSurface()
         chromeMenu = nil
         consolePresentation = nil
@@ -354,6 +368,7 @@ final class WatchModel {
         requestGeneration: String,
         purpose: ConversationGenerationPurpose
     ) -> Bool {
+        cancelViewportRefresh(requeue: true)
         workspaceStarted = true
         let resetRevision =
             continuity.activeChatId != nil
@@ -490,6 +505,7 @@ final class WatchModel {
             bindConversationAccount(account)
         } else {
             conversationAccount = nil
+            resetViewportRefresh()
             continuity.clear()
             resetConversationState()
         }
@@ -518,6 +534,7 @@ final class WatchModel {
         conversationAccount = nil
         chromeMenu = nil
         consolePresentation = nil
+        resetViewportRefresh()
         continuity.clear()
         resetConversationState()
         clearPendingOperationSubmissions()
@@ -553,6 +570,7 @@ final class WatchModel {
         conversationAccount = nil
         chromeMenu = nil
         consolePresentation = nil
+        resetViewportRefresh()
         continuity.clear()
         resetConversationState()
         resetRecents()
@@ -609,6 +627,7 @@ final class WatchModel {
             connected = true
             rawSend(Outbound.uiEvent(action: "get_history", sessionId: nil, payload: .object([:])))
         case .disconnected:
+            resetViewportRefresh()
             invalidateConsoleSurface()
             chromeMenu = nil
             consolePresentation = nil
@@ -649,8 +668,20 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        if consumeViewportStatus(frame) { return }
+        if frame.name == "error",
+            ["viewport_snapshot_rejected", "viewport_snapshot_retryable"].contains(
+                frame.payload["code"]?.stringValue ?? "")
+        {
+            if let request = viewportRequest, request.matchesFailure(frame), request.isCurrent(in: continuity) {
+                let retry = frame.payload["retryable"]?.boolValue == true && viewportRetryBudget > 0
+                viewportRetryBudget -= retry ? 1 : 0
+                if retry { cancelViewportRefresh(requeue: true) } else { failViewportRefresh() }
+            }
+            return
+        }
         if frame.name == "rote_config" {
-            consolePresentation = ConsolePresentation(frame: frame)
+            reduceViewportConfiguration(frame)
             return
         }
         if frame.name == "user_preferences" {
@@ -879,6 +910,7 @@ final class WatchModel {
                 self.statusText = nil
             }
         case "auth_required":
+            resetViewportRefresh()
             Task { await self.handleAuthRequired() }
         default:
             break
@@ -966,9 +998,29 @@ final class WatchModel {
     }
 
     private func reduceConversationSnapshot(_ frame: InboundFrame) {
-        guard let snapshot = ConversationSnapshot(frame: frame),
-            continuity.apply(snapshot) == .applied
-        else { return }
+        guard let snapshot = ConversationSnapshot(frame: frame) else { return }
+        if let request = viewportRequest, request.matches(snapshot) {
+            guard !viewportRefreshBusy else {
+                cancelViewportRefresh(requeue: true)
+                return
+            }
+            guard continuity.apply(snapshot) == .applied else { return }
+            viewportRefreshFailed = false
+            viewportRequest = nil
+            viewportSettledSnapshot = nil
+            if let viewportPresentation { consolePresentation = viewportPresentation }
+            viewportPresentation = nil
+            canvas = snapshot.canvasComponents
+            entries = entries.map { entry in
+                guard case .turn(let id, _) = entry,
+                    let message = snapshot.messages.first(where: { "\($0.messageId)-components" == id })
+                else { return entry }
+                return .turn(id: id, components: message.components)
+            }
+            return
+        }
+        guard continuity.apply(snapshot) == .applied else { return }
+        viewportRefreshFailed = false
         if let account = conversationAccount {
             _ = conversationResumeStore.save(chatId: snapshot.chatId, for: account)
         }
@@ -1007,7 +1059,7 @@ final class WatchModel {
     }
 
     private func reduceTransient(_ frame: InboundFrame) {
-        guard continuity.acceptTransient(frame) else { return }
+        guard viewportRequest == nil, continuity.acceptTransient(frame) else { return }
         switch frame.name {
         case "ui_render", "ui_update":
             let components = frame.renderComponents
@@ -2636,11 +2688,168 @@ extension WatchModel {
         networkMonitor = monitor
     }
 
+    private func consumeViewportStatus(_ frame: InboundFrame) -> Bool {
+        if let request = viewportRequest, let refusal = AdmissionRefusal(frame: frame),
+            refusal.submissionId == request.submissionId, request.isCurrent(in: continuity)
+        {
+            failViewportRefresh()
+            return true
+        }
+        guard let status = OperationStatus(frame: frame), status.action == "update_device",
+            status.connectionGeneration == continuity.connectionGeneration,
+            status.chatId == activeChatId
+        else { return false }
+        guard let request = viewportRequest else {
+            return continuity.acceptedSnapshot?.requestGeneration == status.requestGeneration
+        }
+        guard status.requestGeneration == request.requestGeneration, request.isCurrent(in: continuity) else {
+            return false
+        }
+        if status.terminal, status.state != "completed" {
+            let retry = status.retryable && viewportRetryBudget > 0
+            viewportRetryBudget -= retry ? 1 : 0
+            if retry { cancelViewportRefresh(requeue: true) } else { failViewportRefresh() }
+        }
+        return true
+    }
+
+    private func reduceViewportConfiguration(_ frame: InboundFrame) {
+        if ["chat_id", "connection_generation", "request_generation"].contains(where: { frame.payload[$0] != nil }) {
+            guard let request = viewportRequest,
+                frame.payload["chat_id"]?.stringValue == request.chatId,
+                frame.payload["connection_generation"]?.stringValue == request.connectionGeneration,
+                frame.payload["request_generation"]?.stringValue == request.requestGeneration,
+                request.isCurrent(in: continuity)
+            else { return }
+            guard !viewportRefreshBusy else {
+                cancelViewportRefresh(requeue: true)
+                return
+            }
+            viewportPresentation = ConsolePresentation(frame: frame)
+            return
+        }
+        consolePresentation = ConsolePresentation(frame: frame)
+        viewportSnapshotSupported = frame.payload["viewport_snapshot_supported"]?.boolValue == true
+    }
+
+    private var viewportRefreshAvailable: Bool {
+        viewportSnapshotSupported && phase == .signedIn && connected && conversationAccount != nil
+    }
+
+    private var viewportRefreshBusy: Bool {
+        !consoleChatVisible || consoleSurfaceVisible || guidanceVisible || workVisible
+            || voiceState.active || voiceActivationBusy || voiceSession != nil || pendingVoiceHydration != nil
+            || pendingVoiceActivation != nil || !pendingVoiceSubmissions.isEmpty || statusShowsActivity
+            || pendingCommitRequestGeneration != nil || !transientEntries.isEmpty || transientCanvas != nil
+    }
+
+    private func queueViewportRefresh(_ device: DeviceDescriptor) {
+        viewportRefreshFailed = false
+        pendingViewportDevice = device
+        viewportRetryBudget = 2
+        guard viewportRefreshTask == nil else { return }
+        viewportRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let interval = self?.viewportRefreshInterval else { return }
+                do { try await Task.sleep(nanoseconds: interval) } catch { return }
+                guard let self else { return }
+                guard self.viewportRefreshAvailable else {
+                    self.cancelViewportRefresh(requeue: false)
+                    self.pendingViewportDevice = nil
+                    self.viewportRefreshTask = nil
+                    return
+                }
+                await self.flushViewportRefresh()
+                if self.pendingViewportDevice == nil && self.viewportRequest == nil {
+                    self.viewportRefreshTask = nil
+                    return
+                }
+            }
+        }
+    }
+
+    func flushViewportRefresh() async {
+        if let request = viewportRequest {
+            if !request.isCurrent(in: continuity) {
+                cancelViewportRefresh(requeue: true)
+            } else if viewportRefreshBusy {
+                cancelViewportRefresh(requeue: true)
+            } else if Date() >= viewportDeadline {
+                failViewportRefresh()
+            } else {
+                return
+            }
+        }
+        guard viewportRefreshAvailable, !viewportRefreshBusy,
+            let device = pendingViewportDevice, let settled = continuity.acceptedSnapshot,
+            settled.chatId == activeChatId,
+            let request = ViewportSnapshotRequest(device: device, snapshot: settled),
+            ws != nil || viewportSendOverride != nil,
+            continuity.beginViewportHydration(request)
+        else { return }
+        viewportRefreshFailed = false
+        viewportRequest = request
+        viewportSettledSnapshot = settled
+        viewportDeadline = Date().addingTimeInterval(viewportRefreshTimeout)
+        pendingViewportDevice = nil
+        let sent: Bool
+        if let viewportSendOverride {
+            sent = await viewportSendOverride(request.frameText)
+        } else if let socket = ws {
+            sent = await socket.sendCurrentViewportEvent(request.frameText) { [weak self] in
+                await self?.viewportRequestIsCurrent(request, socket: socket) == true
+            }
+        } else {
+            sent = false
+        }
+        if !sent, viewportRequest == request { failViewportRefresh() }
+    }
+
+    private func viewportRequestIsCurrent(_ request: ViewportSnapshotRequest, socket: WSClient) -> Bool {
+        ws === socket && viewportRefreshAvailable && !viewportRefreshBusy
+            && viewportRequest == request && request.isCurrent(in: continuity)
+    }
+
+    private func cancelViewportRefresh(requeue: Bool) {
+        guard let request = viewportRequest else { return }
+        if let settled = viewportSettledSnapshot {
+            _ = continuity.cancelViewportHydration(request, restoring: settled)
+        }
+        viewportRequest = nil
+        viewportSettledSnapshot = nil
+        viewportPresentation = nil
+        if requeue, pendingViewportDevice == nil { pendingViewportDevice = currentDevice }
+    }
+
+    private func failViewportRefresh() {
+        guard let request = viewportRequest, request.isCurrent(in: continuity) else { return }
+        cancelViewportRefresh(requeue: false)
+        viewportRefreshFailed = true
+    }
+
+    func retryViewportRefresh() {
+        guard viewportRefreshAvailable else { return }
+        queueViewportRefresh(currentDevice)
+    }
+
+    private func resetViewportRefresh() {
+        viewportRefreshFailed = false
+        cancelViewportRefresh(requeue: false)
+        pendingViewportDevice = nil
+        viewportSnapshotSupported = false
+        viewportRefreshTask?.cancel()
+        viewportRefreshTask = nil
+    }
+
     func reportDeviceCapabilities() {
         let device = currentDevice
         guard reportedDevice != device else { return }
         reportedDevice = device
         guard connected, conversationAccount != nil else { return }
+        if viewportSnapshotSupported, activeChatId != nil {
+            queueViewportRefresh(device)
+            return
+        }
         rawSend(Outbound.updateDevice(sessionId: nil, device: device))
     }
 

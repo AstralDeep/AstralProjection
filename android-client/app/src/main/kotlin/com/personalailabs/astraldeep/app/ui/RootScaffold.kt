@@ -67,6 +67,18 @@ fun RootScaffold(
     onSignOut: () -> Unit,
     onWorkspaceAction: (TopBarControl) -> Unit,
 ) {
+    CompositionLocalProvider(LocalViewportInteraction provides vm::viewportInteraction) {
+        RootScaffoldContent(vm, renderer, onSignOut, onWorkspaceAction)
+    }
+}
+
+@Composable
+private fun RootScaffoldContent(
+    vm: AppViewModel,
+    renderer: Renderer,
+    onSignOut: () -> Unit,
+    onWorkspaceAction: (TopBarControl) -> Unit,
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     if (state.console != null && state.consolePresentation != null) {
         CompositionLocalProvider(LocalConsoleControlHeight provides maxOf(32.0, state.consolePresentation!!.minimumControlHeight).dp) {
@@ -97,7 +109,12 @@ fun RootScaffold(
         Column(modifier = Modifier.fillMaxSize().padding(padding).consumeWindowInsets(padding).imePadding()) {
             connectionStripLabel(state.connection, state.everConnected)?.let { ConnectionStrip(it) }
             state.banner?.let {
-                BannerBar(text = it, isError = state.bannerKind == "error", onDismiss = vm::dismissBanner)
+                BannerBar(
+                    text = it,
+                    isError = state.bannerKind == "error",
+                    onDismiss = vm::dismissBanner,
+                    onRetry = if (state.viewportRefreshFailed) vm::retryViewportRefresh else null,
+                )
             }
             Box(modifier = Modifier.fillMaxWidth().weight(1f)) {
                 when (state.screen) {
@@ -145,6 +162,7 @@ internal fun BannerBar(
     text: String,
     isError: Boolean,
     onDismiss: () -> Unit,
+    onRetry: (() -> Unit)? = null,
 ) {
     val bg = if (isError) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant
     val fg = if (isError) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurface
@@ -155,6 +173,9 @@ internal fun BannerBar(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(text, color = fg, fontSize = 13.sp, modifier = Modifier.weight(1f))
+            onRetry?.let { retry ->
+                androidx.compose.material3.TextButton(onClick = retry) { Text("Retry") }
+            }
             Text(
                 "✕",
                 color = fg,
@@ -268,6 +289,7 @@ internal fun SettingsMenu(
     navigationLocked: Boolean = false,
 ) {
     var open by remember { mutableStateOf(false) }
+    ViewportInteraction(open)
     Box {
         IconButton(onClick = { open = true }, modifier = Modifier.sizeIn(minWidth = 48.dp, minHeight = 48.dp)) {
             Icon(

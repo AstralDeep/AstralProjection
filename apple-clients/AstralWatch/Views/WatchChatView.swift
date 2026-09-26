@@ -103,6 +103,13 @@ struct WatchChatView: View {
             .accessibilityValue(accessibility.state)
             .accessibilityAddTraits(.updatesFrequently)
         }
+        if model.viewportRefreshFailed {
+            Text("The layout could not update. Your result is still available.")
+                .font(ConsoleTypography.footnote)
+            Button("Retry layout") { model.retryViewportRefresh() }
+                .disabled(!model.connected)
+                .accessibilityIdentifier("viewport-refresh-retry")
+        }
         if let banner = model.errorBanner {
             Label(banner, systemImage: "exclamationmark.triangle")
                 .font(ConsoleTypography.footnote)

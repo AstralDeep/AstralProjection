@@ -83,6 +83,28 @@ class ConsoleWireTest {
         }
     }
 
+    @Test fun viewportNegotiationAndScopedConfigRequireLiteralCapabilityAndCompleteUuidScope() {
+        val chat = "00000000-0000-4000-8000-000000000001"
+        val connection = "00000000-0000-4000-8000-000000000002"
+        val request = "00000000-0000-4000-8000-000000000003"
+        for (raw in listOf("false", "null", "\"true\"", "1")) {
+            assertFalse(assertIs<Inbound.RoteConfig>(Wire.decode("""{"type":"rote_config","viewport_snapshot_supported":$raw}""")).viewportSnapshotSupported)
+        }
+        val frame = parse("""{"type":"rote_config","viewport_snapshot_supported":true,"chat_id":"$chat","connection_generation":"$connection","request_generation":"$request"}""")
+        val decoded = assertIs<Inbound.RoteConfig>(Wire.decode(frame))
+        assertTrue(decoded.viewportSnapshotSupported)
+        assertEquals(chat, decoded.chatId)
+        assertEquals(connection, decoded.connectionGeneration)
+        assertEquals(request, decoded.requestGeneration)
+        for (field in listOf("chat_id", "connection_generation", "request_generation")) {
+            assertIs<Inbound.Unknown>(Wire.decode(JsonObject(frame - field)))
+            for (invalid in listOf(JsonNull, JsonPrimitive(true), JsonPrimitive("invalid"))) {
+                assertIs<Inbound.Unknown>(Wire.decode(JsonObject(frame + (field to invalid))))
+            }
+        }
+        assertFalse(assertIs<Inbound.RoteConfig>(Wire.decode("""{"type":"rote_config"}""")).viewportSnapshotSupported)
+    }
+
     @Test
     fun picker_and_confirmation_keep_exact_revision_selections() {
         val picker = fixture("guidance_088/selection_surface").getValue("frames").jsonObject.getValue("picker").jsonObject

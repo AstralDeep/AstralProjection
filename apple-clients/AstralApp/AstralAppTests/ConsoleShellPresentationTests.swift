@@ -2,13 +2,12 @@
 // Captured views exercise the same ConsoleShell and live chart renderer used by the signed-in app.
 
 import AstralCore
+@testable import AstralDeep
 import Observation
 import SwiftUI
 import Vision
 import WebKit
 import XCTest
-
-@testable import AstralDeep
 
 @MainActor
 final class ConsoleShellPresentationTests: XCTestCase {
@@ -228,6 +227,32 @@ final class ConsoleShellPresentationTests: XCTestCase {
             XCTAssertNil(model.errorBanner)
             XCTAssertFalse(model.workspaceActionInFlight(.shareCanvas))
             XCTAssertTrue(peer.unexpectedRequests.isEmpty)
+        }
+
+        func testComposerRetainsEditorFocusSelectionAndDraftWhenLayoutReflows() async throws {
+            let model = try model()
+            let (initialPresentation, initialSize) = try presentation(width: 1440)
+            let host = try ConsoleTestMount(model: model, presentation: initialPresentation, size: initialSize)
+            defer { host.close() }
+            try await host.settle()
+            func fields(_ view: NSView) -> [NSTextField] {
+                (view as? NSTextField).map { [$0] } ?? view.subviews.flatMap(fields)
+            }
+            let field = try XCTUnwrap(fields(host.view).first { $0.stringValue == model.composerDraft })
+            XCTAssertTrue(host.window.makeFirstResponder(field))
+            let editor = try XCTUnwrap(field.currentEditor() as? NSTextView)
+            editor.setSelectedRange(NSRange(location: 5, length: 4))
+            for width in [390, 320, 768, 1440] {
+                let (presentation, size) = try presentation(width: width)
+                host.resize(presentation: presentation, size: size)
+                try await host.settle()
+                let current = try XCTUnwrap(fields(host.view).first { $0.stringValue == model.composerDraft })
+                XCTAssertTrue(current === field)
+                XCTAssertTrue(current.currentEditor() === editor)
+                XCTAssertTrue(host.window.firstResponder === editor)
+                XCTAssertEqual(editor.selectedRange(), NSRange(location: 5, length: 4))
+                XCTAssertEqual(model.composerDraft, "Keep this unfinished prompt")
+            }
         }
 
         func testComposerControlsStayCenteredAndAdjacentAcrossWindowWidths() async throws {

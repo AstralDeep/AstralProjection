@@ -666,6 +666,7 @@ internal fun InputBar(
     var attachMenuOpen by remember { mutableStateOf(false) }
     val inputInteractions = remember { MutableInteractionSource() }
     val inputFocused by inputInteractions.collectIsFocusedAsState()
+    ViewportInteraction(inputFocused || attachMenuOpen)
     val composerPadding = if (startView && LocalConfiguration.current.screenWidthDp >= 700) 16.dp else 12.dp
     val inputStyle = TextStyle(fontFamily = AstralSans, fontSize = 14.sp, lineHeight = 22.4.sp, color = MaterialTheme.colorScheme.onSurface)
     val context = LocalContext.current

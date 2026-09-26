@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
@@ -71,6 +72,8 @@ internal fun ConsoleComposer(
     onAction: (ConsoleComposerAction) -> Unit,
 ) {
     var moreOpen by remember { mutableStateOf(false) }
+    var inputFocused by remember { mutableStateOf(false) }
+    ViewportInteraction(moreOpen || inputFocused)
     val colors = MaterialTheme.colorScheme
     val controls = voice.composer?.controls.orEmpty().filter { it.visible }
     val field: @Composable (Modifier) -> Unit = { modifier ->
@@ -78,6 +81,7 @@ internal fun ConsoleComposer(
             input, onInputChange,
             modifier.border(1.dp, colors.outline, RoundedCornerShape(10.dp)).background(colors.surface, RoundedCornerShape(10.dp))
                 .heightIn(min = 44.dp, max = 150.dp).padding(12.dp).testTag("chat-input")
+                .onFocusChanged { inputFocused = it.hasFocus }
                 .semantics { contentDescription = console.label("message_placeholder") }
                 .onPreviewKeyEvent { event ->
                     if (event.key == Key.Enter && event.type == KeyEventType.KeyDown && !event.isShiftPressed) {
