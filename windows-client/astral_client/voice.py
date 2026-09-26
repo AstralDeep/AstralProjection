@@ -2119,6 +2119,10 @@ class VoiceComposerWidget(QWidget):
         style = f"min-height:{minimum}px;" if minimum else ""
         if minimum and button.property("iconOnly"):
             style += f"min-width:{minimum}px;max-width:{minimum}px;"
+        console_width = self.property("consoleControlWidth")
+        if console_width and button.property("iconOnly"):
+            style = (f"min-width:{console_width}px;max-width:{console_width}px;"
+                     "min-height:44px;max-height:44px;padding:0;border:0;background:transparent;")
         button.setStyleSheet(style)
         button.setMinimumHeight(minimum)
 

@@ -1063,6 +1063,17 @@ class ConversationContinuityReducer:
             return None
         return self._committed.get(self.active_chat_id)
 
+    @property
+    def request_completed(self) -> bool:
+        return self._request is not None and self._request.snapshot_applied
+
+    def retire_request(self, request_generation: str) -> bool:
+        if self._request is None or self._request.generation != request_generation:
+            return False
+        self._request = None
+        self.overlay_frames.clear()
+        return True
+
     def activate_chat(self, chat_id: Optional[str]) -> None:
         if chat_id is not None:
             _uuid4(chat_id, "chat_id")
@@ -2707,7 +2718,12 @@ class OrchestratorClient(QObject):
         future.add_done_callback(finished)
         return True
 
-    def update_device(self, device: dict) -> bool:
+    def update_device(
+        self, device: dict, *, chat_id: Optional[str] = None,
+        base_render_revision: Optional[int] = None,
+        request_generation: Optional[str] = None,
+        submission_id: Optional[str] = None, is_current=lambda: True,
+    ) -> bool:
         if not isinstance(device, dict) or device.get("device_type") != "windows":
             raise WindowsProtocolError("Device capabilities are invalid")
         try:
@@ -2716,17 +2732,29 @@ class OrchestratorClient(QObject):
                 raise ValueError
         except (ValueError, TypeError, RecursionError, UnicodeError):
             raise WindowsProtocolError("Device capabilities are invalid") from None
+        scoped = any(value is not None for value in (
+            chat_id, base_render_revision, request_generation, submission_id))
+        if scoped:
+            _uuid4(chat_id, "chat_id")
+            _uuid4(request_generation, "request_generation")
+            _uuid4(submission_id, "submission_id")
+            _uint64(base_render_revision, "base_render_revision")
         self.device = snapshot
         self._device_update_generation += 1
         revision = self._device_update_generation
-        submission_id, request_generation = str(uuid.uuid4()), str(uuid.uuid4())
-        frame = {"type": "ui_event", "action": "update_device", "session_id": None,
+        submission_id = submission_id or str(uuid.uuid4())
+        request_generation = request_generation or str(uuid.uuid4())
+        frame = {"type": "ui_event", "action": "update_device", "session_id": chat_id,
                  "submission_id": submission_id, "request_generation": request_generation,
                  "payload": {"device": snapshot, "submission_id": submission_id,
                              "request_generation": request_generation}}
+        if scoped:
+            frame["payload"].update(
+                chat_id=chat_id, base_render_revision=base_render_revision,
+                snapshot_purpose="hydration", connection_generation=self.connection_generation)
         return self._send_current_frame(
-            frame, is_current=lambda: self._device_update_generation == revision,
-            failure_status="device_update_failed",
+            frame, is_current=lambda: self._device_update_generation == revision and is_current(),
+            failure_status=("viewport_update_failed:" + request_generation if scoped else "device_update_failed"),
         )
 
     def retire_guidance(self, request_generation: str) -> None:

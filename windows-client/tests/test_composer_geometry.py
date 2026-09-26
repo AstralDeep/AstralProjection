@@ -315,8 +315,14 @@ def test_overflowing_categories_keep_complete_touch_targets_visible(request, geo
     settle()
     shell = win._console_shell
     viewport = shell.categories_scroll.viewport()
-    assert shell.categories_scroll.horizontalScrollBar().isVisible()
+    assert not shell.categories_scroll.horizontalScrollBar().isVisible()
+    win.activateWindow()
     for button in shell.categories_body.findChildren(QPushButton):
+        button.setFocus()
+        settle()
+        left = button.mapTo(viewport, button.rect().topLeft()).x()
+        assert left >= 0
+        assert left + button.width() <= viewport.width()
         top = button.mapTo(viewport, button.rect().topLeft()).y()
         assert top >= 0
         assert top + button.height() <= viewport.height()
@@ -377,8 +383,8 @@ def test_result_metadata_and_workspace_actions_fit_actual_narrow_header(request,
         assert control.visibleRegion().boundingRect().contains(control.rect())
         assert control.height() >= geometry["presentation"]["minimum_control_height"]
     if geometry["viewport"][0] < 500:
-        assert title.mapTo(result, title.rect().bottomRight()).y() < min(
-            control.mapTo(result, control.rect().topLeft()).y() for control in controls)
+        assert all(abs(title.mapTo(result, title.rect().center()).y() -
+                       control.mapTo(result, control.rect().center()).y()) <= 1 for control in controls)
     result.fullscreen_button.setFocus()
     settle()
     assert QApplication.focusWidget() is result.fullscreen_button

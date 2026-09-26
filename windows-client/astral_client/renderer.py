@@ -51,7 +51,7 @@ class RenderContext:
 def _label(
     text: str,
     *,
-    color: str = T.TEXT,
+    color: Optional[str] = None,
     size: int = 14,
     bold: bool = False,
     weight: Optional[int] = None,
@@ -67,12 +67,14 @@ def _label(
     lab.setWordWrap(wrap)
     lab.setTextInteractionFlags(
         Qt.TextInteractionFlag.TextSelectableByMouse
+        | Qt.TextInteractionFlag.TextSelectableByKeyboard
         | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        | Qt.TextInteractionFlag.LinksAccessibleByKeyboard
     )
     lab.setOpenExternalLinks(True)
     w = str(weight) if weight else ("600" if bold else "400")
     lab.setStyleSheet(
-        f"color:{color}; font-size:{size}px; font-weight:{w}; background:transparent;"
+        f"color:{color or T.TEXT}; font-size:{size}px; font-weight:{w}; background:transparent;"
     )
     return lab
 
@@ -97,10 +99,10 @@ def _scoped(widget: QWidget, css: str) -> QWidget:
 
 
 def _card_frame(
-    radius: int = 10, bg: str = T.SURFACE, border: str = T.BORDER
+    radius: int = 10, bg: Optional[str] = None, border: Optional[str] = None
 ) -> QFrame:
     f = QFrame()
-    _scoped(f, f"background:{bg}; border:1px solid {border}; border-radius:{radius}px;")
+    _scoped(f, f"background:{bg or T._rgba(T.SURFACE, 0.45)}; border:1px solid {border or T.BORDER}; border-radius:{radius}px;")
     f.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
     return f
 
@@ -139,23 +141,27 @@ def _r_text(c, ctx):
         return _label(content, markdown=True)
     size, bold = _TEXT_SIZES.get(variant, (14, False))
     color = T.MUTED if variant == "caption" else T.TEXT
-    return _label(content, color=color, size=size, bold=bold)
+    label = _label(content, color=color, size=size, bold=bold)
+    if variant == "body":
+        label.setMinimumHeight(23)
+    return label
 
 
 def _r_card(c, ctx):
     frame = _card_frame()
-    lay = _vbox(10, (16, 14, 16, 14))
+    lay = _vbox(12, (16, 16, 16, 16))
     frame.setLayout(lay)
     title = c.get("title")
     if title:
         row = QHBoxLayout()
         row.setSpacing(8)
         bar = QLabel()
-        bar.setFixedSize(4, 18)
+        bar.setFixedSize(4, 16)
         bar.setStyleSheet(f"background:{T.PRIMARY}; border-radius:2px;")
         row.addWidget(bar)
-        row.addWidget(_label(title, size=16, bold=True))
-        row.addStretch(1)
+        heading = _label(title, size=16, bold=True)
+        heading.setMinimumHeight(24)
+        row.addWidget(heading, 1)
         lay.addLayout(row)
     _render_into(lay, _children(c), ctx)
     return frame
@@ -222,7 +228,7 @@ def _r_container(c, ctx):
 def _r_grid(c, ctx):
     w = QWidget()
     grid = QGridLayout()
-    grid.setSpacing(10)
+    grid.setSpacing(_css_px({"gap": c.get("gap", 16)}, "gap", 16))
     grid.setContentsMargins(0, 0, 0, 0)
     w.setLayout(grid)
     cols = max(1, int(c.get("columns", 2) or 2))
@@ -308,19 +314,19 @@ def _r_metric(c, ctx):
     _scoped(
         frame,
         "background:qlineargradient(x1:0,y1:0,x2:1,y2:1,"
-        f"stop:0 {T._rgba(accent, 0.18)}, stop:1 {T._rgba(accent, 0.04)});"
+        f"stop:0 {T._rgba(accent, 0.20)}, stop:1 {T._rgba(accent, 0.05)});"
         f"border:1px solid {T._rgba(T.TEXT, 0.05)};"
         f"border-left:3px solid {accent}; border-radius:12px;",
     )
     frame.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-    lay = _vbox(2, (16, 14, 16, 14))
+    lay = _vbox(4, (16, 16, 16, 16))
     frame.setLayout(lay)
     lay.addWidget(
-        _label(str(c.get("title", "")).upper(), color=T.MUTED, size=11, bold=True)
+        _label(str(c.get("title", "")).upper(), color=T.MUTED, size=12, weight=500)
     )
     row = QHBoxLayout()
     row.setSpacing(8)
-    row.addWidget(_label(c.get("value", ""), size=24, bold=True))
+    row.addWidget(_label(c.get("value", ""), size=28, weight=700), 1)
     if c.get("delta"):
         row.addWidget(
             _label(
@@ -330,7 +336,6 @@ def _r_metric(c, ctx):
                 bold=True,
             )
         )
-    row.addStretch(1)
     lay.addLayout(row)
     if c.get("subtitle"):
         lay.addWidget(_label(c["subtitle"], color=T.MUTED, size=12))
@@ -565,12 +570,14 @@ def _r_param_picker(c, ctx):
         first_item = lay.count()
         if kind == "boolean":
             box = QCheckBox(str(label))
+            box.setProperty("astral_control_key", json.dumps(["field", name, kind]))
             box.setChecked(bool(default))
             getters[name] = lambda b=box: b.isChecked()
             lay.addWidget(box)
         elif kind == "select":
             lay.addWidget(_label(label, size=13, weight=500))
             combo = QComboBox()
+            combo.setProperty("astral_control_key", json.dumps(["field", name, kind]))
             opts = [str(o) for o in (field.get("options") or [])]
             combo.addItems(opts)
             if default is not None and str(default) in opts:
@@ -589,6 +596,7 @@ def _r_param_picker(c, ctx):
                 btn.setObjectName("chip")
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn.setCheckable(True)
+                btn.setProperty("astral_control_key", json.dumps(["field", name, kind, opt]))
                 btn.setChecked(opt in sel)
                 row.addWidget(btn)
                 chips.append((opt, btn))
@@ -598,6 +606,7 @@ def _r_param_picker(c, ctx):
         elif kind == "number":
             lay.addWidget(_label(label, size=13, weight=500))
             edit = QLineEdit()
+            edit.setProperty("astral_control_key", json.dumps(["field", name, kind]))
             if default is not None:
                 edit.setText(str(default))
             getters[name] = lambda e=edit: None if e.text() == "" else _to_number(e.text())
@@ -605,12 +614,14 @@ def _r_param_picker(c, ctx):
         elif kind == "password":
             lay.addWidget(_label(label, size=13, weight=500))
             edit = QLineEdit()
+            edit.setProperty("astral_control_key", json.dumps(["field", name, kind]))
             edit.setEchoMode(QLineEdit.EchoMode.Password)
             getters[name] = lambda e=edit: e.text()
             lay.addWidget(edit)
         elif kind == "textarea":
             lay.addWidget(_label(label, size=13, weight=500))
             area = QPlainTextEdit()
+            area.setProperty("astral_control_key", json.dumps(["field", name, kind]))
             if default is not None:
                 area.setPlainText(str(default))
             area.setMinimumHeight(72)
@@ -619,6 +630,7 @@ def _r_param_picker(c, ctx):
         else:
             lay.addWidget(_label(label, size=13, weight=500))
             edit = QLineEdit()
+            edit.setProperty("astral_control_key", json.dumps(["field", name, kind]))
             if default is not None:
                 edit.setText(str(default))
             getters[name] = lambda e=edit: e.text()
@@ -687,6 +699,7 @@ def _r_input(c, ctx):
     if label:
         lay.addWidget(_label(label, color=T.MUTED, size=12))
     edit = QLineEdit()
+    edit.setProperty("astral_control_key", json.dumps(["input", name]))
     edit.setText(str(c.get("value", "")))
     if c.get("placeholder"):
         edit.setPlaceholderText(str(c["placeholder"]))
@@ -851,8 +864,9 @@ def _r_code(c, ctx):
 
 def _r_divider(c, ctx):
     line = QFrame()
-    line.setFrameShape(QFrame.Shape.HLine)
-    line.setStyleSheet(f"background:{T.BORDER}; max-height:1px;")
+    line.setFrameShape(QFrame.Shape.NoFrame)
+    line.setFixedHeight(1)
+    line.setStyleSheet(f"background:{T._rgba(T.TEXT, 0.10)}; border:none;")
     return line
 
 
@@ -923,8 +937,8 @@ def _r_list(c, ctx):
                 )
             lay.addWidget(card)
         return w
-    frame = _card_frame()
-    lay = _vbox(6, (16, 12, 16, 12))
+    frame = QWidget()
+    lay = _vbox(8)
     frame.setLayout(lay)
     if c.get("title"):
         lay.addWidget(_label(c["title"], size=14, bold=True))
@@ -937,10 +951,12 @@ def _r_list(c, ctx):
         bullet = f"{i + 1}." if ordered else "•"
         row = QHBoxLayout()
         row.setSpacing(8)
-        b = _label(bullet, color=T.MUTED)
-        b.setFixedWidth(20)
+        b = _label(bullet)
+        b.setFixedWidth(12 if not ordered else max(12, b.sizeHint().width()))
         row.addWidget(b, 0, Qt.AlignmentFlag.AlignTop)
-        row.addWidget(_label(txt), 1)
+        label = _label(txt)
+        label.setMinimumHeight(23)
+        row.addWidget(label, 1)
         lay.addLayout(row)
     return frame
 
@@ -1029,10 +1045,12 @@ def _table_pager(c, ctx, n_rows: int):
 
 def _r_tabs(c, ctx):
     tabs = QTabWidget()
+    tabs.setProperty("astral_control_key", "tabs")
     for tab in c.get("tabs", []) or []:
         if not isinstance(tab, dict):
             continue
         page = QWidget()
+        page.setProperty("astral_tab_key", tab.get("id") or tab.get("label"))
         pl = _vbox(10, (12, 12, 12, 12))
         page.setLayout(pl)
         _render_into(pl, _children(tab), ctx)
@@ -1053,17 +1071,20 @@ def _r_collapsible(c, ctx):
     btn = QPushButton(
         ("▾ " if body.isVisible() else "▸ ") + str(c.get("title", "Details"))
     )
+    btn.setCheckable(True)
+    btn.setChecked(bool(c.get("default_open")))
+    btn.setProperty("astral_control_key", "expanded")
     btn.setStyleSheet(
         "text-align:left; border:none; background:transparent; font-weight:600;"
     )
 
-    def toggle():
-        body.setVisible(not body.isVisible())
+    def toggle(expanded):
+        body.setVisible(expanded)
         btn.setText(
-            ("▾ " if body.isVisible() else "▸ ") + str(c.get("title", "Details"))
+            ("▾ " if expanded else "▸ ") + str(c.get("title", "Details"))
         )
 
-    btn.clicked.connect(toggle)
+    btn.toggled.connect(toggle)
     lay.addWidget(btn)
     lay.addWidget(body)
     return frame
@@ -1462,6 +1483,10 @@ def render(component: Any, ctx: RenderContext, *, top_level: bool = False) -> QW
     cid = component.get("component_id") or component.get("id")
     if cid:
         widget.setProperty("component_id", str(cid))
+    elif component.get("name") or component.get("label") or component.get("title"):
+        widget.setProperty("component_state_key", json.dumps([
+            component.get("type"), component.get("name"), component.get("label"), component.get("title")]))
+    widget.setProperty("component_type", str(component.get("type") or ""))
     return widget
 
 

@@ -12,7 +12,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel, QPushButton, QWidget
 
 from astral_client import theme as T
-from astral_client.composites import FlowLayout, PrimitivePlot, StatGrid
+from astral_client.composites import FlowLayout, PrimitivePlot, StatGrid, _palette
 from astral_client.renderer import RenderContext, render, supported_types
 
 
@@ -151,7 +151,8 @@ def test_pipeline_status_details_and_single_current_step(qapp, orientation):
     assert [step.property("status") for step in steps] == ["done", "active", "active", "error", "pending"]
     assert sum(bool(step.property("current_step")) for step in steps) == 1
     assert steps[1].accessibleDescription() == "Checking inputs"
-    assert "Next · pending" in _labels(widget)
+    assert "Next" in _labels(widget)
+    assert steps[-1].accessibleName() == "Next: pending"
     assert not _paint(widget).isNull()
 
 
@@ -213,13 +214,29 @@ def test_radar_preserves_accessible_actual_values_and_bounds_plot(qapp, maximum)
     assert plot.values == [[2, 8, 0], [0, 0, 4]]
     assert plot.scale == (5 if maximum == 5 else 8)
     assert "Measured: A 2, B 8, axis 3 0" in plot.accessibleDescription()
-    assert "series 2: A 0, B 0, axis 3 4" in _labels(widget)
+    assert "series 2: A 0, B 0, axis 3 4" in plot.accessibleDescription()
+    assert "A 0, B 0" not in _labels(widget)
     assert not _paint(widget).isNull()
 
 
 def test_radar_zero_values_use_finite_scale(qapp):
     widget = _render({"type": "radar_chart", "axes": ["a", "b", "c"], "datasets": [{}]})
     assert widget.findChild(PrimitivePlot).scale == 1
+    assert not _paint(widget).isNull()
+
+
+def test_composite_series_palette_uses_shared_pastels_and_legends_keep_values_accessible(qapp):
+    colors = [T.PRIMARY, T.SECONDARY, T.ACCENT]
+    assert _palette() == colors + [T._mix(color, "#FFFFFF", 0.45) for color in colors]
+    widget = _render({"type": "donut_chart", "data": [3, 2], "labels": ["Accepted", "Waiting"]})
+    assert "Accepted: 3" not in _labels(widget)
+    assert "Accepted: 3" in widget.findChild(PrimitivePlot).accessibleDescription()
+
+
+def test_gauge_uses_shared_compact_spacing_and_info_accent(qapp):
+    widget = _render({"type": "gauge", "value": 0.4, "thresholds": [{"at": 0, "variant": "info"}]})
+    assert widget.layout().spacing() == 4
+    assert widget.findChild(PrimitivePlot).variant == "info"
     assert not _paint(widget).isNull()
 
 

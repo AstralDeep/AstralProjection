@@ -209,11 +209,14 @@ def test_agent_cards_keep_labels_inside_visible_bounds_after_rote_resize(win, ge
         shell.toggle_drawer()
     QApplication.processEvents()
     card = controls(shell, "agentId")[0]
-    assert card.height() >= 90
+    assert card.height() == 84
     for child in card.findChildren(QLabel):
         assert child.isVisible()
         assert card.rect().contains(child.geometry())
-        assert child.height() >= child.fontMetrics().height()
+        if child.text():
+            assert child.height() >= child.fontMetrics().height()
+        else:
+            assert child.size().width() == child.size().height() == 8
     shell.history_new_button.click()
     assert not shell.drawer_open and win.active_chat is None
 
@@ -557,7 +560,8 @@ def test_theme_transition_restyles_shell_and_open_settings_without_losing_draft(
     try:
         theme.apply_theme("daylight")
         win._restyle_all()
-        assert theme.TEXT in win._console_shell.brand.styleSheet()
+        assert not win._console_shell.brand.pixmap().isNull()
+        assert win._console_shell.brand.accessibleName() == MENU["console"]["labels"]["brand"]
         assert theme.TEXT in win._console_shell.title.styleSheet()
         assert theme.MUTED in win._console_shell.subtitle.styleSheet()
         assert theme.SURFACE_2 in dialog.styleSheet()

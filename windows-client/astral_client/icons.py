@@ -8,6 +8,10 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 _PATHS: Dict[str, str] = {
+    "search": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+    "back": '<path d="M19 12H5m6-6-6 6 6 6"/>',
+    "chevron_down": '<path d="m6 9 6 6 6-6"/>',
+    "chevron_right": '<path d="m9 6 6 6-6 6"/>',
     "microphone": '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>',
     "device-transfer": '<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>',
     "stop": '<rect x="6" y="6" width="12" height="12" rx="2"></rect>',

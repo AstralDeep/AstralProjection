@@ -53,6 +53,10 @@ def _variant(value) -> str:
     return key if key in T.VARIANT_COLORS else "default"
 
 
+def _state_color(variant):
+    return T.ACCENT if variant == "info" else T.VARIANT_COLORS[variant][0]
+
+
 def _label(text, *, muted=False, bold=False, size=13) -> QLabel:
     label = QLabel(_text(text))
     label.setTextFormat(Qt.TextFormat.PlainText)
@@ -80,19 +84,18 @@ def _box(title="") -> QWidget:
     return widget
 
 
-def _legend(text, color, *, muted=True) -> QWidget:
+def _legend(text, color, *, muted=True, dot=False) -> QWidget:
     widget = QWidget()
     layout = QHBoxLayout(widget)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(6)
+    layout.setSpacing(8 if dot else 4)
     swatch = QFrame()
-    swatch.setFixedSize(8, 8)
-    swatch.setStyleSheet(f"background:{color};border:none;border-radius:4px;")
-    label = _label(text, muted=muted, size=12)
-    label.setWordWrap(False)
+    swatch.setFixedSize(8 if dot else 10, 8 if dot else 10)
+    swatch.setStyleSheet(f"background:{color};border:none;border-radius:{4 if dot else 2}px;")
+    label = _label(text, muted=muted, size=12 if dot else 11)
     label.setToolTip(text)
     layout.addWidget(swatch)
-    layout.addWidget(label)
+    layout.addWidget(label, 1)
     widget.setAccessibleName(text)
     return widget
 
@@ -157,7 +160,11 @@ class FlowLayout(QLayout):
             gap = self.spacing()
             if self.flow_align == "between" and len(row) > 1:
                 gap += available // (len(row) - 1)
-            height = max(item.sizeHint().height() for item, _ in row)
+            height = max(
+                item.heightForWidth(item_width) if item.hasHeightForWidth()
+                else item.sizeHint().height()
+                for item, item_width in row
+            )
             for item, item_width in row:
                 if apply:
                     item.setGeometry(QRect(x, y, item_width, height))
@@ -194,7 +201,11 @@ class StatGrid(QWidget):
 
 
 def action_group(component, context):
-    widget = _box(component.get("label"))
+    widget = _box()
+    name = _text(component.get("label"))
+    widget.setAccessibleName(name)
+    if name:
+        widget.layout().addWidget(_label(name, muted=True, size=12))
     row = QWidget()
     layout = FlowLayout(row, _text(component.get("align")))
     buttons = _list(component.get("buttons"))
@@ -206,6 +217,7 @@ def action_group(component, context):
         button.setAccessibleName(name)
         button.setToolTip(name)
         button.setMinimumHeight(36)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
         variant = _text(item.get("variant") or "primary")
         button.setObjectName(variant if variant in {"primary", "secondary", "ghost", "danger"} else "primary")
         action, payload = item.get("action"), item.get("payload", {})
@@ -213,6 +225,7 @@ def action_group(component, context):
         enabled = valid and not bool(item.get("disabled")) and not bool(component.get("disabled"))
         button.setEnabled(enabled)
         button.setStyleSheet(
+            "QPushButton{padding:8px 16px;font-size:14px;font-weight:500;border-radius:8px;}"
             f"QPushButton:disabled{{background:{T._rgba(T.TEXT, 0.05)};"
             f"border:1px solid {T.BORDER};color:{T.MUTED};}}"
         )
@@ -247,19 +260,23 @@ def stat_group(component, context):
         )
         layout = QVBoxLayout(cell)
         layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(4)
+        layout.setSpacing(0)
         label, value = _text(item.get("label")), _text(item.get("value"))
         layout.addWidget(_label(label, muted=True, size=12))
-        layout.addWidget(_label(value, bold=True, size=18))
+        readout = QWidget()
+        readout_layout = FlowLayout(readout)
+        readout_layout.setSpacing(4)
+        readout_layout.addWidget(_label(value, bold=True, size=18))
         details = [label, value]
         if item.get("delta") is not None:
             trend = _text(item.get("trend")).lower()
             glyph = {"up": "▲", "down": "▼", "flat": "–"}.get(trend, "")
             delta = _label(f"{glyph} {_text(item['delta'])}".strip(), size=12)
-            delta.setStyleSheet(f"color:{T.VARIANT_COLORS[_variant(item.get('variant'))][0]};font-size:12px;")
+            delta.setStyleSheet(f"color:{_state_color(_variant(item.get('variant')))};font-size:12px;")
             delta.setAccessibleName(f"{trend} {_text(item['delta'])}".strip())
-            layout.addWidget(delta)
+            readout_layout.addWidget(delta)
             details.append(delta.accessibleName())
+        layout.addWidget(readout)
         if item.get("hint"):
             layout.addWidget(_label(item["hint"], muted=True, size=11))
             details.append(_text(item["hint"]))
@@ -277,6 +294,7 @@ def pipeline_stepper(component, context):
     vertical = _text(component.get("orientation")).lower() == "vertical"
     layout = QVBoxLayout(content) if vertical else FlowLayout(content)
     layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(12)
     current = False
     statuses = {"done": "success", "active": "info", "pending": "default", "error": "error"}
     steps = _list(component.get("steps"))
@@ -287,15 +305,19 @@ def pipeline_stepper(component, context):
         status = status if status in statuses else "pending"
         variant = statuses[status]
         name = _text(item.get("label"))
-        step = _box()
+        step = QWidget()
+        step_layout = QHBoxLayout(step)
+        step_layout.setContentsMargins(0, 0, 0, 0)
+        step_layout.setSpacing(8)
         step.setAccessibleName(f"{name}: {status}")
         step.setProperty("status", status)
         step.setProperty("current_step", status == "active" and not current)
         current = current or status == "active"
-        heading = _legend(f"{name} · {status}", T.VARIANT_COLORS[variant][0], muted=False)
-        step.layout().addWidget(heading)
+        color = T._rgba(T.TEXT, 0.25) if status == "pending" else _state_color(variant)
+        heading = _legend(name, color, muted=False, dot=True)
+        step_layout.addWidget(heading)
         if item.get("detail"):
-            step.layout().addWidget(_label(item["detail"], muted=True, size=11))
+            step_layout.addWidget(_label(item["detail"], muted=True, size=11))
             step.setAccessibleDescription(_text(item["detail"]))
         layout.addWidget(step)
     widget.layout().addWidget(content)
@@ -320,15 +342,16 @@ class PrimitivePlot(QWidget):
         if self.kind == "gauge":
             diameter = min(102.4, max(1.0, self.width() - 20.0))
             rect = QRectF((self.width() - diameter) / 2, 12.8, diameter, diameter)
-            painter.setPen(QPen(QColor(T._mix(T.SURFACE, T.TEXT, 0.12)), 10,
+            painter.setPen(QPen(QColor(T._mix(T.SURFACE, T.TEXT, 0.12)), 10.24,
                                 Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawArc(rect, 0, 180 * 16)
-            painter.setPen(QPen(QColor(T.VARIANT_COLORS[self.variant][0]), 10,
+            painter.setPen(QPen(QColor(_state_color(self.variant)), 10.24,
                                 Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawArc(rect, 180 * 16, -round(self.values[0] * 180 * 16))
         else:
+            ratio = 0.8 if self.kind == "donut_chart" else 0.9
             size = min(128.0 if self.kind == "donut_chart" else 172.8,
-                       max(1.0, self.width() - 24.0))
+                       max(1.0, self.width() * ratio))
             rect = QRectF((self.width() - size) / 2, (self.height() - size) / 2, size, size)
             if self.kind == "donut_chart":
                 self._donut(painter, rect)
@@ -338,32 +361,28 @@ class PrimitivePlot(QWidget):
 
     def _donut(self, painter, rect):
         palette = _palette()
-        painter.setPen(QPen(QColor(T._mix(T.SURFACE, T.TEXT, 0.12)), 22))
-        painter.drawEllipse(rect)
         largest = max(self.values, default=0)
         normalized = [v / largest for v in self.values] if largest else []
         total = sum(normalized)
         offset = 90 * 16
         for index, value in enumerate(normalized):
             span = -round(360 * 16 * value / total)
-            painter.setPen(QPen(QColor(palette[index % len(palette)]), 22))
+            painter.setPen(QPen(QColor(palette[index % len(palette)]), 22.4))
             painter.drawArc(rect, offset, span)
             offset += span
 
     def _radar(self, painter, rect):
         center, radius = rect.center(), rect.width() / 2
-        painter.setPen(QPen(QColor(T._mix(T.SURFACE, T.TEXT, 0.18)), 1))
+        painter.setPen(QPen(QColor(T._mix(T.SURFACE, T.TEXT, 0.15)), 0.96))
         for fraction in (12 / 45, 24 / 45, 36 / 45, 1):
             painter.drawEllipse(center, radius * fraction, radius * fraction)
         count = len(self.values[0])
         vectors = [QPointF(math.cos(2 * math.pi * i / count - math.pi / 2),
                           math.sin(2 * math.pi * i / count - math.pi / 2)) for i in range(count)]
-        for vector in vectors:
-            painter.drawLine(center, center + vector * radius)
         for index, row in enumerate(self.values):
             color = QColor(_palette()[index % 6])
-            painter.setPen(QPen(color, 2))
-            color.setAlphaF(0.16)
+            painter.setPen(QPen(color, 2.88))
+            color.setAlphaF(0.28)
             painter.setBrush(color)
             polygon = QPolygonF([center + vector * (radius * min(1, value / self.scale))
                                  for vector, value in zip(vectors, row)])
@@ -371,8 +390,8 @@ class PrimitivePlot(QWidget):
 
 
 def _palette():
-    return [T.PRIMARY, T.SECONDARY, T.ACCENT, T.VARIANT_COLORS["success"][0],
-            T.VARIANT_COLORS["warning"][0], T.VARIANT_COLORS["error"][0]]
+    colors = [T.PRIMARY, T.SECONDARY, T.ACCENT]
+    return colors + [T._mix(color, "#FFFFFF", 0.45) for color in colors]
 
 
 def gauge(component, context):
@@ -386,6 +405,7 @@ def gauge(component, context):
     display = _text(component.get("display_value")) or f"{round(value * 100)}%"
     name = _text(component.get("label"))
     widget = _box()
+    widget.layout().setSpacing(4)
     widget.setAccessibleName(f"{name}: {display}" if name else display)
     plot = PrimitivePlot("gauge", [value], variant=variant)
     plot.setAccessibleName(widget.accessibleName())
@@ -411,6 +431,8 @@ def donut_chart(component, context):
     center = [_text(component.get(k)) for k in ("center_value", "center_label")]
     if any(center):
         overlay = QVBoxLayout(plot)
+        overlay.setContentsMargins(24, 24, 24, 24)
+        overlay.setSpacing(0)
         overlay.setAlignment(Qt.AlignmentFlag.AlignCenter)
         for index, text in enumerate(center):
             label = _label(text, bold=index == 0, muted=index == 1, size=18 if index == 0 else 11)
@@ -423,7 +445,7 @@ def donut_chart(component, context):
     for index, value in enumerate(values):
         name = _text(labels[index]) if index < len(labels) else f"series {index + 1}"
         summary = f"{name or f'series {index + 1}'}: {value:g}"
-        legend_layout.addWidget(_legend(summary, _palette()[index % 6]))
+        legend_layout.addWidget(_legend(name or f"series {index + 1}", _palette()[index % 6]))
         descriptions.append(summary)
     widget.layout().addWidget(legend)
     plot.setAccessibleName(f"Donut chart: {_text(component.get('title'))}")
@@ -456,12 +478,16 @@ def radar_chart(component, context):
     plot.setAccessibleName(f"Radar chart: {_text(component.get('title'))}")
     widget.layout().addWidget(plot, alignment=Qt.AlignmentFlag.AlignLeft)
     descriptions = []
+    legend = QWidget()
+    legend_layout = FlowLayout(legend)
     for index, (name, row) in enumerate(zip(names, rows)):
         description = f"{name}: " + ", ".join(f"{axis or f'axis {i + 1}'} {value:g}" for i, (axis, value) in enumerate(zip(axes, row)))
-        label = _label(description, muted=True, size=12)
-        widget.layout().addWidget(_legend(name, _palette()[index % 6]))
-        widget.layout().addWidget(label)
+        entry = _legend(name, _palette()[index % 6])
+        entry.setAccessibleDescription(description)
+        entry.setToolTip(description)
+        legend_layout.addWidget(entry)
         descriptions.append(description)
+    widget.layout().addWidget(legend)
     plot.setAccessibleDescription("; ".join(descriptions))
     return widget
 

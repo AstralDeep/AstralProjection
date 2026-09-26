@@ -238,6 +238,8 @@ a = Analysis(
     datas=[
         ("assets/astraldeep.ico", "assets"),
         (str(_console_font_path), "assets/fonts"),
+        (str(_root.parent / "backend/webrender/static/img/AstralDeep.png"), "assets/img"),
+        (str(_root.parent / "backend/webrender/static/img/user-avatar.png"), "assets/img"),
         (str(_console_font_license_path), "assets/fonts"),
         ("deployment/release-profile.json", "deployment"),
         ("deployment/runtime-manifest.json", "deployment"),
