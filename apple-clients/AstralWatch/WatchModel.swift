@@ -233,6 +233,7 @@ final class WatchModel {
     private var viewportPresentation: ConsolePresentation?
     private var viewportDeadline = Date.distantFuture
     private var viewportRetryBudget = 0
+    private var viewportSubmissionIds: [String] = []
     @ObservationIgnored private var viewportRefreshTask: Task<Void, Never>?
     @ObservationIgnored var viewportRefreshInterval: UInt64 = 250_000_000
     @ObservationIgnored var viewportRefreshTimeout: TimeInterval = 10
@@ -292,7 +293,7 @@ final class WatchModel {
             ownerSurfaceControls = []
             chromeMenu = nil
             consolePresentation = nil
-            resetViewportRefresh()
+            resetViewportRefresh(clearSubmissionHistory: true)
             continuity.clear()
             resetConversationState()
             resetRecents()
@@ -336,7 +337,7 @@ final class WatchModel {
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
-        resetViewportRefresh()
+        resetViewportRefresh(clearSubmissionHistory: true)
         invalidateConsoleSurface()
         chromeMenu = nil
         consolePresentation = nil
@@ -505,7 +506,7 @@ final class WatchModel {
             bindConversationAccount(account)
         } else {
             conversationAccount = nil
-            resetViewportRefresh()
+            resetViewportRefresh(clearSubmissionHistory: true)
             continuity.clear()
             resetConversationState()
         }
@@ -534,7 +535,7 @@ final class WatchModel {
         conversationAccount = nil
         chromeMenu = nil
         consolePresentation = nil
-        resetViewportRefresh()
+        resetViewportRefresh(clearSubmissionHistory: true)
         continuity.clear()
         resetConversationState()
         clearPendingOperationSubmissions()
@@ -570,7 +571,7 @@ final class WatchModel {
         conversationAccount = nil
         chromeMenu = nil
         consolePresentation = nil
-        resetViewportRefresh()
+        resetViewportRefresh(clearSubmissionHistory: true)
         continuity.clear()
         resetConversationState()
         resetRecents()
@@ -2689,10 +2690,12 @@ extension WatchModel {
     }
 
     private func consumeViewportStatus(_ frame: InboundFrame) -> Bool {
-        if let request = viewportRequest, let refusal = AdmissionRefusal(frame: frame),
-            refusal.submissionId == request.submissionId, request.isCurrent(in: continuity)
-        {
-            failViewportRefresh()
+        if let refusal = AdmissionRefusal(frame: frame), viewportSubmissionIds.contains(refusal.submissionId) {
+            if let request = viewportRequest, refusal.submissionId == request.submissionId,
+                request.isCurrent(in: continuity)
+            {
+                failViewportRefresh()
+            }
             return true
         }
         guard let status = OperationStatus(frame: frame), status.action == "update_device",
@@ -2788,6 +2791,8 @@ extension WatchModel {
             continuity.beginViewportHydration(request)
         else { return }
         viewportRefreshFailed = false
+        viewportSubmissionIds.append(request.submissionId)
+        if viewportSubmissionIds.count > 128 { viewportSubmissionIds.removeFirst(viewportSubmissionIds.count - 128) }
         viewportRequest = request
         viewportSettledSnapshot = settled
         viewportDeadline = Date().addingTimeInterval(viewportRefreshTimeout)
@@ -2832,7 +2837,8 @@ extension WatchModel {
         queueViewportRefresh(currentDevice)
     }
 
-    private func resetViewportRefresh() {
+    private func resetViewportRefresh(clearSubmissionHistory: Bool = false) {
+        if clearSubmissionHistory { viewportSubmissionIds.removeAll() }
         viewportRefreshFailed = false
         cancelViewportRefresh(requeue: false)
         pendingViewportDevice = nil
