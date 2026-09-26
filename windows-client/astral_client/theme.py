@@ -6,6 +6,11 @@ build_stylesheet() re-renders the QSS used by app.py and renderer.py.
 from __future__ import annotations
 
 import re
+import logging
+import sys
+from pathlib import Path
+
+from PySide6.QtGui import QFont, QFontDatabase
 
 # Must byte-match webrender's PRESETS (cross-client parity)
 PRESETS = {
@@ -28,7 +33,7 @@ PRESETS = {
 
 PALETTE: dict = dict(PRESETS["midnight"])
 
-FONT = "'Inter', 'Segoe UI', system-ui, sans-serif"
+FONT = "'Open Sans', 'Segoe UI', sans-serif"
 MONO = "'JetBrains Mono', 'Cascadia Code', Consolas, monospace"
 
 _SEMANTIC = {
@@ -45,6 +50,22 @@ PRIMARY = SECONDARY = ACCENT = PRIMARY_SOFT = GRAD = ""
 VARIANT_COLORS: dict = {}
 _ROOT_BG = ""
 ROOT_BG_STYLE = ""
+
+
+def configure_fonts(app) -> bool:
+    if app.property("astralOpenSansLoaded") is True:
+        return True
+    bundled = getattr(sys, "_MEIPASS", None)
+    root = Path(bundled) / "assets" / "fonts" if bundled else Path(__file__).resolve().parents[2] / "contracts" / "assets" / "fonts"
+    font_id = QFontDatabase.addApplicationFont(str(root / "open-sans-latin.ttf"))
+    if font_id < 0 or "Open Sans" not in QFontDatabase.applicationFontFamilies(font_id):
+        logging.getLogger(__name__).error("The bundled Open Sans font could not be loaded.")
+        return False
+    font = QFont("Open Sans")
+    font.setPixelSize(14)
+    app.setFont(font)
+    app.setProperty("astralOpenSansLoaded", True)
+    return True
 
 
 def _hex_to_rgb(value) -> tuple:
@@ -139,6 +160,8 @@ QLineEdit, QPlainTextEdit, QTextEdit {{ background: {_rgba(TEXT, 0.05)}; border:
 QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus {{
            border: 1px solid {_rgba(PRIMARY, 0.6)};
            background: {_rgba(TEXT, 0.08)}; }}
+QPushButton:focus, QToolButton:focus, QComboBox:focus, QCheckBox:focus, QRadioButton:focus {{
+           border: 2px solid {PRIMARY}; }}
 QComboBox {{ background: {_rgba(TEXT, 0.05)}; border: 1px solid {_rgba(TEXT, 0.10)};
            border-radius: 8px; padding: 6px 10px; color: {TEXT}; }}
 QComboBox:hover {{ border-color: {_rgba(PRIMARY, 0.6)}; }}

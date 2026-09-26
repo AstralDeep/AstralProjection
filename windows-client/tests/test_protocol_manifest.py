@@ -69,7 +69,7 @@ def test_persistent_assignment_actions_use_existing_generic_surface():
 def test_feature_088_guidance_actions_are_closed_and_not_desktop_frames():
     data = _manifest()
     actions = data["accept_actions"]
-    assert len(actions) == len(set(actions)) == 136
+    assert len(actions) == len(set(actions)) == 138
     assert {"chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set"} <= set(actions)
     guidance = ["guidance_notes_088", "guidance_skills_088", "guidance_agents_088", "guidance_selection_088"]
     contracts = data["presentation_contracts"]
@@ -83,7 +83,7 @@ def test_feature_088_guidance_actions_are_closed_and_not_desktop_frames():
 def test_feature_088_save_recurring_and_saved_results_are_closed_and_not_desktop_frames():
     data = _manifest()
     actions = data["accept_actions"]
-    assert len(actions) == len(set(actions)) == 136
+    assert len(actions) == len(set(actions)) == 138
     assert {"chrome_work_result_save", "chrome_job_stop"} <= set(actions)
     contracts = data["presentation_contracts"]
     names = ["work_save_088", "recurring_work_088", "saved_results_088"]
@@ -119,6 +119,7 @@ def test_classification_values_are_valid():
 
 def test_core_loop_frames_are_handled():
     for frame in (
+        "rote_config",
         "ui_render",
         "ui_upsert",
         "chat_status",

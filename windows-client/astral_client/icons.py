@@ -8,6 +8,27 @@ from __future__ import annotations
 from typing import Dict, Optional
 
 _PATHS: Dict[str, str] = {
+    "search": '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/>',
+    "back": '<path d="M19 12H5m6-6-6 6 6 6"/>',
+    "chevron_down": '<path d="m6 9 6 6 6-6"/>',
+    "chevron_right": '<path d="m9 6 6 6-6 6"/>',
+    "microphone": '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line>',
+    "device-transfer": '<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>',
+    "stop": '<rect x="6" y="6" width="12" height="12" rx="2"></rect>',
+    "speaker-stop": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line>',
+    "speaker-muted": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="22" y1="3" x2="3" y2="22"></line>',
+    "chat": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>',
+    "speaker-consent": '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>',
+    "menu": '<path d="M4 6h16M4 12h16M4 18h16"/>',
+    "more": '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+    "send": '<path d="M12 20V4m-6 6 6-6 6 6"/>',
+    "add": '<path d="M12 5v14M5 12h14"/>',
+    "collapse": '<path d="M5 12h14"/>',
+    "expand": '<path d="M12 5v14M5 12h14"/>',
+    "fullscreen": '<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>',
+    "exit_fullscreen": '<path d="M3 8h5V3m8 0v5h5M8 21v-5H3m13 5v-5h5"/>',
+    "download": '<path d="M12 3v12m-5-5 5 5 5-5M5 17v4h14v-4"/>',
+    "share": '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.6 10.5 6.8-4m-6.8 7 6.8 4"/>',
     "chats": '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     "sparkle": (
         '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1'

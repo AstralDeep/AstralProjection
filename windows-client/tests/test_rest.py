@@ -124,7 +124,7 @@ def test_parse_chrome_menu_full():
 
 def test_parse_chrome_menu_tolerates_empty_and_malformed():
     assert parse_chrome_menu({}) == {
-        "sections": [], "topbar_actions": [],
+        "sections": [], "topbar_actions": [], "workspace_actions": [],
         "signout": {"label": "Sign out", "action": "logout"},
     }
     assert parse_chrome_menu(None)["sections"] == []

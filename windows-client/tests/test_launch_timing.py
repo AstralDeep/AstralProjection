@@ -41,9 +41,10 @@ class _FakeClient:
     message = _FakeSig()
     status = _FakeSig()
 
-    def __init__(self, url, token, caps=None):
+    def __init__(self, url, token, caps=None, *, work_reads=False):
         self.url = url
         self.token = token
+        self.work_reads = work_reads
         self.running = False
 
     def start(self):

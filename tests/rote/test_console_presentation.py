@@ -12,7 +12,7 @@ from rote.capabilities import DeviceProfile
 from rote.rote import ROTE
 
 
-NATIVE_CLIENTS = ("ios", "macos", "android")
+NATIVE_CLIENTS = ("ios", "macos", "android", "windows")
 CONSOLE_TYPES = (
     "action_group", "stat_group", "gauge", "pipeline_stepper", "donut_chart", "radar_chart",
 )
