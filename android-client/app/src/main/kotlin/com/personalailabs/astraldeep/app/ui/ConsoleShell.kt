@@ -218,7 +218,7 @@ private fun ConsoleTranscript(
     val hasResult = state.workspaceCanvas.isNotEmpty() || state.showSkeleton
     LaunchedEffect(state.activeChatId, turns, state.workspaceCanvas, state.statusText) {
         val count = turns.size + (if (state.statusText != null) 1 else 0) + (if (hasResult) 1 else 0)
-        scroll.scrollToItem(count)
+        scroll.requestScrollToItem(count)
     }
     LazyColumn(
         Modifier.fillMaxSize().onGloballyPositioned {

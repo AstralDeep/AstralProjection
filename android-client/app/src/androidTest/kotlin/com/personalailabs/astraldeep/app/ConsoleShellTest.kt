@@ -81,6 +81,7 @@ import org.junit.Rule
 import org.junit.Test
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.math.floor
 
 class ConsoleShellTest {
     @get:Rule val rule = createComposeRule()
@@ -114,7 +115,8 @@ class ConsoleShellTest {
         val renderer = Renderer(Emit(vm::sendEvent)).registerAllRenderers()
         rule.setContent {
             BoxWithConstraints {
-                fittedDensity = minOf(1f, constraints.maxWidth / width.toFloat(), constraints.maxHeight / height.toFloat())
+                val density = minOf(constraints.maxWidth / width.toFloat(), constraints.maxHeight / height.toFloat())
+                fittedDensity = if (density >= 1f) floor(density) else density
                 CompositionLocalProvider(LocalDensity provides Density(fittedDensity, fontScale)) {
                     AstralTheme {
                         Box(Modifier.size(width.dp, height.dp).testTag("console-root")) { RootScaffold(vm, renderer, {}, {}) }
@@ -217,19 +219,28 @@ class ConsoleShellTest {
             rule.onNodeWithContentDescription("Hide the agent directory").performClick()
             rule.onNodeWithContentDescription("Show the agent directory").performClick()
             rule.onNodeWithContentDescription("Search agents").assertTextContains("Dice")
-            rule.runOnIdle {
-                width = 1440
-                vm.receiveInbound(Inbound.RoteConfig(geometry(1440)))
+            repeat(3) {
+                rule.runOnIdle {
+                    width = 1440
+                    vm.receiveInbound(Inbound.RoteConfig(geometry(1440)))
+                }
+                rule.onNodeWithContentDescription("Search agents").assertTextContains("Dice")
+                rule.onNodeWithContentDescription("Settings").performClick()
+                rule.waitUntil { frames.any { it["action"]?.jsonPrimitive?.content == "chrome_open" } }
+                assertEquals("agents", vm.state.value.pendingSurfaceKey)
+                rule.onNodeWithText("LLM settings").performClick()
+                assertEquals("llm", vm.state.value.pendingSurfaceKey)
+                rule.onNodeWithContentDescription("Close").performClick()
+                assertEquals(Screen.Chat, vm.state.value.screen)
+                assertFalse(vm.state.value.consoleDrawerOpen)
+                rule.runOnIdle {
+                    width = 390
+                    vm.receiveInbound(Inbound.RoteConfig(geometry(390)))
+                }
+                rule.onNodeWithContentDescription("Show the agent directory").performClick()
+                rule.onNodeWithContentDescription("Search agents").assertTextContains("Dice")
+                rule.onNodeWithContentDescription("Hide the agent directory").performClick()
             }
-            rule.onNodeWithContentDescription("Search agents").assertTextContains("Dice")
-            rule.onNodeWithContentDescription("Settings").performClick()
-            rule.waitUntil { frames.any { it["action"]?.jsonPrimitive?.content == "chrome_open" } }
-            assertEquals("agents", vm.state.value.pendingSurfaceKey)
-            rule.onNodeWithText("LLM settings").performClick()
-            assertEquals("llm", vm.state.value.pendingSurfaceKey)
-            rule.onNodeWithContentDescription("Close").performClick()
-            assertEquals(Screen.Chat, vm.state.value.screen)
-            assertFalse(vm.state.value.consoleDrawerOpen)
         }
 
     @Test fun introductionsRejectStaleResponsesAndLoadOnlyTheirOfferedPrompt() =
