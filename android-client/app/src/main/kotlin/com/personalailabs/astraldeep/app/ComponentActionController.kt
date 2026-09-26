@@ -174,6 +174,7 @@ internal class ComponentActionController(
         val ticket = leases.begin(context, kind) ?: return
         val action = Active(ticket, vm)
         active.add(action)
+        vm.viewportInteraction(action, true)
         updatePending()
         var submission: LocalSubmission? = null
         val sent = vm.sendComponentEvent(context, event, payload) { submission = it }
@@ -205,6 +206,7 @@ internal class ComponentActionController(
         val ticket = leases.begin(context, kind) ?: return
         val action = Active(ticket, vm)
         active.add(action)
+        vm.viewportInteraction(action, true)
         updatePending()
         val token = currentToken().orEmpty()
         action.job =
@@ -290,6 +292,7 @@ internal class ComponentActionController(
         leases.isCurrent(action.ticket, handler(action.vm).context(action.ticket.context.component))
 
     private fun finish(action: Active) {
+        action.vm.viewportInteraction(action, false)
         leases.finish(action.ticket)
         active.remove(action)
         updatePending()

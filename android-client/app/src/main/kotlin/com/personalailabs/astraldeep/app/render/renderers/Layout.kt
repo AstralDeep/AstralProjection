@@ -3,6 +3,7 @@
 
 package com.personalailabs.astraldeep.app.render.renderers
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -196,12 +198,31 @@ private fun HeroPrimitive(c: Component) {
 
 @Composable
 private fun BadgePrimitive(c: Component) {
-    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.secondaryContainer) {
-        Text(
-            text = c.str("label") ?: c.str("text").orEmpty(),
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-        )
+    val scheme = MaterialTheme.colorScheme
+    val colors =
+        when (c.str("variant")) {
+            "success" -> AstralWebStyle.Success to Color(0xFF4ADE80)
+            "warning" -> AstralWebStyle.Warning to Color(0xFFFACC15)
+            "error" -> AstralWebStyle.Error to Color(0xFFF87171)
+            "info" -> Color(0xFF3B82F6) to Color(0xFF60A5FA)
+            "accent" -> scheme.primary to scheme.primary
+            else -> scheme.onSurface to scheme.onSurface
+        }
+    val alpha = if (c.str("variant") in setOf("success", "warning", "error", "info", "accent")) 0.15f else 0.1f
+    Surface(
+        shape = RoundedCornerShape(50),
+        color = colors.first.copy(alpha = alpha),
+        contentColor = colors.second,
+        border = BorderStroke(1.dp, colors.first.copy(alpha = if (alpha == 0.15f) 0.25f else 0.15f)),
+    ) {
+        Row(
+            Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            c.str("icon")?.let { Text(it, fontSize = 12.sp) }
+            Text(c.str("label") ?: c.str("text").orEmpty(), fontSize = 12.sp, fontWeight = FontWeight.Medium)
+        }
     }
 }
 

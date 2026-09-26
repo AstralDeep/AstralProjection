@@ -7,6 +7,7 @@ package com.personalailabs.astraldeep.app.transport
 import android.util.Log
 import com.personalailabs.astraldeep.app.auth.ServerSessionCoordinator
 import com.personalailabs.astraldeep.app.auth.ServerSessionException
+import com.personalailabs.astraldeep.core.chrome.TurnSelection
 import com.personalailabs.astraldeep.core.protocol.ChatAttachment
 import com.personalailabs.astraldeep.core.protocol.ConversationResume
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
@@ -32,8 +33,10 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.put
 import okhttp3.Authenticator
 import okhttp3.CookieJar
 import okhttp3.OkHttpClient
@@ -123,6 +126,8 @@ class OrchestratorClient(
     @Volatile private var open = false
 
     @Volatile private var connectionGeneration: String? = null
+    private var observedDevice: DeviceCapabilities? = null
+    private var advertisedDevice: DeviceCapabilities? = null
     private val pending = ArrayDeque<Queued>()
     private val _state = MutableStateFlow(ConnectionState.Disconnected)
     val state: StateFlow<ConnectionState> = _state.asStateFlow()
@@ -143,6 +148,8 @@ class OrchestratorClient(
             ownerEpoch += 1
             open = false
             connectionGeneration = null
+            observedDevice = null
+            advertisedDevice = null
             generationObserver = {}
             pending.clear()
             socket?.cancel()
@@ -232,10 +239,17 @@ class OrchestratorClient(
                                         return@synchronized
                                     }
                                     // register_ui must be the first frame or the server refuses the rest
+                                    val capabilities = observedDevice?.takeIf { it.deviceId == device.deviceId } ?: device
                                     val registration = createRegistrationAttempt(token, device, sessionId())
                                     connectionGeneration = registration.binding.connectionGeneration
                                     onGeneration(registration.binding)
-                                    webSocket.send(registration.frame)
+                                    if (!webSocket.send(registration.frame)) {
+                                        webSocket.cancel()
+                                        close()
+                                        return@synchronized
+                                    }
+                                    advertisedDevice = capabilities
+                                    socket = webSocket
                                     open = true
                                     onOpen()
                                     flushPending(webSocket, onGeneration, onQueuedSubmission)
@@ -366,6 +380,7 @@ class OrchestratorClient(
         chatId: String?,
         attachments: List<ChatAttachment> = emptyList(),
         asyncMode: Boolean = false,
+        selection: TurnSelection? = null,
         onSubmission: (LocalSubmission) -> Unit = {},
     ): LocalSubmission {
         val submission = newSubmission("chat_message", chatId)
@@ -379,6 +394,7 @@ class OrchestratorClient(
                 chatId = chatId,
                 attachments = attachments,
                 asyncMode = asyncMode,
+                selection = selection,
                 requestGeneration = submission.requestGeneration,
                 submissionId = submission.submissionId,
             ),
@@ -439,6 +455,92 @@ class OrchestratorClient(
 
     fun currentConnectionGeneration(): String? = connectionGeneration.takeIf { open }
 
+    internal fun loadChatForVoice(
+        chatId: String,
+        expectedConnection: String,
+        onSubmission: (LocalSubmission) -> Unit,
+    ): LocalSubmission? =
+        synchronized(pending) {
+            val liveSocket = socket
+            val epoch = ownerEpoch
+            if (!open || liveSocket == null || connectionGeneration != expectedConnection) return@synchronized null
+            val submission = newSubmission("load_chat", chatId)
+            val frame =
+                Wire.encodeUiEvent(
+                    action = "load_chat",
+                    sessionId = chatId,
+                    payload = buildJsonObject { put("chat_id", chatId) },
+                    requestGeneration = submission.requestGeneration,
+                    submissionId = submission.submissionId,
+                )
+            onSubmission(submission)
+            bindRequest(conversationRequest(submission, ConversationRequestPurpose.HYDRATION), generationObserver)
+            if (!open || socket !== liveSocket || connectionGeneration != expectedConnection ||
+                ownerEpoch != epoch || !liveSocket.send(frame)
+            ) {
+                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Voice conversation could not be loaded"))
+                return@synchronized null
+            }
+            submission
+        }
+
+    internal fun observeDevice(device: DeviceCapabilities) {
+        synchronized(pending) { observedDevice = device }
+    }
+
+    fun updateDevice(
+        device: DeviceCapabilities,
+        sessionId: String?,
+    ): Boolean =
+        synchronized(pending) {
+            observedDevice = device
+            val current = socket
+            if (!open || current == null) return@synchronized false
+            if (advertisedDevice == device) return@synchronized true
+            if (!current.send(Wire.encodeUpdateDevice(device, sessionId))) return@synchronized false
+            advertisedDevice = device
+            true
+        }
+
+    internal fun refreshViewport(
+        device: DeviceCapabilities,
+        chatId: String,
+        baseRevision: ULong,
+        expectedConnection: String,
+        isCurrent: () -> Boolean,
+        onSubmission: (LocalSubmission) -> Unit,
+    ): Boolean =
+        synchronized(pending) {
+            val liveSocket = socket
+            val epoch = ownerEpoch
+            if (!open || liveSocket == null || connectionGeneration != expectedConnection || !isCurrent()) return@synchronized false
+            val submission = newSubmission("update_device", chatId)
+            val frame =
+                Wire.encodeUiEvent(
+                    "update_device",
+                    chatId,
+                    buildJsonObject {
+                        put("device", Wire.deviceJson(device))
+                        put("chat_id", chatId)
+                        put("base_render_revision", JsonPrimitive(baseRevision.toString().toBigInteger()))
+                        put("snapshot_purpose", "hydration")
+                        put("connection_generation", expectedConnection)
+                    },
+                    submission.requestGeneration,
+                    submission.submissionId,
+                )
+            onSubmission(submission)
+            bindRequest(conversationRequest(submission, ConversationRequestPurpose.HYDRATION), generationObserver)
+            if (!open || socket !== liveSocket || connectionGeneration != expectedConnection || ownerEpoch != epoch ||
+                !isCurrent() || !liveSocket.send(frame)
+            ) {
+                return@synchronized false
+            }
+            observedDevice = device
+            advertisedDevice = device
+            true
+        }
+
     internal fun sendCurrentEvent(
         action: String,
         sessionId: String,
@@ -490,7 +592,11 @@ class OrchestratorClient(
             if (!isPrivateChromeSurface(surface) ||
                 !(
                     action == "chrome_open" && (payload["surface"] as? JsonPrimitive)?.contentOrNull == surface ||
-                        surface == "guidance" && isGuidanceNoteAction(action)
+                        surface == "guidance" &&
+                        (
+                            isGuidanceNoteAction(action) ||
+                                action == "chrome_turn_selection_set" && TurnSelection.fromJson(payload)?.isGuidanceSelection == true
+                        )
                 )
             ) {
                 return@synchronized false
@@ -516,7 +622,8 @@ class OrchestratorClient(
         val payloadChat = (payload["chat_id"] as? JsonPrimitive)?.contentOrNull
         val submission = newSubmission(action, payloadChat ?: sessionId)
         onSubmission(submission)
-        if (isGuidanceNoteAction(action) ||
+        if (action == "update_device" && payload["snapshot_purpose"] != null ||
+            isGuidanceNoteAction(action) || action == "chrome_turn_selection_set" ||
             action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
         ) {
             _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Private surface request requires a current connection"))
@@ -550,6 +657,7 @@ class OrchestratorClient(
         device: DeviceCapabilities,
         activeChatId: String?,
     ): RegistrationAttempt {
+        val actualDevice = observedDevice?.takeIf { it.deviceId == device.deviceId } ?: device
         val connection = newUuid4()
         val request = activeChatId?.let { newUuid4() }
         val binding =
@@ -565,7 +673,7 @@ class OrchestratorClient(
                 Wire.encodeRegisterUi(
                     token = token,
                     sessionId = activeChatId,
-                    device = device,
+                    device = actualDevice,
                     connectionGeneration = connection,
                     resume = request?.let { ConversationResume(activeChatId!!, it) },
                     workReads = true,

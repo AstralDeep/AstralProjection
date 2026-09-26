@@ -26,6 +26,11 @@ fun deviceCapabilities(
     supportedTypes: List<String>,
     deviceId: String? = null,
     voice: RuntimeVoiceCapability = RuntimeVoiceCapability(false, false, "not_determined", false),
+    hasTouch: Boolean = true,
+    pointerType: String = if (hasTouch) "coarse" else "none",
+    connectionType: String = "unknown",
+    reducedMotion: Boolean = false,
+    consoleContract: String? = null,
 ): DeviceCapabilities {
     require(widthPx > 0 && heightPx > 0 && pixelRatio.isFinite() && pixelRatio > 0) {
         "Screen dimensions and density must be finite positive metrics"
@@ -36,7 +41,7 @@ fun deviceCapabilities(
         viewportWidth = (widthPx / pixelRatio).roundToInt().coerceAtLeast(1),
         viewportHeight = (heightPx / pixelRatio).roundToInt().coerceAtLeast(1),
         pixelRatio = pixelRatio,
-        hasTouch = true,
+        hasTouch = hasTouch,
         supportedTypes = supportedTypes,
         deviceType = "android",
         deviceId = deviceId,
@@ -45,6 +50,10 @@ fun deviceCapabilities(
         microphonePermission = voice.microphonePermission,
         fullDuplex = voice.fullDuplex,
         voiceTransport = "livekit",
+        pointerType = pointerType,
+        connectionType = connectionType,
+        reducedMotion = reducedMotion,
+        consoleContract = consoleContract,
     )
 }
 

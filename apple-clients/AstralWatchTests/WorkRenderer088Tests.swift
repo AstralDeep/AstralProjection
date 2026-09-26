@@ -35,7 +35,7 @@ final class WorkRenderer088Tests: XCTestCase {
             let model = WatchModel()
             let actual = try png(WatchComponentView(component: component, workRead: true).environment(model))
             let expected = try png(
-                Text(verbatim: excerpt).font(AstralTypography.footnote).fixedSize(horizontal: false, vertical: true))
+                Text(verbatim: excerpt).font(ConsoleTypography.footnote).fixedSize(horizontal: false, vertical: true))
             let interpreted = try png(WatchComponentView(component: component).environment(model))
         #else
             let model = AppModel(

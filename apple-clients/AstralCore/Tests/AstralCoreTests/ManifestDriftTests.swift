@@ -107,8 +107,8 @@ final class ManifestDriftTests: XCTestCase {
             Set(ClientDispositions.allComponentTypes),
             "component_types drift — update Dispositions.swift + parity matrix")
         XCTAssertEqual(manifest.pushTypes.count, 72)
-        XCTAssertEqual(manifest.componentTypes.count, 35)
-        XCTAssertEqual(manifest.acceptActions.count, 136)
+        XCTAssertEqual(manifest.componentTypes.count, 41)
+        XCTAssertEqual(manifest.acceptActions.count, 138)
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_note_") }), GuidanceRequest.noteActions)
     }

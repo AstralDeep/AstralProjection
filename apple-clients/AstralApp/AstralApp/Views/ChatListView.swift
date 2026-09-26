@@ -64,7 +64,7 @@ struct HistoryHeader: View {
                 .padding(.horizontal, 8).padding(.vertical, 1)
                 .background(theme.palette.text.opacity(0.06), in: Capsule())
         }
-        .font(AstralTypography.sans(11, relativeTo: .caption).weight(.semibold))
+        .font(ConsoleTypography.sans(11, relativeTo: .caption).weight(.semibold))
         .padding(.horizontal, 6).padding(.top, 2).padding(.bottom, 6)
     }
 }
@@ -77,42 +77,22 @@ struct HistoryRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Text(verbatim: chat.icon)
-                .font(.system(size: 15))
-                .frame(width: 28, height: 28)
-                .background(
-                    LinearGradient(
-                        colors: chat.icon.isEmpty
-                            ? [p.text.opacity(0.05), p.text.opacity(0.05)]
-                            : [p.primary.opacity(0.22), p.secondary.opacity(0.14)],
-                        startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 8)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8).strokeBorder(
-                        chat.icon.isEmpty ? p.text.opacity(0.08) : p.primary.opacity(0.2), lineWidth: 1)
-                )
-                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(verbatim: chat.displayTitle)
-                        .font(AstralTypography.sans(13, relativeTo: .body).weight(.semibold))
+                        .font(ConsoleTypography.sans(13, relativeTo: .body).weight(.semibold))
                         .foregroundStyle(p.text).lineLimit(1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     let time = chat.relativeTime()
                     if !time.isEmpty {
-                        Text(verbatim: time).font(AstralTypography.sans(11, relativeTo: .caption))
+                        Text(verbatim: time).font(ConsoleTypography.sans(11, relativeTo: .caption))
                             .monospacedDigit().foregroundStyle(p.muted)
                     }
                 }
                 if !chat.displayPreview.isEmpty {
-                    Text(verbatim: chat.displayPreview).font(AstralTypography.sans(12, relativeTo: .caption))
+                    Text(verbatim: chat.displayPreview).font(ConsoleTypography.sans(12, relativeTo: .caption))
                         .foregroundStyle(p.muted).lineLimit(1)
                 }
-            }
-            if chat.hasSavedComponents {
-                Text("★").font(AstralTypography.sans(11, relativeTo: .caption)).foregroundStyle(p.accent)
-                    .accessibilityLabel("Has saved components")
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 7)

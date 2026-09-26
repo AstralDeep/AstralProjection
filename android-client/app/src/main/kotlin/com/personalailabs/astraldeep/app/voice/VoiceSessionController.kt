@@ -974,6 +974,11 @@ class VoiceSessionController(
     private var leaseRenewalJob: Job? = null
     private var leaseRenewalInFlight: Any? = null
     private var lifecycleToken: Any = Any()
+    internal var preparationToken: Any = Any()
+        private set
+
+    internal fun preparationIsCurrent(token: Any): Boolean = appForeground && preparationToken === token
+
     private val sessionUpdateMutex = Mutex()
     private val mediaTransitionMutex = Mutex()
 
@@ -1121,7 +1126,7 @@ class VoiceSessionController(
     }
 
     fun awaitingChat() {
-        feedback("connecting", "ready", "Creating a conversation for voice…")
+        feedback("connecting", "ready", "Preparing the conversation for voice…")
     }
 
     fun activationFailed(
@@ -1185,8 +1190,10 @@ class VoiceSessionController(
         capability: VoiceMediaCapability,
         takeover: VoiceTakeoverTarget?,
     ) {
+        if (!appForeground) return
         val currentBinding = currentBindingOrFeedback() ?: return
         val activationToken = lifecycleToken
+        val preparation = preparationToken
         val capabilityFailure = capabilityFailure(capability)
         if (capabilityFailure != null) {
             feedback("error", capabilityFailure)
@@ -1205,7 +1212,7 @@ class VoiceSessionController(
             } else {
                 api.takeover(currentBinding, activationId, takeover, capability)
             }
-        if (lifecycleToken !== activationToken || binding !== currentBinding) {
+        if (lifecycleToken !== activationToken || binding !== currentBinding || !preparationIsCurrent(preparation)) {
             if (outcome is VoiceStartOutcome.Started) {
                 runCatching { api.end(currentBinding, outcome.session) }
             }
@@ -1402,6 +1409,7 @@ class VoiceSessionController(
         reason: String = if (active) "foreground" else "backgrounded",
     ) {
         appForeground = active
+        if (!active) preparationToken = Any()
         if (!active) stopLeaseRenewal()
         val activeSession = session
         if (activeSession == null) {
@@ -1533,6 +1541,7 @@ class VoiceSessionController(
 
     private fun invalidateLifecycle() {
         lifecycleToken = Any()
+        preparationToken = Any()
     }
 
     private fun consumeSessionState(value: com.personalailabs.astraldeep.core.protocol.VoiceSessionState) {

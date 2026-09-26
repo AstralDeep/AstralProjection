@@ -553,7 +553,7 @@ private fun ChatList(
 }
 
 @Composable
-private fun ChatBubble(
+internal fun ChatBubble(
     turn: ChatTurn,
     renderer: Renderer,
 ) {
@@ -660,10 +660,13 @@ internal fun InputBar(
     backgroundNextSend: Boolean = false,
     onToggleBackground: () -> Unit = {},
     startView: Boolean = false,
+    console: com.personalailabs.astraldeep.core.chrome.ConsoleModel? = null,
+    onConsoleAction: (com.personalailabs.astraldeep.core.chrome.ConsoleComposerAction) -> Unit = {},
 ) {
     var attachMenuOpen by remember { mutableStateOf(false) }
     val inputInteractions = remember { MutableInteractionSource() }
     val inputFocused by inputInteractions.collectIsFocusedAsState()
+    ViewportInteraction(inputFocused || attachMenuOpen)
     val composerPadding = if (startView && LocalConfiguration.current.screenWidthDp >= 700) 16.dp else 12.dp
     val inputStyle = TextStyle(fontFamily = AstralSans, fontSize = 14.sp, lineHeight = 22.4.sp, color = MaterialTheme.colorScheme.onSurface)
     val context = LocalContext.current
@@ -708,7 +711,7 @@ internal fun InputBar(
     }
 
     Surface(color = Color.Transparent) {
-        Column(modifier = Modifier.fillMaxWidth().padding(if (startView) 0.dp else 10.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(if (startView || console != null) 0.dp else 10.dp)) {
             if (readOnly) {
                 Text(
                     "Viewing history — messaging is paused. Return to the live view to continue.",
@@ -725,69 +728,86 @@ internal fun InputBar(
                 VoiceFeedback(voice)
                 Spacer(Modifier.height(4.dp))
             }
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(if (startView) 22.dp else 18.dp),
-                border =
-                    BorderStroke(
-                        1.dp,
-                        if (inputFocused) {
-                            MaterialTheme.colorScheme.primary.copy(
-                                alpha = 0.75f,
-                            )
-                        } else {
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
-                        },
-                    ),
-            ) {
-                Column(Modifier.fillMaxWidth().padding(composerPadding).testTag("composer-surface")) {
-                    BasicTextField(
-                        value = input,
-                        onValueChange = onInputChange,
-                        modifier =
-                            Modifier.fillMaxWidth().heightIn(
-                                min = if (startView) 80.dp else 68.dp,
-                                max = 160.dp,
-                            ).testTag("chat-input"),
-                        enabled = !readOnly,
-                        textStyle = inputStyle,
-                        maxLines = 6,
-                        interactionSource = inputInteractions,
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
-                        decorationBox = { innerTextField ->
-                            Box(Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 12.dp)) {
-                                if (input.isEmpty()) {
-                                    Text(
-                                        "Ask anything…",
-                                        style = inputStyle,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
+            if (console != null) {
+                ConsoleComposer(
+                    input, onInputChange, readOnly, voice, ::invokeVoice, { attachMenuOpen = true }, ::doSend,
+                    input.isNotBlank() || staged.any { it.state == "ready" }, console, backgroundNextSend, onConsoleAction,
+                )
+                DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { attachMenuOpen = false }) {
+                    DropdownMenuItem(text = { Text("Upload a file") }, onClick = {
+                        attachMenuOpen = false
+                        filePicker.launch("*/*")
+                    })
+                    DropdownMenuItem(text = { Text("Choose from your files") }, onClick = {
+                        attachMenuOpen = false
+                        onOpenAttachments()
+                    })
+                }
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(if (startView) 22.dp else 18.dp),
+                    border =
+                        BorderStroke(
+                            1.dp,
+                            if (inputFocused) {
+                                MaterialTheme.colorScheme.primary.copy(
+                                    alpha = 0.75f,
+                                )
+                            } else {
+                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.16f)
+                            },
+                        ),
+                ) {
+                    Column(Modifier.fillMaxWidth().padding(composerPadding).testTag("composer-surface")) {
+                        BasicTextField(
+                            value = input,
+                            onValueChange = onInputChange,
+                            modifier =
+                                Modifier.fillMaxWidth().heightIn(
+                                    min = if (startView) 80.dp else 68.dp,
+                                    max = 160.dp,
+                                ).testTag("chat-input"),
+                            enabled = !readOnly,
+                            textStyle = inputStyle,
+                            maxLines = 6,
+                            interactionSource = inputInteractions,
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.onSurface),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Default),
+                            decorationBox = { innerTextField ->
+                                Box(Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp, bottom = 12.dp)) {
+                                    if (input.isEmpty()) {
+                                        Text(
+                                            "Ask anything…",
+                                            style = inputStyle,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    }
+                                    innerTextField()
                                 }
-                                innerTextField()
-                            }
-                        },
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    ComposerControls(
-                        readOnly = readOnly,
-                        voice = voice,
-                        backgroundNextSend = backgroundNextSend,
-                        onToggleBackground = onToggleBackground,
-                        onVoiceControl = ::invokeVoice,
-                        onAttach = { attachMenuOpen = true },
-                        onSend = ::doSend,
-                        canSend = input.isNotBlank() || staged.any { it.state == "ready" },
-                    )
-                    DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { attachMenuOpen = false }) {
-                        DropdownMenuItem(text = { Text("Upload a file") }, onClick = {
-                            attachMenuOpen = false
-                            filePicker.launch("*/*")
-                        })
-                        DropdownMenuItem(text = { Text("Choose from your files") }, onClick = {
-                            attachMenuOpen = false
-                            onOpenAttachments()
-                        })
+                            },
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        ComposerControls(
+                            readOnly = readOnly,
+                            voice = voice,
+                            backgroundNextSend = backgroundNextSend,
+                            onToggleBackground = onToggleBackground,
+                            onVoiceControl = ::invokeVoice,
+                            onAttach = { attachMenuOpen = true },
+                            onSend = ::doSend,
+                            canSend = input.isNotBlank() || staged.any { it.state == "ready" },
+                        )
+                        DropdownMenu(expanded = attachMenuOpen, onDismissRequest = { attachMenuOpen = false }) {
+                            DropdownMenuItem(text = { Text("Upload a file") }, onClick = {
+                                attachMenuOpen = false
+                                filePicker.launch("*/*")
+                            })
+                            DropdownMenuItem(text = { Text("Choose from your files") }, onClick = {
+                                attachMenuOpen = false
+                                onOpenAttachments()
+                            })
+                        }
                     }
                 }
             }

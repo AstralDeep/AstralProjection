@@ -9,6 +9,7 @@ import { delimiter, dirname, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+import { consoleShell } from "./console-shell.mjs";
 
 collectClientCoverage(test, "first-task-088");
 
@@ -73,7 +74,7 @@ const VOICE = JSON.parse(await readFile(
   .cases.find(entry => entry.id === "C0")
   .positive.find(entry => entry.id === "C0-P1-composer").payload;
 
-const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.html"), "utf8"))
+const SHELL = consoleShell(ROOT)
   .replace(/\?v=%%ASTRAL_V:[^%]*%%/gu, "")
   .replaceAll("%%ASTRAL_NONCE%%", "first-task-nonce")
   .replaceAll("%%ASTRAL_TOKEN%%", "fixture-owner-token")

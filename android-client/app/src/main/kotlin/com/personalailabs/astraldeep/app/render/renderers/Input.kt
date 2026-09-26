@@ -7,6 +7,7 @@ package com.personalailabs.astraldeep.app.render.renderers
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -40,6 +41,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -50,6 +52,7 @@ import com.personalailabs.astraldeep.app.render.Emit
 import com.personalailabs.astraldeep.app.render.LocalGuidanceNotes
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.ThemeSink
+import com.personalailabs.astraldeep.app.ui.ViewportInteraction
 import com.personalailabs.astraldeep.app.ui.theme.AstralMono
 import com.personalailabs.astraldeep.app.ui.theme.channelSwatchOptions
 import com.personalailabs.astraldeep.app.ui.theme.hexToColor
@@ -86,17 +89,24 @@ private fun InputPrimitive(
     emit: Emit,
 ) {
     var value by remember { mutableStateOf(c.str("value").orEmpty()) }
+    var focused by remember { mutableStateOf(false) }
+    var dirty by remember { mutableStateOf(false) }
+    ViewportInteraction(focused || dirty)
     val action = c.str("action")
     OutlinedTextField(
         value = value,
-        onValueChange = { value = it },
-        modifier = Modifier.fillMaxWidth(),
+        onValueChange = {
+            value = it
+            dirty = true
+        },
+        modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.hasFocus },
         label = c.str("label")?.let { { Text(it) } },
         singleLine = true,
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
         keyboardActions =
             KeyboardActions(
                 onDone = {
+                    dirty = false
                     dispatchInputDone(action, value, emit) {
                         defaultKeyboardAction(ImeAction.Done)
                     }
@@ -225,10 +235,12 @@ private fun ParamPickerPrimitive(
     val texts = remember(c) { mutableStateMapOf<String, String>().apply { putAll(initialTexts(fields)) } }
     val bools = remember(c) { mutableStateMapOf<String, Boolean>().apply { putAll(initialBools(fields)) } }
     val checks = remember(c) { mutableStateMapOf<String, Set<String>>().apply { putAll(initialChecks(fields)) } }
+    var focused by remember { mutableStateOf(false) }
+    ViewportInteraction(focused || texts != initialTexts(fields) || bools != initialBools(fields) || checks != initialChecks(fields))
 
     fun collect(extra: JsonObject) = collectFields(fields, texts, bools, checks, extra)
 
-    Card(modifier = Modifier.fillMaxWidth()) {
+    Card(modifier = Modifier.fillMaxWidth().onFocusChanged { focused = it.hasFocus }.focusGroup()) {
         Column(
             modifier = Modifier.padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -335,6 +347,7 @@ private fun SelectField(
     onSelect: (String) -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
+    ViewportInteraction(open)
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             label,
@@ -415,6 +428,7 @@ private fun ColorPickerPrimitive(
     val label = c.str("label") ?: key
     var current by remember(c) { mutableStateOf(c.str("value") ?: "") }
     var open by remember { mutableStateOf(false) }
+    ViewportInteraction(open)
     Box {
         Row(
             modifier =

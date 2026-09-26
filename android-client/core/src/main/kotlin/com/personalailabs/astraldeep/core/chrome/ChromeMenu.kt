@@ -22,6 +22,7 @@ data class TopBarControl(
     val action: SurfaceRef? = null,
     val operation: String? = null,
     val context: String? = null,
+    val availability: ChromeAvailability? = null,
 )
 
 data class MenuItem(
@@ -30,6 +31,7 @@ data class MenuItem(
     val surface: String,
     val params: JsonObject = JsonObject(emptyMap()),
     val adminOnly: Boolean = false,
+    val availability: ChromeAvailability? = null,
 )
 
 data class MenuGroup(
@@ -51,6 +53,7 @@ data class ChromeMenuModel(
     val topbar: List<TopBarControl>,
     val menu: List<MenuGroup>,
     val signout: SignOutItem,
+    val console: ConsoleModel? = null,
 ) {
     val topbarActions: List<TopBarControl> get() = topbar.filter { it.kind == "action" }
 
@@ -66,6 +69,7 @@ data class ChromeMenuModel(
                     val o = el as? JsonObject ?: return@mapNotNull null
                     val key = o.str("key") ?: return@mapNotNull null
                     val kind = o.str("kind") ?: return@mapNotNull null
+                    if ("availability" in o && ChromeAvailability.fromJson(o["availability"]) == null) return@mapNotNull null
                     if (kind !in setOf("brand", "status", "action", "menu", "workspace_action")) return@mapNotNull null
                     if (kind == "workspace_action") {
                         val fields = setOf("key", "kind", "label", "icon", "operation", "context")
@@ -80,6 +84,7 @@ data class ChromeMenuModel(
                     TopBarControl(
                         key = key,
                         kind = kind,
+                        availability = ChromeAvailability.fromJson(o["availability"]),
                         operation = o.str("operation"),
                         context = o.str("context"),
                         label = o.str("label"),
@@ -103,10 +108,12 @@ data class ChromeMenuModel(
                                 val i = ie as? JsonObject ?: return@mapNotNull null
                                 val ik = i.str("key") ?: return@mapNotNull null
                                 val surface = i.str("surface") ?: return@mapNotNull null
+                                if ("availability" in i && ChromeAvailability.fromJson(i["availability"]) == null) return@mapNotNull null
                                 MenuItem(
                                     key = ik,
                                     label = i.str("label").orEmpty(),
                                     surface = surface,
+                                    availability = ChromeAvailability.fromJson(i["availability"]),
                                     params = i.obj("params") ?: JsonObject(emptyMap()),
                                     adminOnly = i.bool("admin_only") ?: false,
                                 )
@@ -126,6 +133,7 @@ data class ChromeMenuModel(
                 topbar = topbar,
                 menu = menu,
                 signout = signout,
+                console = ConsoleModel.fromJson(root["console"]),
             )
         }
 

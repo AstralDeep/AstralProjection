@@ -480,7 +480,7 @@
       },
       "payload": {
         "version": 1,
-        "agent": "null or {agent_id, revision_id} \u2014 one active declarative agent revision",
+        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
         "skills": "list of {skill_id, revision}, at most 20, unique",
         "notes": "list of {note_id, revision}, at most 8, unique",
         "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
@@ -505,7 +505,15 @@
         ],
         "region": "modal",
         "mode": "replace",
-        "admin_only": false
+        "admin_only": false,
+        "negotiated_optional_fields": {
+          "selection": {
+            "negotiation": "register_ui.device.console_contract == console/v2",
+            "shape": "Exact version-1 selection from the accepted chrome_turn_selection_set command; absent on open, failure and legacy responses.",
+            "acceptance": "Only the current owner, registered connection, guidance surface and fresh canonical UUID4 request_generation may apply one confirmation; duplicates and malformed fields fail closed.",
+            "clear": "The all-empty selection clears local chat selection and is never included on ordinary work dispatch."
+          }
+        }
       },
       "web_response": {
         "type": "chrome_render",
@@ -533,7 +541,7 @@
           "button",
           "param_picker"
         ],
-        "text": "Notes appear only as category, revision and enabled state \u2014 never their value. Skills appear only as name, /command, revision and enabled state \u2014 never their instructions."
+        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
       },
       "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
     },
@@ -1165,8 +1173,9 @@
           "chrome_menu_delivery": false,
           "workspace_capability_attributes": false,
           "supports_file_io": false,
-          "reason": "The wrist retains its existing chrome-free, no-file-IO profile; canvas export/share and component artifact verbs are absent.",
-          "continuation": "Use the same owned chat on a supported phone, desktop or web client. Preserve existing server-provided handoff guidance where present; omission creates no button, URL, token or share snapshot."
+          "reason": "Watch console navigation may be delivered after negotiation, but the wrist retains its no-file-IO profile. Canvas export/share and component artifact verbs remain absent.",
+          "continuation": "Use the same owned chat on a supported phone, desktop or web client. Preserve existing server-provided handoff guidance where present; omission creates no button, URL, token or share snapshot.",
+          "console_navigation": "console/v2 may deliver navigation controls; workspace action delivery remains false."
         }
       },
       "compact_topbar": {
@@ -1313,6 +1322,7 @@
           "registration_source": "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/protocol/Wire.kt",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
+            "guidance_selection_v1",
             "work_read_v1"
           ]
         },
@@ -1321,7 +1331,8 @@
           "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
-            "work_read_v1"
+            "work_read_v1",
+            "guidance_selection_v1"
           ]
         },
         "macos": {
@@ -1329,7 +1340,8 @@
           "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
-            "work_read_v1"
+            "work_read_v1",
+            "guidance_selection_v1"
           ]
         },
         "watch": {
@@ -1337,7 +1349,8 @@
           "registration_source": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Frames.swift",
           "advertised_088_capabilities": [
             "guidance_notes_v1",
-            "work_read_v1"
+            "work_read_v1",
+            "guidance_selection_v1"
           ],
           "menu_projection": "webrender.chrome.menu_model.project_watch_menu_model"
         },
@@ -2298,20 +2311,20 @@
               "basis": "owner_exclusion_T059"
             },
             "android": {
-              "disposition": "version_required",
-              "basis": "missing_capability"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "ios": {
-              "disposition": "version_required",
-              "basis": "missing_capability"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "macos": {
-              "disposition": "version_required",
-              "basis": "missing_capability"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "watch": {
-              "disposition": "version_required",
-              "basis": "missing_capability"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "voice": {
               "disposition": "omitted_by_server",
@@ -2759,6 +2772,143 @@
           "action": "chat_message"
         }
       ]
+    },
+    "console_v2": {
+      "version": 2,
+      "contract": "console/v2",
+      "fixtures": [
+        "contracts/fixtures/console/chrome-console.json",
+        "contracts/fixtures/console/rote-console.json",
+        "contracts/fixtures/console/agent-intro.json",
+        "contracts/fixtures/console/watch-menu.json"
+      ],
+      "negotiation": {
+        "field": "register_ui.device.console_contract",
+        "update_field": "ui_event.update_device.payload.device.console_contract",
+        "native_profiles": [
+          "ios",
+          "macos",
+          "android",
+          "watch"
+        ],
+        "legacy": "Absent, unknown or unsupported contracts retain legacy chrome and ROTE fallbacks. Native capability advertisement is enabled only alongside a qualified implementation.",
+        "authority": "Presentation and device capability metadata confer no permission, owner identity, tool access or routing authority."
+      },
+      "chrome_model": {
+        "field": "chrome_menu.model.console",
+        "required_fields": [
+          "version",
+          "labels",
+          "identity",
+          "catalog",
+          "composer_actions",
+          "show_voice_availability_banner"
+        ],
+        "identity_fields": [
+          "name",
+          "role",
+          "initials"
+        ],
+        "catalog_fields": [
+          "categories",
+          "scenarios",
+          "agents"
+        ],
+        "catalog_source": "The same authenticated host-owned landing catalog used by web; scenario and agent lists are bounded and escaped by each renderer.",
+        "composer_action_kinds": [
+          "toggle",
+          "action"
+        ],
+        "voice_availability_banner": "false for native clients; only the web renders the passive availability footer. Active voice controls, errors, permissions, worker capture and playback remain functional."
+      },
+      "rote": {
+        "field": "rote_config.device_profile.console",
+        "required_fields": [
+          "version",
+          "navigation_mode",
+          "sidebar_width",
+          "content_padding",
+          "composer_padding",
+          "scenario_columns",
+          "settings_presentation",
+          "settings_navigation_axis",
+          "settings_width",
+          "dialog_width",
+          "settings_max_height",
+          "settings_navigation_width",
+          "result_preview_max_height",
+          "result_body_max_height",
+          "fullscreen_inset",
+          "minimum_control_height"
+        ],
+        "navigation_modes": [
+          "sidebar",
+          "drawer",
+          "stack"
+        ],
+        "settings_presentations": [
+          "dialog",
+          "sheet",
+          "push"
+        ],
+        "geometry": "ROTE owns logical viewport-derived dimensions, insets, scenario columns and minimum control height. Native renderers consume validated finite bounded values.",
+        "aggregation": "Send actual viewport, pixel ratio, input, accessibility, audio hardware/permission, network and supported types together. Re-evaluate on any aggregate change, including unchanged dimensions."
+      },
+      "local_prompt": {
+        "action": "compose_prompt",
+        "payload_fields": [
+          "message"
+        ],
+        "maximum_characters": 8000,
+        "scope": "Load prompt from the exact currently displayed authenticated agent introduction; never send this local action to the dispatcher. Reject stale, unavailable, malformed or mismatched actions.",
+        "run": "The exact offered Run prompt closes the introduction and uses the ordinary authenticated composer path, including ready attachments and confirmed selection."
+      },
+      "continuity": "One live result renderer retains component state across preview, collapse, full screen and dashboard. Conversation and owner changes retire stale views and authority.",
+      "watch": {
+        "navigation_mode": "stack",
+        "settings_presentation": "push",
+        "scenario_columns": 1,
+        "availability_fields": [
+          "mode",
+          "message"
+        ],
+        "native": {
+          "mode": "native"
+        },
+        "handoff": {
+          "mode": "handoff",
+          "message": "Continue on your phone or desktop."
+        },
+        "policy": "Every watch menu/catalog surface action must carry validated explicit availability. ROTE derives it from actual supported types, scoped form capabilities and client capabilities. Unsupported actions expose the supplied continuation without dispatch.",
+        "result": "Existing semantic ROTE fallbacks; six richer visual components are not advertised by watch. Generic param_picker remains unsupported; notes forms use scoped guidance validation.",
+        "file_io": false
+      },
+      "agent_intro": {
+        "components": "Existing text, badge, card, container, list and button primitives. Only console/v2 introductions include text.console_role=surface_subtitle; render its server-owned content in the dialog header.",
+        "layout": "ROTE settings_presentation selects stacked phone scenarios or compact desktop rows; introductions use content height bounded by settings_max_height. Tool names render as wrapping chips.",
+        "authority": "Presentation roles grant no authority. Every Run/Load payload must match the exact currently offered server component."
+      },
+      "viewport_refresh": {
+        "negotiation": "rote_config.viewport_snapshot_supported == true",
+        "action": "update_device",
+        "payload_fields": [
+          "device",
+          "chat_id",
+          "base_render_revision",
+          "snapshot_purpose"
+        ],
+        "snapshot_purpose": "hydration",
+        "identity": "Fresh canonical UUID4 submission_id and request_generation; exact current connection_generation; active authenticated owner and chat. Current-connection delivery only, never queued across reconnect.",
+        "response": "Existing conversation_snapshot for the same chat, connection and fresh request generation at exactly base_render_revision; canonical server-owned content is adapted to the current ROTE profile without advancing semantic revision. An advanced canonical revision receives correlated retryable refusal and remains the responsibility of ordinary semantic commit/hydration delivery.",
+        "admission": "The prior conversation scope must be completed at the declared base_render_revision. Pending commits, ordinary hydration, wrong owner/chat/connection, stale revisions and replaced scopes fail closed before and after asynchronous reads.",
+        "client_state": "Coalesce capability changes, defer during active operations or direct editing, retain the committed view until a matching snapshot validates, and preserve composer, selection and presentation state. Timeout or a correlated refusal retires only the exact refresh and permits an explicit retry.",
+        "errors": [
+          "viewport_snapshot_rejected",
+          "viewport_snapshot_retryable"
+        ],
+        "legacy": "Clients without negotiation keep ordinary capability updates. No client may accept post-snapshot transient frames or equal-revision replacements in a completed generation.",
+        "layout_ack": "The scoped rote_config carries matching chat_id, connection_generation and request_generation; clients apply its layout only with the matching accepted snapshot."
+      }
     }
   },
   "frame_contracts": {
@@ -3798,7 +3948,8 @@
   ],
   "client_local_actions": [
     "attach_existing",
-    "computer_host_consent"
+    "computer_host_consent",
+    "compose_prompt"
   ],
   "additive_fields": [
     {
@@ -4046,6 +4197,70 @@
       "scope": "present only when the desktop owner switched on 'Allow remote control'; absent means the socket is not a controllable host; a malformed descriptor costs host eligibility, never the session",
       "introduced_by": "076-remote-computer-control (FR-002)",
       "contract": "specs/076-remote-computer-control/contracts/transport.md"
+    },
+    {
+      "field": "console_contract",
+      "shape": "console/v2",
+      "carried_on": [
+        "register_ui.device",
+        "ui_event.update_device.payload.device"
+      ],
+      "scope": "Optional negotiated console contract; absent preserves legacy behavior.",
+      "introduced_by": "090-native-ui-v2",
+      "contract": "console_v2"
+    },
+    {
+      "field": "console",
+      "shape": "console/v2 chrome model",
+      "carried_on": [
+        "chrome_menu.model"
+      ],
+      "scope": "Shared catalog, labels, identity and composer actions for qualified native clients.",
+      "introduced_by": "090-native-ui-v2",
+      "contract": "console_v2"
+    },
+    {
+      "field": "console",
+      "shape": "console/v2 ROTE presentation",
+      "carried_on": [
+        "rote_config.device_profile"
+      ],
+      "scope": "Server-owned logical geometry and native adaptation.",
+      "introduced_by": "090-native-ui-v2",
+      "contract": "console_v2"
+    },
+    {
+      "field": "availability",
+      "shape": "{mode:native} or {mode:handoff,message:string}",
+      "carried_on": [
+        "chrome_menu.model.menu[].items[]",
+        "chrome_menu.model.topbar[]",
+        "chrome_menu.model.console.composer_actions[]",
+        "chrome_menu.model.console.catalog.agents[]"
+      ],
+      "scope": "Explicit watch availability; missing or malformed never permits an action.",
+      "introduced_by": "090-native-ui-v2",
+      "contract": "console_v2"
+    },
+    {
+      "field": "selection",
+      "shape": "exact version-1 selection",
+      "carried_on": [
+        "chrome_surface"
+      ],
+      "scope": "Negotiated successful guidance selection confirmation only; binds the original request generation and current surface/owner/connection.",
+      "introduced_by": "090-native-ui-v2",
+      "contract": "console_v2"
+    },
+    {
+      "field": "viewport_snapshot_supported",
+      "shape": "boolean",
+      "carried_on": [
+        "rote_config"
+      ],
+      "scope": "Optional server capability for a fresh scoped hydration on update_device; absence or false retains legacy capability delivery.",
+      "introduced_by": "090-native-ui-v2",
+      "contract": "console_v2"
     }
   ],
   "component_types": [
@@ -4097,66 +4312,90 @@
       "web": "supported",
       "windows": "omitted_by_server",
       "android": "omitted_by_server",
-      "ios": "omitted_by_server",
-      "macos": "omitted_by_server",
+      "ios": "supported",
+      "macos": "supported",
       "watch": "omitted_by_server",
       "fallback": "container",
-      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+      "reason": "Web supports this type. Qualified iOS and macOS console consumers render it natively only after console/v2 and exact-type negotiation. Other clients retain the named server-side ROTE fallback until their renderers are qualified.",
+      "native_negotiation": {
+        "console_contract": "console/v2",
+        "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
+      }
     },
     "donut_chart": {
       "source_feature": "089-typesafe-a8p-integration",
       "web": "supported",
       "windows": "omitted_by_server",
       "android": "omitted_by_server",
-      "ios": "omitted_by_server",
-      "macos": "omitted_by_server",
+      "ios": "supported",
+      "macos": "supported",
       "watch": "omitted_by_server",
       "fallback": "pie_chart",
-      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+      "reason": "Web supports this type. Qualified iOS and macOS console consumers render it natively only after console/v2 and exact-type negotiation. Other clients retain the named server-side ROTE fallback until their renderers are qualified.",
+      "native_negotiation": {
+        "console_contract": "console/v2",
+        "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
+      }
     },
     "gauge": {
       "source_feature": "089-typesafe-a8p-integration",
       "web": "supported",
       "windows": "omitted_by_server",
       "android": "omitted_by_server",
-      "ios": "omitted_by_server",
-      "macos": "omitted_by_server",
+      "ios": "supported",
+      "macos": "supported",
       "watch": "omitted_by_server",
       "fallback": "progress",
-      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+      "reason": "Web supports this type. Qualified iOS and macOS console consumers render it natively only after console/v2 and exact-type negotiation. Other clients retain the named server-side ROTE fallback until their renderers are qualified.",
+      "native_negotiation": {
+        "console_contract": "console/v2",
+        "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
+      }
     },
     "pipeline_stepper": {
       "source_feature": "089-typesafe-a8p-integration",
       "web": "supported",
       "windows": "omitted_by_server",
       "android": "omitted_by_server",
-      "ios": "omitted_by_server",
-      "macos": "omitted_by_server",
+      "ios": "supported",
+      "macos": "supported",
       "watch": "omitted_by_server",
       "fallback": "timeline",
-      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+      "reason": "Web supports this type. Qualified iOS and macOS console consumers render it natively only after console/v2 and exact-type negotiation. Other clients retain the named server-side ROTE fallback until their renderers are qualified.",
+      "native_negotiation": {
+        "console_contract": "console/v2",
+        "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
+      }
     },
     "radar_chart": {
       "source_feature": "089-typesafe-a8p-integration",
       "web": "supported",
       "windows": "omitted_by_server",
       "android": "omitted_by_server",
-      "ios": "omitted_by_server",
-      "macos": "omitted_by_server",
+      "ios": "supported",
+      "macos": "supported",
       "watch": "omitted_by_server",
       "fallback": "table",
-      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+      "reason": "Web supports this type. Qualified iOS and macOS console consumers render it natively only after console/v2 and exact-type negotiation. Other clients retain the named server-side ROTE fallback until their renderers are qualified.",
+      "native_negotiation": {
+        "console_contract": "console/v2",
+        "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
+      }
     },
     "stat_group": {
       "source_feature": "089-typesafe-a8p-integration",
       "web": "supported",
       "windows": "omitted_by_server",
       "android": "omitted_by_server",
-      "ios": "omitted_by_server",
-      "macos": "omitted_by_server",
+      "ios": "supported",
+      "macos": "supported",
       "watch": "omitted_by_server",
       "fallback": "grid",
-      "reason": "Feature 089 is web-only by owner directive. Non-web clients receive the server-side ROTE fallback named here, which carries the same values; they are never sent the new type."
+      "reason": "Web supports this type. Qualified iOS and macOS console consumers render it natively only after console/v2 and exact-type negotiation. Other clients retain the named server-side ROTE fallback until their renderers are qualified.",
+      "native_negotiation": {
+        "console_contract": "console/v2",
+        "supported_types": "Exact component type must also be advertised; otherwise use the named ROTE fallback."
+      }
     }
   }
 }

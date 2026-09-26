@@ -575,10 +575,13 @@ final class AppleLiveKitVoiceMediaClient: NSObject, AppleVoiceMediaClient {
             try await next.connect(
                 url: grant.url, token: grant.joinToken,
                 connectOptions: options, roomOptions: nil)
+            guard room === next else { throw CancellationError() }
             eventHandler?(.connected)
         } catch {
-            disconnect()
-            eventHandler?(.failed)
+            if room === next {
+                disconnect()
+                eventHandler?(.failed)
+            }
             throw error
         }
     }
@@ -1653,6 +1656,7 @@ private func appFutureTimestamp(_ value: String) -> Bool {
 
 @MainActor @Observable
 final class AppleVoiceSessionController {
+    private static let maximumRecoveryAttempts = 3
     private static let terminalRefreshReasons: Set<String> = [
         "session_ended", "session_already_ended", "voice_session_not_found",
         "session_not_found", "worker_assignment_unavailable",
@@ -1686,6 +1690,7 @@ final class AppleVoiceSessionController {
     private let uuid: () -> String
     private let retryNanoseconds: UInt64
     private let leaseRenewalNanoseconds: UInt64
+    private let hydrationTimeoutNanoseconds: UInt64
     private var connection: UIConnection?
     private var pendingControl: VoiceControlBinding?
     private var binding: AppleVoiceUIBinding?
@@ -1697,14 +1702,18 @@ final class AppleVoiceSessionController {
     private var announcementLedger = VoiceAnnouncementLedger()
     private var pendingFinals: [String: PendingFinal] = [:]
     private var pendingNewChat: (submission: String, request: String)?
+    private var pendingChatHydration: (chat: String, request: String, epoch: Int)?
+    private var hydrationTimeout: Task<Void, Never>?
     private var pendingActivation = false
     private var pendingTakeoverActivation = false
     private var pendingActivationEpoch: Int?
     private var pendingCapability: AppleVoiceMediaCapability?
     private var activationInFlight = false
     private var mediaConnectInFlight = false
+    private var mediaConnectGeneration = 0
     private var recoveryRequired = false
     private var recoveryRevision = 0
+    private var recoveryAttempts = 0
     private var endRequested = false
     private var lastSuspensionReason = "backgrounded"
     private var currentTurn: VoiceTurnState?
@@ -1723,7 +1732,7 @@ final class AppleVoiceSessionController {
     private var controlTransportAvailable = true
     private var microphoneDesired = true
     private var frameSender: ((String) -> Bool)?
-    private var chatAdopter: ((String) -> Void)?
+    private var chatAdopter: ((String) -> String?)?
 
     private(set) var composer: VoiceComposerModel?
     private(set) var phase = "off"
@@ -1753,7 +1762,8 @@ final class AppleVoiceSessionController {
         },
         uuid: @escaping () -> String = { UUID().uuidString.lowercased() },
         retryNanoseconds: UInt64 = 2_500_000_000,
-        leaseRenewalNanoseconds: UInt64 = 20_000_000_000
+        leaseRenewalNanoseconds: UInt64 = 20_000_000_000,
+        hydrationTimeoutNanoseconds: UInt64 = 10_000_000_000
     ) {
         let resolvedAPI = api ?? URLSessionAppleVoiceControlAPI()
         let resolvedMedia = media ?? AppleLiveKitVoiceMediaClient()
@@ -1765,11 +1775,12 @@ final class AppleVoiceSessionController {
         self.uuid = uuid
         self.retryNanoseconds = retryNanoseconds
         self.leaseRenewalNanoseconds = leaseRenewalNanoseconds
+        self.hydrationTimeoutNanoseconds = hydrationTimeoutNanoseconds
         resolvedMedia.eventHandler = { [weak self] event in self?.consume(event) }
     }
 
     func setFrameSender(_ sender: @escaping (String) -> Bool) { frameSender = sender }
-    func setChatAdopter(_ adopter: @escaping (String) -> Void) { chatAdopter = adopter }
+    func setChatAdopter(_ adopter: @escaping (String) -> String?) { chatAdopter = adopter }
 
     #if DEBUG
         func installTerminalNoticeForUITesting(_ turn: VoiceTurnState) {
@@ -1811,6 +1822,9 @@ final class AppleVoiceSessionController {
     }
 
     func updateVisibleChatLocally(_ chatId: String?) {
+        if let pending = pendingChatHydration, pending.chat != chatId {
+            invalidateActivation()
+        }
         connection?.visibleChatId = chatId
         rebuildBinding()
         guard let chatId, let session, session.visibleChatId != chatId,
@@ -1871,6 +1885,10 @@ final class AppleVoiceSessionController {
         pendingActivationEpoch = expectedActivationEpoch
         if connection?.visibleChatId == nil {
             requestCorrelatedNewChat()
+            return
+        }
+        if let chatId = connection?.visibleChatId, chatAdopter != nil {
+            beginChatHydration(chatId, expectedActivationEpoch: expectedActivationEpoch)
             return
         }
         let capability = await permissionProvider()
@@ -2038,6 +2056,7 @@ final class AppleVoiceSessionController {
         terminalNotice = nil
         mediaConnectInFlight = false
         recoveryRequired = false
+        recoveryAttempts = 0
         endRequested = false
         lastSuspensionReason = "backgrounded"
         transcriptPreview = nil
@@ -2095,6 +2114,10 @@ final class AppleVoiceSessionController {
             && value.voice.generation == session?.generation
             && value.voice.mediaGrantRevision == session?.mediaGrantRevision
         if ownedHere && !localMediaMatches {
+            guard recoveryAttempts < Self.maximumRecoveryAttempts else {
+                feedbackRecoveryExhausted()
+                return
+            }
             if session != nil, !activationInFlight, !mediaConnectInFlight {
                 if recoveryTask == nil { markRecoveryRequired() }
                 scheduleRecovery()
@@ -2250,7 +2273,40 @@ final class AppleVoiceSessionController {
         pendingNewChat = nil
         connection?.visibleChatId = value.chatId
         rebuildBinding()
-        chatAdopter?(value.chatId)
+        beginChatHydration(value.chatId, expectedActivationEpoch: expectedActivationEpoch)
+    }
+
+    private func beginChatHydration(_ chatId: String, expectedActivationEpoch: Int) {
+        guard let request = chatAdopter?(chatId) else {
+            invalidateActivation()
+            feedback("error", "chat_context_unavailable", "Open the conversation before starting voice.")
+            return
+        }
+        pendingChatHydration = (chatId, request, expectedActivationEpoch)
+        feedback("connecting", "chat_context_unavailable", "Loading the conversation for voice…")
+        hydrationTimeout?.cancel()
+        let timeout = hydrationTimeoutNanoseconds
+        hydrationTimeout = Task { [weak self] in
+            do { try await Task.sleep(nanoseconds: timeout) } catch { return }
+            guard let self, self.pendingChatHydration?.epoch == expectedActivationEpoch else { return }
+            self.invalidateActivation()
+            self.feedback("error", "chat_context_unavailable", "The conversation did not load. Please try again.")
+        }
+    }
+
+    func conversationDidHydrate(_ snapshot: ConversationSnapshot) {
+        guard let pending = pendingChatHydration,
+            snapshot.snapshotPurpose == "hydration",
+            snapshot.chatId == pending.chat, connection?.visibleChatId == pending.chat,
+            snapshot.requestGeneration == pending.request,
+            snapshot.connectionGeneration == connection?.connectionGeneration,
+            pending.epoch == activationEpoch, pendingActivationEpoch == pending.epoch,
+            pendingActivation, !endRequested
+        else { return }
+        let expectedActivationEpoch = pending.epoch
+        pendingChatHydration = nil
+        hydrationTimeout?.cancel()
+        hydrationTimeout = nil
         Task {
             let capability: AppleVoiceMediaCapability
             if let pendingCapability {
@@ -2285,7 +2341,7 @@ final class AppleVoiceSessionController {
     private func continueActivationIfReady(expectedActivationEpoch: Int) async {
         guard expectedActivationEpoch == activationEpoch,
             pendingActivationEpoch == expectedActivationEpoch,
-            pendingActivation, !endRequested,
+            pendingActivation, !endRequested, pendingChatHydration == nil,
             let capability = pendingCapability
         else { return }
         if let failure = capabilityFailure(capability) {
@@ -2387,6 +2443,7 @@ final class AppleVoiceSessionController {
             takeoverTarget = nil
             self.session = session
             self.grant = grant
+            recoveryAttempts = 0
             microphoneDesired = session.microphoneEnabled || session.chatContextSynced
             announcementLedger = VoiceAnnouncementLedger()
             transcriptSequences.removeAll()
@@ -2395,11 +2452,17 @@ final class AppleVoiceSessionController {
                 return
             }
             mediaConnectInFlight = true
+            mediaConnectGeneration &+= 1
+            let connectGeneration = mediaConnectGeneration
+            defer {
+                if mediaConnectGeneration == connectGeneration { mediaConnectInFlight = false }
+            }
             refreshAudioRouteBaseline()
             let connectEpoch = lifecycleEpoch
             let connectRecoveryRevision = recoveryRevision
             do {
                 try await media.connect(grant)
+                guard mediaConnectGeneration == connectGeneration else { return }
                 guard lifecycleEpoch == connectEpoch, foregroundEligible, recoveryEligible,
                     recoveryRevision == connectRecoveryRevision,
                     self.session?.sessionId == session.sessionId,
@@ -2408,7 +2471,6 @@ final class AppleVoiceSessionController {
                 else {
                     media.disconnect()
                     mediaConnected = false
-                    mediaConnectInFlight = false
                     if self.session == nil || endRequested {
                         recoveryRequired = false
                     } else {
@@ -2424,6 +2486,7 @@ final class AppleVoiceSessionController {
                 if session.chatContextSynced && session.foregroundActive && recoveryEligible {
                     try await media.setMicrophoneEnabled(true)
                 }
+                guard mediaConnectGeneration == connectGeneration else { return }
                 guard lifecycleEpoch == connectEpoch, foregroundEligible, recoveryEligible,
                     recoveryRevision == connectRecoveryRevision,
                     self.session?.sessionId == session.sessionId,
@@ -2432,7 +2495,6 @@ final class AppleVoiceSessionController {
                 else {
                     media.disconnect()
                     mediaConnected = false
-                    mediaConnectInFlight = false
                     if self.session == nil || endRequested {
                         recoveryRequired = false
                     } else if !recoveryRequired {
@@ -2448,7 +2510,11 @@ final class AppleVoiceSessionController {
                     feedback("connecting", "chat_context_unavailable")
                 }
                 recoveryRequired = false
+                recoveryAttempts = 0
             } catch {
+                guard lifecycleEpoch == connectEpoch, mediaConnectGeneration == connectGeneration,
+                    self.session?.sessionId == session.sessionId
+                else { return }
                 media.disconnect()
                 mediaConnected = false
                 markRecoveryRequired()
@@ -2456,7 +2522,6 @@ final class AppleVoiceSessionController {
                     "reconnecting", "media_error",
                     "Voice media is reconnecting. Typed chat is still available.")
             }
-            mediaConnectInFlight = false
         }
     }
 
@@ -2470,11 +2535,18 @@ final class AppleVoiceSessionController {
                 return
             }
             mediaConnected = true
-            if !mediaConnectInFlight, recoveryTask == nil { recoveryRequired = false }
+            if !mediaConnectInFlight, recoveryTask == nil {
+                recoveryRequired = false
+                recoveryAttempts = 0
+            }
         case .reconnecting:
             guard session != nil else { return }
             mediaConnected = false
             markRecoveryRequired()
+            guard recoveryAttempts < Self.maximumRecoveryAttempts else {
+                feedbackRecoveryExhausted()
+                return
+            }
             feedback("reconnecting", "network_interrupted")
         case .failed:
             guard session != nil else { return }
@@ -2807,6 +2879,9 @@ final class AppleVoiceSessionController {
     private func invalidateActivation() {
         activationEpoch &+= 1
         pendingNewChat = nil
+        pendingChatHydration = nil
+        hydrationTimeout?.cancel()
+        hydrationTimeout = nil
         pendingActivation = false
         pendingTakeoverActivation = false
         pendingActivationEpoch = nil
@@ -2872,9 +2947,15 @@ final class AppleVoiceSessionController {
             !activationInFlight, !mediaConnectInFlight,
             session != nil, currentBinding() != nil, recoveryTask == nil
         else { return }
+        guard recoveryAttempts < Self.maximumRecoveryAttempts else {
+            feedbackRecoveryExhausted()
+            return
+        }
         lifecycleEpoch += 1
         let epoch = lifecycleEpoch
         let revision = recoveryRevision
+        let retryMultiplier: UInt64 = recoveryAttempts == 0 ? 0 : UInt64(1 << (recoveryAttempts - 1))
+        let delay = min(retryNanoseconds, 30_000_000_000) * retryMultiplier
         let pendingSuspension = suspensionTask
         recoveryTask = Task { [weak self] in
             _ = await pendingSuspension?.value
@@ -2887,10 +2968,18 @@ final class AppleVoiceSessionController {
                     }
                 }
             }
+            if delay > 0 {
+                do {
+                    try await Task.sleep(nanoseconds: delay)
+                } catch {
+                    return
+                }
+            }
             guard !Task.isCancelled, self.lifecycleEpoch == epoch,
                 self.recoveryEligible, self.recoveryRevision == revision
             else { return }
             self.suspensionTask = nil
+            self.recoveryAttempts += 1
             await self.recoverMedia(epoch: epoch, revision: revision)
         }
     }
@@ -2931,7 +3020,7 @@ final class AppleVoiceSessionController {
             feedback(
                 "reconnecting", "network_interrupted",
                 "Voice connection was interrupted. Retrying…")
-            await armTransientRecoveryRetry(epoch: epoch, revision: revision)
+            markRecoveryRequired()
             return
         }
         guard case .refreshed(let refreshed, let nextGrant) = refresh,
@@ -2978,15 +3067,20 @@ final class AppleVoiceSessionController {
         session = resumed
         grant = nextGrant
         mediaConnectInFlight = true
+        mediaConnectGeneration &+= 1
+        let connectGeneration = mediaConnectGeneration
+        defer {
+            if mediaConnectGeneration == connectGeneration { mediaConnectInFlight = false }
+        }
         refreshAudioRouteBaseline()
         do {
             try await media.connect(nextGrant)
+            guard mediaConnectGeneration == connectGeneration else { return }
             guard !Task.isCancelled, lifecycleEpoch == epoch, recoveryEligible,
                 recoveryRevision == revision
             else {
                 media.disconnect()
                 mediaConnected = false
-                mediaConnectInFlight = false
                 return
             }
             if resumed.chatContextSynced && microphoneDesired {
@@ -2994,6 +3088,7 @@ final class AppleVoiceSessionController {
             } else {
                 try? await media.setMicrophoneEnabled(false)
             }
+            guard mediaConnectGeneration == connectGeneration else { return }
             guard !Task.isCancelled, lifecycleEpoch == epoch, recoveryEligible,
                 recoveryRevision == revision,
                 session?.sessionId == resumed.sessionId,
@@ -3002,7 +3097,6 @@ final class AppleVoiceSessionController {
             else {
                 media.disconnect()
                 mediaConnected = false
-                mediaConnectInFlight = false
                 return
             }
             mediaConnected = true
@@ -3013,24 +3107,20 @@ final class AppleVoiceSessionController {
                 feedback("connecting", "chat_context_unavailable")
             }
             recoveryRequired = false
+            recoveryAttempts = 0
         } catch {
+            guard !Task.isCancelled, lifecycleEpoch == epoch, mediaConnectGeneration == connectGeneration,
+                session?.sessionId == resumed.sessionId
+            else { return }
             media.disconnect()
             mediaConnected = false
-            feedback("error", "media_error")
+            markRecoveryRequired()
+            feedback("reconnecting", "media_error", "Voice media is reconnecting. Typed chat is still available.")
         }
-        mediaConnectInFlight = false
     }
 
-    private func armTransientRecoveryRetry(epoch: Int, revision: Int) async {
-        do {
-            try await Task.sleep(nanoseconds: retryNanoseconds)
-        } catch {
-            return
-        }
-        guard !Task.isCancelled, lifecycleEpoch == epoch, recoveryEligible,
-            recoveryRevision == revision, session != nil
-        else { return }
-        markRecoveryRequired()
+    private func feedbackRecoveryExhausted() {
+        feedback("error", "media_error", "Voice could not reconnect. End it and start again.")
     }
 
     private func retireTerminalMediaSession() {
@@ -3087,6 +3177,7 @@ final class AppleVoiceSessionController {
         terminalNotice = nil
         mediaConnectInFlight = false
         recoveryRequired = false
+        recoveryAttempts = 0
         endRequested = false
         lastSuspensionReason = "backgrounded"
         transcriptPreview = nil
@@ -3110,6 +3201,7 @@ final class AppleVoiceSessionController {
         mediaConnected = false
         mediaConnectInFlight = false
         recoveryRequired = false
+        recoveryAttempts = 0
         session = nil
         grant = nil
         audioRouteAvailable = true

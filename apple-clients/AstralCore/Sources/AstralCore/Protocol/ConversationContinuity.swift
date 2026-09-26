@@ -296,6 +296,36 @@ public struct ConversationContinuityReducer: Sendable {
     }
 
     @discardableResult
+    public mutating func beginViewportHydration(_ request: ViewportSnapshotRequest) -> Bool {
+        guard let settled = acceptedSnapshot,
+            settled.chatId == request.chatId,
+            settled.connectionGeneration == request.connectionGeneration,
+            settled.renderRevision == request.baseRenderRevision,
+            openRequest(chatId: request.chatId, requestGeneration: request.requestGeneration, purpose: .hydration)
+        else { return false }
+        expectedRenderRevision = request.baseRenderRevision
+        return true
+    }
+
+    @discardableResult
+    public mutating func cancelViewportHydration(
+        _ request: ViewportSnapshotRequest, restoring settled: ConversationSnapshot
+    ) -> Bool {
+        guard request.isCurrent(in: self), settled.chatId == request.chatId,
+            settled.connectionGeneration == request.connectionGeneration,
+            settled.renderRevision == request.baseRenderRevision,
+            usedRequestGenerations.contains(settled.requestGeneration),
+            let purpose = ConversationGenerationPurpose(rawValue: settled.snapshotPurpose)
+        else { return false }
+        requestGeneration = settled.requestGeneration
+        requestPurpose = purpose
+        acceptedSnapshot = settled
+        expectedRenderRevision = nil
+        lastTransientSequence = 0
+        return true
+    }
+
+    @discardableResult
     public mutating func accept(_ ready: ConversationCommitReady) -> Bool {
         guard ready.chatId == activeChatId,
             ready.connectionGeneration == connectionGeneration,

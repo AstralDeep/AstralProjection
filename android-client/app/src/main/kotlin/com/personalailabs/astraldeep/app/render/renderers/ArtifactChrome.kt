@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personalailabs.astraldeep.app.ui.ComponentActionHandler
+import com.personalailabs.astraldeep.app.ui.ViewportInteraction
 import com.personalailabs.astraldeep.core.chrome.ComponentChrome
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
@@ -98,6 +99,7 @@ internal fun ArtifactFooter(
     val pending = handler?.pending?.collectAsStateWithLifecycle()?.value.orEmpty()
     if (provenance == null && actions.isEmpty()) return
     var dialog by remember(context) { mutableStateOf<String?>(null) }
+    ViewportInteraction(dialog != null)
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             provenance?.let { ProvenanceBadge(it) }

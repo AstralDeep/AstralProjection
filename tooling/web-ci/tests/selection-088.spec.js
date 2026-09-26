@@ -8,6 +8,7 @@ import { dirname, resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 
 import { collectClientCoverage } from "./client-coverage-fixture.mjs";
+import { consoleShell } from "./console-shell.mjs";
 
 collectClientCoverage(test, "selection-088");
 
@@ -27,7 +28,7 @@ const NOTES = JSON.parse(await readFile(
 
 const TOPBAR = '<div class="flex items-center gap-2 px-3"><button type="button" id="astral-newchat-btn">New chat</button>'
   + '<a id="logout" href="/auth/logout">Sign out</a></div>';
-const SHELL = (await readFile(resolve(ROOT, "backend/webrender/templates/shell.html"), "utf8"))
+const SHELL = consoleShell(ROOT)
   .replace(/\?v=%%ASTRAL_V:[^%]*%%/gu, "")
   .replaceAll("%%ASTRAL_NONCE%%", "selection-nonce")
   .replaceAll("%%ASTRAL_TOKEN%%", "fixture-owner-token")

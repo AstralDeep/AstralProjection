@@ -11,6 +11,7 @@ import com.personalailabs.astraldeep.app.render.renderers.rows
 import com.personalailabs.astraldeep.app.render.renderers.str
 import com.personalailabs.astraldeep.app.render.renderers.strList
 import com.personalailabs.astraldeep.app.ui.WorkspaceContext
+import com.personalailabs.astraldeep.core.sdui.ActionGroupPresentation
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -322,6 +323,14 @@ internal class CanvasCaptureRegistry {
 
                     fun stringArray(values: List<String>) = JsonArray(values.map(::JsonPrimitive))
                     when (type) {
+                        "action_group" -> {
+                            put("type", "text")
+                            put("content", ActionGroupPresentation(raw).label)
+                        }
+                        in COMPOSITES -> {
+                            put("type", "image")
+                            put("alt", c.str("title") ?: c.str("label").orEmpty())
+                        }
                         "text" -> put("content", c.str("content") ?: c.str("text").orEmpty())
                         "code" -> put("content", c.str("content") ?: c.str("code").orEmpty())
                         "card" -> strings("title")
@@ -474,9 +483,9 @@ internal class CanvasCaptureRegistry {
                             },
                         )
                 }
-                if (type == "image" || type in CHARTS) {
+                if (type == "image" || type in CHARTS || type in COMPOSITES) {
                     val pixels = node.pixels ?: throw CanvasCaptureUnavailable()
-                    if (type == "image") {
+                    if (type == "image" || type in COMPOSITES) {
                         val size = node.imageSize ?: throw CanvasCaptureUnavailable()
                         out["width"] = JsonPrimitive(size.first)
                         out["height"] = JsonPrimitive(size.second)
@@ -515,6 +524,7 @@ internal class CanvasCaptureRegistry {
 
     companion object {
         val CHARTS = setOf("bar_chart", "line_chart", "pie_chart", "plotly_chart")
+        val COMPOSITES = setOf("stat_group", "gauge", "pipeline_stepper", "donut_chart", "radar_chart")
         private val OMITTED =
             setOf(
                 "button",
@@ -553,6 +563,12 @@ internal class CanvasCaptureRegistry {
                 "keyvalue",
                 "timeline",
                 "rating",
+                "action_group",
+                "stat_group",
+                "gauge",
+                "pipeline_stepper",
+                "donut_chart",
+                "radar_chart",
             )
     }
 }

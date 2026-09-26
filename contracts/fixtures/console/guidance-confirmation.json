@@ -1,0 +1,428 @@
+{
+  "contract": "console/v2",
+  "client_capability": "guidance_selection_v1",
+  "cases": [
+    {
+      "name": "selected",
+      "state": {
+        "view": "selection",
+        "status": "ready",
+        "agents": [
+          {
+            "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+            "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09",
+            "display_name": "Literature scout <script>alert(\"private\")"
+          }
+        ],
+        "skills": [
+          {
+            "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+            "revision": 4,
+            "name": "Standup format",
+            "command": "standup",
+            "enabled": true
+          },
+          {
+            "skill_id": "b4e6a8c0-1d3f-4a5b-9c7e-2f4a6b8d0e32",
+            "revision": 1,
+            "name": "Plain language <script>alert(\"priva",
+            "command": "",
+            "enabled": false
+          }
+        ],
+        "notes": [
+          {
+            "note_id": "7a8b9c0d-1e2f-4a3b-8c5d-6e7f8a9b0c43",
+            "revision": 3,
+            "category": "preference",
+            "enabled": true
+          },
+          {
+            "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+            "revision": 9,
+            "category": "context",
+            "enabled": true
+          }
+        ],
+        "selected": {
+          "agent": {
+            "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+            "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+          },
+          "skills": [
+            {
+              "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+              "revision": 4
+            }
+          ],
+          "notes": [
+            {
+              "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+              "revision": 9
+            }
+          ]
+        },
+        "notice": "saved"
+      },
+      "frame": {
+        "type": "chrome_surface",
+        "region": "modal",
+        "surface_key": "guidance",
+        "title": "Use for this chat",
+        "admin_only": false,
+        "components": [
+          {
+            "type": "alert",
+            "message": "Selection saved.",
+            "variant": "success"
+          },
+          {
+            "type": "text",
+            "content": "Use for this chat: your selection applies to this chat only. Each task you send carries exactly the agent revision, skill revisions and note revisions listed here; the server rechecks them when the task is accepted and refuses anything changed or forgotten since.",
+            "variant": "body"
+          },
+          {
+            "type": "text",
+            "content": "Agent",
+            "variant": "h3"
+          },
+          {
+            "type": "card",
+            "title": "Literature scout <script>alert(\"private\")",
+            "content": [
+              {
+                "type": "badge",
+                "label": "Selected",
+                "variant": "success"
+              },
+              {
+                "type": "text",
+                "content": "Revision 3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09",
+                "variant": "caption"
+              },
+              {
+                "type": "button",
+                "label": "Stop using this agent",
+                "action": "chrome_turn_selection_set",
+                "payload": {
+                  "version": 1,
+                  "agent": null,
+                  "skills": [
+                    {
+                      "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                      "revision": 4
+                    }
+                  ],
+                  "notes": [
+                    {
+                      "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+                      "revision": 9
+                    }
+                  ]
+                },
+                "variant": "secondary",
+                "disabled": false,
+                "local": false
+              }
+            ],
+            "variant": "default"
+          },
+          {
+            "type": "text",
+            "content": "Skills",
+            "variant": "h3"
+          },
+          {
+            "type": "card",
+            "title": "Standup format",
+            "content": [
+              {
+                "type": "badge",
+                "label": "Selected",
+                "variant": "success"
+              },
+              {
+                "type": "text",
+                "content": "/standup",
+                "variant": "caption"
+              },
+              {
+                "type": "text",
+                "content": "Revision 4",
+                "variant": "caption"
+              },
+              {
+                "type": "button",
+                "label": "Remove skill",
+                "action": "chrome_turn_selection_set",
+                "payload": {
+                  "version": 1,
+                  "agent": {
+                    "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+                    "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+                  },
+                  "skills": [],
+                  "notes": [
+                    {
+                      "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+                      "revision": 9
+                    }
+                  ]
+                },
+                "variant": "secondary",
+                "disabled": false,
+                "local": false
+              }
+            ],
+            "variant": "default"
+          },
+          {
+            "type": "card",
+            "title": "Plain language <script>alert(\"priva",
+            "content": [
+              {
+                "type": "badge",
+                "label": "Disabled",
+                "variant": "default"
+              },
+              {
+                "type": "text",
+                "content": "Revision 1",
+                "variant": "caption"
+              }
+            ],
+            "variant": "default"
+          },
+          {
+            "type": "text",
+            "content": "Private notes",
+            "variant": "h3"
+          },
+          {
+            "type": "card",
+            "title": "Preference",
+            "content": [
+              {
+                "type": "badge",
+                "label": "Enabled",
+                "variant": "default"
+              },
+              {
+                "type": "text",
+                "content": "Revision 3",
+                "variant": "caption"
+              },
+              {
+                "type": "button",
+                "label": "Add note",
+                "action": "chrome_turn_selection_set",
+                "payload": {
+                  "version": 1,
+                  "agent": {
+                    "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+                    "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+                  },
+                  "skills": [
+                    {
+                      "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                      "revision": 4
+                    }
+                  ],
+                  "notes": [
+                    {
+                      "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+                      "revision": 9
+                    },
+                    {
+                      "note_id": "7a8b9c0d-1e2f-4a3b-8c5d-6e7f8a9b0c43",
+                      "revision": 3
+                    }
+                  ]
+                },
+                "variant": "primary",
+                "disabled": false,
+                "local": false
+              }
+            ],
+            "variant": "default"
+          },
+          {
+            "type": "card",
+            "title": "Context",
+            "content": [
+              {
+                "type": "badge",
+                "label": "Selected",
+                "variant": "success"
+              },
+              {
+                "type": "text",
+                "content": "Revision 9",
+                "variant": "caption"
+              },
+              {
+                "type": "button",
+                "label": "Remove note",
+                "action": "chrome_turn_selection_set",
+                "payload": {
+                  "version": 1,
+                  "agent": {
+                    "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+                    "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+                  },
+                  "skills": [
+                    {
+                      "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+                      "revision": 4
+                    }
+                  ],
+                  "notes": []
+                },
+                "variant": "secondary",
+                "disabled": false,
+                "local": false
+              }
+            ],
+            "variant": "default"
+          },
+          {
+            "type": "button",
+            "label": "Clear selection",
+            "action": "chrome_turn_selection_set",
+            "payload": {
+              "version": 1,
+              "agent": null,
+              "skills": [],
+              "notes": []
+            },
+            "variant": "danger",
+            "disabled": false,
+            "local": false
+          },
+          {
+            "type": "button",
+            "label": "Refresh",
+            "action": "chrome_open",
+            "payload": {
+              "surface": "guidance",
+              "params": {
+                "view": "selection"
+              }
+            },
+            "variant": "secondary",
+            "disabled": false,
+            "local": false
+          }
+        ],
+        "mode": "replace",
+        "request_generation": "6ac91e50-3a65-4818-880c-46660c71a98a",
+        "selection": {
+          "version": 1,
+          "agent": {
+            "agent_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c76",
+            "revision_id": "3c4d5e6f-7a8b-4c9d-8e1f-2a3b4c5d6e09"
+          },
+          "skills": [
+            {
+              "skill_id": "0d9c2f9a-3e5b-4c7d-8a1f-6b2e4d8c0a13",
+              "revision": 4
+            }
+          ],
+          "notes": [
+            {
+              "note_id": "8b9c0d1e-2f3a-4b4c-9d6e-7f8a9b0c1d54",
+              "revision": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "cleared",
+      "state": {
+        "view": "selection",
+        "status": "ready",
+        "agents": [],
+        "skills": [],
+        "notes": [],
+        "selected": {
+          "agent": null,
+          "skills": [],
+          "notes": []
+        },
+        "notice": "cleared"
+      },
+      "frame": {
+        "type": "chrome_surface",
+        "region": "modal",
+        "surface_key": "guidance",
+        "title": "Use for this chat",
+        "admin_only": false,
+        "components": [
+          {
+            "type": "alert",
+            "message": "Selection cleared.",
+            "variant": "success"
+          },
+          {
+            "type": "text",
+            "content": "Use for this chat: your selection applies to this chat only. Each task you send carries exactly the agent revision, skill revisions and note revisions listed here; the server rechecks them when the task is accepted and refuses anything changed or forgotten since.",
+            "variant": "body"
+          },
+          {
+            "type": "text",
+            "content": "Agent",
+            "variant": "h3"
+          },
+          {
+            "type": "text",
+            "content": "No active agent revision to select.",
+            "variant": "caption"
+          },
+          {
+            "type": "text",
+            "content": "Skills",
+            "variant": "h3"
+          },
+          {
+            "type": "text",
+            "content": "No skills to select.",
+            "variant": "caption"
+          },
+          {
+            "type": "text",
+            "content": "Private notes",
+            "variant": "h3"
+          },
+          {
+            "type": "text",
+            "content": "No private notes to select.",
+            "variant": "caption"
+          },
+          {
+            "type": "button",
+            "label": "Refresh",
+            "action": "chrome_open",
+            "payload": {
+              "surface": "guidance",
+              "params": {
+                "view": "selection"
+              }
+            },
+            "variant": "secondary",
+            "disabled": false,
+            "local": false
+          }
+        ],
+        "mode": "replace",
+        "request_generation": "6ac91e50-3a65-4818-880c-46660c71a98a",
+        "selection": {
+          "version": 1,
+          "agent": null,
+          "skills": [],
+          "notes": []
+        }
+      }
+    }
+  ]
+}

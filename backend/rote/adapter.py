@@ -7,6 +7,7 @@ from typing import AbstractSet, Any, Dict, List, Optional
 
 from rote import fallback, lod
 from rote.capabilities import DeviceProfile, DeviceType
+from rote.console import CONSOLE_CONTRACT
 
 
 _WEB_PROFILES = frozenset({DeviceType.BROWSER, DeviceType.TABLET, DeviceType.MOBILE})
@@ -19,12 +20,17 @@ _WEB_089_TYPES = frozenset({
 
 class ComponentAdapter:
     @staticmethod
-    def adapt_guidance_surface(state: Dict, profile: DeviceProfile) -> List[Dict]:
+    def adapt_guidance_surface(state: Dict, profile: DeviceProfile, *, surface_capabilities=()) -> List[Dict]:
         import json
-        from astralprojection.chrome.guidance import build_notes_view
+        from astralprojection.chrome.guidance import build_guidance_view, build_notes_view
 
-        components = [item.to_dict() for item in build_notes_view(state).components]
+        builder = build_guidance_view if profile.console_contract == CONSOLE_CONTRACT else build_notes_view
+        components = [item.to_dict() for item in builder(state).components]
         supported = profile.supported_types
+        if (profile.device_type == DeviceType.WATCH and profile.console_contract == CONSOLE_CONTRACT
+                and isinstance(surface_capabilities, (list, tuple))
+                and "guidance_notes_v1" in surface_capabilities and supported is not None):
+            supported = supported | {"param_picker"}
         actions = 0
         count = 0
 
@@ -97,6 +103,14 @@ class ComponentAdapter:
 
     _089_WEB_DEVICES = frozenset({"browser", "tablet", "mobile"})
 
+    @staticmethod
+    def _supports_console_type(ctype: str, profile: DeviceProfile) -> bool:
+        return (
+            profile.console_contract == CONSOLE_CONTRACT
+            and ctype in (profile.supported_types or ())
+            and (ctype not in {"donut_chart", "radar_chart"} or profile.supports_charts)
+        )
+
     @classmethod
     def _degrade_089_for_non_web(cls, comp: Dict, profile: DeviceProfile) -> Dict:
         if not isinstance(comp, dict):
@@ -111,11 +125,11 @@ class ComponentAdapter:
         if not isinstance(comp, dict):
             return comp
         ctype = str(comp.get("type", "")).strip().lower()
-        if ctype in cls._089_TYPES:
+        if ctype in cls._089_TYPES and not cls._supports_console_type(ctype, profile):
             legacy = cls._legacy_supported_types(profile)
             return cls._degrade_unsupported(comp, legacy)
         out = dict(comp)
-        for key in ("content", "children"):
+        for key in ("content", "children", "actions", "overflow_actions", "buttons"):
             kids = comp.get(key)
             if isinstance(kids, list):
                 out[key] = [
@@ -462,7 +476,7 @@ class ComponentAdapter:
     @classmethod
     def _degrade_children(cls, comp: Dict, supported) -> Dict:
         out = dict(comp)
-        for key in ("content", "children"):
+        for key in ("content", "children", "actions", "overflow_actions", "buttons"):
             kids = comp.get(key)
             if isinstance(kids, list):
                 out[key] = [cls._degrade_unsupported(c, supported)
@@ -574,7 +588,7 @@ class ComponentAdapter:
                     budget[0] -= 1
                 return node
             out = dict(node)
-            for key in ("children", "content"):
+            for key in ("children", "content", "actions", "overflow_actions", "buttons"):
                 if isinstance(out.get(key), list):
                     out[key] = [w for w in (walk(c) for c in out[key]) if w is not None]
             if isinstance(out.get("tabs"), list):
@@ -686,10 +700,13 @@ class ComponentAdapter:
 
     @classmethod
     def _adapt_089_web(cls, comp: Dict, profile: DeviceProfile) -> Optional[Dict]:
-        if profile.device_type not in _WEB_PROFILES:
-            return comp
         comp_type = comp.get("type", "")
-        width = profile.capabilities.viewport_width or 0
+        if (profile.device_type not in _WEB_PROFILES
+                and not cls._supports_console_type(comp_type, profile)):
+            return comp
+        width = profile.capabilities.viewport_width or (
+            profile.capabilities.screen_width if profile.console_contract == CONSOLE_CONTRACT else 0
+        )
 
         if comp_type == "stat_group":
             columns = comp.get("columns")
@@ -722,7 +739,8 @@ class ComponentAdapter:
             if not isinstance(actions, list):
                 return comp
             updated = dict(comp)
-            if profile.device_type == DeviceType.MOBILE:
+            if (profile.device_type == DeviceType.MOBILE
+                    or profile.console_contract == CONSOLE_CONTRACT and width <= 480):
                 updated["wrap"] = True
             if len(actions) > 3:
                 updated["actions"] = list(actions[:2])

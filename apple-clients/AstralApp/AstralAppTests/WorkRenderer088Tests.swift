@@ -45,7 +45,7 @@ final class WorkRenderer088Tests: XCTestCase {
                 ComponentView(component: component).environment(model).environment(theme).environment(
                     \.astralWorkReadSurface, true))
             let expected = try png(
-                Text(verbatim: excerpt).font(AstralTypography.body).foregroundStyle(theme.palette.text)
+                Text(verbatim: excerpt).font(ConsoleTypography.body).foregroundStyle(theme.palette.text)
                     .textSelection(.enabled).fixedSize(horizontal: false, vertical: true).frame(
                         maxWidth: .infinity, alignment: .leading))
             let interpreted = try png(ComponentView(component: component).environment(model).environment(theme))

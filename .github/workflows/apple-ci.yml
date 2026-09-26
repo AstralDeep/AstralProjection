@@ -541,14 +541,16 @@ jobs:
           xcrun simctl delete "astral-watch-060" 2>/dev/null || true
           udid="$(xcrun simctl create "astral-watch-060" "Apple Watch Series 11 (46mm)" "$runtime_id")"
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
-      - name: Run Watch continuity target with coverage
+      - name: Run Watch continuity and navigation with coverage
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "${COVERAGE_ROOT}"
           result="${COVERAGE_ROOT}/AstralWatch.xcresult"
+          unit_result="${COVERAGE_ROOT}/AstralWatch-unit.xcresult"
+          navigation_result="${COVERAGE_ROOT}/AstralWatch-navigation.xcresult"
           report="${COVERAGE_ROOT}/apple-watchos-xccov.json"
-          rm -rf "$result"
+          rm -rf "$result" "$unit_result" "$navigation_result"
           rm -f "$report"
           set +e
           xcodebuild \
@@ -558,19 +560,30 @@ jobs:
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             -enableCodeCoverage YES \
-            -resultBundlePath "$result" \
+            -resultBundlePath "$unit_result" \
             -only-testing:AstralWatchTests \
             test
-          status=$?
+          unit_status=$?
+          xcodebuild \
+            -project "${APP_PROJECT}" \
+            -scheme AstralWatchNavigation \
+            -destination "platform=watchOS Simulator,id=${{ steps.watch_sim.outputs.udid }}" \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            -enableCodeCoverage YES \
+            -resultBundlePath "$navigation_result" \
+            -only-testing:AstralWatchNavigationUITests \
+            test
+          navigation_status=$?
           set -e
-          if [[ -d "$result" ]]; then
-            python3 scripts/export_xccov_line_coverage.py \
-              --repo "$PWD" \
-              --xcresult "$result" \
-              --platform watchos \
-              --output "$report"
-          fi
-          exit "$status"
+          test "$unit_status" -eq 0
+          test "$navigation_status" -eq 0
+          xcrun xcresulttool merge --output-path "$result" "$unit_result" "$navigation_result"
+          python3 scripts/export_xccov_line_coverage.py \
+            --repo "$PWD" \
+            --xcresult "$result" \
+            --platform watchos \
+            --output "$report"
       - name: Upload mapped Watch coverage
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -578,6 +591,8 @@ jobs:
           name: apple-watchos-continuity-coverage
           path: |
             build/060/coverage/AstralWatch.xcresult
+            build/060/coverage/AstralWatch-unit.xcresult
+            build/060/coverage/AstralWatch-navigation.xcresult
             build/060/coverage/apple-watchos-xccov.json
           if-no-files-found: error
           retention-days: 14

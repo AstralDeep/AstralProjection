@@ -21,9 +21,9 @@ final class WatchPresentation088Tests: XCTestCase {
     }
 
     func testAdvertisedActualDescriptorMatchesRealROTEFixture() throws {
-        XCTAssertEqual(
-            DeviceDescriptor.watch(viewportWidth: 200, viewportHeight: 240).json,
-            try fixture()["device"])
+        var device = DeviceDescriptor.watch(viewportWidth: 200, viewportHeight: 240)
+        device.connectionType = "wifi"
+        XCTAssertEqual(device.json, try fixture()["device"])
         XCTAssertEqual(ClientDispositions.watch.components["chat_history"], .native)
         XCTAssertEqual(ClientDispositions.watch.components["skeleton"], .native)
         for unsupported in ["table", "file_download", "file_upload", "plotly_chart"] {
@@ -40,7 +40,7 @@ final class WatchPresentation088Tests: XCTestCase {
         XCTAssertEqual(chats.map(\.id), (0..<4).map { "watch-fixture-\($0)" })
         XCTAssertEqual(chats[0].title, "Synthetic conversation 0")
         XCTAssertTrue(chats[0].hasSavedComponents)
-        XCTAssertEqual(chats[0].icon, "🌤️")
+        XCTAssertEqual(chats[0].icon, "WX")
         XCTAssertEqual(chats[0].timeLabel, "just now")
         XCTAssertEqual(chats[1].timeLabel, "2m")
         XCTAssertTrue(chats.allSatisfy { $0.preview.isEmpty })

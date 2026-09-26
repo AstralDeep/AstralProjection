@@ -46,7 +46,7 @@ struct ComponentChrome: View {
                                     Text(descriptor.icon).accessibilityHidden(true)
                                     Text(descriptor.label)
                                 }
-                                .font(AstralTypography.sans(10, relativeTo: .caption2))
+                                .font(ConsoleTypography.sans(10, relativeTo: .caption2))
                                 .foregroundStyle(theme.palette.muted.opacity(0.7))
                                 .frame(minHeight: 44)
                                 .contentShape(Rectangle())
@@ -90,7 +90,7 @@ struct ProvenanceBadge: View {
                 Text(icon)
                 Text(label)
             }
-            .font(AstralTypography.sans(10, relativeTo: .caption2))
+            .font(ConsoleTypography.sans(10, relativeTo: .caption2))
             .foregroundStyle(color.opacity(0.7))
             .accessibilityLabel("Provenance: \(label)")
         }
@@ -122,9 +122,9 @@ struct RefineSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(target.title.isEmpty ? "Refine this component" : "Refine \(target.title)")
-                .font(AstralTypography.headline).foregroundStyle(p.text)
+                .font(ConsoleTypography.headline).foregroundStyle(p.text)
             Text("Describe the change. The component updates in place — earlier versions stay restorable.")
-                .font(AstralTypography.caption).foregroundStyle(p.muted)
+                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
                 .fixedSize(horizontal: false, vertical: true)
             TextField("e.g. sort by total, highest first", text: $instruction, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
@@ -207,7 +207,7 @@ private struct ComponentHistorySheet: View {
                     let versions = ComponentChromeModel.versions(from: target.context.component.raw["versions"])
                     if versions.isEmpty {
                         Text(ComponentChromeModel.emptyHistory)
-                            .font(AstralTypography.caption).foregroundStyle(theme.palette.muted)
+                            .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
                     }
                     ForEach(versions) { version in
                         Button {
@@ -250,7 +250,7 @@ private struct ComponentShareSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 16) {
                 if let url, model.componentActionIsCurrent(target.context) {
-                    Text(url.absoluteString).font(AstralTypography.caption).textSelection(.enabled)
+                    Text(url.absoluteString).font(ConsoleTypography.caption).textSelection(.enabled)
                     HStack {
                         Button(copied ? "Copied" : "Copy link") {
                             guard model.componentActionIsCurrent(target.context) else {
@@ -270,7 +270,7 @@ private struct ComponentShareSheet: View {
                             .buttonStyle(AstralButtonStyle(palette: theme.palette, variant: "primary"))
                     }
                 } else if let failure {
-                    Text(failure).font(AstralTypography.callout)
+                    Text(failure).font(ConsoleTypography.callout)
                 } else {
                     ProgressView("Creating share link…")
                 }

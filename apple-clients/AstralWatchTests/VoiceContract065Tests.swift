@@ -27,6 +27,7 @@ final class VoiceContract065Tests: XCTestCase {
 
     func testWatchRegistrationAdvertisesStableBoundPCMCapability() throws {
         let model = WatchModel()
+        model.audioHardwareProvider = { (true, true) }
         model.voiceBridge = MockWatchVoiceBridge(permission: .authorized)
         model.voiceTokenProvider = { "keycloak-token" }
 
@@ -336,6 +337,117 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertNil(model.errorBanner)
     }
 
+    func testNewVoiceChatWaitsForHydrationAndDisplaysCommittedResult() async throws {
+        let model = try configuredVoiceModel()
+        model.connected = true
+        var wires: [InboundFrame] = []
+        model.outboundTap = { if let frame = InboundFrame.parse($0) { wires.append(frame) } }
+        model.currentConnectionVoiceSendOverride = { _ in }
+        let recorder = RequestRecorder()
+        let response = try JSONValue.object([
+            "session": voiceSessionJSON(deviceId: model.voiceDeviceId, visibleChatId: chat),
+            "grant": bridgeGrantJSON(),
+        ]).encoded()
+        model.voiceRESTTransport = { request in
+            await recorder.record(request)
+            return (201, response)
+        }
+        model.handleFrame(
+            InboundFrame.parse(
+                try composerJSON(
+                    revision: 15, actions: ["voice_session_start"]))!)
+        model.performVoiceAction("voice_session_start")
+        try await Task.sleep(for: .milliseconds(40))
+        let create = try XCTUnwrap(wires.first)
+        let submission = try XCTUnwrap(create.payload["submission_id"]?.stringValue)
+        let request = try XCTUnwrap(create.payload["request_generation"]?.stringValue)
+        model.handleFrame(
+            try XCTUnwrap(
+                InboundFrame.parse(
+                    """
+                    {"type":"chat_created","schema_version":"1","connection_generation":"\(connection)",
+                     "submission_id":"\(submission)","request_generation":"\(request)",
+                     "payload":{"schema_version":"1","connection_generation":"\(connection)",
+                      "submission_id":"\(submission)","request_generation":"\(request)",
+                      "chat_id":"\(chat)","from_message":false}}
+                    """)))
+        let load = try XCTUnwrap(wires.last)
+        XCTAssertEqual(load.payload["action"]?.stringValue, "load_chat")
+        let loadRequest = try XCTUnwrap(load.payload["request_generation"]?.stringValue)
+        let before = await recorder.values()
+        XCTAssertTrue(before.isEmpty)
+        model.handleFrame(try voiceHydrationFrame(request: request))
+        let afterStale = await recorder.values()
+        XCTAssertTrue(afterStale.isEmpty)
+        model.handleFrame(try voiceHydrationFrame(request: loadRequest))
+        try await Task.sleep(for: .milliseconds(60))
+        XCTAssertEqual(model.voiceState, .greeting)
+        let recorded = await recorder.value()
+        XCTAssertTrue(recorded?.url?.path.hasSuffix("/api/voice/sessions") == true)
+        model.handleFrame(
+            try XCTUnwrap(
+                InboundFrame.parse(
+                    """
+                    {"type":"conversation_commit_ready","schema_version":1,"chat_id":"\(chat)",
+                     "connection_generation":"\(connection)","request_generation":"\(request)","render_revision":1}
+                    """)))
+        model.handleFrame(try voiceHydrationFrame(request: request, purpose: "commit", revision: 1))
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Dice total: 21"])
+        XCTAssertFalse(model.entries.isEmpty)
+        model.handleVoiceScenePhase(.background)
+    }
+
+    func testVoiceHydrationTimeoutAndLifecycleChangesNeverStartSession() async throws {
+        for cancellation in ["timeout", "connection", "background", "new_chat"] {
+            let timeout = cancellation == "timeout"
+            let model = try configuredVoiceModel()
+            model.connected = true
+            model.activeChatId = chat
+            model.voiceHydrationTimeout = .milliseconds(20)
+            var wires: [InboundFrame] = []
+            model.outboundTap = { if let frame = InboundFrame.parse($0) { wires.append(frame) } }
+            let recorder = RequestRecorder()
+            model.voiceRESTTransport = { request in
+                await recorder.record(request)
+                return (500, Data())
+            }
+            model.handleFrame(
+                InboundFrame.parse(
+                    try composerJSON(
+                        revision: 15, actions: ["voice_session_start"]))!)
+            model.performVoiceAction("voice_session_start")
+            try await Task.sleep(for: .milliseconds(10))
+            let load = try XCTUnwrap(wires.last { $0.payload["action"]?.stringValue == "load_chat" })
+            let request = try XCTUnwrap(load.payload["request_generation"]?.stringValue)
+            if cancellation == "connection" { XCTAssertTrue(model.beginConversationConnection(otherConnection)) }
+            if cancellation == "background" { model.handleVoiceScenePhase(.background) }
+            if cancellation == "new_chat" { model.newConversation() }
+            try await Task.sleep(for: .milliseconds(45))
+            if timeout { XCTAssertEqual(model.voiceState, .error) }
+            model.handleFrame(try voiceHydrationFrame(request: request))
+            try await Task.sleep(for: .milliseconds(20))
+            let recorded = await recorder.values()
+            XCTAssertTrue(recorded.isEmpty)
+        }
+    }
+
+    private func voiceHydrationFrame(request: String, purpose: String = "hydration", revision: Int = 0) throws
+        -> InboundFrame
+    {
+        try XCTUnwrap(
+            InboundFrame.parse(
+                """
+                {"type":"conversation_snapshot","schema_version":1,
+                 "snapshot_id":"\(UUID().uuidString.lowercased())","chat_id":"\(chat)",
+                 "connection_generation":"\(connection)","request_generation":"\(request)",
+                 "snapshot_purpose":"\(purpose)","render_revision":\(revision),
+                 "committed_at":"2026-09-25T12:00:00Z",
+                 "transcript":[{"message_id":"answer","role":"assistant","created_at":"2026-09-25T12:00:00Z",
+                    "parts":[{"type":"text","text":"Rolled six dice: total 21"}],"attachments":[]}],
+                 "canvas":{"target":"canvas","components":[{"type":"text","content":"Dice total: 21"}]}}
+                """))
+    }
+
     func testTakeoverActionCarriesServerGenerationAndGrantRevision() async throws {
         let model = try configuredVoiceModel()
         model.connected = true
@@ -354,8 +466,14 @@ final class VoiceContract065Tests: XCTestCase {
                     generation: 7,
                     mediaGrantRevision: 9))!)
 
+        var wires: [InboundFrame] = []
+        model.outboundTap = { if let frame = InboundFrame.parse($0) { wires.append(frame) } }
         model.performVoiceAction("voice_session_takeover")
-        try await Task.sleep(for: .milliseconds(75))
+        try await Task.sleep(for: .milliseconds(30))
+        let load = try XCTUnwrap(wires.last { $0.payload["action"]?.stringValue == "load_chat" })
+        model.handleFrame(
+            try voiceHydrationFrame(request: try XCTUnwrap(load.payload["request_generation"]?.stringValue)))
+        try await Task.sleep(for: .milliseconds(50))
 
         let recorded = await recorder.value()
         let request = try XCTUnwrap(recorded)
@@ -753,7 +871,10 @@ final class VoiceContract065Tests: XCTestCase {
         }
 
         model.startVoiceLeaseRenewal()
-        try await Task.sleep(for: .milliseconds(75))
+        let renewalDeadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while await recorder.values().count < 2, ContinuousClock.now < renewalDeadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
         let renewalRequests = await recorder.values()
         let renewalBodies = renewalRequests.compactMap {
             $0.httpBody.flatMap { try? JSONValue.parse($0) }

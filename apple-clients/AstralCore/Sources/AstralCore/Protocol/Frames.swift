@@ -556,7 +556,7 @@ public struct UpsertOp: Sendable, Equatable {
     }
 }
 
-public struct DeviceDescriptor: Sendable {
+public struct DeviceDescriptor: Equatable, Sendable {
     public var deviceId: String?
     public var deviceType: String
     public var viewportWidth: Int
@@ -572,6 +572,9 @@ public struct DeviceDescriptor: Sendable {
     public var userAgent: String
     public var reducedMotion: Bool
     public var pointerType: String
+    public var hasCamera: Bool
+    public var connectionType: String
+    public var consoleContract: String?
 
     public init(
         deviceType: String, viewportWidth: Int, viewportHeight: Int,
@@ -583,7 +586,10 @@ public struct DeviceDescriptor: Sendable {
         supportedTypes: [String],
         userAgent: String,
         reducedMotion: Bool = false,
-        pointerType: String = "coarse"
+        pointerType: String = "coarse",
+        hasCamera: Bool = false,
+        connectionType: String = "unknown",
+        consoleContract: String? = nil
     ) {
         self.deviceId = deviceId
         self.deviceType = deviceType
@@ -600,6 +606,9 @@ public struct DeviceDescriptor: Sendable {
         self.userAgent = userAgent
         self.reducedMotion = reducedMotion
         self.pointerType = pointerType
+        self.hasCamera = hasCamera
+        self.connectionType = connectionType
+        self.consoleContract = consoleContract
     }
 
     public static func ios(viewportWidth: Int, viewportHeight: Int) -> DeviceDescriptor {
@@ -607,7 +616,8 @@ public struct DeviceDescriptor: Sendable {
             deviceType: "ios", viewportWidth: viewportWidth,
             viewportHeight: viewportHeight,
             supportedTypes: ClientDispositions.ios.nativeComponentTypes,
-            userAgent: "AstralDeep-iOS/0.1")
+            userAgent: "AstralDeep-iOS/0.1",
+            consoleContract: ConsoleModel.contract)
     }
 
     public static func macos(viewportWidth: Int, viewportHeight: Int) -> DeviceDescriptor {
@@ -617,7 +627,8 @@ public struct DeviceDescriptor: Sendable {
             hasTouch: false,
             supportedTypes: ClientDispositions.macos.nativeComponentTypes,
             userAgent: "AstralDeep-macOS/0.1",
-            pointerType: "fine")
+            pointerType: "fine",
+            consoleContract: ConsoleModel.contract)
     }
 
     public static func watch(viewportWidth: Int, viewportHeight: Int) -> DeviceDescriptor {
@@ -629,7 +640,7 @@ public struct DeviceDescriptor: Sendable {
     }
 
     var json: JSONValue {
-        .object([
+        var fields: [String: JSONValue] = [
             "device_type": .string(deviceType),
             "screen_width": .number(Double(viewportWidth)),
             "screen_height": .number(Double(viewportHeight)),
@@ -642,14 +653,18 @@ public struct DeviceDescriptor: Sendable {
             "microphone_permission": .string(microphonePermission),
             "full_duplex": .bool(fullDuplex),
             "voice_transport": .string(voiceTransport),
-            "has_camera": .bool(false),
+            "has_camera": .bool(hasCamera),
             "has_file_system": .bool(deviceType != "watch"),
-            "connection_type": .string("wifi"),
+            "connection_type": .string(connectionType),
             "reduced_motion": .bool(reducedMotion),
             "pointer_type": .string(pointerType),
             "user_agent": .string(userAgent),
             "supported_types": .array(supportedTypes.map { .string($0) }),
-        ])
+        ]
+        if consoleContract == ConsoleModel.contract {
+            fields["console_contract"] = .string(ConsoleModel.contract)
+        }
+        return .object(fields)
     }
 }
 
@@ -696,6 +711,7 @@ public enum Outbound {
         var capabilities = ["render", "stream"]
         if workReadSupported { capabilities.append("work_read_v1") }
         if guidanceNotesSupported { capabilities.append("guidance_notes_v1") }
+        if device.consoleContract == ConsoleModel.contract { capabilities.append("guidance_selection_v1") }
         if voiceCapable { capabilities.append("voice") }
         var frame: [String: JSONValue] = [
             "type": .string("register_ui"),
@@ -717,6 +733,7 @@ public enum Outbound {
         _ message: String, sessionId: String?,
         displayMessage: String? = nil,
         attachments: [ChatAttachmentRef] = [],
+        selection: TurnSelection? = nil,
         submissionId: String = UUID().uuidString.lowercased(),
         requestGeneration: String = UUID().uuidString.lowercased()
     ) -> String {
@@ -725,6 +742,7 @@ public enum Outbound {
         if !attachments.isEmpty {
             payload["attachments"] = .array(attachments.map { $0.json })
         }
+        if let selection, !selection.isEmpty { payload["selection"] = selection.json }
         return uiEvent(
             action: "chat_message",
             sessionId: sessionId,

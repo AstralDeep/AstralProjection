@@ -1,5 +1,5 @@
-// Tests that Wire refuses shared guidance-form envelopes Android doesn't natively render (skills,
-// declarative-agent, selection) in full, never partially, since the client never advertises support for them.
+// Tests exact native guidance-note forms and refusal of unsupported skill and agent editing envelopes.
+// Selection has its own negotiated decoder and shared fixture coverage in ConsoleWireTest.
 
 package com.personalailabs.astraldeep.core.protocol
 
@@ -39,7 +39,7 @@ class GuidanceFormWire088Test {
     }
 
     private fun unadmittedFixtures(): Map<String, JsonObject> =
-        listOf("skills", "agents", "selection").associateWith { name ->
+        listOf("skills", "agents").associateWith { name ->
             val file =
                 generateSequence(File(System.getProperty("user.dir")).absoluteFile) { it.parentFile }
                     .map { File(it, "contracts/fixtures/guidance_088/${name}_surface.json") }.first { it.isFile }
@@ -48,7 +48,7 @@ class GuidanceFormWire088Test {
 
     @Test fun unadmitted_088_guidance_forms_are_refused_in_full_until_deliberately_admitted() {
         val frames = unadmittedFixtures()
-        assertEquals(mapOf("skills" to 4, "agents" to 8, "selection" to 2), frames.mapValues { it.value.size })
+        assertEquals(mapOf("skills" to 4, "agents" to 8), frames.mapValues { it.value.size })
         for ((name, modes) in frames) {
             for ((mode, frame) in modes) {
                 assertIs<Inbound.Unknown>(Wire.decode(frame.jsonObject), "$name/$mode must be refused whole")

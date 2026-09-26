@@ -82,6 +82,8 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     private var generation = UUID()
     private var hasShownFailure = false
     private var appearance: OfflineChartDocument.Appearance?
+    private var component: AstralComponent?
+    private var preferredHeight = 320.0
     private weak var captureRegistry: CanvasCaptureRegistry?
     private var captureNode: CanvasCaptureNode?
     private var captureLease = UUID()
@@ -107,14 +109,21 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         appearance: OfflineChartDocument.Appearance? = nil,
         captureRegistry: CanvasCaptureRegistry? = nil, captureNode: CanvasCaptureNode? = nil
     ) {
+        let contentChanged = self.component != component || self.appearance != appearance
+        self.component = component
         self.appearance = appearance
+        preferredHeight = OfflineChartDocument.height(
+            component: component, viewportWidth: viewportWidth, slotWidth: 500)
         #if os(macOS)
             webView.underPageBackgroundColor = appearance.map { NSColor(Color(hex: $0.background)) } ?? .clear
         #endif
         let next: String
         do {
-            next = try OfflineChartDocument.html(
-                component: component, viewportWidth: viewportWidth, appearance: appearance)
+            next =
+                if !contentChanged, let document { document } else {
+                    try OfflineChartDocument.html(
+                        component: component, viewportWidth: viewportWidth, appearance: appearance)
+                }
         } catch {
             next = OfflineChartDocument.failure(appearance: appearance)
         }
@@ -132,7 +141,10 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
                 }
             }
         }
-        guard document != next else { return }
+        guard document != next else {
+            resize(webView)
+            return
+        }
         document = next
         hasShownFailure = false
         let current = UUID()
@@ -182,6 +194,7 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
         captureNode = nil
         document = nil
         appearance = nil
+        component = nil
         webView.stopLoading()
         webView.navigationDelegate = nil
         webView.uiDelegate = nil
@@ -209,7 +222,36 @@ final class OfflineChartCoordinator: NSObject, WKNavigationDelegate, WKUIDelegat
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { showFailure(webView) }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        if let currentNavigation, currentNavigation === navigation { loadedGeneration = generation }
+        if let currentNavigation, currentNavigation === navigation {
+            loadedGeneration = generation
+            resize(webView)
+        }
+    }
+
+    private func resize(_ webView: WKWebView) {
+        guard readyForCapture else { return }
+        let current = generation
+        webView.callAsyncJavaScript(
+            """
+            window.astralChartHeight = preferredHeight;
+            for (let attempt = 0; attempt < 100; attempt++) {
+                const state = document.documentElement.dataset.chartState;
+                if (state === 'error' || state === 'empty') return;
+                if (state === 'ready') {
+                    const chart = document.getElementById('chart');
+                    const height = chart.getBoundingClientRect().width < 500 ? 260 : window.astralChartHeight;
+                    await Plotly.relayout(chart, {height});
+                    await Plotly.Plots.resize(chart);
+                    return;
+                }
+                await new Promise(resolve => setTimeout(resolve, 20));
+            }
+            throw new Error('Chart resize unavailable');
+            """, arguments: ["preferredHeight": preferredHeight], in: nil, in: .page
+        ) { [weak self, weak webView] result in
+            guard let self, let webView, self.generation == current else { return }
+            if case .failure = result { self.showFailure(webView) }
+        }
     }
 
     func capturePixels(_ webView: WKWebView) async throws -> Data {

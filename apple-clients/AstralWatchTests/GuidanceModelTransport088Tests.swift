@@ -277,7 +277,7 @@ final class GuidanceModelTransport088Tests: XCTestCase {
 
 }
 
-private final class GuidanceModelPeer: @unchecked Sendable {
+final class GuidanceModelPeer: @unchecked Sendable {
     let ready = XCTestExpectation(description: "loopback listener")
     let listener: NWListener
     private let queue = DispatchQueue(label: "astral.work-model.test")

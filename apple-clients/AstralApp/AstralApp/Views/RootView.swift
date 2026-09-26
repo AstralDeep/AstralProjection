@@ -14,6 +14,8 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
+    @Environment(\.displayScale) private var displayScale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var viewportWidth: CGFloat = 1024
     private var p: AstralPalette { theme.palette }
@@ -32,6 +34,20 @@ struct RootView: View {
     private var rootBackground: some View { p.bg }
 
     private var signedIn: some View {
+        Group {
+            if let console = model.console, let presentation = model.consolePresentation {
+                ConsoleShell(console: console, presentation: presentation)
+            } else {
+                legacyShell
+            }
+        }
+        .environment(\.astralViewportWidth, viewportWidth)
+        .background(p.bg.ignoresSafeArea())
+        .background(viewportReporter)
+        .onChange(of: reduceMotion) { _, _ in model.reportDeviceCapabilities() }
+    }
+
+    private var legacyShell: some View {
         VStack(spacing: 0) {
             AstralTopBar()
             if let label = model.connectionStripLabel {
@@ -40,30 +56,33 @@ struct RootView: View {
             if let banner = model.errorBanner {
                 BannerBar(text: banner, isError: model.bannerIsError) { model.dismissBanner() }
             }
+            ViewportRefreshNotice()
             surface
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .environment(\.astralViewportWidth, viewportWidth)
-        .background(p.bg.ignoresSafeArea())
-        .background(
-            GeometryReader { geo in
-                Color.clear
-                    .onAppear {
-                        viewportWidth = geo.size.width
-                        model.canvasCapture.setWindow(geo.size)
-                        model.viewportChanged(
-                            width: Int(geo.size.width),
-                            height: Int(geo.size.height))
-                    }
-                    .onChange(of: geo.size) { _, size in
-                        viewportWidth = size.width
-                        model.canvasCapture.setWindow(size)
-                        model.viewportChanged(
-                            width: Int(size.width),
-                            height: Int(size.height))
-                    }
-            }
-        )
+    }
+
+    private var viewportReporter: some View {
+        GeometryReader { geo in
+            Color.clear
+                .onAppear {
+                    viewportWidth = geo.size.width
+                    model.canvasCapture.setWindow(geo.size)
+                    model.viewportChanged(
+                        width: Int(geo.size.width),
+                        height: Int(geo.size.height), pixelRatio: displayScale)
+                }
+                .onChange(of: geo.size) { _, size in
+                    viewportWidth = size.width
+                    model.canvasCapture.setWindow(size)
+                    model.viewportChanged(
+                        width: Int(size.width),
+                        height: Int(size.height), pixelRatio: displayScale)
+                }
+                .onChange(of: displayScale) { _, scale in
+                    model.viewportChanged(width: Int(geo.size.width), height: Int(geo.size.height), pixelRatio: scale)
+                }
+        }
     }
 
     @ViewBuilder
@@ -88,7 +107,7 @@ struct AstralNewChatButton: View {
             HStack(spacing: 6) {
                 Image(systemName: "plus").font(.system(size: 18, weight: .regular))
                 if viewportWidth >= 640 {
-                    Text("New chat").font(AstralTypography.subheadline)
+                    Text("New chat").font(ConsoleTypography.subheadline)
                         .accessibilityIdentifier("new-chat-visible-label")
                 }
             }
@@ -329,11 +348,31 @@ struct ConnectionStrip: View {
     let label: String
     var body: some View {
         Text(label)
-            .font(AstralTypography.caption)
+            .font(ConsoleTypography.caption)
             .foregroundStyle(theme.palette.muted)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 14).padding(.vertical, 5)
             .background(theme.palette.surface2)
+    }
+}
+
+struct ViewportRefreshNotice: View {
+    @Environment(AppModel.self) var model
+    @Environment(ThemeStore.self) var theme
+
+    var body: some View {
+        if model.viewportRefreshFailed {
+            HStack(spacing: 8) {
+                Text("The layout could not update. Your result is still available.")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Retry layout") { model.retryViewportRefresh() }
+                    .disabled(!model.connected)
+                    .accessibilityIdentifier("viewport-refresh-retry")
+            }
+            .font(ConsoleTypography.footnote).foregroundStyle(theme.palette.text)
+            .padding(.horizontal, 14).padding(.vertical, 8)
+            .background(theme.palette.warning.opacity(0.16))
+        }
     }
 }
 
@@ -346,10 +385,10 @@ struct BannerBar: View {
     var body: some View {
         let color = isError ? theme.palette.error : theme.palette.info
         HStack(spacing: 8) {
-            Text(text).font(AstralTypography.footnote).foregroundStyle(theme.palette.text)
+            Text(text).font(ConsoleTypography.footnote).foregroundStyle(theme.palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: onDismiss) {
-                Image(systemName: "xmark").font(AstralTypography.caption).foregroundStyle(theme.palette.muted)
+                Image(systemName: "xmark").font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
             }
             .buttonStyle(.plain)
         }
@@ -373,14 +412,14 @@ struct SignInView: View {
                 model.signIn()
             } label: {
                 Label("Sign in with SSO", systemImage: "person.badge.key")
-                    .font(AstralTypography.headline)
+                    .font(ConsoleTypography.headline)
                     .frame(maxWidth: 320)
                     .padding(.vertical, 6)
             }
             .buttonStyle(.borderedProminent)
             .accessibilityLabel("Sign in with single sign-on")
             if let error = model.signInError {
-                Text(error).font(AstralTypography.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
+                Text(error).font(ConsoleTypography.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
             }
             Spacer().frame(height: 48)
         }

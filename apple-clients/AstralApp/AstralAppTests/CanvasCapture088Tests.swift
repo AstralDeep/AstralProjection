@@ -30,6 +30,115 @@ final class CanvasCapture088Tests: XCTestCase {
         return registry
     }
 
+    func testCompositePixelsPreserveMeasuredLayoutAndOmitRawAuthority() async throws {
+        for type in CanvasCaptureRegistry.compositePixelTypes.sorted() {
+            let registry = registry()
+            let source = try component(
+                "{\"type\":\"\(type)\",\"id\":\"visible\",\"title\":\"Visible\",\"value\":0.5,\"items\":[{\"label\":\"Visible\",\"value\":1,\"secret\":\"PRIVATE\"}],\"datasets\":[{\"data\":[1,2,3],\"authorization\":\"PRIVATE\"}],\"_source_params\":{\"token\":\"PRIVATE\"},\"action\":\"PRIVATE\"}"
+            )
+            let node = try XCTUnwrap(registry.node(path: "/components/0", component: source))
+            registry.retain(png, for: node, imageSize: CGSize(width: 140.5, height: 190.25))
+            let captured = try await registry.capture([source], isCurrent: { true })
+            let value = try JSONValue.parse(captured)
+            let image = try XCTUnwrap(value["components"]?.arrayValue?.first)
+            XCTAssertEqual(image["type"], .string("image"))
+            XCTAssertEqual(image["id"], .string("visible"))
+            XCTAssertEqual(image["width"], .number(140.5))
+            XCTAssertEqual(image["height"], .number(190.25))
+            XCTAssertEqual(image["caption"], .string(""))
+            XCTAssertEqual(
+                value["images"]?.arrayValue?.first?["data_url"],
+                .string("data:image/png;base64," + png.base64EncodedString()))
+            XCTAssertFalse(String(decoding: captured, as: UTF8.self).contains("PRIVATE"))
+            XCTAssertNil(image["datasets"])
+            XCTAssertNil(image["items"])
+            XCTAssertNil(image["action"])
+        }
+    }
+
+    func testCompositeMissingPixelsDimensionsAndStaleIdentityRefuseExport() async throws {
+        let source = try component(#"{"type":"gauge","id":"capacity","value":0.5}"#)
+        for size: CGSize? in [
+            nil, .zero, CGSize(width: CGFloat.infinity, height: 100), CGSize(width: 100, height: 20000),
+        ] {
+            let registry = registry()
+            registry.retain(png, for: registry.node(path: "/components/0", component: source)!, imageSize: size)
+            do {
+                _ = try await registry.capture([source], isCurrent: { true })
+                XCTFail("Invalid captured dimensions accepted")
+            } catch { XCTAssertTrue(error is CanvasCaptureError) }
+        }
+        let registry = registry()
+        registry.retain(
+            png, for: registry.node(path: "/components/0", component: source)!,
+            imageSize: CGSize(width: 128, height: 90))
+        let changed = try component(#"{"type":"gauge","id":"capacity","value":0.9}"#)
+        do {
+            _ = try await registry.capture([changed], isCurrent: { true })
+            XCTFail("Stale gauge pixels accepted")
+        } catch { XCTAssertTrue(error is CanvasCaptureError) }
+    }
+
+    func testActionGroupsExportOnlyVisibleLabelWithoutControlPayloads() async throws {
+        let source = try component(
+            #"{"type":"action_group","id":"actions","label":"Next steps","buttons":[{"label":"Run","action":"PRIVATE","payload":{"nonce":"PRIVATE"},"children":[{"type":"image","url":"https://private.invalid"}]}]}"#
+        )
+        let bytes = try await registry().capture([source], isCurrent: { true })
+        let value = try JSONValue.parse(bytes)
+        XCTAssertEqual(value["components"]?.arrayValue?.first?["type"], .string("text"))
+        XCTAssertEqual(value["components"]?.arrayValue?.first?["content"], .string("Next steps"))
+        XCTAssertEqual(value["components"]?.arrayValue?.first?["id"], .string("actions"))
+        XCTAssertEqual(value["images"], .array([]))
+        XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("PRIVATE"))
+        XCTAssertFalse(String(decoding: bytes, as: UTF8.self).contains("private.invalid"))
+    }
+
+    func testMountedNativeCompositesPublishCurrentPixelsForExport() async throws {
+        let model = model()
+        let theme = ThemeStore()
+        let source = try component(
+            #"{"type":"container","children":[{"type":"stat_group","title":"Overview","columns":3,"items":[{"label":"Count","value":12}]},{"type":"gauge","label":"Capacity","value":0.5},{"type":"pipeline_stepper","steps":[{"label":"Load","status":"active"}]},{"type":"donut_chart","labels":["One","Two"],"data":[1,2]},{"type":"radar_chart","axes":["A","B","C"],"datasets":[{"label":"Run","data":[1,2,3]}]}]}"#
+        )
+        model.canvas = [source]
+        model.canvasCapture.setWindow(CGSize(width: 320, height: 1200))
+        model.canvasCapture.setCanvas(CGSize(width: 296, height: 1100), palette: theme.palette)
+        let content = ComponentView(component: source).environment(model).environment(theme)
+            .environment(\.canvasCapturePath, "/components/0").frame(width: 296, height: 1100)
+        #if os(macOS)
+            let window = NSWindow(
+                contentRect: CGRect(x: 0, y: 0, width: 296, height: 1100), styleMask: .borderless, backing: .buffered,
+                defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = NSHostingView(rootView: content)
+            window.contentView?.layoutSubtreeIfNeeded()
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+        #else
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 296, height: 1100))
+            window.rootViewController = UIHostingController(rootView: content)
+            window.isHidden = false
+            window.layoutIfNeeded()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+        #endif
+        var captured: Data?
+        for _ in 0..<100 {
+            captured = try? await model.canvasCapture.capture([source], isCurrent: { true })
+            if captured != nil { break }
+            try await Task.sleep(for: .milliseconds(25))
+        }
+        let value = try JSONValue.parse(XCTUnwrap(captured))
+        XCTAssertEqual(value["images"]?.arrayValue?.count, 5)
+        let children = try XCTUnwrap(value["components"]?.arrayValue?.first?["children"]?.arrayValue)
+        XCTAssertTrue(children.allSatisfy { $0["type"] == .string("image") })
+        XCTAssertTrue(
+            children.allSatisfy { ($0["width"]?.numberValue ?? 0) > 0 && ($0["width"]?.numberValue ?? 0) <= 296 })
+    }
+
     func testRawPathsSelectedPaneAndClosedChildrenArePreservedWithoutPrivateMetadata() async throws {
         let registry = registry()
         let root = try component(

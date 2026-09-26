@@ -9,6 +9,7 @@ struct WatchComponentView: View {
     let component: AstralComponent
     var workRead = false
     var guidance = false
+    var consoleSurface = false
     @Environment(WatchModel.self) var model
     @State private var expanded = false
 
@@ -24,14 +25,15 @@ struct WatchComponentView: View {
                 .accessibilityValue(expanded ? "Expanded" : "Collapsed")
                 if expanded {
                     ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                        WatchComponentView(component: child, workRead: workRead, guidance: guidance)
+                        WatchComponentView(
+                            component: child, workRead: workRead, guidance: guidance, consoleSurface: consoleSurface)
                     }
                 }
             }
-            .font(AstralTypography.footnote)
+            .font(ConsoleTypography.footnote)
         } else if WorkspaceWelcome.role(of: component) == .intro {
             markdown(component.fallbackText)
-                .font(AstralTypography.title3.weight(.medium))
+                .font(ConsoleTypography.title3.weight(.medium))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
         } else {
@@ -48,7 +50,7 @@ struct WatchComponentView: View {
                 EmptyView()
             } else if component.variant == "caption" {
                 markdown(content)
-                    .font(AstralTypography.caption2)
+                    .font(ConsoleTypography.caption2)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -61,28 +63,28 @@ struct WatchComponentView: View {
                 Image(systemName: iconForVariant)
                 VStack(alignment: .leading, spacing: 1) {
                     if let title = component.title, !title.isEmpty {
-                        markdown(title).font(AstralTypography.footnote.bold())
+                        markdown(title).font(ConsoleTypography.footnote.bold())
                     }
                     markdown(component.message ?? component.fallbackText)
-                        .font(AstralTypography.footnote)
+                        .font(ConsoleTypography.footnote)
                 }
             }
             .foregroundStyle(alertColor)
         case "metric":
             VStack(alignment: .leading, spacing: 0) {
                 markdown(component.title ?? component.label ?? "")
-                    .font(AstralTypography.caption2)
+                    .font(ConsoleTypography.caption2)
                     .foregroundStyle(.secondary)
                 Text(component.value ?? "—")
-                    .font(AstralTypography.title3.bold())
+                    .font(ConsoleTypography.title3.bold())
                     .minimumScaleFactor(0.6)
                 if let sub = component.raw["subtitle"]?.stringValue, !sub.isEmpty {
-                    markdown(sub).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                    markdown(sub).font(ConsoleTypography.caption2).foregroundStyle(.secondary)
                 }
             }
         case "badge":
             Text(component.label ?? component.fallbackText)
-                .font(AstralTypography.caption2.bold())
+                .font(ConsoleTypography.caption2.bold())
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(.tint.opacity(0.3), in: Capsule())
         case "list":
@@ -93,7 +95,7 @@ struct WatchComponentView: View {
                         Text("•")
                         markdown(item)
                     }
-                    .font(AstralTypography.footnote)
+                    .font(ConsoleTypography.footnote)
                 }
             }
         case "keyvalue":
@@ -102,12 +104,12 @@ struct WatchComponentView: View {
                 ForEach(Array(WatchComponentText.keyValueRows(in: component).enumerated()), id: \.offset) { _, pair in
                     VStack(alignment: .leading, spacing: 1) {
                         HStack(alignment: .top) {
-                            Text(pair.label).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                            Text(pair.label).font(ConsoleTypography.caption2).foregroundStyle(.secondary)
                             Spacer(minLength: 4)
-                            Text(pair.value).font(AstralTypography.footnote)
+                            Text(pair.value).font(ConsoleTypography.footnote)
                         }
                         if !pair.hint.isEmpty {
-                            markdown(pair.hint).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                            markdown(pair.hint).font(ConsoleTypography.caption2).foregroundStyle(.secondary)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -119,11 +121,11 @@ struct WatchComponentView: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let label = component.label ?? component.title, !label.isEmpty {
                     HStack {
-                        markdown(label).font(AstralTypography.caption2).foregroundStyle(.secondary)
+                        markdown(label).font(ConsoleTypography.caption2).foregroundStyle(.secondary)
                         Spacer(minLength: 4)
                         if component.raw["show_percentage"]?.boolValue != false {
                             Text("\(Int((progressFraction * 100).rounded()))%")
-                                .font(AstralTypography.caption2).foregroundStyle(.secondary)
+                                .font(ConsoleTypography.caption2).foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -136,16 +138,22 @@ struct WatchComponentView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     titleLine
                     ForEach(Array(component.children.enumerated()), id: \.offset) { _, child in
-                        WatchComponentView(component: child, workRead: workRead, guidance: guidance)
+                        WatchComponentView(
+                            component: child, workRead: workRead, guidance: guidance, consoleSurface: consoleSurface)
                     }
                 }
                 .padding(6)
-                .background(.gray.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+                .background(model.theme.palette.surface, in: RoundedRectangle(cornerRadius: 8))
             }
         case "divider":
             Divider()
         case "button":
-            if guidance, let action = component.raw["action"]?.stringValue,
+            if consoleSurface, model.consoleSurface?.permits(component) == true {
+                Button(component.label ?? "") { model.sendConsoleComponent(component) }
+                    .buttonStyle(.bordered)
+                    .disabled(!model.connected)
+                    .frame(minHeight: model.consolePresentation?.minimumControlHeight ?? 44)
+            } else if guidance, let action = component.raw["action"]?.stringValue,
                 let payload = component.raw["payload"],
                 let request = GuidanceRequest(action: action, payload: payload)
             {
@@ -182,10 +190,10 @@ struct WatchComponentView: View {
         default:
             VStack(alignment: .leading, spacing: 2) {
                 markdown(component.fallbackText)
-                    .font(AstralTypography.footnote)
+                    .font(ConsoleTypography.footnote)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(component.type)
-                    .font(AstralTypography.caption2)
+                    .font(ConsoleTypography.caption2)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -194,29 +202,29 @@ struct WatchComponentView: View {
     private var handoff: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(component.label ?? component.title ?? component.fallbackText)
-                .font(AstralTypography.footnote).foregroundStyle(.secondary)
+                .font(ConsoleTypography.footnote).foregroundStyle(.secondary)
             Label("Continue on your phone or desktop", systemImage: "iphone.and.arrow.forward")
-                .font(AstralTypography.caption2).foregroundStyle(.tint)
+                .font(ConsoleTypography.caption2).foregroundStyle(.tint)
         }
     }
 
     private func markdown(_ string: String) -> Text {
-        (workRead || guidance)
+        (workRead || guidance || consoleSurface)
             ? Text(verbatim: string) : Text(InlineMarkdown.attributed(MarkdownBlocks.plainText(string)))
     }
 
     @ViewBuilder
     private var titleLine: some View {
         if let title = component.title, !title.isEmpty {
-            markdown(title).font(AstralTypography.caption.bold())
+            markdown(title).font(ConsoleTypography.caption.bold())
         }
     }
 
     private func fontForTextVariant(_ variant: String?) -> Font {
         switch variant {
-        case "h1", "h2": return AstralTypography.headline
-        case "h3": return AstralTypography.subheadline.weight(.semibold)
-        default: return AstralTypography.footnote
+        case "h1", "h2": return ConsoleTypography.headline
+        case "h3": return ConsoleTypography.subheadline.weight(.semibold)
+        default: return ConsoleTypography.footnote
         }
     }
 
@@ -231,8 +239,8 @@ struct WatchComponentView: View {
 
     private var alertColor: Color {
         switch component.variant {
-        case "error", "danger": return WatchBrand.error
-        case "warning": return WatchBrand.warning
+        case "error", "danger": return model.theme.palette.error
+        case "warning": return model.theme.palette.warning
         default: return .primary
         }
     }

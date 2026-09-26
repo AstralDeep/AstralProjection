@@ -114,6 +114,12 @@ final class AppModel: NSObject {
         let surfaceKey: String
         let title: String
         let components: [AstralComponent]
+
+        var subtitle: String? {
+            components.first {
+                $0.type == "text" && $0.raw["console_role"]?.stringValue == "surface_subtitle"
+            }?.textContent
+        }
     }
 
     @ObservationIgnored private let defaults: UserDefaults
@@ -137,7 +143,7 @@ final class AppModel: NSObject {
     #endif
     let redirectURI = AstralConfig.redirectURI
     let voiceDeviceId: String
-    @ObservationIgnored let voice = AppleVoiceSessionController()
+    @ObservationIgnored let voice: AppleVoiceSessionController
 
     var signedIn = false
     var accountName = ""
@@ -147,6 +153,7 @@ final class AppModel: NSObject {
     var activeChatId: String?
 
     var composerDraft = ""
+    var composerAccessoryPresented = false
     var runInBackground = false
     var workspaceStarted = false
     var turns: [ChatTurn] = [] {
@@ -202,6 +209,13 @@ final class AppModel: NSObject {
     var auditLoading = false
 
     var chromeMenu: ChromeMenuModel?
+    var consolePresentation: ConsolePresentation?
+    var consoleDashboardVisible = true
+    var consoleDrawerOpen = false
+    var consoleFullscreen = false
+    var consoleResultCollapsed = false
+    var turnSelection: TurnSelection?
+    var console: ConsoleModel? { chromeMenu?.console }
     var pendingSurfaceKey = ""
     var pendingSurfaceParams: JSONValue = .object([:])
     var pendingSurface: SurfaceContent?
@@ -232,7 +246,7 @@ final class AppModel: NSObject {
         return transientCanvas ?? canvas
     }
     var workspaceCanvas: [AstralComponent] {
-        workspaceStarted ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
+        workspaceStarted || console != nil ? WorkspaceWelcome.workComponents(visibleCanvas) : visibleCanvas
     }
     var visibleTurns: [ChatTurn] { turns + transientTurns }
     var isViewingHistory: Bool { viewingIndex != nil }
@@ -268,6 +282,20 @@ final class AppModel: NSObject {
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
+    private(set) var viewportRefreshFailed = false
+    private var viewportSnapshotSupported = false
+    private var pendingViewportDevice: DeviceDescriptor?
+    private var viewportRequest: ViewportSnapshotRequest?
+    private var viewportSettledSnapshot: ConversationSnapshot?
+    private var viewportPresentation: ConsolePresentation?
+    private var viewportDeadline = Date.distantFuture
+    private var viewportRetryBudget = 0
+    private var viewportSubmissionIds: [String] = []
+    @ObservationIgnored private var viewportRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var viewportRefreshInterval: UInt64 = 250_000_000
+    @ObservationIgnored var viewportRefreshTimeout: TimeInterval = 10
+    @ObservationIgnored var viewportSendOverride: ((String) async -> Bool)?
+    private var directEditingOwners: Set<UUID> = []
     @ObservationIgnored private var pendingCommitRequestGeneration: String?
     @ObservationIgnored private var llmPhaseTask: Task<Void, Never>?
     @ObservationIgnored private var llmWatchdogTask: Task<Void, Never>?
@@ -322,8 +350,10 @@ final class AppModel: NSObject {
         conversationResumeStore: ConversationResumeStore = ConversationResumeStore(),
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
-        webSocket: WSClient? = nil
+        webSocket: WSClient? = nil,
+        voiceController: AppleVoiceSessionController? = nil
     ) {
+        self.voice = voiceController ?? AppleVoiceSessionController()
         self.store = tokenStore
         self.ws = webSocket
         self.conversationResumeStore = conversationResumeStore
@@ -367,6 +397,7 @@ final class AppModel: NSObject {
         }
         voice.setChatAdopter { [weak self] chatId in
             self?.adoptChat(chatId)
+            return self?.refreshActiveChat()
         }
         #if os(iOS)
             WatchOverrideSync.shared.activate()
@@ -376,6 +407,7 @@ final class AppModel: NSObject {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            resetViewportRefresh(clearSubmissionHistory: true)
             continuity.clear()
             resetChatState()
         }
@@ -776,6 +808,7 @@ final class AppModel: NSObject {
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
+        resetViewportRefresh(clearSubmissionHistory: true)
         invalidateWorkRead()
         clearPendingOperationSubmissions()
         transientTurns = []
@@ -789,7 +822,7 @@ final class AppModel: NSObject {
         requestGeneration: String,
         purpose: ConversationGenerationPurpose
     ) -> Bool {
-        workspaceStarted = true
+        cancelViewportRefresh(requeue: true)
         let resetRevision =
             continuity.activeChatId != nil
             && continuity.activeChatId != chatId
@@ -799,6 +832,8 @@ final class AppModel: NSObject {
                 requestGeneration: requestGeneration,
                 purpose: purpose)
         else { return false }
+        workspaceStarted = true
+        consoleDashboardVisible = false
         activeChatId = chatId
         transientTurns = []
         transientCanvas = nil
@@ -934,6 +969,7 @@ final class AppModel: NSObject {
             bindConversationAccount(account)
         } else {
             conversationAccount = nil
+            resetViewportRefresh(clearSubmissionHistory: true)
             continuity.clear()
             resetChatState()
         }
@@ -961,6 +997,7 @@ final class AppModel: NSObject {
         conversationAccount = nil
         signedIn = false
         voice.close()
+        resetViewportRefresh(clearSubmissionHistory: true)
         continuity.clear()
         resetChatState()
         clearPendingOperationSubmissions()
@@ -968,6 +1005,7 @@ final class AppModel: NSObject {
         operationStatuses = [:]
         agentLifecycles = [:]
         chromeMenu = nil
+        consolePresentation = nil
         mandatorySurface = false
         clearLLMFirstLoginOperation()
         agents = []
@@ -986,6 +1024,15 @@ final class AppModel: NSObject {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
         conversationAccount = nil
+        invalidateGuidance()
+        pendingSurface = nil
+        pendingSurfaceKey = ""
+        pendingSurfaceParams = .object([:])
+        mandatorySurface = false
+        screen = .chat
+        chromeMenu = nil
+        consolePresentation = nil
+        resetViewportRefresh(clearSubmissionHistory: true)
         continuity.clear()
         resetChatState()
         clearPendingOperationSubmissions()
@@ -996,6 +1043,9 @@ final class AppModel: NSObject {
     }
 
     @ObservationIgnored private var lastReportedViewport: (width: Int, height: Int)?
+    @ObservationIgnored private var reportedDevice: DeviceDescriptor?
+    @ObservationIgnored private var reportedPixelRatio: Double?
+    @ObservationIgnored private var networkConnectionType = "unknown"
 
     private var device: DeviceDescriptor {
         #if os(macOS)
@@ -1007,6 +1057,9 @@ final class AppModel: NSObject {
             var descriptor = DeviceDescriptor.ios(viewportWidth: w, viewportHeight: h)
         #endif
         descriptor.deviceId = voiceDeviceId
+        descriptor.pixelRatio = reportedPixelRatio ?? descriptor.pixelRatio
+        descriptor.hasCamera = AVCaptureDevice.default(for: .video) != nil
+        descriptor.connectionType = networkConnectionType
         #if os(macOS)
             let audioAvailability = AppleVoicePermission.macOSHardwareAvailability(
                 AppleVoicePermission.currentAudioRouteSnapshot())
@@ -1028,12 +1081,200 @@ final class AppModel: NSObject {
         return descriptor
     }
 
-    func viewportChanged(width: Int, height: Int) {
+    func viewportChanged(width: Int, height: Int, pixelRatio: Double? = nil) {
         guard width > 0, height > 0 else { return }
-        if let last = lastReportedViewport, last == (width, height) { return }
-        let isFirst = lastReportedViewport == nil
         lastReportedViewport = (width, height)
-        guard signedIn, !isFirst else { return }
+        if let pixelRatio, pixelRatio.isFinite, pixelRatio > 0, pixelRatio <= 16 {
+            reportedPixelRatio = pixelRatio
+        }
+        reportDeviceCapabilities()
+    }
+
+    func networkCapabilitiesChanged(_ connectionType: String) {
+        networkConnectionType =
+            ["wifi", "cellular", "ethernet", "none"].contains(connectionType)
+            ? connectionType : "unknown"
+        reportDeviceCapabilities()
+    }
+
+    private func consumeViewportStatus(_ frame: InboundFrame) -> Bool {
+        if let refusal = AdmissionRefusal(frame: frame), viewportSubmissionIds.contains(refusal.submissionId) {
+            if let request = viewportRequest, refusal.submissionId == request.submissionId,
+                request.isCurrent(in: continuity)
+            {
+                failViewportRefresh()
+            }
+            return true
+        }
+        guard let status = OperationStatus(frame: frame), status.action == "update_device",
+            status.connectionGeneration == continuity.connectionGeneration,
+            status.chatId == activeChatId
+        else { return false }
+        guard let request = viewportRequest else {
+            return continuity.acceptedSnapshot?.requestGeneration == status.requestGeneration
+        }
+        guard status.requestGeneration == request.requestGeneration, request.isCurrent(in: continuity) else {
+            return false
+        }
+        if status.terminal, status.state != "completed" {
+            let retry = status.retryable && viewportRetryBudget > 0
+            viewportRetryBudget -= retry ? 1 : 0
+            if retry { cancelViewportRefresh(requeue: true) } else { failViewportRefresh() }
+        }
+        return true
+    }
+
+    private func reduceViewportConfiguration(_ frame: InboundFrame) {
+        if ["chat_id", "connection_generation", "request_generation"].contains(where: { frame.payload[$0] != nil }) {
+            guard let request = viewportRequest,
+                frame.payload["chat_id"]?.stringValue == request.chatId,
+                frame.payload["connection_generation"]?.stringValue == request.connectionGeneration,
+                frame.payload["request_generation"]?.stringValue == request.requestGeneration,
+                request.isCurrent(in: continuity)
+            else { return }
+            guard !viewportRefreshBusy else {
+                cancelViewportRefresh(requeue: true)
+                return
+            }
+            viewportPresentation = ConsolePresentation(frame: frame)
+            return
+        }
+        consolePresentation = ConsolePresentation(frame: frame)
+        viewportSnapshotSupported = frame.payload["viewport_snapshot_supported"]?.boolValue == true
+    }
+
+    private var viewportRefreshAvailable: Bool {
+        viewportSnapshotSupported && signedIn && connected && conversationAccount != nil
+    }
+
+    private var viewportRefreshBusy: Bool {
+        screen != .chat || mandatorySurface || timelineReadOnly || isViewingHistory
+            || turnActive || asyncDetached || pendingReplace || pendingCommitRequestGeneration != nil
+            || voice.active || !workspaceActionsInFlight.isEmpty || !componentActionsInFlight.isEmpty
+            || !directEditingOwners.isEmpty
+            || composerAccessoryPresented || staged.contains(where: { $0.state == "uploading" })
+            || !transientTurns.isEmpty || transientCanvas != nil
+    }
+
+    private func queueViewportRefresh(_ device: DeviceDescriptor) {
+        viewportRefreshFailed = false
+        pendingViewportDevice = device
+        viewportRetryBudget = 2
+        guard viewportRefreshTask == nil else { return }
+        viewportRefreshTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let interval = self?.viewportRefreshInterval else { return }
+                do { try await Task.sleep(nanoseconds: interval) } catch { return }
+                guard let self else { return }
+                guard self.viewportRefreshAvailable else {
+                    self.cancelViewportRefresh(requeue: false)
+                    self.pendingViewportDevice = nil
+                    self.viewportRefreshTask = nil
+                    return
+                }
+                await self.flushViewportRefresh()
+                if self.pendingViewportDevice == nil && self.viewportRequest == nil {
+                    self.viewportRefreshTask = nil
+                    return
+                }
+            }
+        }
+    }
+
+    func flushViewportRefresh() async {
+        if let request = viewportRequest {
+            if !request.isCurrent(in: continuity) {
+                cancelViewportRefresh(requeue: true)
+            } else if viewportRefreshBusy {
+                cancelViewportRefresh(requeue: true)
+            } else if Date() >= viewportDeadline {
+                failViewportRefresh()
+            } else {
+                return
+            }
+        }
+        guard viewportRefreshAvailable, !viewportRefreshBusy,
+            let device = pendingViewportDevice, let settled = continuity.acceptedSnapshot,
+            settled.chatId == activeChatId,
+            let request = ViewportSnapshotRequest(device: device, snapshot: settled),
+            ws != nil || viewportSendOverride != nil,
+            continuity.beginViewportHydration(request)
+        else { return }
+        viewportRefreshFailed = false
+        viewportSubmissionIds.append(request.submissionId)
+        if viewportSubmissionIds.count > 128 { viewportSubmissionIds.removeFirst(viewportSubmissionIds.count - 128) }
+        viewportRequest = request
+        viewportSettledSnapshot = settled
+        viewportDeadline = Date().addingTimeInterval(viewportRefreshTimeout)
+        pendingViewportDevice = nil
+        let sent: Bool
+        if let viewportSendOverride {
+            sent = await viewportSendOverride(request.frameText)
+        } else if let socket = ws {
+            sent = await socket.sendCurrentViewportEvent(request.frameText) { [weak self] in
+                await self?.viewportRequestIsCurrent(request, socket: socket) == true
+            }
+        } else {
+            sent = false
+        }
+        if !sent, viewportRequest == request { failViewportRefresh() }
+    }
+
+    private func viewportRequestIsCurrent(_ request: ViewportSnapshotRequest, socket: WSClient) -> Bool {
+        ws === socket && viewportRefreshAvailable && !viewportRefreshBusy
+            && viewportRequest == request && request.isCurrent(in: continuity)
+    }
+
+    private func cancelViewportRefresh(requeue: Bool) {
+        guard let request = viewportRequest else { return }
+        if let settled = viewportSettledSnapshot {
+            _ = continuity.cancelViewportHydration(request, restoring: settled)
+        }
+        viewportRequest = nil
+        viewportSettledSnapshot = nil
+        viewportPresentation = nil
+        if requeue, pendingViewportDevice == nil { pendingViewportDevice = device }
+    }
+
+    private func failViewportRefresh() {
+        guard let request = viewportRequest, request.isCurrent(in: continuity) else { return }
+        cancelViewportRefresh(requeue: false)
+        viewportRefreshFailed = true
+    }
+
+    func retryViewportRefresh() {
+        guard viewportRefreshAvailable else { return }
+        queueViewportRefresh(device)
+    }
+
+    private func resetViewportRefresh(clearSubmissionHistory: Bool = false) {
+        if clearSubmissionHistory { viewportSubmissionIds.removeAll() }
+        viewportRefreshFailed = false
+        cancelViewportRefresh(requeue: false)
+        pendingViewportDevice = nil
+        viewportSnapshotSupported = false
+        viewportRefreshTask?.cancel()
+        viewportRefreshTask = nil
+    }
+
+    func setDirectEditing(_ owner: UUID, active: Bool) {
+        if active {
+            directEditingOwners.insert(owner)
+            cancelViewportRefresh(requeue: true)
+        } else {
+            directEditingOwners.remove(owner)
+        }
+    }
+
+    func reportDeviceCapabilities() {
+        let current = device
+        guard reportedDevice != current else { return }
+        reportedDevice = current
+        guard signedIn else { return }
+        if viewportSnapshotSupported, activeChatId != nil {
+            queueViewportRefresh(current)
+            return
+        }
         let identity = ClientOperationIdentity.fresh()
         beginLocalOperationSubmission(
             identity: identity,
@@ -1044,7 +1285,7 @@ final class AppModel: NSObject {
         rawSend(
             Outbound.updateDevice(
                 sessionId: nil,
-                device: device,
+                device: current,
                 submissionId: identity.submissionId,
                 requestGeneration: identity.requestGeneration))
     }
@@ -1092,6 +1333,7 @@ final class AppModel: NSObject {
                 Task { await self.reconcileLLMFirstLoginOperation() }
             }
         case .disconnected:
+            resetViewportRefresh()
             invalidateWorkRead()
             connected = false
             voice.controlTransportDisconnected()
@@ -1127,6 +1369,18 @@ final class AppModel: NSObject {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        if consumeViewportStatus(frame) { return }
+        if frame.name == "error",
+            ["viewport_snapshot_rejected", "viewport_snapshot_retryable"].contains(
+                frame.payload["code"]?.stringValue ?? "")
+        {
+            if let request = viewportRequest, request.matchesFailure(frame), request.isCurrent(in: continuity) {
+                let retry = frame.payload["retryable"]?.boolValue == true && viewportRetryBudget > 0
+                viewportRetryBudget -= retry ? 1 : 0
+                if retry { cancelViewportRefresh(requeue: true) } else { failViewportRefresh() }
+            }
+            return
+        }
         if guidanceState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
             let generation = guidanceState.generation
         {
@@ -1243,6 +1497,8 @@ final class AppModel: NSObject {
                 invalidateWorkRead()
                 workReadFailed = true
             }
+        case "rote_config":
+            reduceViewportConfiguration(frame)
         case "chrome_surface":
             reduceChromeSurface(frame)
         case "operation_status":
@@ -1340,6 +1596,7 @@ final class AppModel: NSObject {
         case "saved_components_list":
             break
         case "auth_required":
+            resetViewportRefresh()
             Task { await self.handleAuthRequired() }
         default:
             break
@@ -1712,9 +1969,27 @@ final class AppModel: NSObject {
     }
 
     private func reduceConversationSnapshot(_ frame: InboundFrame) {
-        guard let snapshot = ConversationSnapshot(frame: frame),
-            continuity.apply(snapshot) == .applied
-        else { return }
+        guard let snapshot = ConversationSnapshot(frame: frame) else { return }
+        if let request = viewportRequest, request.matches(snapshot) {
+            guard !viewportRefreshBusy else {
+                cancelViewportRefresh(requeue: true)
+                return
+            }
+            guard continuity.apply(snapshot) == .applied else { return }
+            viewportRefreshFailed = false
+            viewportRequest = nil
+            viewportSettledSnapshot = nil
+            if let viewportPresentation { consolePresentation = viewportPresentation }
+            viewportPresentation = nil
+            canvas = snapshot.canvasComponents
+            turns = turns.map { turn in
+                guard let message = snapshot.messages.first(where: { $0.messageId == turn.id }) else { return turn }
+                return ChatTurn(id: turn.id, role: turn.role, text: turn.text, components: message.components)
+            }
+            return
+        }
+        guard continuity.apply(snapshot) == .applied else { return }
+        viewportRefreshFailed = false
 
         if let account = conversationAccount {
             _ = conversationResumeStore.save(chatId: snapshot.chatId, for: account)
@@ -1746,6 +2021,7 @@ final class AppModel: NSObject {
         stepTrail = []
         asyncDetached = false
         pendingCommitRequestGeneration = nil
+        voice.conversationDidHydrate(snapshot)
     }
 
     private func chatPreviewTurn(
@@ -1769,7 +2045,7 @@ final class AppModel: NSObject {
     }
 
     private func reduceTransient(_ frame: InboundFrame) {
-        guard continuity.acceptTransient(frame) else { return }
+        guard viewportRequest == nil, continuity.acceptTransient(frame) else { return }
         switch frame.name {
         case "ui_render", "ui_update":
             let components = frame.renderComponents
@@ -1842,8 +2118,9 @@ final class AppModel: NSObject {
         return chatId == activeChatId
     }
 
-    private func refreshActiveChat() {
-        guard let chatId = activeChatId, !chatId.isEmpty else { return }
+    @discardableResult
+    private func refreshActiveChat() -> String? {
+        guard let chatId = activeChatId, !chatId.isEmpty else { return nil }
         let identity = ClientOperationIdentity.fresh()
         let request = identity.requestGeneration
         if continuity.connectionGeneration != nil {
@@ -1852,7 +2129,7 @@ final class AppModel: NSObject {
                     chatId: chatId,
                     requestGeneration: request,
                     purpose: .hydration)
-            else { return }
+            else { return nil }
         }
         beginLocalOperationSubmission(
             identity: identity,
@@ -1865,6 +2142,7 @@ final class AppModel: NSObject {
                 chatId: chatId,
                 submissionId: identity.submissionId,
                 requestGeneration: request))
+        return request
     }
 
     private func reduceUiRender(_ frame: InboundFrame) {
@@ -1934,6 +2212,9 @@ final class AppModel: NSObject {
             guard signedIn, connected, screen == .surface, pendingSurfaceKey == "guidance",
                 let update = GuidanceSurfaceUpdate(frame: frame), guidanceState.accepts(update)
             else { return }
+            if let selection = frame.payload["selection"], let decoded = TurnSelection(json: selection) {
+                turnSelection = decoded.isEmpty ? nil : decoded
+            }
             retireGuidanceTicket()
             if update.components.isEmpty {
                 invalidateGuidance()
@@ -2194,6 +2475,11 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        consoleFullscreen = false
+        consoleResultCollapsed = false
+        turnSelection = nil
+        consoleDashboardVisible = true
+        consoleDrawerOpen = false
         invalidateWorkRead()
         if pendingSurfaceKey == "work" {
             pendingSurfaceKey = ""
@@ -2345,6 +2631,35 @@ final class AppModel: NSObject {
 
     func dismissBanner() { errorBanner = nil }
 
+    func consoleLabel(_ key: String) -> String { console?.labels[key] ?? "" }
+
+    func showConsoleDashboard() {
+        guard !mandatorySurface else { return }
+        closeSurface()
+        screen = .chat
+        consoleDashboardVisible = true
+        consoleDrawerOpen = false
+    }
+
+    func useConsoleScenario(_ scenario: ConsoleScenario, run: Bool) {
+        guard signedIn, connected, !mandatorySurface, !mutationsLocked,
+            console?.catalog.scenarios.contains(scenario) == true
+        else { return }
+        closeSurface()
+        composerDraft = scenario.prompt
+        if run {
+            sendChat(scenario.prompt)
+            composerDraft = ""
+        }
+    }
+
+    private func permitsIntroPrompt(_ component: AstralComponent, action: String, payload: JSONValue) -> Bool {
+        if component.raw["action"]?.stringValue == action, component.raw["payload"] == payload {
+            return true
+        }
+        return component.children.contains { permitsIntroPrompt($0, action: action, payload: payload) }
+    }
+
     func sendChat(_ text: String) {
         if timelineReadOnly { return }
         let ready = staged.filter { $0.state == "ready" && $0.attachmentId != nil }
@@ -2402,6 +2717,8 @@ final class AppModel: NSObject {
             chatId: activeChatId)
 
         var payload: [String: JSONValue] = ["message": .string(text)]
+        if let turnSelection, !turnSelection.isEmpty { payload["selection"] = turnSelection.json }
+        consoleDashboardVisible = false
         if background { payload["async_mode"] = .bool(true) }
         if let cid = activeChatId { payload["chat_id"] = .string(cid) }
         if !ready.isEmpty {
@@ -2425,7 +2742,25 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action == "compose_prompt" || (action == "chat_message" && pendingSurfaceKey == "agent_intro") {
+            guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
+                pendingSurfaceKey == "agent_intro",
+                let message = payload["message"]?.stringValue, !message.isEmpty, message.count <= 8000,
+                Set(payload.objectValue?.keys.map { $0 } ?? []) == ["message"],
+                pendingSurface?.components.contains(where: { permitsIntroPrompt($0, action: action, payload: payload) })
+                    == true
+            else { return }
+            closeSurface()
+            if action == "chat_message" {
+                sendChat(message)
+                composerDraft = ""
+            } else {
+                composerDraft = message
+            }
+            return
+        }
         if action.hasPrefix("chrome_note_")
+            || action == "chrome_turn_selection_set"
             || (action == "chrome_open" && payload["surface"]?.stringValue == "guidance")
         {
             _ = sendGuidanceRequest(action: action, payload: payload)
@@ -2448,6 +2783,12 @@ final class AppModel: NSObject {
         }
         if timelineReadOnly && timelineMutations.contains(action) { return }
         if action == "chat_message" {
+            consoleDashboardVisible = false
+            if let turnSelection, !turnSelection.isEmpty {
+                var fields = payload.objectValue ?? [:]
+                fields["selection"] = turnSelection.json
+                payload = .object(fields)
+            }
             workspaceStarted = true
             let background = runInBackground
             runInBackground = false
@@ -2651,6 +2992,8 @@ final class AppModel: NSObject {
                             text: message))
                 }
                 turnActive = true
+                workspaceStarted = true
+                consoleDashboardVisible = false
                 pendingReplace = true
                 pendingCanvas = []
                 liveOpsThisTurn = false
@@ -2671,7 +3014,10 @@ final class AppModel: NSObject {
         await voice.perform(action)
     }
 
-    func voiceSceneBecameActive() { voice.sceneBecameActive() }
+    func voiceSceneBecameActive() {
+        voice.sceneBecameActive()
+        reportDeviceCapabilities()
+    }
 
     func voiceSceneBecameInactive() { voice.sceneBecameInactive() }
 
@@ -2679,7 +3025,10 @@ final class AppModel: NSObject {
 
     func voiceAudioSessionInterruptionEnded() { voice.audioSessionInterruptionEnded() }
 
-    func voiceAudioRouteChanged() { voice.audioRouteChanged() }
+    func voiceAudioRouteChanged() {
+        voice.audioRouteChanged()
+        reportDeviceCapabilities()
+    }
 
     func voiceAudioEngineConfigurationChanged() { voice.audioEngineConfigurationChanged() }
 
@@ -2727,7 +3076,12 @@ final class AppModel: NSObject {
     }
 
     func openChat(_ chatId: String) {
+        consoleFullscreen = false
+        consoleResultCollapsed = false
         invalidateGuidance()
+        turnSelection = nil
+        consoleDashboardVisible = false
+        consoleDrawerOpen = false
         workspaceStarted = true
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
@@ -2838,6 +3192,7 @@ final class AppModel: NSObject {
     private var guidanceMenuAvailable: Bool {
         chromeMenu?.allItems.contains { $0.surface == "guidance" } == true
             || !GuidanceRequest.controls(in: chromeMenu).isEmpty
+            || console?.composerActions.contains { $0.action?.surface == "guidance" } == true
     }
 
     private func retireGuidanceTicket() {
@@ -2862,7 +3217,11 @@ final class AppModel: NSObject {
 
     func retryGuidance() {
         guard pendingSurfaceKey == "guidance" else { return }
-        _ = sendGuidanceRequest(action: "chrome_open", payload: GuidanceRequest.list.payload)
+        _ = sendGuidanceRequest(
+            action: "chrome_open",
+            payload: .object([
+                "surface": .string("guidance"), "params": pendingSurfaceParams,
+            ]))
     }
 
     @discardableResult
@@ -2879,6 +3238,14 @@ final class AppModel: NSObject {
                 || GuidanceRequest.controls(in: chromeMenu).contains(where: {
                     GuidanceRequest(action: "chrome_open", payload: .object($0.chromeOpenPayload)) == request
                 })
+                || console?.composerActions.contains(where: {
+                    guard let action = $0.action else { return false }
+                    return GuidanceRequest(
+                        action: "chrome_open",
+                        payload: .object([
+                            "surface": .string(action.surface), "params": action.params,
+                        ])) == request
+                }) == true
         else { return false }
         invalidateWorkRead()
         let generation = guidanceEpoch
@@ -2886,7 +3253,9 @@ final class AppModel: NSObject {
         _ = guidanceState.begin(request, generation: generation)
         screen = .surface
         pendingSurfaceKey = "guidance"
-        pendingSurfaceParams = .object(["mode": .string("list")])
+        if action == "chrome_open" {
+            pendingSurfaceParams = payload["params"] ?? .object(["mode": .string("list")])
+        }
         pendingSurface = nil
         guard signedIn, connected, conversationAccount != nil, let socket = ws else {
             failGuidanceRequest(generation: generation)

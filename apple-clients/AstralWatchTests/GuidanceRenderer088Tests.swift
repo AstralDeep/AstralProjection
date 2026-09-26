@@ -30,7 +30,7 @@ final class GuidanceRenderer088Tests: XCTestCase {
             let model = WatchModel()
             let actual = try image(WatchComponentView(component: component, guidance: true).environment(model))
             let expected = try image(
-                Text(verbatim: text).font(AstralTypography.footnote).fixedSize(horizontal: false, vertical: true))
+                Text(verbatim: text).font(ConsoleTypography.footnote).fixedSize(horizontal: false, vertical: true))
         #else
             let suite = "GuidanceRenderer088.\(UUID().uuidString)"
             let defaults = UserDefaults(suiteName: suite)!

@@ -42,7 +42,7 @@ final class GuidanceRenderer088Tests: XCTestCase {
                     \.astralWorkReadSurface, true
                 ).environment(\.astralGuidanceSurface, true))
             let expected = try image(
-                Text(verbatim: text).font(AstralTypography.body).foregroundStyle(theme.palette.text).textSelection(
+                Text(verbatim: text).font(ConsoleTypography.body).foregroundStyle(theme.palette.text).textSelection(
                     .enabled
                 ).fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading))
             model.signedIn = true

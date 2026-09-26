@@ -3,18 +3,29 @@
 
 package com.personalailabs.astraldeep.app
 
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertTextContains
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performTextInput
 import com.personalailabs.astraldeep.app.render.CanvasHost
 import com.personalailabs.astraldeep.app.render.Emit
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.renderers.registerAllRenderers
+import com.personalailabs.astraldeep.app.ui.LocalViewportInteraction
 import com.personalailabs.astraldeep.core.sdui.Component
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 
@@ -26,6 +37,32 @@ class RenderersTest {
             val r = Renderer(Emit { _, _ -> }).registerAllRenderers()
             CanvasHost(components = components, renderer = r)
         }
+    }
+
+    @Test fun focusedAndDirtyInputDefersViewportChangesUntilSubmitted() {
+        val interactions = mutableSetOf<Any>()
+        val component = Component("input", "input", attrs("""{"label":"Draft value","value":"","action":"input_done"}"""), emptyList())
+        rule.setContent {
+            val focus = LocalFocusManager.current
+            CompositionLocalProvider(
+                LocalViewportInteraction provides { key, active ->
+                    if (active) interactions.add(key) else interactions.remove(key)
+                },
+            ) {
+                Column {
+                    Renderer(Emit { _, _ -> }).registerAllRenderers().render(component)
+                    TextButton(onClick = { focus.clearFocus() }) { Text("Leave field") }
+                }
+            }
+        }
+        rule.runOnIdle { assertTrue(interactions.isEmpty()) }
+        rule.onNodeWithText("Draft value").performClick().performTextInput("Unsent value")
+        rule.runOnIdle { assertFalse(interactions.isEmpty()) }
+        rule.onNodeWithText("Leave field").performClick()
+        rule.runOnIdle { assertFalse(interactions.isEmpty()) }
+        rule.onNodeWithText("Draft value").assertTextContains("Unsent value").performClick().performImeAction()
+        rule.onNodeWithText("Leave field").performClick()
+        rule.runOnIdle { assertTrue(interactions.isEmpty()) }
     }
 
     @Test

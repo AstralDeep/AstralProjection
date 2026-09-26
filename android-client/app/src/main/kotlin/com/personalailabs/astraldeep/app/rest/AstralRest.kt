@@ -13,6 +13,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -76,6 +77,18 @@ class AstralRest(
     private val baseUrl: String,
     private val client: OkHttpClient = OkHttpClient(),
 ) {
+    suspend fun deleteChat(
+        token: String,
+        chatId: String,
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            val url =
+                baseUrl.trimEnd('/').toHttpUrl().newBuilder()
+                    .addPathSegment("api").addPathSegment("chats").addPathSegment(chatId).build()
+            val request = Request.Builder().url(url).header("Authorization", "Bearer $token").delete().build()
+            runCatching { client.newCall(request).execute().use { it.isSuccessful } }.getOrDefault(false)
+        }
+
     suspend fun uploadAttachment(
         token: String,
         filename: String,

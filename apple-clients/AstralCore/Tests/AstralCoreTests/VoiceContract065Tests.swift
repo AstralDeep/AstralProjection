@@ -154,7 +154,9 @@ final class VoiceContract065Tests: XCTestCase {
             connectionGeneration: connection)
         let value = try JSONValue.parse(Data(raw.utf8))
         XCTAssertEqual(value["device_id"]?.stringValue, deviceId)
-        XCTAssertEqual(value["capabilities"]?.arrayValue?.compactMap(\.stringValue), ["render", "stream", "voice"])
+        XCTAssertEqual(
+            value["capabilities"]?.arrayValue?.compactMap(\.stringValue),
+            ["render", "stream", "guidance_selection_v1", "voice"])
         XCTAssertEqual(value["device"]?["microphone_permission"]?.stringValue, "authorized")
         XCTAssertEqual(value["device"]?["voice_transport"]?.stringValue, "livekit")
     }

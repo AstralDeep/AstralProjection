@@ -108,6 +108,7 @@ internal class WorkspaceActionController(
         val ticket = leases.begin(control.operation ?: return, context) ?: return
         val action = Active(ticket, vm)
         active[ticket.operation] = action
+        vm.viewportInteraction(action, true)
         val token = currentToken().orEmpty()
         action.job =
             activity.lifecycleScope.launch {
@@ -206,6 +207,7 @@ internal class WorkspaceActionController(
             (action.capture == null || currentContext(action.vm)?.let { action.capture!!.canDeliver(it) } == true)
 
     private fun finish(action: Active) {
+        action.vm.viewportInteraction(action, false)
         leases.finish(action.ticket)
         if (active[action.ticket.operation] === action) active.remove(action.ticket.operation)
         if (pendingSave === action) pendingSave = null

@@ -20,6 +20,9 @@ from scripts import build_native_export as builder
 def test_generated_document_and_csp_are_exact_shared_assets():
     markup, manifest = builder.build()
     assert markup == export_asset_path("export.html").read_text()
+    apple = builder.ROOT / "apple-clients/AstralApp/AstralApp/Resources"
+    assert markup == (apple / "export.html").read_text()
+    assert manifest == json.loads((apple / "export.manifest.json").read_text())
     assert manifest == json.loads(export_asset_path("manifest.json").read_text())
     assert manifest["template_sha256"] == hashlib.sha256(markup.encode()).hexdigest()
     scripts = re.findall(r"<script>(.*?)</script>", markup, re.S)

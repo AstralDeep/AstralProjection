@@ -37,13 +37,7 @@ class ROTE:
         new_profile = DeviceProfile.from_dict(device_info) if device_info else DeviceProfile.default()
         self._profiles[websocket] = new_profile
 
-        changed = (
-            old_profile is None
-            or old_profile.device_type != new_profile.device_type
-            or old_profile.max_grid_columns != new_profile.max_grid_columns
-            or old_profile.capabilities.viewport_width != new_profile.capabilities.viewport_width
-            or old_profile.capabilities.viewport_height != new_profile.capabilities.viewport_height
-        )
+        changed = old_profile != new_profile
 
         logger.info(
             f"ROTE: device update — type={new_profile.device_type.value} "
@@ -78,8 +72,12 @@ class ROTE:
     def get_cached_components(self, websocket: Any) -> Optional[List[Dict]]:
         return copy.deepcopy(self._last_components.get(websocket))
 
-    def adapt(self, websocket: Any, components: List[Dict]) -> List[Dict]:
+    def remember_components(self, websocket: Any, components: List[Dict]) -> None:
         self._last_components[websocket] = components
+
+    def adapt(self, websocket: Any, components: List[Dict], *, cache: bool = True) -> List[Dict]:
+        if cache:
+            self.remember_components(websocket, components)
 
         profile = self.get_profile(websocket)
 
