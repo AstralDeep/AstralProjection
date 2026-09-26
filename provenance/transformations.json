@@ -3229,7 +3229,7 @@
       "sourcePath": "windows-client/tests/test_voice_contract_065.py",
       "sourceBlob": "26f8ac37be3068733d6b7a9adaa7c9482cfe735d",
       "sourceMode": "100644",
-      "resultSha256": "849e9da8e7e96f3b232cf2862267b5f7804d3a00811223e10854584a64943c80",
+      "resultSha256": "9d36d9f7aac23a310a9c48a7c2f3a241e2232709d1349b215484c53e402e75a2",
       "task": "T053/T071",
       "reason": "Prove strict Windows client-local frame semantics, bound finals, canonical playout phases, closed dispositions, and unchanged remote-v1 proof behavior. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },

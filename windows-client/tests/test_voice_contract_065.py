@@ -1172,8 +1172,9 @@ def test_reconnect_flushes_retained_voice_after_ordinary_queue(qapp):
         async def send(self, raw):
             sent.append(json.loads(raw))
 
-    asyncio.run(client._flush_pending(FakeWs()))
-    asyncio.run(client._resend_voice_pending(FakeWs()))
+    client._ws = FakeWs()
+    asyncio.run(client._flush_pending(client._ws))
+    asyncio.run(client._resend_voice_pending(client._ws))
 
     assert [frame["action"] for frame in sent] == ["get_history", "chat_message"]
 

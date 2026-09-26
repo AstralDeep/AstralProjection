@@ -192,7 +192,8 @@ def test_retirement_never_reopens_old_work(win, change):
         win._begin_silent_refresh = lambda: None
         win._on_status("auth_required:synthetic")
     elif change == "rotation":
-        win._voice_connection_changed(str(uuid.uuid4()))
+        win.client.connection_generation = str(uuid.uuid4())
+        win._voice_connection_changed(win.client.connection_generation)
     else:
         win._new_chat()
     title = win._surface_dialog._title.text()
