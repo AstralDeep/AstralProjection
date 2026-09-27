@@ -198,7 +198,7 @@ jobs:
   app-unit-tests:
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -322,7 +322,7 @@ jobs:
   first-login-ui:
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -385,9 +385,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "${COVERAGE_ROOT}"
-          result_base="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login"
+          result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"
           report="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-first-login-xccov.json"
           rm -f "$report"
+          test ! -e "$result" && test ! -L "$result"
           dest='${{ matrix.destination }}'
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
             dest="platform=iOS Simulator,id=${{ steps.ios_sim.outputs.udid }}"
@@ -404,48 +405,29 @@ jobs:
               -derivedDataPath "$derived" build-for-testing
             test_action=test-without-building
           fi
-          run_suite() {
-            result="${result_base}-attempt-$1.xcresult"
-            test ! -e "$result" && test ! -L "$result"
-            xcodebuild \
-              -project "${APP_PROJECT}" \
-              -scheme AstralApp \
-              -destination "$dest" \
-              -configuration Debug \
-              CODE_SIGNING_ALLOWED=NO \
-              -enableCodeCoverage YES \
-              -test-timeouts-enabled YES \
-              -default-test-execution-time-allowance 180 \
-              -maximum-test-execution-time-allowance 300 \
-              -retry-tests-on-failure \
-              -test-iterations 3 \
-              -derivedDataPath "$derived" \
-              -resultBundlePath "$result" \
-              -only-testing:AstralAppUITests/LLMFirstLoginUITests \
-              -only-testing:AstralAppUITests/VoiceConversationUITests \
-              -only-testing:AstralAppUITests/Accessibility060UITests \
-              -only-testing:AstralAppUITests/WorkspacePresentationUITests \
-              ${workspace_actions[@]+"${workspace_actions[@]}"} \
-              -only-testing:AstralAppUITests/ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes \
-              "$test_action"
-          }
           set +e
-          run_suite 1
+          xcodebuild \
+            -project "${APP_PROJECT}" \
+            -scheme AstralApp \
+            -destination "$dest" \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO \
+            -enableCodeCoverage YES \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 180 \
+            -maximum-test-execution-time-allowance 300 \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
+            -derivedDataPath "$derived" \
+            -resultBundlePath "$result" \
+            -only-testing:AstralAppUITests/LLMFirstLoginUITests \
+            -only-testing:AstralAppUITests/VoiceConversationUITests \
+            -only-testing:AstralAppUITests/Accessibility060UITests \
+            -only-testing:AstralAppUITests/WorkspacePresentationUITests \
+            ${workspace_actions[@]+"${workspace_actions[@]}"} \
+            -only-testing:AstralAppUITests/ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation \
+            "$test_action"
           status=$?
-          # Per-test retries share one simulator session, so a wedged sim
-          # fails all of them together (observed). A second FULL invocation
-          # against an erased, freshly booted device isolates infra sickness;
-          # a real regression fails both attempts.
-          if [[ "$status" -ne 0 && "${{ matrix.slug }}" == "ios" ]]; then
-            echo "::warning::first-login suite failed (status $status); resetting the dedicated simulator for one clean retry"
-            udid="${{ steps.ios_sim.outputs.udid }}"
-            xcrun simctl shutdown "$udid" 2>/dev/null || true
-            xcrun simctl erase "$udid" || true
-            xcrun simctl boot "$udid" || true
-            xcrun simctl bootstatus "$udid" -b || true
-            run_suite 2
-            status=$?
-          fi
           set -e
           if [[ -d "$result" ]]; then
             native_args=()
@@ -471,7 +453,7 @@ jobs:
         with:
           name: apple-${{ matrix.slug }}-first-login-coverage
           path: |
-            build/060/coverage/AstralApp-${{ matrix.slug }}-first-login-attempt-*.xcresult
+            build/060/coverage/AstralApp-${{ matrix.slug }}-first-login.xcresult
             build/060/coverage/apple-${{ matrix.slug }}-first-login-xccov.json
             build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json
             build/060/coverage/native-binaries/apple-${{ matrix.slug }}-ui.zip
@@ -501,7 +483,7 @@ jobs:
   watch-continuity:
     name: Required · watchOS 26.5 continuity coverage
     runs-on: macos-26
-    timeout-minutes: 35
+    timeout-minutes: 30
     steps:
       - name: Check out candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

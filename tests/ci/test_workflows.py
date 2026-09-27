@@ -260,16 +260,25 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "VoiceConversationUITests",
         "WorkspacePresentationUITests",
         "WorkspaceActionsUITests",
-        "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes",
+        "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation",
     ):
         assert "-only-testing:AstralAppUITests/" + selector in first_login
+    assert (
+        "-only-testing:AstralAppUITests/ConversationContinuityUITests/"
+        "testDeterministicProcessRelaunchRestoresSemanticConversation \\\n"
+    ) in first_login
     assert (
         'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)'
         in first_login
     )
     assert '"${workspace_actions[@]}"' in first_login
-    assert 'result="${result_base}-attempt-$1.xcresult"' in first_login
+    assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
+    assert 'test ! -e "$result" && test ! -L "$result"' in first_login
     assert 'rm -rf "$result"' not in first_login
+    assert first_login.count("-resultBundlePath") == 1
+    assert "-retry-tests-on-failure" in first_login
+    assert "-test-iterations 3" in first_login
+    assert "build/060/coverage/AstralApp-${{ matrix.slug }}-first-login.xcresult" in first_login
     app_unit_marker = _step_block(app_unit, "Publish app unit success marker")
     assert "name: apple-required-app-unit-${{ matrix.slug }}" in app_unit_marker
     assert "app-unit-${{ matrix.slug }}.ok" in app_unit
@@ -658,6 +667,15 @@ def test_apple_ci_preserves_exact_platform_coverage_and_marker_contract() -> Non
     _assert_apple_platform_contract(apple)
 
 
+def test_apple_ci_jobs_finish_within_thirty_minutes() -> None:
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+
+    for job_id in _job_ids(apple):
+        limits = re.findall(r"(?m)^    timeout-minutes: (\d+)$", _job_block(apple, job_id))
+        assert len(limits) == 1, job_id
+        assert int(limits[0]) <= 30, job_id
+
+
 @pytest.mark.parametrize(
     ("needle", "replacement"),
     (
@@ -837,8 +855,8 @@ def _assert_ios_domain_collection(text):
     assert "-only-testing:" not in prepare
     assert "-only-testing:AstralAppTests" in unit
     ui = _job_block(text, "first-login-ui")
-    assert ui.index("build-for-testing") < ui.index("run_suite()")
-    assert 'result="${result_base}-attempt-$1.xcresult"' in ui
+    assert ui.index("build-for-testing") < ui.index('-resultBundlePath "$result"')
+    assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in ui
     assert "--lane" not in _job_block(text, "watch-continuity")
 
 
@@ -939,6 +957,61 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
         assert exports[0][exports[0].index("--native-domain") + 1] == (
             f"coverage with spaces/apple-ios-{lane}-domain.json"
         )
+
+
+@pytest.mark.parametrize("platform", ["macos", "ios"])
+def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp_path, platform):
+    bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
+    if bash is None:
+        pytest.skip("Apple workflow shell contract requires Bash")
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    script = textwrap.dedent(
+        _step_block(
+            _job_block(text, "first-login-ui"),
+            "Run deterministic first-login, voice and workspace UI tests with coverage",
+        ).split("run: |\n", 1)[1]
+    )
+    for name, value in {
+        "matrix.slug": platform,
+        "matrix.destination": "platform=macOS",
+        "steps.ios_sim.outputs.udid": "owned-fixture-id",
+    }.items():
+        script = script.replace("${{ " + name + " }}", value)
+    recorder = tmp_path / "record_commands.py"
+    recorder.write_text(
+        "import json, os, pathlib, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'xcodebuild' and '-resultBundlePath' in sys.argv:\n"
+        "    pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1]).mkdir(parents=True)\n"
+        "    raise SystemExit(65)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = "\n".join(
+        f'{name}() {{ {command} {name} "$@"; }}' for name in ("xcodebuild", "xcrun", "python3")
+    ) + "\n"
+    record = tmp_path / "commands.jsonl"
+    result = subprocess.run(
+        [bash, "-c", prefix + script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "COVERAGE_ROOT": "coverage with spaces",
+            "APP_PROJECT": "Owned Fixture.xcodeproj",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode != 0
+    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
+    assert len(suites) == 1
+    assert "-retry-tests-on-failure" in suites[0]
+    assert not [call for call in calls if call[0] == "xcrun"]
+    collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
+    assert not collectors
 
 
 @pytest.mark.parametrize("failing_command", ["none", "AstralWatch", "AstralWatchNavigation", "merge"])

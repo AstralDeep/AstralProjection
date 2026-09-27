@@ -1250,8 +1250,8 @@
       "sourceBlob": "7418d32da167fcda8275c48815d2aa76ad01a25a",
       "sourceMode": "100644",
       "task": "T060",
-      "reason": "Feature 088 native CI fixture repair: Observe every required and forbidden restored text in one public immutable accessibility snapshot, preserving twenty actual relaunches and the unchanged launch-inclusive five-second bound. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27.",
-      "resultSha256": "7a2bd274ec0e671a4cadec837be7a50b39c6cab104ba32af747faa1d2b284858"
+      "reason": "Feature 088 native CI fixture repair: Observe every required and forbidden restored text in one public immutable accessibility snapshot, preserving twenty actual relaunches and the unchanged launch-inclusive five-second bound. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: replace the twenty-relaunch soak loops with one terminate, relaunch and verify-restored cycle that keeps the five-second bound.",
+      "resultSha256": "1df754537e3065d7c0356bf25511282a7c760c9b466054d01cc62c3ec0c527c3"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/LLMFirstLoginUITests.swift",
@@ -3419,11 +3419,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/apple-ci.yml",
-          "sha256": "5ce11fa5e5a55d7d443804c836957d631dd2a85611764f038eefe689011ce813"
+          "sha256": "6e63f06aca91a2100d2cc668702c808009f5b3c0d5dc3b2e2c9652c414c5ede2"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Build fixed iOS build-for-testing Products and retain separate raw test lanes, compiler-domain witnesses and selected binary archives for CI coverage qualification; complete Products retention belongs to the protected producer. Quote the two literal test-action defaults so ShellCheck does not interpret them as command-output assignments; CI behavior and compiled client inputs are unchanged. Expand optional selector/domain arrays with Bash 3 nounset-compatible guards, preserving zero arguments on macOS and exact nonempty iOS arguments; execute the actual workflow steps with command recorders in regression tests. Require watch navigation alongside model tests and combine successful native result bundles before exporting coverage; retain both failure artifacts."
+      "reason": "Keep active Apple CI read-only and trigger its exact platform matrix for both remote-v1 and client-local-v1 fixture changes. Feature 088 Apple coverage qualification: actual iOS Core plus app and UI observations are mandatory in the CI union; native workspace UI suites execute and failed attempts are retained. Release normalization separately requires authenticated staging evidence. Build fixed iOS build-for-testing Products and retain separate raw test lanes, compiler-domain witnesses and selected binary archives for CI coverage qualification; complete Products retention belongs to the protected producer. Quote the two literal test-action defaults so ShellCheck does not interpret them as command-output assignments; CI behavior and compiled client inputs are unchanged. Expand optional selector/domain arrays with Bash 3 nounset-compatible guards, preserving zero arguments on macOS and exact nonempty iOS arguments; execute the actual workflow steps with command recorders in regression tests. Require watch navigation alongside model tests and combine successful native result bundles before exporting coverage; retain both failure artifacts. Fair CI 2026-09-27: cap every Apple job at 30 minutes, select the single-relaunch continuity proof, and let a failed first-login suite fail its job instead of erasing the simulator and rerunning the whole suite; per-test retries remain."
     },
     {
       "path": "workflows-disabled/apple-release.yml",
