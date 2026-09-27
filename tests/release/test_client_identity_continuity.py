@@ -38,7 +38,7 @@ def test_android_store_and_oidc_identity_remain_registered_values() -> None:
     assert "check(currentVersionCode >= migrationVersionCodeFloor)" in gradle
     assert "applicationId = registeredApplicationId" in gradle
     assert "versionCode = currentVersionCode" in gradle
-    assert 'versionName = "1.5"' in gradle
+    assert 'versionName = "1.7"' in gradle
     assert 'manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme' in gradle
 
     redirect_uri = "com.personalailabs.astraldeep:/oauth2redirect"
@@ -125,8 +125,8 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     assert versioned == original | navigation
     assert len(original) == 10 and len(navigation) == 4
     for key in original | navigation:
-        assert "CURRENT_PROJECT_VERSION = 62;" in configurations[key]
-        assert "MARKETING_VERSION = 1.6;" in configurations[key]
+        assert "CURRENT_PROJECT_VERSION = 63;" in configurations[key]
+        assert "MARKETING_VERSION = 1.7;" in configurations[key]
     for key in navigation:
         body = configurations[key]
         assert "SUPPORTED_PLATFORMS = watchsimulator;" in body

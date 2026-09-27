@@ -1430,115 +1430,154 @@ struct ParamPickerComponent: View {
         let kind = field["kind"]?.stringValue ?? field["type"]?.stringValue ?? "text"
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-            switch kind {
-            case "boolean", "checkbox":
-                Toggle(
-                    "",
-                    isOn: Binding(
-                        get: { flags[name] ?? (field["default"]?.boolValue ?? false) },
-                        set: { flags[name] = $0 })
-                )
-                .labelsHidden().tint(p.primary)
-                .accessibilityIdentifier("param-field-\(name)")
-                .accessibilityLabel(label)
-                .accessibilityValue(
-                    flags[name] ?? (field["default"]?.boolValue ?? false)
-                        ? "Enabled" : "Disabled")
-            case "select":
-                let options =
-                    field["options"]?.arrayValue?.compactMap { $0.stringValue ?? $0["value"]?.stringValue } ?? []
-                Picker(
-                    label,
-                    selection: Binding(
-                        get: {
-                            values[name] ?? (guidanceSurface ? field["default"]?.stringValue : nil) ?? options.first
-                                ?? ""
-                        },
-                        set: { values[name] = $0 })
-                ) {
-                    ForEach(options, id: \.self) { Text($0).tag($0) }
-                }
-                .pickerStyle(.menu).tint(p.primary)
-                .accessibilityIdentifier("param-field-\(name)")
-                .accessibilityLabel(label)
-                .accessibilityValue(
-                    values[name] ?? (guidanceSurface ? field["default"]?.stringValue : nil) ?? options.first
-                        ?? "Not selected")
-            case "checklist":
-                let options =
-                    field["options"]?.arrayValue?.compactMap { $0.stringValue ?? $0["value"]?.stringValue } ?? []
-                ForEach(options, id: \.self) { option in
-                    Toggle(
-                        option,
-                        isOn: Binding(
-                            get: { flags["\(name).\(option)"] ?? false },
-                            set: { flags["\(name).\(option)"] = $0 })
-                    )
-                    .font(ConsoleTypography.callout).tint(p.primary)
-                    .accessibilityIdentifier("param-field-\(name)-\(option)")
-                    .accessibilityLabel(option)
-                    .accessibilityValue(
-                        flags["\(name).\(option)"] == true ? "Selected" : "Not selected")
-                }
-            case "number":
-                TextField(
-                    field["help"]?.stringValue ?? "",
-                    text: Binding(
-                        get: {
-                            values[name]
-                                ?? (field["default"]?.stringValue
-                                    ?? field["default"]?.numberValue.map { String($0) } ?? "")
-                        },
-                        set: { values[name] = $0 })
-                )
-                .textFieldStyle(.roundedBorder)
-                .focused($editingFocused)
-                #if os(iOS)
-                    .keyboardType(.decimalPad)
-                #endif
-                .accessibilityIdentifier("param-field-\(name)")
-                .accessibilityLabel(label)
-            case "password":
-                SecureField(
-                    field["help"]?.stringValue ?? "",
-                    text: Binding(
-                        get: { values[name] ?? "" },
-                        set: { values[name] = $0 })
-                )
-                .textFieldStyle(.roundedBorder)
-                .focused($editingFocused)
-                .accessibilityIdentifier("param-field-\(name)")
-                .accessibilityLabel(label)
-            case "textarea":
-                TextEditor(
-                    text: Binding(
-                        get: { values[name] ?? (field["default"]?.stringValue ?? "") },
-                        set: { values[name] = $0 })
-                )
-                .frame(minHeight: 80)
-                .autocorrectionDisabled(true)
-                #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                #endif
-                .accessibilityIdentifier("param-field-\(name)")
-                .accessibilityLabel(label)
-            default:
-                TextField(
-                    field["help"]?.stringValue ?? "",
-                    text: Binding(
-                        get: { values[name] ?? (field["default"]?.stringValue ?? "") },
-                        set: { values[name] = $0 })
-                )
-                .textFieldStyle(.roundedBorder)
-                .focused($editingFocused)
-                .autocorrectionDisabled(true)
-                #if os(iOS)
-                    .textInputAutocapitalization(.never)
-                #endif
-                .accessibilityIdentifier("param-field-\(name)")
-                .accessibilityLabel(label)
-            }
+            fieldControl(field, name: name, label: label, kind: kind)
         }
+    }
+
+    /// Each control kind has its own builder. One switch over every kind inside
+    /// `fieldBody` exceeded the Xcode 26.3 type-checker time limit in Release
+    /// archives, although newer toolchains accepted it.
+    @ViewBuilder
+    private func fieldControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
+        switch kind {
+        case "boolean", "checkbox":
+            booleanField(field, name: name, label: label)
+        case "select":
+            selectField(field, name: name, label: label)
+        case "checklist":
+            checklistField(field, name: name)
+        case "number":
+            numberField(field, name: name, label: label)
+        case "password":
+            passwordField(field, name: name, label: label)
+        case "textarea":
+            textareaField(field, name: name, label: label)
+        default:
+            plainTextField(field, name: name, label: label)
+        }
+    }
+
+    @ViewBuilder
+    private func booleanField(_ field: JSONValue, name: String, label: String) -> some View {
+        let isOn: Binding<Bool> = Binding(
+            get: { flags[name] ?? (field["default"]?.boolValue ?? false) },
+            set: { flags[name] = $0 })
+        let enabled: Bool = flags[name] ?? (field["default"]?.boolValue ?? false)
+        Toggle("", isOn: isOn)
+            .labelsHidden().tint(p.primary)
+            .accessibilityIdentifier("param-field-\(name)")
+            .accessibilityLabel(label)
+            .accessibilityValue(enabled ? "Enabled" : "Disabled")
+    }
+
+    private func fieldOptions(_ field: JSONValue) -> [String] {
+        field["options"]?.arrayValue?.compactMap { $0.stringValue ?? $0["value"]?.stringValue } ?? []
+    }
+
+    /// The typed value first, then the guidance default, then the first option.
+    private func selectedOption(_ field: JSONValue, name: String, options: [String]) -> String? {
+        if let current = values[name] { return current }
+        if guidanceSurface, let fallback = field["default"]?.stringValue { return fallback }
+        return options.first
+    }
+
+    @ViewBuilder
+    private func selectField(_ field: JSONValue, name: String, label: String) -> some View {
+        let options: [String] = fieldOptions(field)
+        let selection: Binding<String> = Binding(
+            get: { selectedOption(field, name: name, options: options) ?? "" },
+            set: { values[name] = $0 })
+        let spoken: String = selectedOption(field, name: name, options: options) ?? "Not selected"
+        Picker(label, selection: selection) {
+            ForEach(options, id: \.self) { Text($0).tag($0) }
+        }
+        .pickerStyle(.menu).tint(p.primary)
+        .accessibilityIdentifier("param-field-\(name)")
+        .accessibilityLabel(label)
+        .accessibilityValue(spoken)
+    }
+
+    @ViewBuilder
+    private func checklistField(_ field: JSONValue, name: String) -> some View {
+        let options: [String] = fieldOptions(field)
+        ForEach(options, id: \.self) { option in
+            checklistOption(name: name, option: option)
+        }
+    }
+
+    @ViewBuilder
+    private func checklistOption(name: String, option: String) -> some View {
+        let key = "\(name).\(option)"
+        let isOn: Binding<Bool> = Binding(
+            get: { flags[key] ?? false },
+            set: { flags[key] = $0 })
+        Toggle(option, isOn: isOn)
+            .font(ConsoleTypography.callout).tint(p.primary)
+            .accessibilityIdentifier("param-field-\(name)-\(option)")
+            .accessibilityLabel(option)
+            .accessibilityValue(flags[key] == true ? "Selected" : "Not selected")
+    }
+
+    @ViewBuilder
+    private func numberField(_ field: JSONValue, name: String, label: String) -> some View {
+        let text: Binding<String> = Binding(
+            get: {
+                values[name]
+                    ?? (field["default"]?.stringValue
+                        ?? field["default"]?.numberValue.map { String($0) } ?? "")
+            },
+            set: { values[name] = $0 })
+        TextField(field["help"]?.stringValue ?? "", text: text)
+            .textFieldStyle(.roundedBorder)
+            .focused($editingFocused)
+            #if os(iOS)
+                .keyboardType(.decimalPad)
+            #endif
+            .accessibilityIdentifier("param-field-\(name)")
+            .accessibilityLabel(label)
+    }
+
+    @ViewBuilder
+    private func passwordField(_ field: JSONValue, name: String, label: String) -> some View {
+        let text: Binding<String> = Binding(
+            get: { values[name] ?? "" },
+            set: { values[name] = $0 })
+        SecureField(field["help"]?.stringValue ?? "", text: text)
+            .textFieldStyle(.roundedBorder)
+            .focused($editingFocused)
+            .accessibilityIdentifier("param-field-\(name)")
+            .accessibilityLabel(label)
+    }
+
+    @ViewBuilder
+    private func textareaField(_ field: JSONValue, name: String, label: String) -> some View {
+        let text: Binding<String> = Binding(
+            get: { values[name] ?? (field["default"]?.stringValue ?? "") },
+            set: { values[name] = $0 })
+        TextEditor(text: text)
+            .frame(minHeight: 80)
+            .autocorrectionDisabled(true)
+            #if os(iOS)
+                .textInputAutocapitalization(.never)
+            #endif
+            .accessibilityIdentifier("param-field-\(name)")
+            .accessibilityLabel(label)
+    }
+
+    @ViewBuilder
+    private func plainTextField(_ field: JSONValue, name: String, label: String) -> some View {
+        let text: Binding<String> = Binding(
+            get: { values[name] ?? (field["default"]?.stringValue ?? "") },
+            set: { values[name] = $0 })
+        TextField(field["help"]?.stringValue ?? "", text: text)
+            .textFieldStyle(.roundedBorder)
+            .focused($editingFocused)
+            .autocorrectionDisabled(true)
+            #if os(iOS)
+                .textInputAutocapitalization(.never)
+            #endif
+            .accessibilityIdentifier("param-field-\(name)")
+            .accessibilityLabel(label)
     }
 
     @ViewBuilder
