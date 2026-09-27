@@ -131,6 +131,7 @@ def package(tmp_path, monkeypatch):
             return plistlib.dumps(signed)
         elif "--force" in args:
             code = Path(args[-1])
+            (code / "Contents/_CodeSignature").mkdir(parents=True, exist_ok=True)
             (code / "Contents/_CodeSignature/leaf").write_bytes(b"distribution")
             if code.suffix == ".app":
                 (code / "Contents/MacOS/AstralDeep").write_bytes(
@@ -180,6 +181,22 @@ def test_ad_hoc_resource_bundles_are_repaired_like_development_ones(package):
     )
     receipt = module.repair(package.source, package.output, INSTALLER)
     assert receipt["repaired_resources"] == ["Contents/Resources/Sample.bundle"]
+
+
+def test_unsigned_resource_bundles_are_signed_without_reading_a_signature(package):
+    bundle = package.app / "Contents/Resources/Sample.bundle"
+    shutil.rmtree(bundle / "Contents/_CodeSignature")
+    receipt = module.repair(package.source, package.output, INSTALLER)
+    assert receipt["repaired_resources"] == ["Contents/Resources/Sample.bundle"]
+    reads = [c for c in package.calls if "--extract-certificates=" in " ".join(c)]
+    assert not any(Path(c[-1]) == bundle for c in reads)
+
+
+def test_refusals_name_the_code_object_inside_the_app(package):
+    package.state["bad_nested_arch"] = True
+    with pytest.raises(module.PackageError) as failure:
+        module.repair(package.source, package.output)
+    assert str(failure.value) == "nested_certificate_mismatch Contents/Frameworks/Sample.framework"
 
 
 def test_already_matching_resources_are_not_signed_again(package):

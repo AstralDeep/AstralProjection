@@ -77,6 +77,15 @@ def certificate(path: Path, scratch: Path, arch: str | None = None) -> str:
         return hashlib.sha1(leaf.read_bytes()).hexdigest().upper() if leaf.is_file() else ""
 
 
+def unsigned_resource(code: Path, app: Path) -> bool:
+    """A SwiftPM resource bundle can be exported with no signature at all."""
+    return (
+        code.suffix == ".bundle"
+        and code.is_relative_to(app / "Contents/Resources")
+        and not (code / "Contents/_CodeSignature").exists()
+    )
+
+
 def installer_certificate(package: Path, scratch: Path) -> str:
     run("pkgutil", "--check-signature", str(package))
     toc = scratch / "package-toc.xml"
@@ -173,10 +182,18 @@ def distribution_identity(app: Path, scratch: Path) -> tuple[str, dict]:
 def verify_app(app: Path, scratch: Path, identity: str) -> None:
     inventory(app)
     for code in [*code_bundles(app), app]:
-        for arch in architectures(code):
-            if certificate(code, scratch, arch) != identity:
-                raise PackageError("nested_certificate_mismatch")
+        try:
+            for arch in architectures(code):
+                if certificate(code, scratch, arch) != identity:
+                    raise PackageError("nested_certificate_mismatch")
+        except PackageError as error:
+            raise PackageError(f"{error} {where(code, app)}") from None
     run("codesign", "--verify", "--deep", "--strict", "--all-architectures", str(app))
+
+
+def where(code: Path, app: Path) -> str:
+    """Names a code object by its place inside the app, which carries no identity detail."""
+    return "app" if code == app else str(code.relative_to(app))
 
 
 def normalized_metadata(root: Path) -> dict[str, bytes]:
@@ -191,11 +208,15 @@ def normalized_metadata(root: Path) -> dict[str, bytes]:
 
 def assert_payload(original: Path, final: Path, scratch: Path) -> None:
     before, after = inventory(original), inventory(final)
-    if before.keys() != after.keys():
+
+    def members(files: dict[str, str]) -> set[str]:
+        return {name for name in files if "_CodeSignature" not in Path(name).parts}
+
+    if members(before) != members(after):
         raise PackageError("payload_members_changed")
     executables = []
     for name in before:
-        if before[name] == after[name] or "_CodeSignature" in Path(name).parts:
+        if "_CodeSignature" in Path(name).parts or before[name] == after[name]:
             continue
         if before[name].startswith("link:") or after[name].startswith("link:"):
             raise PackageError("payload_symlink_changed")
@@ -244,12 +265,19 @@ def repair(source: Path, output: Path, installer: str | None = None) -> dict:
         original = scratch / "original"
         run("pkgutil", "--expand-full", str(source), str(original))
         original_app = app_from_package(original)
-        identity, signed = distribution_identity(original_app, scratch)
+        try:
+            identity, signed = distribution_identity(original_app, scratch)
+        except PackageError as error:
+            raise PackageError(f"{error} app") from None
         app = scratch / original_app.name
         run("ditto", str(original_app), str(app))
         repaired = []
         for code in code_bundles(app):
-            if certificate(code, scratch) == identity:
+            try:
+                current = "" if unsigned_resource(code, app) else certificate(code, scratch)
+            except PackageError as error:
+                raise PackageError(f"{error} {where(code, app)}") from None
+            if current == identity:
                 continue
             info = code / "Contents/Info.plist"
             if (
