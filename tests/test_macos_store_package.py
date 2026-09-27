@@ -52,7 +52,10 @@ def package(tmp_path, monkeypatch):
     executable.write_bytes(bytes.fromhex("cafebabe") + b"CODE|signature-old")
     (app / "Contents/embedded.provisionprofile").write_bytes(plistlib.dumps(profile))
     (original / "Distribution").write_text('<installer><payload installKBytes="1"/></installer>')
-    (original / "sample.pkg/PackageInfo").write_text('<pkg-info install-location="/Applications"/>')
+    (original / "sample.pkg/PackageInfo").write_text(
+        '<pkg-info install-location="/Applications">'
+        '<payload numberOfFiles="5" installKBytes="1"/></pkg-info>'
+    )
     source = tmp_path / "original.pkg"
     source.write_bytes(b"original-package")
     output = tmp_path / "repaired.pkg"
@@ -75,6 +78,11 @@ def package(tmp_path, monkeypatch):
                 shutil.copytree(state["product_app"], target)
                 if state.get("bad_metadata"):
                     (Path(args[3]) / "Distribution").write_text('<installer changed="true"/>')
+                if state.get("signature_files_added"):
+                    (Path(args[3]) / "sample.pkg/PackageInfo").write_text(
+                        '<pkg-info install-location="/Applications">'
+                        '<payload numberOfFiles="9" installKBytes="2"/></pkg-info>'
+                    )
             return b""
         if args[0] == "xar":
             toc = Path(args[-1].split("=", 1)[1])
@@ -197,6 +205,19 @@ def test_refusals_name_the_code_object_inside_the_app(package):
     with pytest.raises(module.PackageError) as failure:
         module.repair(package.source, package.output)
     assert str(failure.value) == "nested_certificate_mismatch Contents/Frameworks/Sample.framework"
+
+
+def test_payload_file_count_may_follow_added_signature_files(package):
+    package.state["signature_files_added"] = True
+    receipt = module.repair(package.source, package.output, INSTALLER)
+    assert receipt["installer_metadata_unchanged"]
+
+
+def test_metadata_refusal_names_the_file_element_and_attribute(package):
+    package.state["bad_metadata"] = True
+    with pytest.raises(module.PackageError) as failure:
+        module.repair(package.source, package.output, INSTALLER)
+    assert str(failure.value) == "installer_metadata_changed Distribution installer changed"
 
 
 def test_already_matching_resources_are_not_signed_again(package):

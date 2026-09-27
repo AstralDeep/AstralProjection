@@ -201,9 +201,36 @@ def normalized_metadata(root: Path) -> dict[str, bytes]:
     for path in [root / "Distribution", *root.glob("*.pkg/PackageInfo")]:
         element = ET.fromstring(path.read_bytes())
         for node in element.iter():
+            # Payload size and file count follow the re-signed bundles; signing a
+            # previously unsigned resource bundle adds its signature files.
             node.attrib.pop("installKBytes", None)
+            node.attrib.pop("numberOfFiles", None)
         result[str(path.relative_to(root))] = ET.tostring(element)
     return result
+
+
+def metadata_difference(before: dict[str, bytes], after: dict[str, bytes]) -> str:
+    """Names the first differing metadata file, element and attribute, never their values."""
+    for name in sorted(before.keys() | after.keys()):
+        if name not in before or name not in after:
+            return f"{name} presence"
+        if before[name] == after[name]:
+            continue
+        old, new = ET.fromstring(before[name]).iter(), ET.fromstring(after[name]).iter()
+        for first, second in zip(old, new):
+            if first.tag != second.tag:
+                return f"{name} {first.tag} tag"
+            keys = sorted(
+                key
+                for key in first.attrib.keys() | second.attrib.keys()
+                if first.attrib.get(key) != second.attrib.get(key)
+            )
+            if keys:
+                return f"{name} {first.tag} {','.join(keys)}"
+            if (first.text or "").strip() != (second.text or "").strip():
+                return f"{name} {first.tag} text"
+        return f"{name} structure"
+    return "none"
 
 
 def assert_payload(original: Path, final: Path, scratch: Path) -> None:
@@ -322,8 +349,10 @@ def repair(source: Path, output: Path, installer: str | None = None) -> dict:
         verify_app(final_app, scratch, identity)
         if entitlements(final_app) != signed:
             raise PackageError("entitlements_changed")
-        if normalized_metadata(original) != normalized_metadata(final):
-            raise PackageError("installer_metadata_changed")
+        before_metadata, after_metadata = normalized_metadata(original), normalized_metadata(final)
+        if before_metadata != after_metadata:
+            difference = metadata_difference(before_metadata, after_metadata)
+            raise PackageError(f"installer_metadata_changed {difference}")
         assert_payload(original_app, final_app, scratch)
         if hashlib.sha256(source.read_bytes()).hexdigest() != original_digest:
             raise PackageError("input_changed")
