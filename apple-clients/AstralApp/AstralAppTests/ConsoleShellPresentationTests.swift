@@ -156,8 +156,10 @@ final class ConsoleShellPresentationTests: XCTestCase {
             let current = host.charts()
             XCTAssertEqual(current.count, 1, state)
             XCTAssertTrue(current.first === chart, state)
-            let nextOrigin = try await chart.evaluateJavaScript("performance.timeOrigin") as? Double
-            XCTAssertEqual(nextOrigin, origin, state)
+            let currentOrigin = try await chart.evaluateJavaScript("performance.timeOrigin")
+            let nextOrigin = try XCTUnwrap(currentOrigin as? Double, state)
+            // WebKit floors each timeOrigin read to 1 ms; a reloaded document starts far more than 5 ms later.
+            XCTAssertEqual(nextOrigin, origin, accuracy: 5, state)
             let range =
                 try await chart.evaluateJavaScript("document.getElementById('chart').layout.yaxis.range") as? [Double]
             XCTAssertEqual(range, [1, 4], state)
