@@ -420,7 +420,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             -enableCodeCoverage YES \
             -test-timeouts-enabled YES \
-            -default-test-execution-time-allowance 180 \
+            -default-test-execution-time-allowance 90 \
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
             -test-iterations 3 \

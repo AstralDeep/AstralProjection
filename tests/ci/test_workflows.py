@@ -289,6 +289,10 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert first_login.count("-resultBundlePath") == 1
     assert "-retry-tests-on-failure" in first_login
     assert "-test-iterations 3" in first_login
+    assert "-test-timeouts-enabled YES \\\n" in first_login
+    assert first_login.count("-default-test-execution-time-allowance") == 1
+    assert "-default-test-execution-time-allowance 90 \\\n" in first_login
+    assert "-maximum-test-execution-time-allowance 300 \\\n" in first_login
     assert "build/060/coverage/AstralApp-${{ matrix.slug }}-first-login.xcresult" in first_login
     app_unit_marker = _step_block(app_unit, "Publish app unit success marker")
     assert "name: apple-required-app-unit-${{ matrix.slug }}" in app_unit_marker
@@ -1027,6 +1031,7 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
     suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
     assert len(suites) == 1
     assert "-retry-tests-on-failure" in suites[0]
+    assert suites[0][suites[0].index("-default-test-execution-time-allowance") + 1] == "90"
     assert not [call for call in calls if call[0] == "xcrun"]
     collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
     assert not collectors
