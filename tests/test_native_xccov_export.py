@@ -1,6 +1,6 @@
-"""Tests for the native-domain xccov exporter (scripts/native_xccov_domain.py) against
-real Git sources and stubbed tool bytes: raw counters and source identities survive
-the CLI, and denials leave no output.
+"""Tests for the xccov exporter and its native-domain policy (scripts/native_xccov_domain.py)
+against real Git sources and stubbed tool bytes: raw counters and source identities survive
+the CLI, discarded subranges keep their unsigned 64-bit bound, and denials leave no output.
 """
 
 from __future__ import annotations
@@ -89,3 +89,87 @@ def test_native_export_denials_leave_no_output(native_export, monkeypatch, mutat
     with pytest.raises(exporter.ExportError):
         exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform=platform, native_domain=domain)
     assert not output.exists()
+
+
+_ARCHIVE_SOURCE = "/checkout/" + policy.APP_ROOT + "Example.swift"
+
+
+def _observations(subranges=None, count=7):
+    row = {"line": 2, "isExecutable": True, "executionCount": count}
+    if subranges is not None:
+        row["subranges"] = subranges
+    return json.dumps({_ARCHIVE_SOURCE: [{"line": 1, "isExecutable": False}, row]}).encode()
+
+
+@pytest.mark.parametrize("field", ["column", "executionCount", "length"])
+def test_unsigned_64_bit_subranges_leave_exported_lines_unchanged(native_export, field):
+    repo, bundle, paths, _domain, rows = native_export
+    plain = repo / "build/plain.json"
+    exporter.export_xccov(repo=repo, xcresult=bundle, output=plain, platform="ios")
+    subrange = {"column": 18, "executionCount": 0, "length": 0, field: 2**64 - 1}
+    rows[-1]["subranges"] = [subrange]
+    wrapped = repo / "build/wrapped.json"
+    exporter.export_xccov(repo=repo, xcresult=bundle, output=wrapped, platform="ios")
+    assert wrapped.read_bytes() == plain.read_bytes()
+    assert json.loads(wrapped.read_text()) == {
+        paths[0]: [{"line": 1, "isExecutable": False}, {"line": 2, "isExecutable": True, "executionCount": 7}]
+    }
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("executionCount", 2**64),
+        ("column", 2**64),
+        ("length", 2**64),
+        ("executionCount", -1),
+        ("column", 1.5),
+        ("length", "7"),
+        ("executionCount", True),
+        ("column", None),
+    ],
+)
+def test_subrange_integers_outside_unsigned_64_bits_are_refused_where_they_occur(field, value):
+    subrange = {"column": 18, "executionCount": 0, "length": 0, field: value}
+    with pytest.raises(exporter.ExportError) as refused:
+        exporter._normalize_observations(
+            _observations([subrange]), queried_path=_ARCHIVE_SOURCE, maximum_lines=3
+        )
+    assert refused.value.code == "invalid_observation"
+    assert _ARCHIVE_SOURCE in refused.value.message
+    assert "line 2" in refused.value.message
+    assert f"subrange {field}" in refused.value.message
+
+
+def test_line_execution_counts_keep_their_signed_64_bit_bound():
+    accepted = exporter._normalize_observations(
+        _observations(count=2**63 - 1), queried_path=_ARCHIVE_SOURCE, maximum_lines=3
+    )
+    assert accepted[-1]["executionCount"] == 2**63 - 1
+    with pytest.raises(exporter.ExportError) as refused:
+        exporter._normalize_observations(
+            _observations(count=2**63), queried_path=_ARCHIVE_SOURCE, maximum_lines=3
+        )
+    assert refused.value.code == "invalid_observation"
+    assert _ARCHIVE_SOURCE in refused.value.message
+    assert "line 2" in refused.value.message
+    assert "executionCount" in refused.value.message
+
+
+@pytest.mark.parametrize(
+    "subranges",
+    [
+        {"column": 18, "executionCount": 0, "length": 0},
+        [{"column": 18, "executionCount": 0, "length": 0}] * (exporter.MAX_SUBRANGES_PER_LINE + 1),
+        [[18, 0, 0]],
+        [{"column": 18, "executionCount": 0}],
+        [{"column": 18, "executionCount": 0, "length": 0, "count": 0}],
+    ],
+)
+def test_malformed_subranges_are_refused_where_they_occur(subranges):
+    with pytest.raises(exporter.ExportError) as refused:
+        exporter._normalize_observations(
+            _observations(subranges), queried_path=_ARCHIVE_SOURCE, maximum_lines=3
+        )
+    assert refused.value.code == "invalid_observation"
+    assert f"{_ARCHIVE_SOURCE} line 2" in refused.value.message
