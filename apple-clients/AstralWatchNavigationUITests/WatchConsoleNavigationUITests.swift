@@ -72,6 +72,8 @@ final class WatchConsoleNavigationUITests: XCTestCase {
         load.tap()
         let send = app.buttons["watch-send-dictation"]
         reveal(send)
+        reveal(app.buttons["Start here"])
+        reveal(send)
         XCTAssertTrue(peer.frames.isEmpty)
         XCTAssertTrue(
             app.staticTexts.containing(
