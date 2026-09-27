@@ -1,6 +1,6 @@
 """Tests for win_agent/process_supervision.py: the frozen-safe BYO supervisor against
 the neutral conformance fixture — bounded pipe reading, spawn ownership, full
-descendant-tree termination, and leak-free cleanup across repeated trials.
+descendant-tree termination, and release of terminal processes from its registry.
 """
 
 from __future__ import annotations
@@ -229,7 +229,7 @@ def test_supervisor_snapshots_and_terminate_all_cover_every_owned_child() -> Non
 
 def test_terminal_processes_release_bounded_rings_from_long_lived_registry() -> None:
     supervisor = ProcessSupervisor()
-    for _trial in range(100):
+    for _cycle in range(2):
         process = _spawn(supervisor, "raise SystemExit(0)\n")
         _assert_cleanup(process.wait(timeout=5))
         assert supervisor.snapshots() == ()

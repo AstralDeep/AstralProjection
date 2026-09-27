@@ -70,9 +70,9 @@
       "sourcePath": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityInstrumentedTest.kt",
       "sourceBlob": "cfe52322c98550496cf46fc77b71f00dd293bb4b",
       "sourceMode": "100644",
-      "resultSha256": "c2f5fe736d39830733c627d799792120a923a5b6b493b5d70f1a823eefbf18d4",
+      "resultSha256": "23fe158789be55b198f520c869647ddb40b8a65ba0f579a4ea139daef21e731a",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: prove process recreation restores the account-scoped locator in one cycle instead of twenty."
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/Fixtures.kt",
@@ -2968,9 +2968,9 @@
       "sourcePath": "windows-client/tests/test_byo_supervision_060.py",
       "sourceBlob": "f47bc7a74113baf1015a0aec2e386652c41e4613",
       "sourceMode": "100644",
-      "resultSha256": "7bf8efce25efe840f126e6fdb8149dee262330be84155523d763d459e900ceab",
+      "resultSha256": "2c4c2fbe4eecc3a8838ff8950964965d343c9e02f9ca7af0652b179709c8c230",
       "task": "T166",
-      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: delete the 700-trial supervision soak test; every behaviour it repeated keeps its own single-trial test."
+      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: delete the 700-trial supervision soak test; every behaviour it repeated keeps its own single-trial test. Fair CI 2026-09-27: run the registry release check for two cycles on one supervisor instead of 100."
     },
     {
       "path": "windows-client/tests/test_canvas_convergence.py",
