@@ -117,6 +117,8 @@ def package(tmp_path, monkeypatch):
                 and Path(args[-1]).suffix == ".framework"
             ):
                 value = b"other"
+            if state.get("ad_hoc_resources") and value == b"development":
+                return b""
             Path(prefix + "0").write_bytes(value)
         elif "--verbose=4" in args:
             code = Path(args[-1])
@@ -169,6 +171,15 @@ def test_actual_export_shape_repairs_development_resources_and_preserves_origina
     assert [Path(c[-1]).suffix for c in signing] == [".bundle", ".app"]
     assert all("--deep" not in c for c in signing)
     assert "--options" in signing[-1] and "runtime" in signing[-1]
+
+
+def test_ad_hoc_resource_bundles_are_repaired_like_development_ones(package):
+    package.state["ad_hoc_resources"] = True
+    assert (
+        module.certificate(package.app / "Contents/Resources/Sample.bundle", package.scratch) == ""
+    )
+    receipt = module.repair(package.source, package.output, INSTALLER)
+    assert receipt["repaired_resources"] == ["Contents/Resources/Sample.bundle"]
 
 
 def test_already_matching_resources_are_not_signed_again(package):
@@ -283,6 +294,9 @@ def test_native_command_failure_is_closed_and_bounded(monkeypatch):
     monkeypatch.setattr(module.subprocess, "run", fake)
     with pytest.raises(module.PackageError, match="codesign_failed"):
         module.run("codesign", "arg")
+    with pytest.raises(module.PackageError) as failure:
+        module.run("codesign", "-d", "--extract-certificates=/private/prefix", "/private/app")
+    assert str(failure.value) == "codesign_failed -d"
     assert calls[0]["timeout"] == 180
     monkeypatch.setattr(
         module.subprocess, "run", lambda *a, **k: SimpleNamespace(returncode=0, stdout=b"ok")
@@ -297,7 +311,9 @@ def test_cli_success_and_closed_failure(package, monkeypatch, capsys):
     assert module.main() == 0
     assert json.loads(capsys.readouterr().out)["distribution_leaf_sha1"] == DIST
     assert module.main() == 1
-    assert capsys.readouterr().out.strip() == "mac_store_package_repair_unavailable"
+    closed = capsys.readouterr()
+    assert closed.out.strip() == "mac_store_package_repair_unavailable"
+    assert closed.err.strip() == "refusal: output_exists"
 
 
 def test_timeout_cleanup_preserves_original(package, monkeypatch):
