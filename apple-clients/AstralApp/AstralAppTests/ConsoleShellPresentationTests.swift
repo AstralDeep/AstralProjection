@@ -599,6 +599,7 @@ private final class ConsoleTestMount {
             let bitmap = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(snapshot().tiffRepresentation)))
             let scale = Double(bitmap.pixelsWide) / state.size.width
             let area = band.intersection(CGRect(origin: .zero, size: state.size))
+            guard !area.isEmpty else { return [] }
             var glyphs: [CGRect] = []
             for x in Int(area.minX * scale)..<Int(area.maxX * scale) {
                 var column = CGRect.null

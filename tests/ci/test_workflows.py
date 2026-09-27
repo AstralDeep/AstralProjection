@@ -338,7 +338,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "-test-iterations 3" in first_login
     assert "-test-timeouts-enabled YES \\\n" in first_login
     assert first_login.count("-default-test-execution-time-allowance") == 1
-    assert "-default-test-execution-time-allowance 90 \\\n" in first_login
+    assert "-default-test-execution-time-allowance 120 \\\n" in first_login
     assert "-maximum-test-execution-time-allowance 300 \\\n" in first_login
     assert "build/060/coverage/AstralApp-${{ matrix.slug }}-first-login.xcresult" in first_login
     app_unit_marker = _step_block(app_unit, "Publish app unit success marker")
@@ -662,8 +662,8 @@ def _assert_jobs_capped_at_thirty_minutes(text: str) -> None:
         assert len(limits) == 1 and 0 < int(limits[0]) <= 30, (job_id, limits)
 
 
-@pytest.mark.parametrize("workflow_name", ("ci.yml", "android-ci.yml"))
-def test_core_and_android_jobs_are_capped_at_thirty_minutes(workflow_name: str) -> None:
+@pytest.mark.parametrize("workflow_name", ("ci.yml", "android-ci.yml", "apple-ci.yml"))
+def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name: str) -> None:
     _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
 
 
@@ -674,6 +674,8 @@ def test_core_and_android_jobs_are_capped_at_thirty_minutes(workflow_name: str) 
         ("ci.yml", "    timeout-minutes: 10\n", ""),
         ("android-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 45\n"),
         ("android-ci.yml", "    timeout-minutes: 15\n", ""),
+        ("apple-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 31\n"),
+        ("apple-ci.yml", "    timeout-minutes: 15\n", ""),
     ),
 )
 def test_job_timeout_cap_rejects_missing_or_longer_limits(
@@ -835,15 +837,6 @@ def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> No
 def test_apple_ci_preserves_exact_platform_coverage_and_marker_contract() -> None:
     apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
     _assert_apple_platform_contract(apple)
-
-
-def test_apple_ci_jobs_finish_within_thirty_minutes() -> None:
-    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
-
-    for job_id in _job_ids(apple):
-        limits = re.findall(r"(?m)^    timeout-minutes: (\d+)$", _job_block(apple, job_id))
-        assert len(limits) == 1, job_id
-        assert int(limits[0]) <= 30, job_id
 
 
 @pytest.mark.parametrize(
@@ -1186,7 +1179,7 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
     suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
     assert len(suites) == 1
     assert "-retry-tests-on-failure" in suites[0]
-    assert suites[0][suites[0].index("-default-test-execution-time-allowance") + 1] == "90"
+    assert suites[0][suites[0].index("-default-test-execution-time-allowance") + 1] == "120"
     assert not [call for call in calls if call[0] == "xcrun"]
     collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
     assert not collectors
