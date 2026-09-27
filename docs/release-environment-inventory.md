@@ -97,8 +97,8 @@ to these identities. A repository rename or redirect proves none of them.
 
 | Platform | Repository observation | Store-authoritative value |
 |---|---|---|
-| Android | Candidate `versionCode` is `9`; `versionName` is `1.5`; `targetSdk`/`compileSdk` 36 | Play refused the `6 (1.4)` targetSdk-35 bundle on 2026-09-03 (target API 36 required), consuming code `6`; `7 (1.4)` was submitted the same day and `8` was reserved on 2026-09-12, so the 2026-09-26 release uses `9`; recheck the all-app-bundles inventory before upload |
-| Apple | Candidate source is `MARKETING_VERSION 1.6` / `CURRENT_PROJECT_VERSION 62` | Release run 61 uploaded iOS and macOS `1.5 (61)` on 2026-09-03; the release lane stamps the GitHub run number as the build, so recheck App Store Connect immediately before upload |
+| Android | Candidate `versionCode` is `9`; `versionName` is `1.7`, matching the Apple marketing version at the owner's request; `targetSdk`/`compileSdk` 36 | Play refused the `6 (1.4)` targetSdk-35 bundle on 2026-09-03 (target API 36 required), consuming code `6`; `7 (1.4)` was submitted the same day and `8` was reserved on 2026-09-12, so the 2026-09-26 release uses `9`; recheck the all-app-bundles inventory before upload |
+| Apple | Candidate source is `MARKETING_VERSION 1.7` / `CURRENT_PROJECT_VERSION 63` | Release run 61 uploaded iOS and macOS `1.5 (61)` on 2026-09-03. Run 62 (`apple-v1.6`, 2026-09-27) failed at the iOS archive under Xcode 26.3 before any upload, so 1.6 never reached App Store Connect. The release lane stamps the GitHub run number as the build; recheck App Store Connect immediately before upload |
 | Windows | Candidate source is `0.6.0`; the latest published release is `v0.5.2` (2026-09-03); the `v0.5.0` and `v0.5.1` tags are immutable and unpublished: the release lane first lacked the Projection submodule checkout, then the Feature 075 speech-helper publish | The bridge version is deliberately unselected in `contracts/windows-release-trust.json` |
 
 GitHub run numbers and checked-in project defaults are evidence leads, not

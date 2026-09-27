@@ -191,7 +191,7 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = currentVersionCode
-        versionName = "1.5"
+        versionName = "1.7"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme
