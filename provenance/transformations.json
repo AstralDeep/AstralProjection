@@ -2617,9 +2617,9 @@
       "sourcePath": "windows-client/AstralDeep.spec",
       "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
       "sourceMode": "100644",
-      "resultSha256": "f1305f71ee45e237061a0c9d4b1042bd8dd20a77067e3b187d3b8e08158f150c",
-      "task": "T166/T058/T059/T102",
-      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage."
+      "resultSha256": "df52ec0f6919f6d4877e6c72077b521425d0661d9b170c8dc87ae042ca6de0dc",
+      "task": "T166/T058/T059/T102/T014",
+      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/Launch-AstralDeep.bat",
@@ -2635,9 +2635,9 @@
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "adaa35b08feceacf649476483674f83f760c00c1bfd0dc1fbe980e5627a50e06",
-      "task": "T060/T062/T188/T056/T058/T104/T102",
-      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage."
+      "resultSha256": "86574a03789b45dfb4c3310322937ab301847cdd07590e0621c792775aa7b053",
+      "task": "T060/T062/T188/T056/T058/T104/T102/T014",
+      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/Scripts/generate_win_icon.py",
@@ -2662,9 +2662,9 @@
       "sourcePath": "windows-client/astral_client/app.py",
       "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
       "sourceMode": "100644",
-      "resultSha256": "a2afd43b6cf3ad1dac951d9c09d72dd89e1d39da24a9216f3fd63698028b7a72",
-      "task": "T059/T071/T088/T040",
-      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Render validated literal Work surfaces in the existing Windows shell and retire reads across owner, connection and navigation changes. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Bind Windows auth-attempt cancellation, scenario attachment delivery and native control feedback with their lifecycle regression checks."
+      "resultSha256": "a1e78e7c408ec15175ff01f9844f95e07eb83b08f751531b98627c1811f11e98",
+      "task": "T059/T071/T088/T040/T014",
+      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Render validated literal Work surfaces in the existing Windows shell and retire reads across owner, connection and navigation changes. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Bind Windows auth-attempt cancellation, scenario attachment delivery and native control feedback with their lifecycle regression checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/astral_client/audit_log.py",
@@ -2716,9 +2716,9 @@
       "sourcePath": "windows-client/astral_client/deployment.py",
       "sourceBlob": "0483064234542ed0033353ee4551735228781990",
       "sourceMode": "100644",
-      "resultSha256": "40143968fbeedb56e85a99a4ce085ee6e3735b062ced45c2bd2bacb671800262",
-      "task": "T166/T102",
-      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation and a 0.5.0 generic-development identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "8de47bb4aae724478167267eb8b7bbfe2257725cf96cecf73876ffe2e0919053",
+      "task": "T166/T102/T014",
+      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation and a 0.5.0 generic-development identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/astral_client/integrity.py",
@@ -2743,27 +2743,27 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "ddc39f2d63bacb4f58f0926733602016582e6170a17d5427ec3725e94fc3fb33",
-      "task": "T166/T054/T071/T089/T040",
-      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Provide the Windows Work-only current-socket send with submission correlation and no offline replay. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Initialize native Windows Qt core input providers before device enumeration."
+      "resultSha256": "1865def24cf5bb6508bafd7d26d2c8ebc64a260aca265c0f9946fdc71bcef40e",
+      "task": "T166/T054/T071/T089/T040/T014",
+      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Provide the Windows Work-only current-socket send with submission correlation and no offline replay. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Initialize native Windows Qt core input providers before device enumeration. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/astral_client/protocol_manifest.py",
       "sourcePath": "windows-client/astral_client/protocol_manifest.py",
       "sourceBlob": "7b47e7e8a789b1d7a5b0fae543b3ff0665248148",
       "sourceMode": "100644",
-      "resultSha256": "c5ea7b8fd067d8be492d9ba94794283313c8e7fca2db7cc59230c1eb5fe1d89a",
-      "task": "T053/T040",
-      "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "resultSha256": "2b238931fb6b4695dc782a4b464305800d7a777fc2e623375dfaf84cc312f3e8",
+      "task": "T053/T040/T014",
+      "reason": "Name the standalone Projection manifest as the current source for Windows frame dispositions. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/astral_client/renderer.py",
       "sourcePath": "windows-client/astral_client/renderer.py",
       "sourceBlob": "0dd02dd95f36f1e97a74566441d59d3a01fde072",
       "sourceMode": "100644",
-      "task": "T055",
-      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks.",
-      "resultSha256": "917ba6d3d49db985c14b8ad08705680f5170f055451987572db21566ccce0d7d"
+      "task": "T055/T014",
+      "reason": "Feature 088 review: Verify quiet grounded provenance rendering while retaining estimated/generated disclosures and workspace identities. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes.",
+      "resultSha256": "dce3faf7ec3fce8e959d27a5e67cd76e3e240eb2e0ff35a9cd3634f929d9ad52"
     },
     {
       "path": "windows-client/astral_client/rest.py",
@@ -2788,18 +2788,18 @@
       "sourcePath": "windows-client/astral_client/theme.py",
       "sourceBlob": "2e2ff4df16812138a2da4eee97695b90034a41f2",
       "sourceMode": "100644",
-      "resultSha256": "d0613235d916db4ef00910d0e9074adc46367486ba8a33dd23c48107c8f87274",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "resultSha256": "5c77eb9e7519f0e93b8da79002bcdcad961a794eea91dd79826a335f8da3aae1",
+      "task": "T063/T014",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/astral_client/voice.py",
       "sourcePath": "windows-client/astral_client/voice.py",
       "sourceBlob": "8cbf3a7bbe032abbd6d9f718e94ee8cafaef46c7",
       "sourceMode": "100644",
-      "resultSha256": "84a254cd0f61def32f9c79667311fea4533dae87a3104ba843ac2b96bf80515e",
-      "task": "T055/T057/T059/T088/T089",
-      "reason": "Implement the Windows local helper and TTS lifecycle with launch/close barriers, bound local frames, one-shot acknowledgements, and exact remote-media recovery fences. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "resultSha256": "8521cad8e835d6d1cb44b599c52c1a0370b8c74e50fd43a3f76900ec4ab2ae57",
+      "task": "T055/T057/T059/T088/T089/T014",
+      "reason": "Implement the Windows local helper and TTS lifecycle with launch/close barriers, bound local frames, one-shot acknowledgements, and exact remote-media recovery fences. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/deployment/release-profile.json",
@@ -2851,9 +2851,9 @@
       "sourcePath": "windows-client/tests/conftest.py",
       "sourceBlob": "f8c0916f52494b6e953da01ba66a91db783bbee9",
       "sourceMode": "100644",
-      "resultSha256": "25ce626da0c57b51ec36526acd29da43de3bf0208cbc544d8bb40b30a0b2ad60",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "83e4c36833aaa907bbae23fb51e42f0d1243c3695a473c7460297ec24d23aa52",
+      "task": "T063/T014/T013",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Windows console qualification: explicitly destroy test-owned Qt roots on the GUI thread without changing assertions."
     },
     {
       "path": "windows-client/tests/e2e_live.py",
@@ -2878,9 +2878,9 @@
       "sourcePath": "windows-client/tests/release_evidence_060.py",
       "sourceBlob": "21b46644204d9d509e129dfcde32dce6bc202584",
       "sourceMode": "100644",
-      "resultSha256": "6a840fbc62bb6a9da0604841d49fa95f67751745d5152eeb860573c31b9c59ce",
-      "task": "T102",
-      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "064c655ac818f766e548dc510246423a222016db5d27994be64d8ca5aabc77ef",
+      "task": "T102/T014",
+      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/tests/screenshot.py",
@@ -2905,9 +2905,9 @@
       "sourcePath": "windows-client/tests/test_accessibility_060.py",
       "sourceBlob": "4ce444446e44626b2ab05ed788f3a210d3551bc3",
       "sourceMode": "100644",
-      "resultSha256": "a0fd0230cabbcac92301a62926ca9b7817831346926b0da34a27c9bd9f4eb868",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "017f1179f2713a01428a0fa019ba233912c1174860fb1eb225a966fac7e3148a",
+      "task": "T063/T013",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows console qualification: explicitly destroy test-owned Qt roots on the GUI thread without changing assertions."
     },
     {
       "path": "windows-client/tests/test_app_icon.py",
@@ -3031,9 +3031,9 @@
       "sourcePath": "windows-client/tests/test_conversation_continuity_060.py",
       "sourceBlob": "f15a48e2734e231db035b78c39bea0f009ade6fc",
       "sourceMode": "100644",
-      "resultSha256": "bd602f06f161600a89e9e143be859166059e1738a8f33d2a88d0e33f579db8d5",
-      "task": "T056/T060",
-      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "5ab73b9361cfa4e1768ab19ae9dd3d17a9b4b60364fb56d1e62292fd8f2018ad",
+      "task": "T056/T060/T014",
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/tests/test_deployment_profile_060.py",
@@ -3076,18 +3076,18 @@
       "sourcePath": "windows-client/tests/test_message_routing.py",
       "sourceBlob": "0a0b864f43cd2d5689321c592d5989f72ba29eca",
       "sourceMode": "100644",
-      "resultSha256": "f2ef3085298e76e619edeac29df4f62744a063c344748aa928d876e5279db3d1",
-      "task": "T055/T071",
-      "reason": "Exercise exact local and typed acknowledgement correlation while rejecting stale, malformed, duplicate, and cross-mode acknowledgements without UI mutation. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Bind Windows auth-attempt cancellation, scenario attachment delivery and native control feedback with their lifecycle regression checks."
+      "resultSha256": "75b53466a5add29225602eab84cf2c9b2bd170def25e6804ffe9f5a3bcfcea2e",
+      "task": "T055/T071/T014/T013",
+      "reason": "Exercise exact local and typed acknowledgement correlation while rejecting stale, malformed, duplicate, and cross-mode acknowledgements without UI mutation. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Bind Windows auth-attempt cancellation, scenario attachment delivery and native control feedback with their lifecycle regression checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Windows console qualification: explicitly destroy test-owned Qt roots on the GUI thread without changing assertions."
     },
     {
       "path": "windows-client/tests/test_packaged_release.py",
       "sourcePath": "windows-client/tests/test_packaged_release.py",
       "sourceBlob": "d2388022214b169fd9438ea80ece7206ad736758",
       "sourceMode": "100644",
-      "resultSha256": "d9afcb1c74c3f989424f1609cd576a7b451121ed1a6acfd5156d00cfa45f859e",
-      "task": "T058/T104/T102",
-      "reason": "Inspect the actual frozen archive for the qualified speech runtime, smoke the embedded helper, and verify the 0.5.0 packaged deployment report. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "resultSha256": "8e029de766aac1012052fcc1068f192d557aab0dba8507eb1452291f43a28db9",
+      "task": "T058/T104/T102/T014",
+      "reason": "Inspect the actual frozen archive for the qualified speech runtime, smoke the embedded helper, and verify the 0.5.0 packaged deployment report. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/tests/test_param_visible_when.py",
@@ -3139,9 +3139,9 @@
       "sourcePath": "windows-client/tests/test_renderer.py",
       "sourceBlob": "15b1de77422f7c88ee9f9d91eb3a537614abb64e",
       "sourceMode": "100644",
-      "resultSha256": "8234f511d6cfce0dbab4590aa349d06b781a1f8754729237ec7d5ba8c13f3f89",
-      "task": "T053",
-      "reason": "Repoint Windows renderer vocabulary parity to the standalone Projection contract. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "9c06c6f39566d058f9509997a1943a70234edaeb67607b9d78da1a37d1352f54",
+      "task": "T053/T014",
+      "reason": "Repoint Windows renderer vocabulary parity to the standalone Projection contract. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "windows-client/tests/test_rest.py",
@@ -3211,27 +3211,27 @@
       "sourcePath": "windows-client/tests/test_task_continuity.py",
       "sourceBlob": "234b11ea4cefbc4418a46fa444790d7bb416f081",
       "sourceMode": "100644",
-      "resultSha256": "ca8dd4ffb8208b2d8922f8d560fb2bb8be9489af464e8a91f6ff4affbd427d69",
-      "task": "T166",
-      "reason": "Preserve runtime-v3 authority identity across bounded Windows task recovery and successor delivery. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "8b517b2d44d70c8cb6d2aad2a1bcea377cd1fe808db977c664c4e86dbf59a9b6",
+      "task": "T166/T013",
+      "reason": "Preserve runtime-v3 authority identity across bounded Windows task recovery and successor delivery. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows console qualification: explicitly destroy test-owned Qt roots on the GUI thread without changing assertions."
     },
     {
       "path": "windows-client/tests/test_theme_live.py",
       "sourcePath": "windows-client/tests/test_theme_live.py",
       "sourceBlob": "f65514fd464a1bfd04f82f7eedca6e17f2d474b0",
       "sourceMode": "100644",
-      "resultSha256": "93a0e34fe229ab6e462743c7237038f0f30928c33e6d923e1eef8ac9550cff5c",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "e3f138dde5375e66dc238f12768c46ceb469f2d016a0de7c37395b268f08a22e",
+      "task": "T063/T013",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows console qualification: explicitly destroy test-owned Qt roots on the GUI thread without changing assertions."
     },
     {
       "path": "windows-client/tests/test_top_bar.py",
       "sourcePath": "windows-client/tests/test_top_bar.py",
       "sourceBlob": "6447afc408fbeb1c33a03898d5759abf34199b42",
       "sourceMode": "100644",
-      "resultSha256": "c504e706d5c1ade272d083ab63bea55120d882d527faff5cd0ed65fbb963e5d8",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "resultSha256": "a9e6ca62cce60b8c6f259b59620150ae7cb2918c557e42b81b65004acaf4c637",
+      "task": "T063/T013",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows console qualification: explicitly destroy test-owned Qt roots on the GUI thread without changing assertions."
     },
     {
       "path": "windows-client/tests/test_transport.py",
@@ -3439,9 +3439,9 @@
       "sourcePath": ".github/workflows/build-windows-candidate.yml",
       "sourceBlob": "8fc92178a67ef67703b7e17e1ed7a15df5aa3867",
       "sourceMode": "100644",
-      "resultSha256": "c473358c75975b5f7e79205f7a925d5d253364938402b4598467991dddfef47e",
-      "task": "T056/T102",
-      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
+      "resultSha256": "58799516661cf0c073d5dd9602ec7e9c059864118bee41c44af24a43725bd8d9",
+      "task": "T056/T102/T014",
+      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
     },
     {
       "path": "workflows-disabled/release-apple-evidence-normalizer.yml",

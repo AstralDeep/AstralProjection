@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from . import theme as T
 from .composites import build_composite
+from .typography import Paragraph
 
 
 @dataclass
@@ -149,6 +150,7 @@ def _r_text(c, ctx):
 
 def _r_card(c, ctx):
     frame = _card_frame()
+    frame.setProperty("astralCard", True)
     lay = _vbox(12, (16, 16, 16, 16))
     frame.setLayout(lay)
     title = c.get("title")
@@ -326,7 +328,11 @@ def _r_metric(c, ctx):
     )
     row = QHBoxLayout()
     row.setSpacing(8)
-    row.addWidget(_label(c.get("value", ""), size=28, weight=700), 1)
+    value = Paragraph(str(c.get("value", "")), 33.6)
+    value.setStyleSheet(
+        f"color:{T.TEXT}; font-size:28px; font-weight:700; letter-spacing:-0.56px; background:transparent;"
+    )
+    row.addWidget(value, 1)
     if c.get("delta"):
         row.addWidget(
             _label(

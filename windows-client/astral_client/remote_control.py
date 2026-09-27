@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, QSettings, Qt, QTimer, Signal
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QWidget
 
 from . import __version__
+from .settings import create_settings
 from win_agent import computer_use
 
 logger = logging.getLogger("RemoteControl")
@@ -38,7 +39,7 @@ def _default_name() -> str:
 
 class RemoteControlSettings:
     def __init__(self, settings: Optional[QSettings] = None):
-        self._settings = settings if settings is not None else QSettings("AstralDeep", "WindowsClient")
+        self._settings = settings if settings is not None else create_settings()
 
     @property
     def enabled(self) -> bool:

@@ -9,8 +9,8 @@ import re
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QPointF, QRect, QSize, Qt, Signal, QTimer
-from PySide6.QtGui import QKeySequence, QPalette, QPixmap, QShortcut, QTextLayout, QTextOption
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QSize, Qt, Signal, QTimer
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QPalette, QPixmap, QRadialGradient, QShortcut, QTextLayout, QTextOption
 from PySide6.QtWidgets import (
     QApplication, QBoxLayout, QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit,
     QMenu, QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QStyle, QStyleOptionButton,
@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 from . import theme as T
 from . import icons
 from .composites import FlowLayout
+from .typography import Paragraph
 
 
 def clear_layout(layout):
@@ -35,8 +36,8 @@ def clear_layout(layout):
             clear_layout(item.layout())
 
 
-def label(text, *, heading=False, size=None, weight=None):
-    widget = QLabel(text)
+def label(text, *, heading=False, size=None, weight=None, line_height=None):
+    widget = QLabel(text) if line_height is None else Paragraph(text, line_height)
     widget.setProperty("consoleTone", "text" if heading else "muted")
     widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setWordWrap(True)
@@ -93,6 +94,20 @@ class AgentDescription(QLabel):
             first.append(metrics.elidedText(words.pop(0), Qt.TextElideMode.ElideRight, self.width()))
         second = metrics.elidedText(" ".join(words), Qt.TextElideMode.ElideRight, self.width())
         self.setText(" ".join(first) + ("\n" + second if second else ""))
+
+
+class ConsoleBackground(QFrame):
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(T.BG))
+        center = QPointF(self.width() / 2, 0)
+        gradient = QRadialGradient(center, max(1, math.hypot(self.width() / 2, self.height())))
+        start = QColor(T.SECONDARY)
+        start.setAlphaF(0.16)
+        gradient.setColorAt(0, start)
+        gradient.setColorAt(0.55, QColor(T.BG))
+        gradient.setColorAt(1, QColor(T.BG))
+        painter.fillRect(self.rect(), gradient)
 
 
 class WrappedBanner(QPushButton):
@@ -230,6 +245,10 @@ class BannerViewport(QScrollArea):
 class AttachmentTray(QScrollArea):
     def __init__(self):
         super().__init__()
+        self._preferred_height = 0
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.timeout.connect(self.refresh)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -248,12 +267,43 @@ class AttachmentTray(QScrollArea):
         height = self.flow.heightForWidth(self.viewport().width())
         if self.body.minimumHeight() != height:
             self.body.setMinimumHeight(height)
-        if self.height() != min(160, height):
-            self.setFixedHeight(min(160, height))
+        minimum = max((button.minimumHeight() for button in self.body.findChildren(QPushButton)), default=0)
+        preferred = min(160, height, max(minimum, self.window().height() // 4))
+        self.setMinimumHeight(min(minimum, height))
+        self.setMaximumHeight(preferred)
+        if preferred != self._preferred_height:
+            self._preferred_height = preferred
+            self.updateGeometry()
+
+    def sizeHint(self):
+        size = super().sizeHint()
+        size.setHeight(self._preferred_height)
+        return size
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if self.window() is not self:
+            self.window().installEventFilter(self)
+        self._refresh_timer.start(0)
+
+    def eventFilter(self, watched, event):
+        if watched is self.window() and event.type() == QEvent.Type.Resize:
+            self._refresh_timer.start(0)
+        return super().eventFilter(watched, event)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.refresh()
+
+
+class CategoryViewport(QScrollArea):
+    def __init__(self, feed):
+        super().__init__()
+        self._feed = feed
+
+    def ensureWidgetVisible(self, widget, xmargin=50, ymargin=50):
+        super().ensureWidgetVisible(widget, xmargin, ymargin)
+        self._feed.ensureWidgetVisible(self, 0, 0)
 
 
 class ComposerEdit(QPlainTextEdit):
@@ -269,9 +319,8 @@ class ComposerEdit(QPlainTextEdit):
         self._completer = None
 
     def _fit_text(self):
-        lines = max(1, self.document().size().height())
         minimum = self.property("consoleMinimumHeight") or 44
-        self.setFixedHeight(min(144, max(minimum, round(lines * self.fontMetrics().lineSpacing() + 22))))
+        self.setFixedHeight(minimum)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -330,21 +379,23 @@ class ResponsiveComposer(QWidget):
         if self._row is None:
             return
         self._voice.set_control_minimum(minimum)
-        self._voice.setProperty("consoleControlWidth", 32 if minimum >= 44 else 44)
+        compact = bool(self.property("consoleCompact"))
+        self._voice.setProperty("consoleControlWidth", 32 if compact else 44)
         for voice_control in self._voice.findChildren(QPushButton):
             self._voice._size_control(voice_control)
         for control in self._fixed_controls:
             send = control is self._fixed_controls[-1]
-            width = 44 if send or minimum < 44 else 32
+            width = 32 if compact and not send else 44
             geometry = f"min-width:{width}px;max-width:{width}px;min-height:44px;max-height:44px;padding:0;border:0;"
             if not send:
-                control.setStyleSheet(geometry + "background:transparent;")
+                control.setStyleSheet("QPushButton{" + geometry + "background:transparent;}"
+                                     + f"QPushButton:pressed{{background:{T._rgba(T.PRIMARY,0.15)};}}")
             else:
-                control.setStyleSheet(geometry + f"border-radius:10px;background:{T.GRAD};")
+                control.setStyleSheet("QPushButton{" + geometry + f"border-radius:10px;background:{T.GRAD};}}")
             control.setFixedSize(width, 44)
-        self._row.setSpacing(2 if minimum >= 44 else 6)
-        self._editor.setStyleSheet(f"font-size:{16 if minimum >= 44 else 14}px;padding:10px 12px;background:{T._rgba(T.SURFACE_2,0.9)};")
-        self._editor.setProperty("consoleMinimumHeight", 44 if minimum >= 44 else 50)
+        self._row.setSpacing(2 if compact else 6)
+        self._editor.setStyleSheet(f"font-size:{16 if compact else 14}px;padding:10px 12px;background:{T._rgba(T.SURFACE_2,0.9)};")
+        self._editor.setProperty("consoleMinimumHeight", 44 if compact else 50)
         self._editor._fit_text()
         self.queue_reflow()
 
@@ -428,24 +479,43 @@ class ResultPanel(QFrame):
         self._header_reflow_timer.setSingleShot(True)
         self._header_reflow_timer.timeout.connect(self._reflow_header)
         self.title = label("", heading=True, size=14)
+        self._title_text = ""
         self.title.setWordWrap(False)
+        self.title.setMinimumWidth(0)
         self.title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.fullscreen_icon = label("✦", heading=True, size=14)
         self.fullscreen_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.fullscreen_icon.setFixedSize(36, 36)
         self.header.addWidget(self.fullscreen_icon)
-        self.result_heading = QVBoxLayout()
+        self.heading_widget = QWidget()
+        self.result_heading = QVBoxLayout(self.heading_widget)
+        self.result_heading.setContentsMargins(0, 0, 0, 0)
         self.result_heading.setSpacing(2)
-        self.result_heading.addWidget(self.title)
-        self.fullscreen_role = label("", size=12)
-        self.result_heading.addWidget(self.fullscreen_role)
-        self.header.addLayout(self.result_heading, 1)
+        self.title_row = QHBoxLayout()
+        self.title_row.setSpacing(8)
+        self.title_row.addWidget(self.title, 1)
         self.turn_badge = label("")
-        self.header.addWidget(self.turn_badge)
+        self.turn_badge.setWordWrap(False)
+        self.title_row.addWidget(self.turn_badge)
+        self.fullscreen_badge = label("", size=11, weight=600)
+        self.fullscreen_badge.setWordWrap(False)
+        self.fullscreen_badge.setFixedHeight(22)
+        self.title_row.addWidget(self.fullscreen_badge)
+        self.title_row.addStretch(0)
+        self.result_heading.addLayout(self.title_row)
+        self.fullscreen_role = label("", size=12)
+        self.fullscreen_role.setFixedHeight(17)
+        self.result_heading.addWidget(self.fullscreen_role)
+        self.header.addWidget(self.heading_widget, 1)
         self.workspace_layout = QHBoxLayout()
         self.workspace_layout.setSpacing(8)
         self.collapse_button = button("", self.toggle_collapsed)
         self.fullscreen_button = button("", self.toggle_fullscreen)
+        self.escape_hint = QLabel("Esc", self.fullscreen_button)
+        self.escape_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.escape_hint.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.escape_hint.setFixedSize(31, 22)
+        self.fullscreen_button.installEventFilter(self)
         self.header_actions.addWidget(self.collapse_button)
         self.header_actions.addWidget(self.fullscreen_button)
         self.header_actions.addLayout(self.workspace_layout)
@@ -462,16 +532,25 @@ class ResultPanel(QFrame):
         self.preview_fade = QFrame(canvas)
         self.preview_fade.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         canvas.installEventFilter(self)
+        self.title.installEventFilter(self)
+        canvas.content_changed.connect(lambda: self._header_reflow_timer.start(0))
         self.restyle()
 
     def restyle(self):
+        header_background = T.SURFACE_2 if self.fullscreen else T._rgba(T.TEXT, 0.025)
         self.card.setStyleSheet(
             f"#consoleResultCard{{background:{T.SURFACE_2};border:{0 if self.fullscreen else 1}px solid {T._rgba(T.TEXT,0.16)};border-radius:{0 if self.fullscreen else 10}px;}}"
-            f"#consoleResultHeader{{background:{T._rgba(T.TEXT,0.025)};border-bottom:1px solid {T._rgba(T.TEXT,0.12)};}}")
+            f"#consoleResultHeader{{background:{header_background};border-bottom:1px solid {T._rgba(T.TEXT,0.12)};}}")
         self.agent_icon.setStyleSheet(f"color:{T.ACCENT};background:{T._rgba(T.PRIMARY,0.18)};border:1px solid {T._rgba(T.PRIMARY,0.38)};border-radius:8px;")
-        self.fullscreen_icon.setStyleSheet(self.agent_icon.styleSheet())
+        self.fullscreen_icon.setStyleSheet(f"background:{T._rgba(T.PRIMARY,0.2)};border:1px solid {T._rgba(T.PRIMARY,0.45)};border-radius:10px;")
+        glyph = icons.icon("modal_sparkle", T.ACCENT, T.ACCENT, 14)
+        if glyph is not None:
+            self.agent_icon.setPixmap(glyph.pixmap(QSize(14, 14)))
+            self.fullscreen_icon.setPixmap(glyph.pixmap(QSize(16, 16)))
         self.fullscreen_role.setStyleSheet(f"color:{T.ACCENT};font-size:12px;")
         self.turn_badge.setStyleSheet(f"color:{T.MUTED};font-size:11px;padding:2px 7px;border-radius:6px;border:1px solid {T.BORDER};background:{T._rgba(T.TEXT,0.04)};")
+        self.fullscreen_badge.setStyleSheet(f"color:{T.ACCENT};font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid {T._rgba(T.PRIMARY,0.5)};background:{T._rgba(T.PRIMARY,0.2)};")
+        self.escape_hint.setStyleSheet(f"color:{T.MUTED};font-size:10px;font-weight:400;padding:0;border:1px solid {T._rgba(T.TEXT,0.2)};border-radius:4px;background:{T._rgba(T.BG,0.3)};")
         self.preview_button.setStyleSheet(f"font-size:12px;font-weight:600;background:{T.SURFACE_2};border:1px solid {T._rgba(T.TEXT,0.24)};border-radius:6px;padding:8px 18px;")
         self.preview_fade.setStyleSheet(f"background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 {T._rgba(T.SURFACE_2,0)},stop:0.55 {T._rgba(T.SURFACE_2,0.88)},stop:1 {T._rgba(T.SURFACE_2,0.98)});")
 
@@ -479,11 +558,13 @@ class ResultPanel(QFrame):
         self.labels = labels
         self.presentation = presentation
         agent = labels["result_default_agent"]
-        self.title.setText(labels["result_title"].replace("{agent}", agent))
+        self._set_title(labels["result_title"].replace("{agent}", agent))
         self.role.setText(labels["result_agent_role"])
         self.fullscreen_role.setText(labels["result_agent_role"])
         self.agent_name.setText(agent)
         self.preview_height = round(presentation["result_body_max_height"])
+        self.fullscreen_badge.setText(labels["fullscreen"])
+        icons.apply(self.preview_button, "fullscreen", T.TEXT, T.TEXT, 14)
         self.preview_button.setText(labels["result_preview_action"])
         self.preview_button.setAccessibleName(labels["result_preview_action"])
         self.preview_cover.setAccessibleName(labels["result_preview_action"])
@@ -492,11 +573,22 @@ class ResultPanel(QFrame):
     def set_metadata(self, agent, turns):
         if not self.labels:
             return
-        self.title.setText(self.labels["result_title"].replace("{agent}", agent or self.labels["result_default_agent"]))
+        self._set_title(self.labels["result_title"].replace("{agent}", agent or self.labels["result_default_agent"]))
         self.agent_name.setText(agent or self.labels["result_default_agent"])
         self.turn_badge.setText(f"{self.labels['turn_singular'].capitalize()} {turns}")
         self.turn_badge.setVisible(turns > 0)
         self._header_reflow_timer.start(0)
+
+    def _set_title(self, text):
+        self._title_text = text
+        self.title.setAccessibleName(text)
+        self.title.setToolTip(text)
+        self._elide_title()
+
+    def _elide_title(self):
+        self.title.setMaximumWidth(self.title.fontMetrics().horizontalAdvance(self._title_text) + 1)
+        self.title.setText(self.title.fontMetrics().elidedText(
+            self._title_text, Qt.TextElideMode.ElideRight, self.title.width()))
 
     def set_workspace_actions(self, actions):
         clear_layout(self.workspace_layout)
@@ -530,7 +622,8 @@ class ResultPanel(QFrame):
         self.fullscreen_button.setText(self.labels["exit_fullscreen" if self.fullscreen else "fullscreen"])
         self.fullscreen_button.setAccessibleName(self.fullscreen_button.text())
         self.fullscreen_button.setToolTip(self.fullscreen_button.text())
-        icons.apply(self.fullscreen_button, "exit_fullscreen" if self.fullscreen else "fullscreen", T.MUTED, T.TEXT)
+        color = T.VARIANT_COLORS["error"][0] if self.fullscreen else T.MUTED
+        icons.apply(self.fullscreen_button, "close" if self.fullscreen else "fullscreen", color, T.TEXT, 16 if self.fullscreen else 12)
         self.agent_header.setVisible(not self.fullscreen)
         self.collapse_button.setVisible(not self.fullscreen)
         self.turn_badge.setVisible(not self.fullscreen and bool(self.turn_badge.text()))
@@ -559,35 +652,64 @@ class ResultPanel(QFrame):
     def eventFilter(self, watched, event):
         if watched is self.canvas and event.type() == QEvent.Type.Resize:
             self._place_preview()
+        if watched is self.fullscreen_button and event.type() == QEvent.Type.Resize:
+            self._place_escape_hint()
+        if watched is self.title and event.type() == QEvent.Type.Resize:
+            self._elide_title()
         return super().eventFilter(watched, event)
+
+    def _place_escape_hint(self):
+        self.escape_hint.move(self.fullscreen_button.width() - 47,
+                              (self.fullscreen_button.height() - self.escape_hint.height()) // 2)
 
     def _reflow_header(self):
         compact = self.presentation.get('settings_navigation_axis') == 'horizontal'
         height = 44 if compact else 28
-        width = 40 if compact else height
-        self.collapse_button.setStyleSheet(f"min-width:{width}px;max-width:{width}px;min-height:{height}px;max-height:{height}px;padding:0;border-radius:6px;background:{T._rgba(T.TEXT,0.05)};")
+        self.collapse_button.setStyleSheet(f"padding:0;border-radius:6px;background:{T._rgba(T.TEXT,0.05)};")
+        self.collapse_button.setFixedSize(40 if compact else height, height)
         self.fullscreen_button.setStyleSheet(f"font-size:12px;font-weight:700;padding:5px 12px;border-radius:6px;background:{T._rgba(T.TEXT,0.04)};")
         self.fullscreen_button.setText('' if compact else self.labels.get('exit_fullscreen' if self.fullscreen else 'fullscreen', ''))
         if self.fullscreen:
-            self.fullscreen_button.setStyleSheet(f"font-size:13px;font-weight:700;padding:8px 14px;border:1px solid {T._rgba(T.VARIANT_COLORS['error'][0],0.35)};border-radius:8px;color:{T.VARIANT_COLORS['error'][0]};background:{T._rgba(T.VARIANT_COLORS['error'][0],0.1)};")
-        self.fullscreen_button.setMinimumHeight(height)
-        self.fullscreen_button.setMaximumWidth(36 if compact else 16777215)
+            padding = "0" if compact else "0 55px 0 16px"
+            self.fullscreen_button.setStyleSheet(f"font-size:13px;font-weight:700;padding:{padding};border:1px solid {T._rgba(T.VARIANT_COLORS['error'][0],0.35)};border-radius:8px;color:{T.VARIANT_COLORS['error'][0]};background:{T._rgba(T.VARIANT_COLORS['error'][0],0.12)};")
+        elif compact:
+            self.fullscreen_button.setStyleSheet(f"padding:0;border-radius:6px;background:{T._rgba(T.TEXT,0.04)};")
+        self.fullscreen_button.setMinimumWidth(0)
+        self.fullscreen_button.setMaximumWidth(16777215)
+        self.fullscreen_button.setFixedHeight(44 if compact else 36 if self.fullscreen else 30)
+        if compact:
+            self.fullscreen_button.setFixedWidth(36 if self.fullscreen else 32)
         self.turn_badge.setVisible(not compact and not self.fullscreen and bool(self.turn_badge.text()))
-        self.header_actions.setSpacing(4 if compact else 8)
+        self.fullscreen_badge.setVisible(self.fullscreen and not compact)
+        self.escape_hint.setVisible(self.fullscreen and not compact)
+        self.header_actions.setSpacing((8 if compact else 14) if self.fullscreen else (2 if compact else 8))
+        self.workspace_layout.setSpacing((2 if self.fullscreen else 0) if compact else 8)
         self.fullscreen_icon.setVisible(self.fullscreen and not compact)
         self.fullscreen_role.setVisible(self.fullscreen and not compact)
-        margin = 12 if compact else 32 if self.fullscreen else 16
-        self.header.setContentsMargins(margin, 10 if compact else 16 if self.fullscreen else 10, margin, 10 if compact else 16 if self.fullscreen else 10)
-        self.title.setStyleSheet(f"color:{T.TEXT};font-size:{14 if compact or not self.fullscreen else 16}px;font-weight:600;")
+        margin = (12 if self.fullscreen else 8) if compact else (32 if self.fullscreen else 16)
+        self.header.setContentsMargins(margin, 0, margin, 0)
+        self.header.setSpacing(8 if compact else 14 if self.fullscreen else 10)
+        self.header_widget.setFixedHeight((65 if compact else 70) if self.fullscreen else (60 if compact else 50))
+        self.heading_widget.setFixedHeight(42 if self.fullscreen and not compact else 22)
+        self.title.setFixedHeight(23 if self.fullscreen and not compact else 20)
+        self.title.setStyleSheet(f"color:{T.TEXT};font-size:{14 if compact or not self.fullscreen else 17}px;font-weight:600;")
+        self._elide_title()
         self.canvas._lay.setContentsMargins(*(16, 16, 16, 16) if compact or not self.fullscreen else (36, 28, 36, 28))
+        body_height = self.canvas._lay.totalHeightForWidth(max(1, self.canvas.viewport().width()))
+        if body_height < 0:
+            body_height = self.canvas._lay.sizeHint().height()
+        minimum = 0 if self.collapsed else 120 if self.fullscreen else min(self.preview_height, max(120, body_height))
+        self.canvas.setMinimumHeight(minimum)
         if self._fullscreen_action_last != self.fullscreen:
             self.header_actions.removeWidget(self.fullscreen_button)
             self.header_actions.insertWidget(self.header_actions.count() if self.fullscreen else 1, self.fullscreen_button)
             self._fullscreen_action_last = self.fullscreen
         for index in range(self.workspace_layout.count()):
             control = self.workspace_layout.itemAt(index).widget()
-            width = 38 if compact else height
-            control.setStyleSheet(f"min-width:{width}px;max-width:{width}px;min-height:{height}px;max-height:{height}px;padding:0;background:transparent;border:0;")
+            width = (36 if self.fullscreen else 44) if compact else 30
+            control.setStyleSheet("padding:0;background:transparent;border:0;")
+            control.setFixedSize(width, 44 if compact else 36 if self.fullscreen else 30)
+        self._place_escape_hint()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -626,6 +748,7 @@ class ConsoleShell(QWidget):
         self.layout_row.setContentsMargins(0, 0, 0, 0)
         self.layout_row.setSpacing(0)
         self.sidebar = QFrame()
+        self.sidebar.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Ignored)
         self.sidebar.setObjectName("consoleSidebar")
         self.sidebar_layout = QVBoxLayout(self.sidebar)
         self.sidebar_layout.setContentsMargins(22, 22, 22, 22)
@@ -712,7 +835,7 @@ class ConsoleShell(QWidget):
         self.account_button.setMenu(self.account_menu)
         self.sidebar_layout.addWidget(self.account_button)
         self.layout_row.addWidget(self.sidebar)
-        self.main = QFrame()
+        self.main = ConsoleBackground()
         self.main.setObjectName("consoleMain")
         self.main_layout = QVBoxLayout(self.main)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -727,6 +850,7 @@ class ConsoleShell(QWidget):
         self.heading.setObjectName("consoleDashboard")
         header_layout.addWidget(self.heading)
         self.turn_count = label("", heading=True, size=13)
+        self.turn_count.setWordWrap(False)
         self.turn_count.setObjectName("consoleTurns")
         header_layout.addWidget(self.turn_count)
         header_layout.addStretch(1)
@@ -736,10 +860,11 @@ class ConsoleShell(QWidget):
         self.main_layout.addWidget(self.header)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
         self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.scroll.setStyleSheet("QScrollBar:vertical{width:6px;margin:0;}")
-        self.scroll.setViewportMargins(0, 0, -6, 0)
+        self.scroll.verticalScrollBar().rangeChanged.connect(self._scroll_range_changed)
         self.scroll_body = QWidget()
         self.feed_layout = QVBoxLayout(self.scroll_body)
         self.feed_layout.setSpacing(24)
@@ -749,7 +874,7 @@ class ConsoleShell(QWidget):
         self.title = label("", heading=True)
         self.title.setStyleSheet(f"color:{T.TEXT};font-size:24px;font-weight:800;letter-spacing:-0.48px;")
         self.title.setMinimumHeight(36)
-        self.subtitle = label("", size=14)
+        self.subtitle = label("", size=14, line_height=21)
         landing_layout.setSpacing(0)
         landing_layout.addWidget(self.title)
         landing_layout.addSpacing(4)
@@ -760,12 +885,13 @@ class ConsoleShell(QWidget):
         page_divider.setFixedHeight(1)
         landing_layout.addWidget(page_divider)
         landing_layout.addSpacing(26)
-        scenarios_header = QHBoxLayout()
+        scenarios_header = QBoxLayout(QBoxLayout.Direction.LeftToRight)
+        self.scenarios_header = scenarios_header
         scenarios_header.setSpacing(14)
-        self.start_here = label("", heading=True, weight=700)
+        self.start_here = label("", heading=True, weight=700, line_height=27)
         self.start_here.setWordWrap(False)
         scenarios_header.addWidget(self.start_here, 1)
-        self.categories_scroll = QScrollArea()
+        self.categories_scroll = CategoryViewport(self.scroll)
         self.categories_scroll.setObjectName("consoleCategories")
         self.categories_scroll.setWidgetResizable(True)
         self.categories_scroll.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
@@ -776,6 +902,14 @@ class ConsoleShell(QWidget):
         self.categories_layout.setContentsMargins(5, 5, 5, 5)
         self.categories_layout.setSpacing(6)
         self.categories_scroll.setWidget(self.categories_body)
+        self._category_focus_timer = QTimer(self)
+        self._category_focus_timer.setSingleShot(True)
+        self._category_focus_timer.timeout.connect(self._reveal_category)
+        self._control_size_timer = QTimer(self)
+        self._control_size_timer.setSingleShot(True)
+        self._control_size_timer.timeout.connect(self._size_controls)
+        self._control_viewport = self.scroll.viewport()
+        self._control_viewport.installEventFilter(self)
         scenarios_header.addWidget(self.categories_scroll)
         landing_layout.addLayout(scenarios_header)
         landing_layout.addSpacing(14)
@@ -804,10 +938,10 @@ class ConsoleShell(QWidget):
         self.main_layout.addWidget(chips)
         self.main_layout.addWidget(composer)
         self.layout_row.addWidget(self.main, 1)
-        self.more_button = button("⋯", lambda: None)
+        self.more_button = button("⋯", self._show_more)
         self.more_button.setObjectName("iconGhost")
         self.more_menu = QMenu(self.more_button)
-        self.more_button.setMenu(self.more_menu)
+        self.more_menu.aboutToHide.connect(lambda: self.more_button.setDown(False))
         self.shade = button("", self.close_drawer)
         self.shade.setParent(self)
         self.shade.setAccessibleName("Close navigation")
@@ -822,7 +956,6 @@ class ConsoleShell(QWidget):
         self.setStyleSheet(
             f"#consoleSidebar{{background:{T._mix(T.BG, T.SURFACE_2, 0.45)};border-right:1px solid {T.BORDER};}}"
             f"#consoleSidebar[drawer=\"true\"]{{background:{T.SURFACE_2};}}"
-            f"#consoleMain{{background:qradialgradient(cx:0.5,cy:0,radius:0.8,stop:0 {T._mix(T.BG,T.SECONDARY,0.16)},stop:0.7 {T.BG});}}"
             f"#consoleHeader{{background:{T._mix(T.BG,T.SURFACE_2,0.98)};border-bottom:1px solid {T.BORDER};}}"
             f"#consoleResult{{background:{T.SURFACE};border:1px solid {T.BORDER};border-radius:12px;}}"
             f"#consoleScenario{{background:{T._rgba(T.SURFACE_2,0.6)};border:1px solid {T._rgba(T.TEXT,0.09)};border-radius:12px;}}"
@@ -846,7 +979,7 @@ class ConsoleShell(QWidget):
         for widget in self.findChildren(QLabel):
             tone = widget.property("consoleTone")
             if tone is not None:
-                color = T.TEXT if tone == "text" else T.MUTED
+                color = T.TEXT if tone == "text" else T._mix(T.BG, T.TEXT, 0.78) if tone == "secondary" else T.MUTED
                 widget.setStyleSheet(re.sub(r"color:[^;]+;", f"color:{color};", widget.styleSheet()))
         self.directory_label.setStyleSheet(f"color:{T.MUTED};font-size:12px;font-weight:700;letter-spacing:1px;")
         self.directory_count.setStyleSheet(f"color:{T.TEXT};font-size:12px;font-weight:700;padding:2px 8px;border-radius:11px;border:1px solid {T._rgba(T.PRIMARY,0.32)};background:{T._rgba(T.PRIMARY,0.16)};")
@@ -918,6 +1051,9 @@ class ConsoleShell(QWidget):
         self.results.set_workspace_actions(menu.get("workspace_actions", []))
         for item in model["composer_actions"]:
             action = self.more_menu.addAction(item["label"])
+            icon = icons.icon(icons.name_for_action(item.get("icon")) or "gear", T.MUTED, T.TEXT, 16)
+            if icon is not None:
+                action.setIcon(icon)
             if item["kind"] == "toggle":
                 action.setCheckable(True)
                 action.setChecked(self.background)
@@ -959,11 +1095,12 @@ class ConsoleShell(QWidget):
         self.sidebar.setFixedWidth(round(presentation["sidebar_width"]))
         self.drawer_button.setVisible(not wide)
         if self.model:
-            self.heading.setText(self.model["labels"]["dashboard"] + (self.model["labels"]["dashboard_suffix"] if wide else ""))
+            compact = presentation["settings_navigation_axis"] == "horizontal"
+            self.heading.setText(self.model["labels"]["dashboard"] + ("" if compact else self.model["labels"]["dashboard_suffix"]))
             self.heading.setIcon(icons.icon("back", T.MUTED, T.TEXT, 14))
             self.heading.setIconSize(QSize(14, 14))
-            icons.apply(self.new_button, "add", T.TEXT, T.TEXT)
-            if wide:
+            icons.apply(self.new_button, "add", T.ACCENT, T.TEXT)
+            if not compact:
                 self.new_button.setText(self.model["labels"]["new_chat"])
         padding = presentation["content_padding"]
         self.feed_layout.setContentsMargins(*(round(padding[k]) for k in ("left", "top", "right", "bottom")))
@@ -984,6 +1121,13 @@ class ConsoleShell(QWidget):
         if self.presentation is None:
             return
         minimum = round(self.presentation["minimum_control_height"])
+        menu_style = (
+            f"QMenu{{min-width:208px;max-width:208px;background:{T.SURFACE_2};border:1px solid {T._rgba(T.TEXT,0.12)};padding:5px;border-radius:10px;}}"
+            f"QMenu::item{{height:{max(39, minimum)}px;padding:0 10px;font-size:14px;border-radius:6px;}}"
+            f"QMenu::item:selected{{background:{T._rgba(T.PRIMARY,0.18)};}}"
+        )
+        if self.more_menu.styleSheet() != menu_style:
+            self.more_menu.setStyleSheet(menu_style)
         for control in self.categories_body.findChildren(QPushButton):
             control.setMinimumHeight(max(32, minimum))
         for control in self.history_body.findChildren(QPushButton):
@@ -995,28 +1139,49 @@ class ConsoleShell(QWidget):
         self.history_button.setMinimumHeight(max(28, minimum))
         self.search.setMinimumHeight(max(38, minimum))
         wide = self.presentation['navigation_mode'] == 'sidebar'
-        self.header.setFixedHeight(54 if wide else 61)
+        compact = self.presentation['settings_navigation_axis'] == 'horizontal'
+        self.header.setFixedHeight(61 if compact else 54 if wide else 73)
+        self.header.layout().setSpacing(10 if compact else 12)
+        self.new_button.setFixedWidth(44 if compact else self.new_button.sizeHint().width())
+        self.heading.setStyleSheet("padding:0 8px;" if compact else "padding:0 14px;")
+        self.turn_count.setStyleSheet(f"color:{T.ACCENT};font-size:13px;font-weight:600;" +
+                                     ("padding:0;background:transparent;" if compact else f"padding:6px 12px;border-radius:6px;background:{T.BG};"))
         self.sidebar.setProperty('drawer', not wide)
         self.sidebar.style().unpolish(self.sidebar)
         self.sidebar.style().polish(self.sidebar)
-        self.header.layout().setContentsMargins(32 if wide else 10, 10 if wide else 8, 32 if wide else 8, 10 if wide else 8)
+        self.header.layout().setContentsMargins(32 if wide else 10, 10 if wide else 8, 32 if wide else 8 if compact else 12, 10 if wide else 8)
+        self.header.layout().setAlignment(self.drawer_button, Qt.AlignmentFlag.AlignVCenter)
+        self.header.layout().setAlignment(self.heading, Qt.AlignmentFlag.AlignVCenter)
+        self.header.layout().setAlignment(self.new_button, Qt.AlignmentFlag.AlignVCenter)
+        self.turn_count.setFixedHeight(32 if compact or wide else 55)
         self.drawer_button.setFixedWidth(44)
         padding = self.presentation['content_padding']
         available = self.scroll.viewport().width() - round(padding['left'] + padding['right'])
-        category_width = self.categories_layout.sizeHint().width() + 2
-        self.categories_scroll.setFixedWidth(max(1, min(category_width, round(available * 0.62))))
         categories = self.categories_body.findChildren(QPushButton)
         for control in categories:
             control.ensurePolished()
+        margins = self.categories_layout.contentsMargins()
+        category_width = (sum(control.sizeHint().width() for control in categories)
+                          + max(0, len(categories) - 1) * self.categories_layout.spacing()
+                          + margins.left() + margins.right() + 2 * self.categories_scroll.frameWidth())
+        widest_category = max((control.sizeHint().width() for control in categories), default=0) + 12
+        stacked = available < self.start_here.sizeHint().width() + widest_category + 14
+        self.scenarios_header.setDirection(QBoxLayout.Direction.TopToBottom if stacked else QBoxLayout.Direction.LeftToRight)
+        self.categories_scroll.setFixedWidth(max(1, min(category_width, available if stacked else round(available * 0.62))))
         height = max((max(control.minimumHeight(), control.sizeHint().height())
                       for control in categories), default=minimum)
-        margins = self.categories_layout.contentsMargins()
         self.categories_scroll.setFixedHeight(
             height + margins.top() + margins.bottom() + self.categories_scroll.frameWidth() * 2
         )
         self.subtitle.setMinimumHeight(21)
         if isinstance(self.composer, ResponsiveComposer):
+            self.composer.setProperty("consoleCompact", compact)
+            self.composer.setObjectName("consoleComposer")
+            self.composer.setStyleSheet(f"#consoleComposer{{background:{T._mix(T.BG,T.SURFACE_2,0.45)};border-top:1px solid {T.BORDER};}}")
             self.composer.set_control_minimum(minimum)
+
+    def _scroll_range_changed(self, minimum, maximum):
+        self.scroll.setViewportMargins(0, 0, -6 if maximum > minimum else 0, 0)
 
     def select_category(self, category):
         self.category = category
@@ -1043,17 +1208,22 @@ class ConsoleShell(QWidget):
             layout.setContentsMargins(16, 16, 16, 16)
             layout.setSpacing(8)
             head = QHBoxLayout()
-            head.addWidget(label(row['category']), 1)
+            category = label(row['category'], weight=600, line_height=18)
+            category.setProperty("consoleTone", "secondary")
+            category.setStyleSheet(f"color:{T._mix(T.BG,T.TEXT,0.78)};font-size:12px;font-weight:600;")
+            head.addWidget(category, 1)
             badge = label(labels["example"], size=11, weight=600)
             badge.setStyleSheet(f"color:{T.MUTED};font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid {T._rgba(T.TEXT,0.12)};background:{T._rgba(T.TEXT,0.05)};")
+            badge.setFixedHeight(23)
             head.addWidget(badge)
             layout.addLayout(head)
-            title = label(row["title"], heading=True, size=14, weight=700)
+            title = label(row["title"], heading=True, size=14, weight=700, line_height=21)
             title.setMinimumHeight(21)
             layout.addWidget(title)
-            description = label(row["description"])
+            description = label(row["description"], line_height=18)
             description.setMinimumHeight(18)
             layout.addWidget(description)
+            layout.addStretch(1)
             controls = QHBoxLayout()
             controls.setSpacing(8)
             controls.setContentsMargins(0, 4, 0, 0)
@@ -1066,6 +1236,9 @@ class ConsoleShell(QWidget):
                     control.setFocus()
                 if run:
                     control.setObjectName("primary")
+                    control.setStyleSheet("font-weight:700;")
+                else:
+                    control.setStyleSheet(f"background:transparent;border:1px solid {T._rgba(T.TEXT,0.14)};color:{T._mix(T.BG,T.TEXT,0.78)};")
                 controls.addWidget(control)
             controls.addStretch(1)
             layout.addLayout(controls)
@@ -1122,6 +1295,21 @@ class ConsoleShell(QWidget):
     def _open_action(self, item):
         action = item["action"]
         self.surface_requested.emit(action["surface"], item["label"], action.get("params", {}))
+
+    def _show_more(self):
+        if self.more_menu.isVisible():
+            self.more_menu.hide()
+            return
+        self.more_menu.ensurePolished()
+        compact = self.presentation and self.presentation["settings_navigation_axis"] == "horizontal"
+        anchor = self.composer if compact else self.more_button
+        right = anchor.width() - (self.composer.layout().contentsMargins().right() if compact else 0)
+        top = self.more_button.mapTo(anchor, QPoint(0, 0)).y()
+        size = self.more_menu.sizeHint().expandedTo(self.more_menu.minimumSize())
+        point = anchor.mapToGlobal(QPoint(right - size.width(), top - size.height() - (8 if compact else 10)))
+        self.more_menu.popup(point)
+        self.more_button.setDown(True)
+        self.more_menu.setActiveAction(self.more_menu.actions()[0] if self.more_menu.actions() else None)
 
     def _set_background(self, enabled):
         self.background = enabled
@@ -1236,7 +1424,7 @@ class ConsoleShell(QWidget):
                 except RuntimeError:
                     self.results.fullscreen_button.setFocus()
             self._return_focus = None
-            QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(self._scroll_before_fullscreen))
+            QTimer.singleShot(0, self.scroll, lambda: self.scroll.verticalScrollBar().setValue(self._scroll_before_fullscreen))
         self.results.apply_state()
 
     def dismiss(self):
@@ -1258,6 +1446,13 @@ class ConsoleShell(QWidget):
         self._size_controls()
 
     def eventFilter(self, watched, event):
+        if watched is self._control_viewport and event.type() == QEvent.Type.Resize:
+            self._control_size_timer.start(0)
         if event.type() == QEvent.Type.FocusIn and watched.property("category") is not None:
-            self.categories_scroll.ensureWidgetVisible(watched, 6, 0)
+            self._category_focus_timer.start(0)
         return super().eventFilter(watched, event)
+
+    def _reveal_category(self):
+        focused = QApplication.focusWidget()
+        if focused is not None and self.categories_body.isAncestorOf(focused):
+            self.categories_scroll.ensureWidgetVisible(focused, 0, 0)

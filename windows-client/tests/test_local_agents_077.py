@@ -90,7 +90,7 @@ def test_inventory_skips_and_prunes_a_root_whose_revisions_are_gone(tmp_path):
     assert os.path.isdir(legacy)
 
 
-def test_dialog_lists_refreshes_and_stops_through_the_host(qapp, tmp_path):
+def test_dialog_lists_refreshes_and_stops_through_the_host(qapp, tmp_path, native_root):
     host = _host(tmp_path)
     running_dir = _install(tmp_path, "ua-greeter-1", "Greeter")
     proc = _Proc()
@@ -105,7 +105,7 @@ def test_dialog_lists_refreshes_and_stops_through_the_host(qapp, tmp_path):
         return True
     host.stop = _stop
     opened = []
-    dialog = local_agents.LocalAgentsDialog(host, opener=opened.append)
+    dialog = native_root(local_agents.LocalAgentsDialog, host, opener=opened.append)
     assert dialog.table.rowCount() == 1 and dialog.rows()[0]["status"] == "online"
     assert "1 installed · 1 online" in dialog.status.text()
     assert not dialog.stop_btn.isEnabled()
@@ -125,10 +125,10 @@ def test_dialog_lists_refreshes_and_stops_through_the_host(qapp, tmp_path):
     assert local_agents.open_folder("") is False
 
 
-def test_settings_menu_carries_the_local_entry_only_for_a_hosting_profile(qapp):
+def test_settings_menu_carries_the_local_entry_only_for_a_hosting_profile(qapp, native_root):
     from astral_client.app import TopBar
     calls = []
-    bar = TopBar("sam", lambda: None, lambda: None, lambda *a: None, lambda: None,
+    bar = native_root(TopBar, "sam", lambda: None, lambda: None, lambda *a: None, lambda: None,
                  local_items=[("Agents on this PC", lambda: calls.append("open"))])
     bar.set_menu_model({"menu": [{"label": "Account", "items": [
         {"label": "My agents & skills", "surface": "agent_authoring"}]}],
@@ -138,6 +138,6 @@ def test_settings_menu_carries_the_local_entry_only_for_a_hosting_profile(qapp):
     assert labels.index("Agents on this PC") > labels.index("My agents && skills")
     [a for a in bar._menu.actions() if a.text() == "Agents on this PC"][0].trigger()
     assert calls == ["open"]
-    plain = TopBar("sam", lambda: None, lambda: None, lambda *a: None, lambda: None)
+    plain = native_root(TopBar, "sam", lambda: None, lambda: None, lambda *a: None, lambda: None)
     plain.set_menu_model({"menu": [], "signout": {"label": "Sign out", "action": "logout"}})
     assert "Agents on this PC" not in [a.text() for a in plain._menu.actions()]

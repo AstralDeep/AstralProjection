@@ -45,9 +45,8 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QWidgetAction,
 )
-from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QTextDocument
+from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QTextDocument
 
 from . import theme as T
 from . import icons as _icons
@@ -57,6 +56,8 @@ from . import integrity as _integrity
 from . import __version__ as _APP_VERSION
 from .deployment import EffectiveDeploymentProfile
 from .deployment import write_redacted_report
+from .settings import create_settings
+from .surface_backdrop import SurfaceBackdrop
 from .protocol import (
     AdmissionRefusal,
     AgentLifecycle,
@@ -247,6 +248,31 @@ class ChatRail(QWidget):
         self._hint: Optional[QWidget] = None
         self._transient: Optional[QWidget] = None
         self._semantic_cache = None
+        self._turn_label = ""
+
+    def configure_console(self, labels) -> None:
+        self._turn_label = labels["turn_singular"].capitalize()
+        self._refresh_metadata()
+
+    def _refresh_metadata(self) -> None:
+        from PySide6.QtCore import QDateTime
+
+        turns = 0
+        for index in range(self._lay.count() - 1):
+            wrap = self._lay.itemAt(index).widget()
+            bubble = getattr(wrap, "_conversation_bubble", None)
+            if bubble is None or bubble.property("conversationRole") != "user":
+                continue
+            turns += 1
+            stamp = bubble.property("conversationCreatedAt")
+            date = QDateTime.fromString(stamp or "", Qt.DateFormat.ISODateWithMs)
+            visible = bool(self.property("consoleFeed") and self._turn_label and date.isValid())
+            wrap._metadata.setVisible(visible)
+            if visible:
+                wrap._turn.setText(f"{self._turn_label} {turns}")
+                wrap._time.setText(date.toLocalTime().toString("HH:mm"))
+                wrap._time.setAccessibleName(stamp)
+                wrap._time.setToolTip(stamp)
 
     def _drop_hint(self) -> None:
         if self._hint is not None:
@@ -274,14 +300,37 @@ class ChatRail(QWidget):
     def _insert_bubble(self, bubble: QFrame, role: str) -> None:
         self._semantic_cache = None
         wrap = QWidget()
-        row = QHBoxLayout(wrap)
+        wrap._conversation_bubble = bubble
+        stack = QVBoxLayout(wrap)
+        stack.setContentsMargins(0, 0, 0, 0)
+        stack.setSpacing(6)
+        if role == "user":
+            wrap._metadata = QWidget()
+            metadata = QHBoxLayout(wrap._metadata)
+            metadata.setContentsMargins(0, 0, 0, 0)
+            metadata.setSpacing(8)
+            metadata.addStretch(1)
+            wrap._turn = QLabel()
+            wrap._turn.setObjectName("conversationTurn")
+            wrap._turn.setTextFormat(Qt.TextFormat.PlainText)
+            wrap._turn.setStyleSheet(f"color:{T.MUTED};font-size:11px;padding:2px 7px;border:1px solid {T.BORDER};border-radius:10px;background:{T._rgba(T.TEXT,0.04)};")
+            wrap._turn.setFixedHeight(20)
+            metadata.addWidget(wrap._turn)
+            wrap._time = QLabel()
+            wrap._time.setObjectName("conversationTime")
+            wrap._time.setStyleSheet(f"color:{T.MUTED};font-size:11px;background:transparent;")
+            metadata.addWidget(wrap._time)
+            stack.addWidget(wrap._metadata)
+        row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
         if role == "user":
-            row.addStretch(1)
-        row.addWidget(bubble)
+            row.addStretch(0)
+        row.addWidget(bubble, 1)
         if role != "user":
-            row.addStretch(1)
+            row.addStretch(0)
+        stack.addLayout(row)
         self._lay.insertWidget(self._lay.count() - 1, wrap)
+        self._refresh_metadata()
         self._fit_bubbles()
         self.content_changed.emit()
 
@@ -289,7 +338,11 @@ class ChatRail(QWidget):
         if not self.property("consoleFeed"):
             return
         available = max(1, self.width())
-        for bubble in self.findChildren(QFrame):
+        for index in range(self._lay.count() - 1):
+            wrap = self._lay.itemAt(index).widget()
+            bubble = getattr(wrap, "_conversation_bubble", None)
+            if bubble is None:
+                continue
             role = bubble.property("conversationRole")
             if role is None:
                 continue
@@ -297,12 +350,17 @@ class ChatRail(QWidget):
             widths = []
             for item in labels:
                 document = QTextDocument()
-                document.setMarkdown(item.text())
+                if item.textFormat() == Qt.TextFormat.RichText:
+                    document.setHtml(item.text())
+                else:
+                    document.setMarkdown(item.text())
                 widths.append(max((item.fontMetrics().horizontalAdvance(line) for line in document.toPlainText().splitlines()), default=0))
             if role == "user":
                 cap = min(680, round(available * (0.92 if self.window().width() < 768 else 0.78)))
-                bubble.setFixedWidth(min(cap, max(widths, default=cap) + 34))
+                bubble.setMinimumWidth(0)
+                bubble.setMaximumWidth(min(cap, max(widths, default=cap) + 34))
             else:
+                bubble.setMinimumWidth(0)
                 bubble.setMaximumWidth(min(available, 708))
 
     def resizeEvent(self, event):
@@ -316,25 +374,50 @@ class ChatRail(QWidget):
         self._scroll.takeWidget()
         self._scroll.hide()
         self.layout().addWidget(self._inner)
+        self._refresh_metadata()
 
     def add(self, role: str, text: str) -> None:
         self._drop_hint()
         bubble = self._bubble_frame(role)
         bl = QVBoxLayout(bubble)
         bl.setContentsMargins(16, 12, 16, 12)
-        body = QLabel(text)
-        body.setWordWrap(True)
-        body.setFrameShape(QFrame.Shape.NoFrame)
-        body.setTextFormat(Qt.TextFormat.MarkdownText)
-        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        body.setStyleSheet(f"color:{T.TEXT}; font-size:14px; background:transparent;")
+        body = self._text_body(text, role)
         bl.addWidget(body)
         self._insert_bubble(bubble, role)
         bar = self._scroll.verticalScrollBar()
         bar.setValue(bar.maximum())
 
+    @staticmethod
+    def _text_body(text, role, caption=False):
+        from PySide6.QtGui import QTextBlockFormat, QTextCursor
+
+        size = 11 if caption else 14.72 if role == "assistant" else 14
+        line_height = size * (1.65 if role == "assistant" and not caption else 1.5)
+        body = QLabel()
+        body.setWordWrap(True)
+        body.setFrameShape(QFrame.Shape.NoFrame)
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse
+                                     | Qt.TextInteractionFlag.TextSelectableByKeyboard)
+        body.setStyleSheet(f"color:{T.MUTED if caption else T.TEXT};font-size:{size}px;background:transparent;")
+        body.ensurePolished()
+        document = QTextDocument()
+        document.setDefaultFont(body.font())
+        document.setMarkdown(text)
+        block = document.begin()
+        while block.isValid():
+            formatting = block.blockFormat()
+            formatting.setLineHeight(line_height, QTextBlockFormat.LineHeightTypes.MinimumHeight.value)
+            QTextCursor(block).setBlockFormat(formatting)
+            block = block.next()
+        body.setText(document.toHtml())
+        body.setAccessibleName(document.toPlainText())
+        body.setProperty("conversationText", text)
+        return body
+
     def _semantic_bubble(self, message: SemanticMessage, ctx: RenderContext) -> QWidget:
         bubble = self._bubble_frame(message.role)
+        bubble.setProperty("conversationCreatedAt", message.created_at)
         layout = QVBoxLayout(bubble)
         layout.setContentsMargins(16, 12 if message.role == "user" else 14, 16, 12 if message.role == "user" else 14)
         if message.role not in ("user", "assistant"):
@@ -363,18 +446,7 @@ class ChatRail(QWidget):
             layout.addWidget(chip)
         for part in message.parts:
             if part.type == "text":
-                body = QLabel(part.text or "")
-                body.setWordWrap(True)
-                body.setTextFormat(Qt.TextFormat.MarkdownText)
-                body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-                if part.variant == "caption":
-                    body.setStyleSheet(
-                        f"color:{T.MUTED}; font-size:11px; background:transparent;"
-                    )
-                else:
-                    body.setStyleSheet(
-                        f"color:{T.TEXT}; font-size:14px; background:transparent;"
-                    )
+                body = self._text_body(part.text or "", message.role, part.variant == "caption")
                 layout.addWidget(body)
             elif part.type == "components":
                 for component in part.components:
@@ -461,8 +533,10 @@ class ChatRail(QWidget):
         self._transient = None
         while self._lay.count() > 1:
             item = self._lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                widget.deleteLater()
         self.content_changed.emit()
 
     def add_note(self, text: str) -> None:
@@ -831,7 +905,7 @@ class SurfaceDialog(QDialog):
         self._close_notified = False
         self._menu = {}
         self._has_navigation = False
-        self._veil = QWidget(parent) if parent is not None else None
+        self._veil = SurfaceBackdrop(parent) if parent is not None else None
         if self._veil is not None:
             self._veil.setObjectName("surfaceBackdrop")
             self._veil.hide()
@@ -860,6 +934,7 @@ class SurfaceDialog(QDialog):
         self._header_icon.setFixedSize(36, 36)
         self._header_layout.addWidget(self._header_icon, 0, Qt.AlignmentFlag.AlignTop)
         heading = QVBoxLayout()
+        self._heading_layout = heading
         heading.setContentsMargins(0, 0, 0, 0)
         heading.setSpacing(2)
         heading.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -912,11 +987,15 @@ class SurfaceDialog(QDialog):
         self._timer.setSingleShot(True)
         self._timer.setInterval(self.LOAD_TIMEOUT_MS)
         self._timer.timeout.connect(self._on_timeout)
+        self._position_timer = QTimer(self)
+        self._position_timer.setSingleShot(True)
+        self._position_timer.timeout.connect(self._position_surface)
         self._navigation = None
         self._surface_payload = None
         self._apply_surface_style()
 
     def set_navigation(self, menu, presentation, on_open) -> None:
+        previous_axis = self._presentation.get("settings_navigation_axis") if self._presentation else None
         self._menu = menu
         self._presentation = presentation
         self._has_navigation = any(item["surface"] == self._surface
@@ -942,9 +1021,6 @@ class SurfaceDialog(QDialog):
             self._navigation_layout.setContentsMargins(0, 0, 0, 0)
             self._navigation.setWidget(self._navigation_inner)
             panel_layout.addWidget(self._navigation, 1)
-            self._nav_signout = console_button("", self._request_sign_out)
-            self._nav_signout.setObjectName("surfaceSignout")
-            panel_layout.addWidget(self._nav_signout)
             self._navigation_box.addWidget(self._navigation_panel)
             self._navigation_box.addWidget(self._scroll, 1)
             self.layout().insertWidget(2, self._navigation_body, 1)
@@ -967,6 +1043,7 @@ class SurfaceDialog(QDialog):
         if identity and not horizontal:
             who = QWidget()
             who.setObjectName("surfaceIdentity")
+            who.setFixedHeight(56)
             who_layout = QHBoxLayout(who)
             who_layout.setContentsMargins(8, 4, 8, 12)
             who_layout.setSpacing(10)
@@ -976,35 +1053,67 @@ class SurfaceDialog(QDialog):
             avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
             who_layout.addWidget(avatar)
             names = QVBoxLayout()
-            names.setSpacing(2)
+            names.setSpacing(0)
             for key in ("name", "role"):
                 label = QLabel(str(identity.get(key, "")))
                 label.setObjectName("surfaceIdentityName" if key == "name" else "surfaceIdentityRole")
                 label.setTextFormat(Qt.TextFormat.PlainText)
+                label.setFixedHeight(21 if key == "name" else 18)
                 names.addWidget(label)
             who_layout.addLayout(names, 1)
             self._navigation_layout.addWidget(who)
+            self._navigation_layout.addSpacing(6)
         for section in menu.get("sections", []):
             if not horizontal:
                 group = QLabel(section["label"].upper())
                 group.setObjectName("surfaceNavigationGroup")
+                group.setFixedHeight(31)
                 self._navigation_layout.addWidget(group)
             for item in section["items"]:
                 control = console_button(item["label"], lambda checked=False, selected=item: on_open(
                     selected["surface"], selected["label"], selected.get("params", {})))
                 control.setCheckable(True)
                 control.setChecked(item["surface"] == self._surface)
+                font = control.font()
+                font.setWeight(QFont.Weight.DemiBold if control.isChecked() else QFont.Weight.Normal)
+                control.setFont(font)
                 control.setObjectName("surfaceNavigationItem")
-                control.setMinimumHeight(34)
+                control.setFixedHeight(34 if presentation["navigation_mode"] == "sidebar" else 35)
                 control.setAutoDefault(False)
                 self._navigation_layout.addWidget(control)
-        self._navigation_layout.addStretch(1)
         signout = menu.get("signout", {})
+        if not horizontal:
+            spacer = QWidget()
+            spacer.setMinimumHeight(8)
+            self._navigation_layout.addWidget(spacer, 1)
+            if signout.get("action") == "logout":
+                rule = QWidget()
+                rule.setFixedHeight(13)
+                rule_layout = QVBoxLayout(rule)
+                rule_layout.setContentsMargins(4, 6, 4, 6)
+                line = QFrame()
+                line.setObjectName("surfaceNavigationRule")
+                line.setFixedHeight(1)
+                rule_layout.addWidget(line)
+                self._navigation_layout.addWidget(rule)
+        self._nav_signout = console_button("", self._request_sign_out)
+        self._nav_signout.setObjectName("surfaceSignout")
+        self._nav_signout.setFixedHeight(34 if presentation["navigation_mode"] == "sidebar" else 35)
+        self._nav_signout.setAutoDefault(False)
         self._nav_signout.setText(_btn_label(signout.get("label", "Sign out")))
         self._nav_signout.setAccessibleName(signout.get("label", "Sign out"))
-        self._nav_signout.setVisible(not horizontal and signout.get("action") == "logout")
+        self._nav_signout.setVisible(signout.get("action") == "logout")
+        self._navigation_layout.addWidget(self._nav_signout)
+        if horizontal:
+            self._navigation_layout.addStretch(1)
         self._apply_surface_style()
+        if self._surface_payload is not None and previous_axis != presentation["settings_navigation_axis"]:
+            saved = _capture_controls(self._inner)
+            self._clear_body()
+            self._render_surface_components(self._surface_payload)
+            _restore_controls(self._inner, saved)
         self._position_surface()
+        self._position_timer.start(0)
 
     def set_mandatory(self, on: bool) -> None:
         on = bool(on)
@@ -1063,8 +1172,22 @@ class SurfaceDialog(QDialog):
         if parent is not None:
             width, height = min(width, parent.width()), min(height, parent.height())
         if not fullscreen and not self._has_navigation:
+            self.ensurePolished()
+            for widget in self._inner.findChildren(QWidget):
+                widget.ensurePolished()
+                if widget.layout() is not None:
+                    widget.layout().invalidate()
+                    widget.layout().activate()
+            self._lay.invalidate()
+            self._lay.activate()
+            self._header_layout.invalidate()
+            self._header_layout.activate()
             body_height = self._lay.totalHeightForWidth(max(1, width - 2))
             header_height = self._header_layout.totalHeightForWidth(max(1, width - 2))
+            if body_height < 0:
+                body_height = self._lay.sizeHint().height()
+            if header_height < 0:
+                header_height = self._header_layout.sizeHint().height()
             extra = self._footer.sizeHint().height() if self._mandatory else 0
             extra += self._status.sizeHint().height() if not self._status.isHidden() else 0
             height = min(height, max(160, body_height + header_height + extra + 2))
@@ -1089,6 +1212,7 @@ class SurfaceDialog(QDialog):
             self._return_focus = focus
         self._position_surface()
         if self._veil is not None:
+            self._veil.refresh()
             self._veil.show()
             self._veil.raise_()
         super().showEvent(event)
@@ -1114,9 +1238,13 @@ class SurfaceDialog(QDialog):
         self.layout().setContentsMargins(margin, margin, margin, margin)
         self._header_layout.setContentsMargins(16 if fullscreen else 20, 12 if fullscreen else 18,
                                               16 if fullscreen else 20, 12 if fullscreen else 18)
+        alignment = Qt.AlignmentFlag.AlignVCenter if fullscreen else Qt.AlignmentFlag.AlignTop
+        self._header_layout.setAlignment(self._header_icon, alignment)
+        self._header_layout.setAlignment(self._close_btn, alignment)
+        self._heading_layout.setAlignment(alignment)
         self._set_body_margins()
         self.setStyleSheet(
-            f"QDialog{{background:{T.SURFACE};border:{0 if fullscreen else 1}px solid {T._rgba(T.TEXT, 0.12)};border-radius:{radius}px;}}"
+            f"QDialog{{background:{T.SURFACE_2};border:{0 if fullscreen else 1}px solid {T._rgba(T.TEXT, 0.12)};border-radius:{radius}px;}}"
             f"QFrame#surfaceHeader{{border:none;border-bottom:1px solid {T._rgba(T.TEXT, 0.08)};background:transparent;}}"
             "QScrollArea{border:none;background:transparent;}"
             f"QScrollBar:vertical{{width:8px;background:transparent;}}QScrollBar::handle:vertical{{background:{T._rgba(T.MUTED, 0.25)};}}"
@@ -1130,18 +1258,22 @@ class SurfaceDialog(QDialog):
             f"QPushButton#surfaceNavigationItem:checked{{background:{T._rgba(T.PRIMARY, 0.16)};color:{T.TEXT};font-weight:600;}}"
             f"QPushButton#surfaceNavigationItem:hover{{background:{T._rgba(T.TEXT, 0.06)};color:{T.TEXT};}}"
             f"QPushButton#surfaceNavigationItem:focus{{border:1px solid {T.PRIMARY};}}"
-            f"QPushButton#surfaceSignout{{background:transparent;border:none;border-top:1px solid {T.BORDER};padding:12px 22px;color:{T.VARIANT_COLORS['error'][0]};text-align:left;}}"
+            f"QFrame#surfaceNavigationRule{{background:{T._rgba(T.TEXT, 0.08)};border:none;}}"
+            f"QPushButton#surfaceSignout{{background:transparent;border:none;border-radius:6px;padding:7px 10px;color:{T.VARIANT_COLORS['error'][0]};font-size:14px;text-align:left;}}"
+            f"QPushButton#surfaceSignout:hover{{background:{T._rgba(T.TEXT, 0.06)};}}"
+            f"QPushButton#surfaceSignout:focus{{border:1px solid {T.PRIMARY};}}"
             f"QPushButton#surfaceClose{{padding:0;border:none;border-radius:10px;background:transparent;color:{T.MUTED};font-size:20px;}}"
             f"QPushButton#surfaceClose:hover{{background:{T.SURFACE_2};color:{T.TEXT};}}"
             f"QPushButton#surfaceClose:focus{{border:1px solid {T.PRIMARY};}}"
         )
         self._header_icon.setStyleSheet(f"background:{T._rgba(T.PRIMARY, 0.18)};color:{T._mix(T.PRIMARY, T.TEXT, 0.45)};border-radius:10px;font-size:18px;")
-        self._header_icon.setPixmap(_icons._render("sparkle", T._mix(T.PRIMARY, T.TEXT, 0.45), 18, self.devicePixelRatioF()))
+        self._header_icon.setPixmap(_icons._render("modal_sparkle", T._mix(T.PRIMARY, T.TEXT, 0.45), 18, self.devicePixelRatioF()))
         self._title.setStyleSheet(f"color:{T.TEXT};font-size:16px;font-weight:700;background:transparent;")
         self._subtitle.setStyleSheet(f"color:{T.MUTED};font-size:12px;background:transparent;")
         self._status.setStyleSheet(f"color:{T.MUTED};font-size:12px;background:transparent;")
         if self._veil is not None:
             self._veil.setStyleSheet(f"QWidget#surfaceBackdrop{{background:{T._rgba(T.BG, 0.72)};}}")
+            self._veil.schedule_refresh()
 
     def _set_body_margins(self) -> None:
         fullscreen = self._presentation is not None and self._presentation["settings_presentation"] != "dialog"
@@ -1229,9 +1361,10 @@ class SurfaceDialog(QDialog):
         self._clear_body()
         self._render_surface_components(components)
         self._position_surface()
+        self._position_timer.start(0)
 
     def _render_surface_components(self, components) -> None:
-        from .surface_widgets import adapt_settings_component
+        from .surface_widgets import adapt_detail_components, adapt_settings_component
 
         self._lay.setSpacing(8 if self._surface == "agents" and not self._params.get("agent_id") else 16)
         subtitles = [component for component in components or []
@@ -1241,6 +1374,12 @@ class SurfaceDialog(QDialog):
         subtitle = subtitles[0] if len(subtitles) == 1 else None
         self._subtitle.setText(subtitle["content"] if subtitle else "")
         self._subtitle.setVisible(subtitle is not None)
+        body = [component for component in components or [] if component is not subtitle]
+        compact = self._presentation is not None and self._presentation["settings_navigation_axis"] == "horizontal"
+        detail = adapt_detail_components(self._surface, self._params, body, self._ctx, compact)
+        if detail is not None:
+            self._lay.insertWidget(self._lay.count() - 1, detail)
+            return
         for component in components or []:
             if component is not subtitle:
                 adapted = adapt_settings_component(self._surface, self._params, component, self._ctx)
@@ -1376,18 +1515,20 @@ class TopBar(QFrame):
 
     def _rebuild_menu(self, parsed: dict) -> None:
         self._menu.clear()
+
+        def add_heading(label):
+            action = self._menu.addAction(_btn_label(label))
+            font = action.font()
+            font.setPixelSize(10)
+            font.setBold(True)
+            font.setLetterSpacing(font.SpacingType.AbsoluteSpacing, 1)
+            action.setFont(font)
+            action.setEnabled(False)
+
         for section in parsed.get("sections", []):
             heading = str(section.get("label", "")).strip()
             if heading:
-                head = QLabel(heading.upper())
-                head.setStyleSheet(
-                    f"color:{T.MUTED}; font-size:10px; font-weight:700; "
-                    "letter-spacing:1px; padding:6px 24px 2px 24px; background:transparent;"
-                )
-                ha = QWidgetAction(self._menu)
-                ha.setDefaultWidget(head)
-                ha.setEnabled(False)
-                self._menu.addAction(ha)
+                add_heading(heading.upper())
             for item in section.get("items", []):
                 label = item.get("label", "")
                 act = QAction(_btn_label(label), self._menu)
@@ -1397,28 +1538,16 @@ class TopBar(QFrame):
                 )
                 self._menu.addAction(act)
         if self._local_items:
-            head = QLabel("THIS PC")
-            head.setStyleSheet(
-                f"color:{T.MUTED}; font-size:10px; font-weight:700; "
-                "letter-spacing:1px; padding:6px 24px 2px 24px; background:transparent;"
-            )
-            ha = QWidgetAction(self._menu)
-            ha.setDefaultWidget(head)
-            ha.setEnabled(False)
-            self._menu.addAction(ha)
+            add_heading("THIS PC")
             for label, handler in self._local_items:
                 act = QAction(_btn_label(label), self._menu)
                 act.triggered.connect(lambda _checked=False, h=handler: h())
                 self._menu.addAction(act)
         self._menu.addSeparator()
         so = parsed.get("signout", {}) or {}
-        so_label = QLabel(so.get("label", "Sign out"))
-        so_label.setStyleSheet("color:#EF4444; padding:6px 24px; background:transparent;")
-        so_label.setCursor(Qt.CursorShape.PointingHandCursor)
-        so_label.mousePressEvent = lambda _ev: (self._menu.close(), self._emit_sign_out())
-        wa = QWidgetAction(self._menu)
-        wa.setDefaultWidget(so_label)
-        self._menu.addAction(wa)
+        signout = self._menu.addAction(_btn_label(so.get("label", "Sign out")))
+        signout.triggered.connect(self._menu.close)
+        signout.triggered.connect(self._emit_sign_out)
 
     def _emit_open(self, surface: str, label: str) -> None:
         if callable(self._on_open_surface):
@@ -1923,7 +2052,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("AstralDeep — Windows")
         self.resize(1280, 860)
         self._resume_store = ConversationResumeStore(
-            QSettings("AstralDeep", "WindowsClient")
+            create_settings()
         )
         self._resume_store.bind_token(token)
         self.active_chat: Optional[str] = self._resume_store.active_chat()
@@ -2330,6 +2459,7 @@ class MainWindow(QMainWindow):
         if shell.presentation != self._console_presentation:
             shell.apply_presentation(self._console_presentation)
         labels = self._console_model["labels"]
+        self.rail.configure_console(labels)
         self._voice_widget.set_availability_banner(self._console_model["show_voice_availability_banner"])
         self._input.setPlaceholderText(labels["message_placeholder"])
         self._input.setAccessibleName(labels["message_placeholder"])
@@ -2358,6 +2488,17 @@ class MainWindow(QMainWindow):
         if update_navigation:
             shell.update_conversation(active, result)
         shell._size_controls()
+        minimum = round(shell.presentation["minimum_control_height"])
+        card_padding = 12 if shell.presentation["settings_navigation_axis"] == "horizontal" else 16
+        for card in self.canvas.findChildren(QFrame):
+            if card.property("astralCard"):
+                card.layout().setContentsMargins(*([card_padding] * 4))
+        for control in self.canvas.findChildren(QPushButton):
+            baseline = control.property("consoleOriginalMinimum")
+            if baseline is None:
+                baseline = control.minimumHeight()
+                control.setProperty("consoleOriginalMinimum", baseline)
+            control.setMinimumHeight(max(baseline, minimum))
         agent_id = next((row.get("source_agent") or row.get("_source_agent") or row.get("agent_id") or row.get("agent")
                          for row in rows if isinstance(row, dict) and any(row.get(key) for key in
                          ("source_agent", "_source_agent", "agent_id", "agent"))), None)
@@ -3890,7 +4031,12 @@ class MainWindow(QMainWindow):
                 token = candidate.refresh()
             except Exception:  # noqa: BLE001
                 token = None
-            self._silent_refresh_done.emit(generation, (session, candidate, token))
+            if self._auth_stopped or generation != self._auth_generation:
+                return
+            try:
+                self._silent_refresh_done.emit(generation, (session, candidate, token))
+            except RuntimeError:
+                return
 
         try:
             threading.Thread(target=_work, name="astral-silent-refresh", daemon=True).start()
@@ -4967,7 +5113,7 @@ class MainWindow(QMainWindow):
         return {"accepted": accepted, "choice": None}
 
     def _settings(self) -> QSettings:
-        return QSettings("AstralDeep", "WindowsClient")
+        return create_settings()
 
     def _gui_pick_directory(self, title: str, default: str = "") -> Optional[str]:
         chosen = QFileDialog.getExistingDirectory(self, title, default or "")
@@ -5483,7 +5629,7 @@ def _launch(
     settings=None,
     effective_profile: Optional[EffectiveDeploymentProfile] = None,
 ) -> "MainWindow":
-    settings = settings or QSettings("AstralDeep", "WindowsClient")
+    settings = settings or create_settings()
     if effective_profile is None:
         _resolve_config(args, settings=settings, prompt=None)
     else:

@@ -18,6 +18,7 @@ from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import urlsplit
 
 from .integrity import parse_semver
+from .settings import SettingsProfileError, settings_registry_key
 
 
 PROFILE_SCHEMA_VERSION = 1
@@ -394,7 +395,11 @@ def _development_profile() -> DeploymentProfile:
     )
 
 
-def read_persisted_profile() -> Optional[str]:
+def read_persisted_profile(environment: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    try:
+        registry_key = settings_registry_key(environment)
+    except SettingsProfileError as exc:
+        raise DeploymentProfileError(str(exc)) from exc
     if os.name != "nt":
         return None
     try:  # pragma: no cover
@@ -402,8 +407,8 @@ def read_persisted_profile() -> Optional[str]:
     except ImportError:
         return None
     locations = (
-        (r"Software\AstralDeep\WindowsClient\deployment", "profile_json"),
-        (r"Software\AstralDeep\WindowsClient", "deployment/profile_json"),
+        (registry_key + r"\deployment", "profile_json"),
+        (registry_key, "deployment/profile_json"),
     )
     for key_path, value_name in locations:
         try:
@@ -619,12 +624,16 @@ def resolve_startup(
         return bundled if bundled.is_file() else root / name
 
     resolution_environment = os.environ if environment is None else environment
+    try:
+        settings_registry_key(resolution_environment)
+    except SettingsProfileError as exc:
+        raise DeploymentProfileError(str(exc)) from exc
     higher_precedence_profile_selected = bool(
         options.deployment_profile
         or resolution_environment.get("ASTRAL_MANAGED_DEPLOYMENT_PROFILE")
     )
     if persisted_profile_json is None and not higher_precedence_profile_selected:
-        persisted_profile_json = read_persisted_profile()
+        persisted_profile_json = read_persisted_profile(resolution_environment)
     effective = resolve_effective_profile(
         bundled_profile_path=root / "deployment" / "release-profile.json",
         expected_client_version=expected_client_version,

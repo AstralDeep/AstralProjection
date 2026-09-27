@@ -69,8 +69,8 @@ def clock(monkeypatch):
 @pytest.fixture
 def win(qapp, monkeypatch, tmp_path, clock):
     settings = QSettings(str(tmp_path / 'settings.ini'), QSettings.Format.IniFormat)
-    monkeypatch.setattr(appmod, 'QSettings', lambda *a, **kw: settings)
-    monkeypatch.setattr(protocol, 'QSettings', lambda *a, **kw: settings)
+    monkeypatch.setattr(appmod, 'create_settings', lambda: settings)
+    monkeypatch.setattr(protocol, 'create_settings', lambda: settings)
     monkeypatch.setattr(appmod, 'OrchestratorClient', LocalClient)
     monkeypatch.setattr(appmod.MainWindow, '_start_integrity_check', lambda self: None)
     monkeypatch.setattr(appmod.MainWindow, '_init_workspace', lambda self: None)

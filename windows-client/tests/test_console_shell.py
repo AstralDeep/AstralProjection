@@ -314,11 +314,13 @@ def test_settings_navigation_uses_rote_axis_and_server_menu(win, geometry):
     win._open_surface("llm", "LLM settings")
     dialog = win._surface_dialog
     assert dialog.width() == geometry["presentation"]["settings_width"]
-    controls = dialog._navigation_inner.findChildren(QPushButton)
+    controls = dialog._navigation_inner.findChildren(QPushButton, "surfaceNavigationItem")
     assert [control.accessibleName() for control in controls] == [item["label"] for section in MENU["menu"] for item in section["items"]]
+    assert dialog._nav_signout.accessibleName() == MENU["signout"]["label"]
+    assert dialog._nav_signout.isVisible()
     win._on_chrome_surface({"surface_key": "llm", "title": "Providers", "components": [{"type": "text", "content": "Configured"}]})
     assert dialog._title.text() == "Providers"
-    controls = dialog._navigation_inner.findChildren(QPushButton)
+    controls = dialog._navigation_inner.findChildren(QPushButton, "surfaceNavigationItem")
     next(control for control in controls if control.accessibleName() == "Theme").click()
     assert win.client.sent[-1] == ("chrome_open", {"surface": "theme", "params": {}})
     win._retry_surface("theme", {})

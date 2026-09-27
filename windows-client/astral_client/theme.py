@@ -63,6 +63,7 @@ def configure_fonts(app) -> bool:
         return False
     font = QFont("Open Sans")
     font.setPixelSize(14)
+    font.setHintingPreference(QFont.HintingPreference.PreferNoHinting)
     app.setFont(font)
     app.setProperty("astralOpenSansLoaded", True)
     return True

@@ -19,7 +19,9 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QVBoxLayout,
     QWidget,
+    QWidgetItem,
 )
+from shiboken6 import delete, isValid
 
 from . import theme as T
 
@@ -107,6 +109,19 @@ class FlowLayout(QLayout):
         self.flow_align = align
         self.setContentsMargins(0, 0, 0, 0)
         self.setSpacing(8)
+        items = self.items
+
+        def dispose_items():
+            while items:
+                item = items.pop()
+                if isValid(item):
+                    delete(item)
+
+        self.destroyed.connect(dispose_items)
+
+    def addWidget(self, widget):
+        self.addChildWidget(widget)
+        self.addItem(QWidgetItem(widget))
 
     def addItem(self, item):
         self.items.append(item)

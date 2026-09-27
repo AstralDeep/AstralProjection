@@ -107,6 +107,18 @@ endpoint, or credentials:
 .\dist\AstralDeep.exe --validate-deployment --report deployment-validation.json
 ```
 
+Independent client runs may set `ASTRAL_WINDOWS_PROFILE_ID` to a canonical,
+lowercase UUID4. GUI state, conversation resumption, voice identity, remote
+control consent and persisted deployment selection then use the separate
+`AstralDeep/WindowsClientProfile-<UUID>` native settings namespace, with settings
+fallbacks disabled. An invalid identifier fails closed before authentication or
+Qt startup. With the variable absent, the existing `AstralDeep/WindowsClient`
+profile and deployment precedence remain unchanged; no profile is migrated.
+
+Packaged tests and release qualification choose a fresh identifier for each
+invocation. They never clear the interactive user's profile. Disposable
+namespaces remain in the test account's settings storage.
+
 ## Run (dev)
 
 Requires **Python 3.11+** and a running orchestrator. For local dev set the

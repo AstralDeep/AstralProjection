@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 
 import pytest
 
@@ -50,24 +51,8 @@ def _clean_env(tmp_path: Path) -> dict[str, str]:
     local.mkdir()
     environment["APPDATA"] = str(roaming)
     environment["LOCALAPPDATA"] = str(local)
+    environment["ASTRAL_WINDOWS_PROFILE_ID"] = str(uuid.uuid4())
     return environment
-
-
-def _clear_native_windows_settings() -> None:
-    if sys.platform != "win32":
-        return
-    result = subprocess.run(
-        [
-            "reg.exe",
-            "delete",
-            r"HKCU\Software\AstralDeep\WindowsClient",
-            "/f",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode in (0, 1), result.stderr
 
 
 def _offline_profile(path: Path) -> Path:
@@ -232,7 +217,6 @@ def test_actual_frozen_gui_completes_rendered_chat_with_one_profile(tmp_path):
     token = os.getenv("ASTRAL_WINDOWS_SMOKE_TOKEN")
     if not token:
         pytest.skip("candidate staging token is required for the connected GUI smoke")
-    _clear_native_windows_settings()
     report = tmp_path / "rendered-chat-smoke.json"
     environment = _clean_env(tmp_path)
     environment["ASTRAL_TOKEN"] = token
@@ -264,7 +248,6 @@ def test_actual_frozen_gui_completes_rendered_chat_with_one_profile(tmp_path):
 @pytest.mark.skipif(sys.platform != "win32", reason="requires the frozen Windows GUI")
 def test_actual_frozen_gui_retains_selected_profile_during_offline_retry(tmp_path):
     exe = _candidate_exe()
-    _clear_native_windows_settings()
     report = tmp_path / "offline-retry-smoke.json"
     profile = _offline_profile(tmp_path / "offline-profile.json")
     environment = _clean_env(tmp_path)
@@ -299,12 +282,11 @@ def test_actual_frozen_gui_retains_selected_profile_during_offline_retry(tmp_pat
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires Windows HWND inspection")
-def test_fresh_hkcu_connected_launch_has_no_configure_dialog_and_terminates(tmp_path):
+def test_isolated_profile_connected_launch_has_no_configure_dialog_and_terminates(tmp_path):
     exe = _candidate_exe()
     token = os.getenv("ASTRAL_WINDOWS_SMOKE_TOKEN")
     if not token:
         pytest.skip("candidate staging token is required for the connected GUI smoke")
-    _clear_native_windows_settings()
     environment = _clean_env(tmp_path)
     environment["ASTRAL_TOKEN"] = token
     process = subprocess.Popen([str(exe)], env=environment)

@@ -86,6 +86,30 @@ def test_current_refresh_delivers_success_or_failure(win, workers, monkeypatch, 
     assert win._token == ("dev-token" if failure else "fresh")
 
 
+def test_retired_refresh_does_not_emit_to_a_closed_window(win, workers):
+    completions = []
+    win._silent_refresh_done.connect(lambda *args: completions.append(args))
+    win._auth_session = session()
+    win._begin_silent_refresh()
+    pending = workers.pop()
+    win.close()
+    pending()
+    assert completions == []
+
+
+def test_refresh_completion_tolerates_signal_destruction_race(win, workers, monkeypatch):
+    attempts = []
+    def emit(*args):
+        attempts.append(args)
+        raise RuntimeError("Signal source has been deleted")
+    monkeypatch.setattr(win, "_silent_refresh_done", SimpleNamespace(emit=emit))
+    win._auth_session = session()
+    win._begin_silent_refresh()
+    workers.pop()()
+    assert len(attempts) == 1
+    assert win._token == "dev-token"
+
+
 @pytest.mark.parametrize("transition", ["close", "replace"])
 @pytest.mark.parametrize("failure", [False, True])
 def test_interactive_reauth_completion_is_bound_to_attempt(win, workers, monkeypatch, transition, failure):

@@ -27,6 +27,7 @@ from PySide6.QtGui import QGuiApplication, QInputDevice, QPointingDevice
 
 from . import __version__
 from .console import parse_turn_selection
+from .settings import create_settings
 
 
 _MAX_UINT64 = (1 << 64) - 1
@@ -613,7 +614,7 @@ def _is_uuid4(value: object) -> bool:
 
 
 def load_or_create_voice_device_id(settings: Optional[QSettings] = None) -> str:
-    store = settings or QSettings("AstralDeep", "WindowsClient")
+    store = settings if settings is not None else create_settings()
     current = store.value(VOICE_DEVICE_ID_KEY, "", type=str) or ""
     if _is_uuid4(current):
         return current
@@ -702,7 +703,7 @@ class ConversationResumeStore:
     )
 
     def __init__(self, settings: Optional[QSettings] = None):
-        self.settings = settings or QSettings("AstralDeep", "WindowsClient")
+        self.settings = settings if settings is not None else create_settings()
         self.storage_key: Optional[str] = None
 
     @staticmethod

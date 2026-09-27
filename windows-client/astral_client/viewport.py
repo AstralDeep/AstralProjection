@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 
 from .console import parse_console_presentation
 from .protocol import ConversationSnapshot, WindowsProtocolError, decode_semantic_transcript
-from .renderer import render
+from .renderer import _apply_theme_via_ctx, render
 
 
 class ControlIdentityError(ValueError):
@@ -375,17 +375,25 @@ class ViewportRefresh(QObject):
             self.deferred.start()
             return
         window = self.window
+        candidate = copy.deepcopy(window._continuity)
+        if candidate.reduce_snapshot(request.snapshot) != "snapshot_applied":
+            self.fail()
+            return
         staged = QWidget()
         staged_rail = QWidget()
+        staged_context = copy.copy(window.canvas.ctx)
+        themes = []
+        staged_context.apply_theme = lambda theme: themes.append(copy.deepcopy(theme))
         widgets = []
         messages = []
         rail_state = None
+        rail_focus = None
         try:
             saved = capture_controls(window.canvas._inner, strict=True)
             selected_canvas = capture_selections(window.canvas._inner)
             canvas_focus = capture_focus(window.canvas._inner)
             for component in request.snapshot["canvas"]["components"]:
-                widget = render(component, window.canvas.ctx, top_level=True)
+                widget = render(component, staged_context, top_level=True)
                 widget.setParent(staged)
                 widgets.append(widget)
             restore_controls(staged, saved, strict=True)
@@ -394,16 +402,24 @@ class ViewportRefresh(QObject):
             if request.snapshot["transcript"] != window._rendered_snapshot.transcript:
                 rail_state = capture_controls(window.rail, strict=True)
                 selections = capture_selections(window.rail)
+                rail_focus = capture_focus(window.rail)
                 for message in decode_semantic_transcript(request.snapshot["transcript"]):
-                    bubble = window.rail._semantic_bubble(message, window.canvas.ctx)
+                    bubble = window.rail._semantic_bubble(message, staged_context)
                     bubble.setParent(staged_rail)
                     messages.append((bubble, message.role))
                 restore_controls(staged_rail, rail_state, strict=True)
                 restore_selections(staged_rail, selections)
+                focus_target(staged_rail, rail_focus)
         except (ControlIdentityError, RuntimeError, ValueError, TypeError):
             staged.deleteLater()
             staged_rail.deleteLater()
             self.fail()
+            return
+        if not self.scope_matches(request):
+            staged.deleteLater()
+            staged_rail.deleteLater()
+            if self.pending is request:
+                self.retire(reset=True)
             return
         disposition = window._continuity.reduce_snapshot(request.snapshot)
         if disposition != "snapshot_applied":
@@ -418,7 +434,12 @@ class ViewportRefresh(QObject):
         scrolls = [(area, area.verticalScrollBar().value(), area.horizontalScrollBar().value()) for area in areas]
         window.canvas.replace_prepared(request.snapshot["canvas"]["components"], widgets)
         if rail_state is not None:
+            previous = [window.rail._lay.itemAt(index).widget()
+                        for index in range(window.rail._lay.count() - 1)]
             window.rail.clear()
+            for bubble in previous:
+                if bubble is not None:
+                    bubble.setParent(None)
             for bubble, role in messages:
                 window.rail._insert_bubble(bubble, role)
         staged.deleteLater()
@@ -433,6 +454,9 @@ class ViewportRefresh(QObject):
             focused.setFocus()
         if rail_state is not None:
             restore_controls(window.rail, rail_state, strict=True)
+            focused = focus_target(window.rail, rail_focus)
+            if focused is not None:
+                focused.setFocus()
         for area, vertical, horizontal in scrolls:
             area.verticalScrollBar().setValue(vertical)
             area.horizontalScrollBar().setValue(horizontal)
@@ -440,6 +464,9 @@ class ViewportRefresh(QObject):
         self.pending = None
         self.timeout.stop()
         self.deferred.stop()
+        staged_context.apply_theme = window.canvas.ctx.apply_theme
+        for theme in themes:
+            _apply_theme_via_ctx(theme, staged_context)
         window._sync_console_conversation()
         accepted = window._rendered_snapshot
 

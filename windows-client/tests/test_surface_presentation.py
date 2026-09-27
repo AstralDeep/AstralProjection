@@ -23,8 +23,8 @@ CASES = json.loads((ROOT / "contracts/fixtures/console/rote-console.json").read_
 
 
 @pytest.fixture
-def host(qapp):
-    parent = QWidget()
+def host(qapp, native_root):
+    parent = native_root(QWidget)
     parent._console_model = MODEL["console"]
     layout = QVBoxLayout(parent)
     button = QPushButton("Open settings")
@@ -35,8 +35,6 @@ def host(qapp):
     button.setFocus()
     QApplication.processEvents()
     yield parent, button
-    parent.close()
-    parent.deleteLater()
 
 
 def presentation(width):
@@ -58,7 +56,7 @@ def test_settings_dialog_centers_and_renders_server_identity_and_navigation(host
     labels = [label.text() for label in dialog._navigation_inner.findChildren(QLabel)]
     assert MODEL["console"]["identity"]["name"] in labels
     assert MODEL["menu"][0]["label"].upper() in labels
-    controls = dialog._navigation_inner.findChildren(QPushButton)
+    controls = dialog._navigation_inner.findChildren(QPushButton, "surfaceNavigationItem")
     controls[-1].click()
     final_item = MODEL["menu"][-1]["items"][-1]
     assert opened == [(final_item["surface"], final_item["label"], final_item["params"])]
@@ -164,11 +162,11 @@ def agent_row():
     ]}
 
 
-def test_agent_adapter_preserves_exact_actions_and_accessible_full_description(qapp):
+def test_agent_adapter_preserves_exact_actions_and_accessible_full_description(qapp, native_root):
     sent = []
     source = agent_row()
     original = deepcopy(source)
-    widget = adapt_settings_component("agents", {}, source, RenderContext(lambda *args: sent.append(args)))
+    widget = native_root(adapt_settings_component, "agents", {}, source, RenderContext(lambda *args: sent.append(args)))
     buttons = widget.findChildren(QPushButton)
     opener = next(button for button in buttons if button.objectName() == "settingsAgentOpen")
     assert opener.accessibleName() == "Inspect: Sample agent"
@@ -209,14 +207,14 @@ def test_settings_adaptation_is_scoped_to_agent_list_only(qapp, surface, params,
     assert adapt_settings_component(surface, params, source, RenderContext(lambda *_: None)) is None
 
 
-def test_agent_adapter_preserves_disabled_actions_and_non_success_badges(qapp):
+def test_agent_adapter_preserves_disabled_actions_and_non_success_badges(qapp, native_root):
     source = agent_row()
     source["content"][0]["children"][1]["variant"] = "warning"
     source["content"][1]["content"] = "Short description"
     for action in source["content"][2]["children"]:
         action["disabled"] = True
     sent = []
-    widget = adapt_settings_component("agents", {}, source, RenderContext(lambda *args: sent.append(args)))
+    widget = native_root(adapt_settings_component, "agents", {}, source, RenderContext(lambda *args: sent.append(args)))
     for button in widget.findChildren(QPushButton):
         button.click()
         assert not button.isEnabled()
@@ -224,13 +222,13 @@ def test_agent_adapter_preserves_disabled_actions_and_non_success_badges(qapp):
     assert "Ready" in [label.text() for label in widget.findChildren(QLabel)]
 
 
-def test_agent_list_tabs_use_server_labels_actions_and_selected_disablement(qapp):
+def test_agent_list_tabs_use_server_labels_actions_and_selected_disablement(qapp, native_root):
     sent = []
     source = {"type": "container", "direction": "row", "children": [
         {"type": "button", "label": "Private", "action": "chrome_open", "payload": {"surface": "agents", "params": {"tab": "mine"}}, "disabled": True},
         {"type": "button", "label": "Shared", "action": "chrome_open", "payload": {"surface": "agents", "params": {"tab": "public"}}},
     ]}
-    widget = adapt_settings_component("agents", {}, source, RenderContext(lambda *args: sent.append(args)))
+    widget = native_root(adapt_settings_component, "agents", {}, source, RenderContext(lambda *args: sent.append(args)))
     private, shared = widget.findChildren(QPushButton)
     private.click()
     shared.click()

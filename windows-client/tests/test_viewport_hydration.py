@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTabWidget, QWidget
 
+from astral_client import viewport
 from astral_client.protocol import LocalOperationSubmission, OrchestratorClient, WindowsProtocolError, device_caps
 from astral_client.renderer import RenderContext, render
 from astral_client.viewport import ControlIdentityError, capture_controls, restore_controls
@@ -520,3 +521,127 @@ def test_competing_operation_retires_then_resumes_coalesced_viewport(win):
     win._viewport.flush()
     assert win._viewport.pending is not None
     assert win._viewport.pending.generation != ticket.generation
+
+
+def test_replayed_snapshot_is_rejected_before_rendering_can_apply_effects(win, monkeypatch):
+    old = win._rendered_snapshot
+    calls = []
+    monkeypatch.setattr(viewport, "render", lambda *args, **kwargs: calls.append(args) or QWidget())
+    ticket = start(win)
+    win._on_message(acknowledgment(ticket))
+    win._on_message(snapshot(ticket, snapshot_id=old.snapshot_id))
+    assert win._viewport.retry_required and win._rendered_snapshot is old
+    assert win._continuity.committed_snapshot is old
+    assert calls == []
+
+
+@pytest.mark.parametrize("failure", ["identity", "renderer", "scope"])
+def test_failed_staging_preserves_committed_view_and_never_applies_theme(win, monkeypatch, failure):
+    old = win._rendered_snapshot
+    original = win.canvas.findChildren(QLineEdit)[0]
+    original.setText("unsent result draft")
+    themes = []
+    win.canvas.ctx.apply_theme = themes.append
+    normal_render = viewport.render
+
+    def rendering(component, context, **kwargs):
+        if component.get("component_id") == "transition":
+            if failure == "renderer":
+                raise RuntimeError("renderer failed before commit")
+            if failure == "scope":
+                win.client.connection_generation = OTHER_CONNECTION
+        return normal_render(component, context, **kwargs)
+
+    monkeypatch.setattr(viewport, "render", rendering)
+    ticket = start(win)
+    components = [{"type": "theme_apply", "preset": "daylight"},
+                  {"type": "text", "component_id": "transition", "content": "Adapted"},
+                  form([{"name": "replacement", "kind": "text"}]) if failure == "identity" else form()]
+    win._on_message(acknowledgment(ticket))
+    win._on_message(snapshot(ticket, components))
+    assert win._viewport.pending is None
+    assert win._viewport.retry_required is (failure != "scope")
+    assert win._rendered_snapshot is old and win._continuity.committed_snapshot is old
+    assert win.canvas.findChildren(QLineEdit)[0] is original
+    assert original.text() == "unsent result draft" and themes == []
+
+
+@pytest.mark.parametrize("custom_callback", [False, True])
+def test_valid_staged_theme_applies_once_after_snapshot_and_view_commit(win, monkeypatch, custom_callback):
+    calls = []
+
+    def apply_theme(theme):
+        calls.append((theme, win._rendered_snapshot.snapshot_id, win._viewport.pending))
+
+    if custom_callback:
+        win.canvas.ctx.apply_theme = apply_theme
+    else:
+        win.canvas.ctx.apply_theme = None
+        monkeypatch.setattr("astral_client.renderer.T.apply_theme", apply_theme)
+    ticket = start(win)
+    theme = {"type": "theme_apply", "preset": "daylight"}
+    updated = snapshot(ticket, [theme, form()])
+    win._on_message(acknowledgment(ticket))
+    win._on_message(updated)
+    assert calls == [(theme, updated["snapshot_id"], None)]
+    assert not win._viewport.retry_required
+
+
+def transcript_with_components(win, components):
+    generation = win._begin_conversation_request("hydration", CHAT)
+    initial = _snapshot(request=generation, snapshot_id=str(uuid.uuid4()))
+    initial["canvas"]["components"] = [form()]
+    initial["transcript"][0]["parts"].append({"type": "components", "components": components})
+    win._on_message(initial)
+    win._viewport.deferred.stop()
+    win.activateWindow()
+    QApplication.processEvents()
+    win._viewport_timer.stop()
+    return initial
+
+
+def test_transcript_controls_restore_without_retired_widgets_conflicting(win):
+    initial = transcript_with_components(win, [form()])
+    original = win.rail.findChildren(QLineEdit)[0]
+    original.setText("transcript draft")
+    original.setSelection(1, 5)
+    original.clearFocus()
+    ticket = start(win)
+    updated = snapshot(ticket)
+    updated["transcript"] = copy.deepcopy(initial["transcript"])
+    updated["transcript"][0]["parts"].append({"type": "text", "text": "Reflowed detail"})
+    win._on_message(acknowledgment(ticket))
+    win._on_message(updated)
+    assert win._rendered_snapshot.snapshot_id == updated["snapshot_id"]
+    assert win._viewport.pending is None and not win._viewport.retry_required
+    controls = win.rail.findChildren(QLineEdit)
+    assert original not in controls and len(controls) == 2
+    assert controls[0].text() == "transcript draft"
+    assert controls[0].selectedText() == "ransc"
+
+
+@pytest.mark.parametrize("missing_focus", [False, True])
+def test_transcript_action_focus_is_preserved_or_refresh_is_rejected(win, missing_focus):
+    action = {"type": "button", "component_id": "transcript-action", "label": "Transcript action", "action": "run"}
+    initial = transcript_with_components(win, [action])
+    old = win._rendered_snapshot
+    original = next(button for button in win.rail.findChildren(QPushButton) if button.text() == action["label"])
+    original.setFocus()
+    assert QApplication.focusWidget() is original
+    ticket = start(win)
+    updated = snapshot(ticket)
+    updated["transcript"] = copy.deepcopy(initial["transcript"])
+    updated["transcript"][0]["parts"].append({"type": "text", "text": "Reflowed detail"})
+    if missing_focus:
+        updated["transcript"][0]["parts"][-2]["components"] = []
+    win._on_message(acknowledgment(ticket))
+    win._on_message(updated)
+    if missing_focus:
+        assert win._viewport.retry_required and win._rendered_snapshot is old
+        assert QApplication.focusWidget() is original
+    else:
+        assert win._rendered_snapshot.snapshot_id == updated["snapshot_id"]
+        focused = QApplication.focusWidget()
+        assert focused is not original and focused.text() == action["label"]
+        assert win.rail.isAncestorOf(focused)
+        assert original not in win.rail.findChildren(QPushButton)

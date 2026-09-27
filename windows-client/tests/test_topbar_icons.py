@@ -20,7 +20,7 @@ def qapp():
     yield app
 
 
-def test_icons_mirror_the_web_vocabulary_and_render(qapp):
+def test_icons_mirror_the_web_vocabulary_and_render(qapp, native_root):
     for name in ("chats", "sparkle", "history", "gear", "paperclip"):
         markup = icons.svg_markup(name, "#abcdef")
         assert 'stroke="#abcdef"' in markup and "currentColor" not in markup
@@ -29,18 +29,18 @@ def test_icons_mirror_the_web_vocabulary_and_render(qapp):
     assert icons.name_for_action("pulse") == "sparkle"
     assert icons.name_for_action("history") == "history"
     assert icons.name_for_action("mystery") is None
-    btn = QPushButton("✨")
+    btn = native_root(QPushButton, "✨")
     assert icons.apply(btn, "sparkle", T.MUTED, T.TEXT) is True
     assert btn.text() == "" and not btn.icon().isNull()
     assert btn.iconSize().width() == 18
-    other = QPushButton("?")
+    other = native_root(QPushButton, "?")
     assert icons.apply(other, "nope", T.MUTED, T.TEXT) is False and other.text() == "?"
 
 
-def test_topbar_buttons_are_svg_icons_with_text_only_as_fallback(qapp, monkeypatch):
+def test_topbar_buttons_are_svg_icons_with_text_only_as_fallback(qapp, monkeypatch, native_root):
     from astral_client.app import TopBar
 
-    bar = TopBar("sam", lambda: None, lambda: None, lambda *a: None, lambda: None)
+    bar = native_root(TopBar, "sam", lambda: None, lambda: None, lambda *a: None, lambda: None)
     assert not bar.recent_btn.icon().isNull() and bar.recent_btn.text() == ""
     assert not bar.settings_btn.icon().isNull() and bar.settings_btn.text() == ""
     model = {"sections": [], "signout": {"label": "Sign out", "action": "logout"},
