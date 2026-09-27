@@ -28,8 +28,8 @@ def _role(widget):
     return interface.role()
 
 
-def test_application_status_has_stable_name_and_dynamic_state(qapp):
-    topbar = TopBar("user", lambda: None, lambda: None, lambda *_: None, lambda: None)
+def test_application_status_has_stable_name_and_dynamic_state(qapp, native_root):
+    topbar = native_root(TopBar, "user", lambda: None, lambda: None, lambda *_: None, lambda: None)
 
     assert isinstance(topbar._mark, QLabel)
     assert _role(topbar._mark) == QAccessible.Role.StaticText
@@ -43,11 +43,11 @@ def test_application_status_has_stable_name_and_dynamic_state(qapp):
 
 
 def test_agent_authoring_controls_expose_contextual_semantics_and_focus(
-    qapp, monkeypatch
+    qapp, monkeypatch, native_root
 ):
     monkeypatch.setenv("ASTRAL_DANGEROUS_BYPASS", "0")
     emitted = []
-    dialog = AgentsDialog(None, lambda action, payload: emitted.append((action, payload)))
+    dialog = native_root(AgentsDialog, None, lambda action, payload: emitted.append((action, payload)))
     dialog.set_agents(
         [
             {
@@ -127,7 +127,7 @@ def test_agent_authoring_controls_expose_contextual_semantics_and_focus(
 
 
 @pytest.fixture
-def window(qapp, monkeypatch):
+def window(qapp, monkeypatch, native_root):
     monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
     monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
     monkeypatch.setattr(
@@ -135,11 +135,10 @@ def window(qapp, monkeypatch):
         "load_or_create_host_id",
         lambda: "77777777-7777-4777-8777-777777777777",
     )
-    win = MainWindow("ws://127.0.0.1:9/ws", "dev-token", connect=False)
+    win = native_root(MainWindow, "ws://127.0.0.1:9/ws", "dev-token", connect=False)
     win.show()
     qapp.processEvents()
     yield win
-    win.close()
 
 
 def test_status_banner_is_a_named_keyboard_operable_button(qapp, window):

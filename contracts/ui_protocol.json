@@ -1313,9 +1313,11 @@
           "device_type": "windows",
           "registration_source": "windows-client/astral_client/protocol.py",
           "advertised_088_capabilities": [
-            "work_read_v1"
+            "work_read_v1",
+            "guidance_notes_v1",
+            "guidance_selection_v1"
           ],
-          "redesign": "excluded_by_owner_T059"
+          "redesign": "qualified_notes_selection_and_workspace_actions_only"
         },
         "android": {
           "device_type": "android",
@@ -1601,9 +1603,8 @@
               "basis": "web_render_channel"
             },
             "windows": {
-              "disposition": "omitted_by_server",
-              "basis": "contract_declared",
-              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "android": {
               "disposition": "supported",
@@ -1647,9 +1648,8 @@
               "basis": "web_render_channel"
             },
             "windows": {
-              "disposition": "omitted_by_server",
-              "basis": "contract_declared",
-              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "android": {
               "disposition": "supported",
@@ -1692,9 +1692,8 @@
               "basis": "web_render_channel"
             },
             "windows": {
-              "disposition": "omitted_by_server",
-              "basis": "contract_declared",
-              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "android": {
               "disposition": "supported",
@@ -1738,9 +1737,8 @@
               "basis": "web_render_channel"
             },
             "windows": {
-              "disposition": "omitted_by_server",
-              "basis": "contract_declared",
-              "contract_path": "presentation_contracts.guidance_notes_088.legacy"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "android": {
               "disposition": "supported",
@@ -2307,8 +2305,8 @@
               "basis": "web_render_channel"
             },
             "windows": {
-              "disposition": "omitted_by_server",
-              "basis": "owner_exclusion_T059"
+              "disposition": "supported",
+              "basis": "advertised_capability"
             },
             "android": {
               "disposition": "supported",
@@ -2658,9 +2656,8 @@
               "basis": "web_render_channel"
             },
             "windows": {
-              "disposition": "omitted_by_server",
-              "basis": "contract_declared",
-              "contract_path": "presentation_contracts.component_chrome.dispositions.windows"
+              "disposition": "supported",
+              "basis": "shared_chrome_menu"
             },
             "android": {
               "disposition": "supported",
@@ -2699,9 +2696,8 @@
               "basis": "web_render_channel"
             },
             "windows": {
-              "disposition": "omitted_by_server",
-              "basis": "contract_declared",
-              "contract_path": "presentation_contracts.component_chrome.dispositions.windows"
+              "disposition": "supported",
+              "basis": "shared_chrome_menu"
             },
             "android": {
               "disposition": "supported",

@@ -43,13 +43,12 @@ class _FakeClient:
 
 
 @pytest.fixture
-def win(qapp, monkeypatch):
+def win(qapp, monkeypatch, native_root):
     monkeypatch.setattr(appmod, "OrchestratorClient", _FakeClient)
     monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
     monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
-    w = MainWindow("ws://127.0.0.1:9/ws", "dev-token")
+    w = native_root(MainWindow, "ws://127.0.0.1:9/ws", "dev-token")
     yield w
-    w.close()
 
 
 def _sent_load_chats(win):

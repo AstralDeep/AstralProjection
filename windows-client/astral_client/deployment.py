@@ -18,6 +18,7 @@ from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import urlsplit
 
 from .integrity import parse_semver
+from .settings import SettingsProfileError, settings_registry_key
 
 
 PROFILE_SCHEMA_VERSION = 1
@@ -130,6 +131,16 @@ def _uri(value: object, label: str, *, websocket: bool) -> tuple[str, bool]:
     if parsed.hostname.lower() in {"example.com", "example.invalid", "changeme.invalid"}:
         raise DeploymentProfileError(f"{label} is placeholder-valued")
     return result, _is_local_host(parsed.hostname)
+
+
+def _is_loopback_endpoint(endpoint: str) -> bool:
+    host = urlsplit(endpoint).hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -280,7 +291,7 @@ def parse_profile(
     if expected_client_version is not None and client_version != expected_client_version:
         raise DeploymentProfileError("profile client_version does not match the client")
     distribution = data["distribution"]
-    if distribution not in {"production", "generic_developer"}:
+    if distribution not in {"production", "generic_developer", "local_backend"}:
         raise DeploymentProfileError("distribution is unsupported")
     local_only = _bool(data["local_only"], "local_only")
     authority, authority_local = _uri(data["authority"], "authority", websocket=False)
@@ -335,6 +346,17 @@ def parse_profile(
             raise DeploymentProfileError("production profile permits a developer fallback")
         if byo_disposition != "authenticated_ui_tunnel" or legacy_disposition != "disabled":
             raise DeploymentProfileError("production agent dispositions are inconsistent")
+    elif distribution == "local_backend":
+        if not local_only or not _is_loopback_endpoint(endpoint):
+            raise DeploymentProfileError("local backend profiles require a loopback WebSocket endpoint")
+        if authority_local or not authority.startswith("https://"):
+            raise DeploymentProfileError("local backend profiles require a remote HTTPS Keycloak authority")
+        if auth_mode != "keycloak_oidc_pkce":
+            raise DeploymentProfileError("local backend profiles require direct Keycloak PKCE")
+        if policy.configure_dialog_allowed or policy.development_defaults_allowed:
+            raise DeploymentProfileError("local backend profiles cannot permit a developer fallback")
+        if byo_disposition != "authenticated_ui_tunnel" or legacy_disposition != "disabled":
+            raise DeploymentProfileError("local backend agent dispositions are inconsistent")
     else:
         if not local_only or not authority_local or not endpoint_local:
             raise DeploymentProfileError("generic developer profiles must be explicitly local-only")
@@ -394,7 +416,11 @@ def _development_profile() -> DeploymentProfile:
     )
 
 
-def read_persisted_profile() -> Optional[str]:
+def read_persisted_profile(environment: Optional[Mapping[str, str]] = None) -> Optional[str]:
+    try:
+        registry_key = settings_registry_key(environment)
+    except SettingsProfileError as exc:
+        raise DeploymentProfileError(str(exc)) from exc
     if os.name != "nt":
         return None
     try:  # pragma: no cover
@@ -402,8 +428,8 @@ def read_persisted_profile() -> Optional[str]:
     except ImportError:
         return None
     locations = (
-        (r"Software\AstralDeep\WindowsClient\deployment", "profile_json"),
-        (r"Software\AstralDeep\WindowsClient", "deployment/profile_json"),
+        (registry_key + r"\deployment", "profile_json"),
+        (registry_key, "deployment/profile_json"),
     )
     for key_path, value_name in locations:
         try:
@@ -619,12 +645,16 @@ def resolve_startup(
         return bundled if bundled.is_file() else root / name
 
     resolution_environment = os.environ if environment is None else environment
+    try:
+        settings_registry_key(resolution_environment)
+    except SettingsProfileError as exc:
+        raise DeploymentProfileError(str(exc)) from exc
     higher_precedence_profile_selected = bool(
         options.deployment_profile
         or resolution_environment.get("ASTRAL_MANAGED_DEPLOYMENT_PROFILE")
     )
     if persisted_profile_json is None and not higher_precedence_profile_selected:
-        persisted_profile_json = read_persisted_profile()
+        persisted_profile_json = read_persisted_profile(resolution_environment)
     effective = resolve_effective_profile(
         bundled_profile_path=root / "deployment" / "release-profile.json",
         expected_client_version=expected_client_version,

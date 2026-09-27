@@ -497,7 +497,7 @@ class _FakeClient:
 @pytest.fixture
 def window(qapp, monkeypatch, tmp_path):
     monkeypatch.setattr(appmod, "OrchestratorClient", _FakeClient)
-    monkeypatch.setattr(appmod, "QSettings", lambda *_a, **_k: _settings(tmp_path / "app.ini"))
+    monkeypatch.setattr(appmod, "create_settings", lambda: _settings(tmp_path / "app.ini"))
     monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
     monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
     monkeypatch.setattr(appmod, "load_or_create_host_id", lambda: SNAPSHOT_1)

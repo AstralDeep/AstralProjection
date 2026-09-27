@@ -435,7 +435,73 @@ def test_stop_speech_keeps_local_playout_stopped_when_server_request_fails(qapp)
 
     assert media.calls == [("stop_playback",)]
     assert [item[0] for item in http.calls].count("stop_speech") == 1
-    assert states[-1] == ("error", "network_interrupted")
+    assert states[-1] == ("error", "Voice connection was interrupted. Check your connection, then start voice again.")
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_media_disconnect_releases_authenticated_server_session(qapp, cleanup_fails):
+    controller, _transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    states = []
+    controller.status_changed.connect(lambda state, message: states.append((state, message)))
+    original_end = http.end
+
+    def end(*args):
+        original_end(*args)
+        if cleanup_fails:
+            raise VoiceHttpError("network_interrupted")
+
+    http.end = end
+    media.on_state("disconnected", "network_interrupted")
+
+    assert controller.session_id is None
+    assert controller.audio.stopped > 0
+    ended = [call for call in http.calls if call[0] == "end"]
+    assert len(ended) == 1
+    assert ended[0][1:4] == (SESSION, 2, 4)
+    assert ended[0][4]["connection_generation"] == CONNECTION
+    assert states[-1][0] == "error"
+    assert "start voice again" in states[-1][1]
+
+
+@pytest.mark.parametrize("retired", ["connection", "closed", "binding", "no_session"])
+def test_media_disconnect_cleanup_does_not_cross_retired_authority(qapp, retired):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+    pending = []
+    controller._run_async = pending.append
+    if retired == "binding":
+        controller.control_binding = None
+    elif retired == "no_session":
+        controller.session_id = None
+    media.on_state("disconnected", "network_interrupted")
+    if retired == "connection":
+        transport.connection_generation = "00000000-0000-4000-8000-000000000099"
+    elif retired == "closed":
+        controller.close()
+    for work in pending:
+        work()
+    assert not [call for call in http.calls if call[0] == "end"]
+
+
+@pytest.mark.parametrize("retired", ["connection", "closed"])
+def test_media_cleanup_rechecks_authority_after_waiting_for_session_lock(qapp, retired):
+    controller, transport, http, media = _controller()
+    controller.handle_action("voice_session_start")
+
+    class RetiringLock:
+        def __enter__(self):
+            if retired == "closed":
+                controller.close()
+            else:
+                transport.connection_generation = "00000000-0000-4000-8000-000000000099"
+
+        def __exit__(self, *_args):
+            pass
+
+    controller._session_update_lock = RetiringLock()
+    media.on_state("disconnected", "network_interrupted")
+    assert not [call for call in http.calls if call[0] == "end"]
 
 
 def test_server_idle_permission_revoke_and_explicit_end_release_media(qapp):

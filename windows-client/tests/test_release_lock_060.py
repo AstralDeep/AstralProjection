@@ -8,8 +8,11 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import shutil
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -51,6 +54,124 @@ def _locked_packages() -> dict[str, str]:
             assert direct.group(1) == direct.group(2)
             packages["lets-agent"] = direct.group(2)
     return packages
+
+
+def _freeze_tool(tmp_path):
+    spec = importlib.util.spec_from_file_location(
+        "astral_client.freeze_environment", ROOT / "astral_client" / "freeze_environment.py"
+    )
+    tool = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(tool)
+    executable = tmp_path / "release" / "Scripts" / "python.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"interpreter fixture")
+    base = tmp_path / "python"
+    base.mkdir()
+    system = tmp_path / "Windows" / "System32"
+    system.mkdir(parents=True)
+    tool.sys = SimpleNamespace(
+        platform="win32", executable=str(executable), base_prefix=str(base)
+    )
+    return tool, system.parent
+
+
+def test_freeze_environment_ignores_ambient_search_paths_without_mutating_input(tmp_path):
+    tool, windows = _freeze_tool(tmp_path)
+    environment = {
+        "SystemRoot": str(windows),
+        "PATH": "unrelated-native-tools",
+        "Path": "another-native-tool",
+        "PYTHONPATH": "unrelated-python",
+        "PythonHome": "other-python-installation",
+        "TEMP": str(tmp_path),
+    }
+    original = dict(environment)
+    clean = tool.freeze_environment(environment)
+    assert environment == original
+    assert clean == {
+        "SystemRoot": str(windows),
+        "TEMP": str(tmp_path),
+        "PATH": os.pathsep.join(
+            str(path.resolve())
+            for path in (
+                Path(tool.sys.executable).parent,
+                Path(tool.sys.base_prefix),
+                windows / "System32",
+                windows,
+            )
+        ),
+    }
+
+
+def test_freeze_environment_reads_process_environment_and_deduplicates(tmp_path, monkeypatch):
+    tool, windows = _freeze_tool(tmp_path)
+    tool.sys.base_prefix = str(Path(tool.sys.executable).parent)
+    monkeypatch.setattr(tool.os, "environ", {"SYSTEMROOT": str(windows), "PATH": "tainted"})
+    clean = tool.freeze_environment()
+    assert len(clean["PATH"].split(os.pathsep)) == 3
+    assert "tainted" not in clean["PATH"]
+
+
+def test_freeze_environment_rejects_non_windows_host(tmp_path):
+    tool, windows = _freeze_tool(tmp_path)
+    tool.sys.platform = "linux"
+    with pytest.raises(tool.FreezeEnvironmentError, match="Windows interpreter"):
+        tool.freeze_environment({"SystemRoot": str(windows)})
+
+
+@pytest.mark.parametrize("windows_root", [None, "", "relative-windows"])
+def test_freeze_environment_rejects_missing_or_relative_system_root(tmp_path, windows_root):
+    tool, _windows = _freeze_tool(tmp_path)
+    environment = {} if windows_root is None else {"SystemRoot": windows_root}
+    with pytest.raises(tool.FreezeEnvironmentError, match="absolute SystemRoot"):
+        tool.freeze_environment(environment)
+
+
+@pytest.mark.parametrize(
+    "invalid", ["relative-executable", "missing-executable", "missing-base", "relative-base", "missing-system32"]
+)
+def test_freeze_environment_rejects_invalid_required_directories(tmp_path, invalid):
+    tool, windows = _freeze_tool(tmp_path)
+    if invalid == "relative-executable":
+        tool.sys.executable = "python.exe"
+    elif invalid == "missing-executable":
+        tool.sys.executable = str(tmp_path / "absent-python.exe")
+    elif invalid == "missing-base":
+        tool.sys.base_prefix = str(tmp_path / "absent-base")
+    elif invalid == "relative-base":
+        tool.sys.base_prefix = "relative-base"
+    else:
+        (windows / "System32").rmdir()
+    with pytest.raises(tool.FreezeEnvironmentError, match="existing interpreter and system directories"):
+        tool.freeze_environment({"SystemRoot": str(windows)})
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="PyInstaller Windows PE resolver")
+def test_freeze_environment_prevents_ambient_dll_resolution(tmp_path, monkeypatch):
+    from PyInstaller.depend.bindepend import resolve_library_path
+
+    tool, windows = _freeze_tool(tmp_path)
+    source = Path(os.environ["SystemRoot"]) / "System32" / "kernel32.dll"
+    tainted = tmp_path / "unrelated-tool"
+    tainted.mkdir()
+    name = "astral-freeze-probe.dll"
+    shutil.copyfile(source, tainted / name)
+    system_library = windows / "System32" / name
+    shutil.copyfile(source, system_library)
+    environment = {"SystemRoot": str(windows), "PATH": os.pathsep.join((str(tainted), str(system_library.parent)))}
+    monkeypatch.setenv("PATH", environment["PATH"])
+    assert Path(resolve_library_path(name)) == tainted / name
+    monkeypatch.setenv("PATH", tool.freeze_environment(environment)["PATH"])
+    assert Path(resolve_library_path(name)) == system_library
+
+
+def test_package_spec_sanitizes_environment_before_native_discovery():
+    source = SPEC.read_text(encoding="utf-8")
+    sanitize = source.index("_freeze_environment = freeze_environment()")
+    install = source.index("os.environ.update(_freeze_environment)")
+    collect = source.index('collect_submodules("PySide6.QtCharts")')
+    assert sanitize < source.index("os.environ.clear()") < install < collect < source.index("a = Analysis(")
 
 
 def test_complete_lock_is_exact_hashed_and_covers_direct_inputs():

@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+import uuid
 
 import pytest
 
@@ -50,24 +51,8 @@ def _clean_env(tmp_path: Path) -> dict[str, str]:
     local.mkdir()
     environment["APPDATA"] = str(roaming)
     environment["LOCALAPPDATA"] = str(local)
+    environment["ASTRAL_WINDOWS_PROFILE_ID"] = str(uuid.uuid4())
     return environment
-
-
-def _clear_native_windows_settings() -> None:
-    if sys.platform != "win32":
-        return
-    result = subprocess.run(
-        [
-            "reg.exe",
-            "delete",
-            r"HKCU\Software\AstralDeep\WindowsClient",
-            "/f",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode in (0, 1), result.stderr
 
 
 def _offline_profile(path: Path) -> Path:
@@ -137,6 +122,18 @@ def test_actual_frozen_archive_contains_only_qualified_local_speech_runtime():
             "microsoft.codecoverage",
         )
     )
+
+
+def test_actual_frozen_console_font_and_license_match_shared_assets():
+    _exe, archive, names = _frozen_archive()
+    sources = {
+        "assets/fonts/open-sans-latin.ttf": ROOT.parent / "contracts/assets/fonts/open-sans-latin.ttf",
+        "assets/fonts/opensans-ofl.txt": ROOT.parent / "apple-clients/NativeAppearance/Resources/OpenSans-OFL.txt",
+    }
+    assert sources.keys() <= names
+    for bundled, source in sources.items():
+        entry = next(name for name in archive.toc if name.replace("\\", "/").lower() == bundled)
+        assert archive.extract(entry) == source.read_bytes()
 
 
 def test_actual_frozen_helper_completes_ready_shutdown_pipe_smoke(tmp_path):
@@ -220,7 +217,6 @@ def test_actual_frozen_gui_completes_rendered_chat_with_one_profile(tmp_path):
     token = os.getenv("ASTRAL_WINDOWS_SMOKE_TOKEN")
     if not token:
         pytest.skip("candidate staging token is required for the connected GUI smoke")
-    _clear_native_windows_settings()
     report = tmp_path / "rendered-chat-smoke.json"
     environment = _clean_env(tmp_path)
     environment["ASTRAL_TOKEN"] = token
@@ -242,6 +238,12 @@ def test_actual_frozen_gui_completes_rendered_chat_with_one_profile(tmp_path):
     value = json.loads(report.read_text(encoding="utf-8"))
     assert value["status"] == "passed"
     assert value["detail_code"] == "rendered_turn_complete"
+    assert value["console_model_valid"] is True
+    assert value["console_presentation_valid"] is True
+    assert value["console_shell_current"] is True
+    assert value["console_shell_visible"] is True
+    assert value["legacy_topbar_hidden"] is True
+    assert value["legacy_split_hidden"] is True
     assert value["transcript_turns"] >= 2
     assert value["canvas_components"] >= 1
     assert value["window_profile_match"] is True
@@ -252,7 +254,6 @@ def test_actual_frozen_gui_completes_rendered_chat_with_one_profile(tmp_path):
 @pytest.mark.skipif(sys.platform != "win32", reason="requires the frozen Windows GUI")
 def test_actual_frozen_gui_retains_selected_profile_during_offline_retry(tmp_path):
     exe = _candidate_exe()
-    _clear_native_windows_settings()
     report = tmp_path / "offline-retry-smoke.json"
     profile = _offline_profile(tmp_path / "offline-profile.json")
     environment = _clean_env(tmp_path)
@@ -287,12 +288,11 @@ def test_actual_frozen_gui_retains_selected_profile_during_offline_retry(tmp_pat
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires Windows HWND inspection")
-def test_fresh_hkcu_connected_launch_has_no_configure_dialog_and_terminates(tmp_path):
+def test_isolated_profile_connected_launch_has_no_configure_dialog_and_terminates(tmp_path):
     exe = _candidate_exe()
     token = os.getenv("ASTRAL_WINDOWS_SMOKE_TOKEN")
     if not token:
         pytest.skip("candidate staging token is required for the connected GUI smoke")
-    _clear_native_windows_settings()
     environment = _clean_env(tmp_path)
     environment["ASTRAL_TOKEN"] = token
     process = subprocess.Popen([str(exe)], env=environment)

@@ -20,6 +20,8 @@ MATRIX = MANIFEST["presentation_contracts"]["disposition_matrix_088"]
 CLIENTS = ["web", "windows", "android", "ios", "macos", "watch", "voice"]
 NATIVE_CLIENTS = ("android", "ios", "macos", "watch")
 DISPOSITIONS = {"supported", "read_only_handoff", "omitted_by_server", "version_required"}
+WINDOWS_SURFACES = {"guidance_notes_088", "guidance_selection_088"}
+WINDOWS_WORKSPACE_ACTIONS = {"canvas_export": "export_canvas", "canvas_share": "share_canvas"}
 
 
 def _fixture(relative):
@@ -121,10 +123,20 @@ def _validate_cell(manifest, row, client, cell, bases, profiles, capability):
         if disposition != "supported" or basis != "web_render_channel":
             raise ValueError("web is the web-first channel at %s" % where)
     elif client == "windows":
-        if disposition not in {"read_only_handoff", "omitted_by_server"}:
-            raise ValueError("Windows is excluded from the 088 redesign at %s" % where)
-        if disposition == "read_only_handoff" and capability not in advertised:
-            raise ValueError("Windows cannot hand off an unadvertised surface at %s" % where)
+        if row["contract"] == "work_read_088":
+            if (disposition != "read_only_handoff" or basis != "owner_exclusion_T059"
+                    or capability not in advertised):
+                raise ValueError("Windows retains its declared work read handoff at %s" % where)
+        elif row["contract"] in WINDOWS_SURFACES:
+            if (disposition != "supported" or basis != "advertised_capability"
+                    or capability not in advertised):
+                raise ValueError("Windows requires its qualified surface capability at %s" % where)
+        elif row["contract"] == "chrome_menu" and destination in WINDOWS_WORKSPACE_ACTIONS:
+            if (disposition != "supported" or basis != "shared_chrome_menu"
+                    or row.get("operation") != WINDOWS_WORKSPACE_ACTIONS[destination]):
+                raise ValueError("Windows requires its qualified workspace action at %s" % where)
+        elif disposition != "omitted_by_server":
+            raise ValueError("Windows cannot gain an unqualified destination at %s" % where)
     elif client == "voice":
         if disposition not in {"read_only_handoff", "omitted_by_server"}:
             raise ValueError("voice cannot complete a command surface at %s" % where)
@@ -248,12 +260,24 @@ REFUSALS = {
         disposition="read_only_handoff", handoff="finish it on web"),
     "unresolvable_contract_path": lambda m: _first(m, "guidance_notes_list")["clients"][
         "windows"].update(contract_path="presentation_contracts.guidance_notes_088.rumour"),
-    "contract_declared_without_path": lambda m: _first(m, "guidance_notes_list")["clients"][
+    "contract_declared_without_path": lambda m: _first(m, "workspace_start_welcome")["clients"][
         "windows"].pop("contract_path"),
     "web_not_supported": lambda m: _first(m, "work_list")["clients"]["web"].update(
         disposition="version_required", basis="missing_capability"),
     "windows_redesigned": lambda m: _first(m, "work_list")["clients"]["windows"].update(
         disposition="supported", basis="advertised_capability", handoff=None),
+    "windows_work_write": lambda m: _first(m, "work_save_review")["clients"]["windows"].update(
+        disposition="supported", basis="advertised_capability"),
+    "windows_notes_capability_missing": lambda m: m["client_profiles"]["windows"][
+        "advertised_088_capabilities"].remove("guidance_notes_v1"),
+    "windows_selection_capability_missing": lambda m: m["client_profiles"]["windows"][
+        "advertised_088_capabilities"].remove("guidance_selection_v1"),
+    "windows_notes_omitted": lambda m: _first(m, "guidance_notes_list")["clients"][
+        "windows"].update(disposition="omitted_by_server"),
+    "windows_workspace_operation_mismatch": lambda m: _first(m, "canvas_export").update(
+        operation="share_canvas"),
+    "windows_workspace_wrong_basis": lambda m: _first(m, "canvas_share")["clients"][
+        "windows"].update(basis="owner_exclusion_T059"),
     "voice_supported": lambda m: _first(m, "guidance_notes_new")["clients"]["voice"].update(
         disposition="supported"),
     "capability_already_advertised": lambda m: _first(m, "work_detail")["clients"][
@@ -372,12 +396,20 @@ def test_the_wrist_projection_pins_every_watch_row():
         assert "wrist never advertises it" in _resolve(MANIFEST, cell["contract_path"])
 
 
-def test_windows_keeps_its_existing_layout_and_never_gains_an_088_destination():
+def test_windows_supports_only_qualified_surfaces_and_workspace_actions():
+    supported = {
+        "guidance_notes_list", "guidance_notes_new", "guidance_notes_edit",
+        "guidance_notes_forget", "guidance_selection_form", "canvas_export", "canvas_share",
+    }
+    handoffs = {"work_list", "work_detail", "work_result"}
     for row in MATRIX["rows"]:
         cell = row["clients"]["windows"]
-        assert cell["disposition"] in {"read_only_handoff", "omitted_by_server"}
-        if cell["disposition"] == "read_only_handoff":
-            assert row["contract"] == "work_read_088"
+        if row["destination"] in supported:
+            assert cell["disposition"] == "supported"
+        elif row["destination"] in handoffs:
+            assert cell["disposition"] == "read_only_handoff"
+        else:
+            assert cell["disposition"] == "omitted_by_server"
     legacy = _resolve(MANIFEST, "presentation_contracts.workspace_088.legacy_layout_targets")
     assert legacy == ["windows"]
     assert _first(MATRIX, "workspace_start_welcome")["clients"]["windows"][

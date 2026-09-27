@@ -15,6 +15,8 @@ os.environ["ASTRAL_WIN_AGENT"] = "0"
 
 from astral_client import app as appmod  # noqa: E402
 from astral_client.app import MainWindow, normalize_error  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent  # noqa: E402
+from shiboken6 import isValid  # noqa: E402
 
 
 class _FakeClient:
@@ -51,6 +53,26 @@ def win(qapp, monkeypatch):
     w = MainWindow("ws://127.0.0.1:9/ws", "dev-token")
     yield w
     w.close()
+    w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
+def test_repeated_main_and_surface_deletion_destroys_owned_widgets(qapp, monkeypatch, native_root):
+    monkeypatch.setattr(appmod, "OrchestratorClient", _FakeClient)
+    monkeypatch.setattr(MainWindow, "_start_integrity_check", lambda self: None)
+    monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
+    for _ in range(20):
+        window = native_root(MainWindow, "ws://127.0.0.1:9/ws", "", connect=False)
+        window._on_message({"type": "chrome_surface", "surface_key": "theme", "title": "Theme",
+                            "components": [{"type": "text", "content": "PRESETS"}]})
+        dialog = window._surface_dialog
+        backdrop = dialog._veil
+        assert dialog.parentWidget() is window
+        assert backdrop.parentWidget() is window
+        window.close()
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        assert not any(isValid(widget) for widget in (window, dialog, backdrop))
 
 
 def test_normalize_error_shapes():
@@ -371,11 +393,11 @@ def test_history_target_render_without_dialog_is_logged(win, caplog):
     assert any("history surface rendered" in r.message for r in caplog.records)
 
 
-def test_topbar_renders_and_routes_action_buttons(qapp):
+def test_topbar_renders_and_routes_action_buttons(qapp, native_root):
     from astral_client.app import TopBar
 
     opened = []
-    tb = TopBar("user", lambda: None, lambda: None,
+    tb = native_root(TopBar, "user", lambda: None, lambda: None,
                 lambda s, ln: opened.append((s, ln)), lambda: None)
     tb.set_menu_model({
         "topbar": [
@@ -395,10 +417,10 @@ def test_topbar_renders_and_routes_action_buttons(qapp):
     assert opened and opened[0][0] == "workspace_timeline"
 
 
-def test_topbar_actions_rebuilt_and_cleared(qapp):
+def test_topbar_actions_rebuilt_and_cleared(qapp, native_root):
     from astral_client.app import TopBar
 
-    tb = TopBar("u", lambda: None, lambda: None, lambda s, ln: None, lambda: None)
+    tb = native_root(TopBar, "u", lambda: None, lambda: None, lambda s, ln: None, lambda: None)
     tb.set_menu_model({"topbar": [
         {"kind": "action", "label": "T", "action": {"surface": "workspace_timeline"}}]})
     assert len(tb._action_buttons) == 1
@@ -406,12 +428,10 @@ def test_topbar_actions_rebuilt_and_cleared(qapp):
     assert tb._action_buttons == []
 
 
-def test_settings_menu_shows_group_headers_and_literal_ampersand(qapp):
-    from PySide6.QtWidgets import QLabel, QWidgetAction
-
+def test_settings_menu_shows_group_headers_and_literal_ampersand(qapp, native_root):
     from astral_client.app import TopBar
 
-    tb = TopBar("u", lambda: None, lambda: None, lambda s, ln: None, lambda: None)
+    tb = native_root(TopBar, "u", lambda: None, lambda: None, lambda s, ln: None, lambda: None)
     tb.set_menu_model({
         "topbar": [],
         "menu": [
@@ -424,24 +444,22 @@ def test_settings_menu_shows_group_headers_and_literal_ampersand(qapp):
         "signout": {"label": "Sign out", "action": "logout"},
     })
     header_texts = [
-        wa.defaultWidget().text()
-        for wa in tb._menu.actions()
-        if isinstance(wa, QWidgetAction) and isinstance(wa.defaultWidget(), QLabel)
+        action.text() for action in tb._menu.actions() if not action.isEnabled()
     ]
     assert "ACCOUNT" in header_texts and "HELP" in header_texts
-    assert "Sign out" in header_texts
     item_texts = [a.text() for a in tb._menu.actions() if a.text()]
+    assert "Sign out" in item_texts
     assert "Agents && permissions" in item_texts
     assert {"Theme", "User guide"} <= set(item_texts)
 
 
-def test_surface_dialog_timeout_shows_retry_and_arrival_cancels(qapp):
+def test_surface_dialog_timeout_shows_retry_and_arrival_cancels(qapp, native_root):
     from PySide6.QtWidgets import QPushButton
 
     from astral_client.app import SurfaceDialog
 
     retried = []
-    dlg = SurfaceDialog(None, emit=lambda a, p: None,
+    dlg = native_root(SurfaceDialog, None, emit=lambda a, p: None,
                         on_retry=lambda s, p: retried.append((s, p)))
     dlg.begin_load("theme", {}, title="Theme")
     assert dlg._timer.isActive()
@@ -457,11 +475,11 @@ def test_surface_dialog_timeout_shows_retry_and_arrival_cancels(qapp):
     dlg.close()
 
 
-def test_surface_dialog_chrome_submit_shows_in_flight(qapp):
+def test_surface_dialog_chrome_submit_shows_in_flight(qapp, native_root):
     from astral_client.app import SurfaceDialog
 
     sent = []
-    dlg = SurfaceDialog(None, emit=lambda a, p: sent.append((a, p)))
+    dlg = native_root(SurfaceDialog, None, emit=lambda a, p: sent.append((a, p)))
     dlg.set_surface("LLM", [])
     dlg._emit_from_surface("chrome_llm_save", {"fields": {}})
     assert sent == [("chrome_llm_save", {"fields": {}})]
@@ -471,12 +489,12 @@ def test_surface_dialog_chrome_submit_shows_in_flight(qapp):
     dlg.close()
 
 
-def test_surface_dialog_switch_removes_stale_widgets_immediately(qapp):
+def test_surface_dialog_switch_removes_stale_widgets_immediately(qapp, native_root):
     from PySide6.QtWidgets import QLabel
 
     from astral_client.app import SurfaceDialog
 
-    dlg = SurfaceDialog(None, emit=lambda a, p: None)
+    dlg = native_root(SurfaceDialog, None, emit=lambda a, p: None)
     dlg.set_surface("Personalization", [{"type": "text", "content": "SOUL-TAB"}])
     assert any("SOUL-TAB" in (w.text() or "") for w in dlg._inner.findChildren(QLabel))
     dlg.set_surface("Theme", [{"type": "text", "content": "PRESETS"}])
@@ -548,11 +566,11 @@ def test_chrome_surface_mandatory_pins_modal_and_suppresses_dismissal(win):
     assert not dlg.isHidden()
 
 
-def test_mandatory_signout_button_invokes_sign_out_routine(qapp):
+def test_mandatory_signout_button_invokes_sign_out_routine(qapp, native_root):
     from astral_client.app import SurfaceDialog
 
     signed_out = []
-    dlg = SurfaceDialog(None, emit=lambda a, p: None,
+    dlg = native_root(SurfaceDialog, None, emit=lambda a, p: None,
                         on_sign_out=lambda: signed_out.append(True))
     assert dlg._signout_btn.isHidden()
     dlg.set_mandatory(True)
@@ -590,11 +608,11 @@ def test_workspace_timeline_routes_to_sdui_surface(win):
     assert ("get_history", {}) not in win.client.sent
 
 
-def test_surface_dialog_client_local_action_does_not_arm_timer(qapp):
+def test_surface_dialog_client_local_action_does_not_arm_timer(qapp, native_root):
     from astral_client.app import SurfaceDialog
 
     sent = []
-    dlg = SurfaceDialog(None, emit=lambda a, p: sent.append((a, p)))
+    dlg = native_root(SurfaceDialog, None, emit=lambda a, p: sent.append((a, p)))
     dlg.set_surface("Your files", [])
     assert dlg._timer.isActive() is False
     dlg._emit_from_surface("attach_existing", {"attachment_id": "att-1"})
@@ -661,10 +679,14 @@ def test_theme_apply_component_triggers_app_restyle(win, qapp, monkeypatch):
 
 
 def test_silent_refresh_done_reconnects_on_token(win, monkeypatch):
+    from types import SimpleNamespace
+
     reconnected = []
     monkeypatch.setattr(win, "_reconnect", lambda tok: reconnected.append(tok))
     win._silent_refresh_active = True
-    win._on_silent_refresh_done("NEWTOKEN")
+    win._auth_session = SimpleNamespace(access_token="OLDTOKEN")
+    win._on_silent_refresh_done(win._auth_generation,
+                               (win._auth_session, SimpleNamespace(access_token="NEWTOKEN"), "NEWTOKEN"))
     assert reconnected == ["NEWTOKEN"]
     assert win._silent_refresh_active is False
 
@@ -673,13 +695,14 @@ def test_silent_refresh_done_prompts_on_failure(win, monkeypatch):
     prompted = []
     monkeypatch.setattr(win, "_prompt_reauth", lambda: prompted.append(True))
     win._silent_refresh_active = True
-    win._on_silent_refresh_done(None)
+    win._on_silent_refresh_done(win._auth_generation, (win._auth_session, win._auth_session, None))
     assert prompted == [True]
     assert win._silent_refresh_active is False
 
 
 def test_auth_required_runs_refresh_off_gui_thread(win, qapp, monkeypatch):
     import threading
+    from PySide6.QtTest import QTest
 
     reconnected = []
     monkeypatch.setattr(win, "_reconnect", lambda tok: reconnected.append(tok))
@@ -702,7 +725,11 @@ def test_auth_required_runs_refresh_off_gui_thread(win, qapp, monkeypatch):
     win._reauth_tries = 0
     win._on_status("auth_required:expired")
     assert win._silent_refresh_active is True
-    assert done.wait(3.0), "the refresh worker never ran"
+    for _ in range(500):
+        QTest.qWait(10)
+        if done.is_set():
+            break
+    assert done.is_set(), "the refresh worker never ran"
     assert seen["thread"] is not main_thread
     for _ in range(100):
         qapp.processEvents()

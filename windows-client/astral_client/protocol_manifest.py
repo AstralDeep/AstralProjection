@@ -8,10 +8,10 @@ from __future__ import annotations
 HANDLED = "handled"
 IGNORED = "ignored"
 
-CLIENT_LOCAL_ACTIONS: frozenset[str] = frozenset({"attach_existing", "computer_host_consent"})
+CLIENT_LOCAL_ACTIONS: frozenset[str] = frozenset({"attach_existing", "computer_host_consent", "compose_prompt"})
 
 CLASSIFICATION: dict[str, str] = {
-    "rote_config": IGNORED,
+    "rote_config": HANDLED,
     "chrome_menu": HANDLED,
     "user_preferences": HANDLED,
     "system_config": IGNORED,

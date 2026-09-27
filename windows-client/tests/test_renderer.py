@@ -127,6 +127,54 @@ def test_card_renders_nested_children(qapp):
     assert any("child-text" in t for t in labels)
 
 
+@pytest.mark.parametrize("width", [320, 960])
+def test_card_heading_uses_available_width_and_plain_lists_share_the_card(qapp, width):
+    title = "Results from a completed operation"
+    widget = render({"type": "card", "title": title, "content": [
+        {"type": "divider", "component_id": "rule"},
+        {"type": "list", "component_id": "items", "items": ["First result", "Second result"]},
+    ]}, _ctx())
+    widget.resize(width, widget.sizeHint().height())
+    widget.show()
+    qapp.processEvents()
+    heading = next(label for label in widget.findChildren(QLabel) if label.text() == title)
+    assert heading.width() >= width - 50
+    divider = next(child for child in widget.findChildren(QWidget) if child.property("component_id") == "rule")
+    assert divider.height() == 1 and divider.frameShape() == QFrame.Shape.NoFrame
+    items = next(child for child in widget.findChildren(QWidget) if child.property("component_id") == "items")
+    assert items.styleSheet() == ""
+    assert items.layout().contentsMargins().isNull()
+    assert items.layout().spacing() == 8
+    widget.close()
+
+
+def test_grid_uses_server_gap_and_metrics_use_shared_value_size(qapp):
+    widget = render({"type": "grid", "gap": 20, "content": [
+        {"type": "metric", "title": "Total", "value": "42"},
+        {"type": "metric", "title": "Count", "value": "7"},
+    ]}, _ctx())
+    widget.ensurePolished()
+    assert widget.layout().spacing() == 20
+    values = [label for label in widget.findChildren(QLabel) if label.text() in {"42", "7"}]
+    assert len(values) == 2
+    assert all(label.font().pixelSize() == 28 for label in values)
+
+
+@pytest.mark.parametrize("preset", ["midnight", "daylight"])
+def test_new_labels_and_cards_use_current_theme_after_switch(qapp, preset):
+    from astral_client import theme as theme
+
+    original = dict(theme.PALETTE)
+    try:
+        theme.apply_theme(preset)
+        widget = render({"type": "card", "title": "Current theme"}, _ctx())
+        heading = next(label for label in widget.findChildren(QLabel) if label.text())
+        assert theme.TEXT in heading.styleSheet()
+        assert theme._rgba(theme.SURFACE, 0.45) in widget.styleSheet()
+    finally:
+        theme.apply_theme({"colors": original})
+
+
 def test_bad_component_does_not_crash(qapp):
     w = render({"type": "table", "headers": ["A"], "rows": "oops"}, _ctx())
     assert isinstance(w, QWidget)

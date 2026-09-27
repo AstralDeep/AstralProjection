@@ -24,8 +24,59 @@ Orchestrator (:8001)  ──WebSocket /ws──►  OrchestratorClient (asyncio 
   token + device caps, message loop, `ui_event`/`chat_message` out).
 - `astral_client/renderer.py` — structured component dict → native `QWidget`.
 - `astral_client/charts.py` — bar/line/pie via QtCharts.
+- `astral_client/composites.py` — action/stat groups, gauge, pipeline stepper,
+  donut and radar charts using native Qt layouts and painting.
+- `astral_client/console.py`, `console_widgets.py` — validated `console/v2`
+  chrome/catalog and ROTE presentation rendered as the native application shell.
+- `astral_client/workspace_actions.py` — authorized committed-canvas export and
+  share, fenced to the current owner, connection, chat and render revision.
 - `astral_client/app.py` — main window (chat rail + canvas) and message wiring.
-- `astral_client/theme.py` — dark palette mirroring the web app.
+- `astral_client/theme.py` — server theme roles and packaged shared Open Sans.
+
+### Console v2
+
+The client opts into the existing `console/v2` contract and reports its actual
+Qt viewport, screen scale, input devices, supported primitives and voice backend.
+It waits for validated chrome and ROTE geometry before displaying the new shell.
+Labels, scenarios, categories, account/settings navigation and available actions
+come from the server; the client does not maintain a parallel product catalog.
+
+Run sends the selected scenario through ordinary authenticated chat dispatch;
+Load prompt only changes the draft. Result preview, collapse and full-screen
+retain one live canvas and its component state. Export downloads the server's
+authorized committed HTML and saves atomically to the user's chosen file. Share
+is offered only when the server declares it; neither action grants permission
+locally or substitutes an uncommitted native view for server export state.
+
+Normal Keycloak sessions renew before their reported expiry and register again
+through the existing connection protocol. Same-owner renewal retains the draft,
+attachments, pending submissions and unchanged result controls. Account changes
+clear private views and reject delayed responses from the previous account.
+Actions that encounter an expired credential ask for a retry after reconnection;
+uploads are never silently repeated.
+
+Result titles move above their action row when the measured width requires it.
+Status feedback wraps long words and remains keyboard reachable when it exceeds
+the available height: Page Up, Page Down, Home and End scroll the message while
+Space activates its existing dismiss or cancel action.
+
+The six additional native primitive renderers consume the existing manifest
+schemas. They reject invalid/non-finite chart data, bound collection sizes,
+preserve disabled actions and expose chart values as accessible text. They do
+not introduce primitive types or change other clients' dispositions.
+
+Windows omits the server-designated web-only passive voice availability banner.
+Control labels/tooltips, disabled states and actionable active-session errors
+remain accessible. Voice uses the existing authenticated worker/media path.
+Idle voice stays in the composer row when it fits. Active controls wrap into a
+full-width row when their measured size needs it, retaining the ROTE control
+target; long errors and transcripts remain readable in a bounded scroll area.
+Native voice SVGs use the exact `VOICE_ICONS` paths from
+`backend/webrender/static/client.js`, with the server's accessible labels.
+
+Qualification is recorded in Deep's `specs/091-windows-ui-v2/verification.md`.
+Source tests and offscreen renders do not establish live worker, hardware DPI,
+packaged authentication, or release acceptance.
 
 ## Deployment profile and precedence
 
@@ -55,6 +106,39 @@ endpoint, or credentials:
 ```powershell
 .\dist\AstralDeep.exe --validate-deployment --report deployment-validation.json
 ```
+
+Independent client runs may set `ASTRAL_WINDOWS_PROFILE_ID` to a canonical,
+lowercase UUID4. GUI state, conversation resumption, voice identity, remote
+control consent and persisted deployment selection then use the separate
+`AstralDeep/WindowsClientProfile-<UUID>` native settings namespace, with settings
+fallbacks disabled. An invalid identifier fails closed before authentication or
+Qt startup. With the variable absent, the existing `AstralDeep/WindowsClient`
+profile and deployment precedence remain unchanged; no profile is migrated.
+
+Packaged tests and release qualification choose a fresh identifier for each
+invocation. They never clear the interactive user's profile. Disposable
+namespaces remain in the test account's settings storage.
+
+For a local backend with the usual remote Keycloak identity provider, use
+`Launch-AstralDeep-Local.bat`. It passes the complete
+`deployment/local-backend-profile.json` to the same packaged executable.
+The window title includes **Local testing**. This explicit `local_backend`
+distribution requires a loopback WebSocket endpoint, a remote HTTPS authority,
+direct Keycloak PKCE and authenticated agent transport. It rejects developer
+authentication/configuration fallbacks, unspecified bind addresses and legacy
+agent keys. `local_only` scopes the application backend; identity remains at
+the selected HTTPS Keycloak authority. Production and all-local generic
+developer profile restrictions are unchanged.
+
+A local profile may also be selected in the existing native
+`deployment/profile_json` setting so opening the executable directly uses it.
+After that selection is read, local runtime settings use a stable separate
+namespace derived from the complete profile. Production conversation resumption,
+workspace selection and remote-control consent are not inherited. An explicitly
+provided `ASTRAL_WINDOWS_PROFILE_ID` continues to select its isolated namespace.
+Removing that explicit selection restores the bundled sandbox profile; do so
+only when the build is approved for that environment. User sign-in is still
+required; the launcher does not supply tokens or change server authentication.
 
 ## Run (dev)
 
@@ -95,6 +179,12 @@ dotnet publish asr-helper\AstralSpeechHelper.csproj `
 # → dist/AstralDeep.exe  (single-file, no console)
 .\dist\AstralDeep.exe --validate-deployment
 ```
+
+The spec restricts native dependency discovery to the active Python interpreter,
+its base installation, and Windows system directories. It replaces ambient
+`PATH` entries and clears `PYTHONPATH` and `PYTHONHOME` for analysis subprocesses;
+locked package hooks still collect their own dependencies.
+Missing interpreter or Windows system directories stop the freeze.
 
 The reusable `build-windows-candidate.yml` workflow performs the authoritative
 unsigned build-once candidate run from two clean locked Python 3.11

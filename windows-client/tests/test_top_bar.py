@@ -10,10 +10,11 @@ import pytest
 pytest.importorskip("PySide6")
 
 
-def _bar(qapp):
+@pytest.fixture
+def bar(native_root):
     from astral_client.app import TopBar
 
-    return TopBar("u", lambda: None, lambda: None, lambda s, ln: None, lambda: None)
+    return native_root(TopBar, "u", lambda: None, lambda: None, lambda s, ln: None, lambda: None)
 
 
 def _order(tb):
@@ -26,8 +27,8 @@ def _order(tb):
     return out
 
 
-def test_topbar_widget_order_matches_the_shared_model(qapp):
-    tb = _bar(qapp)
+def test_topbar_widget_order_matches_the_shared_model(bar):
+    tb = bar
     order = _order(tb)
 
     assert order[0] is tb._mark
@@ -36,8 +37,8 @@ def test_topbar_widget_order_matches_the_shared_model(qapp):
     assert order[3:] == [tb.new_btn, tb.recent_btn, tb._actions_holder, tb.settings_btn]
 
 
-def test_server_model_actions_sit_between_recent_and_settings(qapp):
-    tb = _bar(qapp)
+def test_server_model_actions_sit_between_recent_and_settings(bar):
+    tb = bar
     order = _order(tb)
 
     assert order.index(tb._actions_holder) > order.index(tb.recent_btn)
@@ -45,15 +46,15 @@ def test_server_model_actions_sit_between_recent_and_settings(qapp):
     assert order.index(tb._actions_holder) < order.index(tb.settings_btn)
 
 
-def test_recent_chats_does_not_use_the_clock_glyph(qapp):
-    tb = _bar(qapp)
+def test_recent_chats_does_not_use_the_clock_glyph(bar):
+    tb = bar
     assert "🕓" not in tb.recent_btn.text()
     assert tb.recent_btn.accessibleName() == "Recent chats"
     assert tb.recent_btn.toolTip() == "Recent chats"
 
 
-def test_topbar_controls_are_icon_only_with_names(qapp):
-    tb = _bar(qapp)
+def test_topbar_controls_are_icon_only_with_names(bar):
+    tb = bar
     tb._rebuild_topbar_actions(
         [{"surface": "workspace_timeline", "label": "Workspace timeline",
           "icon": "clock"}]

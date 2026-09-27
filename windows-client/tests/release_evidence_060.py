@@ -187,6 +187,7 @@ def _clean_env(tmp_path: Path) -> dict[str, str]:
         "ASTRAL_AUTH_BFF",
         "ASTRAL_TOKEN",
         "AGENT_API_KEY",
+        "QT_QPA_PLATFORM",
     ):
         environment.pop(name, None)
     roaming = tmp_path / "Roaming"
@@ -195,19 +196,8 @@ def _clean_env(tmp_path: Path) -> dict[str, str]:
     local.mkdir(exist_ok=True)
     environment["APPDATA"] = str(roaming)
     environment["LOCALAPPDATA"] = str(local)
+    environment["ASTRAL_WINDOWS_PROFILE_ID"] = str(uuid.uuid4())
     return environment
-
-
-def _clear_native_windows_settings() -> None:
-    if sys.platform != "win32":
-        return
-    result = subprocess.run(
-        ["reg.exe", "delete", r"HKCU\Software\AstralDeep\WindowsClient", "/f"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert result.returncode in (0, 1), result.stderr
 
 
 def _staging_profile(path: Path) -> Path:
@@ -589,7 +579,6 @@ def test_sign_in_accepts_staging_token_and_refuses_a_stale_principal():
 def test_rendered_chat_completes_in_the_frozen_gui_against_staging(tmp_path):
     started = time.monotonic()
     token = _required_env("ASTRAL_WINDOWS_SMOKE_TOKEN")
-    _clear_native_windows_settings()
     report = tmp_path / "rendered-chat-smoke.json"
     profile = _staging_profile(tmp_path / "staging-profile.json")
     environment = _clean_env(tmp_path)
@@ -616,6 +605,12 @@ def test_rendered_chat_completes_in_the_frozen_gui_against_staging(tmp_path):
     value = json.loads(report.read_text(encoding="utf-8"))
     assert value["status"] == "passed"
     assert value["detail_code"] == "rendered_turn_complete"
+    assert value["console_model_valid"] is True
+    assert value["console_presentation_valid"] is True
+    assert value["console_shell_current"] is True
+    assert value["console_shell_visible"] is True
+    assert value["legacy_topbar_hidden"] is True
+    assert value["legacy_split_hidden"] is True
     assert value["transcript_turns"] >= 2
     assert value["canvas_components"] >= 1
     assert value["window_profile_match"] is True
@@ -844,10 +839,9 @@ def test_personal_agent_authoring_surface_and_benign_host_round_trip(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="requires Windows HWND inspection")
-def test_windows_clean_profile_no_dialog_on_fresh_hkcu(tmp_path):
+def test_windows_isolated_profile_has_no_configure_dialog(tmp_path):
     started = time.monotonic()
     token = _required_env("ASTRAL_WINDOWS_SMOKE_TOKEN")
-    _clear_native_windows_settings()
     profile = _staging_profile(tmp_path / "staging-profile.json")
     environment = _clean_env(tmp_path)
     environment["ASTRAL_TOKEN"] = token
