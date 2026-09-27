@@ -113,7 +113,39 @@ jobs:
               assert counts and sum(count > 0 for count in counts) / len(counts) >= .90, name
           PY
 
-  windows:
+  windows-tests:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install the locked Windows release runtime
+        run: python -m pip install --require-hashes -r windows-client/requirements-release.lock.txt
+      - name: Install locked CI tooling and Projection package
+        shell: pwsh
+        run: |
+          python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m pip install --no-deps --no-build-isolation .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run Windows source tests with changed-line coverage
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: windows-client
+        run: |
+          python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `
+            --cov=windows-client\astral_client --cov-branch `
+            --cov-report=xml:build\075\coverage\windows-python.xml
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          diff-cover build\075\coverage\windows-python.xml `
+            --compare-branch origin/main --fail-under=90
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  windows-package:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
@@ -140,8 +172,10 @@ jobs:
         run: |
           dotnet format windows-client\asr-helper\AstralSpeechHelper.csproj `
             --verify-no-changes --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet format windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj `
             --verify-no-changes --no-restore
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build the native helper and isolated tests
         run: >-
           dotnet build windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj
@@ -157,6 +191,7 @@ jobs:
             --collect:"Code Coverage" `
             --results-directory build\075\coverage\windows-csharp-raw `
             -- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $reports = @(Get-ChildItem build\075\coverage\windows-csharp-raw `
             -Recurse -Filter '*.cobertura.xml')
           if ($reports.Count -ne 1) {
@@ -186,6 +221,7 @@ jobs:
           dotnet test windows-client\asr-helper\tests\AstralSpeechHelper.Tests.csproj `
             --configuration Release --no-restore --no-build `
             --filter "TestCategory=HostCapability"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Publish deterministic helper and verify provenance
         shell: pwsh
         run: |
@@ -235,15 +271,19 @@ jobs:
           }
           dotnet clean windows-client\asr-helper\AstralSpeechHelper.csproj `
             --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet publish windows-client\asr-helper\AstralSpeechHelper.csproj `
             --configuration Release --no-restore --output $publish
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $firstHash = Get-VerifiedHelperHash $publish
 
           Remove-Item -LiteralPath $publish -Recurse -Force
           dotnet clean windows-client\asr-helper\AstralSpeechHelper.csproj `
             --configuration Release
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           dotnet publish windows-client\asr-helper\AstralSpeechHelper.csproj `
             --configuration Release --no-restore --output $publish
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $secondHash = Get-VerifiedHelperHash $publish
           if ($firstHash -ne $secondHash) {
             throw "helper publish is not byte reproducible"
@@ -255,22 +295,13 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python -m pip install --no-deps --no-build-isolation .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Enforce changed native helper coverage
         run: >-
           diff-cover build/075/coverage/windows-csharp.xml
           --compare-branch origin/main --fail-under=90
-      - name: Run Windows source tests with changed-line coverage
-        shell: pwsh
-        env:
-          QT_QPA_PLATFORM: offscreen
-          PYTHONPATH: windows-client
-        run: |
-          python -m pytest windows-client\tests -q -p no:cacheprovider `
-            --cov=windows-client\astral_client --cov-branch `
-            --cov-report=xml:build\075\coverage\windows-python.xml
-          diff-cover build\075\coverage\windows-python.xml `
-            --compare-branch origin/main --fail-under=90
       - name: Run actual frozen Windows package smokes
         env:
           ASTRAL_WINDOWS_EXE: ${{ github.workspace }}\windows-client\dist\AstralDeep.exe
@@ -284,7 +315,7 @@ jobs:
 
   required:
     if: always()
-    needs: [python, web, windows]
+    needs: [python, web, windows-tests, windows-package]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every owner gate
@@ -292,4 +323,5 @@ jobs:
         run: |
           [[ '${{ needs.python.result }}' == 'success' ]]
           [[ '${{ needs.web.result }}' == 'success' ]]
-          [[ '${{ needs.windows.result }}' == 'success' ]]
+          [[ '${{ needs.windows-tests.result }}' == 'success' ]]
+          [[ '${{ needs.windows-package.result }}' == 'success' ]]

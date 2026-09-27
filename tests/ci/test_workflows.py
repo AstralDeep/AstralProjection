@@ -128,10 +128,65 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
     assert '"backend/webrender/static/**/*.js"' in package["scripts"]["lint"]
 
 
-def _assert_windows_native_contract(text: str) -> None:
-    windows = _job_block(text, "windows")
+_PWSH_EXIT_CHECK = "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+_WINDOWS_NATIVE_COMMANDS = ("python ", "dotnet ", "diff-cover ")
+_WINDOWS_RELEASE_INSTALL = (
+    "python -m pip install --require-hashes -r windows-client/requirements-release.lock.txt"
+)
+_WINDOWS_TOOLING_INSTALL = (
+    "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
+)
 
-    assert "fetch-depth: 0" in windows
+
+def _assert_windows_steps_stop_on_native_failure(job: str) -> None:
+    # GitHub's pwsh wrapper only propagates the last native exit code of a script.
+    assert "continue-on-error" not in job
+    checked = 0
+    for step in re.split(r"(?m)^      - ", job)[1:]:
+        if "run: |\n" not in step:
+            continue
+        shell = re.search(r"(?m)^        shell: (\S+)$", step)
+        assert shell is None or shell[1] == "pwsh", step
+        lines = [line.strip() for line in step.split("run: |\n", 1)[1].splitlines()]
+        index = 0
+        while index < len(lines):
+            if lines[index].startswith(_WINDOWS_NATIVE_COMMANDS):
+                while lines[index].endswith("`"):
+                    index += 1
+                assert index + 1 < len(lines) and lines[index + 1] == _PWSH_EXIT_CHECK, step
+                checked += 1
+            index += 1
+    assert checked
+
+
+def _assert_windows_native_contract(text: str) -> None:
+    source_tests = _job_block(text, "windows-tests")
+    windows = _job_block(text, "windows-package")
+
+    for job in (source_tests, windows):
+        assert "runs-on: windows-latest" in job
+        assert "fetch-depth: 0" in job
+        assert job.count("--compare-branch origin/main --fail-under=90") == 1
+        _assert_windows_steps_stop_on_native_failure(job)
+    source_step = _step_block(
+        source_tests, "Run Windows source tests with changed-line coverage"
+    )
+    for required in (
+        "QT_QPA_PLATFORM: offscreen",
+        "PYTHONPATH: windows-client",
+        r"python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `",
+        r"--cov=windows-client\astral_client --cov-branch `",
+        r"--cov-report=xml:build\075\coverage\windows-python.xml",
+        r"diff-cover build\075\coverage\windows-python.xml `",
+    ):
+        assert required in source_step
+    assert (
+        source_tests.index(_WINDOWS_RELEASE_INSTALL)
+        < source_tests.index(_WINDOWS_TOOLING_INSTALL)
+        < source_tests.index(r"python -m pytest windows-client\tests -q")
+    )
+    assert r"python -m pytest windows-client\tests -q" not in windows
+
     assert (
         "actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1"
         in windows
@@ -154,9 +209,6 @@ def _assert_windows_native_contract(text: str) -> None:
         "helper publish is not byte reproducible",
         "python -m PyInstaller --noconfirm --clean AstralDeep.spec",
         "diff-cover build/075/coverage/windows-csharp.xml",
-        r"python -m pytest windows-client\tests -q -p no:cacheprovider `",
-        r"--cov=windows-client\astral_client --cov-branch `",
-        r"diff-cover build\075\coverage\windows-python.xml `",
         "ASTRAL_WINDOWS_EXE: ${{ github.workspace }}",
         r"windows-client\tests\test_packaged_release.py",
         r"windows-client\tests\test_helper_integrity_075.py",
@@ -188,16 +240,11 @@ def _assert_windows_native_contract(text: str) -> None:
         in helper_publish[first_hash:second_clean]
     )
     assert windows.count("--verify-no-changes") == 2
-    assert windows.count("--compare-branch origin/main --fail-under=90") == 2
-    release_install = windows.index(
-        "python -m pip install --require-hashes -r "
-        "windows-client/requirements-release.lock.txt"
-    )
+    release_install = windows.index(_WINDOWS_RELEASE_INSTALL)
     frozen_build = windows.index("python -m PyInstaller --noconfirm --clean AstralDeep.spec")
-    tooling_install = windows.index(
-        "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
-    )
-    assert release_install < frozen_build < tooling_install
+    tooling_install = windows.index(_WINDOWS_TOOLING_INSTALL)
+    frozen_smokes = windows.index(r"windows-client\tests\test_packaged_release.py")
+    assert release_install < frozen_build < tooling_install < frozen_smokes
 
 
 def _assert_apple_platform_contract(apple: str) -> None:
@@ -339,7 +386,13 @@ def _assert_apple_platform_contract(apple: str) -> None:
 def test_core_ci_is_active_read_only_and_projection_owned() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
 
-    assert _job_ids(text) == {"python", "web", "windows", "required"}
+    assert _job_ids(text) == {
+        "python",
+        "web",
+        "windows-tests",
+        "windows-package",
+        "required",
+    }
     _assert_core_trigger_and_python_coverage(text)
     assert "permissions:\n  contents: read" in text
     assert "if: ${{ false }}" not in text
@@ -385,11 +438,12 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     assert "QT_QPA_PLATFORM: offscreen" in text
     assert "PYTHONPATH: windows-client" in text
     _assert_windows_native_contract(text)
-    assert "if: always()" in text
-    assert "needs: [python, web, windows]" in text
-    for job in ("python", "web", "windows"):
-        assert f"needs.{job}.result" in text
-    assert text.count("== 'success'") == 3
+    required = _job_block(text, "required")
+    assert "if: always()" in required
+    assert "needs: [python, web, windows-tests, windows-package]" in required
+    for job in ("python", "web", "windows-tests", "windows-package"):
+        assert f"[[ '${{{{ needs.{job}.result }}}}' == 'success' ]]" in required
+    assert text.count("== 'success'") == 4
 
 
 def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
@@ -427,7 +481,7 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
         assert re.search(rf"(?m)^{re.escape(package)}==[^\s]+.*--hash=sha256:", lock)
 
     install = "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
-    for job_id in ("python", "windows"):
+    for job_id in ("python", "windows-tests", "windows-package"):
         job = _job_block(text, job_id)
         assert install in job
         assert "python -m pip install --no-deps --no-build-isolation ." in job
@@ -496,6 +550,22 @@ def test_core_ci_rejects_trigger_or_python_coverage_weakening(
             r"windows-client\tests\test_packaged_release.py",
         ),
         ("--compare-branch origin/main --fail-under=90", "--fail-under=89"),
+        (" --durations=25", ""),
+        ("  windows-tests:\n", "  windows-source:\n"),
+        (
+            "windows-python.xml\n          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n",
+            "windows-python.xml\n",
+        ),
+        (
+            "--no-restore\n          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n"
+            "          dotnet format",
+            "--no-restore\n          dotnet format",
+        ),
+        (
+            "coverage\n        shell: pwsh\n",
+            "coverage\n        continue-on-error: true\n        shell: pwsh\n",
+        ),
+        ("coverage\n        shell: pwsh\n", "coverage\n        shell: cmd\n"),
     ),
 )
 def test_windows_native_contract_rejects_gate_weakening(
@@ -508,6 +578,58 @@ def test_windows_native_contract_rejects_gate_weakening(
 
     with pytest.raises(AssertionError):
         _assert_windows_native_contract(mutated)
+
+
+@pytest.mark.parametrize(
+    ("pytest_exit", "diff_cover_exit"),
+    ((1, 0), (5, 0), (0, 1), (0, 0)),
+)
+def test_windows_source_step_fails_when_tests_or_coverage_fail(
+    tmp_path: Path,
+    pytest_exit: int,
+    diff_cover_exit: int,
+) -> None:
+    pwsh = shutil.which("pwsh")
+    if pwsh is None or os.name != "posix":
+        pytest.skip("GitHub's pwsh step wrapper is exercised with PowerShell 7 on POSIX")
+    step = _step_block(
+        _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "windows-tests"),
+        "Run Windows source tests with changed-line coverage",
+    )
+    script = tmp_path / "step.ps1"
+    script.write_text(
+        "$ErrorActionPreference = 'stop'\n"
+        + textwrap.dedent(step.split("run: |\n", 1)[1])
+        + "\nif ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }\n",
+        encoding="utf-8",
+    )
+    shims = tmp_path / "bin"
+    shims.mkdir()
+    record = tmp_path / "commands.txt"
+    for name, code in (("python", pytest_exit), ("diff-cover", diff_cover_exit)):
+        shim = shims / name
+        shim.write_text(
+            f"#!/bin/sh\nprintf '%s\\n' \"{name} $*\" >> \"$COMMAND_RECORD\"\nexit {code}\n"
+        )
+        shim.chmod(0o755)
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-Command", f". '{script}'"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{shims}{os.pathsep}{os.environ['PATH']}",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    calls = record.read_text(encoding="utf-8").splitlines()
+    assert result.returncode == (pytest_exit or diff_cover_exit), result.stderr
+    assert calls[0].startswith("python -m pytest windows-client\\tests -q")
+    assert [call.split()[0] for call in calls] == (
+        ["python"] if pytest_exit else ["python", "diff-cover"]
+    )
 
 
 def test_native_ci_is_active_and_uses_standalone_paths() -> None:

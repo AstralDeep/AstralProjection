@@ -19,11 +19,12 @@ FIXTURES = Path(__file__).parents[2] / "contracts" / "fixtures" / "console"
 
 
 def model():
-    return json.loads((FIXTURES / "chrome-console.json").read_text())["console"]
+    return json.loads((FIXTURES / "chrome-console.json").read_text(encoding="utf-8"))["console"]
 
 
 def presentation():
-    return json.loads((FIXTURES / "rote-console.json").read_text())["cases"][0]["presentation"]
+    cases = json.loads((FIXTURES / "rote-console.json").read_text(encoding="utf-8"))["cases"]
+    return cases[0]["presentation"]
 
 
 def selection():
@@ -106,7 +107,9 @@ def test_empty_catalog_is_valid_and_untrusted_text_is_not_markup():
     assert parse_console_model(source) == source
 
 
-@pytest.mark.parametrize("case", json.loads((FIXTURES / "rote-console.json").read_text())["cases"])
+@pytest.mark.parametrize(
+    "case", json.loads((FIXTURES / "rote-console.json").read_text(encoding="utf-8"))["cases"]
+)
 def test_shared_geometry_is_not_recomputed(case):
     source = case["presentation"]
     assert parse_console_presentation(source) == source

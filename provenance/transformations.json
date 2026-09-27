@@ -2968,9 +2968,9 @@
       "sourcePath": "windows-client/tests/test_byo_supervision_060.py",
       "sourceBlob": "f47bc7a74113baf1015a0aec2e386652c41e4613",
       "sourceMode": "100644",
-      "resultSha256": "919fa5a22846121597f958c42c9418333a7ab64826a47819765f57656a70425e",
+      "resultSha256": "7bf8efce25efe840f126e6fdb8149dee262330be84155523d763d459e900ceab",
       "task": "T166",
-      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: delete the 700-trial supervision soak test; every behaviour it repeated keeps its own single-trial test."
     },
     {
       "path": "windows-client/tests/test_canvas_convergence.py",
