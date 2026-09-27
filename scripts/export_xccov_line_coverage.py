@@ -445,7 +445,10 @@ def _normalize_observations(
                 raise ExportError("invalid_observation", f"{label} exceeds its bound")
             observation["executionCount"] = count
         elif "executionCount" in item:
-            raise ExportError("invalid_observation", "non-executable line has an execution count")
+            raise ExportError(
+                "invalid_observation",
+                f"non-executable line has an execution count at {location}",
+            )
         normalized.append(observation)
     normalized.sort(key=lambda item: item["line"])
     maximum_observed = normalized[-1]["line"]

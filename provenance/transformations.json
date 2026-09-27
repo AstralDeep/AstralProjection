@@ -2293,9 +2293,9 @@
       "sourcePath": "scripts/export_xccov_line_coverage.py",
       "sourceBlob": "fb8854fb6756f735e3f6b99bc2430b9fde30b196",
       "sourceMode": "100644",
-      "resultSha256": "03a1041fb3d621c1f84f553775dca4fd57597ecd68bf511cf3a708670f53d9d3",
+      "resultSha256": "d2085688ab1df1e0948496d777b9ef71b5b7de4c535f4419d24b291fffd35ac4",
       "task": "T062",
-      "reason": "Bind original iOS xccov observations to exact source bytes and retained compiler mapping domains without manufacturing coverage rows or counts. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: accept discarded subrange integers up to the unsigned 64-bit bound xccov prints and locate every refused subrange or line count by file, line and field; line counts keep the signed 64-bit bound."
+      "reason": "Bind original iOS xccov observations to exact source bytes and retained compiler mapping domains without manufacturing coverage rows or counts. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: accept discarded subrange integers up to the unsigned 64-bit bound xccov prints and locate every refused subrange, line count or non-executable count by file, line and field; line counts keep the signed 64-bit bound."
     },
     {
       "path": "scripts/run_android_next_major_canary.py",

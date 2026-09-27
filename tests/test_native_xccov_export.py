@@ -173,3 +173,16 @@ def test_malformed_subranges_are_refused_where_they_occur(subranges):
         )
     assert refused.value.code == "invalid_observation"
     assert f"{_ARCHIVE_SOURCE} line 2" in refused.value.message
+
+
+def test_non_executable_line_with_a_count_is_refused_where_it_occurs():
+    document = json.dumps({_ARCHIVE_SOURCE: [
+        {"line": 1, "isExecutable": False},
+        {"line": 2, "isExecutable": False, "executionCount": 3},
+    ]}).encode()
+    with pytest.raises(exporter.ExportError) as refused:
+        exporter._normalize_observations(document, queried_path=_ARCHIVE_SOURCE, maximum_lines=3)
+    assert refused.value.code == "invalid_observation"
+    assert refused.value.message == (
+        f"non-executable line has an execution count at {_ARCHIVE_SOURCE} line 2"
+    )
