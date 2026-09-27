@@ -34,11 +34,11 @@ def test_android_store_and_oidc_identity_remain_registered_values() -> None:
     assert 'val registeredApplicationId = "com.personalailabs.astraldeep"' in gradle
     assert 'val registeredRedirectScheme = "com.personalailabs.astraldeep"' in gradle
     assert "val migrationVersionCodeFloor = 5" in gradle
-    assert "val currentVersionCode = 8" in gradle
+    assert "val currentVersionCode = 9" in gradle
     assert "check(currentVersionCode >= migrationVersionCodeFloor)" in gradle
     assert "applicationId = registeredApplicationId" in gradle
     assert "versionCode = currentVersionCode" in gradle
-    assert 'versionName = "1.4"' in gradle
+    assert 'versionName = "1.5"' in gradle
     assert 'manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme' in gradle
 
     redirect_uri = "com.personalailabs.astraldeep:/oauth2redirect"

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "release_id": "windows-0.5.2",
-  "client_version": "0.5.2",
+  "release_id": "windows-0.6.0",
+  "client_version": "0.6.0",
   "python_version": "3.11",
   "target_platform": "win_amd64",
-  "deployment_profile_sha256": "3fec236769146add8be8293625f5ce8350ef5ef197932a8e42585b51d8258fbf",
+  "deployment_profile_sha256": "25db27097a8069a0d472091676e8f1067b87776a303087d59b88dad32b6362b0",
   "requirements_input_sha256": "5bd4739e9a0db246de0d9df06315be3e2f8f734e40a48e2569a00124382c3a5a",
   "requirements_lock_sha256": "f376ece93b3754b02498e8243a88b3c68282fd26d80c868d85c23bb7ac1d317d",
   "runtime_contract_version": 3,

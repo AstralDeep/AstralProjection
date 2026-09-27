@@ -36,7 +36,7 @@ def smoke(request, monkeypatch, tmp_path, qapp):
     window = request.getfixturevalue("window_fixture")
     effective = resolve_effective_profile(
         bundled_profile_path=ROOT / "windows-client/deployment/release-profile.json",
-        expected_client_version="0.5.2", environment={},
+        expected_client_version="0.6.0", environment={},
     )
     window._deployment_profile = effective
     window.deployment_profile_digest = effective.digest
