@@ -5,7 +5,8 @@ Explicit profile identifiers isolate independent client runs without reading the
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, Mapping
+import hashlib
+from typing import TYPE_CHECKING, Mapping, MutableMapping
 from uuid import UUID
 
 if TYPE_CHECKING:
@@ -38,6 +39,14 @@ def settings_application(environment: Mapping[str, str] | None = None) -> str:
 def settings_registry_key(environment: Mapping[str, str] | None = None) -> str:
     application = settings_application(environment)
     return f"Software\\{SETTINGS_ORGANIZATION}\\{application}"
+
+
+def isolate_local_settings(profile_digest: str, environment: MutableMapping[str, str] | None = None) -> None:
+    environment = os.environ if environment is None else environment
+    settings_application(environment)
+    if PROFILE_ENVIRONMENT_KEY not in environment:
+        digest = hashlib.sha256(f"AstralDeep/local-backend/{profile_digest}".encode()).digest()
+        environment[PROFILE_ENVIRONMENT_KEY] = str(UUID(bytes=digest[:16], version=4))
 
 
 def create_settings(environment: Mapping[str, str] | None = None) -> QSettings:

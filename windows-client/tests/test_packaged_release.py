@@ -238,6 +238,12 @@ def test_actual_frozen_gui_completes_rendered_chat_with_one_profile(tmp_path):
     value = json.loads(report.read_text(encoding="utf-8"))
     assert value["status"] == "passed"
     assert value["detail_code"] == "rendered_turn_complete"
+    assert value["console_model_valid"] is True
+    assert value["console_presentation_valid"] is True
+    assert value["console_shell_current"] is True
+    assert value["console_shell_visible"] is True
+    assert value["legacy_topbar_hidden"] is True
+    assert value["legacy_split_hidden"] is True
     assert value["transcript_turns"] >= 2
     assert value["canvas_components"] >= 1
     assert value["window_profile_match"] is True

@@ -133,6 +133,16 @@ def _uri(value: object, label: str, *, websocket: bool) -> tuple[str, bool]:
     return result, _is_local_host(parsed.hostname)
 
 
+def _is_loopback_endpoint(endpoint: str) -> bool:
+    host = urlsplit(endpoint).hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 @dataclass(frozen=True)
 class OverridePolicy:
     managed_profile_allowed: bool
@@ -281,7 +291,7 @@ def parse_profile(
     if expected_client_version is not None and client_version != expected_client_version:
         raise DeploymentProfileError("profile client_version does not match the client")
     distribution = data["distribution"]
-    if distribution not in {"production", "generic_developer"}:
+    if distribution not in {"production", "generic_developer", "local_backend"}:
         raise DeploymentProfileError("distribution is unsupported")
     local_only = _bool(data["local_only"], "local_only")
     authority, authority_local = _uri(data["authority"], "authority", websocket=False)
@@ -336,6 +346,17 @@ def parse_profile(
             raise DeploymentProfileError("production profile permits a developer fallback")
         if byo_disposition != "authenticated_ui_tunnel" or legacy_disposition != "disabled":
             raise DeploymentProfileError("production agent dispositions are inconsistent")
+    elif distribution == "local_backend":
+        if not local_only or not _is_loopback_endpoint(endpoint):
+            raise DeploymentProfileError("local backend profiles require a loopback WebSocket endpoint")
+        if authority_local or not authority.startswith("https://"):
+            raise DeploymentProfileError("local backend profiles require a remote HTTPS Keycloak authority")
+        if auth_mode != "keycloak_oidc_pkce":
+            raise DeploymentProfileError("local backend profiles require direct Keycloak PKCE")
+        if policy.configure_dialog_allowed or policy.development_defaults_allowed:
+            raise DeploymentProfileError("local backend profiles cannot permit a developer fallback")
+        if byo_disposition != "authenticated_ui_tunnel" or legacy_disposition != "disabled":
+            raise DeploymentProfileError("local backend agent dispositions are inconsistent")
     else:
         if not local_only or not authority_local or not endpoint_local:
             raise DeploymentProfileError("generic developer profiles must be explicitly local-only")

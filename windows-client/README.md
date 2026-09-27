@@ -119,6 +119,27 @@ Packaged tests and release qualification choose a fresh identifier for each
 invocation. They never clear the interactive user's profile. Disposable
 namespaces remain in the test account's settings storage.
 
+For a local backend with the usual remote Keycloak identity provider, use
+`Launch-AstralDeep-Local.bat`. It passes the complete
+`deployment/local-backend-profile.json` to the same packaged executable.
+The window title includes **Local testing**. This explicit `local_backend`
+distribution requires a loopback WebSocket endpoint, a remote HTTPS authority,
+direct Keycloak PKCE and authenticated agent transport. It rejects developer
+authentication/configuration fallbacks, unspecified bind addresses and legacy
+agent keys. `local_only` scopes the application backend; identity remains at
+the selected HTTPS Keycloak authority. Production and all-local generic
+developer profile restrictions are unchanged.
+
+A local profile may also be selected in the existing native
+`deployment/profile_json` setting so opening the executable directly uses it.
+After that selection is read, local runtime settings use a stable separate
+namespace derived from the complete profile. Production conversation resumption,
+workspace selection and remote-control consent are not inherited. An explicitly
+provided `ASTRAL_WINDOWS_PROFILE_ID` continues to select its isolated namespace.
+Removing that explicit selection restores the bundled sandbox profile; do so
+only when the build is approved for that environment. User sign-in is still
+required; the launcher does not supply tokens or change server authentication.
+
 ## Run (dev)
 
 Requires **Python 3.11+** and a running orchestrator. For local dev set the

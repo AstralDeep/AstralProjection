@@ -138,6 +138,11 @@ def main(argv=None) -> int:
         print(json.dumps(startup.validation_report, sort_keys=True))
         return 0
 
+    if startup.effective_profile.profile.distribution == "local_backend":
+        from astral_client.settings import isolate_local_settings
+
+        isolate_local_settings(startup.effective_profile.digest)
+
     # Must follow the byo-worker branch (frozen exe reentry)
     from astral_client.app import main as app_main
 

@@ -2049,7 +2049,9 @@ class MainWindow(QMainWindow):
         self.deployment_profile_digest = (
             deployment_profile.digest if deployment_profile is not None else None
         )
-        self.setWindowTitle("AstralDeep — Windows")
+        local_backend = (deployment_profile is not None
+                         and deployment_profile.profile.distribution == "local_backend")
+        self.setWindowTitle("AstralDeep — Windows — Local testing" if local_backend else "AstralDeep — Windows")
         self.resize(1280, 860)
         self._resume_store = ConversationResumeStore(
             create_settings()
@@ -5493,11 +5495,37 @@ def _install_release_smoke(
     state = {"sent": False, "complete": False}
     window._release_smoke_exit_code = 1
 
+    def _console_checks() -> dict[str, bool]:
+        model = parse_console_model(window._console_model)
+        presentation = parse_console_presentation(window._console_presentation)
+        shell = window._console_shell
+        current = (
+            isinstance(shell, ConsoleShell)
+            and model is not None
+            and presentation is not None
+            and shell.model == model
+            and shell.presentation == presentation
+            and window._root_layout.indexOf(shell) >= 0
+            and window.isAncestorOf(shell)
+        )
+        return {
+            "console_model_valid": model is not None,
+            "console_presentation_valid": presentation is not None,
+            "console_shell_current": current,
+            "console_shell_visible": (
+                current and shell.isVisible() and shell.isEnabled()
+            ),
+            "legacy_topbar_hidden": window.topbar.isHidden(),
+            "legacy_split_hidden": window._legacy_split.isHidden(),
+        }
+
     def _finish(frame: Optional[dict] = None, error: Optional[str] = None) -> None:
         if state["complete"]:
             return
         state["complete"] = True
         report = effective_profile.redacted_report()
+        console_checks = _console_checks()
+        report.update(console_checks)
         if error is None and frame is not None:
             transcript = frame.get("transcript") or []
             canvas = frame.get("canvas") or {}
@@ -5512,14 +5540,18 @@ def _install_release_smoke(
                 }
             )
             passed = (
-                len(transcript) >= 2
+                all(console_checks.values())
+                and len(transcript) >= 2
                 and report["canvas_components"] >= 1
                 and report["window_profile_match"]
                 and report["byo_profile_match"]
                 and report["tools_agent_profile_match"]
             )
             report["status"] = "passed" if passed else "failed"
-            report["detail_code"] = "rendered_turn_complete" if passed else "incomplete_rendered_turn"
+            report["detail_code"] = (
+                "console_bootstrap_incomplete" if not all(console_checks.values())
+                else "rendered_turn_complete" if passed else "incomplete_rendered_turn"
+            )
             window._release_smoke_exit_code = 0 if passed else 1
         else:
             report.update(
