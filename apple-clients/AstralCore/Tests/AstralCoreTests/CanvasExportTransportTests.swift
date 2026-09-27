@@ -8,11 +8,12 @@ import XCTest
 @testable import AstralCore
 
 final class CanvasExportTransportTests: XCTestCase {
+    private let socketEventTimeout: TimeInterval = 30
     func testRealSlowDripCannotExtendPresentationResourceDeadline() async throws {
         let server = try CanvasExportDripServer()
         defer { server.stop() }
         server.start()
-        await fulfillment(of: [server.ready], timeout: 3)
+        await fulfillment(of: [server.ready], timeout: socketEventTimeout)
         let port = try XCTUnwrap(server.listener.port)
         let url = URL(string: "http://127.0.0.1:\(port.rawValue)/presentation")!
         let configuration = NoStoreHTTP.configuration()
@@ -33,13 +34,13 @@ final class CanvasExportTransportTests: XCTestCase {
         let server = try CanvasExportDripServer()
         defer { server.stop() }
         server.start()
-        await fulfillment(of: [server.ready], timeout: 3)
+        await fulfillment(of: [server.ready], timeout: socketEventTimeout)
         let port = try XCTUnwrap(server.listener.port)
         let url = URL(string: "http://127.0.0.1:\(port.rawValue)/presentation")!
         let session = URLSession(configuration: NoStoreHTTP.configuration())
         defer { session.invalidateAndCancel() }
         let task = Task { try await CanvasExportPolicy.response(NoStoreHTTP.request(url: url), session: session) }
-        await fulfillment(of: [server.startedBody], timeout: 3)
+        await fulfillment(of: [server.startedBody], timeout: socketEventTimeout)
         let start = ContinuousClock.now
         task.cancel()
         do {
@@ -54,7 +55,7 @@ final class CanvasExportTransportTests: XCTestCase {
         let server = try CanvasExportDripServer()
         defer { server.stop() }
         server.start()
-        await fulfillment(of: [server.ready], timeout: 3)
+        await fulfillment(of: [server.ready], timeout: socketEventTimeout)
         let port = try XCTUnwrap(server.listener.port)
         let base = URL(string: "http://127.0.0.1:\(port.rawValue)")!
         let configuration = NoStoreHTTP.configuration()

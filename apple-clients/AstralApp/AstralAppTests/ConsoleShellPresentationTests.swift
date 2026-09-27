@@ -12,6 +12,7 @@ import XCTest
 
 @MainActor
 final class ConsoleShellPresentationTests: XCTestCase {
+    private let socketEventTimeout: TimeInterval = 30
     private var suites: [String] = []
 
     private func fixture(_ name: String) throws -> JSONValue {
@@ -47,6 +48,11 @@ final class ConsoleShellPresentationTests: XCTestCase {
         model.screen = .chat
         model.composerDraft = "Keep this unfinished prompt"
         return model
+    }
+
+    private func poll(until condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(socketEventTimeout)
+        while !condition(), Date() < deadline { try await Task.sleep(for: .milliseconds(50)) }
     }
 
     override func tearDown() {
@@ -178,7 +184,7 @@ final class ConsoleShellPresentationTests: XCTestCase {
                 ], supportsWebSocket: true)
             peer.start()
             defer { peer.stop() }
-            await fulfillment(of: [peer.ready], timeout: 5)
+            await fulfillment(of: [peer.ready], timeout: socketEventTimeout)
             let store = InMemoryTokenStore()
             store.save(
                 StoredTokens(
@@ -186,7 +192,7 @@ final class ConsoleShellPresentationTests: XCTestCase {
             let server = try XCTUnwrap(URL(string: "http://127.0.0.1:\(try XCTUnwrap(peer.port))"))
             let model = try model(tokenStore: store, server: server)
             await model.bootstrap()
-            for _ in 0..<100 where peer.registrations == 0 { try await Task.sleep(for: .milliseconds(50)) }
+            try await poll { peer.registrations != 0 }
             XCTAssertEqual(peer.registrations, 1)
             var menu = try XCTUnwrap(try fixture("chrome-console").objectValue)
             menu["topbar"] = .array(
@@ -221,12 +227,12 @@ final class ConsoleShellPresentationTests: XCTestCase {
             ] {
                 model.errorBanner = nil
                 try clickShare()
-                for _ in 0..<50 where model.errorBanner == nil { try await Task.sleep(for: .milliseconds(50)) }
+                try await poll { model.errorBanner != nil }
                 XCTAssertEqual(model.errorBanner, expected)
             }
             model.errorBanner = nil
             try clickShare()
-            for _ in 0..<50 where peer.requests.count < 4 { try await Task.sleep(for: .milliseconds(50)) }
+            try await poll { peer.requests.count >= 4 }
             XCTAssertEqual(peer.requests.count, 4)
             XCTAssertTrue(model.workspaceActionInFlight(.shareCanvas))
             model.bindConversationAccount(

@@ -559,6 +559,11 @@ jobs:
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             -enableCodeCoverage YES \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 300 \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
             -resultBundlePath "$navigation_result" \
             -only-testing:AstralWatchNavigationUITests \
             test

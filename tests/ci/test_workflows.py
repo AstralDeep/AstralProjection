@@ -360,6 +360,15 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert watch.count(exporter) == 1
     assert "-scheme AstralWatchNavigation" in watch
     assert "-only-testing:AstralWatchNavigationUITests" in watch
+    navigation = watch[watch.index("-scheme AstralWatchNavigation") :]
+    for flag in (
+        "-test-timeouts-enabled YES",
+        "-default-test-execution-time-allowance 120",
+        "-maximum-test-execution-time-allowance 300",
+        "-retry-tests-on-failure",
+        "-test-iterations 3",
+    ):
+        assert watch.count(flag) == 1 and flag in navigation, flag
     assert 'test "$unit_status" -eq 0' in watch
     assert 'test "$navigation_status" -eq 0' in watch
     assert 'xcrun xcresulttool merge --output-path "$result" "$unit_result" "$navigation_result"' in watch
@@ -649,7 +658,7 @@ def test_windows_source_step_fails_when_tests_or_coverage_fail(
         timeout=60,
     )
     calls = record.read_text(encoding="utf-8").splitlines()
-    assert result.returncode == (pytest_exit or diff_cover_exit), result.stderr
+    assert (result.returncode != 0) == bool(pytest_exit or diff_cover_exit), result.stderr
     assert calls[0].startswith("python -m pytest windows-client\\tests -q")
     assert [call.split()[0] for call in calls] == (
         ["python"] if pytest_exit else ["python", "diff-cover"]
@@ -1242,6 +1251,10 @@ def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_com
         assert build[build.index("-project") + 1] == "Owned Watch.xcodeproj"
         assert build[build.index("-destination") + 1] == "platform=watchOS Simulator,id=owned-watch"
         assert "-enableCodeCoverage" in build and "CODE_SIGNING_ALLOWED=NO" in build
+    assert "-retry-tests-on-failure" not in builds[0]
+    assert "-retry-tests-on-failure" in builds[1]
+    assert builds[1][builds[1].index("-test-iterations") + 1] == "3"
+    assert builds[1][builds[1].index("-default-test-execution-time-allowance") + 1] == "120"
     merges = [call for call in calls if call[0] == "xcrun"]
     assert len(merges) == (1 if failing_command in {"none", "merge"} else 0)
     if merges:

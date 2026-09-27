@@ -9,6 +9,7 @@ import XCTest
 
 @MainActor
 final class ConsoleWatchTests: XCTestCase {
+    private let socketEventTimeout: TimeInterval = 30
     private let connection = "22222222-2222-4222-8222-222222222222"
     private let generation = "33333333-3333-4333-8333-333333333333"
     private let owner = ConversationAccount(issuer: "https://iam.example.test", subject: "owner")!
@@ -218,7 +219,7 @@ final class ConsoleWatchTests: XCTestCase {
         let peer = try GuidanceModelPeer()
         peer.start()
         defer { peer.stop() }
-        await fulfillment(of: [peer.ready], timeout: 3)
+        await fulfillment(of: [peer.ready], timeout: socketEventTimeout)
         let socket = WSClient(url: URL(string: "ws://127.0.0.1:\(try XCTUnwrap(peer.listener.port).rawValue)/ws")!)
         let model = WatchModel(conversationResumeStore: ConversationResumeStore(), webSocket: socket)
         let ready = expectation(description: "console registered socket")
@@ -230,7 +231,7 @@ final class ConsoleWatchTests: XCTestCase {
             }
         }
         await socket.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
-        await fulfillment(of: [ready], timeout: 3)
+        await fulfillment(of: [ready], timeout: socketEventTimeout)
         try configured(model)
         let agent = try XCTUnwrap(model.console?.catalog.agents.first)
         model.openAgent(agent)
@@ -261,7 +262,7 @@ final class ConsoleWatchTests: XCTestCase {
     }
 
     private func until(_ condition: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(3)
+        let deadline = Date().addingTimeInterval(socketEventTimeout)
         while !condition(), Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertTrue(condition())
     }

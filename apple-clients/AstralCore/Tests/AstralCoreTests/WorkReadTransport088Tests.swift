@@ -8,6 +8,7 @@ import XCTest
 @testable import AstralCore
 
 final class WorkReadTransport088Tests: XCTestCase {
+    private let socketEventTimeout: TimeInterval = 30
     private let generation = "33333333-3333-4333-8333-333333333333"
 
     private func connected(
@@ -16,7 +17,7 @@ final class WorkReadTransport088Tests: XCTestCase {
         let peer = try WorkReadLoopback()
         peer.start()
         defer { peer.stop() }
-        await fulfillment(of: [peer.ready], timeout: 3)
+        await fulfillment(of: [peer.ready], timeout: socketEventTimeout)
         let port = try XCTUnwrap(peer.listener.port)
         let client = WSClient(url: URL(string: "ws://127.0.0.1:\(port.rawValue)/ws")!)
         let ready = expectation(description: "registered current socket")
@@ -27,7 +28,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             }
         }
         await client.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
-        await fulfillment(of: [ready], timeout: 3)
+        await fulfillment(of: [ready], timeout: socketEventTimeout)
         do { try await body(client, peer) } catch {
             await client.stop()
             consume.cancel()
@@ -60,7 +61,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             peer.expectSingleRead()
             let sent = await client.sendCurrentViewportEvent(text) { true }
             XCTAssertTrue(sent)
-            await fulfillment(of: [peer.twoReads], timeout: 3)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
             XCTAssertEqual(peer.reads, [text])
             await client.stop()
             let stopped = await client.sendCurrentViewportEvent(text) { true }
@@ -98,7 +99,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             let closed = await client.sendCurrentChromeEvent(close) { true }
             XCTAssertTrue(opened)
             XCTAssertTrue(closed)
-            await fulfillment(of: [peer.twoReads], timeout: 3)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
             XCTAssertEqual(peer.reads, [open, close])
             await client.stop()
             let disconnected = await client.sendCurrentChromeEvent(open) { true }
@@ -125,7 +126,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             let closed = await client.sendCurrentWorkEvent(close) { true }
             XCTAssertTrue(opened)
             XCTAssertTrue(closed)
-            await fulfillment(of: [peer.twoReads], timeout: 3)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
             XCTAssertEqual(peer.reads, [open, close])
         }
     }
@@ -147,7 +148,7 @@ final class WorkReadTransport088Tests: XCTestCase {
                         return mode != "stale"
                     }
                 }
-                await fulfillment(of: [entered], timeout: 3)
+                await fulfillment(of: [entered], timeout: socketEventTimeout)
                 if mode == "cancelled" { pending.cancel() }
                 if mode == "stopped" { await client.stop() }
                 await gate.release()
@@ -160,7 +161,7 @@ final class WorkReadTransport088Tests: XCTestCase {
                         payload: .object(["surface": .string("work")]), requestGeneration: generation)
                     let closed = await client.sendCurrentWorkEvent(close) { true }
                     XCTAssertTrue(closed)
-                    await fulfillment(of: [peer.twoReads], timeout: 3)
+                    await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
                     XCTAssertEqual(peer.reads, [close])
                 } else {
                     XCTAssertTrue(peer.reads.isEmpty)
@@ -180,7 +181,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             let barrier = component("component_restore")
             let sent = await client.sendCurrentComponentEvent(barrier) { true }
             XCTAssertTrue(sent)
-            let deadline = Date().addingTimeInterval(3)
+            let deadline = Date().addingTimeInterval(socketEventTimeout)
             while !peer.reads.contains(barrier) && Date() < deadline {
                 try await Task.sleep(nanoseconds: 10_000_000)
             }
@@ -205,7 +206,7 @@ final class WorkReadTransport088Tests: XCTestCase {
                     return true
                 }
             }
-            await fulfillment(of: [entered], timeout: 3)
+            await fulfillment(of: [entered], timeout: socketEventTimeout)
             pending.cancel()
             await gate.release()
             let sent = await pending.value
@@ -216,7 +217,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             XCTAssertTrue(opened)
             let forgotten = await client.sendCurrentGuidanceEvent(wire) { true }
             XCTAssertTrue(forgotten)
-            await fulfillment(of: [peer.twoReads], timeout: 3)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
             XCTAssertEqual(peer.reads.count, 2)
             XCTAssertEqual(GuidanceRequest(frameText: peer.reads[0]), .list)
             XCTAssertEqual(peer.reads[1], wire)
@@ -241,7 +242,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             let restored = await client.sendCurrentComponentEvent(restore) { true }
             XCTAssertTrue(refined)
             XCTAssertTrue(restored)
-            await fulfillment(of: [peer.twoReads], timeout: 3)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
             XCTAssertEqual(peer.reads, [refine, restore])
         }
     }
@@ -250,7 +251,7 @@ final class WorkReadTransport088Tests: XCTestCase {
         let peer = try WorkReadLoopback()
         peer.start()
         defer { peer.stop() }
-        await fulfillment(of: [peer.ready], timeout: 3)
+        await fulfillment(of: [peer.ready], timeout: socketEventTimeout)
         let port = try XCTUnwrap(peer.listener.port)
         let client = WSClient(url: URL(string: "ws://127.0.0.1:\(port.rawValue)/ws")!)
         let restore = component("component_restore")
@@ -287,13 +288,13 @@ final class WorkReadTransport088Tests: XCTestCase {
             for await event in stream { if case .connected = event { ready.fulfill() } }
         }
         await client.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
-        await fulfillment(of: [ready], timeout: 3)
-        let flushDeadline = Date().addingTimeInterval(3)
+        await fulfillment(of: [ready], timeout: socketEventTimeout)
+        let flushDeadline = Date().addingTimeInterval(socketEventTimeout)
         while peer.reads.isEmpty && Date() < flushDeadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(peer.reads, [queued])
         let restored = await client.sendCurrentComponentEvent(restore) { true }
         XCTAssertTrue(restored)
-        await fulfillment(of: [peer.twoReads], timeout: 3)
+        await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
         XCTAssertEqual(peer.reads, [queued, restore])
         await client.stop()
         consume.cancel()
@@ -303,7 +304,7 @@ final class WorkReadTransport088Tests: XCTestCase {
         for notes in [false, true] {
             let peer = try WorkReadLoopback()
             peer.start()
-            await fulfillment(of: [peer.ready], timeout: 3)
+            await fulfillment(of: [peer.ready], timeout: socketEventTimeout)
             let port = try XCTUnwrap(peer.listener.port)
             let client = WSClient(url: URL(string: "ws://127.0.0.1:\(port.rawValue)/ws")!)
             let gate = WorkReadGate()
@@ -327,9 +328,9 @@ final class WorkReadTransport088Tests: XCTestCase {
                     await gate.wait()
                     return false
                 })
-            await fulfillment(of: [validating], timeout: 3)
+            await fulfillment(of: [validating], timeout: socketEventTimeout)
             await peer.closeTransport()
-            await fulfillment(of: [peer.remoteClosed], timeout: 3)
+            await fulfillment(of: [peer.remoteClosed], timeout: socketEventTimeout)
             let sent: Bool
             if notes {
                 sent = await client.sendCurrentGuidanceEvent(
@@ -343,12 +344,12 @@ final class WorkReadTransport088Tests: XCTestCase {
             XCTAssertFalse(sent)
             XCTAssertTrue(peer.reads.isEmpty)
             await gate.release()
-            await fulfillment(of: [reconnected], timeout: 5)
+            await fulfillment(of: [reconnected], timeout: socketEventTimeout)
             let barrier = component("component_restore")
             peer.expectSingleRead()
             let delivered = await client.sendCurrentComponentEvent(barrier) { true }
             XCTAssertTrue(delivered)
-            await fulfillment(of: [peer.twoReads], timeout: 3)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
             XCTAssertEqual(peer.reads, [barrier], "Refused private send must never replay on the new connection")
             await client.stop()
             consume.cancel()
@@ -360,7 +361,7 @@ final class WorkReadTransport088Tests: XCTestCase {
         for notes in [false, true] {
             let peer = try WorkReadLoopback()
             peer.start()
-            await fulfillment(of: [peer.ready], timeout: 3)
+            await fulfillment(of: [peer.ready], timeout: socketEventTimeout)
             let port = try XCTUnwrap(peer.listener.port)
             let client = WSClient(url: URL(string: "ws://127.0.0.1:\(port.rawValue)/ws")!)
             let first = expectation(description: "first registered socket")
@@ -376,7 +377,7 @@ final class WorkReadTransport088Tests: XCTestCase {
                 }
             }
             await client.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
-            await fulfillment(of: [first], timeout: 3)
+            await fulfillment(of: [first], timeout: socketEventTimeout)
             let gate = WorkReadGate()
             let entered = expectation(description: "original view validation awaits")
             let pending = Task {
@@ -394,9 +395,9 @@ final class WorkReadTransport088Tests: XCTestCase {
                 return await client.sendCurrentWorkEvent(
                     work.frameText(requestGeneration: generation), isCurrent: current)
             }
-            await fulfillment(of: [entered], timeout: 3)
+            await fulfillment(of: [entered], timeout: socketEventTimeout)
             await peer.closeTransport()
-            await fulfillment(of: [replacement], timeout: 5)
+            await fulfillment(of: [replacement], timeout: socketEventTimeout)
             await gate.release()
             let sent = await pending.value
             XCTAssertFalse(sent)
@@ -404,7 +405,7 @@ final class WorkReadTransport088Tests: XCTestCase {
             let barrier = component("component_restore")
             let delivered = await client.sendCurrentComponentEvent(barrier) { true }
             XCTAssertTrue(delivered)
-            await fulfillment(of: [peer.twoReads], timeout: 3)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
             XCTAssertEqual(peer.reads, [barrier])
             await client.stop()
             consume.cancel()

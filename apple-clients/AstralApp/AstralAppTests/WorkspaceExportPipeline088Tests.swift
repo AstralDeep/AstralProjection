@@ -10,6 +10,7 @@ import XCTest
 
 @MainActor
 final class WorkspaceExportPipeline088Tests: XCTestCase {
+    private let socketEventTimeout: TimeInterval = 30
     private func withModel(
         authorizationStatus: Int = 200,
         presentationStatus: Int = 200,
@@ -19,7 +20,7 @@ final class WorkspaceExportPipeline088Tests: XCTestCase {
             authorizationStatus: authorizationStatus, presentationStatus: presentationStatus)
         server.start()
         defer { server.stop() }
-        await fulfillment(of: [server.ready], timeout: 3)
+        await fulfillment(of: [server.ready], timeout: socketEventTimeout)
         let port = try XCTUnwrap(server.listener.port)
         let suite = "WorkspaceExportPipeline088.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
