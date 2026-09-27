@@ -1,8 +1,9 @@
 // Verifies scoped layout refresh preserves native presentation and rejects stale, failed, or busy hydration.
 
 import AstralCore
-@testable import AstralWatch
 import XCTest
+
+@testable import AstralWatch
 
 @MainActor
 final class ViewportSnapshotTests: XCTestCase {

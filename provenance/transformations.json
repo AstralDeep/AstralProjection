@@ -1492,9 +1492,9 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/ConversationSnapshotTests.swift",
       "sourceBlob": "244a4314b963eca719e1c458545112dd7e0b9e53",
       "sourceMode": "100644",
-      "resultSha256": "3b1675bd1f352a05e6996e1efcb08ec7c76d86111cdfb6d7346ca0598d38c0a9",
+      "resultSha256": "0234288d40b17386f2e30307cda3deb19adb80a56c4db7253ad0d106b0949e81",
       "task": "T056/T060",
-      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery."
+      "reason": "Feature 088 authenticated native verification: preserve local commit publication, server generation freshness, terminal recovery and busy request fences across native clients, with regression coverage. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Fair CI 2026-09-27: place regular imports before the @testable import so the strict swift-format lane passes."
     },
     {
       "path": "apple-clients/AstralCore/Tests/AstralCoreTests/CoreLogicTests.swift",

@@ -2,12 +2,13 @@
 // Captured views exercise the same ConsoleShell and live chart renderer used by the signed-in app.
 
 import AstralCore
-@testable import AstralDeep
 import Observation
 import SwiftUI
 import Vision
 import WebKit
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class ConsoleShellPresentationTests: XCTestCase {
