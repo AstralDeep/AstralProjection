@@ -80,7 +80,7 @@ packaged authentication, or release acceptance.
 
 ## Deployment profile and precedence
 
-The 0.5.2 release candidate contains one reviewed, non-secret production
+The 0.6.0 release candidate contains one reviewed, non-secret production
 profile at `deployment/release-profile.json`. It resolves that whole profile
 before importing Qt, starting authentication, opening a transport, or hosting
 an agent. A clean install therefore opens without the **Configure AstralDeep**

@@ -97,9 +97,9 @@ to these identities. A repository rename or redirect proves none of them.
 
 | Platform | Repository observation | Store-authoritative value |
 |---|---|---|
-| Android | Candidate `versionCode` is `7`; `versionName` is `1.4`; `targetSdk`/`compileSdk` 36 | Play refused the `6 (1.4)` targetSdk-35 bundle on 2026-09-03 (target API 36 required), consuming code `6`; recheck the all-app-bundles inventory before upload |
-| Apple | Candidate source is `MARKETING_VERSION 1.5` / `CURRENT_PROJECT_VERSION 61` | Authenticated App Store Connect on 2026-08-30 confirmed iOS and macOS `1.4 (60)`; reserve `ASTRAL_APPLE_LAST_SUBMITTED_BUILD=60` and a base of at least `61`, then recheck immediately before upload |
-| Windows | Candidate source is `0.5.2`; live legacy baseline is `v0.4.0`; the `v0.5.0` and `v0.5.1` tags (2026-09-03) are immutable and unpublished: the release lane first lacked the Projection submodule checkout, then the Feature 075 speech-helper publish | The bridge version is deliberately unselected in `contracts/windows-release-trust.json` |
+| Android | Candidate `versionCode` is `9`; `versionName` is `1.5`; `targetSdk`/`compileSdk` 36 | Play refused the `6 (1.4)` targetSdk-35 bundle on 2026-09-03 (target API 36 required), consuming code `6`; `7 (1.4)` was submitted the same day and `8` was reserved on 2026-09-12, so the 2026-09-26 release uses `9`; recheck the all-app-bundles inventory before upload |
+| Apple | Candidate source is `MARKETING_VERSION 1.6` / `CURRENT_PROJECT_VERSION 62` | Release run 61 uploaded iOS and macOS `1.5 (61)` on 2026-09-03; the release lane stamps the GitHub run number as the build, so recheck App Store Connect immediately before upload |
+| Windows | Candidate source is `0.6.0`; the latest published release is `v0.5.2` (2026-09-03); the `v0.5.0` and `v0.5.1` tags are immutable and unpublished: the release lane first lacked the Projection submodule checkout, then the Feature 075 speech-helper publish | The bridge version is deliberately unselected in `contracts/windows-release-trust.json` |
 
 GitHub run numbers and checked-in project defaults are evidence leads, not
 store truth. Store maxima must be rechecked immediately before publication;

@@ -178,7 +178,7 @@ def test_non_windows_persisted_profile_does_not_use_registry(monkeypatch):
 
 def test_startup_passes_explicit_environment_to_registry(registry):
     resolved = deployment.resolve_startup(
-        [], resource_root=CLIENT_ROOT, expected_client_version="0.5.2",
+        [], resource_root=CLIENT_ROOT, expected_client_version="0.6.0",
         frozen=True, environment=PROFILE_ENVIRONMENT,
     )
     assert resolved.effective_profile.source == "bundled_release"
@@ -188,7 +188,7 @@ def test_startup_passes_explicit_environment_to_registry(registry):
 def test_invalid_profile_rejected_even_with_managed_deployment(registry):
     with pytest.raises(deployment.DeploymentProfileError, match="canonical UUID4"):
         deployment.resolve_startup(
-            [], resource_root=CLIENT_ROOT, expected_client_version="0.5.2", frozen=True,
+            [], resource_root=CLIENT_ROOT, expected_client_version="0.6.0", frozen=True,
             environment={settings.PROFILE_ENVIRONMENT_KEY: "bad",
                          "ASTRAL_MANAGED_DEPLOYMENT_PROFILE": "unused.json"},
         )

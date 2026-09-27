@@ -23,7 +23,7 @@ def test_local_profile_uses_one_explicit_endpoint_and_normal_keycloak(source):
     selected = local_profile()
     startup = resolve_startup(
         ["--deployment-profile", str(PROFILE)] if source == "command_line" else [],
-        resource_root=ROOT, expected_client_version="0.5.2", frozen=True,
+        resource_root=ROOT, expected_client_version="0.6.0", frozen=True,
         persisted_profile_json=json.dumps(selected) if source == "persisted" else None,
         environment=({"ASTRAL_MANAGED_DEPLOYMENT_PROFILE": str(PROFILE)} if source == "managed" else {}),
     )
@@ -100,7 +100,7 @@ def test_invalid_persisted_local_selection_does_not_return_to_sandbox():
     selected = local_profile()
     selected["websocket_endpoint"] = "ws://192.168.1.2:8001/ws"
     with pytest.raises(DeploymentProfileError, match="loopback"):
-        resolve_startup([], resource_root=ROOT, expected_client_version="0.5.2", frozen=True,
+        resolve_startup([], resource_root=ROOT, expected_client_version="0.6.0", frozen=True,
                         environment={}, persisted_profile_json=json.dumps(selected))
 
 
@@ -108,7 +108,7 @@ def test_local_runtime_namespace_is_stable_and_keeps_selector_separate():
     from astral_client.settings import isolate_local_settings, settings_registry_key
 
     selector = {}
-    selected = resolve_startup([], resource_root=ROOT, expected_client_version="0.5.2", frozen=True,
+    selected = resolve_startup([], resource_root=ROOT, expected_client_version="0.6.0", frozen=True,
                                environment=selector, persisted_profile_json=json.dumps(local_profile()))
     runtime = dict(selector)
     isolate_local_settings(selected.effective_profile.digest, runtime)
@@ -162,7 +162,7 @@ def test_local_window_identifies_target_without_starting_transport(monkeypatch, 
     monkeypatch.setattr(MainWindow, "_init_workspace", lambda self: None)
     profile = resolve_startup(
         ["--deployment-profile", str(PROFILE)], resource_root=ROOT,
-        expected_client_version="0.5.2", frozen=True, environment={},
+        expected_client_version="0.6.0", frozen=True, environment={},
     ).effective_profile
     window = native_root(MainWindow, profile.profile.websocket_endpoint, "", connect=False,
                          deployment_profile=profile)

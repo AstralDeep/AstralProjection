@@ -128,7 +128,7 @@ val keystoreProperties =
 val registeredApplicationId = "com.personalailabs.astraldeep"
 val registeredRedirectScheme = "com.personalailabs.astraldeep"
 val migrationVersionCodeFloor = 5
-val currentVersionCode = 8
+val currentVersionCode = 9
 check(currentVersionCode >= migrationVersionCodeFloor) {
     "Android versionCode must not regress below the AstralProjection migration floor"
 }
@@ -191,7 +191,7 @@ android {
         minSdk = libs.versions.minSdk.get().toInt()
         targetSdk = libs.versions.targetSdk.get().toInt()
         versionCode = currentVersionCode
-        versionName = "1.4"
+        versionName = "1.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme

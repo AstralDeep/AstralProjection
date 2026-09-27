@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "profile_id": "astraldeep-local-backend-0.5.2",
-  "release_id": "windows-0.5.2",
-  "client_version": "0.5.2",
+  "profile_id": "astraldeep-local-backend-0.6.0",
+  "release_id": "windows-0.6.0",
+  "client_version": "0.6.0",
   "distribution": "local_backend",
   "local_only": true,
   "authority": "https://iam.ai.uky.edu/realms/Astral",

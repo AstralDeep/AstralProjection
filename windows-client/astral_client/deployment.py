@@ -393,8 +393,8 @@ def _development_profile() -> DeploymentProfile:
         {
             "schema_version": 1,
             "profile_id": "astraldeep-local-developer",
-            "release_id": "generic-developer-0.5.2",
-            "client_version": "0.5.2",
+            "release_id": "generic-developer-0.6.0",
+            "client_version": "0.6.0",
             "distribution": "generic_developer",
             "local_only": True,
             "authority": "http://127.0.0.1:8080/realms/Astral",

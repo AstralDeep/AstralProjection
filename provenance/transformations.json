@@ -16,9 +16,9 @@
       "sourcePath": "android-client/app/build.gradle.kts",
       "sourceBlob": "be4d9c9f66672789f4283d9e66c408c8249ed9e7",
       "sourceMode": "100644",
-      "resultSha256": "155a3e1e400f9e3848ab59a0932c776c8bf071d044871ea83e159848feb3c5de",
+      "resultSha256": "939ce73bd3fb153e0ca1f33c8ab6a5562b74d0c3d5658c3692538bfa77f36898",
       "task": "T054/T057/T013/T014/T102/T056/T060",
-      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs. Feature 088 actual Android workspace action qualification: injectable existing REST and ActivityResultRegistry seams retain production defaults; test-only MockWebServer uses the already pinned coordinate and Java provider lint is strict. Normal debug/release runtime dependency graphs are unchanged; the real controller is exercised through lifecycle, capture, network, private WebView, clipboard and document-provider flows. Advance only the current versionCode from 7 to 8 after Play rejected reuse of code 7; retain versionName 1.4, registered identities, signing setup and runtime behavior. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Native console parity: consume negotiated server chrome and ROTE geometry, retain current conversation and voice identity, and qualify native rendering, transport and interaction behavior."
+      "reason": "Repoint generated Android voice fixtures to Projection, hash-bind the Feature 075 local fixture, and advance the Play-verified release candidate to versionCode 6 / versionName 1.4 without changing dependencies or registered identities. Feature 078: advance the candidate to versionCode 7 after Play refused the targetSdk-35 6 (1.4) bundle on 2026-09-03. Feature 088 native checkpoint: align the Android workspace, server chrome, ephemeral owner state, approved typography and isolated Plotly rendering with web; retain authenticated delivery and bounded download boundaries. Feature 088 portable canvas export: capture current native display state and loaded pixels, bound private rendering and owner-scoped save lifetimes, share the script-free web finalizer, and qualify the exact source-bound coverage lanes without changing dependencies or app identities. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs. Feature 088 actual Android workspace action qualification: injectable existing REST and ActivityResultRegistry seams retain production defaults; test-only MockWebServer uses the already pinned coordinate and Java provider lint is strict. Normal debug/release runtime dependency graphs are unchanged; the real controller is exercised through lifecycle, capture, network, private WebView, clipboard and document-provider flows. Advance only the current versionCode from 7 to 8 after Play rejected reuse of code 7; retain versionName 1.4, registered identities, signing setup and runtime behavior. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Native console parity: consume negotiated server chrome and ROTE geometry, retain current conversation and voice identity, and qualify native rendering, transport and interaction behavior. Release 2026-09-26: advance Android to versionCode 9 / versionName 1.5 for the native UI v2 release."
     },
     {
       "path": "android-client/app/gradle.lockfile",
@@ -2617,9 +2617,9 @@
       "sourcePath": "windows-client/AstralDeep.spec",
       "sourceBlob": "253955f910fec308082f9051037e0e36a7ca9b38",
       "sourceMode": "100644",
-      "resultSha256": "df52ec0f6919f6d4877e6c72077b521425d0661d9b170c8dc87ae042ca6de0dc",
+      "resultSha256": "e1480198d4222e4f5888f1002ff5fedf9b8da7750c5764c83d35fe510827b8a3",
       "task": "T166/T058/T059/T102/T014",
-      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Package the protected BYO executor, exact LETS runtime artifacts, qualified local speech helper, and allowlisted Qt text-to-speech plugin while binding the Windows candidate to version 0.5.0. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/Launch-AstralDeep.bat",
@@ -2635,9 +2635,9 @@
       "sourcePath": "windows-client/README.md",
       "sourceBlob": "96fa82dd5e8c38e40f60fdaf883e33ef26ae4f8b",
       "sourceMode": "100644",
-      "resultSha256": "86574a03789b45dfb4c3310322937ab301847cdd07590e0621c792775aa7b053",
+      "resultSha256": "047d05bdac2d63895389abe46f3b5fd0aec404ffe47d5d846a1f53c7a615f039",
       "task": "T060/T062/T188/T056/T058/T104/T102/T014",
-      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Document standalone trust validation, reproducible Windows qualification, and the 0.5.0 release-candidate deployment profile. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Restrict frozen native dependency discovery to the selected Python and Windows directories, with tainted-path regression coverage. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/Scripts/generate_win_icon.py",
@@ -2653,18 +2653,18 @@
       "sourcePath": "windows-client/astral_client/__init__.py",
       "sourceBlob": "813cef4ea157a2f0c56b2e816396c6a0f380eb58",
       "sourceMode": "100644",
-      "resultSha256": "19cbb95243896402ea332619c95f5222627c548081216aaf3aacf418e4e6c05a",
+      "resultSha256": "814ee0409cb23e18502908e6ae30cab949c5c47d4a6632eca72986ae6bcc79d2",
       "task": "T102",
-      "reason": "Advance the native Windows client identity from 0.4.0 to the 0.5.0 release candidate. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Advance the native Windows client identity from 0.4.0 to the 0.5.0 release candidate. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/astral_client/app.py",
       "sourcePath": "windows-client/astral_client/app.py",
       "sourceBlob": "c7f76d598fb69e474b43492b5a6bc7a7f2ca7539",
       "sourceMode": "100644",
-      "resultSha256": "a1e78e7c408ec15175ff01f9844f95e07eb83b08f751531b98627c1811f11e98",
+      "resultSha256": "af09d8b53e809d145f21dcc2ac4d73617c1c0bb9e095e66d8b9e7687e942b3e0",
       "task": "T059/T071/T088/T040/T014",
-      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Render validated literal Work surfaces in the existing Windows shell and retire reads across owner, connection and navigation changes. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Bind Windows auth-attempt cancellation, scenario attachment delivery and native control feedback with their lifecycle regression checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Route authenticated local speech frames through the Windows controller with exact one-shot acknowledgement correlation, lifecycle cleanup, and unchanged remote-v1 dispatch. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Render validated literal Work surfaces in the existing Windows shell and retire reads across owner, connection and navigation changes. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Bind Windows auth-attempt cancellation, scenario attachment delivery and native control feedback with their lifecycle regression checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: bind the owner-approved Feature 091 local-backend testing and console-bootstrap bytes merged in 9b44995f (ledger refresh only)."
     },
     {
       "path": "windows-client/astral_client/audit_log.py",
@@ -2716,9 +2716,9 @@
       "sourcePath": "windows-client/astral_client/deployment.py",
       "sourceBlob": "0483064234542ed0033353ee4551735228781990",
       "sourceMode": "100644",
-      "resultSha256": "8de47bb4aae724478167267eb8b7bbfe2257725cf96cecf73876ffe2e0919053",
+      "resultSha256": "28b0676f0ffa0124aefa683b17a46e1f11d8ec4f4a660a4e70e31de83a2b43c3",
       "task": "T166/T102/T014",
-      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation and a 0.5.0 generic-development identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Validate and install the runtime-v3 four-file BYO bundle with explicit legacy-v2 dispatch mediation and a 0.5.0 generic-development identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/astral_client/integrity.py",
@@ -2806,27 +2806,27 @@
       "sourcePath": "windows-client/deployment/release-profile.json",
       "sourceBlob": "751fff03c1b3ff8838e35186d1105f26fa4f6696",
       "sourceMode": "100644",
-      "resultSha256": "391d6222d36a41ab5a637598708243e6d14692178da0355de43884d01bb9861c",
+      "resultSha256": "9a3ac1bb26f93ea28184c532c63cafb0256297874db1301cc727595412716058",
       "task": "T102",
-      "reason": "Bind the reviewed production deployment profile to Windows release 0.5.0 without changing authority, endpoints, credentials, or override policy. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
+      "reason": "Bind the reviewed production deployment profile to Windows release 0.5.0 without changing authority, endpoints, credentials, or override policy. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/deployment/runtime-manifest.json",
       "sourcePath": "windows-client/deployment/runtime-manifest.json",
       "sourceBlob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
       "sourceMode": "100644",
-      "resultSha256": "b132f5cc2f20ea950b0407e3cf7958b6dce7a20937ae2e4fbd6357892077cbb9",
+      "resultSha256": "62afcd97b93921fe560f467d3e823083c0391d834ae917733cd39a5380f806da",
       "task": "T166/T102",
-      "reason": "Declare runtime contract v3 and the protected-executor file while binding the Windows 0.5.0 release/profile identities and canonical profile digest. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule)."
+      "reason": "Declare runtime contract v3 and the protected-executor file while binding the Windows 0.5.0 release/profile identities and canonical profile digest. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/main.py",
       "sourcePath": "windows-client/main.py",
       "sourceBlob": "7b9c2fba21cb01b78cc90f531ae3712b366d9542",
       "sourceMode": "100644",
-      "resultSha256": "17afbb3f7867dd8a96b2ecfeefff1910b16586456b0c71e1c87d7338f770c123",
+      "resultSha256": "3fb9129797994bf0c7e07cdbf94d9484c220b6dc2f558a063d1f40ee4a7f5400",
       "task": "T166",
-      "reason": "Propagate authenticated host-session identity into the runtime-v3 Windows BYO authority boundary. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Propagate authenticated host-session identity into the runtime-v3 Windows BYO authority boundary. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Release 2026-09-26: bind the owner-approved Feature 091 local-backend testing and console-bootstrap bytes merged in 9b44995f (ledger refresh only)."
     },
     {
       "path": "windows-client/requirements-release.lock.txt",
@@ -2878,9 +2878,9 @@
       "sourcePath": "windows-client/tests/release_evidence_060.py",
       "sourceBlob": "21b46644204d9d509e129dfcde32dce6bc202584",
       "sourceMode": "100644",
-      "resultSha256": "064c655ac818f766e548dc510246423a222016db5d27994be64d8ca5aabc77ef",
+      "resultSha256": "e3aa3d7e494a9a3cfd78bdb03abb43ec026dac3b27fb27f735a934970e4c4a58",
       "task": "T102/T014",
-      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/tests/screenshot.py",
@@ -2959,9 +2959,9 @@
       "sourcePath": "windows-client/tests/test_byo_runtime_compatibility.py",
       "sourceBlob": "ad9ec95dc7d6f95f9dbbba185797889d697a4d56",
       "sourceMode": "100644",
-      "resultSha256": "551f6c4174eb6d93b4ba3a76b8832958857546fa0e5c19a6111a363fb9883fb3",
+      "resultSha256": "c1f796c4902f7549bd30a3c2ff73a7c3c88f3bb8e13057213da58d5068cf240b",
       "task": "T166/T102",
-      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Cover runtime-v3 authority propagation, off/shadow/enforce posture, legacy-v2 mediation, and the 0.5.0 registered host metadata. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/tests/test_byo_supervision_060.py",
@@ -3040,9 +3040,9 @@
       "sourcePath": "windows-client/tests/test_deployment_profile_060.py",
       "sourceBlob": "1a71b8dd3865abab13a6ac954223e928477c1f8a",
       "sourceMode": "100644",
-      "resultSha256": "403e4e30de24fb5a3ff2c967605bb171a4590f915081a940c6fdb219dec33e7a",
+      "resultSha256": "770d7dfe0ad130f2c3614e473d06de35312a72f2a0552ba22302bc18db5ebb97",
       "task": "T102",
-      "reason": "Verify the 0.5.0 production and generic-development deployment identities, canonical digest, precedence, and packaged validation contract. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Verify the 0.5.0 production and generic-development deployment identities, canonical digest, precedence, and packaged validation contract. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/tests/test_first_turn.py",
@@ -3085,9 +3085,9 @@
       "sourcePath": "windows-client/tests/test_packaged_release.py",
       "sourceBlob": "d2388022214b169fd9438ea80ece7206ad736758",
       "sourceMode": "100644",
-      "resultSha256": "8e029de766aac1012052fcc1068f192d557aab0dba8507eb1452291f43a28db9",
+      "resultSha256": "e362a64a5a48f701567e9955638fd7c922ad65b32d6719c548890c08b2860c54",
       "task": "T058/T104/T102/T014",
-      "reason": "Inspect the actual frozen archive for the qualified speech runtime, smoke the embedded helper, and verify the 0.5.0 packaged deployment report. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Inspect the actual frozen archive for the qualified speech runtime, smoke the embedded helper, and verify the 0.5.0 packaged deployment report. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "windows-client/tests/test_param_visible_when.py",
@@ -3439,9 +3439,9 @@
       "sourcePath": ".github/workflows/build-windows-candidate.yml",
       "sourceBlob": "8fc92178a67ef67703b7e17e1ed7a15df5aa3867",
       "sourceMode": "100644",
-      "resultSha256": "58799516661cf0c073d5dd9602ec7e9c059864118bee41c44af24a43725bd8d9",
+      "resultSha256": "83f65c779d4f2e2c4d7b5570ab1ac81db6a0704666655bfd8f9cd0b1efa75c6a",
       "task": "T056/T102/T014",
-      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Keep the copied Windows candidate workflow inert, read-only, and secret-free while labeling the 0.5.0 candidate. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
     },
     {
       "path": "workflows-disabled/release-apple-evidence-normalizer.yml",

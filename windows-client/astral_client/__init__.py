@@ -3,4 +3,4 @@ orchestrator's SDUI components as Qt widgets, imported by every astral_client an
 win_agent module (app.py, protocol.py, renderer.py).
 """
 
-__version__ = "0.5.2"
+__version__ = "0.6.0"
