@@ -3404,11 +3404,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "28f2cefcf9e48d4677410d5b1ca35dcc48619995f6ead124faac5e589737650e"
+          "sha256": "5a6b38ea074ab4e03ee5cae9eed583d685da864cd74d2c413fdf526d77348a51"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator actionÃ¢â‚¬â„¢s line-oriented script execution, preserving the exact device/report arguments and gates."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator actionÃ¢â‚¬â„¢s line-oriented script execution, preserving the exact device/report arguments and gates. Fair CI 2026-09-27: cap build-test and the instrumented emulator lane at 30 minutes and the readiness diagnostic at 15."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

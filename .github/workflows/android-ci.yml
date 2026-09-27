@@ -39,7 +39,7 @@ on:
 permissions:
   contents: read
 
-# A new push to the same PR branch cancels the previous run (incl. the 45m
+# A new push to the same PR branch cancels the previous run (incl. the 30m
 # emulator lane) instead of running both to completion; pushes to main and
 # the nightly schedule never cancel each other.
 concurrency:
@@ -53,6 +53,7 @@ defaults:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -114,6 +115,7 @@ jobs:
     # not on every PR push.
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
@@ -144,7 +146,7 @@ jobs:
   instrumented:
     name: Required · instrumented UI tests (emulator)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 

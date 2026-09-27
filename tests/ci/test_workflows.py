@@ -632,6 +632,39 @@ def test_windows_source_step_fails_when_tests_or_coverage_fail(
     )
 
 
+def _assert_jobs_capped_at_thirty_minutes(text: str) -> None:
+    for job_id in _job_ids(text):
+        limits = re.findall(r"(?m)^    timeout-minutes: (\d+)$", _job_block(text, job_id))
+        assert len(limits) == 1 and 0 < int(limits[0]) <= 30, (job_id, limits)
+
+
+@pytest.mark.parametrize("workflow_name", ("ci.yml", "android-ci.yml"))
+def test_core_and_android_jobs_are_capped_at_thirty_minutes(workflow_name: str) -> None:
+    _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "needle", "replacement"),
+    (
+        ("ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 31\n"),
+        ("ci.yml", "    timeout-minutes: 10\n", ""),
+        ("android-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 45\n"),
+        ("android-ci.yml", "    timeout-minutes: 15\n", ""),
+    ),
+)
+def test_job_timeout_cap_rejects_missing_or_longer_limits(
+    workflow_name: str,
+    needle: str,
+    replacement: str,
+) -> None:
+    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+    mutated = text.replace(needle, replacement, 1)
+    assert mutated != text
+
+    with pytest.raises(AssertionError):
+        _assert_jobs_capped_at_thirty_minutes(mutated)
+
+
 def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     android = (ACTIVE / "android-ci.yml").read_text(encoding="utf-8")
     apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")

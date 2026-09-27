@@ -12,6 +12,7 @@ permissions:
 jobs:
   python:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -45,6 +46,7 @@ jobs:
 
   web:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
@@ -115,6 +117,7 @@ jobs:
 
   windows-tests:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -147,6 +150,7 @@ jobs:
 
   windows-package:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
@@ -317,6 +321,7 @@ jobs:
     if: always()
     needs: [python, web, windows-tests, windows-package]
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Require every owner gate
         shell: bash
