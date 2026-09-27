@@ -1,10 +1,11 @@
 // Tests for Work-surface read transport: closed read/close delivery exactly once, cancellation and
 // stopped-socket suppression, guidance-open isolation from replay, and post-refusal send refusal.
 
-@testable import AstralCore
 import Foundation
 import Network
 import XCTest
+
+@testable import AstralCore
 
 final class WorkReadTransport088Tests: XCTestCase {
     private let generation = "33333333-3333-4333-8333-333333333333"

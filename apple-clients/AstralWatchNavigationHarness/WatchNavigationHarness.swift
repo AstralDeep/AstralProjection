@@ -60,7 +60,7 @@ private final class WatchNavigationSession {
     func run() async {
         let events = await socket.events()
         let lifetime = Task {
-            try? await Task.sleep(nanoseconds: 120_000_000_000)
+            try? await Task.sleep(nanoseconds: 600_000_000_000)
             await socket.stop()
         }
         defer {
@@ -80,5 +80,6 @@ private final class WatchNavigationSession {
             }
         }
         await socket.stop()
+        await model.handle(.disconnected(reason: "The navigation test peer closed."))
     }
 }

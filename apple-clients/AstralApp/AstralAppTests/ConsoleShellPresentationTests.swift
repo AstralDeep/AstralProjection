@@ -2,12 +2,13 @@
 // Captured views exercise the same ConsoleShell and live chart renderer used by the signed-in app.
 
 import AstralCore
-@testable import AstralDeep
 import Observation
 import SwiftUI
 import Vision
 import WebKit
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class ConsoleShellPresentationTests: XCTestCase {
@@ -155,8 +156,10 @@ final class ConsoleShellPresentationTests: XCTestCase {
             let current = host.charts()
             XCTAssertEqual(current.count, 1, state)
             XCTAssertTrue(current.first === chart, state)
-            let nextOrigin = try await chart.evaluateJavaScript("performance.timeOrigin") as? Double
-            XCTAssertEqual(nextOrigin, origin, state)
+            let currentOrigin = try await chart.evaluateJavaScript("performance.timeOrigin")
+            let nextOrigin = try XCTUnwrap(currentOrigin as? Double, state)
+            // WebKit floors each timeOrigin read to 1 ms; a reloaded document starts far more than 5 ms later.
+            XCTAssertEqual(nextOrigin, origin, accuracy: 5, state)
             let range =
                 try await chart.evaluateJavaScript("document.getElementById('chart').layout.yaxis.range") as? [Double]
             XCTAssertEqual(range, [1, 4], state)
@@ -203,19 +206,26 @@ final class ConsoleShellPresentationTests: XCTestCase {
             try await host.settle()
             XCTAssertNotNil(model.workspaceActionContext(for: .shareCanvas))
             _ = try attach(host, name: "Console workspace share controls")
+            func clickShare() throws {
+                let title = try XCTUnwrap(host.recognizedText().first { $0.text == model.consoleResultTitle })
+                let header = CGRect(
+                    x: title.bounds.maxX * size.width, y: (1 - title.bounds.midY) * size.height - 22,
+                    width: size.width, height: 44)
+                let share = try XCTUnwrap(host.glyphs(in: header).last)
+                // Off the glyph but inside its 40-point control, so the whole control frame must accept the click.
+                host.click(CGPoint(x: share.midX + 12, y: size.height - share.midY))
+            }
             for expected in [
                 "Share link copied to clipboard.", "Sharing refused: the content matched the PHI gate.",
                 "Couldn't create the share link.",
             ] {
                 model.errorBanner = nil
-                let title = try XCTUnwrap(host.recognizedText().first { $0.text == model.consoleResultTitle })
-                host.click(CGPoint(x: size.width - 76, y: title.bounds.midY * size.height))
+                try clickShare()
                 for _ in 0..<50 where model.errorBanner == nil { try await Task.sleep(for: .milliseconds(50)) }
                 XCTAssertEqual(model.errorBanner, expected)
             }
             model.errorBanner = nil
-            let title = try XCTUnwrap(host.recognizedText().first { $0.text == model.consoleResultTitle })
-            host.click(CGPoint(x: size.width - 76, y: title.bounds.midY * size.height))
+            try clickShare()
             for _ in 0..<50 where peer.requests.count < 4 { try await Task.sleep(for: .milliseconds(50)) }
             XCTAssertEqual(peer.requests.count, 4)
             XCTAssertTrue(model.workspaceActionInFlight(.shareCanvas))
@@ -560,18 +570,18 @@ private final class ConsoleTestMount {
             let scale = Double(bitmap.pixelsWide) / state.size.width
             var bounds = CGRect.null
             for y in Int(cell.minY * scale)..<Int(cell.maxY * scale) {
-                for x in Int(cell.minX * scale)..<Int(cell.maxX * scale) {
-                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
-                    let channels = [color.redComponent, color.greenComponent, color.blueComponent]
-                    let high = channels.max()!
-                    let low = channels.min()!
-                    if low > 0.27, high - low < 0.18 {
-                        bounds = bounds.union(
-                            CGRect(x: Double(x) / scale, y: Double(y) / scale, width: 1 / scale, height: 1 / scale))
-                    }
+                for x in Int(cell.minX * scale)..<Int(cell.maxX * scale) where isForeground(bitmap, x: x, y: y) {
+                    bounds = bounds.union(
+                        CGRect(x: Double(x) / scale, y: Double(y) / scale, width: 1 / scale, height: 1 / scale))
                 }
             }
             return bounds.isNull ? nil : bounds
+        }
+
+        private func isForeground(_ bitmap: NSBitmapImageRep, x: Int, y: Int) -> Bool {
+            guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { return false }
+            let channels = [color.redComponent, color.greenComponent, color.blueComponent]
+            return channels.min()! > 0.27 && channels.max()! - channels.min()! < 0.18
         }
 
         func recognizedText() throws -> [(text: String, bounds: CGRect)] {
@@ -583,6 +593,27 @@ private final class ConsoleTestMount {
             return (request.results ?? []).compactMap { result in
                 result.topCandidates(1).first.map { (text: $0.string, bounds: result.boundingBox) }
             }
+        }
+
+        func glyphs(in band: CGRect) throws -> [CGRect] {
+            let bitmap = try XCTUnwrap(NSBitmapImageRep(data: XCTUnwrap(snapshot().tiffRepresentation)))
+            let scale = Double(bitmap.pixelsWide) / state.size.width
+            let area = band.intersection(CGRect(origin: .zero, size: state.size))
+            var glyphs: [CGRect] = []
+            for x in Int(area.minX * scale)..<Int(area.maxX * scale) {
+                var column = CGRect.null
+                for y in Int(area.minY * scale)..<Int(area.maxY * scale) where isForeground(bitmap, x: x, y: y) {
+                    column = column.union(
+                        CGRect(x: Double(x) / scale, y: Double(y) / scale, width: 1 / scale, height: 1 / scale))
+                }
+                guard !column.isNull else { continue }
+                if let last = glyphs.last, column.minX - last.maxX < 4 {
+                    glyphs[glyphs.count - 1] = last.union(column)
+                } else {
+                    glyphs.append(column)
+                }
+            }
+            return glyphs.filter { (4...30).contains($0.width) && (4...30).contains($0.height) }
         }
 
         func scrollHorizontalNavigationToEnd() -> Bool {

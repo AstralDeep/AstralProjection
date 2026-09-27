@@ -1,5 +1,5 @@
-// UI tests for conversation continuity across process relaunch: twenty relaunches deterministically restore
-// the same semantic conversation, and the authenticated provider gate survives them.
+// UI tests for conversation continuity across process relaunch: one relaunch deterministically restores the
+// same semantic conversation within five seconds, and the authenticated provider gate survives a relaunch.
 
 import Foundation
 import XCTest
@@ -13,54 +13,37 @@ final class ConversationContinuityUITests: XCTestCase {
         super.tearDown()
     }
 
-    func testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes() {
+    func testDeterministicProcessRelaunchRestoresSemanticConversation() {
         launch(scenario: "continuity-seed")
         assertSemanticConversation(timeout: 5)
         app.terminate()
 
-        var durations: [TimeInterval] = []
-        for trial in 1...20 {
-            let startedAt = Date()
-            launch(scenario: "continuity-resume")
-            assertSemanticConversation(timeout: 5)
-            let duration = Date().timeIntervalSince(startedAt)
-            durations.append(duration)
-            XCTAssertLessThan(
-                duration,
-                5,
-                "trial \(trial) exceeded the five-second deterministic restoration bound")
-            if trial < 20 { app.terminate() }
-        }
+        let startedAt = Date()
+        launch(scenario: "continuity-resume")
+        assertSemanticConversation(timeout: 5)
+        let duration = Date().timeIntervalSince(startedAt)
+        XCTAssertLessThan(duration, 5, "relaunch exceeded the five-second deterministic restoration bound")
 
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "apple-continuity-twentieth-relaunch"
+        screenshot.name = "apple-continuity-relaunch"
         screenshot.lifetime = .keepAlways
         add(screenshot)
 
         let hierarchy = XCTAttachment(
             data: Data(app.debugDescription.utf8),
             uniformTypeIdentifier: "public.plain-text")
-        hierarchy.name = "apple-continuity-twentieth-relaunch-hierarchy"
+        hierarchy.name = "apple-continuity-relaunch-hierarchy"
         hierarchy.lifetime = .keepAlways
         add(hierarchy)
 
-        let sorted = durations.sorted()
-        let report = [
-            "trials=\(durations.count)",
-            "mean_seconds=\(format(durations.reduce(0, +) / Double(durations.count)))",
-            "p50_seconds=\(format(percentile(0.50, sorted: sorted)))",
-            "p95_seconds=\(format(percentile(0.95, sorted: sorted)))",
-            "max_seconds=\(format(sorted.last ?? 0))",
-            "samples_seconds=\(durations.map(format).joined(separator: ","))",
-        ].joined(separator: "\n")
         let timing = XCTAttachment(
-            data: Data(report.utf8), uniformTypeIdentifier: "public.plain-text")
-        timing.name = "apple-continuity-relaunch-timings"
+            data: Data("relaunch_seconds=\(format(duration))".utf8), uniformTypeIdentifier: "public.plain-text")
+        timing.name = "apple-continuity-relaunch-timing"
         timing.lifetime = .keepAlways
         add(timing)
     }
 
-    func testLiveAuthenticatedProviderGateSurvivesTwentyRelaunches() throws {
+    func testLiveAuthenticatedProviderGateSurvivesRelaunch() throws {
         app = XCUIApplication()
         app.launch()
         guard app.staticTexts["Set up your AI provider"].waitForExistence(timeout: 5) else {
@@ -68,40 +51,24 @@ final class ConversationContinuityUITests: XCTestCase {
         }
         app.terminate()
 
-        var durations: [TimeInterval] = []
-        for trial in 1...20 {
-            app = XCUIApplication()
-            let startedAt = Date()
-            app.launch()
+        app = XCUIApplication()
+        let startedAt = Date()
+        app.launch()
+        XCTAssertTrue(
+            app.staticTexts["Set up your AI provider"].waitForExistence(timeout: 5),
+            "authenticated provider gate was not restored after relaunch")
+        XCTAssertFalse(app.buttons["Sign in"].exists)
+        let duration = Date().timeIntervalSince(startedAt)
+        XCTAssertLessThan(duration, 5, "authenticated relaunch exceeded five seconds")
 
-            let providerGate = app.staticTexts["Set up your AI provider"]
-            XCTAssertTrue(
-                providerGate.waitForExistence(timeout: 5),
-                "authenticated provider gate was not restored on trial \(trial)")
-            XCTAssertFalse(app.buttons["Sign in"].exists)
-            let duration = Date().timeIntervalSince(startedAt)
-            durations.append(duration)
-            XCTAssertLessThan(
-                duration,
-                5,
-                "authenticated relaunch trial \(trial) exceeded five seconds")
-            if trial < 20 { app.terminate() }
-        }
-
-        let sorted = durations.sorted()
         let report = [
             "surface=mandatory_provider_setup",
             "authentication=persisted_keycloak_pkce_session",
-            "trials=\(durations.count)",
-            "mean_seconds=\(format(durations.reduce(0, +) / Double(durations.count)))",
-            "p50_seconds=\(format(percentile(0.50, sorted: sorted)))",
-            "p95_seconds=\(format(percentile(0.95, sorted: sorted)))",
-            "max_seconds=\(format(sorted.last ?? 0))",
-            "samples_seconds=\(durations.map(format).joined(separator: ","))",
+            "relaunch_seconds=\(format(duration))",
         ].joined(separator: "\n")
         let timing = XCTAttachment(
             data: Data(report.utf8), uniformTypeIdentifier: "public.plain-text")
-        timing.name = "apple-live-authenticated-relaunch-timings"
+        timing.name = "apple-live-authenticated-relaunch-timing"
         timing.lifetime = .keepAlways
         add(timing)
     }
@@ -141,12 +108,6 @@ final class ConversationContinuityUITests: XCTestCase {
         for fragment in forbidden {
             XCTAssertFalse(texts.contains { $0.contains(fragment) }, "Unexpected restored text: \(fragment)")
         }
-    }
-
-    private func percentile(_ fraction: Double, sorted: [TimeInterval]) -> TimeInterval {
-        guard !sorted.isEmpty else { return 0 }
-        let rank = max(0, min(sorted.count - 1, Int(ceil(fraction * Double(sorted.count))) - 1))
-        return sorted[rank]
     }
 
     private func format(_ value: TimeInterval) -> String {

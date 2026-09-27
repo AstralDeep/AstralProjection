@@ -46,7 +46,7 @@ final class WorkspacePresentationUITests: XCTestCase {
         app.launch()
         defer { app.terminate() }
         #if os(macOS)
-            let preview = app.buttons["New Chat, 3h, Alpha = 2 Beta = 5, Has saved components"]
+            let preview = app.buttons["New Chat, 3h, Alpha = 2 Beta = 5"]
             let first = app.buttons["New Chat, 2h, First preview"]
         #else
             let preview = app.staticTexts["Alpha = 2 Beta = 5"]
