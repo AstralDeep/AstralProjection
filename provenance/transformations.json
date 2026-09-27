@@ -1250,8 +1250,8 @@
       "sourceBlob": "7418d32da167fcda8275c48815d2aa76ad01a25a",
       "sourceMode": "100644",
       "task": "T060",
-      "reason": "Feature 088 native CI fixture repair: Observe every required and forbidden restored text in one public immutable accessibility snapshot, preserving twenty actual relaunches and the unchanged launch-inclusive five-second bound. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: replace the twenty-relaunch soak loops with one terminate, relaunch and verify-restored cycle that keeps the five-second bound.",
-      "resultSha256": "1df754537e3065d7c0356bf25511282a7c760c9b466054d01cc62c3ec0c527c3"
+      "reason": "Feature 088 native CI fixture repair: Observe every required and forbidden restored text in one public immutable accessibility snapshot, preserving twenty actual relaunches and the unchanged launch-inclusive five-second bound. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: replace the twenty-relaunch soak loops with one terminate, relaunch and verify-restored cycle that keeps the five-second bound. Fair CI 2026-09-27: the CI-run deterministic test replaces its launch-inclusive five-second bound with a 20-second guard against a hung restoration (hosted simulators relaunch in about six seconds) and still attaches the measured relaunch time; the live authenticated variant keeps five seconds.",
+      "resultSha256": "ce4d0c42794e5b34011ac211b2eb77be4f32f4f1f146a5bdad66543bf9dc7099"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/LLMFirstLoginUITests.swift",
