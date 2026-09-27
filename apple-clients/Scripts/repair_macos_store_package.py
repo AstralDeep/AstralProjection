@@ -14,6 +14,7 @@ import plistlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -26,7 +27,10 @@ class PackageError(ValueError):
 def run(*args: str) -> bytes:
     result = subprocess.run(args, capture_output=True, timeout=180, check=False)
     if result.returncode:
-        raise PackageError(f"{Path(args[0]).name}_failed")
+        # The tool and its first option locate the failure; command output can carry
+        # identity details and never enters the error.
+        option = next((a.split("=", 1)[0] for a in args[1:] if a.startswith("-")), "")
+        raise PackageError(f"{Path(args[0]).name}_failed {option}".rstrip())
     if args[0] == "codesign" and "--verbose=4" in args:
         return result.stderr
     return result.stdout
@@ -68,7 +72,9 @@ def certificate(path: Path, scratch: Path, arch: str | None = None) -> str:
         if arch:
             args += ["--arch", arch]
         run(*args, str(path))
-        return hashlib.sha1(Path(prefix + "0").read_bytes()).hexdigest().upper()
+        leaf = Path(prefix + "0")
+        # An ad hoc signature has no certificate chain, so it matches no identity.
+        return hashlib.sha1(leaf.read_bytes()).hexdigest().upper() if leaf.is_file() else ""
 
 
 def installer_certificate(package: Path, scratch: Path) -> str:
@@ -317,8 +323,11 @@ def main() -> int:
         print(
             json.dumps(repair(args.input, args.output, args.installer_certificate), sort_keys=True)
         )
-    except (OSError, ValueError, KeyError, subprocess.SubprocessError, ET.ParseError):
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError, ET.ParseError) as error:
         print("mac_store_package_repair_unavailable")
+        # The receipt stays closed; stderr carries only the fixed refusal reason.
+        reason = str(error) if isinstance(error, PackageError) else type(error).__name__
+        print(f"refusal: {reason}", file=sys.stderr)
         return 1
     return 0
 
