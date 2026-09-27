@@ -156,7 +156,10 @@ jobs:
           result="$root/${COVERAGE_ROOT}/AstralCore-ios.xcresult"
           report="$root/${COVERAGE_ROOT}/apple-ios-core-xccov.json"
           mkdir -p "${COVERAGE_ROOT}"
-          test ! -e "$result" && test ! -L "$result"
+          if [ -e "$result" ] || [ -L "$result" ]; then
+            echo "::error::result bundle $result already exists"
+            exit 1
+          fi
           core_args=(-scheme AstralCore -destination "platform=iOS Simulator,id=$udid"
             -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES
             -derivedDataPath "$root/build/060/core-ios-dd" -only-testing:AstralCoreTests)
@@ -388,7 +391,10 @@ jobs:
           result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"
           report="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-first-login-xccov.json"
           rm -f "$report"
-          test ! -e "$result" && test ! -L "$result"
+          if [ -e "$result" ] || [ -L "$result" ]; then
+            echo "::error::result bundle $result already exists"
+            exit 1
+          fi
           dest='${{ matrix.destination }}'
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
             dest="platform=iOS Simulator,id=${{ steps.ios_sim.outputs.udid }}"

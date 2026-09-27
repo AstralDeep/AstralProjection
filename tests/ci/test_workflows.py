@@ -200,6 +200,14 @@ def _assert_windows_native_contract(text: str) -> None:
     assert release_install < frozen_build < tooling_install
 
 
+APPLE_RESULT_GUARD = (
+    'if [ -e "$result" ] || [ -L "$result" ]; then\n'
+    '            echo "::error::result bundle $result already exists"\n'
+    "            exit 1\n"
+    "          fi\n"
+)
+
+
 def _assert_apple_platform_contract(apple: str) -> None:
     app_unit = _job_block(apple, "app-unit-tests")
     core_ios = _job_block(apple, "core-ios-tests")
@@ -248,6 +256,8 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "swift test" not in core_ios
     assert "--platform ios" in core_ios
     assert "apple-required-core-ios-coverage" in core_ios
+    assert APPLE_RESULT_GUARD in core_ios
+    assert "test ! -e" not in core_ios
     assert "needs.core-ios-tests.result" in apple_required
     assert "--platform ios --profile ci" in apple_required
     assert (
@@ -273,7 +283,8 @@ def _assert_apple_platform_contract(apple: str) -> None:
     )
     assert '"${workspace_actions[@]}"' in first_login
     assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
-    assert 'test ! -e "$result" && test ! -L "$result"' in first_login
+    assert APPLE_RESULT_GUARD in first_login
+    assert "test ! -e" not in first_login
     assert 'rm -rf "$result"' not in first_login
     assert first_login.count("-resultBundlePath") == 1
     assert "-retry-tests-on-failure" in first_login
@@ -959,8 +970,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
         )
 
 
-@pytest.mark.parametrize("platform", ["macos", "ios"])
-def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp_path, platform):
+def _run_first_login_step(tmp_path, platform, *, suite_exit):
     bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
     if bash is None:
         pytest.skip("Apple workflow shell contract requires Bash")
@@ -977,6 +987,7 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
         "steps.ios_sim.outputs.udid": "owned-fixture-id",
     }.items():
         script = script.replace("${{ " + name + " }}", value)
+    assert "${{" not in script
     recorder = tmp_path / "record_commands.py"
     recorder.write_text(
         "import json, os, pathlib, sys\n"
@@ -984,13 +995,14 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
         "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "if sys.argv[1] == 'xcodebuild' and '-resultBundlePath' in sys.argv:\n"
         "    pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1]).mkdir(parents=True)\n"
-        "    raise SystemExit(65)\n"
+        f"    raise SystemExit({suite_exit})\n"
     )
     command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
     prefix = "\n".join(
         f'{name}() {{ {command} {name} "$@"; }}' for name in ("xcodebuild", "xcrun", "python3")
     ) + "\n"
     record = tmp_path / "commands.jsonl"
+    record.touch()
     result = subprocess.run(
         [bash, "-c", prefix + script],
         cwd=tmp_path,
@@ -1004,14 +1016,37 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
         text=True,
         timeout=15,
     )
-    assert result.returncode != 0
-    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    return result, [json.loads(line) for line in record.read_text().splitlines()]
+
+
+@pytest.mark.parametrize("platform", ["macos", "ios"])
+def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp_path, platform):
+    result, calls = _run_first_login_step(tmp_path, platform, suite_exit=65)
+
+    assert result.returncode == (65 if platform == "macos" else 1), result.stderr
     suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
     assert len(suites) == 1
     assert "-retry-tests-on-failure" in suites[0]
     assert not [call for call in calls if call[0] == "xcrun"]
     collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
     assert not collectors
+
+
+@pytest.mark.parametrize("platform", ["macos", "ios"])
+@pytest.mark.parametrize("existing", ["directory", "dangling-link"])
+def test_apple_first_login_refuses_an_existing_result_bundle(tmp_path, platform, existing):
+    bundle = tmp_path / "coverage with spaces" / f"AstralApp-{platform}-first-login.xcresult"
+    bundle.parent.mkdir()
+    if existing == "directory":
+        bundle.mkdir()
+    else:
+        bundle.symlink_to(tmp_path / "missing")
+
+    result, calls = _run_first_login_step(tmp_path, platform, suite_exit=0)
+
+    assert result.returncode == 1
+    assert "::error::result bundle" in result.stdout
+    assert calls == []
 
 
 @pytest.mark.parametrize("failing_command", ["none", "AstralWatch", "AstralWatchNavigation", "merge"])
