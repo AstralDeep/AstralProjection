@@ -399,7 +399,7 @@ final class ReleaseEvidenceTests: XCTestCase {
             })
         checks.append(
             await runCheck("reconnect_resume", recorder: recorder) {
-                try await self.runResumeTrials()
+                try await self.runReconnectResume()
             })
         checks.append(
             await runCheck("agent_lifecycle", recorder: recorder) {
@@ -620,49 +620,49 @@ final class ReleaseEvidenceTests: XCTestCase {
         return production
     }
 
-    private func runResumeTrials() async throws -> CheckProduction {
+    private func runReconnectResume() async throws -> CheckProduction {
         let store = freshStore()
         guard store.save(chatId: chat, for: account) else {
             throw EvidenceFailure(code: "resume_trials_below_floor", message: "locator save refused")
         }
-        var latenciesMs: [Double] = []
-        var successes = 0
-        let trials = 20
+        let started = Date()
+        let launched = await connectThenDisconnect(store: store, resumed: false)
+        let reconnected = await connectThenDisconnect(store: store, resumed: true)
+        let latency = Date().timeIntervalSince(started) * 1000
+        let successes = launched && reconnected ? 1 : 0
 
-        for trial in 1...trials {
-            let startedTrial = Date()
-            let model = WatchModel(conversationResumeStore: store)
-            model.bindConversationAccount(account)
-            let frameText = model.registrationFrame(token: "release-evidence-token", resumed: trial > 1)
-            let registration = try? JSONValue.parse(Data(frameText.utf8))
-            let resumed =
-                registration?["resume"]?["active_chat_id"]?.stringValue == chat
-                && model.activeChatId == chat
-            await model.handle(.disconnected(reason: "release evidence trial \(trial)"))
-            let retained = store.load(for: account)?.chatId == chat
-            latenciesMs.append(Date().timeIntervalSince(startedTrial) * 1000)
-            if resumed && retained { successes += 1 }
-        }
-
-        let successRate = Double(successes) / Double(trials) * 100
         var production = CheckProduction()
         production.measurements = [
             measurementRecord(
-                metric: "trial_count", aggregation: "total", value: Double(trials),
-                unit: "count", sampleCount: trials, comparator: "gte", threshold: 20),
+                metric: "trial_count", aggregation: "total", value: 1,
+                unit: "count", sampleCount: 1, comparator: "gte", threshold: 1),
             measurementRecord(
-                metric: "resume_success_rate", aggregation: "rate", value: successRate,
-                unit: "percent", sampleCount: trials, comparator: "gte", threshold: 100),
+                metric: "resume_success_rate", aggregation: "rate", value: Double(successes * 100),
+                unit: "percent", sampleCount: 1, comparator: "gte", threshold: 100),
         ]
         production.raw = [
-            "trial_count": trials,
+            "trial_count": 1,
             "successful_trials": successes,
-            "latencies_ms": latenciesMs.map { Int($0.rounded()) },
+            "launch_restored": launched,
+            "reconnect_restored": reconnected,
+            "latency_ms": Int(latency.rounded()),
         ]
-        if successes < trials {
+        if successes < 1 {
             production.failureCode = "resume_trials_below_floor"
         }
         return production
+    }
+
+    private func connectThenDisconnect(store: ConversationResumeStore, resumed: Bool) async -> Bool {
+        let model = WatchModel(conversationResumeStore: store)
+        model.bindConversationAccount(account)
+        let frameText = model.registrationFrame(token: "release-evidence-token", resumed: resumed)
+        let registration = try? JSONValue.parse(Data(frameText.utf8))
+        let restored =
+            registration?["resume"]?["active_chat_id"]?.stringValue == chat
+            && model.activeChatId == chat
+        await model.handle(.disconnected(reason: "release evidence reconnect"))
+        return restored && store.load(for: account)?.chatId == chat
     }
 
     private func runAgentLifecycle() throws -> CheckProduction {

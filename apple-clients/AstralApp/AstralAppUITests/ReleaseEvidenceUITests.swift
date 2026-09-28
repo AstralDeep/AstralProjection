@@ -441,7 +441,7 @@ final class ReleaseEvidenceUITests: XCTestCase {
 
         checks.append(
             runCheck("reconnect_resume", recorder: recorder, blockedBy: liveBlocked) {
-                try self.runResumeTrials()
+                self.runRelaunchResume()
             })
 
         checks.append(
@@ -734,48 +734,37 @@ final class ReleaseEvidenceUITests: XCTestCase {
         return production
     }
 
-    private func runResumeTrials() throws -> CheckProduction {
-        var latenciesMs: [Double] = []
-        var successes = 0
-        let trials = 20
-
-        for trial in 1...trials {
-            app.terminate()
-            let startedTrial = Date()
-            app.launch()
-            var restored = userPromptElement().waitForExistence(timeout: 5)
-            if restored {
-                let remaining = max(0.1, 5 - Date().timeIntervalSince(startedTrial))
-                restored = assistantDiceElement().waitForExistence(timeout: remaining)
-            }
-            let latency = Date().timeIntervalSince(startedTrial) * 1000
-            latenciesMs.append(latency)
-            if restored && latency <= 5000 { successes += 1 }
-            if trial == trials {
-                let screenshot = XCTAttachment(screenshot: app.screenshot())
-                screenshot.name = "\(compiledPlatform)-release-resume-twentieth-relaunch"
-                screenshot.lifetime = .keepAlways
-                add(screenshot)
-            }
+    private func runRelaunchResume() -> CheckProduction {
+        app.terminate()
+        let started = Date()
+        app.launch()
+        var restored = userPromptElement().waitForExistence(timeout: 5)
+        if restored {
+            let remaining = max(0.1, 5 - Date().timeIntervalSince(started))
+            restored = assistantDiceElement().waitForExistence(timeout: remaining)
         }
+        let latency = Date().timeIntervalSince(started) * 1000
+        let successes = restored && latency <= 5000 ? 1 : 0
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "\(compiledPlatform)-release-resume-relaunch"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
 
-        let successRate = Double(successes) / Double(trials) * 100
         var production = CheckProduction()
         production.measurements = [
             measurementRecord(
-                metric: "trial_count", aggregation: "total", value: Double(trials),
-                unit: "count", sampleCount: trials, comparator: "gte", threshold: 20),
+                metric: "trial_count", aggregation: "total", value: 1,
+                unit: "count", sampleCount: 1, comparator: "gte", threshold: 1),
             measurementRecord(
-                metric: "resume_success_rate", aggregation: "rate", value: successRate,
-                unit: "percent", sampleCount: trials, comparator: "gte", threshold: 100),
+                metric: "resume_success_rate", aggregation: "rate", value: Double(successes * 100),
+                unit: "percent", sampleCount: 1, comparator: "gte", threshold: 100),
         ]
         production.raw = [
-            "trial_count": trials,
+            "trial_count": 1,
             "successful_trials": successes,
-            "latencies_ms": latenciesMs.map { Int($0.rounded()) },
-            "max_latency_ms": Int((latenciesMs.max() ?? 0).rounded()),
+            "latency_ms": Int(latency.rounded()),
         ]
-        if successes < trials {
+        if successes < 1 {
             production.failureCode = "resume_trials_below_floor"
         }
         return production

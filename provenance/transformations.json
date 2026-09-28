@@ -98,8 +98,8 @@
       "sourceBlob": "cbe379b313c3e39dc281204f5192b6a96e70c992",
       "sourceMode": "100644",
       "task": "T056/T060",
-      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27.",
-      "resultSha256": "04ad2f788e984e71f73364809647cc33b35fb56a8de7491cc49d55b46416dbe5"
+      "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 genuine Android JVM/device coverage: opt-in dedicated coverage variant, separate exact tooling lock and checksum additions, one pinned JVM agent and native full-class reporting. Normal debug/release runtime dependencies and app identities remain unchanged; protected staging uses the same retained APKs. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume restores the completed chat through one resumed staging socket and reports trial_count 1 for AstralDeep's single-cycle floor instead of repeating twenty trials.",
+      "resultSha256": "ed6365fd8aedb8c22e2064f5645ad2f00426bca09bfa3d1b689f9da23f95e378"
     },
     {
       "path": "android-client/app/src/androidTest/kotlin/com/personalailabs/astraldeep/app/RenderersTest.kt",
@@ -1267,9 +1267,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift",
       "sourceBlob": "18e207353f54c5bfb33d55df444e20ef111cc9aa",
       "sourceMode": "100644",
-      "resultSha256": "0a808500ecf2513e2e5736125b75fc1c45a33c0c8caa8f5f1fe527079d35c557",
+      "resultSha256": "805ec85c2c3535a283797873c017d283ad249aec9ecfd0c2dfbf40b6aad4ce2c",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one terminate-and-relaunch restore of the prompt and dice answer within five seconds and reports trial_count 1 instead of twenty relaunches."
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/VoiceConversationUITests.swift",
@@ -1789,9 +1789,9 @@
       "sourcePath": "apple-clients/AstralWatchTests/ReleaseEvidenceTests.swift",
       "sourceBlob": "88cd7b60560d52b1f42d377053e85846177fed52",
       "sourceMode": "100644",
-      "resultSha256": "696e590af5607c35a27914df8d3d6760d3cd0b8191f0297e215d99cb6009293b",
+      "resultSha256": "80bc92daba59e0fd7545eadc5aff6975f7de062e445a98484874971ff3580cb4",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one launch-and-reconnect lifecycle in which the fresh and resumed registrations both carry the persisted locator and the locator survives each disconnect, and reports trial_count 1 instead of twenty repetitions."
     },
     {
       "path": "apple-clients/AstralWatchTests/StatusLifecycleTests.swift",
@@ -2590,9 +2590,9 @@
       "sourcePath": "tooling/web-ci/tests/release-060.spec.js",
       "sourceBlob": "819f9d8d549f54c6a3b48d2c6353088f18af3324",
       "sourceMode": "100644",
-      "resultSha256": "a24722c5dc78c27aa041c356b32fd6d108218911cc4859fb23cbd1c85b7bb2b2",
+      "resultSha256": "ca65e2f7b2dda205b95d11cae720d02eb5ed18b6e2529effbb75cd12e9ffc7fe",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one reload restores the transcript and canvas within five seconds without a welcome and reports trial_count 1 instead of twenty reloads."
     },
     {
       "path": "tooling/web-ci/tests/voice-conversation-065.spec.js",
@@ -2878,9 +2878,9 @@
       "sourcePath": "windows-client/tests/release_evidence_060.py",
       "sourceBlob": "21b46644204d9d509e129dfcde32dce6bc202584",
       "sourceMode": "100644",
-      "resultSha256": "e3aa3d7e494a9a3cfd78bdb03abb43ec026dac3b27fb27f735a934970e4c4a58",
+      "resultSha256": "d2f42e582ca36bd8e74055bd05c3a93ff81095d35201cb22a122fbae6e11e59c",
       "task": "T102/T014",
-      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
+      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release. Single-resume proof 2026-09-28: reconnect_resume proves one resumed session restores the completed transcript and reports trial_count 1 instead of twenty sessions; the report description no longer carries a task ID or a stale version."
     },
     {
       "path": "windows-client/tests/screenshot.py",
