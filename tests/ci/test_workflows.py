@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 ACTIVE = ROOT / ".github" / "workflows"
 INACTIVE = ROOT / "workflows-disabled"
 PYTHON_CI_LOCK = ROOT / "tooling" / "python-ci" / "requirements.lock.txt"
+EVENT_BASE_SHA = "${{ github.event.pull_request.base.sha || github.event.before }}"
 REVIEWED_GITLEAKS_FIXTURE_FINGERPRINTS = frozenset(
     {
         "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_remote_machines_surface.py:private-key:42",
@@ -79,18 +80,41 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
     assert "branches: [main]" in pull_request
 
     python = _job_block(text, "python")
+    assert "fetch-depth: 0" in python
     assert "mkdir -p build/074/coverage" in python
     assert (
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
         "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov-branch "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
+    record = _step_block(python, "Record changed Python coverage for the event range")
+    assert f"BASE_SHA: {EVENT_BASE_SHA}" in record
     assert (
-        "diff-cover build/074/coverage/projection-python.xml "
-        "--compare-branch origin/main --fail-under=90"
-    ) in python
+        "python scripts/check_changed_coverage.py build/074/coverage/projection-python.xml\n"
+        '          --base-sha "$BASE_SHA" --fail-under=90\n'
+        "          --output build/074/coverage/projection-python-changed-coverage.json"
+    ) in record
+    assert "diff-cover" not in python
+
+
+def test_every_changed_line_gate_records_an_event_range_decision() -> None:
+    text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
+    gated = [
+        job_id for job_id in sorted(_job_ids(text))
+        if "check_changed_coverage.py" in _job_block(text, job_id)
+    ]
+
+    assert gated == ["python", "windows-package", "windows-tests"]
+    assert "diff-cover" not in text
+    assert text.count("check_changed_coverage.py") == 3
+    assert text.count(f"BASE_SHA: {EVENT_BASE_SHA}") == 3
+    for job_id in gated:
+        job = _job_block(text, job_id)
+        assert "fetch-depth: 0" in job, job_id
+        assert job.count("--fail-under=90") == 1, job_id
+        assert job.count("changed-coverage.json") == 1, job_id
 
 
 def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
@@ -166,7 +190,9 @@ def _assert_windows_native_contract(text: str) -> None:
     for job in (source_tests, windows):
         assert "runs-on: windows-latest" in job
         assert "fetch-depth: 0" in job
-        assert job.count("--compare-branch origin/main --fail-under=90") == 1
+        assert job.count(f"BASE_SHA: {EVENT_BASE_SHA}") == 1
+        assert job.count('--base-sha "$env:BASE_SHA" --fail-under=90') == 1
+        assert "diff-cover" not in job
         _assert_windows_steps_stop_on_native_failure(job)
     source_step = _step_block(
         source_tests, "Run Windows source tests with changed-line coverage"
@@ -177,7 +203,8 @@ def _assert_windows_native_contract(text: str) -> None:
         r"python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `",
         r"--cov=windows-client\astral_client --cov-branch `",
         r"--cov-report=xml:build\075\coverage\windows-python.xml",
-        r"diff-cover build\075\coverage\windows-python.xml `",
+        r"python scripts\check_changed_coverage.py build\075\coverage\windows-python.xml `",
+        r"--output build\075\coverage\windows-python-changed-coverage.json",
     ):
         assert required in source_step
     assert (
@@ -208,7 +235,8 @@ def _assert_windows_native_contract(text: str) -> None:
         "helper provenance does not match its inputs",
         "helper publish is not byte reproducible",
         "python -m PyInstaller --noconfirm --clean AstralDeep.spec",
-        "diff-cover build/075/coverage/windows-csharp.xml",
+        "python scripts/check_changed_coverage.py build/075/coverage/windows-csharp.xml",
+        "--output build/075/coverage/windows-csharp-changed-coverage.json",
         "ASTRAL_WINDOWS_EXE: ${{ github.workspace }}",
         r"windows-client\tests\test_packaged_release.py",
         r"windows-client\tests\test_helper_integrity_075.py",
@@ -550,8 +578,20 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
             "--cov=tests.test_merge_xccov_line_coverage",
         ),
         ("--cov-branch", ""),
-        ("--compare-branch origin/main", "--compare-branch HEAD~1"),
+        (
+            "--cov=scripts.check_changed_coverage",
+            "--cov=tests.test_check_changed_coverage",
+        ),
+        ('--base-sha "$BASE_SHA"', "--base-sha HEAD~1"),
+        (EVENT_BASE_SHA, "${{ github.event.before }}"),
         ("--fail-under=90", "--fail-under=89"),
+        (
+            "python scripts/check_changed_coverage.py build/074/coverage/projection-python.xml\n"
+            '          --base-sha "$BASE_SHA" --fail-under=90\n',
+            "diff-cover build/074/coverage/projection-python.xml\n"
+            "          --compare-branch origin/main --fail-under=90\n",
+        ),
+        ("        with:\n          fetch-depth: 0\n", ""),
     ),
 )
 def test_core_ci_rejects_trigger_or_python_coverage_weakening(
@@ -589,7 +629,13 @@ def test_core_ci_rejects_trigger_or_python_coverage_weakening(
             r"windows-client\tests\test_helper_integrity_075.py",
             r"windows-client\tests\test_packaged_release.py",
         ),
-        ("--compare-branch origin/main --fail-under=90", "--fail-under=89"),
+        ('--base-sha "$env:BASE_SHA" --fail-under=90', '--base-sha "$BASE_SHA" --fail-under=90'),
+        ("--fail-under=90", "--fail-under=89"),
+        (EVENT_BASE_SHA, "${{ github.event.before }}"),
+        (
+            "python scripts/check_changed_coverage.py build/075/coverage/windows-csharp.xml",
+            "diff-cover build/075/coverage/windows-csharp.xml",
+        ),
         (" --durations=25", ""),
         ("  windows-tests:\n", "  windows-source:\n"),
         (
@@ -621,13 +667,13 @@ def test_windows_native_contract_rejects_gate_weakening(
 
 
 @pytest.mark.parametrize(
-    ("pytest_exit", "diff_cover_exit"),
+    ("pytest_exit", "coverage_exit"),
     ((1, 0), (5, 0), (0, 1), (0, 0)),
 )
 def test_windows_source_step_fails_when_tests_or_coverage_fail(
     tmp_path: Path,
     pytest_exit: int,
-    diff_cover_exit: int,
+    coverage_exit: int,
 ) -> None:
     pwsh = shutil.which("pwsh")
     if pwsh is None or os.name != "posix":
@@ -646,12 +692,14 @@ def test_windows_source_step_fails_when_tests_or_coverage_fail(
     shims = tmp_path / "bin"
     shims.mkdir()
     record = tmp_path / "commands.txt"
-    for name, code in (("python", pytest_exit), ("diff-cover", diff_cover_exit)):
-        shim = shims / name
-        shim.write_text(
-            f"#!/bin/sh\nprintf '%s\\n' \"{name} $*\" >> \"$COMMAND_RECORD\"\nexit {code}\n"
-        )
-        shim.chmod(0o755)
+    shim = shims / "python"
+    shim.write_text(
+        "#!/bin/sh\n"
+        "printf '%s\\n' \"python $*\" >> \"$COMMAND_RECORD\"\n"
+        f'if [ "$1" = "-m" ]; then exit {pytest_exit}; fi\n'
+        f"exit {coverage_exit}\n"
+    )
+    shim.chmod(0o755)
     result = subprocess.run(
         [pwsh, "-NoProfile", "-NonInteractive", "-Command", f". '{script}'"],
         cwd=tmp_path,
@@ -659,17 +707,23 @@ def test_windows_source_step_fails_when_tests_or_coverage_fail(
             **os.environ,
             "PATH": f"{shims}{os.pathsep}{os.environ['PATH']}",
             "COMMAND_RECORD": str(record),
+            "BASE_SHA": "a" * 40,
         },
         capture_output=True,
         text=True,
         timeout=60,
     )
     calls = record.read_text(encoding="utf-8").splitlines()
-    assert (result.returncode != 0) == bool(pytest_exit or diff_cover_exit), result.stderr
+    assert (result.returncode != 0) == bool(pytest_exit or coverage_exit), result.stderr
     assert calls[0].startswith("python -m pytest windows-client\\tests -q")
-    assert [call.split()[0] for call in calls] == (
-        ["python"] if pytest_exit else ["python", "diff-cover"]
-    )
+    if pytest_exit:
+        assert len(calls) == 1
+    else:
+        assert len(calls) == 2
+        assert calls[1].startswith(
+            "python scripts\\check_changed_coverage.py build\\075\\coverage\\windows-python.xml"
+            f" --base-sha {'a' * 40} --fail-under=90"
+        )
 
 
 def _assert_jobs_capped_at_thirty_minutes(text: str) -> None:

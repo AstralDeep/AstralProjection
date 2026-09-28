@@ -39,8 +39,14 @@ jobs:
       - run: python -m pip install --no-deps --no-build-isolation .
       - run: ruff check src backend tests scripts windows-client
       - run: mkdir -p build/074/coverage
-      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
-      - run: diff-cover build/074/coverage/projection-python.xml --compare-branch origin/main --fail-under=90
+      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
+      - name: Record changed Python coverage for the event range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: >-
+          python scripts/check_changed_coverage.py build/074/coverage/projection-python.xml
+          --base-sha "$BASE_SHA" --fail-under=90
+          --output build/074/coverage/projection-python-changed-coverage.json
       - run: PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation
       - run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import astralprojection, rote, webrender"
 
@@ -139,13 +145,15 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: windows-client
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `
             --cov=windows-client\astral_client --cov-branch `
             --cov-report=xml:build\075\coverage\windows-python.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          diff-cover build\075\coverage\windows-python.xml `
-            --compare-branch origin/main --fail-under=90
+          python scripts\check_changed_coverage.py build\075\coverage\windows-python.xml `
+            --base-sha "$env:BASE_SHA" --fail-under=90 `
+            --output build\075\coverage\windows-python-changed-coverage.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   windows-package:
@@ -303,9 +311,13 @@ jobs:
           python -m pip install --no-deps --no-build-isolation .
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Enforce changed native helper coverage
+        shell: pwsh
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: >-
-          diff-cover build/075/coverage/windows-csharp.xml
-          --compare-branch origin/main --fail-under=90
+          python scripts/check_changed_coverage.py build/075/coverage/windows-csharp.xml
+          --base-sha "$env:BASE_SHA" --fail-under=90
+          --output build/075/coverage/windows-csharp-changed-coverage.json
       - name: Run actual frozen Windows package smokes
         env:
           ASTRAL_WINDOWS_EXE: ${{ github.workspace }}\windows-client\dist\AstralDeep.exe
