@@ -2743,9 +2743,9 @@
       "sourcePath": "windows-client/astral_client/protocol.py",
       "sourceBlob": "c16ec978cd8517f336e2966797c25545bd29ff24",
       "sourceMode": "100644",
-      "resultSha256": "1865def24cf5bb6508bafd7d26d2c8ebc64a260aca265c0f9946fdc71bcef40e",
+      "resultSha256": "2bb87cc527be01cfb78a6ae1654bf650ec7a7385bf57a9aab2a6ac6023094ed1",
       "task": "T166/T054/T071/T089/T040/T014",
-      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Provide the Windows Work-only current-socket send with submission correlation and no offline replay. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Initialize native Windows Qt core input providers before device enumeration. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes."
+      "reason": "Carry exact runtime authority plus strict Windows local speech, acknowledgement, recovery, and canonical playout phase fields in the delivery protocol. Feature 076: remote computer control (computer_request/computer_session/computer_host pushes, computer_event/computer_response + chrome_computer_* actions, the computer_host register_ui field, the My computers menu item, and the Windows host wiring). Feature 088 authenticated native verification: restore welcome and responsive grid parity, preserve conversation commit and recovery fences, and prevent transcript-collapse layout stalls with targeted regressions. Feature 088 committed continuation: Provide the Windows Work-only current-socket send with submission correlation and no offline replay. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Initialize native Windows Qt core input providers before device enumeration. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Rebind the packaged runtime lock digest to the astralprims 0.4.0 Windows release lock."
     },
     {
       "path": "windows-client/astral_client/protocol_manifest.py",
@@ -2815,9 +2815,9 @@
       "sourcePath": "windows-client/deployment/runtime-manifest.json",
       "sourceBlob": "711a46165ede46df4f1d580994d6fce0427f7c8f",
       "sourceMode": "100644",
-      "resultSha256": "62afcd97b93921fe560f467d3e823083c0391d834ae917733cd39a5380f806da",
+      "resultSha256": "f37a86e1db3dcfa65ef11f8e34a76a9bd0ae073d0b4e43cf5aab7ecec2f6f953",
       "task": "T166/T102",
-      "reason": "Declare runtime contract v3 and the protected-executor file while binding the Windows 0.5.0 release/profile identities and canonical profile digest. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release."
+      "reason": "Declare runtime contract v3 and the protected-executor file while binding the Windows 0.5.0 release/profile identities and canonical profile digest. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release. Rebind the packaged runtime lock digest to the astralprims 0.4.0 Windows release lock."
     },
     {
       "path": "windows-client/main.py",
@@ -2833,18 +2833,18 @@
       "sourcePath": "windows-client/requirements-release.lock.txt",
       "sourceBlob": "f533dbb4dfcedf6398a8c1649dccd37fd4c1f7f7",
       "sourceMode": "100644",
-      "resultSha256": "f376ece93b3754b02498e8243a88b3c68282fd26d80c868d85c23bb7ac1d317d",
+      "resultSha256": "cd04dd23361ee769f57ea1d046b0b5e10aa50bb41ebe65c4683d7518c9e9a079",
       "task": "T166",
-      "reason": "Pin the exact signed LETS v1.0.11 wheel URL and digest for reproducible Windows candidates."
+      "reason": "Pin the exact signed LETS v1.0.11 wheel URL and digest for reproducible Windows candidates. Pin astralprims 0.4.0 with its PyPI wheel hash so pyproject.toml, the CI lock and the Windows requirements agree (Projection Constitution XI); no other lock line changes."
     },
     {
       "path": "windows-client/requirements.in",
       "sourcePath": "windows-client/requirements.in",
       "sourceBlob": "17727135e29ec6a7bafc0950777a2e134e4f3ef6",
       "sourceMode": "100644",
-      "resultSha256": "5bd4739e9a0db246de0d9df06315be3e2f8f734e40a48e2569a00124382c3a5a",
+      "resultSha256": "1f1055a2d6317d3bdebe9ef7e7d7e37f429151aef529224702d5b0eac7693bbd",
       "task": "T166",
-      "reason": "Declare the signed LETS public executor dependency consumed by the Windows protected runtime."
+      "reason": "Declare the signed LETS public executor dependency consumed by the Windows protected runtime. Pin astralprims 0.4.0 so pyproject.toml, the CI lock and the Windows requirements agree (Projection Constitution XI)."
     },
     {
       "path": "windows-client/tests/conftest.py",
@@ -3364,9 +3364,9 @@
       "sourcePath": "windows-client/win_agent/byo_host.py",
       "sourceBlob": "6ed2071b286421438f09c14cc6725540e2de370e",
       "sourceMode": "100644",
-      "resultSha256": "b4c06f1906416c58b402e4fc782ef624d72dae8e28d1490b43f5360c446ee4cb",
+      "resultSha256": "7f5807e1dff1b692c03a70b51582e2b92ba20143daf3424dcf887dc85125bb8f",
       "task": "T166",
-      "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Validate the exact owner, binding, lease, lineage, audience, runtime, and generation fence before Windows launch. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Rebind the packaged runtime lock digest to the astralprims 0.4.0 Windows release lock."
     },
     {
       "path": "windows-client/win_agent/byo_worker.py",

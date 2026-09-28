@@ -3,7 +3,7 @@
 --only-binary=:all:
 
 annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
-astralprims==0.3.0 --hash=sha256:9272b404205244b32391f32c3f7009d3c653fd97deed7ff2b01c8ebeaa4d8d7d
+astralprims==0.4.0 --hash=sha256:9d5affbf2588bf55abce1c0622c14d7039acf998d44a569eb6f258c36f442cc0
 build==1.5.0 --hash=sha256:13f3eecb844759ab66efec90ca17639bbf14dc06cb2fdf37a9010322d9c50a6f
 chardet==7.4.3 --hash=sha256:4c3da294de1a681097848ab58bd3f2771a674f8039d2d87a5538b28856b815e9 --hash=sha256:7005c88da26fd95d8abb8acbe6281d833e9a9181b03cf49b4546c4555389bd97 --hash=sha256:ccc1f83ab4bcfb901cf39e0c4ba6bc6e726fc6264735f10e24ceb5cb47387578
 colorama==0.4.6 ; sys_platform == "win32" --hash=sha256:4f1d9991f5acc0ca119f9d443620b77f9d6b33703e51011c16baf57afb285fc6

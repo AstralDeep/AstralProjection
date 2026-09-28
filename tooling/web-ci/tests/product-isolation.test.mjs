@@ -20,7 +20,7 @@ async function fixtureRoot() {
   );
   await writeFile(
     resolve(root, "pyproject.toml"),
-    '[project]\ndependencies = ["astralprims==0.3.0"]\n'
+    '[project]\ndependencies = ["astralprims==0.4.0"]\n'
       + '[tool.setuptools.packages.find]\nwhere = ["src", "."]\n'
       + 'include = ["astralprojection*", "webrender*"]\n',
     "utf8",

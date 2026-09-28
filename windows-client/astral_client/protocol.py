@@ -43,7 +43,7 @@ _SEMVER = re.compile(
 RUNTIME_CONTRACT_VERSIONS = (3,)
 LEGACY_RUNTIME_DISPOSITIONS = {2: "dispatch_mediated_only"}
 RUNTIME_LOCK_ARTIFACT = "requirements-release.lock.txt"
-RUNTIME_LOCK_SHA256 = "f376ece93b3754b02498e8243a88b3c68282fd26d80c868d85c23bb7ac1d317d"
+RUNTIME_LOCK_SHA256 = "cd04dd23361ee769f57ea1d046b0b5e10aa50bb41ebe65c4683d7518c9e9a079"
 
 VOICE_DEVICE_ID_KEY = "astraldeep.voice.device_id.v1"
 VOICE_TRANSCRIPT_TOPIC = "astraldeep.voice.transcript.v1"

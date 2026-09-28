@@ -551,7 +551,7 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
 def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
-            "a91870671b818da8bd06565b6b21af406a4c96cbb812f0006db730d36a1e1d59"
+            "f08a9282fb5ac555ca2df6ee922cd2ec77eb070447b43175799e907142c09ff1"
         ),
         "tooling/web-ci/package.json": (
             "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
@@ -560,16 +560,16 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"
         ),
         "windows-client/requirements.in": (
-            "5bd4739e9a0db246de0d9df06315be3e2f8f734e40a48e2569a00124382c3a5a"
+            "1f1055a2d6317d3bdebe9ef7e7d7e37f429151aef529224702d5b0eac7693bbd"
         ),
         "windows-client/requirements.txt": (
             "d301d1e3a1b523fda5c1488693cf9a7a4336504c0d168bd0f4e220c8b0302c95"
         ),
         "windows-client/requirements-release.lock.txt": (
-            "f376ece93b3754b02498e8243a88b3c68282fd26d80c868d85c23bb7ac1d317d"
+            "cd04dd23361ee769f57ea1d046b0b5e10aa50bb41ebe65c4683d7518c9e9a079"
         ),
         "windows-client/deployment/runtime-lock-contract.json": (
-            "5907ee2ffedc4376d31721739f8279cbac69774af72459de34905dd679bfd0db"
+            "24a819186b94951bba81e2f280aa00258cf99cbf02b0363a9e5bada1f8a62bd8"
         ),
         "android-client/buildscript-gradle.lockfile": (
             "9e0750c539a1715561bb7018f3f24010f2542a7400b953abc4958959c9616750"
