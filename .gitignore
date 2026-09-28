@@ -124,3 +124,6 @@ signing.properties
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Coding-agent local state; Spec Kit Claude skills are installed per machine
+.claude/
