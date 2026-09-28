@@ -2235,6 +2235,15 @@
       "reason": "Open Sans serves monospace-styled code as well (089 FR-032); JetBrains Mono is no longer loaded by anything."
     },
     {
+      "path": "backend/webrender/targets/__init__.py",
+      "sourcePath": "backend/webrender/targets/__init__.py",
+      "sourceBlob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+      "sourceMode": "100644",
+      "resultSha256": "c8636caaadebb115e1b9d4de0bef577eef2ac708eb9c931b9e2b81c226e96e99",
+      "task": "T063",
+      "reason": "Give the render-target package the three-sentence header that Constitution Principle XIV requires."
+    },
+    {
       "path": "backend/webrender/targets/mcp_renderer.py",
       "sourcePath": "backend/webrender/targets/mcp_renderer.py",
       "sourceBlob": "14b797116584bafab9b0a119214db994a7637e36",
@@ -2878,9 +2887,9 @@
       "sourcePath": "windows-client/tests/release_evidence_060.py",
       "sourceBlob": "21b46644204d9d509e129dfcde32dce6bc202584",
       "sourceMode": "100644",
-      "resultSha256": "d2f42e582ca36bd8e74055bd05c3a93ff81095d35201cb22a122fbae6e11e59c",
+      "resultSha256": "8a39671293a91d6faef576a0a8d65eb25414ef1b7bd428f4af5b98e97155ad5e",
       "task": "T102/T014",
-      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release. Single-resume proof 2026-09-28: reconnect_resume proves one resumed session restores the completed transcript and reports trial_count 1 instead of twenty sessions; the report description no longer carries a task ID or a stale version."
+      "reason": "Require frozen Windows release evidence to report the 0.5.0 candidate identity. Feature 078: advance the Windows client identity to 0.5.2 (the v0.5.0 tag is immutable and unpublished; its lane never initialized the Projection submodule). Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native Windows console fidelity, scoped viewport hydration, isolated settings and lifecycle behavior against the shared web references; bind the current Windows source bytes. Release 2026-09-26: advance the Windows client identity to 0.6.0 for the native UI v2 release. Single-resume proof 2026-09-28: reconnect_resume proves one resumed session restores the completed transcript and reports trial_count 1 instead of twenty sessions; the report description no longer carries a task ID or a stale version. Resolve the release-evidence validator and schema from the nearest ancestor that carries them, so the producer loads them inside AstralDeep."
     },
     {
       "path": "windows-client/tests/screenshot.py",

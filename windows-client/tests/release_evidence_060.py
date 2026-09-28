@@ -32,13 +32,18 @@ from astral_client import integrity  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 REPO = ROOT.parent
-VALIDATOR = REPO / "scripts" / "validate_release_evidence.py"
-SCHEMA = (
-    REPO
-    / "specs"
-    / "060-runtime-reliability-hardening"
-    / "contracts"
-    / "release-evidence.schema.json"
+
+
+def _release_tooling(relative: str) -> Path:
+    for base in ROOT.parents:
+        if (base / relative).is_file():
+            return base / relative
+    return REPO / relative
+
+
+VALIDATOR = _release_tooling("scripts/validate_release_evidence.py")
+SCHEMA = _release_tooling(
+    "specs/060-runtime-reliability-hardening/contracts/release-evidence.schema.json"
 )
 PROMPT = "Roll exactly six six-sided dice and show the normalized results."
 STAGING_FIELDS = (
