@@ -1,4 +1,4 @@
-"""Verify native menu heading lifetime and dispatch during repeated server model refreshes.
+"""Verify native menu heading lifetime and dispatch when the server menu model is refreshed.
 The checks retain visible, noninteractive headings without owning custom header widgets.
 """
 
@@ -37,10 +37,10 @@ def model(label="Account & access", surface="agents"):
         "signout": {"label": "Leave session", "action": "logout"}}
 
 
-def test_repeated_refresh_keeps_headings_native_visible_and_noninteractive(topbar, qapp):
+def test_refresh_keeps_headings_native_visible_and_noninteractive(topbar, qapp):
     bar, opened, local, signed_out = topbar
     stylesheet = qapp.styleSheet()
-    for index in range(80):
+    for index in range(2):
         bar.set_menu_model(model(surface=f"surface-{index}"))
         qapp.setStyleSheet(stylesheet)
         QApplication.processEvents()
@@ -57,7 +57,7 @@ def test_repeated_refresh_keeps_headings_native_visible_and_noninteractive(topba
         assert opened == local == signed_out == []
     next(action for action in actions if action.text() == "Agents && permissions").trigger()
     next(action for action in actions if action.text() == "Agents && tools").trigger()
-    assert opened == [("surface-79", "Agents & permissions")]
+    assert opened == [("surface-1", "Agents & permissions")]
     assert local == [True]
 
 

@@ -128,7 +128,7 @@ internal fun ConsoleIcon(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
-    IconButton(onClick, enabled = enabled, modifier = Modifier.size(44.dp)) {
+    IconButton(onClick, enabled = enabled, modifier = Modifier.size(48.dp)) {
         Icon(painterResource(icon), label, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

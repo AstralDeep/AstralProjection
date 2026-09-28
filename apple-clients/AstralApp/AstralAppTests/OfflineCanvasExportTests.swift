@@ -1,10 +1,16 @@
 // Tests for OfflineCanvasExport: the bundled document encodes untrusted presentation data and keeps window
-// geometry, a real WebKit export is self-contained and script-free, and foreign images can't be fetched.
+// geometry, a real WebKit export is self-contained and script-free, foreign images can't be fetched, and an
+// exhausted render bound fails closed while the production bounds stay fixed.
 
 import AstralCore
 import XCTest
 
 @testable import AstralDeep
+
+nonisolated extension CanvasExportTimeouts {
+    // A loaded hosted simulator can keep a fresh WebContent process busy past the 5-second production bound.
+    static let loadedHost = CanvasExportTimeouts(callback: .seconds(30), total: .seconds(60))
+}
 
 @MainActor
 final class OfflineCanvasExportTests: XCTestCase {
@@ -40,7 +46,8 @@ final class OfflineCanvasExportTests: XCTestCase {
     }
 
     func testRealPrivateWebKitReturnsSelfContainedScriptFreeHTML() async throws {
-        let output = try await OfflineCanvasExport.render(presentation: presentation(), isCurrent: { true })
+        let output = try await OfflineCanvasExport.render(
+            presentation: presentation(), timeouts: .loadedHost, isCurrent: { true })
         let html = try XCTUnwrap(String(data: output, encoding: .utf8))
         XCTAssertTrue(html.contains("Visible local result"))
         XCTAssertTrue(html.contains("script-src 'none'"))
@@ -52,7 +59,7 @@ final class OfflineCanvasExportTests: XCTestCase {
     func testForeignImageCannotBeFetchedOrExportedAsBlankSuccess() async throws {
         let data = try presentation(html: "<img src=\"https://export-denied.invalid/private-image.png\">")
         do {
-            _ = try await OfflineCanvasExport.render(presentation: data, isCurrent: { true })
+            _ = try await OfflineCanvasExport.render(presentation: data, timeouts: .loadedHost, isCurrent: { true })
             XCTFail("A missing offline image must not create a successful file")
         } catch { XCTAssertTrue(error is CanvasExportFailure) }
     }
@@ -62,18 +69,30 @@ final class OfflineCanvasExportTests: XCTestCase {
         var checks = 0
         do {
             _ = try await OfflineCanvasExport.render(
-                presentation: data,
+                presentation: data, timeouts: .loadedHost,
                 isCurrent: {
                     checks += 1
                     return checks < 4
                 })
             XCTFail("Old owner document")
         } catch { XCTAssertTrue(error is CancellationError) }
-        let task = Task { try await OfflineCanvasExport.render(presentation: data, isCurrent: { true }) }
+        let task = Task {
+            try await OfflineCanvasExport.render(presentation: data, timeouts: .loadedHost, isCurrent: { true })
+        }
         task.cancel()
         do {
             _ = try await task.value
             XCTFail("Cancelled document")
         } catch { XCTAssertTrue(error is CancellationError) }
+    }
+
+    func testProductionBoundsStayFixedAndAnExhaustedRenderBoundFailsClosed() async throws {
+        XCTAssertEqual(CanvasExportTimeouts.standard, CanvasExportTimeouts(callback: .seconds(5), total: .seconds(25)))
+        do {
+            _ = try await OfflineCanvasExport.render(
+                presentation: presentation(), timeouts: CanvasExportTimeouts(callback: .seconds(30), total: .zero),
+                isCurrent: { true })
+            XCTFail("An exhausted render bound produced a document")
+        } catch { XCTAssertTrue(error is CanvasExportFailure) }
     }
 }

@@ -127,7 +127,7 @@ struct ConsoleResultPane: View {
                             model.consoleResultCollapsed.toggle()
                         } label: {
                             Image(systemName: model.consoleResultCollapsed ? "chevron.down" : "chevron.up")
-                                .frame(width: 40, height: 44)
+                                .frame(width: 40, height: 44).contentShape(Rectangle())
                         }
                         .accessibilityLabel(model.consoleLabel(model.consoleResultCollapsed ? "expand" : "collapse"))
                     }
@@ -136,6 +136,7 @@ struct ConsoleResultPane: View {
                             model.consoleFullscreen = true
                         } label: {
                             Image(systemName: "arrow.up.left.and.arrow.down.right").frame(width: 40, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .accessibilityLabel("Open this result in full screen")
                     }
@@ -146,7 +147,9 @@ struct ConsoleResultPane: View {
                         } label: {
                             Image(systemName: "xmark").frame(width: 40, height: 44)
                                 .foregroundStyle(p.error).background(
-                                    p.error.opacity(0.1), in: RoundedRectangle(cornerRadius: 7))
+                                    p.error.opacity(0.1), in: RoundedRectangle(cornerRadius: 7)
+                                )
+                                .contentShape(Rectangle())
                         }
                         .keyboardShortcut(.escape, modifiers: [])
                         .accessibilityLabel(model.consoleLabel("exit_fullscreen"))
@@ -213,7 +216,7 @@ struct WorkspaceActionButtons: View {
                         start(action)
                     } label: {
                         Image(systemName: action == .exportCanvas ? "square.and.arrow.down" : "square.and.arrow.up")
-                            .frame(width: 40, height: 44)
+                            .frame(width: 40, height: 44).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(

@@ -43,11 +43,22 @@ enum OfflineCanvasExportDocument {
     }
 }
 
+nonisolated struct CanvasExportTimeouts: Equatable {
+    static let standard = CanvasExportTimeouts(callback: .seconds(5), total: .seconds(25))
+    let callback: Duration
+    let total: Duration
+}
+
 @MainActor
 private final class CanvasExportEvaluation {
+    private let limit: Duration
     private var continuation: CheckedContinuation<Any?, Error>?
     private var result: Result<Any?, Error>?
     private var timeout: Task<Void, Never>?
+
+    init(limit: Duration) {
+        self.limit = limit
+    }
 
     func begin(_ continuation: CheckedContinuation<Any?, Error>) {
         if let result {
@@ -55,8 +66,8 @@ private final class CanvasExportEvaluation {
             return
         }
         self.continuation = continuation
-        timeout = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(5)) } catch { return }
+        timeout = Task { [weak self, limit] in
+            do { try await Task.sleep(for: limit) } catch { return }
             self?.finish(.failure(CanvasExportFailure.unavailable))
         }
     }
@@ -76,17 +87,18 @@ final class OfflineCanvasExport: NSObject, WKNavigationDelegate, WKUIDelegate {
     private var initialNavigation = true
 
     static func render(
-        presentation: Data, bundle: Bundle = .main, isCurrent: () -> Bool
+        presentation: Data, bundle: Bundle = .main, timeouts: CanvasExportTimeouts = .standard,
+        isCurrent: () -> Bool
     ) async throws -> Data {
         try Task.checkCancellation()
         guard isCurrent() else { throw CancellationError() }
-        let deadline = ContinuousClock.now.advanced(by: .seconds(25))
+        let deadline = ContinuousClock.now.advanced(by: timeouts.total)
         let html = try OfflineCanvasExportDocument.html(presentation: presentation, bundle: bundle)
         let size = try OfflineCanvasExportDocument.windowSize(presentation)
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.preferences.javaScriptCanOpenWindowsAutomatically = false
-        let compiled = try await boundedCallback { evaluation in
+        let compiled = try await boundedCallback(within: timeouts.callback) { evaluation in
             WKContentRuleListStore.default().compileContentRuleList(
                 forIdentifier: "astral-canvas-export-network-deny-v1",
                 encodedContentRuleList:
@@ -118,7 +130,7 @@ final class OfflineCanvasExport: NSObject, WKNavigationDelegate, WKUIDelegate {
             try Task.checkCancellation()
             guard isCurrent() else { throw CancellationError() }
             let result = try await evaluate(
-                webView, script: "window.AstralExportResult || ({state:'loading'})")
+                webView, script: "window.AstralExportResult || ({state:'loading'})", within: timeouts.callback)
             try Task.checkCancellation()
             guard isCurrent() else { throw CancellationError() }
             guard ContinuousClock.now < deadline else { throw CanvasExportFailure.unavailable }
@@ -137,16 +149,18 @@ final class OfflineCanvasExport: NSObject, WKNavigationDelegate, WKUIDelegate {
         throw CanvasExportFailure.unavailable
     }
 
-    private static func evaluate(_ webView: WKWebView, script: String) async throws -> Any? {
-        try await boundedCallback { evaluation in
+    private static func evaluate(_ webView: WKWebView, script: String, within limit: Duration) async throws -> Any? {
+        try await boundedCallback(within: limit) { evaluation in
             webView.evaluateJavaScript(script) { result, error in
                 if let error { evaluation.finish(.failure(error)) } else { evaluation.finish(.success(result)) }
             }
         }
     }
 
-    private static func boundedCallback(_ begin: (CanvasExportEvaluation) -> Void) async throws -> Any? {
-        let evaluation = CanvasExportEvaluation()
+    private static func boundedCallback(
+        within limit: Duration, _ begin: (CanvasExportEvaluation) -> Void
+    ) async throws -> Any? {
+        let evaluation = CanvasExportEvaluation(limit: limit)
         return try await withTaskCancellationHandler(
             operation: {
                 try Task.checkCancellation()

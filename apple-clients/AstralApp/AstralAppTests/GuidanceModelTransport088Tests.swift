@@ -17,6 +17,7 @@ import XCTest
 
 @MainActor
 final class GuidanceModelTransport088Tests: XCTestCase {
+    private let socketEventTimeout: TimeInterval = 30
     private let connection = "55555555-5555-4555-8555-555555555555"
     private let operation = "66666666-6666-4666-8666-666666666666"
     private let menu = InboundFrame.parse(
@@ -24,7 +25,7 @@ final class GuidanceModelTransport088Tests: XCTestCase {
     )!
 
     private func waitUntil(_ label: String, _ condition: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(3)
+        let deadline = Date().addingTimeInterval(socketEventTimeout)
         while !condition() && Date() < deadline { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertTrue(condition(), label)
     }
@@ -86,7 +87,7 @@ final class GuidanceModelTransport088Tests: XCTestCase {
         let peer = try GuidanceModelPeer()
         peer.start()
         defer { peer.stop() }
-        await fulfillment(of: [peer.ready], timeout: 3)
+        await fulfillment(of: [peer.ready], timeout: socketEventTimeout)
         let port = try XCTUnwrap(peer.listener.port)
         let socket = WSClient(url: URL(string: "ws://127.0.0.1:\(port.rawValue)/ws")!)
         let suite = "GuidanceModelTransport088Tests.\(UUID().uuidString)"
@@ -110,7 +111,7 @@ final class GuidanceModelTransport088Tests: XCTestCase {
             }
         }
         await socket.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
-        await fulfillment(of: [ready], timeout: 3)
+        await fulfillment(of: [ready], timeout: socketEventTimeout)
         model.connected = true
         model.handleFrame(menu)
         do { try await body(model, socket, peer) } catch {

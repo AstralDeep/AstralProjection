@@ -88,6 +88,8 @@ final class WatchModel {
     var workUpdate: WorkSurfaceUpdate?
     var workReadState = WorkReadState()
     var workReadFailed = false
+    static let workReadTimeout: Duration = .seconds(10)
+    @ObservationIgnored var workReadClock: any Clock<Duration> = SuspendingClock()
     private var workReadEpoch = UUID().uuidString.lowercased()
     private var workReadSelection: WorkReadRequest?
     @ObservationIgnored private var workReadTask: Task<Void, Never>?
@@ -1377,6 +1379,13 @@ final class WatchModel {
         guard let generation, workReadState.generation == generation else { return }
         invalidateWorkRead()
         workReadFailed = true
+    }
+
+    func expireWorkRead(generation: String) async -> Bool {
+        do { try await workReadClock.sleep(for: Self.workReadTimeout) } catch { return false }
+        guard !Task.isCancelled, workUpdate == nil else { return false }
+        failWorkRead(generation: generation)
+        return true
     }
 
     private func invalidateWorkRead(includeGuidance: Bool = true) {

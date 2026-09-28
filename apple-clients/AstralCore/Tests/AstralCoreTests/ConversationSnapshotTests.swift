@@ -2,8 +2,9 @@
 // malformed or mixed-purpose parts, revision equality rules, commit-ready fencing, and transient-frame
 // sequencing.
 
-@testable import AstralCore
 import XCTest
+
+@testable import AstralCore
 
 final class ConversationSnapshotTests: XCTestCase {
     private let chat = "11111111-1111-4111-8111-111111111111"

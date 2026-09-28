@@ -118,7 +118,7 @@ internal fun ConsoleComposer(
                 enabled = !readOnly,
                 modifier =
                     Modifier.size(
-                        44.dp,
+                        48.dp,
                     ).background(if (background) colors.primary.copy(alpha = 0.16f) else Color.Transparent, RoundedCornerShape(8.dp)),
             ) {
                 Icon(
@@ -146,7 +146,7 @@ internal fun ConsoleComposer(
             enabled = canSend && !readOnly,
             modifier =
                 Modifier.size(
-                    44.dp,
+                    48.dp,
                 ).background(
                     if (canSend && !readOnly) colors.primary else colors.surface,
                     RoundedCornerShape(10.dp),
@@ -161,7 +161,7 @@ internal fun ConsoleComposer(
         }
     }
     BoxWithConstraints(Modifier.fillMaxWidth().testTag("composer-surface")) {
-        val controlWidth = 44 * (maxOf(1, controls.size) + 3) + 4 * (maxOf(1, controls.size) + 2)
+        val controlWidth = 48 * (maxOf(1, controls.size) + 3) + 4 * (maxOf(1, controls.size) + 2)
         if (maxWidth.value >= controlWidth + 136 * LocalDensity.current.fontScale) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 field(Modifier.weight(1f).padding(end = 4.dp))

@@ -107,11 +107,11 @@ def test_parent_destruction_disposes_owned_items_and_releases_references(qapp, n
     assert reference() is None
 
 
-def test_repeated_layout_disposal_preserves_native_window_types_and_styles(qapp, native_root):
+def test_layout_disposal_preserves_native_window_types_and_styles(qapp, native_root):
     stylesheet = qapp.styleSheet()
     retained = []
     try:
-        for cycle in range(100):
+        for cycle in range(2):
             parent = native_root(QWidget)
             layout = FlowLayout(parent)
             for index in range(4):

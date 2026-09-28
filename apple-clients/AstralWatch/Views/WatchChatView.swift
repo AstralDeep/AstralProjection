@@ -11,7 +11,8 @@ struct WatchChatView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                // Not lazy: scrolling a lazy stack to a trailing navigation link re-lays it out forever on watchOS.
+                VStack(alignment: .leading, spacing: 8) {
                     if !model.workspaceStarted {
                         if let console = model.console {
                             Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)

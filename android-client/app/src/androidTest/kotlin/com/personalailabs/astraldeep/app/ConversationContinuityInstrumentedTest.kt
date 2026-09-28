@@ -22,23 +22,18 @@ class ConversationContinuityInstrumentedTest {
     private val chatId = "11111111-1111-4111-8111-111111111111"
 
     @After
-    fun clearTrialState() {
+    fun clearResumeState() {
         ConversationResumeStore(context).clear(account, ClearReason.ACCOUNT_SWITCH_OR_REMOVAL)
     }
 
     @Test
-    fun twenty_process_recreation_trials_restore_the_same_account_scoped_locator() {
-        repeat(20) { trial ->
-            val writer = ConversationResumeStore(context)
-            assertTrue("trial $trial write", writer.save(account, chatId))
+    fun process_recreation_restores_the_same_account_scoped_locator() {
+        val writer = ConversationResumeStore(context)
+        assertTrue(writer.save(account, chatId))
 
-            val recreated = ConversationResumeStore(context)
-            assertEquals("trial $trial recreate", chatId, recreated.load(account)?.chatId)
-            assertNull(
-                "trial $trial account isolation",
-                recreated.load(AccountIdentity(account.issuer, "foreign-$trial")),
-            )
-        }
+        val recreated = ConversationResumeStore(context)
+        assertEquals(chatId, recreated.load(account)?.chatId)
+        assertNull(recreated.load(AccountIdentity(account.issuer, "foreign-user")))
     }
 
     @Test

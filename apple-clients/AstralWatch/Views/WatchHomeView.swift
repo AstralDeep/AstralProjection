@@ -166,10 +166,7 @@ struct WatchWorkSurfaceView: View {
         .task(id: model.workReadState.generation) {
             timedOut = false
             guard let generation = model.workReadState.generation else { return }
-            do { try await Task.sleep(nanoseconds: 10_000_000_000) } catch { return }
-            guard !Task.isCancelled, model.workUpdate == nil else { return }
-            model.failWorkRead(generation: generation)
-            timedOut = true
+            if await model.expireWorkRead(generation: generation) { timedOut = true }
         }
         .onDisappear { model.closeWorkRead() }
     }

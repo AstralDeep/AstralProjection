@@ -128,10 +128,65 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
     assert '"backend/webrender/static/**/*.js"' in package["scripts"]["lint"]
 
 
-def _assert_windows_native_contract(text: str) -> None:
-    windows = _job_block(text, "windows")
+_PWSH_EXIT_CHECK = "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }"
+_WINDOWS_NATIVE_COMMANDS = ("python ", "dotnet ", "diff-cover ")
+_WINDOWS_RELEASE_INSTALL = (
+    "python -m pip install --require-hashes -r windows-client/requirements-release.lock.txt"
+)
+_WINDOWS_TOOLING_INSTALL = (
+    "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
+)
 
-    assert "fetch-depth: 0" in windows
+
+def _assert_windows_steps_stop_on_native_failure(job: str) -> None:
+    # GitHub's pwsh wrapper only propagates the last native exit code of a script.
+    assert "continue-on-error" not in job
+    checked = 0
+    for step in re.split(r"(?m)^      - ", job)[1:]:
+        if "run: |\n" not in step:
+            continue
+        shell = re.search(r"(?m)^        shell: (\S+)$", step)
+        assert shell is None or shell[1] == "pwsh", step
+        lines = [line.strip() for line in step.split("run: |\n", 1)[1].splitlines()]
+        index = 0
+        while index < len(lines):
+            if lines[index].startswith(_WINDOWS_NATIVE_COMMANDS):
+                while lines[index].endswith("`"):
+                    index += 1
+                assert index + 1 < len(lines) and lines[index + 1] == _PWSH_EXIT_CHECK, step
+                checked += 1
+            index += 1
+    assert checked
+
+
+def _assert_windows_native_contract(text: str) -> None:
+    source_tests = _job_block(text, "windows-tests")
+    windows = _job_block(text, "windows-package")
+
+    for job in (source_tests, windows):
+        assert "runs-on: windows-latest" in job
+        assert "fetch-depth: 0" in job
+        assert job.count("--compare-branch origin/main --fail-under=90") == 1
+        _assert_windows_steps_stop_on_native_failure(job)
+    source_step = _step_block(
+        source_tests, "Run Windows source tests with changed-line coverage"
+    )
+    for required in (
+        "QT_QPA_PLATFORM: offscreen",
+        "PYTHONPATH: windows-client",
+        r"python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `",
+        r"--cov=windows-client\astral_client --cov-branch `",
+        r"--cov-report=xml:build\075\coverage\windows-python.xml",
+        r"diff-cover build\075\coverage\windows-python.xml `",
+    ):
+        assert required in source_step
+    assert (
+        source_tests.index(_WINDOWS_RELEASE_INSTALL)
+        < source_tests.index(_WINDOWS_TOOLING_INSTALL)
+        < source_tests.index(r"python -m pytest windows-client\tests -q")
+    )
+    assert r"python -m pytest windows-client\tests -q" not in windows
+
     assert (
         "actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1"
         in windows
@@ -154,9 +209,6 @@ def _assert_windows_native_contract(text: str) -> None:
         "helper publish is not byte reproducible",
         "python -m PyInstaller --noconfirm --clean AstralDeep.spec",
         "diff-cover build/075/coverage/windows-csharp.xml",
-        r"python -m pytest windows-client\tests -q -p no:cacheprovider `",
-        r"--cov=windows-client\astral_client --cov-branch `",
-        r"diff-cover build\075\coverage\windows-python.xml `",
         "ASTRAL_WINDOWS_EXE: ${{ github.workspace }}",
         r"windows-client\tests\test_packaged_release.py",
         r"windows-client\tests\test_helper_integrity_075.py",
@@ -188,16 +240,31 @@ def _assert_windows_native_contract(text: str) -> None:
         in helper_publish[first_hash:second_clean]
     )
     assert windows.count("--verify-no-changes") == 2
-    assert windows.count("--compare-branch origin/main --fail-under=90") == 2
-    release_install = windows.index(
-        "python -m pip install --require-hashes -r "
-        "windows-client/requirements-release.lock.txt"
-    )
+    release_install = windows.index(_WINDOWS_RELEASE_INSTALL)
     frozen_build = windows.index("python -m PyInstaller --noconfirm --clean AstralDeep.spec")
-    tooling_install = windows.index(
-        "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
-    )
-    assert release_install < frozen_build < tooling_install
+    tooling_install = windows.index(_WINDOWS_TOOLING_INSTALL)
+    frozen_smokes = windows.index(r"windows-client\tests\test_packaged_release.py")
+    assert release_install < frozen_build < tooling_install < frozen_smokes
+
+
+APPLE_RESULT_GUARD = (
+    'if [ -e "$result" ] || [ -L "$result" ]; then\n'
+    '            echo "::error::result bundle $result already exists"\n'
+    "            exit 1\n"
+    "          fi\n"
+)
+APPLE_RETRY_POLICY = (
+    "-test-timeouts-enabled YES",
+    "-default-test-execution-time-allowance 120",
+    "-maximum-test-execution-time-allowance 300",
+    "-retry-tests-on-failure",
+    "-test-iterations 3",
+)
+
+
+def _assert_retry_policy_in_one_run(job: str, run: str) -> None:
+    for flag in APPLE_RETRY_POLICY:
+        assert job.count(flag) == 1 and flag in run, flag
 
 
 def _assert_apple_platform_contract(apple: str) -> None:
@@ -248,6 +315,11 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "swift test" not in core_ios
     assert "--platform ios" in core_ios
     assert "apple-required-core-ios-coverage" in core_ios
+    assert APPLE_RESULT_GUARD in core_ios
+    assert "test ! -e" not in core_ios
+    for job in (app_unit, core_ios):
+        assert job.count("set +e") == 1 and job.count("-resultBundlePath") == 1
+        _assert_retry_policy_in_one_run(job, job[job.index("set +e") : job.index("status=$?")])
     assert "needs.core-ios-tests.result" in apple_required
     assert "--platform ios --profile ci" in apple_required
     assert (
@@ -260,16 +332,30 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "VoiceConversationUITests",
         "WorkspacePresentationUITests",
         "WorkspaceActionsUITests",
-        "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversationTwentyTimes",
+        "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation",
     ):
         assert "-only-testing:AstralAppUITests/" + selector in first_login
+    assert (
+        "-only-testing:AstralAppUITests/ConversationContinuityUITests/"
+        "testDeterministicProcessRelaunchRestoresSemanticConversation \\\n"
+    ) in first_login
     assert (
         'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)'
         in first_login
     )
     assert '"${workspace_actions[@]}"' in first_login
-    assert 'result="${result_base}-attempt-$1.xcresult"' in first_login
+    assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in first_login
+    assert APPLE_RESULT_GUARD in first_login
+    assert "test ! -e" not in first_login
     assert 'rm -rf "$result"' not in first_login
+    assert first_login.count("-resultBundlePath") == 1
+    assert "-retry-tests-on-failure" in first_login
+    assert "-test-iterations 3" in first_login
+    assert "-test-timeouts-enabled YES \\\n" in first_login
+    assert first_login.count("-default-test-execution-time-allowance") == 1
+    assert "-default-test-execution-time-allowance 120 \\\n" in first_login
+    assert "-maximum-test-execution-time-allowance 300 \\\n" in first_login
+    assert "build/060/coverage/AstralApp-${{ matrix.slug }}-first-login.xcresult" in first_login
     app_unit_marker = _step_block(app_unit, "Publish app unit success marker")
     assert "name: apple-required-app-unit-${{ matrix.slug }}" in app_unit_marker
     assert "app-unit-${{ matrix.slug }}.ok" in app_unit
@@ -289,6 +375,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert watch.count(exporter) == 1
     assert "-scheme AstralWatchNavigation" in watch
     assert "-only-testing:AstralWatchNavigationUITests" in watch
+    _assert_retry_policy_in_one_run(watch, watch[watch.index("-scheme AstralWatchNavigation") :])
     assert 'test "$unit_status" -eq 0' in watch
     assert 'test "$navigation_status" -eq 0' in watch
     assert 'xcrun xcresulttool merge --output-path "$result" "$unit_result" "$navigation_result"' in watch
@@ -339,7 +426,13 @@ def _assert_apple_platform_contract(apple: str) -> None:
 def test_core_ci_is_active_read_only_and_projection_owned() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
 
-    assert _job_ids(text) == {"python", "web", "windows", "required"}
+    assert _job_ids(text) == {
+        "python",
+        "web",
+        "windows-tests",
+        "windows-package",
+        "required",
+    }
     _assert_core_trigger_and_python_coverage(text)
     assert "permissions:\n  contents: read" in text
     assert "if: ${{ false }}" not in text
@@ -385,11 +478,12 @@ def test_core_ci_runs_qualified_owner_gates() -> None:
     assert "QT_QPA_PLATFORM: offscreen" in text
     assert "PYTHONPATH: windows-client" in text
     _assert_windows_native_contract(text)
-    assert "if: always()" in text
-    assert "needs: [python, web, windows]" in text
-    for job in ("python", "web", "windows"):
-        assert f"needs.{job}.result" in text
-    assert text.count("== 'success'") == 3
+    required = _job_block(text, "required")
+    assert "if: always()" in required
+    assert "needs: [python, web, windows-tests, windows-package]" in required
+    for job in ("python", "web", "windows-tests", "windows-package"):
+        assert f"[[ '${{{{ needs.{job}.result }}}}' == 'success' ]]" in required
+    assert text.count("== 'success'") == 4
 
 
 def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
@@ -427,7 +521,7 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
         assert re.search(rf"(?m)^{re.escape(package)}==[^\s]+.*--hash=sha256:", lock)
 
     install = "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt"
-    for job_id in ("python", "windows"):
+    for job_id in ("python", "windows-tests", "windows-package"):
         job = _job_block(text, job_id)
         assert install in job
         assert "python -m pip install --no-deps --no-build-isolation ." in job
@@ -496,6 +590,22 @@ def test_core_ci_rejects_trigger_or_python_coverage_weakening(
             r"windows-client\tests\test_packaged_release.py",
         ),
         ("--compare-branch origin/main --fail-under=90", "--fail-under=89"),
+        (" --durations=25", ""),
+        ("  windows-tests:\n", "  windows-source:\n"),
+        (
+            "windows-python.xml\n          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n",
+            "windows-python.xml\n",
+        ),
+        (
+            "--no-restore\n          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }\n"
+            "          dotnet format",
+            "--no-restore\n          dotnet format",
+        ),
+        (
+            "coverage\n        shell: pwsh\n",
+            "coverage\n        continue-on-error: true\n        shell: pwsh\n",
+        ),
+        ("coverage\n        shell: pwsh\n", "coverage\n        shell: cmd\n"),
     ),
 )
 def test_windows_native_contract_rejects_gate_weakening(
@@ -508,6 +618,93 @@ def test_windows_native_contract_rejects_gate_weakening(
 
     with pytest.raises(AssertionError):
         _assert_windows_native_contract(mutated)
+
+
+@pytest.mark.parametrize(
+    ("pytest_exit", "diff_cover_exit"),
+    ((1, 0), (5, 0), (0, 1), (0, 0)),
+)
+def test_windows_source_step_fails_when_tests_or_coverage_fail(
+    tmp_path: Path,
+    pytest_exit: int,
+    diff_cover_exit: int,
+) -> None:
+    pwsh = shutil.which("pwsh")
+    if pwsh is None or os.name != "posix":
+        pytest.skip("GitHub's pwsh step wrapper is exercised with PowerShell 7 on POSIX")
+    step = _step_block(
+        _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "windows-tests"),
+        "Run Windows source tests with changed-line coverage",
+    )
+    script = tmp_path / "step.ps1"
+    script.write_text(
+        "$ErrorActionPreference = 'stop'\n"
+        + textwrap.dedent(step.split("run: |\n", 1)[1])
+        + "\nif ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }\n",
+        encoding="utf-8",
+    )
+    shims = tmp_path / "bin"
+    shims.mkdir()
+    record = tmp_path / "commands.txt"
+    for name, code in (("python", pytest_exit), ("diff-cover", diff_cover_exit)):
+        shim = shims / name
+        shim.write_text(
+            f"#!/bin/sh\nprintf '%s\\n' \"{name} $*\" >> \"$COMMAND_RECORD\"\nexit {code}\n"
+        )
+        shim.chmod(0o755)
+    result = subprocess.run(
+        [pwsh, "-NoProfile", "-NonInteractive", "-Command", f". '{script}'"],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "PATH": f"{shims}{os.pathsep}{os.environ['PATH']}",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    calls = record.read_text(encoding="utf-8").splitlines()
+    assert (result.returncode != 0) == bool(pytest_exit or diff_cover_exit), result.stderr
+    assert calls[0].startswith("python -m pytest windows-client\\tests -q")
+    assert [call.split()[0] for call in calls] == (
+        ["python"] if pytest_exit else ["python", "diff-cover"]
+    )
+
+
+def _assert_jobs_capped_at_thirty_minutes(text: str) -> None:
+    for job_id in _job_ids(text):
+        limits = re.findall(r"(?m)^    timeout-minutes: (\d+)$", _job_block(text, job_id))
+        assert len(limits) == 1 and 0 < int(limits[0]) <= 30, (job_id, limits)
+
+
+@pytest.mark.parametrize("workflow_name", ("ci.yml", "android-ci.yml", "apple-ci.yml"))
+def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name: str) -> None:
+    _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(
+    ("workflow_name", "needle", "replacement"),
+    (
+        ("ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 31\n"),
+        ("ci.yml", "    timeout-minutes: 10\n", ""),
+        ("android-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 45\n"),
+        ("android-ci.yml", "    timeout-minutes: 15\n", ""),
+        ("apple-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 31\n"),
+        ("apple-ci.yml", "    timeout-minutes: 15\n", ""),
+    ),
+)
+def test_job_timeout_cap_rejects_missing_or_longer_limits(
+    workflow_name: str,
+    needle: str,
+    replacement: str,
+) -> None:
+    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+    mutated = text.replace(needle, replacement, 1)
+    assert mutated != text
+
+    with pytest.raises(AssertionError):
+        _assert_jobs_capped_at_thirty_minutes(mutated)
 
 
 def test_native_ci_is_active_and_uses_standalone_paths() -> None:
@@ -730,6 +927,18 @@ def test_apple_contract_rejects_coverage_inputs_outside_candidate_checkout() -> 
         _assert_apple_platform_contract(mutated)
 
 
+@pytest.mark.parametrize("job_id", ["app-unit-tests", "core-ios-tests"])
+@pytest.mark.parametrize("flag", APPLE_RETRY_POLICY)
+def test_apple_contract_rejects_unit_runs_without_the_per_test_retry_policy(job_id, flag):
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    job = _job_block(apple, job_id)
+    mutated = apple.replace(job, job.replace(flag + " \\\n", "", 1), 1)
+    assert mutated != apple
+
+    with pytest.raises(AssertionError):
+        _assert_apple_platform_contract(mutated)
+
+
 def test_release_activation_document_matches_current_workflow_inventory() -> None:
     document = (ROOT / "docs" / "release-workflow-activation.md").read_text(
         encoding="utf-8"
@@ -837,8 +1046,8 @@ def _assert_ios_domain_collection(text):
     assert "-only-testing:" not in prepare
     assert "-only-testing:AstralAppTests" in unit
     ui = _job_block(text, "first-login-ui")
-    assert ui.index("build-for-testing") < ui.index("run_suite()")
-    assert 'result="${result_base}-attempt-$1.xcresult"' in ui
+    assert ui.index("build-for-testing") < ui.index('-resultBundlePath "$result"')
+    assert 'result="${COVERAGE_ROOT}/AstralApp-${{ matrix.slug }}-first-login.xcresult"' in ui
     assert "--lane" not in _job_block(text, "watch-continuity")
 
 
@@ -920,6 +1129,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     assert xcode[-1][-1] == ("test-without-building" if platform == "ios" else "test")
     assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
+    _assert_retried_test_run(xcode)
     if lane == "ui":
         selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
         assert "-only-testing:AstralAppUITests/WorkspacePresentationUITests" in selectors
@@ -939,6 +1149,150 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
         assert exports[0][exports[0].index("--native-domain") + 1] == (
             f"coverage with spaces/apple-ios-{lane}-domain.json"
         )
+
+
+def _assert_retried_test_run(xcode):
+    runs = [call for call in xcode if "-resultBundlePath" in call]
+    assert runs == [xcode[-1]]
+    run = xcode[-1]
+    assert [run[run.index(flag) + 1] for flag in (
+        "-test-timeouts-enabled",
+        "-default-test-execution-time-allowance",
+        "-maximum-test-execution-time-allowance",
+        "-test-iterations",
+    )] == ["YES", "120", "300", "3"]
+    assert run.count("-retry-tests-on-failure") == 1
+    assert not [call for call in xcode[:-1] if "-retry-tests-on-failure" in call]
+
+
+def test_apple_core_ios_builds_once_then_runs_one_retried_suite(tmp_path):
+    bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
+    if bash is None:
+        pytest.skip("Apple workflow shell contract requires Bash")
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    script = textwrap.dedent(
+        _step_block(
+            _job_block(text, "core-ios-tests"), "Run AstralCore on the supported iOS simulator"
+        ).split("run: |\n", 1)[1]
+    )
+    assert "${{" not in script
+    (tmp_path / "apple-clients" / "AstralCore").mkdir(parents=True)
+    recorder = tmp_path / "record_commands.py"
+    recorder.write_text(
+        "import json, os, pathlib, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'xcodebuild' and '-resultBundlePath' in sys.argv:\n"
+        "    pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1]).mkdir(parents=True)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = "\n".join(
+        f'{name}() {{ {command} {name} "$@"; }}' for name in ("xcodebuild", "xcrun", "python3")
+    ) + "\n"
+    record = tmp_path / "commands.jsonl"
+    result = subprocess.run(
+        [bash, "-c", prefix + script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "COVERAGE_ROOT": "coverage with spaces",
+            "IOS_RUNTIME": "26.5",
+            "GITHUB_RUN_ID": "1",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    xcode = [call for call in calls if call[0] == "xcodebuild"]
+    assert [call[-1] for call in xcode] == ["build-for-testing", "test-without-building"]
+    _assert_retried_test_run(xcode)
+    collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
+    assert len(collectors) == 1
+    assert collectors[0][collectors[0].index("--lane") + 1] == "core"
+
+
+def _run_first_login_step(tmp_path, platform, *, suite_exit):
+    bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
+    if bash is None:
+        pytest.skip("Apple workflow shell contract requires Bash")
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    script = textwrap.dedent(
+        _step_block(
+            _job_block(text, "first-login-ui"),
+            "Run deterministic first-login, voice and workspace UI tests with coverage",
+        ).split("run: |\n", 1)[1]
+    )
+    for name, value in {
+        "matrix.slug": platform,
+        "matrix.destination": "platform=macOS",
+        "steps.ios_sim.outputs.udid": "owned-fixture-id",
+    }.items():
+        script = script.replace("${{ " + name + " }}", value)
+    assert "${{" not in script
+    recorder = tmp_path / "record_commands.py"
+    recorder.write_text(
+        "import json, os, pathlib, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'xcodebuild' and '-resultBundlePath' in sys.argv:\n"
+        "    pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1]).mkdir(parents=True)\n"
+        f"    raise SystemExit({suite_exit})\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = "\n".join(
+        f'{name}() {{ {command} {name} "$@"; }}' for name in ("xcodebuild", "xcrun", "python3")
+    ) + "\n"
+    record = tmp_path / "commands.jsonl"
+    record.touch()
+    result = subprocess.run(
+        [bash, "-c", prefix + script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "COVERAGE_ROOT": "coverage with spaces",
+            "APP_PROJECT": "Owned Fixture.xcodeproj",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    return result, [json.loads(line) for line in record.read_text().splitlines()]
+
+
+@pytest.mark.parametrize("platform", ["macos", "ios"])
+def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp_path, platform):
+    result, calls = _run_first_login_step(tmp_path, platform, suite_exit=65)
+
+    assert result.returncode == (65 if platform == "macos" else 1), result.stderr
+    suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
+    assert len(suites) == 1
+    assert "-retry-tests-on-failure" in suites[0]
+    assert suites[0][suites[0].index("-default-test-execution-time-allowance") + 1] == "120"
+    assert not [call for call in calls if call[0] == "xcrun"]
+    collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
+    assert not collectors
+
+
+@pytest.mark.parametrize("platform", ["macos", "ios"])
+@pytest.mark.parametrize("existing", ["directory", "dangling-link"])
+def test_apple_first_login_refuses_an_existing_result_bundle(tmp_path, platform, existing):
+    bundle = tmp_path / "coverage with spaces" / f"AstralApp-{platform}-first-login.xcresult"
+    bundle.parent.mkdir()
+    if existing == "directory":
+        bundle.mkdir()
+    else:
+        bundle.symlink_to(tmp_path / "missing")
+
+    result, calls = _run_first_login_step(tmp_path, platform, suite_exit=0)
+
+    assert result.returncode == 1
+    assert "::error::result bundle" in result.stdout
+    assert calls == []
 
 
 @pytest.mark.parametrize("failing_command", ["none", "AstralWatch", "AstralWatchNavigation", "merge"])
@@ -981,6 +1335,10 @@ def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_com
         assert build[build.index("-project") + 1] == "Owned Watch.xcodeproj"
         assert build[build.index("-destination") + 1] == "platform=watchOS Simulator,id=owned-watch"
         assert "-enableCodeCoverage" in build and "CODE_SIGNING_ALLOWED=NO" in build
+    assert "-retry-tests-on-failure" not in builds[0]
+    assert "-retry-tests-on-failure" in builds[1]
+    assert builds[1][builds[1].index("-test-iterations") + 1] == "3"
+    assert builds[1][builds[1].index("-default-test-execution-time-allowance") + 1] == "120"
     merges = [call for call in calls if call[0] == "xcrun"]
     assert len(merges) == (1 if failing_command in {"none", "merge"} else 0)
     if merges:

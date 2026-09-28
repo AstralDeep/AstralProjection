@@ -120,7 +120,9 @@ def test_uncorrelated_legacy_chrome_cannot_replace_selected_work(win, phase, not
 
 def test_canonical_work_result_uses_complete_literal_qt_labels(win):
     root = Path(__file__).resolve().parents[2]
-    fixture = json.loads((root / "contracts/fixtures/work_088/read_surface.json").read_text())
+    fixture = json.loads(
+        (root / "contracts/fixtures/work_088/read_surface.json").read_text(encoding="utf-8")
+    )
     message = fixture["frames"]["result"]
     literal = '**literal** [source](https://example.invalid) <b>HTML</b> & "text"\nSecond line'
     expected = []
