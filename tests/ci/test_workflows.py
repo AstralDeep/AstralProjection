@@ -253,6 +253,18 @@ APPLE_RESULT_GUARD = (
     "            exit 1\n"
     "          fi\n"
 )
+APPLE_RETRY_POLICY = (
+    "-test-timeouts-enabled YES",
+    "-default-test-execution-time-allowance 120",
+    "-maximum-test-execution-time-allowance 300",
+    "-retry-tests-on-failure",
+    "-test-iterations 3",
+)
+
+
+def _assert_retry_policy_in_one_run(job: str, run: str) -> None:
+    for flag in APPLE_RETRY_POLICY:
+        assert job.count(flag) == 1 and flag in run, flag
 
 
 def _assert_apple_platform_contract(apple: str) -> None:
@@ -305,6 +317,9 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert "apple-required-core-ios-coverage" in core_ios
     assert APPLE_RESULT_GUARD in core_ios
     assert "test ! -e" not in core_ios
+    for job in (app_unit, core_ios):
+        assert job.count("set +e") == 1 and job.count("-resultBundlePath") == 1
+        _assert_retry_policy_in_one_run(job, job[job.index("set +e") : job.index("status=$?")])
     assert "needs.core-ios-tests.result" in apple_required
     assert "--platform ios --profile ci" in apple_required
     assert (
@@ -360,15 +375,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert watch.count(exporter) == 1
     assert "-scheme AstralWatchNavigation" in watch
     assert "-only-testing:AstralWatchNavigationUITests" in watch
-    navigation = watch[watch.index("-scheme AstralWatchNavigation") :]
-    for flag in (
-        "-test-timeouts-enabled YES",
-        "-default-test-execution-time-allowance 120",
-        "-maximum-test-execution-time-allowance 300",
-        "-retry-tests-on-failure",
-        "-test-iterations 3",
-    ):
-        assert watch.count(flag) == 1 and flag in navigation, flag
+    _assert_retry_policy_in_one_run(watch, watch[watch.index("-scheme AstralWatchNavigation") :])
     assert 'test "$unit_status" -eq 0' in watch
     assert 'test "$navigation_status" -eq 0' in watch
     assert 'xcrun xcresulttool merge --output-path "$result" "$unit_result" "$navigation_result"' in watch
@@ -920,6 +927,18 @@ def test_apple_contract_rejects_coverage_inputs_outside_candidate_checkout() -> 
         _assert_apple_platform_contract(mutated)
 
 
+@pytest.mark.parametrize("job_id", ["app-unit-tests", "core-ios-tests"])
+@pytest.mark.parametrize("flag", APPLE_RETRY_POLICY)
+def test_apple_contract_rejects_unit_runs_without_the_per_test_retry_policy(job_id, flag):
+    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    job = _job_block(apple, job_id)
+    mutated = apple.replace(job, job.replace(flag + " \\\n", "", 1), 1)
+    assert mutated != apple
+
+    with pytest.raises(AssertionError):
+        _assert_apple_platform_contract(mutated)
+
+
 def test_release_activation_document_matches_current_workflow_inventory() -> None:
     document = (ROOT / "docs" / "release-workflow-activation.md").read_text(
         encoding="utf-8"
@@ -1110,6 +1129,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     assert xcode[-1][-1] == ("test-without-building" if platform == "ios" else "test")
     assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
+    _assert_retried_test_run(xcode)
     if lane == "ui":
         selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
         assert "-only-testing:AstralAppUITests/WorkspacePresentationUITests" in selectors
@@ -1129,6 +1149,70 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
         assert exports[0][exports[0].index("--native-domain") + 1] == (
             f"coverage with spaces/apple-ios-{lane}-domain.json"
         )
+
+
+def _assert_retried_test_run(xcode):
+    runs = [call for call in xcode if "-resultBundlePath" in call]
+    assert runs == [xcode[-1]]
+    run = xcode[-1]
+    assert [run[run.index(flag) + 1] for flag in (
+        "-test-timeouts-enabled",
+        "-default-test-execution-time-allowance",
+        "-maximum-test-execution-time-allowance",
+        "-test-iterations",
+    )] == ["YES", "120", "300", "3"]
+    assert run.count("-retry-tests-on-failure") == 1
+    assert not [call for call in xcode[:-1] if "-retry-tests-on-failure" in call]
+
+
+def test_apple_core_ios_builds_once_then_runs_one_retried_suite(tmp_path):
+    bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
+    if bash is None:
+        pytest.skip("Apple workflow shell contract requires Bash")
+    text = (ACTIVE / "apple-ci.yml").read_text()
+    script = textwrap.dedent(
+        _step_block(
+            _job_block(text, "core-ios-tests"), "Run AstralCore on the supported iOS simulator"
+        ).split("run: |\n", 1)[1]
+    )
+    assert "${{" not in script
+    (tmp_path / "apple-clients" / "AstralCore").mkdir(parents=True)
+    recorder = tmp_path / "record_commands.py"
+    recorder.write_text(
+        "import json, os, pathlib, sys\n"
+        "with open(os.environ['COMMAND_RECORD'], 'a') as output:\n"
+        "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
+        "if sys.argv[1] == 'xcodebuild' and '-resultBundlePath' in sys.argv:\n"
+        "    pathlib.Path(sys.argv[sys.argv.index('-resultBundlePath') + 1]).mkdir(parents=True)\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    prefix = "\n".join(
+        f'{name}() {{ {command} {name} "$@"; }}' for name in ("xcodebuild", "xcrun", "python3")
+    ) + "\n"
+    record = tmp_path / "commands.jsonl"
+    result = subprocess.run(
+        [bash, "-c", prefix + script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "COVERAGE_ROOT": "coverage with spaces",
+            "IOS_RUNTIME": "26.5",
+            "GITHUB_RUN_ID": "1",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "COMMAND_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    calls = [json.loads(line) for line in record.read_text().splitlines()]
+    xcode = [call for call in calls if call[0] == "xcodebuild"]
+    assert [call[-1] for call in xcode] == ["build-for-testing", "test-without-building"]
+    _assert_retried_test_run(xcode)
+    collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
+    assert len(collectors) == 1
+    assert collectors[0][collectors[0].index("--lane") + 1] == "core"
 
 
 def _run_first_login_step(tmp_path, platform, *, suite_exit):

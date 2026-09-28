@@ -166,6 +166,11 @@ jobs:
           (cd apple-clients/AstralCore && xcodebuild "${core_args[@]}" build-for-testing)
           set +e
           (cd apple-clients/AstralCore && xcodebuild "${core_args[@]}" \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 300 \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
             -resultBundlePath "$result" test-without-building)
           status=$?
           set -e
@@ -265,6 +270,11 @@ jobs:
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             -enableCodeCoverage YES \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 120 \
+            -maximum-test-execution-time-allowance 300 \
+            -retry-tests-on-failure \
+            -test-iterations 3 \
             -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppTests \

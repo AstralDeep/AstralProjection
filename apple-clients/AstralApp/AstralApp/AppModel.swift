@@ -238,6 +238,7 @@ final class AppModel: NSObject {
 
     let themeStore = ThemeStore()
     @ObservationIgnored let canvasCapture = CanvasCaptureRegistry()
+    @ObservationIgnored var canvasExportTimeouts = CanvasExportTimeouts.standard
 
     var visibleCanvas: [AstralComponent] {
         if let idx = viewingIndex, canvasHistory.indices.contains(idx) {
@@ -687,7 +688,9 @@ final class AppModel: NSObject {
                         chatId: context.chatId, renderRevision: context.renderRevision, capture: capture)
                 },
                 render: { presentation in
-                    try await OfflineCanvasExport.render(presentation: presentation) {
+                    try await OfflineCanvasExport.render(
+                        presentation: presentation, timeouts: self.canvasExportTimeouts
+                    ) {
                         self.workspaceActionIsCurrent(context)
                     }
                 })

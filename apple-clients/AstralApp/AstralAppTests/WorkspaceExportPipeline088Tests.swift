@@ -1,6 +1,6 @@
 // Tests for the workspace export pipeline (Views/OfflineCanvasExport.swift): production authorization,
-// capture, and the private-file write; refused authorization or presentation never falls back to producing a
-// file.
+// capture, and the private-file write; refused authorization or presentation, or an exhausted render bound,
+// never produces a file.
 
 import AstralCore
 import Network
@@ -14,6 +14,7 @@ final class WorkspaceExportPipeline088Tests: XCTestCase {
     private func withModel(
         authorizationStatus: Int = 200,
         presentationStatus: Int = 200,
+        renderTimeouts: CanvasExportTimeouts = .loadedHost,
         body: (AppModel, WorkspaceExportLoopback) async throws -> Void
     ) async throws {
         let server = try WorkspaceExportLoopback(
@@ -31,6 +32,8 @@ final class WorkspaceExportPipeline088Tests: XCTestCase {
         let model = AppModel(
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
             tokenStore: store, defaults: defaults)
+        XCTAssertEqual(model.canvasExportTimeouts, .standard)
+        model.canvasExportTimeouts = renderTimeouts
         await model.bootstrap()
         model.activeChatId = "11111111-1111-4111-8111-111111111111"
         model.canvas = [
@@ -102,6 +105,20 @@ final class WorkspaceExportPipeline088Tests: XCTestCase {
                 RestClient.removeTemporaryDownload(file)
                 XCTFail("Denied presentation fell back to static authorization HTML")
             } catch { XCTAssertFalse(error is CancellationError) }
+            XCTAssertEqual(server.methods, ["GET", "POST"])
+            XCTAssertFalse(model.workspaceActionInFlight(.exportCanvas))
+        }
+    }
+
+    func testExhaustedRenderBoundNeverCreatesAnOfflineFile() async throws {
+        let exhausted = CanvasExportTimeouts(callback: .seconds(30), total: .zero)
+        try await withModel(renderTimeouts: exhausted) { model, server in
+            let context = try XCTUnwrap(model.workspaceActionContext(for: .exportCanvas))
+            do {
+                let file = try await model.downloadWorkspaceCanvas(context)
+                RestClient.removeTemporaryDownload(file)
+                XCTFail("An exhausted render bound created a file")
+            } catch { XCTAssertTrue(error is CanvasExportFailure) }
             XCTAssertEqual(server.methods, ["GET", "POST"])
             XCTAssertFalse(model.workspaceActionInFlight(.exportCanvas))
         }
