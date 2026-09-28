@@ -1,6 +1,6 @@
 // Tests for the watch Work surface: isolation from conversation speech, owner/connection-change clearing
-// without queueing reads, disabled-button validity, admission-refusal ticket retirement, and reconnect retry
-// retention.
+// without queueing reads, disabled-button validity, admission-refusal ticket retirement, reconnect retry
+// retention, and the ten-second read timeout measured on a controllable clock.
 
 import AstralCore
 import XCTest
@@ -162,5 +162,108 @@ final class WatchWorkSurface088Tests: XCTestCase {
         XCTAssertNil(model.workReadState.generation)
         XCTAssertNil(model.workUpdate)
         XCTAssertTrue(model.localOperationSubmissions.isEmpty)
+    }
+
+    func testReadExpiresWhenTheModelClockReachesTenSecondsAndNotEarlier() async {
+        XCTAssertEqual(WatchModel.workReadTimeout, .seconds(10))
+        XCTAssertTrue(WatchModel().workReadClock is SuspendingClock)
+        let model = model()
+        let clock = ManualClock()
+        model.workReadClock = clock
+        let expiry = Task { await model.expireWorkRead(generation: generation) }
+        await clock.waitForSleeper()
+        clock.advance(by: .seconds(10) - .milliseconds(1))
+        XCTAssertEqual(clock.pendingSleeps, 1)
+        XCTAssertEqual(model.workReadState.generation, generation)
+        XCTAssertFalse(model.workReadFailed)
+        clock.advance(by: .milliseconds(1))
+        let expired = await expiry.value
+        XCTAssertTrue(expired)
+        XCTAssertNil(model.workReadState.generation)
+        XCTAssertTrue(model.workReadFailed)
+    }
+
+    func testAnsweredOrCancelledReadTimerNeverFailsTheRead() async {
+        let answered = model()
+        let clock = ManualClock()
+        answered.workReadClock = clock
+        let answeredExpiry = Task { await answered.expireWorkRead(generation: generation) }
+        await clock.waitForSleeper()
+        answered.handleFrame(frame(.string(generation)))
+        clock.advance(by: WatchModel.workReadTimeout)
+        let answeredExpired = await answeredExpiry.value
+        XCTAssertFalse(answeredExpired)
+        XCTAssertEqual(answered.workUpdate?.title, "Server title")
+        XCTAssertFalse(answered.workReadFailed)
+
+        let pending = model()
+        pending.workReadClock = clock
+        let pendingExpiry = Task { await pending.expireWorkRead(generation: generation) }
+        await clock.waitForSleeper()
+        pendingExpiry.cancel()
+        let pendingExpired = await pendingExpiry.value
+        XCTAssertFalse(pendingExpired)
+        XCTAssertEqual(clock.pendingSleeps, 0)
+        XCTAssertEqual(pending.workReadState.generation, generation)
+        XCTAssertFalse(pending.workReadFailed)
+    }
+}
+
+private nonisolated final class ManualClock: Clock, @unchecked Sendable {
+    nonisolated struct Instant: InstantProtocol {
+        let offset: Swift.Duration
+        func advanced(by duration: Swift.Duration) -> Instant { Instant(offset: offset + duration) }
+        func duration(to other: Instant) -> Swift.Duration { other.offset - offset }
+        static func < (lhs: Instant, rhs: Instant) -> Bool { lhs.offset < rhs.offset }
+    }
+
+    private let lock = NSLock()
+    private var current = Instant(offset: .zero)
+    private var sleepers: [UUID: (deadline: Instant, continuation: CheckedContinuation<Void, Error>)] = [:]
+    private var registration: CheckedContinuation<Void, Never>?
+
+    var now: Instant { lock.withLock { current } }
+    var minimumResolution: Swift.Duration { .zero }
+    var pendingSleeps: Int { lock.withLock { sleepers.count } }
+
+    func sleep(until deadline: Instant, tolerance: Swift.Duration?) async throws {
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                let (outcome, waiter) = lock.withLock {
+                    () -> (Result<Void, Error>?, CheckedContinuation<Void, Never>?) in
+                    if Task.isCancelled { return (.failure(CancellationError()), nil) }
+                    if deadline <= current { return (.success(()), nil) }
+                    sleepers[id] = (deadline, continuation)
+                    defer { registration = nil }
+                    return (nil, registration)
+                }
+                if let outcome { continuation.resume(with: outcome) }
+                waiter?.resume()
+            }
+        } onCancel: {
+            lock.withLock { sleepers.removeValue(forKey: id) }?.continuation.resume(throwing: CancellationError())
+        }
+    }
+
+    func waitForSleeper() async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let ready = lock.withLock { () -> Bool in
+                guard sleepers.isEmpty else { return true }
+                registration = continuation
+                return false
+            }
+            if ready { continuation.resume() }
+        }
+    }
+
+    func advance(by duration: Swift.Duration) {
+        let due = lock.withLock { () -> [CheckedContinuation<Void, Error>] in
+            current = current.advanced(by: duration)
+            let ready = sleepers.filter { $0.value.deadline <= current }
+            for id in ready.keys { sleepers.removeValue(forKey: id) }
+            return ready.values.map(\.continuation)
+        }
+        for continuation in due { continuation.resume() }
     }
 }

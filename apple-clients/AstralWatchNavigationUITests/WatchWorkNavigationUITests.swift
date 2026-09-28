@@ -8,6 +8,8 @@ import XCTest
 
 @MainActor
 final class WatchWorkNavigationUITests: XCTestCase {
+    // The ten-second duration is proven on a controllable clock in AstralWatchTests; this only guards a hang.
+    private let timeoutPathGuard: TimeInterval = 60
     private var peer: WatchNavigationPeer!
     private var app: XCUIApplication!
 
@@ -78,11 +80,9 @@ final class WatchWorkNavigationUITests: XCTestCase {
         screenshot("Actual Watch Home List")
         app.buttons["Work records"].tap()
         let first = try frame(0, action: "chrome_open", mode: "list")
-        let started = Date()
         let unavailable = app.staticTexts["This view is unavailable. Reconnect and retry."]
-        XCTAssertTrue(unavailable.waitForExistence(timeout: 15), app.debugDescription)
-        XCTAssertGreaterThanOrEqual(Date().timeIntervalSince(started), 9)
-        screenshot("Actual ten-second timeout")
+        XCTAssertTrue(unavailable.waitForExistence(timeout: timeoutPathGuard), app.debugDescription)
+        screenshot("Actual Work read timeout")
         peer.respond(to: first, title: "Stale timeout response")
         app.buttons["Retry"].tap()
         let retry = try frame(1, action: "chrome_open", mode: "list")
