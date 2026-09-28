@@ -1434,9 +1434,7 @@ struct ParamPickerComponent: View {
         }
     }
 
-    /// Each control kind has its own builder. One switch over every kind inside
-    /// `fieldBody` exceeded the Xcode 26.3 type-checker time limit in Release
-    /// archives, although newer toolchains accepted it.
+    // One switch over every kind inside fieldBody exceeded the Xcode 26.3 Release type-checker limit
     @ViewBuilder
     private func fieldControl(_ field: JSONValue, name: String, label: String, kind: String) -> some View {
         switch kind {
@@ -1474,7 +1472,6 @@ struct ParamPickerComponent: View {
         field["options"]?.arrayValue?.compactMap { $0.stringValue ?? $0["value"]?.stringValue } ?? []
     }
 
-    /// The typed value first, then the guidance default, then the first option.
     private func selectedOption(_ field: JSONValue, name: String, options: [String]) -> String? {
         if let current = values[name] { return current }
         if guidanceSurface, let fallback = field["default"]?.stringValue { return fallback }

@@ -48,17 +48,14 @@ def build() -> str:
     status.textContent = "This chart could not be displayed. Open it in the web client.";
     status.hidden = false;
   }
-  // Same defanging rules as webrender.renderer._scrub_plotly_html. The native
-  // shell also denies network, navigation, frames, and privileged action bridges.
+  // Same defanging rules as webrender.renderer._scrub_plotly_html
   function scrub(value) {
     if (Array.isArray(value)) return value.map(scrub);
     if (value && typeof value === "object") {
-      // Plotly requires ordinary JSON objects for nested marker/layout options.
-      // Define own data properties so an authored __proto__ key stays inert.
+      // Own data properties keep an authored __proto__ key inert
       var out = {};
       Object.keys(value).forEach(function (key) {
-        // Image/tile sources must be self-contained in this offline document.
-        // Array-valued sources (for example Sankey indices) remain ordinary data.
+        // Image and tile sources must be self-contained in this offline document
         if (key === "source" && typeof value[key] === "string" &&
             !/^(data:image\/|blob:)/i.test(value[key])) throw new Error("External chart source");
         Object.defineProperty(out, key, {
@@ -94,8 +91,7 @@ def build() -> str:
     }
     el.setAttribute("aria-label", c.title ? String(c.title) : "Chart");
 __WEB_OPTIONS__
-    // The surrounding native component owns the maximum visible rectangle.
-    // No remote data or token is exposed to this isolated document.
+    // The surrounding native component owns the maximum visible rectangle
     layout.height = Math.min(1200, Math.max(160, Number(layout.height) || 320));
     Promise.resolve(Plotly.newPlot(el, traces, layout, cfg)).then(function () {
       document.documentElement.dataset.chartState = "ready";

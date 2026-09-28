@@ -1,5 +1,5 @@
-"""Mutable theme tokens and QSS generation for the native client, mirroring
-backend/webrender/chrome/surfaces/theme.py PRESETS. apply_theme() mutates PALETTE;
+"""Mutable theme tokens and QSS generation for the native client, mirroring the
+THEME_PRESETS in src/astralprojection/chrome/personalization.py. apply_theme() mutates PALETTE;
 build_stylesheet() re-renders the QSS used by app.py and renderer.py.
 """
 

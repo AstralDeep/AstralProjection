@@ -1,4 +1,4 @@
-"""The orchestrator's server-side render layer: turns astralprims component dicts,
+"""AstralProjection's server-side render layer: turns astralprims component dicts,
 already ROTE-adapted per device, into a client target's output, web HTML by default;
 new targets register via register_target() in webrender.registry.
 """

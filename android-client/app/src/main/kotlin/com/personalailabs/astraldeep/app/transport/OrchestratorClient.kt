@@ -49,7 +49,6 @@ import java.util.concurrent.TimeUnit
 
 enum class ConnectionState { Connecting, Connected, Disconnected, AuthRequired }
 
-/** The fixed purpose bound to one UUID4 request generation. */
 enum class ConversationRequestPurpose { HYDRATION, COMMIT }
 
 data class ConversationGenerationBinding(

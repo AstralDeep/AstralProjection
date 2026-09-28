@@ -1,6 +1,6 @@
-"""Escape-by-default web renderer turning ROTE-adapted astralprims dicts into HTML,
-matching frontend/DynamicRenderer.tsx's markup exactly; used by orchestrator.py and
-history.py, built on sanitize.py's markdown subset.
+"""Escape-by-default web renderer turning ROTE-adapted astralprims dicts into HTML on
+sanitize.py's markdown subset; registry.py serves it as the default 'web' target, and
+webrender/__init__.py exports its workspace, fragment and export-document entry points.
 """
 
 from __future__ import annotations

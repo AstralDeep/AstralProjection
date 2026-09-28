@@ -38,7 +38,6 @@ class ConversationResumeStore internal constructor(
 
     data class Locator(val chatId: String, val updatedAt: Instant, val schemaVersion: Int = SCHEMA_VERSION)
 
-    /** The complete allowlist of state transitions authorized to remove a locator. */
     enum class ClearReason {
         EXPLICIT_NEW_CHAT,
         DEFINITIVE_SIGN_OUT,

@@ -64,7 +64,6 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-/** Canonical transcript part disposition used by the native message renderer. */
 enum class ChatSegmentKind { TEXT, COMPONENTS, STRUCTURED, RECOVERY }
 
 @Immutable
@@ -88,12 +87,6 @@ data class ChatTurn(
         get() = text.isNotBlank() || segments.any { it.components.isNotEmpty() } || attachments.isNotEmpty()
 }
 
-/**
- * The top-level navigable surfaces. Settings is no longer a screen — it is the
- * server-driven dropdown from the top-bar gear (feature 042); items route to the
- * native Agents/Audit screens or, for any other surface, the SDUI [Surface] screen
- * (chrome_open → chrome_surface, rendered natively).
- */
 enum class Screen { Chat, Agents, History, Audit, Surface }
 
 @Immutable

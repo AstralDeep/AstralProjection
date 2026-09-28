@@ -28,9 +28,7 @@ from astral_client.deployment import (
     validate_packaged_deployment,
 )
 
-# Single version source: astral_client/__init__.py. Read textually (SPECPATH
-# is the spec's directory, injected by PyInstaller) — the spec is exec'd, so
-# the package is not necessarily importable here.
+# Read the version textually: the exec'd spec cannot rely on importing the package
 __version__ = re.search(
     r'__version__\s*=\s*"([^"]+)"',
     (pathlib.Path(SPECPATH) / "astral_client" / "__init__.py").read_text(encoding="utf-8"),
@@ -94,11 +92,7 @@ if not _matches_sha256(
 if not _matches_sha256(_helper_provenance.get("executable_sha256"), _helper_path):
     raise SystemExit("helper build provenance is invalid")
 
-# Bind runtime execution to the exact helper bytes that Analysis will embed.
-# This constant-only module is imported from the PYZ; it is deliberately not a
-# data file adjacent to the extracted helper, where it could be replaced along
-# with that executable. A protected release may sign the helper before this
-# point, then regenerate provenance so the signed bytes become the expectation.
+# A PYZ constant module, not a data file beside the helper, so it cannot be swapped with it
 _helper_sha256 = _sha256(_helper_path)
 _helper_digest_module_name = "_astral_helper_integrity_expected"
 _helper_digest_module_root = _root / "build" / "generated-helper-integrity"
@@ -136,9 +130,7 @@ if _manifest.get("requirements_input_sha256") != _sha256(_requirements_input_pat
 if _manifest.get("required_runtime_lock_sha256") != _sha256(_release_lock_path):
     raise SystemExit("Windows BYO runtime is not bound to the final release lock")
 
-# Run the same strict, duplicate-rejecting, exact-field validation used by the
-# frozen executable. This happens before Analysis/EXE construction, so malformed
-# or unapproved deployment/runtime inputs cannot produce candidate bytes.
+# The frozen executable's own validation runs before Analysis so bad inputs yield no candidate
 _effective_profile = resolve_effective_profile(
     bundled_profile_path=_profile_path,
     expected_client_version=__version__,
@@ -152,10 +144,6 @@ validate_packaged_deployment(
     expected_client_version=__version__,
 )
 
-# Windows VERSIONINFO resource derived from the single version constant, so
-# the shipped exe's file properties (FileVersion/ProductVersion) always match
-# astral_client.__version__ — the same constant the launch integrity check
-# compares against the latest GitHub release tag.
 _ver_tuple = tuple(int(p) for p in __version__.split(".")[:3]) + (0,)
 version_res = VSVersionInfo(
     ffi=FixedFileInfo(filevers=_ver_tuple, prodvers=_ver_tuple),
@@ -174,25 +162,15 @@ version_res = VSVersionInfo(
 
 hiddenimports = (
     collect_submodules("PySide6.QtCharts")
-    # Feature 075: QTextToSpeech and its Windows SAPI engine plugin are local
-    # synthesis runtime inputs. Keep both module and plugin closure explicit.
+    # QTextToSpeech and its SAPI plugin are runtime inputs, so their closure is explicit
     + collect_submodules("PySide6.QtTextToSpeech")
-    # Feature 065: the frozen client is a direct-RTC participant. Keep the
-    # exact livekit.rtc Python closure explicit so offline analysis cannot
-    # silently omit lazily imported room/audio/data modules.
+    # Offline analysis must not omit lazily imported livekit.rtc modules
     + collect_submodules("livekit.rtc")
     + collect_submodules("aiohttp")
     + collect_submodules("sigstore")
-    # Feature 058: the frozen exe IS the interpreter for every BYO agent worker
-    # (it re-invokes itself with --byo-worker), so the delivered bundle's only
-    # third-party import must resolve INSIDE the bundle — it can never pip-install.
+    # The frozen exe is every BYO worker's interpreter, so astralprims must resolve inside it
     + collect_submodules("astralprims")
-    # websockets resolves `connect` through a runtime __import__ in its
-    # imports.py, so the concrete client module is not a statically visible
-    # dependency. It has survived freezing only because the `if TYPE_CHECKING:`
-    # block in websockets/__init__.py leaves IMPORT_NAME bytecode that
-    # modulegraph happens to follow — incidental, and it would break silently if
-    # upstream reorganized that block. Collect the package explicitly.
+    # websockets resolves connect through a runtime __import__, so collect it explicitly
     + collect_submodules("websockets")
     + ["PySide6.QtCharts", "PySide6.QtMultimedia", "PySide6.QtTextToSpeech", "websockets",
        "livekit", "livekit.rtc",
@@ -203,12 +181,10 @@ hiddenimports = (
        "astral_client.helper_integrity", _helper_digest_module_name,
        "astral_client.confirm",
        "psutil", "pyperclip", "sigstore", "astralprims", "lets", "nacl",
-       # Feature 074: this helper is reached through a pre-Qt frozen-exe
-       # entrypoint, so ordinary static import analysis cannot discover it.
+       # Reached through a pre-Qt frozen entrypoint that static analysis cannot discover
        "lets.authority_helper", "lets.executor"]
 )
 
-# Trim heavy, unused Qt modules to keep the binary lean.
 excludes = [
     "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.QtWebEngineQuick",
     "PySide6.Qt3DCore", "PySide6.Qt3DRender", "PySide6.QtQuick3D",
@@ -219,8 +195,7 @@ excludes = [
 a = Analysis(
     ["main.py"],
     pathex=[str(_helper_digest_module_root)],
-    # The Windows livekit wheel carries its RTC FFI native artifact. Collect it
-    # deliberately instead of relying on import discovery inside a one-file exe.
+    # Collect livekit's RTC FFI artifact rather than rely on one-file import discovery
     binaries=(
         collect_dynamic_libs("livekit")
         + collect_dynamic_libs(
@@ -233,8 +208,6 @@ a = Analysis(
         )
         + [("asr-helper/publish/AstralSpeechHelper.exe", "asr-helper")]
     ),
-    # The brand icon ships inside the bundle too, so the running app can set
-    # its window/taskbar icon (assets resolve via sys._MEIPASS when frozen).
     datas=[
         ("assets/astraldeep.ico", "assets"),
         (str(_console_font_path), "assets/fonts"),
@@ -256,9 +229,7 @@ a = Analysis(
     excludes=excludes,
     noarchive=False,
 )
-# The PySide hook collects every text-to-speech plugin. Retain only the real
-# Windows SAPI backend so a packaged client can never report the silent mock
-# plugin as a local-synthesis capability.
+# Keep only the SAPI plugin so a package never reports the silent mock as local synthesis
 a.binaries = [
     entry
     for entry in a.binaries
@@ -284,11 +255,11 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,        # GUI app, no console window
+    console=False,
     disable_windowed_traceback=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    version=version_res,  # VERSIONINFO stamped from astral_client.__version__
+    version=version_res,
     icon="assets/astraldeep.ico",
 )

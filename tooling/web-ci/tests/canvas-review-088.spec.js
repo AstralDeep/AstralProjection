@@ -8,8 +8,14 @@ import { expect, test } from "@playwright/test";
 const ROOT = resolve(import.meta.dirname, "../../..");
 const STATIC = resolve(ROOT, "backend/webrender/static");
 const client = await readFile(resolve(STATIC, "client.js"), "utf8");
-const chartCode = client.slice(client.indexOf("  var chartResizeObserver"), client.indexOf("  // ---- theme_apply:"));
-const exportCode = client.slice(client.indexOf("  async function snapshotCanvasDocument"), client.indexOf("  function mintShare"));
+function between(source, start, end) {
+  const from = source.indexOf(start);
+  const to = source.indexOf(end, from);
+  if (from < 0 || to < 0) throw new Error(`client.js no longer contains ${from < 0 ? start : end}`);
+  return source.slice(from, to);
+}
+const chartCode = between(client, "  var chartResizeObserver", "  function hexToChannels(");
+const exportCode = between(client, "  async function snapshotCanvasDocument", "  function mintShare");
 
 async function setup(page, width = 1200) {
   await page.setViewportSize({ width, height: 900 });

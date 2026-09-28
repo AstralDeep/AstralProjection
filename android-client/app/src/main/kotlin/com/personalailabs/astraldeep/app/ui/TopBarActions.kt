@@ -6,7 +6,6 @@ package com.personalailabs.astraldeep.app.ui
 import com.personalailabs.astraldeep.core.chrome.TopBarControl
 import kotlinx.serialization.json.JsonObject
 
-/** Which glyph a server-owned top-bar action maps to (feature 044 T037). */
 enum class TopBarIcon { SPARKLE, HISTORY, GENERIC }
 
 data class TopBarActionView(

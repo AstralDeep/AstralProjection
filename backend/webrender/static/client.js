@@ -1,10 +1,7 @@
-/* Thin server-driven UI client.
- * The orchestrator renders astralprims primitives to HTML (ROTE-adapted) and
- * pushes it over the WebSocket protocol. This client inserts the
- * server-rendered `html`, merges streamed chunks (keyed by component_id when
- * bridged to a workspace identity, else stream_id), initializes
- * Plotly charts, and posts user actions back as {type:"ui_event", action, payload}.
- * No build step. */
+/* Thin server-driven web client for templates/shell.html: it inserts the server-rendered `html` of
+ * WebSocket UI frames, merges streamed chunks by component or stream identity, and initializes Plotly charts.
+ * User actions return to the host as {type: "ui_event", action, payload} frames, and it is served unbuilt
+ * from webrender/static beside astral.css. */
 (function () {
   "use strict";
   if (window.self !== window.top) return; // don't connect inside auth-renew iframes
@@ -12,31 +9,18 @@
   var WS_URL = (location.protocol === "https:" ? "wss:" : "ws:") + "//" + location.host + "/ws";
   var API_URL = location.origin;
   var TOKEN_KEY = "astraldeep.token";
-  // The shell-injected token bootstraps the first connect; every reconnect
-  // re-fetches /auth/session (which silently refreshes server-side) instead of
-  // reusing a stale token. Mock-auth dev works because /auth/session answers
-  // for it.
-  // A full shell load is an authentication boundary: its server-injected
-  // token reflects the current signed-cookie session and MUST win over a
-  // token left in this tab by a prior principal. The sessionStorage value is
-  // only a fallback for legacy/test shells that do not inject a token.
+  // The shell-injected token must win over a token left in this tab by a prior principal
   var token = window.__ASTRAL_TOKEN__ || sessionStorage.getItem(TOKEN_KEY) || "";
 
   var ws = null, attempts = 0, activeChatId = null, streamSeq = {}, firstConnect = true;
-  var timelineMode = false; // read-only workspace history view
-  var authRetried = false;  // one silent auth_required recovery per connection
-  // The server says whether this page load resumes an existing session (false
-  // only right after interactive sign-in). Echoed into the first register_ui;
-  // reconnects within a page are always resumes.
+  var timelineMode = false;
+  var authRetried = false;
   var serverResumed = (window.__ASTRAL_RESUMED__ !== false);
 
-  // Feature 060 conversation continuity. Only the small active-chat locator is
-  // durable; committed transcript/canvas remain server authoritative.
   var activeChatLocatorKey = null;
   var accountIdentityInitialized = false;
   var accountPrivacyEpoch = 0;
   var accountSignedOut = false;
-  // Work reads belong to one live socket/navigation, never the reconnect queue.
   var ownerSurfaceRequest = null;
   var connectionGeneration = null;
   var requestState = null;
@@ -44,9 +28,6 @@
   var lastSnapshotIdByChat = Object.create(null);
   var seenSnapshotIdsByChat = Object.create(null);
   var transientOverlay = null;
-  // Feature 060 server-owned status projections. These maps retain the highest
-  // accepted sequence/pair so reordered WebSocket delivery cannot regress the
-  // visible fallback or replace the first durable operation terminal.
   var operationStatusById = Object.create(null);
   var operationSubmissionByGeneration = Object.create(null);
   var operationSubmissionById = Object.create(null);
@@ -72,9 +53,6 @@
   var voiceIntentionalDisconnect = false;
   var voiceSdkLoggingConfigured = false;
   var voiceTranscriptSequence = Object.create(null);
-  // Final transcripts remain memory-only until the ordinary chat dispatcher
-  // returns a fully correlated acknowledgement or terminal rejection. The
-  // worker owns the other bounded replay copy; neither side uses storage.
   var voicePendingSubmissions = Object.create(null);
   var voicePendingSubmissionBytes = 0;
   var voiceCurrentResultId = null;
@@ -88,9 +66,6 @@
   var voiceLastAnnouncementSequence = 0;
   var voiceResultReservation = Object.create(null);
   var voiceResultQuantumIndex = Object.create(null);
-  // A Set, not an array: every site that adds a timer also removes it once the
-  // timer has definitively fired or been cleared, so a long voice session with
-  // many announcements does not accumulate already-dead ids for teardown to walk.
   var voiceMediaTimers = new Set();
   var voiceLeaseTimer = null;
   var voiceBindingRenewTimer = null;
@@ -133,23 +108,13 @@
   var voicePlayoutSequence = 0;
   var voiceIgnoringTrackEnd = false;
   var VOICE_MAX_PENDING_SUBMISSIONS = 4;
-  // Must exceed one maximal submission or a valid single transcript is refused.
-  // retainFinalVoiceSubmission bounds byte_length at 1024 + 6*(text + identity +
-  // lang); with the 8000-char transcript cap (consumeVoiceTranscript) plus a
-  // worker identity, one item alone reaches ~49 KB, so a 48 KB budget could
-  // never admit a full-length dictation (it tripped "capacity_exhausted" with
-  // zero pending). 96 KB holds one maximal item with headroom while still
-  // bounding the pending queue.
+  // One maximal transcript submission alone reaches ~49 KB, so this budget must exceed it
   var VOICE_MAX_PENDING_BYTES = 96 * 1024;
   var VOICE_SUBMISSION_RETRY_MS = 2500;
   var VOICE_RECOVERY_DEADLINE_MS = 30000;
   var VOICE_RECOVERY_MAX_ATTEMPTS = 4;
   var VOICE_BACKEND_DISCOVERY_TIMEOUT_MS = 2000;
   var VOICE_LOCAL_ACTIVATION_TIMEOUT_MS = 3000;
-  // Language packs are an explicit, separate user action and can be much
-  // larger than the already-installed 3 s activation budget. They still get
-  // one bounded progress window so a wedged browser API cannot disable the
-  // control forever.
   var VOICE_LOCAL_INSTALL_TIMEOUT_MS = 2 * 60 * 1000;
   var VOICE_LOCAL_MAX_ANNOUNCEMENTS = 8;
   var VOICE_LOCAL_TURN_BINDING_TIMEOUT_MS = 2 * 60 * 1000;
@@ -163,7 +128,6 @@
     confirmed_deletion: true,
   });
 
-  /** Return a cryptographically random canonical UUID4. */
   function randomUuid4() {
     if (crypto.randomUUID) return crypto.randomUUID();
     var bytes = new Uint8Array(16);
@@ -182,7 +146,6 @@
       && /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(value);
   }
 
-  /** Load or create the non-secret installation identity used for voice fencing. */
   function loadVoiceDeviceId() {
     var current;
     try { current = localStorage.getItem(VOICE_DEVICE_KEY); } catch (e) {}
@@ -197,11 +160,6 @@
       && !Number.isNaN(Date.parse(value));
   }
 
-  /**
-   * Build the browser-store key from the authenticated Keycloak issuer and
-   * subject. The separator prevents ambiguous concatenations; only the digest
-   * enters storage, so account display identity is never persisted.
-   */
   async function activeChatStorageKey(issuer, subject) {
     if (typeof issuer !== "string" || !issuer || typeof subject !== "string" || !subject) return null;
     var encoder = new TextEncoder();
@@ -233,8 +191,7 @@
       for (var index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
       var claims = JSON.parse(new TextDecoder().decode(bytes));
       if (typeof claims.iss !== "string" || !claims.iss || typeof claims.sub !== "string" || !claims.sub) return null;
-      // These unverified claims namespace local storage only. Authorization
-      // remains exclusively the server's verified-token responsibility.
+      // Unverified claims only namespace local storage; authorization stays with the server
       return { issuer: claims.iss, subject: claims.sub };
     } catch (e) { return null; }
   }
@@ -252,7 +209,6 @@
     } catch (e) { return null; }
   }
 
-  /** Atomically persist the intentionally active non-credential locator. */
   function persistActiveChatLocator(chatId) {
     if (!activeChatLocatorKey || !isCanonicalUuid4(chatId)) return false;
     var value = { schema_version: 1, chat_id: chatId, updated_at: new Date().toISOString() };
@@ -260,13 +216,6 @@
     catch (e) { return false; }
   }
 
-  // ---- Feature 088 (T011): composition selection for this chat. The picker
-  // is the server-rendered guidance surface (view "selection"); each of its
-  // buttons carries the complete version-1 selection the server issued for
-  // its exact revisions. The client keeps that binding only under the
-  // verified owner's key, attaches it to chat_message.payload.selection, and
-  // erases it on the same definitive events that clear the active-chat
-  // locator. Ordinary Send never depends on it (FR-004).
   var ACTIVE_CHAT_KEY_PREFIX = "astraldeep.active_chat.v1.";
   var TURN_SELECTION_KEY_PREFIX = "astraldeep.turn_selection.v1.";
   var TURN_SELECTION_LISTS = { skills: ["skill_id", 20], notes: ["note_id", 8] };
@@ -278,7 +227,6 @@
     return TURN_SELECTION_KEY_PREFIX + key.slice(ACTIVE_CHAT_KEY_PREFIX.length);
   }
 
-  /** Agent ids are plain identifiers: no C0/C1 controls and no lone surrogates. */
   function isSelectionAgentId(value) {
     if (typeof value !== "string" || !value || value.length > 255 || value !== value.trim()) return false;
     for (var i = 0; i < value.length; i++) {
@@ -293,12 +241,6 @@
       && value >= 1 && value <= 9007199254740991;
   }
 
-  /**
-   * Return a fresh copy in the exact version-1 shape Work admission accepts
-   * ({version, agent, skills, notes}, closed keys, canonical ids, bounded
-   * unique lists), or null for anything else. The all-empty selection is
-   * valid here and means "clear".
-   */
   function normalizeTurnSelection(value) {
     if (!hasExactKeys(value, ["version", "agent", "skills", "notes"]) || value.version !== 1) return null;
     var agent = null;
@@ -359,7 +301,6 @@
     } catch (e) {}
   }
 
-  /** Adopt a normalized selection (empty => cleared) for the current owner. */
   function setTurnSelection(selection) {
     turnSelection = selection && !isEmptyTurnSelection(selection) ? selection : null;
     persistTurnSelection();
@@ -385,7 +326,6 @@
     return "Using " + parts.join(", ") + " for this chat";
   }
 
-  /** Bounded summary chip: counts only; names and values never reach the client. */
   function renderTurnSelection() {
     var host = document.getElementById("astral-selection");
     var summary = document.getElementById("astral-selection-summary");
@@ -408,11 +348,6 @@
     return JSON.parse(JSON.stringify(selection));
   }
 
-  /**
-   * A guidance render may stamp the selection it rendered as selected on its
-   * surface root (data-astral-selection). That server-issued binding replaces
-   * the local one; a malformed stamp is ignored.
-   */
   function adoptServerSelection(root) {
     var holder = root && root.querySelector
       ? root.querySelector('[data-chrome-surface="guidance"][data-astral-selection], '
@@ -425,18 +360,11 @@
     if (selection) setTurnSelection(selection);
   }
 
-  /**
-   * Clear a locator only for the four definitive contract events. Transient
-   * socket/auth/provider failures never call this function.
-   */
   function clearActiveChatLocator(reason, chatId, storageKey) {
-    // explicit_new_chat | definitive_sign_out | account_switch | confirmed_deletion
     if (!ALLOWED_LOCATOR_CLEAR_REASONS[reason]) return false;
     if (reason === "confirmed_deletion" && chatId !== activeChatId) return false;
     var key = storageKey || activeChatLocatorKey;
     if (key) { try { localStorage.removeItem(key); } catch (e) {} }
-    // The selection applies to this chat under this owner only: every
-    // definitive event that ends the chat or the owner session erases it.
     clearTurnSelection(key);
     if (!storageKey || storageKey === activeChatLocatorKey || reason === "account_switch") {
       var clearedChatId = activeChatId;
@@ -473,7 +401,6 @@
     }
   }
 
-  /** Erase private local work without dispatching it under the next owner. */
   function clearPrivateAccountState() {
     accountPrivacyEpoch += 1;
     retireOwnerSurface();
@@ -521,8 +448,7 @@
       try { previousKey = sessionStorage.getItem(ACCOUNT_SESSION_KEY); } catch (e) {}
     }
     if (previousKey && previousKey !== nextKey) {
-      // An authenticated owner change needs a fresh transport. Old server
-      // work can still target this socket with unscoped chrome/notifications.
+      // Old server work can still target this socket, so an owner change needs a fresh one
       var previousSocket = ws;
       ws = null;
       socketReady = false;
@@ -540,7 +466,6 @@
     try { sessionStorage.setItem(ACCOUNT_SESSION_KEY, nextKey); } catch (e) {}
     if (!accountIdentityInitialized || changed) {
       accountIdentityInitialized = true;
-      // Only the verified owner's own draft selection is restored (088).
       turnSelection = readTurnSelection();
       renderTurnSelection();
       var selected = new URLSearchParams(location.search).get("chat");
@@ -586,15 +511,11 @@
     return true;
   }
 
-  /** Redirect to the server-side Keycloak login, preserving the destination. */
   function gotoLogin() {
     var next = encodeURIComponent(location.pathname + location.search);
     location.href = "/auth/login?next=" + next;
   }
 
-  /** Refresh the session token via /auth/session (server refreshes silently).
-   * Calls cb(true) when authenticated; redirects to login when the session
-   * is truly gone and `redirect` is set. */
   function refreshToken(redirect, cb) {
     if (accountSignedOut) { if (cb) cb(false); return; }
     fetch(API_URL + "/auth/session", { credentials: "same-origin" })
@@ -613,11 +534,6 @@
       .catch(function () { if (cb) cb(false); });
   }
 
-  // Feature 089: the main column is a scrolling canvas holding the landing and
-  // a feed of turns. A turn's result lives in its own response card, and the
-  // NEWEST assistant card's body is the live workspace. `canvas` still names
-  // that workspace, so every existing caller — render, upsert, stream, export
-  // flags — keeps working unchanged; what moved is where the element sits.
   var canvasPanel = document.getElementById("astral-canvas");
   var chat = document.getElementById("astral-chat");
   var liveTurn = null;
@@ -674,15 +590,11 @@
     bodyEl.classList.toggle("has-overflow", isOver);
   }
 
-  /** One assistant turn: structured after a8p with an agent meta bar, a macOS-style
-   * SDUI container with colored window dots, title, interactive canvas chip, full-screen
-   * expand button, collapse toggle button, and bottom overlay chip. */
   function buildAssistantTurn() {
     var turn = document.createElement("div");
     turn.className = "astral-turn astral-turn-assistant";
     turn.setAttribute("data-turn", String(turnCounter || 1));
 
-    // 1. Assistant Meta Bar (agent called)
     var metaBar = document.createElement("div");
     metaBar.className = "chat-assistant-meta-bar";
     var agentInfo = document.createElement("div");
@@ -704,7 +616,6 @@
     metaBar.appendChild(agentInfo);
     turn.appendChild(metaBar);
 
-    // 2. SDUI Component Container (a8p style)
     var card = document.createElement("div");
     card.className = "astral-response-card sdui-widget-container";
 
@@ -714,13 +625,11 @@
     var left = document.createElement("div");
     left.className = "sdui-widget-header-left astral-card-head-left";
 
-    // Title
     var widgetTitle = document.createElement("span");
     widgetTitle.className = "sdui-widget-title";
     widgetTitle.textContent = "AstralDeep Interface";
     left.appendChild(widgetTitle);
 
-    // Chip: Interactive SDUI Canvas
     var widgetChip = document.createElement("span");
     widgetChip.className = "sdui-widget-chip";
     widgetChip.textContent = "Interactive SDUI Canvas";
@@ -730,7 +639,6 @@
     var right = document.createElement("div");
     right.className = "astral-card-head-right sdui-widget-header-right";
 
-    // Collapse toggle button
     var collapseBtn = document.createElement("button");
     collapseBtn.type = "button";
     collapseBtn.className = "btn-sdui-collapse";
@@ -739,7 +647,6 @@
     collapseBtn.setAttribute("aria-expanded", "true");
     collapseBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>';
 
-    // Full screen button
     var expand = document.createElement("button");
     expand.type = "button";
     expand.className = "btn-sdui-expand astral-expand-chip";
@@ -752,11 +659,9 @@
     head.appendChild(right);
     card.appendChild(head);
 
-    // Card Body
     var body = document.createElement("div");
     body.className = "sdui-widget-body astral-card-body";
 
-    // Bottom overlay with expand chip
     var overlay = document.createElement("div");
     overlay.className = "sdui-widget-overlay";
     overlay.title = "Click to open interactive full screen";
@@ -829,19 +734,17 @@
     };
   }
 
-  /** Point `canvas` at a fresh live card, creating it if there is not one. */
   function ensureLiveTurn() {
     if (liveTurn && liveTurn.turn.parentNode === chat) return liveTurn.body;
     liveTurn = buildAssistantTurn();
     liveTurn.turn.setAttribute("data-astral-live-turn", "1");
-    liveTurn.turn.hidden = true; // nothing to show until content arrives
+    liveTurn.turn.hidden = true;
     chat.appendChild(liveTurn.turn);
     canvas = liveTurn.body;
     if (typeof placePageActions === "function") placePageActions();
     return canvas;
   }
 
-  /** Empty the feed and give it a fresh live card. */
   function resetFeed() {
     dashboardRequested = false;
     closeFullscreen(false);
@@ -855,17 +758,14 @@
     syncChatActiveState();
   }
 
-  /** Freeze the current card so the next turn gets its own. A card with no
-   * content is reused rather than left behind as an empty frame. */
   function sealLiveTurn() {
     if (!liveTurn) return;
-    if (liveTurn.turn.hidden || !liveTurn.body.childNodes.length) return; // reuse
+    if (liveTurn.turn.hidden || !liveTurn.body.childNodes.length) return;
     liveTurn.turn.removeAttribute("data-astral-live-turn");
     liveTurn = null;
     ensureLiveTurn();
   }
 
-  /** The meta a card shows once the turn has an agent and a routing note. */
   function describeLiveTurn(agentName, note) {
     ensureLiveTurn();
     if (agentName) {
@@ -879,15 +779,11 @@
 
   ensureLiveTurn();
 
-  // Shared cross-client canvas empty state: the node ships in shell.html; it is
-  // hidden on the first render with content and shown again on canvas clears.
   var canvasEmpty = document.getElementById("astral-canvas-empty");
   function hideCanvasEmpty() {
     if (canvasEmpty) canvasEmpty.hidden = true;
     if (!liveTurn) return;
     liveTurn.turn.hidden = false;
-    // The card is built before the turn it answers exists; name it now that
-    // there is something in it.
     var n = String(turnCounter || 1);
     liveTurn.turn.setAttribute("data-turn", n);
     if (liveTurn.chip) liveTurn.chip.textContent = "Turn " + n;
@@ -914,9 +810,6 @@
     }
   }
 
-  // Start and work are local arrangements of the same mounted regions. A
-  // cleared conversation returns to start; ordinary rendering never collapses
-  // an active workspace just because a result or loading node disappears.
   var welcomeSlotIds = Object.freeze({
     intro: "astral-start-intro",
     permission: "astral-start-permission",
@@ -957,8 +850,6 @@
   function welcomePlacementRole(node) {
     if (!node || node.nodeType !== 1) return null;
     var content = node;
-    // Keep the renderer's identity/ARIA wrapper intact. Do not pull arbitrary
-    // nested model or user content out of a component that contains a marker.
     if (node.matches(".astral-component")) {
       var identity = node.getAttribute("data-component-id");
       if (identity && identity.indexOf("wel_") !== 0) return null;
@@ -989,7 +880,6 @@
       candidates.forEach(function (entry) { entry.node.remove(); });
       return;
     }
-    // Older shells without these hosts keep their welcome in the canvas.
     if (candidates.some(function (entry) { return !document.getElementById(welcomeSlotIds[entry.role]); })) return;
     candidates.forEach(function (entry) {
       document.getElementById(welcomeSlotIds[entry.role]).replaceChildren(entry.node);
@@ -1018,22 +908,13 @@
     if (node.nodeType === 3) return !!node.textContent.trim();
     if (node.nodeType !== 1) return false;
     if (node === canvasEmpty || welcomePlacementRole(node) || node.matches("script, style")) return false;
-    // 089: the live turn's card is mounted before it has anything in it, so
-    // the feed always has somewhere to render. While it is still hidden it is
-    // scaffolding, not content — counting its expand chip as content would
-    // put the workspace view on screen before the first answer exists.
     if (node.hasAttribute("data-astral-live-turn") && node.hidden) return false;
-    // A response card's header and its expand button are the card's frame,
-    // not the turn's content. Counting them made an empty-but-revealed card
-    // look like a workspace, which then discarded the welcome instead of
-    // placing it.
     if (node.matches(".astral-card-head, .astral-expand-chip, .chat-assistant-meta-bar, .sdui-widget-overlay, #astral-response-top-nav, #astral-response-top-nav *")) return false;
     if (node.id === "astral-response-top-nav" || (node.closest && node.closest("#astral-response-top-nav"))) return false;
     if (node.hasAttribute("data-component-id")
         || node.matches("img, svg, canvas, video, audio, iframe, input, textarea, button")) return true;
     return Array.prototype.some.call(node.childNodes, hasWorkspaceContent);
   }
-  /** True when either mounted region holds something worth a workspace. */
   function workspaceHasContent() {
     return Boolean((chat && Array.prototype.some.call(chat.childNodes, hasWorkspaceContent))
       || (canvas && Array.prototype.some.call(canvas.childNodes, hasWorkspaceContent)));
@@ -1042,25 +923,12 @@
     placeWelcomeContent();
     syncChatActiveState();
     if (document.body.getAttribute("data-astral-view") === "work" || dashboardRequested) return;
-    // A resumed conversation selects work BEFORE its first registration so the
-    // landing never flashes on the way to restored content (feature 060's
-    // continuity contract). That anticipation has to expire once the snapshot
-    // it was anticipating has been applied: without the `hydrationApplied`
-    // guard, a hydration that restores nothing visible keeps re-asserting work
-    // on every mutation, and `settleEmptyHydration` below can never take the
-    // view back. A signed-in user whose remembered chat hydrates empty is then
-    // left on a blank canvas for the whole session with no way out of it.
     if ((requestState && (requestState.purpose === "commit"
           || (requestState.purpose === "hydration" && !requestState.hydrationApplied)))
         || workspaceHasContent()) {
       setWorkspaceView("work");
     }
   }
-  /** Hydration finished and restored nothing: go back to the start view.
-   *
-   * The anticipated workspace was a bet that content was coming. When the
-   * authoritative snapshot lands empty the bet lost, and leaving the bet in
-   * place shows the person an empty void where the landing should be. */
   function settleEmptyHydration() {
     if (document.body.getAttribute("data-astral-view") !== "work") return;
     if (workspaceHasContent()) return;
@@ -1071,19 +939,12 @@
   syncWorkspaceView();
   if (window.MutationObserver) {
     var workspaceObserver = new MutationObserver(syncWorkspaceView);
-    // 089: the live canvas is a node inside the feed and is replaced whenever
-    // the feed is rebuilt, so watching it by identity would leave the observer
-    // on a discarded node. Watching the feed covers it. A shell that still
-    // keeps the two apart is watched separately.
     if (chat) workspaceObserver.observe(chat, { childList: true, subtree: true, characterData: true });
     if (canvas && !(chat && chat.contains(canvas))) {
       workspaceObserver.observe(canvas, { childList: true, subtree: true, characterData: true });
     }
   }
   var statusEl = document.getElementById("astral-status");
-  // Identifies the operation/submission that currently owns the shared status
-  // line. A successful terminal frame may clear only its own progress; it
-  // must not erase a different operation or an unrelated persistent notice.
   var statusOwner = null;
   var input = document.getElementById("astral-input");
   var form = document.getElementById("astral-form");
@@ -1100,7 +961,6 @@
   var voiceTurnNoticeGuidanceEl = document.getElementById("astral-voice-turn-notice-guidance");
   var voiceTurnNoticeState = null;
 
-  // ---- device detection (verbatim from useWebSocket.ts) ----
   function detectDeviceType() {
     var ua = navigator.userAgent.toLowerCase(), vw = window.innerWidth;
     if (/watch|watchos/.test(ua)) return "watch";
@@ -1129,8 +989,6 @@
       has_file_system: true,
       connection_type: (nav.connection && nav.connection.effectiveType) || "unknown",
       user_agent: navigator.userAgent,
-      // 066 additive capability envelope fields (server defaults are safe
-      // when an older client omits them).
       reduced_motion: !!(window.matchMedia
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches),
       pointer_type: (window.matchMedia
@@ -1138,11 +996,6 @@
     };
   }
 
-  // 066: live capability envelope — re-report on material change (resize
-  // settle wired into the layout debounce; permission and connection changes
-  // below) so server-side adaptation never goes stale. Rides the existing
-  // `update_device` action (the server's live-viewport path: it diffs the
-  // profile and re-adapts the persisted canvas). Debounced + de-duped.
   var lastCapabilitySignature = "";
   function maybeReportCapabilities(force) {
     if (!isSocketReady()) return;
@@ -1152,16 +1005,12 @@
       caps.reduced_motion, caps.pointer_type].join("|");
     if (!force && sig === lastCapabilitySignature) return;
     lastCapabilitySignature = sig;
-    // 089 (R12): a viewport change is re-registered whether or not the socket
-    // is up at that instant, so "did the client re-register?" has an answer
-    // that does not depend on connection timing.
     if (window.__ASTRAL_PARITY__ && window.__ASTRAL_PARITY__.notifyViewportRegistered) {
       window.__ASTRAL_PARITY__.notifyViewportRegistered();
     }
     action("update_device", { device: caps }, false);
   }
-  // Rotating a phone changes the viewport without always firing `resize`
-  // first on every engine; both paths land in the same reporter.
+  // Rotating a phone does not always fire resize first, so both paths report
   window.addEventListener("orientationchange", function () {
     setTimeout(function () { applyLayoutClass(); maybeReportCapabilities(); }, 60);
   });
@@ -1186,23 +1035,10 @@
     } catch (e) {}
   }
 
-  // ROTE ↔ shell cooperation, split exactly like the Android client:
-  // ROTE owns per-device COMPONENT adaptation — its authoritative
-  // DeviceProfile (rote_config, after register_ui) is stamped on
-  // body[data-rote-device], provisionally seeded from local detection so
-  // phones never flash the desktop arrangement. The SHELL owns the
-  // ARRANGEMENT via body[data-astral-layout]: "stacked" below 700 CSS px,
-  // "collapsed" 700–1023 (or by preference), "split" at ≥1024 — see
-  // applyLayoutClass — recomputed live on resize, like Compose recomputes
-  // its windowSizeClass on every configuration change.
   function applyDeviceProfile(dt) {
     if (dt) document.body.setAttribute("data-rote-device", String(dt));
   }
-  // 066 canvas-first modes: "stacked" (<700), "collapsed" (700-1023 default —
-  // canvas full width, floating composer, transcript drawer), "split" (>=1024
-  // default — right rail). The user's explicit choice persists per device and
-  // wins over the width default at >=700px.
-  var LAYOUT_PREF_KEY = "astral-chat-pref"; // "open" | "closed" | absent=auto
+  var LAYOUT_PREF_KEY = "astral-chat-pref";
   function chatLayoutPref() {
     try {
       var v = localStorage.getItem(LAYOUT_PREF_KEY);
@@ -1220,8 +1056,6 @@
     var layout = document.body.getAttribute("data-astral-layout");
     var conversation = document.getElementById("astral-chat-toggle");
     var messages = document.getElementById("astral-msgs-toggle");
-    // Breakpoint changes clear the corresponding CSS classes. Their controls
-    // must report the resulting visibility, not the last click in another mode.
     var expanded = layout === "collapsed" && document.body.classList.contains("astral-chat-open");
     if (conversation) {
       conversation.setAttribute("aria-expanded", expanded ? "true" : "false");
@@ -1236,16 +1070,13 @@
     if (w < 700) mode = "stacked";
     else {
       var pref = chatLayoutPref();
-      // The rail is only offerable where it leaves a usable composer: below
-      // 1024 a persisted "keep it open" would crush the input to a few
-      // characters (066 FR-004), so the width bound wins over the preference.
       if (pref === "closed") mode = "collapsed";
       else if (pref === "open" && w >= 1024) mode = "split";
       else mode = w >= 1024 ? "split" : "collapsed";
     }
     if (document.body.getAttribute("data-astral-layout") !== mode) {
       document.body.setAttribute("data-astral-layout", mode);
-      if (mode !== "stacked") { // stacked-only chrome state must not linger
+      if (mode !== "stacked") {
         document.body.classList.remove("astral-history-open", "astral-msgs-open");
       }
       if (mode !== "collapsed") document.body.classList.remove("astral-chat-open");
@@ -1265,13 +1096,10 @@
     }, 220);
   });
 
-  // ---- 066: chat visibility controls + unread accounting ----
   var collapseBtn = document.getElementById("astral-collapse-btn");
   var chatToggleBtn = document.getElementById("astral-chat-toggle");
   var chatUnreadEl = document.getElementById("astral-chat-unread");
   var chatUnread = 0;
-  // Keep the restore action in the floating panel, including while its
-  // transcript is open. A sidebar is offered only where it fits.
   function topbarChatBtn() {
     return document.getElementById("astral-restore-chat-btn");
   }
@@ -1316,7 +1144,6 @@
     if (open) clearChatUnread();
     syncTopbarChatToggle();
   });
-  // One click restores the sidebar without changing conversation or draft.
   document.addEventListener("click", function (event) {
     var btn = event.target && event.target.closest
       ? event.target.closest("#astral-restore-chat-btn") : null;
@@ -1334,7 +1161,6 @@
     syncTopbarChatToggle();
     if (input) input.focus();
   });
-  // Coarse-pointer component chrome: tap a component to reveal its actions.
   document.addEventListener("click", function (e) {
     if (!(window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) return;
     if (e.target.closest && e.target.closest("button, a, input, select, textarea")) return;
@@ -1368,8 +1194,6 @@
     statusEl.textContent = s || "";
     statusEl.setAttribute("aria-busy", busy === true ? "true" : "false");
     statusEl.setAttribute("data-status-state", s ? (busy === true ? "busy" : "settled") : "idle");
-    // 066: mirror turn status beside the composer — the topbar is too far
-    // from the conversation to carry progress/failure alone.
     var turnStatus = document.getElementById("astral-turn-status");
     if (turnStatus) {
       turnStatus.textContent = s || "";
@@ -1378,7 +1202,6 @@
     }
   }
 
-  // ---- Feature 065: server-owned conversational voice + local media adapter ----
   var VOICE_ACTIONS = Object.freeze({
     voice_session_start: true,
     voice_session_takeover: true,
@@ -1476,8 +1299,6 @@
     ended_by_user: "Voice conversation ended. Accepted requests will keep running.",
     speech_error: "Assistant speech failed. The text result may still be available in chat. You can keep typing messages.",
     media_error: "Voice media failed. You can retry or keep typing.",
-    // 066 T032/FR-033: every refusal reason the server can return on session
-    // create renders as its own honest line instead of the generic error text.
     feature_disabled: "Voice is not enabled on this server. You can keep typing messages.",
     authentication_required: "Sign in to use voice. You can keep typing messages.",
     worker_unavailable: "No voice worker is available right now. You can keep typing messages.",
@@ -1862,10 +1683,6 @@
     };
   }
 
-  // 066: Firefox can refuse the cross-origin LiveKit WebSocket outright
-  // (privacy extensions / proxy settings), so voice may not work there.
-  // The disclaimer renders only for Firefox users, only while voice is
-  // starting or failing — the at-rest composer stays quiet (P11).
   var VOICE_FIREFOX = /\bFirefox\//.test(navigator.userAgent || "");
   var VOICE_FIREFOX_HINT = "Note: voice may not work correctly in Firefox "
     + "(privacy settings or extensions can block it). Chrome or Edge is "
@@ -1891,13 +1708,6 @@
     return resolved;
   }
 
-  // The composer used to narrate every voice state under the input:
-  // connecting, listening, transcribing, speaking. That is a running
-  // commentary on something the person is already doing, in the one place
-  // they are looking. These are the states it stays quiet for. The rest --
-  // unavailable, reconnecting, an error, an ended session -- still show,
-  // because those are the ones that need a decision and would otherwise fail
-  // silently (088 FR-028: voice state is never conveyed by colour alone).
   var VOICE_QUIET_STATES = Object.freeze({
     off: true, connecting: true, greeting: true, listening: true,
     speech_detected: true, transcribing: true, acknowledging: true,
@@ -1905,18 +1715,12 @@
     speaking_result: true, muted: true, suspended: true,
   });
 
-  // `_forceVisible` is what the eighty-odd callers used to decide visibility
-  // with, one at a time. It decides nothing now: the panel shows when there is
-  // a message to read, or when the state is one that needs a decision. The
-  // parameter keeps its place so the rule lives here and only here.
   function setVoiceFeedback(state, reason, message, _forceVisible) {
     if (!VOICE_STATES[state]) state = "error";
     reason = typeof reason === "string" && reason ? reason : "internal_error";
     if (voiceFeedbackEl) {
       voiceFeedbackEl.setAttribute("data-state", state);
       voiceFeedbackEl.setAttribute("data-reason", reason);
-      // An explicit message is always someone telling the person something,
-      // so it shows whatever the state is; a bare running state does not.
       voiceFeedbackEl.hidden = !message && !!VOICE_QUIET_STATES[state];
     }
     if (voiceControlsEl) {
@@ -1943,8 +1747,6 @@
     voiceTurnNoticeEl.setAttribute("data-state", frame.state);
     voiceTurnNoticeTitleEl.textContent = title;
     if (Object.prototype.hasOwnProperty.call(frame, "message")) {
-      // The server-owned safe message is contract-bounded and rendered only
-      // as text. Keep its wording verbatim rather than paraphrasing it.
       voiceTurnNoticeMessageEl.textContent = frame.message;
       voiceTurnNoticeMessageEl.hidden = false;
     } else {
@@ -2259,8 +2061,6 @@
     return true;
   }
 
-  // 066: real SVG icons for the composer voice controls (static trusted
-  // markup keyed by the server's data-icon contract).
   var VOICE_ICONS = {
     "microphone": '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>',
     "device-transfer": '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>',
@@ -2271,11 +2071,6 @@
     "speaker-consent": '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>',
   };
 
-  // ---- voice preflight ---------------------------------------------------
-  // Whether the voice service can be reached at all is a question with an
-  // answer before anyone clicks anything, so it is asked in the background
-  // once the socket is registered rather than discovered by a click that
-  // half-starts a session and then fails. `null` means not answered yet.
   var voicePreflight = null;
   var voicePreflightGeneration = null;
   var VOICE_PREFLIGHT_TIMEOUT_MS = 6000;
@@ -2290,10 +2085,6 @@
       || VOICE_PREFLIGHT_REASONS.voice_unavailable;
   }
 
-  /** Reflect the preflight verdict on whatever voice control is on screen.
-   *  The button stays focusable and keeps its click: a disabled button
-   *  cannot explain itself, and "why is this greyed out" is the whole
-   *  question. `aria-disabled` says the same thing to assistive tech. */
   function applyVoicePreflight() {
     if (!voiceControlsEl || !voicePreflight || voicePreflight.ok) return;
     var why = voiceUnavailableMessage();
@@ -2307,9 +2098,6 @@
     }
   }
 
-  // Delegated, so it also covers the client-local default control, which has
-  // no click handler of its own and would otherwise answer a click with
-  // nothing at all.
   if (voiceControlsEl) voiceControlsEl.addEventListener("click", function (event) {
     var button = event.target.closest && event.target.closest("[data-voice-blocked]");
     if (!button) return;
@@ -2318,11 +2106,6 @@
     showToast(voiceUnavailableMessage(), "error");
   }, true);
 
-  //: How long the server gets to answer for itself. composer_state arrives
-  //: right after registration and carries the authoritative voice state, so
-  //: the preflight is for the case where it never comes -- which is exactly
-  //: the case where the mic would otherwise sit there saying "Checking voice
-  //: availability" for the rest of the session.
   var VOICE_PREFLIGHT_DELAY_MS = 1500;
 
   function runVoicePreflight() {
@@ -2344,17 +2127,13 @@
       headers: token ? { Authorization: "Bearer " + token } : {},
       signal: controller ? controller.signal : undefined,
     }).then(function (response) {
-      // 404 is an older server that has no capability route but does have
-      // voice; only an explicit refusal counts as unavailable.
+      // 404 is an older server with voice but no capability route
       if (response.status === 404 || response.ok) return { ok: true };
       return response.json().catch(function () { return {}; }).then(function (body) {
         return { ok: false, reason: (body && body.reason) || "voice_unavailable" };
       });
     }).catch(function () {
-      // A probe that could not be made is not an answer. Taking the mic away
-      // for the rest of the session over one failed background request would
-      // turn a blip into an outage; the activation path does its own discovery
-      // and reports its own failure if voice really is down.
+      // A probe that could not be made is not an answer, so one blip never removes the mic
       return { ok: true };
     }).then(function (verdict) {
       clearTimeout(timer);
@@ -2364,10 +2143,6 @@
     });
   }
 
-  // 066: the voice affordance is ALWAYS present — this client-local default
-  // renders before any composer_state frame arrives (and again on socket
-  // teardown) so an absent/failed server projection can never leave the
-  // composer without a voice control.
   function renderDefaultVoiceControl(reasonText) {
     if (!voiceControlsEl) return;
     var button = document.createElement("button");
@@ -2451,10 +2226,6 @@
     return true;
   }
 
-  // ---- LiveKit lazy loader: the ~549 KB voice SDK left the shell <body>; it
-  // is injected once on first voice need and idle-prefetched after boot, so a
-  // session that never speaks never parses it. Every window.LivekitClient
-  // reference sits downstream of createVoiceRoom, which this gates. ----
   var livekitLoading = false;
   var livekitCallbacks = [];
 
@@ -2474,14 +2245,7 @@
       livekitCallbacks = [];
       for (var i = 0; i < cbs.length; i++) { try { cbs[i](); } catch (e) {} }
     }
-    // Reset the flag on BOTH outcomes. A 200 that does not define a usable
-    // window.LivekitClient.Room (truncated/corrupt bundle, proxy error page)
-    // would otherwise leave livekitLoading latched true forever: livekitSdkReady()
-    // stays false, so every later ensureLiveKitSdk() queues a callback and hits
-    // `if (livekitLoading) return`, never flushing — voice recovery hangs. With
-    // the reset, a failed load settles its waiters (they re-enter createVoiceRoom
-    // and report the honest media_unavailable state) and a later activation can
-    // retry the injection.
+    // Reset on both outcomes, or a bundle without LivekitClient.Room latches loading forever
     s.onload = function () { livekitLoading = false; flush(); };
     s.onerror = function () { livekitLoading = false; flush(); };
     document.head.appendChild(s);
@@ -2492,7 +2256,6 @@
       ? window.LivekitClient.RoomEvent[name] : null;
   }
 
-  /** Keep credentialed signaling/SDP out of browser diagnostics. */
   function configureVoiceSdkLogging() {
     if (voiceSdkLoggingConfigured) return true;
     if (!window.LivekitClient || typeof window.LivekitClient.setLogLevel !== "function") return false;
@@ -2636,8 +2399,6 @@
   }
 
   function teardownVoiceMedia(clearSession) {
-    // Invalidate every in-flight media/control continuation, including joins
-    // that may resolve after a replacement room has already been installed.
     voiceStateEpoch += 1;
     if (voiceSpeechBackend === "client_local") clearClientLocalSpeech(clearSession);
     voiceBackendProbe = null;
@@ -2685,9 +2446,7 @@
         return;
       }
       if (voiceControlPatchActive || voiceControlPatchQueue.length) return;
-      // A generation-fenced semantic no-op renews only the crash/reconnect
-      // lease. It is deliberately not an interaction and cannot postpone the
-      // server-owned five-minute true-idle deadline.
+      // A generation-fenced no-op renews only the reconnect lease, never the server idle deadline
       patchVoiceSession(voiceSpeechBackend === "client_local" ? {} : {
         foreground_active: true,
         foreground_reason: "foreground",
@@ -3142,8 +2901,6 @@
     }
     voiceSession = updateResult.body;
     voiceLastSession = voiceSession;
-    // Recovery can be the first voice work of a page load (a session the server
-    // still considers live), so the lazily-injected SDK may not be resident yet.
     if (!livekitSdkReady()) {
       await new Promise(function (resolve) { ensureLiveKitSdk(resolve); });
       if (voiceRecovery !== recovery || recovery.epoch !== epoch) return;
@@ -3604,12 +3361,6 @@
       setVoiceFeedback("error", "auth_expired", "Voice controls are reconnecting. Try again in a moment.", true);
       return;
     }
-    // The idle prefetch normally lands long before the first gesture, so the
-    // room is built synchronously here and startAudio() keeps its user-gesture
-    // affinity. Only a click inside the first seconds of a page load waits on
-    // the injection; that one loses the gesture and falls back to the existing
-    // "Enable voice audio" affordance. Bounded to a single retry so a bundle
-    // that will not load reaches createVoiceRoom's media_unavailable branch.
     if (!livekitSdkReady() && sdkRetried !== true) {
       setVoiceFeedback("connecting", "ready", null, true);
       ensureLiveKitSdk(function () { beginRemoteVoiceActivation(kind, true); });
@@ -3638,8 +3389,6 @@
     pending.timeout = setTimeout(function () {
       if (voiceActivation !== pending) return;
       teardownVoiceMedia(false);
-      // 066 T032/FR-033: a timeout while the browser permission prompt is
-      // still open is a permission-shaped condition, not a network failure.
       if (pending.awaiting_permission) {
         setVoiceFeedback("error", "permission_not_determined", null, true);
       } else {
@@ -4759,11 +4508,6 @@
   function stopVoiceSpeech() {
     var fence = currentVoiceFence();
     if (!fence || !voiceBindingIsCurrent()) return;
-    // Stop is a realtime local action first. Purge the active/queued local
-    // synthesis and capture owners before starting the generation-fenced server
-    // request so a slow or failed network path cannot leave stale speech
-    // audible.  The server request below still owns the authoritative speech
-    // epoch and existing error/state semantics.
     if (voiceSpeechBackend === "client_local") {
       cancelClientLocalPlayout("stopped_by_user");
       stopClientLocalRecognition("stopped_by_user", true);
@@ -4809,9 +4553,6 @@
   }
 
   function onVoiceControlClick(control) {
-    // The preflight already knows this cannot work. Say so, once, where the
-    // person clicked -- rather than starting a session that fails on its way
-    // up and leaves them guessing.
     if (voicePreflight && !voicePreflight.ok) {
       showToast(voiceUnavailableMessage(), "error");
       return;
@@ -5125,13 +4866,7 @@
       text: frame.text,
       timer: null,
     };
-    // Retention-budget accounting only, and it sits on the final-transcript ->
-    // submission path, so this BOUNDS the size instead of serializing to
-    // measure it. JSON-escaped UTF-8 costs at most 6 bytes per UTF-16 code unit
-    // (a control character becomes a six-byte backslash-u escape), and 1024
-    // covers the key names plus every remaining field — each a uuid, 64-hex
-    // digest, RFC3339 stamp or safe integer validated in consumeVoiceTranscript.
-    // Over-estimating only refuses earlier; under-estimating would not be safe.
+    // Bounds the JSON size without serializing: 6 bytes per UTF-16 unit plus 1024 for fixed fields
     copy.byte_length = 1024 + 6 * (
       copy.text.length + copy.source_participant_identity.length
       + copy.detected_language.length
@@ -5314,7 +5049,6 @@
     return true;
   }
 
-  // Stateless codecs, reused across every transcript and announcement packet.
   var VOICE_TEXT_DECODER = new TextDecoder();
   var VOICE_TEXT_ENCODER = new TextEncoder();
 
@@ -5322,8 +5056,6 @@
     var text;
     try {
       if (payload instanceof Uint8Array) {
-        // byteLength IS the UTF-8 size the bound is expressed in, so an
-        // oversized packet is refused without decoding it at all.
         if (payload.byteLength > maximum) return null;
         text = VOICE_TEXT_DECODER.decode(payload);
       } else if (typeof payload === "string") {
@@ -5479,9 +5211,7 @@
         delete voicePublishedTracks[sid];
         continue;
       }
-      // R-9: the SFU takes ~0.9-1.1s to bind the downtrack after publish
-      // (measured live), so a 1000ms watchdog raced real subscriptions and
-      // reported "Speech playback failed" for audio that was about to play.
+      // The SFU binds the downtrack about 1 s after publish, so a 1000 ms watchdog raced real audio
       var bindWatchdog = setTimeout(function (expectedSid) {
         voiceMediaTimers.delete(bindWatchdog);
         if (voiceSubscribingTrackSid !== expectedSid) return;
@@ -5589,13 +5319,7 @@
       startNextVoiceTrack();
       return;
     }
-    // R-9 (066): Chrome and Firefox deliver ONLY ZEROS from a remote WebRTC
-    // track into a WebAudio graph unless the track also feeds a media-element
-    // sink. This muted keep-alive element unblocks the real samples; audible
-    // output still comes solely from the processor -> destination graph, so
-    // nothing plays twice. Fault-isolated: an enhancement failure (e.g. an
-    // environment whose srcObject rejects the stream) must never fail the
-    // playout itself.
+    // Chrome and Firefox feed WebAudio only zeros unless the track also has a media-element sink
     if (voiceAudioHostEl) {
       try {
         keepAlive = document.createElement("audio");
@@ -5623,10 +5347,7 @@
       var input = event.inputBuffer;
       var output = event.outputBuffer;
       var available = output.length;
-      // R-9: the downtrack binds ~1s after subscribe, so the first graph
-      // frames are silent padding — counting them burned the playout budget
-      // and truncated the announcement's tail. Hold the countdown until real
-      // samples arrive, bounded to 1800ms so true silence can never stall.
+      // The first graph frames are silent padding, so the countdown waits for real samples
       if (!active.heardAudio) {
         var probe = input.numberOfChannels > 0 ? input.getChannelData(0) : null;
         var heard = false;
@@ -5890,7 +5611,6 @@
     }
   }
 
-  /** Create the client-owned retry/generation identity before any socket I/O. */
   function beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus) {
     if (name === "chat_message" || name === "load_chat") setWorkspaceView("work");
     var body = Object.assign({}, payload || {});
@@ -5909,7 +5629,6 @@
       label: "Submitting…",
       shows_status: exposeStatus !== false,
       status_order: ++operationSubmissionOrdinal,
-      // 066: retained so a failed turn can offer an exact retry.
       message: name === "chat_message" && typeof body.message === "string" ? body.message : null,
     };
     operationSubmissionByGeneration[requestGeneration] = local;
@@ -5928,10 +5647,6 @@
     return true;
   }
 
-  // ---- 066: connection honesty. Actions attempted while the socket is not
-  // healthily registered queue visibly (bounded) or refuse loudly — they are
-  // never silently dropped. `socketReady` flips on the post-registration
-  // rote_config verdict and off on close.
   var socketReady = false;
   var pendingActions = [];
   var PENDING_ACTION_LIMIT = 5;
@@ -5982,13 +5697,9 @@
         ? payload.surface : null;
     if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction) retireOwnerSurface();
     if (noteAction) {
-      // A lost acknowledgement must reconcile current notes, never replay a write.
-      // The retry state contains no form values or obsolete revision command.
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
     }
     if (selectionAction) {
-      // 088: the retry re-reads the picker; the selection itself is already
-      // held locally, so nothing about the command is replayed.
       showModalSkeleton("chrome_open", { surface: "guidance", params: { view: "selection" } });
     }
     if ((name === "new_chat" || name === "load_chat") && ownerSurfaceRequest) {
@@ -6024,9 +5735,6 @@
       return submission;
     }
     if (!isSocketReady() && name !== "get_history" && name !== "watch_task") {
-      // Queue chrome/settings actions too (FR-015): the same no-silent-drop
-      // rule chat sends get. Frames are rebuilt at dispatch time so the
-      // then-current connection_generation is used.
       finishOperationSubmission(submission.requestGeneration);
       queueOutboundAction({
         label: name,
@@ -6061,7 +5769,6 @@
     return true;
   }
 
-  /** Persist and bind resume scope before the registration frame is sent. */
   function sendRegistration(resumed) {
     if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
     var resume;
@@ -6098,8 +5805,6 @@
     });
   }
 
-  // ---- Plotly lazy loader: the library left the shell <head> (feature 052);
-  // it is injected once on first chart need and idle-prefetched after boot ----
   var plotlyLoading = false;
   var plotlyCallbacks = [];
   function ensurePlotly(cb) {
@@ -6114,7 +5819,6 @@
       plotlyCallbacks = [];
       for (var i = 0; i < cbs.length; i++) { try { cbs[i](); } catch (e) {} }
     };
-    // allow a later chart render to retry the injection after a load failure
     s.onerror = function () { plotlyLoading = false; };
     document.head.appendChild(s);
   }
@@ -6125,7 +5829,6 @@
     for (var i = 0; i < roots.length; i++) initCharts(roots[i]);
   }
 
-  // ---- Plotly chart init from server-rendered data-chart placeholders ----
   var chartResizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(function (entries) {
     entries.forEach(function (entry) {
       var chart = entry.target;
@@ -6157,10 +5860,7 @@
         margin: { l: 40, r: 20, t: 20, b: 40 },
         paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
         font: { color: "#9CA3AF" },
-        // 089 (R9): 11px is the legibility floor for a chart label at every
-        // width. Plotly writes its tick font inline, so the size has to be
-        // right here — a stylesheet floor would only paint over a layout it
-        // had already computed for smaller text.
+        // Plotly writes tick fonts inline, so the 11px legibility floor must be set here
         xaxis: { gridcolor: "rgba(255,255,255,0.1)", tickfont: { size: 11 } },
         yaxis: { gridcolor: "rgba(255,255,255,0.1)", tickfont: { size: 11 } },
       };
@@ -6176,8 +5876,7 @@
         layout = Object.assign(layout, spec.layout || {});
         cfg = Object.assign(cfg, spec.config || {});
       } else continue;
-      // The host owns chart geometry. An author-supplied fixed width must not
-      // escape the canvas when its rail opens or the viewport becomes narrow.
+      // The host owns chart geometry; an author-fixed width must not escape the canvas
       delete layout.width;
       layout.autosize = true;
       cfg.responsive = true;
@@ -6197,7 +5896,6 @@
     }
   }
 
-  // ---- theme_apply: set --astral-* CSS vars from emitted banners ----
   function hexToChannels(hex) {
     var m = /^#?([0-9a-f]{6})$/i.exec((hex || "").trim());
     if (!m) return null;
@@ -6224,7 +5922,6 @@
     for (var i = 0; i < themes.length; i++) { try { applyTheme(JSON.parse(themes[i].dataset.theme || "{}")); } catch (e) {} }
   }
 
-  // ---- render server HTML into a region ----
   function setHTML(region, htmlStr) {
     var overlay = region.querySelector(":scope > .sdui-widget-overlay");
     region.innerHTML = htmlStr || "";
@@ -6236,8 +5933,6 @@
     var d = document.createElement("div"); d.innerHTML = htmlStr || "";
     if (region === canvas) d.setAttribute("data-astral-render-batch", "append");
     region.appendChild(d); processSideEffects(d);
-    // 089: the scrolling region is the canvas panel; a card body does not
-    // scroll, so scrolling `region` would be a no-op that hides new content.
     canvasPanel.scrollTop = canvasPanel.scrollHeight;
   }
   function appendChatBubble(role, htmlStr) {
@@ -6246,9 +5941,6 @@
     if (role !== "user") noteAssistantActivity();
   }
 
-  // 066: inline failed-turn notice — the user's message stays visible, the
-  // failure is explained beside the conversation, and retry re-sends the
-  // exact content. Never blanks the canvas.
   function appendFailedTurnNotice(message, retryText, generation) {
     var err = document.createElement("div");
     err.className = "astral-chat-error";
@@ -6273,15 +5965,11 @@
     noteAssistantActivity();
   }
 
-  // 066: a failed turn materializes its transient content into the canonical
-  // rail (instead of evaporating with the overlay) and gains a retry.
   function surfaceFailedTurn(frame, localSubmission) {
     if (frame.action !== "chat_message") return;
     try {
       var retryText = localSubmission && localSubmission.message
         ? localSubmission.message : null;
-      // Move whatever the turn had staged in the overlay into the canonical
-      // rail (it is about to be cleared)...
       var overlayChat = transientOverlay && transientOverlay.chat;
       var moved = false;
       if (overlayChat) {
@@ -6290,9 +5978,6 @@
           moved = true;
         }
       }
-      // ...and if the overlay was already gone, rebuild the user's message
-      // from the retained submission so their words NEVER disappear on a
-      // failure (066 FR-017). Deterministic, not overlay-dependent.
       if (!moved && retryText) {
         appendChatBubble("user", "<div>" + escapeText(retryText) + "</div>");
       }
@@ -6302,29 +5987,14 @@
     } catch (e) {}
   }
 
-  // 066: a turn whose operation reported a non-final failure (e.g. an
-  // execution lease expiring during a slow model call) can still go on to
-  // succeed. When any later content or completion arrives for the same
-  // request generation, retract the failure notice and its status so the
-  // user is never told a turn failed while its answer is on screen.
   function retractFailedTurnNotice(generation) {
     if (!generation) return;
     var nodes = chat.querySelectorAll(
       '.astral-chat-error[data-turn-generation="' + generation + '"]');
     for (var i = 0; i < nodes.length; i++) nodes[i].remove();
-    // The STATUS line is deliberately untouched: error ownership there is
-    // operation-scoped (060 contract — "a different success cannot erase the
-    // failure notice") and is released only by its own owner or the next
-    // explicit request. Clearing it here erased another operation's settled
-    // failure whenever any same-generation operation completed.
+    // Status ownership is operation-scoped; clearing it here erased another operation's failure
   }
 
-  // ---- query-start loading skeleton ----
-  // Client-local optimistic placeholder (the Android twin's SkeletonCanvas):
-  // appended to the canvas when a chat turn is sent, removed by the FIRST
-  // canvas content of the turn (render/upsert/stream) or when the turn ends
-  // without any (text-only answers, errors, cancellation). Reuses the
-  // .astral-skeleton-line shimmer the server-driven skeleton primitive ships.
   function showSkeleton() {
     if (timelineMode || document.getElementById("astral-canvas-skeleton")) return;
     setWorkspaceView("work");
@@ -6351,29 +6021,18 @@
     if (d && d.parentNode) d.parentNode.removeChild(d);
   }
 
-  // Feature 055 (uniform rule, wire-contract §1): turn start drops the
-  // ephemeral welcome components (identity prefix "wel_") from the canvas.
-  // SELECTIVE removal only — mid-chat the canvas holds client-side workspace
-  // nodes a blanket clear would lose. Unconditional on purpose: when the
-  // server flag is off the welcome arrives id-less, nothing matches, and
-  // this is a no-op.
   function purgeWelcome() {
     clearWelcomeSlots();
     var nodes = canvas.querySelectorAll('[data-component-id^="wel_"]');
     for (var i = 0; i < nodes.length; i++) {
       if (nodes[i].parentNode) nodes[i].parentNode.removeChild(nodes[i]);
     }
-    // Legacy safety: bare-id welcome nodes sitting directly under the canvas.
     for (var j = canvas.children.length - 1; j >= 0; j--) {
       var kid = canvas.children[j];
       if (kid.id && kid.id.indexOf("wel_") === 0) canvas.removeChild(kid);
     }
   }
 
-  // ---- workspace upsert morph ----
-  // Each op targets [data-component-id]: replace the node in place when it
-  // exists (no flicker, neighbors untouched), append when new, remove on op
-  // 'remove'. Side effects (Plotly/theme) re-run on inserted subtrees only.
   function componentSelector(id) {
     return '[data-component-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]';
   }
@@ -6401,9 +6060,9 @@
       setStatus("Live workspace updated — use “Back to live” to see it.");
       return;
     }
-    hideSkeleton(); // first canvas content of the turn
+    hideSkeleton();
     var ops = msg.ops || [];
-    if (ops.length) hideCanvasEmpty(); // content is arriving on the canvas
+    if (ops.length) hideCanvasEmpty();
     var renderer = ensureRenderer();
     for (var i = 0; i < ops.length; i++) {
       var op = ops[i];
@@ -6420,20 +6079,15 @@
       holder.innerHTML = op.html;
       var fresh = holder.firstElementChild;
       if (!fresh) continue;
-      // Slot-owned welcome nodes retain normal identity upsert/removal. New
-      // markup goes through canvas classification again before any adoption.
       if (welcomeNode) welcomeNode.remove();
       if (node) node.replaceWith(fresh);
       else renderer.appendChild(fresh);
       processSideEffects(fresh);
     }
-    syncCanvasToolbar(); // last-known flags (full renders refresh them)
+    syncCanvasToolbar();
     if (liveTurn && liveTurn.body) checkBodyOverflow(liveTurn.body);
   }
 
-  // Plotly keeps per-node state and handlers; purge a node's charts before it
-  // is replaced. The bundle is lazy-loaded (052) — nothing to purge before it
-  // exists.
   function purgeCharts(node) {
     if (!node || typeof Plotly === "undefined") return;
     var els = node.querySelectorAll(".astral-chart");
@@ -6442,12 +6096,7 @@
     }
   }
 
-  // ---- streaming merge: replace-or-append a per-stream node keyed by stream_id ----
-  // Frames carrying component_id (055 stream→artifact bridge, wire-contract
-  // §2) are keyed by [data-component-id] from the FIRST frame instead — no
-  // stream-<id> node ever exists for them — so the terminal persist ui_upsert
-  // replaces the same node in place rather than double-rendering.
-  var streamChartPlot = {}; // stream_id → last chart re-plot ms (interim ≤1/s)
+  var streamChartPlot = {};
   function mergeStream(msg) {
     var htmlStr = msg.html || "";
     if (msg.error) {
@@ -6458,7 +6107,7 @@
     var id = "stream-" + msg.stream_id;
     var node = document.getElementById(id);
     if (!htmlStr && !msg.terminal) return;
-    hideSkeleton(); // streamed canvas content counts as the first component
+    hideSkeleton();
     if (node) { node.innerHTML = htmlStr; processSideEffects(node); }
     else if (htmlStr) {
       hideCanvasEmpty();
@@ -6469,14 +6118,12 @@
   function mergeKeyedStream(msg, htmlStr) {
     if (msg.terminal) delete streamChartPlot[msg.stream_id];
     else if (htmlStr.indexOf("astral-chart") !== -1) {
-      // Chart-bearing interim frames re-plot at most once per second per
-      // stream (leak/flicker guard); the terminal frame always renders.
       var now = Date.now();
       if (now - (streamChartPlot[msg.stream_id] || 0) < 1000) return;
       streamChartPlot[msg.stream_id] = now;
     }
-    if (!htmlStr) return; // empty terminal: keep the last content for the persist upsert
-    hideSkeleton(); // streamed canvas content counts as the first component
+    if (!htmlStr) return;
+    hideSkeleton();
     var node = canvas.querySelector(componentSelector(msg.component_id));
     var holder = document.createElement("div");
     holder.innerHTML = htmlStr;
@@ -6484,8 +6131,6 @@
     if (!fresh) return;
     if (holder.children.length > 1 ||
         fresh.getAttribute("data-component-id") !== msg.component_id) {
-      // Client-built error html (and any fragment the server did not wrap)
-      // still needs the identity anchor or later frames would append copies.
       fresh = document.createElement("div");
       fresh.setAttribute("data-component-id", msg.component_id);
       while (holder.firstChild) fresh.appendChild(holder.firstChild);
@@ -6497,7 +6142,6 @@
     if (liveTurn && liveTurn.body) checkBodyOverflow(liveTurn.body);
   }
 
-  // ---- feature 060: atomic conversation snapshot + transient overlay ----
   function exactKeys(value, expected) {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     return Object.keys(value).sort().join(",") === expected.slice().sort().join(",");
@@ -6511,7 +6155,6 @@
     }).join(",") + "}";
   }
 
-  /** Clone semantic protocol data while excluding web-only presentation. */
   function semanticClone(value) {
     if (Array.isArray(value)) return value.map(semanticClone);
     if (!value || typeof value !== "object") return value;
@@ -6544,11 +6187,6 @@
     });
   }
 
-  /**
-   * Validate server-rendered web fragments before any live DOM mutation.
-   * Every non-empty top-level component carries exactly the reserved envelope;
-   * native semantic fields remain outside it and drive snapshot equality.
-   */
   function prepareWebPresentation(components) {
     if (!Array.isArray(components)) throw new Error("components_not_array");
     var nodes = [];
@@ -6615,7 +6253,6 @@
     return { wrap: wrap, bubble: summary };
   }
 
-  /** Decode one validated semantic message into a detached visible bubble. */
   function decodeSemanticMessage(message, turnNo) {
     var built = createChatBubbleNode(message.role, turnNo);
     var presentations = [];
@@ -6633,8 +6270,6 @@
     message.parts.forEach(function (part) {
       if (part.type === "text") {
         var textPart = document.createElement("div");
-        // 066: render the server's markdown rendition when present (same
-        // escape-first pipeline as the live path); plain text otherwise.
         var textEnvelope = part._presentation;
         if (textEnvelope) {
           textPart.className = "astral-bubble-md";
@@ -6713,10 +6348,6 @@
       message.parts.forEach(function (part) {
         if (!part || typeof part !== "object" || Array.isArray(part)) throw new Error("snapshot_part");
         if (part.type === "text") {
-          // 066: an assistant text part may carry the transport-only web
-          // rendition envelope (2 keys — never the components' workspace key)
-          // and, per the T023 contract extension, an optional BOUNDED variant
-          // (mirrors shared/protocol.py CANONICAL_TEXT_PART_VARIANTS).
           if ((!exactKeys(part, ["text", "type"]) && !exactKeys(part, ["_presentation", "text", "type"])
               && !exactKeys(part, ["text", "type", "variant"])
               && !exactKeys(part, ["_presentation", "text", "type", "variant"]))
@@ -6755,9 +6386,6 @@
     var transcriptFragment = document.createDocumentFragment();
     var reasoningFragment = document.createDocumentFragment();
     var transcriptPresentations = [];
-    // A turn is one thing the person asked for, so the transcript's own user
-    // messages number it. Preparing a candidate that is later rejected must
-    // leave the live counter alone, which is why this counts locally.
     var turns = 0;
     frame.transcript.forEach(function (message) {
       if (message.role === "user") {
@@ -6804,7 +6432,6 @@
     };
   }
 
-  /** Commit a fully prepared transcript and ROTE canvas in one browser task. */
   function commitSnapshotCandidate(candidate, frame) {
     committedRevisionByChat[frame.chat_id] = frame.render_revision;
     lastSnapshotIdByChat[frame.chat_id] = frame.snapshot_id;
@@ -6853,7 +6480,6 @@
     return code;
   }
 
-  /** Open the exact commit fence advertised for detached server work. */
   function acceptConversationCommitReady(frame) {
     var expected = ["chat_id", "connection_generation", "render_revision", "request_generation",
       "schema_version", "type"];
@@ -6871,9 +6497,7 @@
     if (frame.render_revision <= lastCommittedRenderRevision()) {
       return continuityDisposition("stale_commit_ready");
     }
-    // Never steal the fence from a user turn that has been submitted but has
-    // not received its own snapshot yet. That later full snapshot will include
-    // this already-committed detached update.
+    // Never steal the fence from a submitted user turn still awaiting its own snapshot
     if (requestState && requestState.purpose === "commit" && !requestState.snapshotApplied) {
       return continuityDisposition("commit_request_busy");
     }
@@ -6881,7 +6505,6 @@
     return continuityDisposition("commit_ready_applied");
   }
 
-  /** Purpose-aware reducer for the sole committed-state publication. */
   function reduceConversationSnapshot(frame) {
     try { validateSnapshotShape(frame); }
     catch (e) { return continuityDisposition("invalid_snapshot"); }
@@ -6919,9 +6542,6 @@
     if (requestState.purpose === "hydration") requestState.hydrationApplied = true;
     requestState.snapshotApplied = true;
     if (requestState.purpose === "hydration") {
-      // The atomic hydration snapshot is the authoritative completion of a
-      // load_chat request. Retire only that local submission/status owner;
-      // committed result snapshots still wait for their operation terminal.
       settleHydrationStatus(frame.request_generation);
       settleEmptyHydration();
     }
@@ -7020,14 +6640,9 @@
     });
   }
 
-  /** Reduce one accepted live frame into disposable request-scoped overlay. */
   function reduceTransientFrame(frame) {
     if (!acceptTransientFrame(frame)) return continuityDisposition("transient_frame_ignored");
     var overlay = ensureTransientOverlay();
-    // The live card is mounted hidden so the feed always has somewhere to
-    // render; a frame arriving for it is the moment it has something to show.
-    // Without this the turn's own components are drawn into a hidden card and
-    // the person watches an empty canvas while the work happens.
     hideSkeleton();
     hideCanvasEmpty();
     if (frame.type === "ui_render") {
@@ -7053,17 +6668,12 @@
     var pending = operationSubmissionByGeneration[frame.request_generation];
     if (pending) return frame.chat_id == null || frame.chat_id === activeChatId;
     if (!requestState || frame.request_generation !== requestState.generation) return false;
-    // Surface-only operations deliberately carry chat_id:null. Chat operations
-    // additionally bind to the selected chat; neither may cross generations.
     return frame.chat_id == null || !!(activeChatId && frame.chat_id === activeChatId);
   }
 
   function operationStatusShowsActivity(frame) {
     var local = operationSubmissionByGeneration[frame.request_generation];
     if (local && local.shows_status === false) return false;
-    // load_chat can still emit compatibility work after its atomic snapshot.
-    // That late operation projection is reconciliation state, not visible
-    // activity, because the requested conversation is already restored.
     return !(frame.action === "load_chat" && requestState
       && requestState.purpose === "hydration" && requestState.snapshotApplied
       && frame.request_generation === requestState.generation);
@@ -7126,20 +6736,12 @@
     restoreActiveStatusOrClear(owners);
   }
 
-  // 066 (FR-016): one second into EVERY accepted connection operation the
-  // server publishes a generic progress phase (`operation_status` with
-  // label "Working…"). setStatus is last-writer-wins, so that generic label
-  // used to overwrite the turn's OWN richer phase text — and for a tool-less
-  // turn nothing re-asserted it, leaving the user staring at "Working…" for
-  // the whole model call. A chat turn publishes its own phases, so the
-  // generic one must not take the line from them. Terminal/error frames are
-  // untouched: they are the failure surface.
+  // setStatus is last-writer-wins, so the generic one-second phase must not replace a turn's own
   function genericPhaseWouldClobber(frame) {
     return frame.action === "chat_message" && frame.phase === "running"
       && turnPhaseActive;
   }
 
-  /** Retain/render one canonical operation projection. */
   function reduceOperationStatus(frame) {
     var flags = {
       accepted: [false, false], validating: [false, false],
@@ -7186,21 +6788,14 @@
     var submissionOwner = "operation-submission:" + frame.request_generation;
     var localSubmission = operationSubmissionByGeneration[frame.request_generation];
     if (frame.terminal) finishOperationSubmission(frame.request_generation);
-    if (frame.terminal) turnPhaseActive = false; // the turn's phases are over
+    if (frame.terminal) turnPhaseActive = false;
     if (frame.state === "completed") {
-      // Completion is reconciliation state, not user-facing progress. Clear it
-      // only if this operation (or its local submission) still owns the line.
-      // A concurrent operation or unrelated notice must remain visible.
       retractFailedTurnNotice(frame.request_generation);
-      // The turn's own chat_status "done" clears any phase text it owns, so
-      // this stays byte-identical to the 060 contract.
       restoreActiveStatusOrClear([operationOwner, submissionOwner]);
     } else if (frame.terminal) {
       if (ownerSurfaceRequest && ownerSurfaceRequest.generation === frame.request_generation) {
         retireOwnerSurface(); showModalRetry();
       }
-      // Failure/cancellation/retry guidance persists, but is settled and must
-      // never look like work is still in progress.
       setStatus(visible, false, "operation-error:" + frame.operation_id);
     } else if (operationStatusShowsActivity(frame)
         && (!localSubmission || localSubmission.shows_status !== false)
@@ -7215,7 +6810,6 @@
     return true;
   }
 
-  /** Correlate an admission refusal without inventing a server operation. */
   function reduceAdmissionRefusal(frame) {
     var keys = ["accepted", "code", "message", "retry_after_ms", "retryable", "submission_id", "type"];
     var codes = {
@@ -7248,7 +6842,6 @@
     return true;
   }
 
-  /** Update any open agent surface, with the shared label as a fallback. */
   function renderAgentLifecycle(frame) {
     var matched = false;
     var nodes = document.querySelectorAll("[data-agent-id]");
@@ -7278,7 +6871,6 @@
     }
   }
 
-  /** Retain/render one lexicographically newer canonical lifecycle pair. */
   function reduceAgentLifecycle(frame) {
     var states = { starting: true, online: true, updating: true, failed: true, offline: true };
     var reasonCodes = {
@@ -7319,9 +6911,6 @@
     var hr = document.getElementById("astral-history");
     if (!hr) return;
     var oldTitles = {};
-    // Collect optimistic/pending items that the server might not know about yet.
-    // These are: the current pending-new-chat placeholder, and any item keyed
-    // to activeChatId that hasn't been persisted (no messages yet).
     var pendingNodes = [];
     var existingItems = hr.querySelectorAll(".astral-history-item");
     for (var i = 0; i < existingItems.length; i++) {
@@ -7335,20 +6924,17 @@
       }
       var nameEl = el.querySelector(".astral-history-name");
       if (cid && nameEl) oldTitles[cid] = nameEl.textContent.trim();
-      // Track optimistic items the server may not have rendered yet.
       if (cid === "pending-new-chat" || (activeChatId && cid === activeChatId
           && el.classList.contains("astral-history-item-entering"))) {
         pendingNodes.push(el.cloneNode(true));
       }
     }
     setHTML(hr, html);
-    // Re-insert optimistic items that the server didn't include yet.
     if (pendingNodes.length) {
       var list = hr.querySelector(".astral-history-list");
       for (var k = pendingNodes.length - 1; k >= 0; k--) {
         var pn = pendingNodes[k];
         var pnCid = pn.getAttribute("data-chat-id");
-        // Only re-insert if the server's new HTML doesn't already include it.
         var alreadyPresent = pnCid && hr.querySelector('.astral-history-item[data-chat-id="' + pnCid + '"]');
         if (!alreadyPresent && list) {
           list.insertBefore(pn, list.firstChild);
@@ -7377,7 +6963,6 @@
     }
   }
 
-  // ---- incoming messages ----
   function onMessage(ev) {
     var data; try { data = JSON.parse(ev.data); } catch (e) { return; }
     if (data.type === "voice_transcript"
@@ -7435,9 +7020,6 @@
         else {
           clearWelcomeSlots();
           hideSkeleton(); setHTML(canvas, data.html);
-          // Emptiness comes from the STRUCTURED payload: render_workspace
-          // emits a truthy wrapper div even for zero components (055), so
-          // html truthiness only decides frames without a components array.
           if (Array.isArray(data.components) ? !data.components.length : !data.html) showCanvasEmpty();
           readCanvasFlags(); syncCanvasToolbar();
         }
@@ -7445,7 +7027,7 @@
       case "ui_upsert":
         if (activeChatId) reduceTransientFrame(data);
         else applyUpsert(data);
-        break; // in-place workspace updates
+        break;
       case "ui_update":
         if (isLateWelcomeRender(data)) break;
         if (activeChatId) reduceTransientFrame(data);
@@ -7459,13 +7041,13 @@
         if (activeChatId) reduceTransientFrame(data);
         else { hideSkeleton(); hideCanvasEmpty(); appendHTML(canvas, data.html); }
         break;
-      case "workspace_timeline_mode": // read-only history view
+      case "workspace_timeline_mode":
         timelineMode = !!data.active;
         if (timelineMode) hideSkeleton();
         setStatus(timelineMode ? "Viewing workspace history (read-only)" : "");
-        syncCanvasToolbar(); // export/share chrome hides in the read-only view
+        syncCanvasToolbar();
         break;
-      case "chat_deleted": // chat removed (possibly from another tab)
+      case "chat_deleted":
         if (data.chat_id && data.chat_id === activeChatId) {
           var deletedVoiceFence = currentVoiceFence();
           voiceRecoverySuppressed = true;
@@ -7479,7 +7061,7 @@
           setStatus("This chat was deleted.");
         }
         break;
-      case "auth_required": // recoverable WS auth failure
+      case "auth_required":
         if (ownerSurfaceRequest) { retireOwnerSurface(); setModal(""); }
         if (currentVoiceFence() || voiceActivation) {
           voiceRecoverySuppressed = true;
@@ -7493,8 +7075,6 @@
           authRetried = true;
           refreshToken(true, function (ok) {
             if (ok && ws && ws.readyState === 1) {
-              // sendRegistration emits {type: "register_ui", token: token}
-              // after re-binding the locator and a fresh hydration request.
               sendRegistration(true);
             } else if (ok) { connect(); }
           });
@@ -7510,9 +7090,6 @@
         break;
       }
       case "stream_subscribed": {
-        // component_id-bridged streams get a keyed placeholder (wire-contract
-        // §2) so the first frame and the terminal persist upsert replace it
-        // in place; legacy subscriptions need no node until data arrives.
         if (!data.component_id) break;
         if (data.session_id && activeChatId && data.session_id !== activeChatId) break;
         if (!scopedStatusMatches(data)) break;
@@ -7528,10 +7105,8 @@
         else ensureRenderer().appendChild(ph);
         break;
       }
-      case "chrome_render": // server-rendered chrome regions
+      case "chrome_render":
         if (data.surface_key === "work" || data.surface_key === "guidance") { receiveOwnerSurface(data); break; }
-        // A delayed legacy modal/close cannot replace the current owner surface.
-        // Explicit navigation retires this guard before sending its new action.
         if (data.region === "modal" && ownerSurfaceRequest) break;
         if (data.region === "modal") setModal(data.html || "");
         else if (data.region === "topbar") {
@@ -7547,18 +7122,12 @@
         var chatStatusOwner = data.request_generation
           ? "operation-submission:" + data.request_generation
           : "chat-status";
-        // A turn that ends with no canvas output (text-only answer, error,
-        // cancellation) must still clear the query-start skeleton.
         if (data.status === "done" || data.status === "idle") {
           hideSkeleton();
           clearTransientOverlay();
-          // The welcome was dropped when the skeleton started; if the turn produced
-          // no canvas component at all, restore it so the canvas isn't left blank.
           if (canvas && !canvas.querySelector('[data-component-id], .astral-component')) showCanvasEmpty();
         }
         if (data.status === "processing_async") {
-          // Background dispatch ack (055): status text only — never the turn
-          // lock (no skeleton), so the user can keep chatting or switch chats.
           hideSkeleton();
           setStatus(
             "Running in background…",
@@ -7568,22 +7137,15 @@
           break;
         }
         if (data.status === "info") {
-          // 066: informational server notices (e.g. attachment auto-parse)
-          // used to vanish on web — surface them like the native banner and
-          // never latch the busy line.
           if (data.message) showToast(String(data.message), "info");
           restoreActiveStatusOrClear([chatStatusOwner]);
           break;
         }
-        // 066 (FR-016): prefer the server's OWN phase text — it names what is
-        // happening — and fall back to the generic label per status.
         lastChatStatusText = (data.message && String(data.message).trim())
           || { idle: "", thinking: "Thinking…", executing: "Working…",
                fixing: "Working…", retrying: "Retrying…", combining: "Combining…",
                condensing: "Condensing…", done: "" }[data.status] || "";
         if (lastChatStatusText) {
-          // The turn now owns the line with its own phase — the server's
-          // generic one-second "Working…" must not take it back.
           turnPhaseActive = true;
           setStatus(
             lastChatStatusText,
@@ -7597,11 +7159,7 @@
         }
         break;
       case "chat_step":
-        // 066: chat_step carries {type, chat_id, step} ONLY — it has no
-        // connection/request generation, so the 060 continuity fence
-        // (scopedStatusMatches) rejected EVERY step frame and the web client
-        // silently dropped the whole step trail. Scope it by chat id, the
-        // way tool_progress already is.
+        // chat_step carries no generation, so it is scoped by chat id like tool_progress
         if (data.chat_id && activeChatId && data.chat_id !== activeChatId) break;
         renderStep(data.step);
         break;
@@ -7620,13 +7178,8 @@
         }
         break;
       case "chat_loaded":
-        // Bounded compatibility acknowledgement only. Feature-060 clients do
-        // not clear/replace either committed surface from the legacy two-frame
-        // chat_loaded + ui_render pair; the atomic snapshot must follow.
         if (data.chat && isCanonicalUuid4(data.chat.id)) {
           if (!activeChatId) selectActiveChat(data.chat.id, "hydration");
-          // A compatibility ack may race behind the authoritative snapshot.
-          // Never resurrect hydration progress once that snapshot committed.
           if (data.chat.id === activeChatId && requestState && !requestState.snapshotApplied) {
             setStatus(
               "Restoring conversation…",
@@ -7639,31 +7192,31 @@
       case "user_preferences":
         if (data.preferences && data.preferences.theme) applyTheme(data.preferences.theme);
         break;
-      case "error": { // feature 044 FR-002 — server error replies are never silent
+      case "error": {
         if (!scopedStatusMatches(data)) break;
         var admissionRefusal = reduceAdmissionRefusal(data);
         var em = errorMessage(data);
         showToast(em, "error");
-        hideSkeleton(); // the turn is over; no components are coming
+        hideSkeleton();
         clearTransientOverlay();
         if (["chat_not_found", "chat_deleted", "not_found"].indexOf(data.code) !== -1
             && data.chat_id === activeChatId) clearActiveChatLocator("confirmed_deletion", data.chat_id);
-        if (!admissionRefusal) setStatus(""); // resolve any stuck "Thinking…" state (SC-006)
+        if (!admissionRefusal) setStatus("");
         break;
       }
-      case "notification": // scheduler push (feature 044 parity matrix)
+      case "notification":
         showToast((data.title ? data.title + ": " : "") + (data.body || ""), data.level === "error" ? "error" : "info");
         break;
-      case "task_started": { // 055: background dispatch accepted (any device)
+      case "task_started": {
         var tsp = data.payload || {};
         addTaskChip(tsp.task_id, tsp.chat_id, tsp.title);
         showToast("Running in background — you will be notified when it finishes.", "info");
         break;
       }
-      case "task_completed": { // 055: background task finished (any device)
+      case "task_completed": {
         var tcp = data.payload || {};
         if (tcp.task_id) {
-          if (bgTaskDone[tcp.task_id]) break; // watcher + fan-out duplicate
+          if (bgTaskDone[tcp.task_id]) break;
           bgTaskDone[tcp.task_id] = true;
           removeTaskChip(tcp.task_id);
         }
@@ -7671,11 +7224,10 @@
         var tcMsg = tcp.summary || ("Background task " + (tcp.status || "completed"));
         if (tcp.chat_id && tcp.chat_id === activeChatId) {
           showToast(tcMsg, tcFail ? "error" : "info");
-          // Pull the narrative/canvas the task persisted while detached.
           loadActiveChat(tcp.chat_id);
         } else if (tcp.chat_id) {
           showToast(tcMsg + " — tap to open", tcFail ? "error" : "info", function () {
-            loadActiveChat(tcp.chat_id); // recents-click path
+            loadActiveChat(tcp.chat_id);
             closeHistoryOverlay();
           });
         } else {
@@ -7683,13 +7235,11 @@
         }
         break;
       }
-      case "tool_progress": { // long-running job update (fan-out is chat-scoped)
+      case "tool_progress": {
         if (!scopedStatusMatches(data)) break;
         var tpChat = data.session_id || data.chat_id;
         if (tpChat && activeChatId && tpChat !== activeChatId) break;
-        if (data.terminal) { turnPhaseActive = false; setStatus(""); break; } // outcome lands as a persisted upsert
-        // 066: the frame already carries agent_id — name the agent behind the
-        // job instead of discarding it (derived from the catalog, never guessed).
+        if (data.terminal) { turnPhaseActive = false; setStatus(""); break; }
         var tpText = data.message || ((data.tool_name || "job") + " running…");
         if (!data.message && data.agent_id && agentNameById[data.agent_id]) {
           tpText = (data.tool_name || "job") + " — " + agentNameById[data.agent_id] + " running…";
@@ -7705,43 +7255,33 @@
       case "agent_lifecycle":
         reduceAgentLifecycle(data);
         break;
-      case "rote_config": // ROTE's device verdict drives the shell layout
+      case "rote_config":
         applyDeviceProfile(data.device_profile && data.device_profile.device_type);
-        // 066: the post-registration verdict marks the socket healthy — flush
-        // queued sends and retire the connection pill.
         if (!socketReady) {
           socketReady = true;
           setConnState("connected");
           flushPendingActions();
-          // Ask whether voice can work at all, now, in the background. The
-          // answer decides whether the mic is offered; nothing waits on it.
           runVoicePreflight();
         }
         break;
       case "agent_list":
-        // 066: index the catalog the server already sends so step labels can
-        // name the agent behind a tool (derived, never guessed).
         indexAgentList(data);
         break;
       case "agent_host_inventory_reconciled": case "agent_host_registration_refused":
-      case "agent_host_registered": // host-only; the browser is author-only
+      case "agent_host_registered":
       case "system_config": case "agent_registered":
       case "history_list": case "heartbeat": case "llm_config_ack": case "saved_components_list":
-        break; // not needed for the core flow
+        break;
       default: break;
     }
   }
 
-  // Normalize the three historical error-frame shapes (see
-  // contracts/ui_protocol.json): {code,message} | {payload:{message}} | {message}.
   function errorMessage(data) {
     var m = data.message || (data.payload && data.payload.message) || "Something went wrong.";
     return data.code && data.code !== "internal" ? m + " (" + data.code + ")" : m;
   }
 
   var toastHost = null;
-  /** onTap (optional) makes the toast a tap-to-open affordance (055
-   *  background completions); tappable toasts linger longer. */
   function showToast(message, kind, onTap) {
     if (!message) return;
     if (!toastHost) {
@@ -7772,10 +7312,6 @@
 
   function escapeText(s) { var d = document.createElement("div"); d.textContent = s == null ? "" : String(s); return d.innerHTML; }
 
-  // Render attachment(s) as a pill on its own line above the request text (an
-  // inline prefix collapses onto the query line because chat bubbles don't
-  // preserve newlines). The paperclip is drawn, not typed: the same icon the
-  // composer's attach button uses, so the two read as one affordance.
   var ATTACH_CLIP_SVG = "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" "
     + "stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" "
     + "stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21.44 11.05l-9.19 9.19a6 6 0 "
@@ -7787,10 +7323,6 @@
       + escapeText(names) + "</span></div>";
   }
 
-  // 066: agent identity for step labels, DERIVED from the agent_list the
-  // server already sends — never guessed. A tool name that maps to exactly
-  // one agent gets the agent's name appended; an ambiguous or unknown name
-  // renders bare.
   var toolToAgentName = Object.create(null);
   var agentNameById = Object.create(null);
   function indexAgentList(payload) {
@@ -7803,7 +7335,6 @@
       for (var j = 0; j < tools.length; j++) {
         var name = tools[j] && tools[j].name;
         if (!name || !a.name) continue;
-        // Record collisions as null so an ambiguous tool never claims one agent.
         toolToAgentName[name] = Object.prototype.hasOwnProperty.call(toolToAgentName, name)
           && toolToAgentName[name] !== a.name ? null : a.name;
       }
@@ -7819,8 +7350,6 @@
     return agent ? raw + " — " + agent : raw;
   }
 
-  // The turn's own phase text (from chat_status.message / a live step) and
-  // whether it currently owns the status line — see genericPhaseWouldClobber.
   var lastChatStatusText = "";
   var turnPhaseActive = false;
   function renderStep(step) {
@@ -7836,7 +7365,6 @@
     if (agent) {
       describeLiveTurn(agent, "Active Specialist");
     }
-    // a8p clean turn: suppress appending individual tool execution steps into the transcript feed.
     if (step.status === "in_progress" || step.status === "started") {
       turnPhaseActive = true;
       setStatus(agent ? (agent + " working…") : stepLabel(step), true, "chat-status");
@@ -7846,17 +7374,11 @@
     chat.scrollTop = chat.scrollHeight;
   }
 
-  // ---- outgoing: chat + delegated component actions ----
-  // A message may carry staged attachments (see the attachment block lower
-  // down). readyAttachments()/clearStagedAttachments() are declared there;
-  // function/var hoisting makes them available here at call time.
   function sendChat(message) {
     var ready = (typeof readyAttachments === "function") ? readyAttachments() : [];
     if (!message && !ready.length) return;
     setWorkspaceView("work");
     if (!isSocketReady()) {
-      // 066: never silently drop a send — queue it visibly and dispatch on
-      // registration, or refuse loudly with the text preserved.
       queueChatSend(message, ready);
       if (typeof clearStagedAttachments === "function") clearStagedAttachments();
       return;
@@ -7913,12 +7435,9 @@
       list = historyEl.querySelector(".astral-history-list");
     }
     if (!list) return;
-    // Skip only if the exact chat id is already in the list (server rendered it or we
-    // already inserted an optimistic item for this chat id). If there's a pending-new-chat
-    // item, we'll update it below regardless of whether activeChatId is set.
     if (activeChatId) {
       var activeExisting = list.querySelector('.astral-history-item[data-chat-id="' + activeChatId + '"]');
-      if (activeExisting) return; // Already present as a real (server or optimistic) item.
+      if (activeExisting) return;
     }
     var existingPending = list.querySelector('.astral-history-item[data-chat-id="pending-new-chat"]');
     if (existingPending) {
@@ -7949,12 +7468,12 @@
   }
 
   function doSendChat(message, ready) {
-    sealLiveTurn(); // 089: this answer gets its own card, below the question
+    sealLiveTurn();
     openRequest("commit", activeChatId);
     var html = "";
     if (ready.length) {
       var names = ready.map(function (a) { return a.filename; }).join(", ");
-      html += attachChipHtml(names);  // pill on its own line above the request
+      html += attachChipHtml(names);
     }
     if (message) html += "<div>" + escapeText(message) + "</div>";
     appendTransientChatBubble("user", html);
@@ -7971,9 +7490,7 @@
         return { attachment_id: a.attachment_id, filename: a.filename, category: a.category };
       });
     }
-    if (bgArmed) payload.async_mode = true; // one-shot background-run arming (055)
-    // 088 (T011): the Advanced selection rides the ordinary send as-is; no
-    // selection => no key, so a plain Send is byte-identical to before.
+    if (bgArmed) payload.async_mode = true;
     if (turnSelection) payload.selection = cloneTurnSelection(turnSelection);
     var submission = beginOperationSubmission("chat_message", payload, requestState.generation);
     send({
@@ -7985,11 +7502,9 @@
       request_generation: submission.requestGeneration,
       payload: submission.payload,
     });
-    purgeWelcome(); // 055 uniform rule: welcome never survives the first send
-    // Async turns never lock the composer: no skeleton — the processing_async
-    // ack drives the status line instead.
+    purgeWelcome();
     if (bgArmed) setBgArmed(false);
-    else showSkeleton(); // optimistic loading state until the first canvas content
+    else showSkeleton();
   }
 
   if (form) form.addEventListener("submit", function (e) {
@@ -8006,9 +7521,6 @@
     if (form) form.requestSubmit();
   });
 
-  // ---- new chat (topbar button) — the web twin of the native clients' ＋ New:
-  // clear the local conversation state, then ask the server for a fresh chat
-  // (it replies chat_created, which sets activeChatId).
   var newChatBtn = document.getElementById("astral-newchat-btn");
   if (newChatBtn) newChatBtn.addEventListener("click", function () {
     if (voiceActivation) {
@@ -8019,8 +7531,6 @@
       setVoiceFeedback("connecting", "chat_context_unavailable", "Creating the new voice chat context…", true);
     }
     clearActiveChatLocator("explicit_new_chat", activeChatId);
-    // Only unsent chat requests belong to the discarded composer. Keeping
-    // them would replay the old draft in the new chat after reconnect.
     var cancelledMessages = 0;
     pendingActions = pendingActions.filter(function (entry) {
       if (entry.label !== "chat_message") return true;
@@ -8052,9 +7562,6 @@
     if (input) { try { input.focus(); } catch (e) {} }
   });
 
-  // The local endpoint invalidates the server session before redirecting to
-  // Keycloak, so a deliberate click is the web client's definitive sign-out
-  // event. Token refresh/auth_required never traverses this path.
   document.addEventListener("click", function (event) {
     var link = event.target.closest && event.target.closest('a[href^="/auth/logout"]');
     if (link) {
@@ -8065,9 +7572,7 @@
       teardownVoiceMedia(true);
       clearPendingVoiceSubmissions();
       bestEffortEndVoice(voiceFence);
-      // Clear credentials before navigation. A Keycloak end-session redirect
-      // leaves this tab's sessionStorage alive, so retaining TOKEN_KEY could
-      // register the next account's WebSocket as the previous principal.
+      // An end-session redirect keeps sessionStorage, so the token is cleared before navigating
       token = "";
       window.__ASTRAL_TOKEN__ = "";
       try {
@@ -8079,12 +7584,6 @@
     }
   }, true);
 
-  // ---- stacked-shell chrome: the web twin of Android's StackedShell.
-  // Recent chats live behind the topbar speech-bubble button (full-screen
-  // overlay of the same server-rendered #astral-history region), and the
-  // transcript collapses behind a "Messages (N)" bar above the input.
-  // Split layouts never see these controls — astral.css gates them on
-  // body[data-astral-layout="stacked"].
   function closeHistoryOverlay() {
     document.body.classList.remove("astral-history-open");
     if (chatsBtn) chatsBtn.setAttribute("aria-expanded", "false");
@@ -8120,14 +7619,11 @@
   if (window.MutationObserver && chat) new MutationObserver(syncMsgsToggle).observe(chat, { childList: true });
   syncMsgsToggle();
 
-  // Delegated handlers for server-rendered interactive primitives
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest(".astral-action");
     if (btn) {
       var act = btn.getAttribute("data-action"); var payload = {};
       try { payload = JSON.parse(btn.getAttribute("data-payload") || "{}"); } catch (_) {}
-      // Actions emitted inside a workspace component carry its identity;
-      // historical views are inert except chrome actions.
       var compHost = btn.closest && btn.closest("[data-component-id]");
       if (compHost && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
       if (!payload.chat_id && activeChatId && !(act === "chrome_open" && payload.surface === "work")) {
@@ -8137,9 +7633,6 @@
         setStatus("Read-only history view — go back to live to interact.");
         return;
       }
-      // A chat_message action (e.g. the welcome examples' buttons) is exactly
-      // a typed message — present it the same way: user bubble + the standard
-      // chat payload shape.
       if (act === "chat_message" && payload.message) { sendChat(payload.message); return; }
       if (act === "chrome_open") showModalSkeleton(act, payload);
       if (act === "load_chat" && payload.chat_id) {
@@ -8148,17 +7641,14 @@
         return;
       }
       if (act) action(act, payload);
-      if (act === "load_chat") closeHistoryOverlay(); // mobile: leave the full-screen list
+      if (act === "load_chat") closeHistoryOverlay();
       return;
     }
-    // param_picker toggle buttons (checklist)
     var chip = e.target.closest && e.target.closest(".astral-pp-field[data-kind='checklist']");
     if (chip) { var on = chip.getAttribute("aria-pressed") === "true"; chip.setAttribute("aria-pressed", on ? "false" : "true");
       chip.classList.toggle("bg-astral-primary/30"); chip.classList.toggle("border-astral-primary"); chip.classList.toggle("text-white"); return; }
-    // param_picker submit
     var sub = e.target.closest && e.target.closest(".astral-pp-submit");
     if (sub) { submitParamPicker(sub.closest(".astral-param-picker")); return; }
-    // table pagination
     var pgPrev = e.target.closest && e.target.closest(".astral-page-prev");
     var pgNext = e.target.closest && e.target.closest(".astral-page-next");
     if (pgPrev || pgNext) { paginate(e.target.closest(".astral-pagination"), pgNext ? 1 : -1); return; }
@@ -8196,8 +7686,6 @@
     });
     sendChat(msg);
   }
-  // Pagination carries the table's component identity so the server updates
-  // ONLY that table in place via the standardized component_action pipeline.
   function paginateComponentId(el) {
     var host = el && el.closest && el.closest("[data-component-id]");
     return host ? host.getAttribute("data-component-id") : null;
@@ -8218,11 +7706,6 @@
       params: Object.assign({}, ctx.source_params, { limit: size, offset: 0 }) });
   }
 
-  // ---- 055 US4/US5: component chrome (refine / history / export / share) ----
-  // The server renders the affordances (flag-gated, renderer.py
-  // _component_chrome); this block owns their click behavior. The instruction
-  // capture is an inline popover (same idiom as the paperclip menu — the
-  // codebase never uses window.prompt/alert).
   var chromePop = null;
   function closeChromePop() {
     if (chromePop && chromePop.parentNode) chromePop.parentNode.removeChild(chromePop);
@@ -8230,7 +7713,7 @@
   }
   function openChromePop(anchor) {
     closeChromePop();
-    var row = anchor.parentNode; // the .astral-component-chrome affordance row
+    var row = anchor.parentNode;
     if (row && !row.style.position) row.style.position = "relative";
     chromePop = document.createElement("div");
     chromePop.className = "astral-chrome-pop";
@@ -8328,8 +7811,7 @@
     });
   }
 
-  // Exports are authenticated downloads: fetch with the bearer token, then
-  // hand the blob to a temporary <a download> (a plain href can't carry auth).
+  // A plain href cannot carry the bearer token, so exports download as fetched blobs
   async function snapshotCanvasDocument() {
     return window.AstralCanvasExport.snapshot({
       canvas: canvas,
@@ -8357,8 +7839,6 @@
       .then(function (r) {
         if (!r.ok) throw new Error(r.status === 409 ? "Canvas changed. Reload the chat before exporting." : "Export failed (" + r.status + ")");
         if (ownerEpoch !== accountPrivacyEpoch || exportChatId !== activeChatId) return null;
-        // The authenticated endpoint still authorizes and audits the export.
-        // After approval, capture exactly the visible canvas, including charts.
         if (visualCanvas) {
           if (lastCommittedRenderRevision() !== exportRevision || r.headers.get("X-Astral-Render-Revision") !== String(exportRevision)) throw new Error("Canvas changed. Reload the chat before exporting.");
           return snapshotCanvasDocument();
@@ -8462,15 +7942,6 @@
       });
   }
 
-  // Canvas page actions (export page / share page). The server stamps the flag
-  // state as data-astral-export / data-astral-share on the .dynamic-renderer
-  // root of every full canvas render (renderer.py _workspace_flag_attrs).
-  //
-  // These controls used to be a sticky bar pinned above the canvas content.
-  // They now live in the TOP BAR (chrome/topbar.py renders them `hidden`) and
-  // this function only decides whether each one is shown — so the canvas, the
-  // primary surface, keeps its full height and no strip of chrome sits over
-  // the first component. Same buttons, same classes, same delegated handlers.
   var canvasFlags = { exp: false, share: false };
   function readCanvasFlags() {
     var r = canvas.querySelector(".dynamic-renderer");
@@ -8478,8 +7949,6 @@
     canvasFlags.share = !!(r && r.getAttribute("data-astral-share"));
   }
   function syncCanvasToolbar() {
-    // A historical (timeline) view is read-only, and an empty canvas has
-    // nothing to export or share — in both cases neither control appears.
     var live = !timelineMode && !!canvas.querySelector(".dynamic-renderer");
     var exportBtn = document.getElementById("astral-export-page-btn");
     var shareBtn = document.getElementById("astral-share-page-btn");
@@ -8515,10 +7984,8 @@
     if (chromePop && !chromePop.contains(t)) closeChromePop();
   });
 
-  // Attachment staging: paperclip → pick → upload → chip → send as structured
-  // attachments[] on the next chat_message.
   var CHIP_CLOSE_SVG = "<svg viewBox=\"0 0 24 24\" width=\"12\" height=\"12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.5\" stroke-linecap=\"round\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"></path></svg>";
-  var stagedAttachments = [];   // {uid, attachment_id|null, filename, category, state, note}
+  var stagedAttachments = [];
   var attachSeq = 0;
   var MAX_ATTACHMENTS = 10;
   var attachEl = document.getElementById("astral-attachments");
@@ -8561,8 +8028,6 @@
       x.className = "astral-chip-remove";
       x.setAttribute("aria-label", "Remove " + a.filename);
       x.setAttribute("data-remove-uid", String(a.uid));
-      // Drawn, not typed: the multiplication sign carries its own line box,
-      // which overflowed the button and sat off its centre.
       x.innerHTML = CHIP_CLOSE_SVG;
       chip.appendChild(x);
       attachEl.appendChild(chip);
@@ -8593,7 +8058,6 @@
         entry.attachment_id = j.attachment_id || null;
         entry.category = j.category || "file";
         entry.state = entry.attachment_id ? "ready" : "failed";
-        // Surface the eager auto-parser status (US2) on the chip.
         var ps = j.parser_status;
         if (ps === "preparing") entry.note = "preparing reader…";
         else if (ps === "pending_admin_approval") entry.note = "reader pending admin";
@@ -8610,7 +8074,6 @@
       });
   }
 
-  // Paperclip → small menu: upload a new file, or choose an existing one (US3).
   var attachMenu = null;
   function closeAttachMenu() { if (attachMenu) { attachMenu.remove(); attachMenu = null; } }
   function openAttachMenu() {
@@ -8639,8 +8102,6 @@
       if (attachMenu && !attachMenu.contains(e.target) && e.target !== attachBtn) closeAttachMenu();
     });
   }
-  // Attach an EXISTING file from the library modal — stage a ready chip with no
-  // re-upload, then close the modal (US3).
   document.addEventListener("click", function (e) {
     var btn = e.target.closest && e.target.closest(".astral-attach-existing");
     if (!btn) return;
@@ -8659,14 +8120,12 @@
     }
     if (typeof setModal === "function") setModal("");
   });
-  // Remove-chip delegation.
   if (attachEl) {
     attachEl.addEventListener("click", function (e) {
       var rm = e.target.closest && e.target.closest("[data-remove-uid]");
       if (rm) { removeStaged(parseInt(rm.getAttribute("data-remove-uid"), 10)); }
     });
   }
-  // File selection (the hidden input carries class astral-file-upload).
   document.addEventListener("change", function (e) {
     if (!(e.target.classList && e.target.classList.contains("astral-file-upload"))) return;
     var files = e.target.files ? Array.prototype.slice.call(e.target.files) : [];
@@ -8675,32 +8134,23 @@
     if (room <= 0) { setStatus("You can attach up to " + MAX_ATTACHMENTS + " files per message."); e.target.value = ""; return; }
     if (files.length > room) { setStatus("Only " + room + " more file(s) can be attached to this message."); files = files.slice(0, room); }
     files.forEach(uploadStagedFile);
-    e.target.value = "";  // allow re-selecting the same file later
+    e.target.value = "";
   });
 
-  // ---- 055 cross-device continuity: background-run arming + task chips ----
-  // The composer toggle next to the paperclip arms async_mode for the NEXT
-  // send only; sendChat reads bgArmed via hoisting (same contract as the
-  // attachment helpers above it) and disarms after the message goes out.
   var bgBtn = document.getElementById("astral-bg-btn");
   var bgArmed = false;
   function setBgArmed(on) {
     bgArmed = !!on;
     if (!bgBtn) return;
     bgBtn.setAttribute("aria-pressed", bgArmed ? "true" : "false");
-    // Armed look via the runtime theme tokens — this file styles its own
-    // dynamic chrome inline (see showToast/openChromePop).
     bgBtn.style.cssText = bgArmed
       ? "color:rgb(var(--astral-primary));border-color:rgb(var(--astral-primary) / .7);background:rgb(var(--astral-primary) / .15);"
       : "";
   }
   if (bgBtn) bgBtn.addEventListener("click", function () { setBgArmed(!bgArmed); });
 
-  // One slim chip per running background task (keyed by task_id, cleared by
-  // its task_completed). Lives at the top of the composer so it survives chat
-  // switches; tapping a chip opens the task's chat.
-  var bgTaskChips = {};  // task_id → chip element
-  var bgTaskDone = {};   // task_id → true (dedupes watcher + fan-out copies)
+  var bgTaskChips = {};
+  var bgTaskDone = {};
   var bgTaskHost = null;
   function bgTaskHostEl() {
     if (!bgTaskHost && form) {
@@ -8743,23 +8193,14 @@
     if (chip && chip.parentNode) chip.parentNode.removeChild(chip);
     delete bgTaskChips[taskId];
     syncBgTaskHost();
-    // Don't leave the dispatch-time status text stranded once nothing runs.
     var any = false;
     for (var k in bgTaskChips) { any = true; break; }
     if (!any && statusEl && statusEl.textContent === "Running in background…") setStatus("");
   }
 
-  // Chrome runtime: settings menu, modal surfaces, generic [data-ui-action]
-  // delegation, and the tour step-runner. Server renders all chrome HTML
-  // (webrender/chrome/); this block is plumbing only.
   var modalRoot = document.getElementById("astral-modal");
   var modalReturnFocus = null;
 
-  // ---- chrome_open perceived latency (feature 052): a local skeleton fills
-  // the modal instantly; chrome_render replaces it via setModal. If nothing
-  // arrives within the timeout, a retry card re-sends the same chrome_open
-  // instead of leaving an infinite shimmer. Focus is NOT moved here so
-  // setModal still captures the real return-focus element when it lands.
   var MODAL_SKELETON_TIMEOUT_MS = 6000;
   var modalSkeletonTimer = null;
   var modalSkeletonRequest = null;
@@ -8788,12 +8229,9 @@
     + '<button type="button" class="astral-modal-close px-3 py-1.5 rounded-lg text-xs '
     + 'bg-white/5 border border-white/10 text-astral-text">Close</button></div>';
 
-  /** The settings dialog currently on screen, if one is. */
   function openSettingsDialog() {
     return modalRoot && modalRoot.querySelector(".astral-modal-card.has-nav");
   }
-  /** Move the rail current marker onto the given key, so the rail says where
-   *  you are while the pane it points at is still loading. */
   function markNavCurrent(key) {
     var nav = modalRoot && modalRoot.querySelector(".astral-settings-nav");
     if (!nav || !key) return;
@@ -8805,9 +8243,6 @@
         current = items[i];
       } else items[i].removeAttribute("aria-current");
     }
-    // Name the section being opened straight away. Leaving the previous
-    // section's heading over a loading pane says the dialog is showing
-    // something it is not.
     var heading = modalRoot.querySelector(".astral-modal-title");
     if (current && heading) {
       heading.textContent = (current.textContent || "").trim() || heading.textContent;
@@ -8815,8 +8250,6 @@
       if (subtitle) subtitle.remove();
     }
   }
-  /** Put bodyHtml in the open dialog pane, keeping the dialog itself. False
-   *  when there is no dialog to put it in. */
   function setDialogPane(bodyHtml) {
     var card = openSettingsDialog();
     var body = card && card.querySelector(".astral-modal-body");
@@ -8828,10 +8261,6 @@
     if (!modalRoot) return;
     clearModalSkeletonTimer();
     modalSkeletonRequest = { action: act, payload: payload || {} };
-    // Moving between settings sections keeps the dialog: only the pane goes to
-    // a skeleton. Replacing the whole thing made the dialog close and reopen
-    // on every rail click, and put the slow-render card where the dialog had
-    // been whenever a render took its time.
     var inPlace = act === "chrome_open" && openSettingsDialog()
       && setDialogPane(SKELETON_BODY_HTML);
     if (inPlace) markNavCurrent((payload || {}).surface);
@@ -8853,8 +8282,6 @@
     });
   }
 
-  /** Replace selector inside card with node, insert it after `after` when it
-   *  is new, or remove what is there when node is absent. */
   function replaceOrDrop(root, selector, node, after, before) {
     var existing = root.querySelector(selector);
     if (node && existing) existing.replaceWith(node);
@@ -8864,14 +8291,6 @@
     else if (existing) existing.remove();
   }
 
-  /** Swap an open settings dialog contents for html without replacing the
-   *  dialog itself.
-   *
-   *  Every settings surface renders the same card and the same rail; the
-   *  heading, the optional tab strip, the pane and the footer are what differ.
-   *  Rebuilding all of it on a rail click threw away the rail scroll position,
-   *  moved focus, and made the dialog blink out and back. False when the
-   *  incoming dialog is not the same kind, and the caller replaces it whole. */
   function morphSettingsDialog(html) {
     var card = openSettingsDialog();
     if (!card) return false;
@@ -8882,8 +8301,6 @@
     var nextNav = next && next.querySelector(".astral-settings-nav");
     var nav = card.querySelector(".astral-settings-nav");
     if (!next || !nextBody || !nextNav || !nav) return false;
-    // A dialog that refuses dismissal is a different contract from one that
-    // does not; never morph one into the other.
     if (next.hasAttribute("data-mandatory") !== card.hasAttribute("data-mandatory")) return false;
 
     var overlay = modalRoot.querySelector(".astral-modal-overlay");
@@ -8903,50 +8320,36 @@
       var nextHeading = nextHeader.querySelector(".astral-modal-heading");
       if (heading && nextHeading) heading.replaceWith(nextHeading);
     }
-    // The tab strip lives in the pane beside the rail, above the body.
     var pane = card.querySelector(".astral-modal-pane") || card;
     replaceOrDrop(pane, ".astral-modal-tabs", next.querySelector(".astral-modal-tabs"), null,
                   pane.querySelector(".astral-modal-body"));
     card.querySelector(".astral-modal-body").replaceWith(nextBody);
     replaceOrDrop(card, ".astral-modal-footer", next.querySelector(".astral-modal-footer"), null);
-    // The rail is the same inventory on every surface, so it stays where it is
-    // (with its scroll intact) and only its current marker moves.
     var current = nextNav.querySelector('[aria-current="true"]');
     markNavCurrent(current && current.getAttribute("data-menu-key"));
     processSideEffects(nextBody);
     return true;
   }
 
-  /** Replace the chrome modal content; empty html closes it (restores focus). */
   function setModal(htmlStr) {
     if (!modalRoot) return;
     clearAuthoringControlPending();
     clearModalSkeletonTimer();
     if (htmlStr) {
-      // A settings dialog that is already open keeps its card, its rail and
-      // its scroll; only the pane it is showing is replaced. The dialog is
-      // static from the moment it opens until it is closed.
       var swapped = morphSettingsDialog(htmlStr);
       if (!swapped) {
         modalReturnFocus = document.activeElement;
         modalRoot.innerHTML = htmlStr;
         processSideEffects(modalRoot);
       }
-      // Feature 077: the "My agents & skills" surface carries the user's
-      // current /commands — refresh the typeahead without a reload.
       if (typeof window.__astralRefreshCommands === "function") window.__astralRefreshCommands(modalRoot);
       adoptServerSelection(modalRoot);
-      // Focus moves on open, not on a section change: stealing it back to the
-      // card would drop a keyboard user out of the rail on every click.
       if (!swapped) {
         var card = modalRoot.querySelector(".astral-modal-card");
         if (card) card.focus();
       }
       var pendingTour = tourState;
       maybeStartTour();
-      // A step waiting on the settings dialog can be shown now that its rail
-      // is in the DOM. The tour card sits above the dialog, so the highlighted
-      // entry stays visible behind it.
       if (tourState && tourState === pendingTour && tourAwaitingChrome === tourState.idx) showTourStep();
     } else {
       modalRoot.innerHTML = "";
@@ -8954,10 +8357,6 @@
       modalReturnFocus = null;
     }
   }
-  /** Feature 054: a modal whose card carries data-mandatory (the first-run
-   *  provider-setup gate) refuses every dismissal affordance — ✕/backdrop/
-   *  Escape all funnel here. The server closes it after a successful save;
-   *  the dialog's "Sign out" link is the one escape hatch. */
   function modalIsMandatory() {
     return !!(modalRoot && modalRoot.querySelector && modalRoot.querySelector(".astral-modal-card[data-mandatory]"));
   }
@@ -8967,7 +8366,6 @@
     setModal(""); action("chrome_close", {});
   }
 
-  // ---- settings menu (static, server-rendered; WAI-ARIA menu pattern) ----
   function menuEl() { return document.getElementById("astral-settings-menu"); }
   function menuBtn() { return document.getElementById("astral-settings-btn"); }
   function menuItems() {
@@ -8980,9 +8378,7 @@
     m.hidden = !open;
     b.setAttribute("aria-expanded", open ? "true" : "false");
     if (open && focusFirst) { var items = menuItems(); if (items.length) items[0].focus(); }
-    // Restoring focus to the gear is right for normal open/close, but mid-tour
-    // it would arm the button's Enter/Space/ArrowDown handler — the next key
-    // press would reopen the menu instead of advancing the tour.
+    // Refocusing the gear mid-tour would let the next key reopen the menu instead of advancing
     if (!open && !tourState) { try { b.focus(); } catch (e) {} }
   }
   function menuMove(delta, edge) {
@@ -8993,16 +8389,10 @@
   }
 
   document.addEventListener("click", function (e) {
-    // The gear opens the settings dialog through the ordinary chrome_open
-    // delegation below. It only toggles a popover on a build that still
-    // renders one, so this branch must not swallow the click otherwise.
     var btn = e.target.closest && e.target.closest("#astral-settings-btn");
     if (btn && menuEl()) { setMenu(!menuOpen(), false); return; }
-    // Tour-card clicks must not count as "outside" — the tour opens the menu
-    // to spotlight in-menu targets, and Next would otherwise close it again.
     var inTour = e.target.closest && e.target.closest("#astral-tour-card");
     if (menuOpen() && !inTour && !(e.target.closest && e.target.closest("#astral-settings-menu"))) setMenu(false, false);
-    // modal close affordances: X button or backdrop click
     if (e.target.closest && e.target.closest(".astral-modal-close")) { closeModal(); return; }
     var backdrop = e.target.classList && e.target.classList.contains("astral-modal-backdrop");
     if (backdrop) closeModal();
@@ -9028,7 +8418,6 @@
     else if (e.key === "Tab") { e.preventDefault(); menuMove(e.shiftKey ? -1 : 1); }
   });
 
-  // ---- generic [data-ui-action] delegation (chrome surfaces + creation cards) ----
   function collectChromeFields(container) {
     var fields = {};
     if (!container) return fields;
@@ -9066,7 +8455,7 @@
             });
           }
         }
-      } catch (error) { /* Malformed conditions keep the field hidden. */ }
+      } catch (error) {}
       group.hidden = !visible;
     }
   }
@@ -9106,9 +8495,6 @@
     el.setAttribute("aria-busy", "true");
     el.setAttribute("aria-disabled", "true");
     el.setAttribute("data-control-state", "submitting");
-    // Preserve the native button in the focus order while exposing a guarded
-    // single-flight state. The server-rendered replacement clears the state;
-    // this bound restores it if a response never arrives.
     pendingAuthoringTimer = setTimeout(clearAuthoringControlPending, 10000);
     return true;
   }
@@ -9126,14 +8512,10 @@
     if (el.getAttribute("data-ui-collect") === "true") {
       payload.fields = collectChromeFields(el.closest("[data-ui-form]") || modalRoot);
     }
-    // The timeline surface needs the active chat, which only the client knows
-    // at click time (the static menu is rendered per shell).
     if (act === "chrome_open" && payload.surface === "workspace_timeline") {
       payload.params = payload.params || {};
       if (!payload.params.chat_id && activeChatId) payload.params.chat_id = activeChatId;
     }
-    // "Load" fills the composer and stops there: it is a local convenience,
-    // never a turn, so it is handled here and nothing is sent.
     if (act === "compose_prompt") {
       e.preventDefault();
       closeModal();
@@ -9152,9 +8534,6 @@
     if (act === "chat_message" && modalRoot && modalRoot.contains(el)) closeModal();
     if (act === "chrome_open") { setMenu(false, false); showModalSkeleton(act, payload); }
     if (act === "chrome_turn_selection_set") {
-      // 088 (T011): the button's payload IS the server-issued selection for
-      // exact revisions. Keep it under the verified owner's key (empty =>
-      // clear) and send the normalized shape; anything else is refused here.
       var chosen = normalizeTurnSelection(payload);
       if (!chosen) {
         e.preventDefault();
@@ -9167,24 +8546,16 @@
     action(act, payload);
   });
 
-  // 088 (T011): the summary chip's x clears the selection locally; focus moves
-  // to Advanced so keyboard users are not dropped when the chip disappears.
   document.addEventListener("click", function (e) {
     var clear = e.target.closest && e.target.closest("#astral-selection-clear");
     if (!clear) return;
     clearTurnSelection();
-    // Back to the control that opens the picker. Below 768 that control sits
-    // behind the composer's overflow button, and focusing something the
-    // stylesheet is not showing drops the keyboard user nowhere.
     var advanced = document.getElementById("astral-advanced-btn");
     var target = advanced && advanced.offsetParent !== null
       ? advanced : (document.getElementById("astral-composer-more") || advanced);
     if (target) { try { target.focus(); } catch (err) {} }
   });
 
-  // Permission sections (Agents & permissions): the section master gates its
-  // tool switches — on enables them all, off clears and disables them. The
-  // server enforces the same rule on save; this just keeps the form honest.
   document.addEventListener("change", function (e) {
     var t = e.target;
     if (!(t.classList && t.classList.contains("astral-perm-master"))) return;
@@ -9197,11 +8568,6 @@
     if (body) body.classList.toggle("opacity-50", !on);
   });
 
-  // LLM provider picker (feature 054): the chrome modal is static HTML with no
-  // reactive re-render, so toggle the endpoint field client-side when the
-  // provider dropdown changes — show the free-form base_url input only for
-  // "custom", otherwise show the (auto-set) preset endpoint caption. The
-  // server still derives the URL for presets, so the hidden input is inert.
   document.addEventListener("change", function (e) {
     var t = e.target;
     if (!(t.classList && t.classList.contains("astral-llm-provider"))) return;
@@ -9222,15 +8588,10 @@
       if (custom) custom.style.display = "none";
       if (preset) preset.style.display = "";
       if (urlEl) urlEl.textContent = map[t.value] || "";
-      if (input) input.value = "";  // preset URL is derived server-side
+      if (input) input.value = "";
     }
   });
 
-  // Feature 063: the remote-machines "Credential type" dropdown toggles which
-  // credential fields are shown — SSH key + passphrase for "ssh_key", the
-  // password field for "password". Both groups are always in the DOM (the chrome
-  // modal has no reactive re-render); this flips display to match the selection.
-  // Same static-modal pattern as the LLM provider/endpoint toggle above.
   document.addEventListener("change", function (e) {
     var t = e.target;
     if (!(t.classList && t.classList.contains("astral-cred-type"))) return;
@@ -9413,7 +8774,6 @@
     window.visualViewport.addEventListener("scroll", positionTour);
   }
 
-  // ---- connection lifecycle ----
   function connect() {
     if (accountSignedOut) return;
     var preserveVoiceControls = !!voiceRecoverableFence() || !!voicePendingEndFence;
@@ -9425,7 +8785,6 @@
     voiceBackendPrime = null;
     clearVoiceBindingRenewal();
     if (voiceControlsEl && !preserveVoiceControls) {
-      // 066: never leave the composer without a voice affordance.
       renderDefaultVoiceControl("Voice unavailable while reconnecting…");
     }
     connectionGeneration = randomUuid4();
@@ -9435,19 +8794,10 @@
       if (accountSignedOut || ws !== thisSocket) return;
       attempts = 0; authRetried = false; setStatus("");
       setConnState("connecting", "Registering…");
-      // resumed: firstConnect ? serverResumed : true
       sendRegistration(firstConnect ? serverResumed : true);
       firstConnect = false;
-      // Startup/reconnect metadata is retained and reconciled like every other
-      // operation, but it is not user work and must not flash a global spinner.
       action("get_history", {}, false);
-      // 066: ask for the agent catalog once per connection (Windows and
-      // Android already do; the web client never did) so step labels can
-      // name the agent behind a tool.
       action("discover_agents", {}, false);
-      // Re-attach to still-running background tasks: watch_task re-registers
-      // this socket as a watcher and answers task_completed immediately when
-      // the task finished while the socket was down.
       for (var tid in bgTaskChips) action("watch_task", { task_id: tid }, false);
     };
     ws.onmessage = function (event) {
@@ -9473,28 +8823,20 @@
         setVoiceFeedback("reconnecting", "network_interrupted", null, true);
       }
       setStatus("Disconnected"); attempts++;
-      hideSkeleton(); // the in-flight turn died with the socket
-      clearTransientOverlay(); // old connection/request previews are disposable
-      // Refresh the session token BEFORE reconnecting so a register_ui after
-      // the access-token TTL recovers silently instead of dead-ending. First
-      // connect uses the shell-injected token directly.
+      hideSkeleton();
+      clearTransientOverlay();
+      // Refresh first so a register_ui after the access-token TTL recovers silently
       if (attempts <= 10) setTimeout(function () {
         refreshToken(false, function () { connect(); });
       }, 3000);
     };
   }
-  // Account digest and locator selection complete before the first socket can
-  // register. If the shell token cannot be decoded, /auth/session gets one
-  // bounded chance to provide a fresh token; connection still fails closed at
-  // the server when that session is unavailable.
   prepareAccountIdentity(token, null).then(function (ready) {
     if (ready) connect();
     else refreshToken(false, function () { connect(); });
   }).catch(function () { connect(); });
 
-  // Plotly is backend-neutral. LiveKit is deliberately not prefetched until
-  // authenticated v2 discovery selects llm_factory; a client_local page must
-  // never fetch or parse the remote media stack.
+  // LiveKit is not prefetched until discovery selects llm_factory; client_local never fetches it
   function idlePrefetchVendorBundles() {
     ensurePlotly(null);
     if (voiceSpeechBackend === "llm_factory") ensureLiveKitSdk(null);
@@ -9502,15 +8844,7 @@
   if (window.requestIdleCallback) window.requestIdleCallback(idlePrefetchVendorBundles, { timeout: 5000 });
   else setTimeout(idlePrefetchVendorBundles, 2500);
 
-  // ==========================================================================
-  // Feature 089 — the a8p console: agent directory, landing, response-card
-  // full screen, the drawer, the dialog's tabs, and the parity hook.
-  //
-  // Everything here reads from window.__ASTRAL_LANDING__ (server-built, web
-  // only) or from elements already in the shell. Untrusted strings — agent
-  // names and descriptions, example titles — are written with textContent,
-  // never innerHTML.
-  // ==========================================================================
+  // Untrusted agent names, descriptions and example titles are written with textContent only
   var LANDING = (function () {
     var raw = window.__ASTRAL_LANDING__;
     if (!raw || typeof raw !== "object") return { scenarios: [], categories: [], agents: [] };
@@ -9527,7 +8861,6 @@
     if (text != null) node.textContent = text;
     return node;
   }
-  // ---- the agent directory ------------------------------------------------
   var agentListEl = document.getElementById("astral-agent-list");
   var agentCountEl = document.getElementById("astral-agent-count");
   var agentSearchEl = document.getElementById("astral-agent-search");
@@ -9548,13 +8881,6 @@
     item.appendChild(dot);
     item.setAttribute("aria-label", (agent.name || "Agent")
       + (agent.state === "ready" ? "" : " — disabled"));
-    // Clicking an agent asks what it is for, which is what someone
-    // browsing a directory of unfamiliar agents actually wants. It used to
-    // drop an "@Name" mention into the composer, and only when the composer
-    // was empty — so the second agent you clicked appeared to do nothing
-    // while the first one's name sat in the box. The dialog answers the
-    // question and offers the agent's own examples; Run still goes out as an
-    // ordinary turn through the ordinary gates.
     item.addEventListener("click", function () {
       for (var i = 0; i < agentItems.length; i++) agentItems[i].classList.remove("is-active");
       item.classList.add("is-active");
@@ -9596,7 +8922,6 @@
   if (agentSearchEl) agentSearchEl.addEventListener("input", filterAgentDirectory);
   renderAgentDirectory();
 
-  // ---- the landing: status pills, filter tabs, scenario cards -------------
   var statusAgentsEl = document.getElementById("astral-status-agents");
   var statusAuditEl = document.getElementById("astral-status-audit");
   var resumePill = document.getElementById("astral-status-resume");
@@ -9680,10 +9005,6 @@
   renderFilterTabs();
   renderScenarioGrid();
 
-  // ---- chrome homes ------------------------------------------------------
-  // The chat controls belong with the chat list; the canvas page actions
-  // belong in the card whose canvas they act on. Moving the server's own
-  // nodes keeps every id, label, tour target and delegated action intact.
   var recentToggleEl = document.getElementById("astral-recent-toggle");
   var chatActionsHost = null;
   (function placeChatControls() {
@@ -9691,14 +9012,10 @@
     chatActionsHost = el("div", "astral-recent-actions");
     recentToggleEl.parentNode.insertBefore(chatActionsHost, recentToggleEl);
     chatActionsHost.appendChild(recentToggleEl);
-    // New chat only. Recent chats used to come too, but the list it opens is
-    // the one directly below this heading, so on the web it was a button that
-    // showed you what you were already looking at.
     var newChat = document.getElementById("astral-newchat-btn");
     if (newChat) chatActionsHost.appendChild(newChat);
   })();
 
-  /** Move the canvas page actions into the newest card's header. */
   function placePageActions() {
     if (!liveTurn) return;
     var actions = pageActionNodes;
@@ -9706,7 +9023,6 @@
   }
   placePageActions();
 
-  // ---- the brand returns to the landing ----------------------------------
   var brandBtn = document.getElementById("astral-brand");
   if (brandBtn) brandBtn.addEventListener("click", function () {
     setWorkspaceView("start", true);
@@ -9722,24 +9038,20 @@
     if (newChatBtn) newChatBtn.click();
   });
 
-  // ---- recent work: collapsible ------------------------------------------
   var recentToggle = document.getElementById("astral-recent-toggle");
   var recentSection = document.getElementById("astral-recent-work");
   if (recentToggle) recentToggle.addEventListener("click", function () {
     var open = recentToggle.getAttribute("aria-expanded") === "true";
     recentToggle.setAttribute("aria-expanded", open ? "false" : "true");
-    // The section owns the collapsed state: the toggle has been re-homed away
-    // from the list it controls, so it can no longer style it as a sibling.
     if (recentSection) recentSection.classList.toggle("is-collapsed", open);
   });
 
-  // ---- the full-screen result view ---------------------------------------
   var fsRoot = document.getElementById("astral-fullscreen");
   var fsCanvas = document.getElementById("astral-fs-canvas");
   var fsTitle = document.getElementById("astral-fs-title");
   var fsSub = document.getElementById("astral-fs-sub");
   var fsExit = document.getElementById("astral-fs-exit");
-  var fsSource = null;      // the card body whose content is on screen
+  var fsSource = null;
   var fsReturnFocus = null;
 
   var fsSourceHost = null;
@@ -9834,7 +9146,6 @@
     }
   }, true);
 
-  // ---- the settings dialog's section tabs --------------------------------
   function showModalSection(root, key) {
     var sections = root.querySelectorAll("[data-section]");
     if (!sections.length) return;
@@ -9854,7 +9165,6 @@
     var root = tab.closest(".astral-modal-card");
     if (root) showModalSection(root, tab.getAttribute("data-section-target"));
   });
-  // A freshly rendered dialog starts on its first section.
   if (typeof modalRoot !== "undefined" && modalRoot && window.MutationObserver) {
     new MutationObserver(function () {
       var card = modalRoot.querySelector(".astral-modal-card");
@@ -9863,7 +9173,6 @@
     }).observe(modalRoot, { childList: true });
   }
 
-  // ---- the drawer (<1024) -------------------------------------------------
   var drawerToggle = document.getElementById("astral-drawer-toggle");
   var drawerBackdrop = document.getElementById("astral-drawer-backdrop");
   var sidebarEl = document.getElementById("astral-sidebar");
@@ -9926,8 +9235,6 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && drawerOpen()) { e.preventDefault(); setDrawer(false); }
   });
-  // A click on the backdrop area is the ordinary way out on touch; a click
-  // anywhere outside the open drawer counts as the same intent.
   document.addEventListener("click", function (e) {
     if (!drawerOpen() || !sidebarEl) return;
     if (e.target.closest && e.target.closest("#astral-tour-card")) return;
@@ -9935,7 +9242,6 @@
     setDrawer(false);
   });
 
-  // ---- the composer options menu -----------------------------------------
   var composerMore = document.getElementById("astral-composer-more");
   if (composerMore) {
     composerMore.addEventListener("click", function (e) {
@@ -9954,7 +9260,6 @@
     }
     document.addEventListener("click", function (e) {
       if (composerMore.getAttribute("aria-expanded") !== "true") return;
-      // Advancing the tour may have just revealed this menu's stable target.
       if (e.target.closest && e.target.closest("#astral-tour-card")) return;
       var group = document.getElementById("astral-composer-controls");
       if (composerMore.contains(e.target) || (group && group.contains(e.target))) return;
@@ -9968,11 +9273,6 @@
     });
   }
 
-  // ---- the parity hook ----------------------------------------------------
-  // Test-only, and deliberately thin: it drives the SAME paths a person does,
-  // so what the parity harness measures is what a real turn produces. It
-  // renders nothing itself beyond routing a fixture's HTML through the normal
-  // component path.
   var viewportCallbacks = [];
   window.__ASTRAL_PARITY__ = {
     reset: function () {
@@ -10013,10 +9313,6 @@
         return;
       }
       hideCanvasEmpty();
-      // The candidate renders the fixture's components with ITS OWN renderer
-      // and ROTE profile, per viewport. Injecting the reference's markup
-      // instead would score the reference's styling twice and tell us nothing
-      // about this client.
       var html = "";
       var variants = fixture && fixture.astral_ui_html;
       if (variants) {
@@ -10043,12 +9339,6 @@
   };
 })();
 
-/* Feature 040 (US5): slash-command typeahead. Discovery only — the server
-   rewrites a "/command" into a normal prompt; nothing here invokes a tool. The
-   curated list mirrors orchestrator/slash_commands.COMMANDS. Feature 077: the
-   user's own skill commands join it — fetched once from GET /api/chrome/commands
-   and refreshed whenever the "My agents & skills" surface renders (its root
-   carries data-astral-commands with the current set). */
 (function () {
   var CURATED = [
     { name: "/help", desc: "show available commands" },
@@ -10086,13 +9376,13 @@
         if (!data || !Array.isArray(data.commands)) return;
         setMine(data.commands.filter(function (c) { return c && c.mine; }));
       })
-      .catch(function () { /* discovery only — the server still expands typed commands */ });
+      .catch(function () {});
   }
   window.__astralRefreshCommands = function (root) {
     var holder = root && root.querySelector ? root.querySelector("[data-astral-commands]") : null;
     if (!holder) return;
     try { setMine(JSON.parse(holder.getAttribute("data-astral-commands") || "[]")); }
-    catch (e) { /* malformed attribute: keep the current list */ }
+    catch (e) {}
   };
   window.__astralResetCommands = function (token) {
     ownerEpoch += 1;
@@ -10134,7 +9424,6 @@
 
   function update() {
     var trimmed = (input.value || "").replace(/^\s+/, "");
-    // Only while typing the command NAME: a leading "/" and no space yet.
     if (trimmed.charAt(0) !== "/" || trimmed.indexOf(" ") !== -1) { hide(); return; }
     var prefix = trimmed.toLowerCase();
     render(COMMANDS.filter(function (c) { return c.name.indexOf(prefix) === 0; }));

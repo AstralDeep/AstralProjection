@@ -245,7 +245,6 @@ private fun AuditCard(event: AuditEvent) {
     }
 }
 
-/** The three states of an SDUI settings surface while/after it is requested (T039). */
 enum class SurfaceViewState { Loaded, Loading, TimedOut }
 
 fun surfaceViewState(

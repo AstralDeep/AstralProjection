@@ -1,6 +1,6 @@
 """Serializes the component tree to a role/name/state AOM (accessibility object model)
-document, not markup, that voice navigation and assistive tech can walk; registered
-as the 'aom' render target in webrender.registry, behind FF_AOM_RENDERER.
+document, not markup, that voice navigation and assistive tech can walk; webrender/registry.py
+lists it as the built-in 'aom' target, selected only when a caller or profile names it.
 """
 
 from __future__ import annotations

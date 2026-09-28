@@ -27,8 +27,7 @@ class PackageError(ValueError):
 def run(*args: str) -> bytes:
     result = subprocess.run(args, capture_output=True, timeout=180, check=False)
     if result.returncode:
-        # The tool and its first option locate the failure; command output can carry
-        # identity details and never enters the error.
+        # Command output can carry identity details, so only the tool and option enter the error
         option = next((a.split("=", 1)[0] for a in args[1:] if a.startswith("-")), "")
         raise PackageError(f"{Path(args[0]).name}_failed {option}".rstrip())
     if args[0] == "codesign" and "--verbose=4" in args:
@@ -77,8 +76,8 @@ def certificate(path: Path, scratch: Path, arch: str | None = None) -> str:
         return hashlib.sha1(leaf.read_bytes()).hexdigest().upper() if leaf.is_file() else ""
 
 
+# SwiftPM resource bundles can be exported with no signature at all
 def unsigned_resource(code: Path, app: Path) -> bool:
-    """A SwiftPM resource bundle can be exported with no signature at all."""
     return (
         code.suffix == ".bundle"
         and code.is_relative_to(app / "Contents/Resources")
@@ -192,7 +191,6 @@ def verify_app(app: Path, scratch: Path, identity: str) -> None:
 
 
 def where(code: Path, app: Path) -> str:
-    """Names a code object by its place inside the app, which carries no identity detail."""
     return "app" if code == app else str(code.relative_to(app))
 
 
@@ -201,16 +199,15 @@ def normalized_metadata(root: Path) -> dict[str, bytes]:
     for path in [root / "Distribution", *root.glob("*.pkg/PackageInfo")]:
         element = ET.fromstring(path.read_bytes())
         for node in element.iter():
-            # Payload size and file count follow the re-signed bundles; signing a
-            # previously unsigned resource bundle adds its signature files.
+            # Re-signing changes payload size and file count, so neither is compared
             node.attrib.pop("installKBytes", None)
             node.attrib.pop("numberOfFiles", None)
         result[str(path.relative_to(root))] = ET.tostring(element)
     return result
 
 
+# Names the difference but never its values, which can carry identity details
 def metadata_difference(before: dict[str, bytes], after: dict[str, bytes]) -> str:
-    """Names the first differing metadata file, element and attribute, never their values."""
     for name in sorted(before.keys() | after.keys()):
         if name not in before or name not in after:
             return f"{name} presence"

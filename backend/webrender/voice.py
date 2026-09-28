@@ -1,6 +1,6 @@
 """Renders an astralprims component list to SSML for the 'voice' target, speaking
 structure (metrics, table rows, timeline events) instead of flattening to a string;
-registered via webrender.register_target.
+webrender/registry.py lists it as a built-in target.
 """
 
 from __future__ import annotations
