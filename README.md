@@ -17,6 +17,10 @@ the desktop and responsive control placement, native-client scope, and the
 local verification results. UI v2 names the web design checkpoint; it does not
 rename the Python package version or the shared wire protocol.
 
+[Render targets](docs/render-targets.md) documents each target registered with
+`webrender.registry`, how it is selected, what it renders, and which clients
+consume it.
+
 ## Repository layout
 
 - `src/astralprojection/` — stable contracts, packaged-resource access, and
