@@ -41,9 +41,13 @@ specification paths are not part of AstralProjection.
 6. **`param_picker` checklist/number field kinds** render natively but with
    simple controls (toggle list, decimal text field); date/file kinds fall
    back to text entry.
-7. **Plotly charts render as native approximations** (first trace, bar/line/
-   pie) exactly like the Windows/Android approximations; unsupported trace
-   kinds show the readable fallback.
+7. **Charts render through the shared chart template, not native
+   approximations.** Bar, line, pie and Plotly charts load the generated
+   `contracts/assets/charts/chart.html` with the pinned Plotly bundle into an
+   isolated, network-blocked, nonpersistent WKWebView (`OfflineChartView.swift`),
+   the same template Android embeds. A chart the template cannot draw shows its
+   readable error state, and a remote-asset chart hands off to the web client.
+   The watch does not render charts; they fall back per its disposition table.
 8. **Dev-backend LLM tool-calling degradation** (observed 2026-07-07): the
    dev orchestrator's configured LLM intermittently emits malformed tool
    calls, so agents reply "interactive components unavailable" with markdown

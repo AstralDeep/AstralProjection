@@ -7,9 +7,9 @@
       "sourcePath": "android-client/README.md",
       "sourceBlob": "a2f81fbfa8b081a3c339e870f5cc8ed05a16f1c9",
       "sourceMode": "100644",
-      "resultSha256": "a5578d2244a055f1af5b1ee851a5e061c1d0c02c3064b5df4aba62e17f60174e",
+      "resultSha256": "eb8e1c5c730701bd94bde740243004261a591ed86ff9f797248433b5d1950536",
       "task": "T188",
-      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows."
+      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Projection Constitution XII: describe android-ci's actual triggers and required jobs under Projection Principles X and IX, state that dependencies need only the catalog, lockfiles and verification metadata (Principle XI), and cite the Development Workflow live-verification rule."
     },
     {
       "path": "android-client/app/build.gradle.kts",
@@ -961,9 +961,9 @@
       "sourcePath": "android-client/gradle/libs.versions.toml",
       "sourceBlob": "6cec66b5b4c4842d9f0a7ea9fbc3216885a850c3",
       "sourceMode": "100644",
-      "resultSha256": "82828ae879287fe521102d9e3c1492342173ef1c41715438f4213f42f3dc2d1b",
+      "resultSha256": "5c954c7873e551a917f931d5221422e4d74918d6724dd2b684ccde3e2ed9ecff",
       "task": "T078",
-      "reason": "Feature 078: raise targetSdk and compileSdk from 35 to 36 to satisfy the Google Play target API level requirement (Play refused the targetSdk-35 bundle on 2026-09-03). Dependency versions are unchanged."
+      "reason": "Feature 078: raise targetSdk and compileSdk from 35 to 36 to satisfy the Google Play target API level requirement (Play refused the targetSdk-35 bundle on 2026-09-03). Dependency versions are unchanged. Replace the header comment's feature number and stale lead-dev approval text with the lock and verification-metadata pins; no dependency changes."
     },
     {
       "path": "android-client/gradle/verification-metadata.xml",
@@ -1825,18 +1825,18 @@
       "sourcePath": "apple-clients/KNOWN-ISSUES.md",
       "sourceBlob": "d2b6482f3f8ed21b25c1a344dad1f08ae5e12dd4",
       "sourceMode": "100644",
-      "resultSha256": "5f8649b1981000be18a6b2b1fd3ff60aa99338ce0a7349e7dcfec42fd5cc44d0",
+      "resultSha256": "3a51e91a25b5a05dad95e3b9ace2a9441efd3c8d9b858406fb860bac7443e794",
       "task": "T188",
-      "reason": "Replace broken monorepo task links with standalone Projection provenance guidance."
+      "reason": "Replace broken monorepo task links with standalone Projection provenance guidance. Projection Constitution XII: item 7 now describes the shared WebView chart template iOS, macOS and Android use instead of native approximations."
     },
     {
       "path": "apple-clients/README.md",
       "sourcePath": "apple-clients/README.md",
       "sourceBlob": "cb691c78cf96254f272637b5c6ab21f59a6cb0ed",
       "sourceMode": "100644",
-      "resultSha256": "6bc2a9763d261ecc1a9b2b5cab877f7e82c8c101eb9b7c100b9357aded34d314",
+      "resultSha256": "98b668df911807bd872a89957e08dfe17bbde7d8b2dc397fed8b45ae78d07535",
       "task": "T058/T188",
-      "reason": "Document active Apple owner CI, canonical Primitives identity, standalone provenance, portable fixture regeneration, and the required qualified-host gates. Feature 088 committed continuation: Document the qualified Mac Store package repair helper that preserves executable code and profile-authorized identities while correcting nested resource signatures."
+      "reason": "Document active Apple owner CI, canonical Primitives identity, standalone provenance, portable fixture regeneration, and the required qualified-host gates. Feature 088 committed continuation: Document the qualified Mac Store package repair helper that preserves executable code and profile-authorized identities while correcting nested resource signatures. Projection Constitution XII: state the pinned astralprims 0.4.0 and the mirror's 38 primitives, cite Projection Principle I for the pipeline, and point the Keycloak realm and BYO-agent references at AstralDeep's docs, which do not exist in this repository."
     },
     {
       "path": "apple-clients/Scripts/altool_strict.sh",
@@ -3404,11 +3404,11 @@
       "resultPaths": [
         {
           "path": ".github/workflows/android-ci.yml",
-          "sha256": "5a6b38ea074ab4e03ee5cae9eed583d685da864cd74d2c413fdf526d77348a51"
+          "sha256": "470e99f2a516cbafb0906cf14a40c007fa497b3966bb748e92686fa6797598b8"
         }
       ],
       "task": "T056/T015",
-      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator actionÃ¢â‚¬â„¢s line-oriented script execution, preserving the exact device/report arguments and gates. Fair CI 2026-09-27: cap build-test and the instrumented emulator lane at 30 minutes and the readiness diagnostic at 15."
+      "reason": "Keep active Android CI read-only and trigger it for both remote-v1 and exact client-local-v1 fixture changes. Feature 088 Android CI now builds one dedicated opt-in coverage variant, runs all synthetic device scenarios against retained APKs, and preserves raw native JVM/device report evidence without changing normal debug/release behavior. Disable Gradle configuration caching only for opt-in coverage preparation, matching the qualified native coverage report invocation; normal debug/release configuration and all coverage gates remain unchanged. Use complete physical command lines for the emulator actionÃ¢â‚¬â„¢s line-oriented script execution, preserving the exact device/report arguments and gates. Fair CI 2026-09-27: cap build-test and the instrumented emulator lane at 30 minutes and the readiness diagnostic at 15. Rewrite the stale header comment's AstralDeep principle reference so it describes Projection Constitution Principle X."
     },
     {
       "path": "workflows-disabled/apple-ci.yml",

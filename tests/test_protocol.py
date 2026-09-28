@@ -584,7 +584,7 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
         "android-client/gradle/libs.versions.toml": (
-            "82828ae879287fe521102d9e3c1492342173ef1c41715438f4213f42f3dc2d1b"
+            "5c954c7873e551a917f931d5221422e4d74918d6724dd2b684ccde3e2ed9ecff"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"

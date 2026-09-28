@@ -1,7 +1,7 @@
 name: android-ci
 
-# Additive, independent of the backend Principle XI gates. Scoped to the
-# android-client/ tree so backend changes don't trigger an Android build.
+# Projection's required Android gates (Constitution Principle X), run for changes
+# to the Android client and the shared contracts, assets and scripts it consumes.
 on:
   push:
     branches: [main]

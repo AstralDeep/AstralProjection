@@ -76,7 +76,7 @@ shows a separate public disconnected page with a keyboard-accessible retry link.
 It does not provide offline conversation, file, draft, or account access. Online
 authentication redirects and server errors retain their normal behavior.
 
-The packaged `static/service-worker.js` only caches the seven exact public
+The packaged `static/service-worker.js` only caches the six exact public
 resources listed in `scripts/build_offline_assets.py`. Anonymous, no-store fetches
 must match the packaged MIME type, size, and SHA-256 before caching; cached reads
 repeat these checks and discard corrupt entries before anonymous refetch. Shell HTML,

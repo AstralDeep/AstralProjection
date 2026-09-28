@@ -95,9 +95,13 @@ dev-token or mock-auth shortcut (the unused `DevAuth` path was removed in featur
 ## CI
 
 [`.github/workflows/android-ci.yml`](../.github/workflows/android-ci.yml) runs on
-PRs touching `android-client/`: ktlint + Android Lint, `:core` + `:app` JVM unit
-tests, Kover coverage, and `:app:assembleDebug` (uploads the debug APK). The
-backend Principle XI gates are unchanged and independent.
+pushes to `main` and pull requests that touch `android-client/` or the shared
+contracts, assets and scripts it consumes, nightly, and on demand: ktlint +
+Android Lint, `:core` + `:app` JVM unit tests, Kover coverage (at least 90% on
+`:core`), `:app:assembleDebug` (uploads the debug APK), and the emulator suite.
+Its `build-test`, `instrumented` and `android-required` jobs are required gates
+under Projection Constitution Principle X, and the coverage and lint floors are
+Principle IX; `next-major-readiness` is advisory.
 
 ## Notes
 
@@ -105,8 +109,9 @@ backend Principle XI gates are unchanged and independent.
   receives as HTML (`chrome_render`) is acknowledged, not embedded — native
   screens (Agents/History/Audit) are driven by the existing data actions/REST.
 - **Dependencies** (Compose/AndroidX, OkHttp, kotlinx.serialization, AppAuth,
-  Coil) are declared in `gradle/libs.versions.toml` and require Constitution V
-  lead-dev approval in the PR.
-- Per Constitution X, final correctness is verified on a real device/emulator
-  against the live backend — unit tests + the CI build are necessary but not
-  sufficient.
+  Coil) are declared in `gradle/libs.versions.toml` and pinned by the Gradle
+  lockfiles and `gradle/verification-metadata.xml`; any dependency may be added
+  that way (Projection Constitution Principle XI).
+- Per the Projection constitution's Development Workflow, final correctness is
+  verified on a real device/emulator against the live backend — unit tests + the
+  CI build are necessary but not sufficient.

@@ -1,9 +1,5 @@
-# Version catalog for the AstralDeep Android client.
-#
-# Dependency set introduced by feature 041 (Constitution V — requires lead-dev
-# approval in the PR). These are dependencies of the NEW client artifact, not of
-# the backend image. Versions are a coherent, recent set; reconcile on the first
-# Android Studio sync if the SDK suggests bumps.
+# Version catalog for the AstralDeep Android client; the Gradle lockfiles and
+# gradle/verification-metadata.xml pin every resolved version and checksum.
 
 [versions]
 agp = "9.2.1"

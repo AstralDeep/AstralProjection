@@ -57,14 +57,15 @@ the macOS product carries no watch app at all. `WatchInfo.plist` sets
 
 `AstralCore/Sources/AstralCore/Primitives/` mirrors the first-party
 [`astralprims`](https://github.com/AstralDeep/AstralPrimitives) Python
-package (currently v0.3.0): the same 32 primitives (`AstralPrims.Text`,
+package (currently v0.4.0): the same 38 primitives (`AstralPrims.Text`,
 `.Card`, `.Table`, `.Hero`, …) with the same serialization semantics —
 `toDict()` ≙ `to_dict()`, `createUIResponse` ≙ `create_ui_response`,
 `attributes` merged last (and able to override), `class_name` → `"class"`,
 empty `css` omitted, non-Optional defaults emitted. Types are namespaced
 under `AstralPrims` so nothing collides with SwiftUI. This is the AUTHORING
 layer only — the consuming/render model stays `AstralComponent`
-(Constitution II: astralprims defines → orchestrator renders → ROTE adapts).
+(Projection Constitution Principle I: AstralPrimitives defines → AstralProjection
+renders and adapts → AstralDeep orchestrates).
 
 ```swift
 let canvas = AstralPrims.createUIResponse([
@@ -184,8 +185,9 @@ caching to automate this development-only migration.
    `FF_DEVICE_LOGIN=true`,
    `KEYCLOAK_ALLOWED_AZP=…,astral-mobile,astral-desktop,astral-watch`,
    `KEYCLOAK_DEVICE_CLIENTS=astral-watch`.
-2. Keycloak realm: create the three public clients per
-   `docs/keycloak-realm-settings.md` §051 (device grant ON for `astral-watch`;
+2. Keycloak realm: create the three public clients per AstralDeep's
+   [`docs/keycloak-realm-settings.md`](https://github.com/AstralDeep/AstralDeep/blob/main/docs/keycloak-realm-settings.md)
+   Feature 051 section (device grant ON for `astral-watch`;
    `com.personalailabs.astraldeep:/oauth2redirect` in the Valid redirect URIs of
    `astral-mobile` and `astral-desktop`).
 3. iOS/macOS app: a **Debug** build already points at `http://localhost:8001`
@@ -227,7 +229,8 @@ caching to automate this development-only migration.
   Windows or direct-download-macOS desktop host). A non-sandboxed
   **direct-download (Developer ID)** macOS build *may* host BYO agents with the
   same child-process model as Windows. Host-gating rationale + the full BYO
-  security/enablement posture: [docs/byo-client-agents.md](../docs/byo-client-agents.md).
+  security/enablement posture: AstralDeep's
+  [docs/byo-client-agents.md](https://github.com/AstralDeep/AstralDeep/blob/main/docs/byo-client-agents.md).
   The watch is excluded from BYO authoring entirely.
 
 ## Signing & release runbook (053)
