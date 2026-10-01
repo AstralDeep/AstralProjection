@@ -162,6 +162,24 @@ _WINDOWS_TOOLING_INSTALL = (
 )
 
 
+def _assert_offline_smoke_retry(lines: list[str]) -> None:
+    target = "test_actual_frozen_gui_retains_selected_profile_during_offline_retry"
+    assert [line for line in lines if line] == [
+        "python -m pytest `",
+        "windows-client\\tests\\test_packaged_release.py `",
+        "windows-client\\tests\\test_helper_integrity_075.py `",
+        f'-q -p no:cacheprovider -k "not {target}"',
+        _PWSH_EXIT_CHECK,
+        "for ($attempt = 1; $attempt -le 2; $attempt++) {",
+        "python -m pytest `",
+        f"windows-client\\tests\\test_packaged_release.py::{target} `",
+        "-q -p no:cacheprovider",
+        "if ($LASTEXITCODE -eq 0) { exit 0 }",
+        "}",
+        "exit $LASTEXITCODE",
+    ]
+
+
 def _assert_windows_steps_stop_on_native_failure(job: str) -> None:
     # GitHub's pwsh wrapper only propagates the last native exit code of a script.
     assert "continue-on-error" not in job
@@ -172,6 +190,10 @@ def _assert_windows_steps_stop_on_native_failure(job: str) -> None:
         shell = re.search(r"(?m)^        shell: (\S+)$", step)
         assert shell is None or shell[1] == "pwsh", step
         lines = [line.strip() for line in step.split("run: |\n", 1)[1].splitlines()]
+        if step.startswith("name: Run actual frozen Windows package smokes\n"):
+            _assert_offline_smoke_retry(lines)
+            checked += 1
+            continue
         index = 0
         while index < len(lines):
             if lines[index].startswith(_WINDOWS_NATIVE_COMMANDS):
@@ -518,6 +540,40 @@ def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
     python = _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "python")
 
     assert "python -m pytest -q -p no:cacheprovider" in python
+
+
+def test_frozen_windows_smoke_retry_keeps_other_tests_single_run_and_fails_closed() -> None:
+    text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
+    windows = _job_block(text, "windows-package")
+    smoke = windows[windows.index("- name: Run actual frozen Windows package smokes") :]
+    target = "test_actual_frozen_gui_retains_selected_profile_during_offline_retry"
+    before, retry = smoke.split("for ($attempt = 1; $attempt -le 2; $attempt++)")
+    assert before.count("python -m pytest") == 1
+    assert f'-k "not {target}"' in before
+    assert "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }" in before
+    assert retry.count("python -m pytest") == 1
+    assert f"test_packaged_release.py::{target}" in retry
+    assert "test_helper_integrity_075.py" not in retry
+    assert "if ($LASTEXITCODE -eq 0) { exit 0 }" in retry
+    assert retry.rstrip().endswith("exit $LASTEXITCODE")
+
+
+@pytest.mark.parametrize(
+    "old,new",
+    [
+        ("$attempt -le 2", "$attempt -le 3"),
+        (_PWSH_EXIT_CHECK, ""),
+        ("exit $LASTEXITCODE", "exit 0"),
+        ("test_packaged_release.py::", "test_packaged_release.py "),
+        ('-k "not test_actual_frozen', '-k "test_actual_frozen'),
+    ],
+)
+def test_frozen_smoke_retry_contract_rejects_expansion_and_failure_masking(old, new) -> None:
+    windows = _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "windows-package")
+    smoke = windows[windows.index("- name: Run actual frozen Windows package smokes") :]
+    changed = windows.replace(smoke, smoke.replace(old, new))
+    with pytest.raises(AssertionError):
+        _assert_windows_steps_stop_on_native_failure(changed)
 
 
 def test_gitleaks_history_exempts_only_reviewed_fixture_fingerprints() -> None:

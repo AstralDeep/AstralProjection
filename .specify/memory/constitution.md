@@ -143,11 +143,14 @@ These gates MUST NOT be weakened:
   action to a full commit SHA, and aggregate their jobs fail-closed;
   `tests/ci/test_workflows.py` pins these properties.
 - The separate `claim-reply.yml` community workflow MAY use the built-in token with only
-  `issues: write` to reply to claim comments through the reviewed, commit-pinned community
-  action. It MUST run only on exact `refs/heads/main`, check out no repository code, execute
+  `issues: write` to acknowledge claim comments and reconcile assignments from the committed
+  community reservation ledger through the reviewed, commit-pinned community action. It MUST
+  run only on exact `refs/heads/main`, check out no repository code, execute
   no untrusted input, use no repository secrets or OIDC, and have no contents-write or
   release authority. Its contract tests MUST preserve those boundaries and serialize
-  retries by comment identity. It does not qualify or publish product changes.
+  comment events and scheduled recovery in one repository-wide concurrency group. Manual
+  assignments and removals take precedence; cleanup removes only assignments the bot created
+  for that reservation. It does not qualify or publish product changes.
 - Every job MUST declare exactly one `timeout-minutes` of at most 30 and finish within it.
 - Soak tests are prohibited. Per-test retries are permitted; whole-suite reruns are not.
   Required gates MUST NOT depend on live third-party network services, exact clock-derived
@@ -242,4 +245,4 @@ These gates MUST NOT be weakened:
 - References to numbered constitution principles in records written before 2026-09-28,
   including the client READMEs, refer to the AstralDeep constitution v5.0.0.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-01
+**Version**: 2.1.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-01
