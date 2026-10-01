@@ -649,6 +649,7 @@ def test_release_workflows_are_explicitly_inert_read_only_and_projection_owned()
         "android-ci.yml",
         "apple-ci.yml",
         "ci.yml",
+        "claim-reply.yml",
     }
 
     for path in workflows:

@@ -1002,7 +1002,12 @@ def test_release_activation_document_matches_current_workflow_inventory() -> Non
     disabled = sorted(INACTIVE.glob("*.yml"))
     disabled_jobs = sum(len(_job_ids(path.read_text(encoding="utf-8"))) for path in disabled)
 
-    assert len(active) == 3
+    assert {path.name for path in active} == {
+        "ci.yml",
+        "android-ci.yml",
+        "apple-ci.yml",
+        "claim-reply.yml",
+    }
     assert len(disabled) == 6
     assert disabled_jobs == 8
     assert "Three owner CI workflows are active under `.github/workflows/`" in document
@@ -1076,6 +1081,7 @@ def test_three_owner_workflows_are_active_while_six_release_workflows_remain_ine
         "android-ci.yml",
         "apple-ci.yml",
         "ci.yml",
+        "claim-reply.yml",
     }
     assert len(list(INACTIVE.glob("*.yml"))) == 6
 

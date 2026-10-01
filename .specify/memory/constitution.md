@@ -139,9 +139,15 @@ These gates MUST NOT be weakened:
   (`swift-lint`, `core-tests`, `core-ios-tests`, `app-unit-tests`, `first-login-ui`,
   `watch-continuity`, and `apple-required`) are the required gates. The network-touching
   `next-major-readiness` canary is advisory and MUST NOT become required.
-- Workflows MUST stay read-only with no secrets or `id-token`, pin every action to a full
-  commit SHA, and aggregate their jobs fail-closed; `tests/ci/test_workflows.py` pins these
-  properties.
+- Qualification workflows MUST stay read-only with no secrets or `id-token`, pin every
+  action to a full commit SHA, and aggregate their jobs fail-closed;
+  `tests/ci/test_workflows.py` pins these properties.
+- The separate `claim-reply.yml` community workflow MAY use the built-in token with only
+  `issues: write` to reply to claim comments through the reviewed, commit-pinned community
+  action. It MUST run only on exact `refs/heads/main`, check out no repository code, execute
+  no untrusted input, use no repository secrets or OIDC, and have no contents-write or
+  release authority. Its contract tests MUST preserve those boundaries and serialize
+  retries by comment identity. It does not qualify or publish product changes.
 - Every job MUST declare exactly one `timeout-minutes` of at most 30 and finish within it.
 - Soak tests are prohibited. Per-test retries are permitted; whole-suite reruns are not.
   Required gates MUST NOT depend on live third-party network services, exact clock-derived
@@ -236,4 +242,4 @@ These gates MUST NOT be weakened:
 - References to numbered constitution principles in records written before 2026-09-28,
   including the client READMEs, refer to the AstralDeep constitution v5.0.0.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-09-28
+**Version**: 2.0.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-01
