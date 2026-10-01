@@ -43,6 +43,9 @@ consume it.
 Three owner CI workflows are active and read-only/secret-free. They qualify the
 core Python/web/Windows, Android, and Apple owner surfaces; they do not sign,
 publish, deploy, or submit artifacts. Six release workflows remain disabled under `workflows-disabled/`.
+A separate `.github/workflows/claim-reply.yml` community workflow gives bounty
+claim comments the correct form link or existing assignment status. It has only
+issue-comment authority, uses a pinned shared action, and checks out no code.
 Those release workflows intentionally preserve
 some references to legacy protected-policy and release-evidence tooling that
 was not extracted into this repository. They are historical design inputs, not

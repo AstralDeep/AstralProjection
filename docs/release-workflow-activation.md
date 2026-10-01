@@ -7,6 +7,10 @@ all eight release jobs carry `if: ${{ false }}`. This
 document records the preconditions for a later, separately reviewed release
 activation commit. It does not authorize that commit or any publication.
 
+The separate `.github/workflows/claim-reply.yml` community responder has only
+issue-comment authority and executes a pinned action without checking out code.
+It is outside product qualification and grants no release authority.
+
 ## Current status
 
 | Gate | Status | Evidence or closure |
