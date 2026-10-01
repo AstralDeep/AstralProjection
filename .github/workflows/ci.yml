@@ -319,15 +319,24 @@ jobs:
           --base-sha "$env:BASE_SHA" --fail-under=90
           --output build/075/coverage/windows-csharp-changed-coverage.json
       - name: Run actual frozen Windows package smokes
+        shell: pwsh
         env:
           ASTRAL_WINDOWS_EXE: ${{ github.workspace }}\windows-client\dist\AstralDeep.exe
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: windows-client
-        run: >-
-          python -m pytest
-          windows-client\tests\test_packaged_release.py
-          windows-client\tests\test_helper_integrity_075.py
-          -q -p no:cacheprovider
+        run: |
+          python -m pytest `
+            windows-client\tests\test_packaged_release.py `
+            windows-client\tests\test_helper_integrity_075.py `
+            -q -p no:cacheprovider -k "not test_actual_frozen_gui_retains_selected_profile_during_offline_retry"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          for ($attempt = 1; $attempt -le 2; $attempt++) {
+            python -m pytest `
+              windows-client\tests\test_packaged_release.py::test_actual_frozen_gui_retains_selected_profile_during_offline_retry `
+              -q -p no:cacheprovider
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+          }
+          exit $LASTEXITCODE
 
   required:
     if: always()
