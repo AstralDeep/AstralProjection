@@ -11,6 +11,12 @@ The separate `.github/workflows/claim-reply.yml` community responder has only
 issue-comment authority and executes a pinned action without checking out code.
 It is outside product qualification and grants no release authority.
 
+The separate `.github/workflows/pr-ci-notifications.yml` controller reports current-head
+CI failures and requests maintainer review after all applicable qualification lanes pass.
+It uses only Actions-read and issue/PR notification authority through a pinned action,
+checks out no code and grants no approval, rerun, merge or release authority. First-time
+contributor runs still require manual approval.
+
 ## Current status
 
 | Gate | Status | Evidence or closure |

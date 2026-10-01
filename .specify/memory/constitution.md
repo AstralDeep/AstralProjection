@@ -152,6 +152,15 @@ These gates MUST NOT be weakened:
   assignments and removals take precedence; cleanup removes only assignments the bot created
   for that reservation. It does not qualify or publish product changes.
 - Every job MUST declare exactly one `timeout-minutes` of at most 30 and finish within it.
+- The separate `pr-ci-notifications.yml` controller MAY use only `actions: read`,
+  `issues: write`, and `pull-requests: write` with the built-in token to report current-head
+  CI failures and request maintainer review after all applicable qualification workflows
+  pass. It MUST run only on exact `refs/heads/main` through the reviewed, commit-pinned
+  community action, serialize completion events and recovery, check out no repository code,
+  execute no PR input, download no artifacts, and use no secrets, OIDC, contents-write,
+  approval, rerun, merge, publishing or release authority. Its contract tests MUST preserve
+  those boundaries. First-time contributor run approval remains manual. This controller
+  does not qualify product changes or replace maintainer code review.
 - Soak tests are prohibited. Per-test retries are permitted; whole-suite reruns are not.
   Required gates MUST NOT depend on live third-party network services, exact clock-derived
   values, or wall-clock performance bounds, and a gate fails only for a defect the change
@@ -245,4 +254,4 @@ These gates MUST NOT be weakened:
 - References to numbered constitution principles in records written before 2026-09-28,
   including the client READMEs, refer to the AstralDeep constitution v5.0.0.
 
-**Version**: 2.1.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-01
+**Version**: 2.2.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-01
