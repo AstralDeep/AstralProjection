@@ -8,7 +8,7 @@ from html.parser import HTMLParser
 import pytest
 
 from webrender import render_one
-from webrender.sanitize import block_md, inline_md
+from webrender.sanitize import block_md, inline_md, plain_md
 
 
 class _Links(HTMLParser):
@@ -54,6 +54,59 @@ def test_link_label_and_surrounding_emphasis_still_render():
     assert "<em>the page</em>" in out
     assert ">a_b</code>" in out
     assert _Links(out).anchors[0]["href"] == "https://example.test/a_b"
+
+
+@pytest.mark.parametrize("url", [
+    "https://example.test/A_(B)",
+    "https://example.test/A_(B_(C))",
+    "https://en.wikipedia.org/wiki/Foo_(bar)",
+])
+def test_balanced_parentheses_survive_in_link_destinations(url):
+    out = inline_md(f"**[page]({url})**")
+    link, = _Links(out).anchors
+    assert link["href"] == url
+    assert out.startswith("<strong") and out.endswith("</strong>")
+
+
+@pytest.mark.parametrize(("source", "expected"), [
+    (r"[escaped](https://example.test/A\(B\))", "https://example.test/A(B)"),
+    (r"[escaped close](https://example.test/A\)B)", "https://example.test/A)B"),
+])
+def test_escaped_parentheses_are_literal_destination_characters(source, expected):
+    link, = _Links(inline_md(source)).anchors
+    assert link["href"] == expected
+
+
+@pytest.mark.parametrize("source", [
+    "[empty]()",
+    "[space](https://example.test/a b)",
+    "[missing close](https://example.test/A_(B)",
+    "[too deep](https://example.test/" + "(" * 9 + "x" + ")" * 9 + ")",
+    "[too long](https://example.test/" + "x" * 2049 + ")",
+])
+def test_malformed_or_unbounded_destinations_are_not_links(source):
+    assert not _Links(inline_md(source)).anchors
+
+
+def test_destination_bounds_are_inclusive_and_parenthesis_nesting_is_limited():
+    prefix = "https://example.test/"
+    url = prefix + "x" * (2048 - len(prefix))
+    link, = _Links(inline_md(f"[maximum]({url})")).anchors
+    assert link["href"] == url
+
+    nested = "https://example.test/" + "(" * 8 + "x" + ")" * 8
+    link, = _Links(inline_md(f"[nested]({nested})")).anchors
+    assert link["href"] == nested
+
+
+def test_link_destinations_inside_code_remain_literal():
+    out = inline_md("`[page](https://example.test/A_(B))`")
+    assert not _Links(out).anchors
+    assert "[page](https://example.test/A_(B))" in out
+
+
+def test_plain_text_conversion_removes_a_balanced_parenthesis_destination():
+    assert plain_md("[page](https://example.test/A_(B))") == "page"
 
 
 def test_code_keeps_markup_literal_and_links_inert():
