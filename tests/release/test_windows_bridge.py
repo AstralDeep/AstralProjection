@@ -212,7 +212,6 @@ def test_owner_ci_is_active_while_release_workflows_stay_inert():
         "android-ci.yml",
         "apple-ci.yml",
         "ci.yml",
-        "claim-reply.yml",
         "pr-ci-notifications.yml",
     }
     workflows = sorted((ROOT / "workflows-disabled").glob("*.yml"))

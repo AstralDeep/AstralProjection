@@ -43,13 +43,9 @@ consume it.
 Three owner CI workflows are active and read-only/secret-free. They qualify the
 core Python/web/Windows, Android, and Apple owner surfaces; they do not sign,
 publish, deploy, or submit artifacts. Six release workflows remain disabled under `workflows-disabled/`.
-A separate `.github/workflows/claim-reply.yml` community workflow handles
-`/claim` and `/unclaim` directly on bounty issues and reconciles bot-owned
-assignments with the central reservation ledger. It has only issue-comment and
-assignment authority, uses a pinned shared action, and checks out no code.
-There is no separate claim form. A configured maintainer's merge of the linked
-PR awards points automatically, including for their own claimed work; see the
-[claiming and points guide](https://astraldeep.github.io/contribute.html).
+The community points bot credits the author of a linked bounty PR after it
+merges into `main` and closes the bounty. Contributors can open a PR directly;
+see the [contribution and points guide](https://astraldeep.github.io/contribute.html).
 Those release workflows intentionally preserve
 some references to legacy protected-policy and release-evidence tooling that
 was not extracted into this repository. They are historical design inputs, not
