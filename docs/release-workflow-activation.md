@@ -7,9 +7,8 @@ all eight release jobs carry `if: ${{ false }}`. This
 document records the preconditions for a later, separately reviewed release
 activation commit. It does not authorize that commit or any publication.
 
-The separate `.github/workflows/claim-reply.yml` community responder has only
-issue-comment authority and executes a pinned action without checking out code.
-It is outside product qualification and grants no release authority.
+The community points bot runs in the community website repository and credits
+verified bounty PR merges into `main`. It grants no product or release authority.
 
 The separate `.github/workflows/pr-ci-notifications.yml` controller reports current-head
 CI failures and requests maintainer review after all applicable qualification lanes pass.

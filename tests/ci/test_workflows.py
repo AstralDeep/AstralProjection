@@ -1062,7 +1062,6 @@ def test_release_activation_document_matches_current_workflow_inventory() -> Non
         "ci.yml",
         "android-ci.yml",
         "apple-ci.yml",
-        "claim-reply.yml",
         "pr-ci-notifications.yml",
     }
     assert len(disabled) == 6
@@ -1138,7 +1137,6 @@ def test_three_owner_workflows_are_active_while_six_release_workflows_remain_ine
         "android-ci.yml",
         "apple-ci.yml",
         "ci.yml",
-        "claim-reply.yml",
         "pr-ci-notifications.yml",
     }
     assert len(list(INACTIVE.glob("*.yml"))) == 6
