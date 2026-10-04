@@ -25,11 +25,12 @@ def _safe_url(url: str) -> str:
 
 
 _CODE = re.compile(r"`([^`]+)`")
-_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_LINK_START = re.compile(r"\[([^\]]+)\]\(")
+_MAX_LINK_DESTINATION_LENGTH = 2048
+_MAX_LINK_PARENTHESIS_DEPTH = 8
 _BOLD = re.compile(r"\*\*([^*]+)\*\*|__([^_]+)__")
 _STRIKE = re.compile(r"~~([^~]+)~~")
 _EM = re.compile(r"(?<!\*)\*([^*]+)\*(?!\*)|(?<!_)_([^_]+)_(?!_)")
-_INLINE_TOKEN = re.compile(rf"{_CODE.pattern}|{_LINK.pattern}")
 
 _HR = re.compile(r"^(-{3,}|\*{3,}|_{3,})$")
 _TABLE_SEP_CELL = re.compile(r"^:?-+:?$")
@@ -42,6 +43,55 @@ def inline_md(text: Any) -> str:
     return _inline_escaped(_esc(text))
 
 
+def _parse_link_destination(text: str, start: int) -> tuple[int, str] | None:
+    destination: list[str] = []
+    depth = 0
+    i = start
+    while i < len(text):
+        if i - start > _MAX_LINK_DESTINATION_LENGTH:
+            return None
+        char = text[i]
+        if char.isspace():
+            return None
+        if char == "\\" and i + 1 < len(text) and text[i + 1] in ("(", ")", "\\"):
+            destination.append(text[i + 1])
+            i += 2
+            continue
+        if char == "(":
+            depth += 1
+            if depth > _MAX_LINK_PARENTHESIS_DEPTH:
+                return None
+        elif char == ")":
+            if depth == 0:
+                if not destination:
+                    return None
+                return i + 1, "".join(destination)
+            depth -= 1
+        destination.append(char)
+        i += 1
+    return None
+
+
+def _next_link(text: str, start: int) -> tuple[int, int, str, str] | None:
+    for match in _LINK_START.finditer(text, start):
+        parsed = _parse_link_destination(text, match.end())
+        if parsed is not None:
+            end, url = parsed
+            return match.start(), end, match.group(1), url
+    return None
+
+
+def _strip_inline_links(text: str) -> str:
+    parts: list[str] = []
+    cursor = 0
+    while (link := _next_link(text, cursor)) is not None:
+        start, end, label, _ = link
+        parts.extend((text[cursor:start], label))
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
 # Emphasis must skip generated HTML: could corrupt an href's _blank
 def _inline_escaped(s: str, *, links: bool = True) -> str:
     marker = f"\x00md{secrets.token_hex(16)}:"
@@ -49,25 +99,42 @@ def _inline_escaped(s: str, *, links: bool = True) -> str:
         marker = f"\x00md{secrets.token_hex(16)}:"
     fragments: list[str] = []
 
-    def protect(m: re.Match[str]) -> str:
-        if m.group(1) is not None:
-            fragment = (
-                '<code class="text-astral-accent bg-white/5 px-1 rounded">'
-                f'{m.group(1)}</code>'
-            )
+    def protect_code(code: str) -> str:
+        fragment = (
+            '<code class="text-astral-accent bg-white/5 px-1 rounded">'
+            f'{code}</code>'
+        )
+        token = f"{marker}{len(fragments)}{marker}"
+        fragments.append(fragment)
+        return token
+
+    parts: list[str] = []
+    cursor = 0
+    while cursor < len(s):
+        code = _CODE.search(s, cursor)
+        link = _next_link(s, cursor) if links else None
+        if code is None and link is None:
+            break
+        if code is not None and (link is None or code.start() < link[0]):
+            start, end = code.span()
+            fragment = protect_code(code.group(1))
         else:
-            label = _inline_escaped(m.group(2), links=False)
-            url = _safe_url(m.group(3))
+            assert link is not None
+            start, end, label_text, raw_url = link
+            label = _inline_escaped(label_text, links=False)
+            url = _safe_url(raw_url)
             fragment = (
                 f'<a href="{url}" target="_blank" rel="noopener noreferrer" '
                 'class="text-astral-primary hover:text-astral-secondary hover:underline">'
                 f'{label}</a>'
             )
-        token = f"{marker}{len(fragments)}{marker}"
-        fragments.append(fragment)
-        return token
-
-    s = (_INLINE_TOKEN if links else _CODE).sub(protect, s)
+            token = f"{marker}{len(fragments)}{marker}"
+            fragments.append(fragment)
+            fragment = token
+        parts.extend((s[cursor:start], fragment))
+        cursor = end
+    parts.append(s[cursor:])
+    s = "".join(parts)
     s = _BOLD.sub(lambda m: f'<strong class="text-astral-text">{m.group(1) or m.group(2)}</strong>', s)
     s = _STRIKE.sub(lambda m: f"<del>{m.group(1)}</del>", s)
     s = _EM.sub(lambda m: f"<em>{m.group(1) or m.group(2)}</em>", s)
@@ -265,7 +332,7 @@ def plain_md(text: Any) -> str:
             kept.append(stripped)
     out = " ".join(kept)
     out = _CODE.sub(lambda m: m.group(1), out)
-    out = _LINK.sub(lambda m: m.group(1), out)
+    out = _strip_inline_links(out)
     out = _BOLD.sub(lambda m: m.group(1) or m.group(2), out)
     out = _STRIKE.sub(lambda m: m.group(1), out)
     out = _EM.sub(lambda m: m.group(1) or m.group(2), out)
