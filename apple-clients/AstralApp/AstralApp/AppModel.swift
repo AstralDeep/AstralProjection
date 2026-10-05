@@ -280,8 +280,12 @@ final class AppModel: NSObject {
     }
 
     private let store: TokenStorage
+    @ObservationIgnored private let credentialClock: @Sendable () -> Date
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var ws: WSClient?
+    @ObservationIgnored private var initialWebSocket: WSClient?
+    @ObservationIgnored private var registeredAccessToken: String?
+    @ObservationIgnored private var refreshedWithinMarginAccessToken: String?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
     @ObservationIgnored private var authSession: ASWebAuthenticationSession?
     @ObservationIgnored private var seqState: [String: Int] = [:]
@@ -289,7 +293,10 @@ final class AppModel: NSObject {
     @ObservationIgnored private var statusLifecycle = StatusLifecycleReducer()
     @ObservationIgnored private var refreshTask: Task<RefreshResult, Never>?
     @ObservationIgnored private var refreshTaskGeneration = -1
+    @ObservationIgnored private var refreshContext: CredentialRefreshContext?
+    @ObservationIgnored private var authenticationReadIntent: AuthenticationReadIntent?
     @ObservationIgnored private var sessionGeneration = 0
+    @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
@@ -362,11 +369,14 @@ final class AppModel: NSObject {
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
-        voiceController: AppleVoiceSessionController? = nil
+        voiceController: AppleVoiceSessionController? = nil,
+        credentialClock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.voice = voiceController ?? AppleVoiceSessionController()
         self.store = tokenStore
+        self.credentialClock = credentialClock
         self.ws = webSocket
+        self.initialWebSocket = webSocket
         self.conversationResumeStore = conversationResumeStore
         self.defaults = defaults
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
@@ -440,6 +450,29 @@ final class AppModel: NSObject {
         let connection: String?
         let owner: DownloadOwner
         let socket: WSClient?
+    }
+
+    private struct CredentialRefreshContext {
+        let id = UUID()
+        let owner: DownloadOwner
+        let authentication: ASWebAuthenticationSession?
+        let authority: URL
+        let original: TokenSet
+    }
+
+    private struct SocketAuthenticationContext {
+        let owner: DownloadOwner
+        let socket: WSClient
+        let connection: String
+        let token: String
+    }
+
+    private struct AuthenticationReadIntent {
+        let owner: DownloadOwner
+        let socket: WSClient?
+        let surface: String
+        let params: JSONValue
+        let generation: String?
     }
 
     var downloadOwner: DownloadOwner {
@@ -877,7 +910,8 @@ final class AppModel: NSObject {
         else { return }
         tokens = stored.tokenSet
         enterSignedIn(resumedSession: true)
-        if case .rejected = await refreshOutcome() {
+        let resumedOwner = downloadOwner
+        if case .rejected = await refreshOutcome(), resumedOwner == downloadOwner {
             await signOut(revokeRemote: false)
         }
     }
@@ -940,28 +974,80 @@ final class AppModel: NSObject {
         }
     }
 
-    private func refreshOutcome() async -> RefreshResult {
-        if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
-            return await inFlight.value
-        }
-        guard let current = tokens else { return .rejected("no session") }
-        if !current.needsRefresh() { return .ok(current) }
-        return await runRefresh()
+    private func credentialNeedsRefresh(_ set: TokenSet) -> Bool {
+        credentialHasExpired(set)
+            || (refreshedWithinMarginAccessToken != set.accessToken && credentialIsWithinRefreshMargin(set))
     }
 
-    private func runRefresh() async -> RefreshResult {
-        guard let refresh = tokens?.refreshToken, let oidc else {
+    private func credentialHasExpired(_ set: TokenSet) -> Bool {
+        let now = credentialClock()
+        return now >= set.expiresAt
+            || set.claims?["exp"]?.numberValue.map { $0 <= now.timeIntervalSince1970 } == true
+    }
+
+    private func credentialIsWithinRefreshMargin(_ set: TokenSet) -> Bool {
+        let now = credentialClock()
+        return set.needsRefresh(now: now)
+            || set.claims?["exp"]?.numberValue.map { $0 <= now.addingTimeInterval(60).timeIntervalSince1970 } == true
+    }
+
+    private func refreshOutcome(force: Bool = false, renewSocket: Bool = true) async -> RefreshResult {
+        guard let current = tokens else { return .rejected("no session") }
+        guard !signedIn || current.conversationAccount == conversationAccount else {
+            return .rejected("credentials do not match the session")
+        }
+        if refreshTask == nil, !force, !credentialNeedsRefresh(current) {
+            if renewSocket { renewRegisteredSocket(ifChanged: current) }
+            return .ok(current)
+        }
+        guard let refresh = current.refreshToken, let oidc else {
             return .rejected("no refresh token")
         }
-        let generation = sessionGeneration
-        let attempt = Task { await RefreshStrategy.direct(oidc).attempt(refreshToken: refresh) }
-        refreshTask = attempt
-        refreshTaskGeneration = generation
+        let context: CredentialRefreshContext
+        let attempt: Task<RefreshResult, Never>
+        if let inFlight = refreshTask, let active = refreshContext,
+            active.owner == downloadOwner, active.authentication === authSession,
+            active.authority == oidc.authority, refreshTaskGeneration == sessionGeneration
+        {
+            context = active
+            attempt = inFlight
+        } else {
+            refreshTask?.cancel()
+            context = CredentialRefreshContext(
+                owner: downloadOwner, authentication: authSession,
+                authority: oidc.authority, original: current)
+            attempt = Task { await RefreshStrategy.direct(oidc).attempt(refreshToken: refresh) }
+            refreshTask = attempt
+            refreshTaskGeneration = sessionGeneration
+            refreshContext = context
+        }
         let result = await attempt.value
-        if refreshTaskGeneration == generation { refreshTask = nil }
-        if case .ok(let set) = result, generation == sessionGeneration {
-            tokens = set
-            store.save(StoredTokens(from: set))
+        guard !Task.isCancelled, context.owner == downloadOwner,
+            context.authentication === authSession, context.authority == self.oidc?.authority
+        else { return .transient("session changed") }
+        if case .ok(let set) = result {
+            guard set.conversationAccount == context.original.conversationAccount,
+                !context.owner.signedIn || set.conversationAccount == context.owner.account,
+                !credentialHasExpired(set)
+            else {
+                if refreshContext?.id == context.id {
+                    refreshTask = nil
+                    refreshContext = nil
+                }
+                return .rejected("refreshed credentials do not match the session")
+            }
+            guard tokens == context.original || tokens == set else { return .transient("session changed") }
+            if refreshContext?.id == context.id {
+                refreshTask = nil
+                refreshContext = nil
+                tokens = set
+                refreshedWithinMarginAccessToken = credentialIsWithinRefreshMargin(set) ? set.accessToken : nil
+                store.save(StoredTokens(from: set))
+            }
+            if renewSocket { renewRegisteredSocket(ifChanged: set) }
+        } else if refreshContext?.id == context.id {
+            refreshTask = nil
+            refreshContext = nil
         }
         return result
     }
@@ -971,25 +1057,88 @@ final class AppModel: NSObject {
         return nil
     }
 
-    private func handleAuthRequired() async {
-        guard let refused = tokens?.accessToken else {
-            await signOut()
-            return
-        }
-        let result: RefreshResult
-        if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
-            result = await inFlight.value
-        } else {
-            result = await runRefresh()
-        }
+    private var socketAuthenticationContext: SocketAuthenticationContext? {
+        guard signedIn, let socket = ws, let connection = continuity.connectionGeneration,
+            let token = registeredAccessToken
+        else { return nil }
+        return SocketAuthenticationContext(owner: downloadOwner, socket: socket, connection: connection, token: token)
+    }
+
+    private func socketAuthenticationIsCurrent(_ context: SocketAuthenticationContext) -> Bool {
+        context.owner == downloadOwner && ws === context.socket
+            && continuity.connectionGeneration == context.connection && registeredAccessToken == context.token
+    }
+
+    private func authenticatedSocketIsCurrent(
+        _ socket: WSClient, owner: DownloadOwner, connection: String?
+    ) async -> Bool {
+        guard let context = socketAuthenticationContext, context.socket === socket,
+            context.owner == owner, context.connection == connection, connected
+        else { return false }
+        let result = await refreshOutcome()
+        guard !Task.isCancelled, socketAuthenticationIsCurrent(context), connected else { return false }
         switch result {
-        case .ok(let set) where set.accessToken != refused:
-            connectWS(resumed: true)
-        case .ok, .rejected:
-            await signOut()
-        case .transient:
-            break
+        case .ok(let set): return set.accessToken == context.token
+        case .rejected:
+            await signOut(revokeRemote: false)
+            return false
+        case .transient: return false
         }
+    }
+
+    private func handleAuthRequired(_ context: SocketAuthenticationContext) async {
+        guard socketAuthenticationIsCurrent(context) else { return }
+        let result = await refreshOutcome(force: tokens?.accessToken == context.token)
+        guard !Task.isCancelled, socketAuthenticationIsCurrent(context) else { return }
+        switch result {
+        case .ok(let set) where set.accessToken != context.token:
+            renewRegisteredSocket(ifChanged: set)
+        case .ok, .rejected:
+            await signOut(revokeRemote: false)
+        case .transient:
+            surfaceFailureMessage = "The session could not reconnect. Retry when the connection is available."
+        }
+    }
+
+    private func renewRegisteredSocket(ifChanged set: TokenSet) {
+        guard signedIn, connected, let registeredAccessToken, registeredAccessToken != set.accessToken else { return }
+        let owner = downloadOwner
+        let surface = screen == .surface ? pendingSurfaceKey : ""
+        let params = pendingSurfaceParams
+        let canReload =
+            pendingSurface == nil
+            && (params == .object([:]) || params == .object(["mode": .string("list")])
+                || (surface == "guidance" && params == GuidanceRequest.selection.payload["params"]))
+        let interrupted = !localOperationSubmissions.isEmpty || llmFirstLoginOperation?.isLoading == true
+        connectWS(resumed: true)
+        if canReload, !surface.isEmpty {
+            let generation =
+                surface == "guidance" ? guidanceEpoch : surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
+            authenticationReadIntent = AuthenticationReadIntent(
+                owner: owner, socket: ws, surface: surface, params: params, generation: generation)
+        } else if !surface.isEmpty, interrupted {
+            surfaceFailureMessage = "The session refreshed. Review your entries and retry the action."
+        }
+    }
+
+    private func resumeAuthenticatedRead() {
+        guard let intent = authenticationReadIntent else { return }
+        authenticationReadIntent = nil
+        let generation =
+            intent.surface == "guidance"
+            ? guidanceEpoch : intent.surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
+        guard intent.owner == downloadOwner, intent.socket === ws, screen == .surface,
+            pendingSurfaceKey == intent.surface, generation == intent.generation, !mandatorySurface
+        else { return }
+        if intent.surface == "guidance" {
+            retryGuidance()
+        } else {
+            openSurface(intent.surface, params: intent.params)
+        }
+    }
+
+    private func authenticationSurfaceGeneration(_ surface: String) -> String? {
+        surface == "guidance" ? guidanceEpoch : surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
     }
 
     private func enterSignedIn(resumedSession: Bool) {
@@ -1018,6 +1167,11 @@ final class AppModel: NSObject {
         sessionGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+        refreshContext = nil
+        registeredAccessToken = nil
+        refreshedWithinMarginAccessToken = nil
+        authenticationReadIntent = nil
+        initialWebSocket = nil
         wsTask?.cancel()
         wsTask = nil
         ws = nil
@@ -1336,31 +1490,79 @@ final class AppModel: NSObject {
 
     private func connectWS(resumed initialResumed: Bool) {
         invalidateWorkRead()
+        retireOrdinarySurfaceRequests()
+        authenticationReadIntent = nil
+        registeredAccessToken = nil
+        connected = false
         wsTask?.cancel()
-        if let previous = ws {
+        let client = initialWebSocket ?? WSClient(url: rest.webSocketURL)
+        initialWebSocket = nil
+        if let previous = ws, previous !== client {
             Task { await previous.stop() }
         }
-        let client = WSClient(url: rest.webSocketURL)
         ws = client
+        let owner = downloadOwner
+        let server = serverBase
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
             let events = await client.events()
             await client.start(
                 onConnect: { [weak self] in
                     guard let self else { return nil }
-                    guard let token = await self.freshAccessToken() else { return nil }
+                    guard let token = await self.registrationToken(for: client, owner: owner, server: server) else {
+                        return nil
+                    }
                     let resumed = await resumeState.consume()
-                    return await self.registrationFrame(token: token, resumed: resumed)
+                    return await self.currentRegistrationFrame(
+                        token: token, resumed: resumed, socket: client, owner: owner)
                 },
                 onReplay: { [weak self] replay in
                     guard let self else { return false }
-                    return await self.replayQueuedOperation(replay)
+                    return await self.replayQueuedOperation(replay, socket: client, owner: owner)
                 })
             for await event in events {
-                guard !Task.isCancelled, self.ws === client else { break }
+                guard !Task.isCancelled, self.ws === client, self.downloadOwner == owner else { break }
                 await self.handle(event)
             }
+            await client.stop()
         }
+    }
+
+    private func registrationToken(for socket: WSClient, owner: DownloadOwner, server: URL) async -> String? {
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner, serverBase == server else { return nil }
+        let result = await refreshOutcome(renewSocket: false)
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner, serverBase == server else { return nil }
+        switch result {
+        case .ok(let set): return set.accessToken
+        case .rejected:
+            await signOut(revokeRemote: false)
+            return nil
+        case .transient: return nil
+        }
+    }
+
+    private func currentRegistrationFrame(
+        token: String, resumed: Bool, socket: WSClient, owner: DownloadOwner
+    ) -> String? {
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner, tokens?.accessToken == token else { return nil }
+        let intent = authenticationReadIntent.flatMap { current in
+            current.owner == owner && current.socket === socket
+                && current.generation == authenticationSurfaceGeneration(current.surface) ? current : nil
+        }
+        registeredAccessToken = token
+        let frame = registrationFrame(token: token, resumed: resumed)
+        if let intent {
+            authenticationReadIntent = AuthenticationReadIntent(
+                owner: owner, socket: socket, surface: intent.surface, params: intent.params,
+                generation: authenticationSurfaceGeneration(intent.surface))
+        }
+        return frame
+    }
+
+    private func replayQueuedOperation(_ replay: QueuedOperationReplay, socket: WSClient, owner: DownloadOwner) -> Bool
+    {
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner else { return false }
+        return replayQueuedOperation(replay)
     }
 
     func handle(_ event: WSEvent) async {
@@ -1369,6 +1571,7 @@ final class AppModel: NSObject {
             connected = true
             everConnected = true
             initialConnectionFailed = false
+            resumeAuthenticatedRead()
             if continuity.connectionGeneration == nil {
                 refreshActiveChat()
             }
@@ -1657,7 +1860,9 @@ final class AppModel: NSObject {
         case "auth_required":
             resetViewportRefresh()
             retireOrdinarySurfaceRequests()
-            Task { await self.handleAuthRequired() }
+            if let context = socketAuthenticationContext {
+                Task { await self.handleAuthRequired(context) }
+            }
         default:
             break
         }
@@ -2645,6 +2850,7 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        conversationNavigationGeneration += 1
         consoleFullscreen = false
         consoleResultCollapsed = false
         turnSelection = nil
@@ -3231,7 +3437,61 @@ final class AppModel: NSObject {
 
     private func rawSend(_ text: String) {
         outboundTap?(text)
-        Task { await ws?.send(text) }
+        guard let socket = ws else { return }
+        let owner = downloadOwner
+        let connection = continuity.connectionGeneration
+        let navigation = conversationNavigationGeneration
+        let chatId = activeChatId
+        Task {
+            let allowed: Bool
+            if connected {
+                allowed = await authenticatedSocketIsCurrent(socket, owner: owner, connection: connection)
+            } else {
+                let result = await refreshOutcome(renewSocket: false)
+                if case .ok = result {
+                    allowed = owner == downloadOwner && ws === socket && !Task.isCancelled
+                } else {
+                    allowed = false
+                }
+            }
+            guard allowed else {
+                if owner == downloadOwner {
+                    retireUnsentOperation(text)
+                    restoreUnsentQuery(text, navigation: navigation, chatId: chatId)
+                }
+                return
+            }
+            await socket.send(text)
+        }
+    }
+
+    private func retireUnsentOperation(_ text: String) {
+        guard let frame = InboundFrame.parse(text), let request = frame.payload["request_generation"]?.stringValue
+        else {
+            return
+        }
+        if parameterRequests.values.contains(request) {
+            parameterFailures.insert(request)
+            surfaceFailureMessage = "The action was not sent. Review your entries and retry after reconnecting."
+        }
+        if llmFirstLoginOperation?.submissionId == frame.payload["submission_id"]?.stringValue {
+            clearLLMFirstLoginOperation()
+        }
+        failOrdinarySurface(
+            generation: request, message: "The session could not update. Reconnect and retry this screen.")
+        clearLocalOperationSubmission(requestGeneration: request)
+    }
+
+    private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {
+        guard navigation == conversationNavigationGeneration, activeChatId == chatId, screen == .chat,
+            let frame = InboundFrame.parse(text), frame.payload["action"]?.stringValue == "chat_message",
+            let message = frame.payload["payload"]?["message"]?.stringValue
+        else { return }
+        if composerDraft.isEmpty { composerDraft = message }
+        turnActive = false
+        statusText = nil
+        bannerIsError = true
+        errorBanner = "The message was not sent. Review it and try again after reconnecting."
     }
 
     @discardableResult
@@ -3361,6 +3621,7 @@ final class AppModel: NSObject {
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
+        conversationNavigationGeneration += 1
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         let identity = ClientOperationIdentity.fresh()
@@ -3484,13 +3745,13 @@ final class AppModel: NSObject {
     }
 
     func retryGuidance() {
-        guard pendingSurfaceKey == "guidance" else { return }
-        surfaceFailureMessage = nil
-        _ = sendGuidanceRequest(
-            action: "chrome_open",
-            payload: .object([
-                "surface": .string("guidance"), "params": .object(["mode": .string("list")]),
-            ]))
+        guard screen == .surface, pendingSurfaceKey == "guidance" else { return }
+        let request: GuidanceRequest =
+            pendingSurfaceParams == GuidanceRequest.selection.payload["params"] ? .selection : .list
+        if !sendGuidanceRequest(action: request.action, payload: request.payload), surfaceFailureMessage == nil {
+            guidanceFailed = true
+            surfaceFailureMessage = "This screen is no longer available. Reopen it from the current menu."
+        }
     }
 
     @discardableResult
@@ -3540,6 +3801,12 @@ final class AppModel: NSObject {
             return false
         }
         guidanceTask = Task { [weak self] in
+            guard let self, await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection) else {
+                if let self, self.guidanceEpoch == generation, self.downloadOwner == owner {
+                    self.failGuidanceRequest(generation: generation)
+                }
+                return
+            }
             let sent = await socket.sendCurrentGuidanceEvent(text) { [weak self] in
                 await MainActor.run {
                     guard let self else { return false }
@@ -3549,7 +3816,7 @@ final class AppModel: NSObject {
                         && self.continuity.connectionGeneration == connection
                 }
             }
-            guard let self, !Task.isCancelled, self.guidanceEpoch == generation,
+            guard !Task.isCancelled, self.guidanceEpoch == generation,
                 self.downloadOwner == owner, self.ws === socket
             else { return }
             if !sent { self.failGuidanceRequest(generation: generation) }
@@ -3624,6 +3891,12 @@ final class AppModel: NSObject {
         }
         outboundTap?(text)
         workReadTask = Task { [weak self] in
+            guard let self, await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection) else {
+                if let self, self.workReadEpoch == generation, self.downloadOwner == owner {
+                    self.failWorkRead(generation: generation)
+                }
+                return
+            }
             let sent = await socket.sendCurrentWorkEvent(text) { [weak self] in
                 await MainActor.run {
                     guard let self else { return false }
@@ -3632,7 +3905,7 @@ final class AppModel: NSObject {
                         && self.continuity.connectionGeneration == connection
                 }
             }
-            guard let self, !Task.isCancelled, self.workReadEpoch == generation,
+            guard !Task.isCancelled, self.workReadEpoch == generation,
                 self.downloadOwner == owner, self.ws === socket
             else { return }
             if !sent { self.failWorkRead(generation: generation) }
