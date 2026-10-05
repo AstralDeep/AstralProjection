@@ -992,6 +992,7 @@ class SurfaceDialog(QDialog):
         self._position_timer.timeout.connect(self._position_surface)
         self._navigation = None
         self._surface_payload = None
+        self._retained_controls = None
         self._apply_surface_style()
 
     def set_navigation(self, menu, presentation, on_open) -> None:
@@ -1291,14 +1292,26 @@ class SurfaceDialog(QDialog):
                 w.setParent(None)
                 w.deleteLater()
 
-    def _emit_from_surface(self, action: str, payload: dict) -> None:
-        self._raw_emit(action, payload)
+    def _emit_from_surface(self, action: str, payload: dict):
+        mutation = (action not in {"chrome_open", "chrome_close", "chat_message", "compose_prompt"}
+                    and action not in _CLIENT_LOCAL_ACTIONS)
+        if mutation and self._surface_payload is not None and self._timer.isActive():
+            return False
+        accepted = self._raw_emit(action, payload)
+        if accepted is False:
+            self.fail_operation("Couldn't send this action. Reconnect and retry.")
+            return False
         if action == "chrome_open" and payload.get("surface") == "work":
             return
         if action not in {"chat_message", "compose_prompt"} and action not in _CLIENT_LOCAL_ACTIONS:
             self._status.setText("Applying…")
             self._status.setVisible(True)
+            if mutation:
+                for control in self._inner.findChildren(QPushButton):
+                    if control.property("surface_action") or control.property("form_action"):
+                        control.setEnabled(False)
             self._timer.start()
+        return accepted
 
     def begin_load(self, surface: str, params: dict, title: str = "") -> None:
         if not self.isVisible():
@@ -1320,17 +1333,21 @@ class SurfaceDialog(QDialog):
         self._timer.start()
         self._position_surface()
 
-    def _on_timeout(self) -> None:
+    def _on_timeout(self, message: str = "") -> None:
         self._timer.stop()
         if callable(self._timeout_observer):
             self._timeout_observer()
         self._status.setVisible(False)
+        if self._surface_payload is not None:
+            self._retained_controls = _capture_controls(self._inner)
         self._clear_body()
         box = QWidget()
         bl = QVBoxLayout(box)
         bl.setContentsMargins(0, 24, 0, 0)
         bl.setSpacing(10)
-        msg = QLabel("This settings screen didn't load. Check your connection and try again.")
+        msg = QLabel(message or ("The server hasn't confirmed this action. Reload settings before trying again."
+                                if self._surface_payload is not None
+                                else "This settings screen didn't load. Check your connection and try again."))
         msg.setWordWrap(True)
         msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
         msg.setStyleSheet(f"color:{T.VARIANT_COLORS['warning'][0]}; font-size:13px;")
@@ -1360,8 +1377,27 @@ class SurfaceDialog(QDialog):
         self._title.setText(title or "Settings")
         self._clear_body()
         self._render_surface_components(components)
+        if self._retained_controls is not None:
+            _restore_controls(self._inner, self._retained_controls)
+            self._retained_controls = None
         self._position_surface()
         self._position_timer.start(0)
+
+    def fail_operation(self, message: str) -> None:
+        self._timer.stop()
+        if self._surface_payload is None:
+            self._on_timeout(message)
+        self._status.setText(message)
+        self._status.show()
+        for frame in self._inner.findChildren(QFrame):
+            if frame.property("form_pending"):
+                frame.setProperty("form_pending", False)
+        for control in self._inner.findChildren(QPushButton):
+            if control.property("form_action") or control.property("surface_action"):
+                control.setEnabled(not control.property("server_disabled"))
+        for label in self._inner.findChildren(QLabel):
+            if label.property("form_pending_label"):
+                label.hide()
 
     def _render_surface_components(self, components) -> None:
         from .surface_widgets import adapt_detail_components, adapt_settings_component
@@ -2094,6 +2130,7 @@ class MainWindow(QMainWindow):
         self._audit_request: Optional[str] = None
         self._surface_dialog: Optional[SurfaceDialog] = None
         self._work_read = None
+        self._settings_ticket = None
         self._turn_active = False
         self._turn_phase_active = False
         self._timeline_mode = False
@@ -2587,6 +2624,7 @@ class MainWindow(QMainWindow):
     def _surface_closed(self) -> None:
         self._retire_work_read()
         self._retire_guidance()
+        self._retire_settings()
         self._surface_owner = None
 
     def _console_open_surface(self, surface: str, title: str, params: dict) -> None:
@@ -2599,6 +2637,7 @@ class MainWindow(QMainWindow):
             return
         self._retire_work_read()
         self._retire_guidance()
+        self._retire_settings()
         if self._surface_dialog is None:
             self._surface_dialog = SurfaceDialog(
                 self, self._emit, self._download, on_retry=self._retry_surface,
@@ -2611,13 +2650,46 @@ class MainWindow(QMainWindow):
         self._surface_dialog.raise_()
         if surface == "guidance":
             self._send_guidance("chrome_open", {"surface": surface, "params": params})
-        else:
+        elif surface == "agent_intro":
             self.client.send_event("chrome_open", {"surface": surface, "params": params})
+        else:
+            self._send_settings("chrome_open", {"surface": surface, "params": params})
 
     def _surface_timeout(self) -> None:
         self._finish_work_read()
         self._retire_guidance()
+        self._retire_settings()
         self._surface_owner = None
+
+    def _retire_settings(self) -> None:
+        ticket, self._settings_ticket = self._settings_ticket, None
+        if ticket is not None:
+            self._finish_local_submission_by_generation(ticket[3])
+
+    def _settings_current(self, ticket) -> bool:
+        dialog = self._surface_dialog
+        return (self._settings_ticket is ticket and ticket[0] is self.client
+                and ticket[1] == getattr(self.client, "connection_generation", None)
+                and ticket[2] == self._resume_store.storage_key and dialog is not None
+                and dialog.isVisible() and dialog._surface == ticket[4])
+
+    def _send_settings(self, action: str, payload: dict) -> bool:
+        dialog = self._surface_dialog
+        if dialog is None or not dialog.isVisible() or self._settings_ticket is not None:
+            return False
+        sender = getattr(self.client, "send_current_settings", None)
+        connection = getattr(self.client, "connection_generation", None)
+        owner = self._resume_store.storage_key
+        if not callable(sender) or not _canonical_uuid4(connection) or not owner:
+            dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
+            return False
+        ticket = (self.client, connection, owner, str(uuid.uuid4()), dialog._surface)
+        self._settings_ticket = ticket
+        sent = sender(dialog._surface, action, payload, ticket[3], is_current=lambda: self._settings_current(ticket))
+        if not sent and self._settings_ticket is ticket:
+            self._retire_settings()
+            dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
+        return sent
 
     def _retire_guidance(self) -> None:
         ticket, self._guidance_ticket = self._guidance_ticket, None
@@ -3178,6 +3250,36 @@ class MainWindow(QMainWindow):
 
     def _on_chrome_surface(self, msg: dict) -> None:
         dialog = self._surface_dialog
+        ticket = self._settings_ticket
+        if (ticket is not None and msg.get("mode") == "mandatory"
+                and msg.get("request_generation") is None and msg.get("surface_key") not in {"work", "guidance", "agent_intro"}):
+            self._retire_settings()
+            ticket = None
+        if ticket is not None:
+            if (not self._settings_current(ticket) or msg.get("mode", "replace") != "replace"
+                    or msg.get("surface_key") not in {ticket[4], "error", ""}
+                    or msg.get("request_generation") is not None and msg.get("request_generation") != ticket[3]):
+                return
+            if msg.get("surface_key") == "" and msg.get("components"):
+                return
+            self._retire_settings()
+            if msg.get("surface_key") == "":
+                dialog.set_mandatory(False)
+                dialog.close()
+                return
+            components = msg.get("components") or []
+            owned_failure = (all(isinstance(row, dict) and row.get("type") in {"alert", "text"} for row in components)
+                             and any(row.get("type") == "alert" and row.get("variant") == "error" for row in components))
+            if msg.get("surface_key") == "error" or owned_failure:
+                notices = [row.get("message", row.get("content", "")) for row in components if isinstance(row, dict)]
+                dialog.fail_operation(": ".join(str(value) for value in [msg.get("title", ""), *notices] if value))
+                return
+            dialog.set_surface(msg.get("title") or dialog._title.text(), msg.get("components") or [])
+            self._configure_surface_navigation()
+            return
+        if (self._console_model is not None and msg.get("mode") != "mandatory"
+                and msg.get("surface_key") not in {None, "", "work", "guidance", "agent_intro"}):
+            return
         if msg.get("surface_key") == "guidance" and self._console_model is not None:
             ticket = self._guidance_ticket
             if (ticket is None or msg.get("request_generation") != ticket[3]
@@ -3794,6 +3896,11 @@ class MainWindow(QMainWindow):
                 return
             if action == "chrome_close":
                 self._surface_closed()
+            dialog = self._surface_dialog
+            if (dialog is not None and dialog.isVisible() and dialog._surface not in {"work", "guidance", "agent_intro"}
+                    and action not in {"chrome_close", "chat_message", "compose_prompt"}
+                    and action not in _CLIENT_LOCAL_ACTIONS):
+                return self._send_settings(action, payload)
         if action == "chrome_open" and payload.get("surface") == "work":
             params = payload.get("params")
             self._request_work_surface(params if isinstance(params, dict) else {})
@@ -3879,10 +3986,20 @@ class MainWindow(QMainWindow):
             if self._work_read is not None and self._work_read[3] == s.partition(":")[2]:
                 self._retire_work_read()
             return
+        if s.startswith("settings_failed:"):
+            ticket = self._settings_ticket
+            if ticket is not None and s.partition(":")[2] == ticket[3]:
+                self._retire_settings()
+                if self._surface_dialog is not None:
+                    self._surface_dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
+            return
         if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
+            if self._settings_ticket is not None and self._surface_dialog is not None and self._surface_dialog.isVisible():
+                self._surface_dialog._on_timeout("The connection interrupted this action. Reload settings before trying again.")
             self._viewport.retire(reset=True)
             self._retire_work_read()
             self._retire_guidance()
+            self._retire_settings()
             self._surface_owner = None
             self._clear_workspace_actions()
         remote = getattr(self, "_remote", None)
@@ -4525,6 +4642,11 @@ class MainWindow(QMainWindow):
         )
         self._operation_status_by_id[status.operation_id] = status
         visible = (status.error or {}).get("message") or status.label
+        ticket = self._settings_ticket
+        if (ticket is not None and self._settings_current(ticket) and ticket[3] == status.request_generation
+                and status.terminal and status.state != "completed"):
+            self._retire_settings()
+            self._surface_dialog.fail_operation(str(visible))
         if status.terminal:
             if status.state != "completed":
                 self._continuity.retire_uncommitted_commit(status.request_generation)
@@ -4867,7 +4989,7 @@ class MainWindow(QMainWindow):
             title = msg.get("title") or ""
             body = msg.get("body") or ""
             text = f"{title}: {body}" if title else body
-            kind = "error" if msg.get("level") == "error" else "info"
+            kind = msg.get("level") if msg.get("level") in ("error", "warning") else "info"
             chat = frame_chat_id(msg)
             if chat and chat == self.active_chat:
                 self._show_banner(text, kind)

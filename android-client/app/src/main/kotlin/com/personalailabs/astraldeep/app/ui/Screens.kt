@@ -36,6 +36,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.personalailabs.astraldeep.app.render.FormSubmissionState
+import com.personalailabs.astraldeep.app.render.LocalFormSubmissionState
 import com.personalailabs.astraldeep.app.render.LocalGuidanceNotes
 import com.personalailabs.astraldeep.app.render.LocalWorkReadText
 import com.personalailabs.astraldeep.app.render.Renderer
@@ -269,12 +271,13 @@ fun SurfaceScreen(
     loadFailed: Boolean = false,
     onTimeout: (String?) -> Unit = {},
     showTitle: Boolean = true,
+    formState: FormSubmissionState = FormSubmissionState(),
 ) {
     var attempt by remember(surfaceKey, requestGeneration) { mutableStateOf(0) }
     var timedOut by remember(surfaceKey, requestGeneration) { mutableStateOf(false) }
     val hasSurface = surface != null
     LaunchedEffect(surfaceKey, requestGeneration, attempt, hasSurface) {
-        if (!hasSurface) {
+        if (!hasSurface || requestGeneration != null) {
             timedOut = false
             delay(SURFACE_TIMEOUT_MS)
             onTimeout(requestGeneration)
@@ -282,7 +285,7 @@ fun SurfaceScreen(
         }
     }
     when (surfaceViewState(hasSurface, timedOut || loadFailed)) {
-        SurfaceViewState.Loaded -> SurfaceContent(surface!!, renderer, showTitle)
+        SurfaceViewState.Loaded -> SurfaceContent(surface!!, renderer, showTitle, formState, onRetry)
         SurfaceViewState.Loading -> SkeletonList()
         SurfaceViewState.TimedOut ->
             SurfaceTimeout(
@@ -301,8 +304,9 @@ private fun SurfaceContent(
     surface: Inbound.ChromeSurface,
     renderer: Renderer,
     showTitle: Boolean,
+    formState: FormSubmissionState,
+    onRetry: () -> Unit,
 ) {
-    // Keys items by revision: equal content would else keep stale state
     val revision = remember(surface) { surfaceRevision.incrementAndGet() }
     val listState = rememberLazyListState()
     LaunchedEffect(revision) { listState.scrollToItem(0) }
@@ -320,10 +324,34 @@ private fun SurfaceContent(
                 )
             }
         }
-        itemsIndexed(surface.components, key = { i, _ -> "$revision-$i" }) { _, comp ->
+        if (formState.error != null) {
+            item(key = "surface-operation-result") {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(formState.error, color = MaterialTheme.colorScheme.error)
+                    if (formState.reloadRequired) {
+                        Button(onClick = onRetry, enabled = formState.connected && !formState.pending) {
+                            Text("Reload settings")
+                        }
+                    }
+                }
+            }
+        }
+        if (formState.pending) {
+            item(key = "surface-operation-pending") {
+                Text("Waiting for server…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        itemsIndexed(surface.components, key = { i, component ->
+            if (component.type == "param_picker") {
+                "${surface.surfaceKey}-form-${component.id ?: i}-${component.attributes["fields"]?.toString()?.hashCode()}"
+            } else {
+                "$revision-$i"
+            }
+        }) { _, comp ->
             CompositionLocalProvider(
                 LocalWorkReadText provides isPrivateChromeSurface(surface.surfaceKey),
                 LocalGuidanceNotes provides (surface.surfaceKey == "guidance"),
+                LocalFormSubmissionState provides formState,
             ) {
                 renderer.render(comp)
             }
@@ -368,7 +396,9 @@ fun connectionStripLabel(
     everConnected: Boolean,
 ): String? =
     when {
-        !everConnected || c == ConnectionState.Connected -> null
+        c == ConnectionState.Connected -> null
         c == ConnectionState.AuthRequired -> connectionLabel(c)
+        !everConnected && c == ConnectionState.Disconnected -> "Unable to connect. Check your connection and retry."
+        !everConnected -> connectionLabel(c)
         else -> "Reconnecting…"
     }

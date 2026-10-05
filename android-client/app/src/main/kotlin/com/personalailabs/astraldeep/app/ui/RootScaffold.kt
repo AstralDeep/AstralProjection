@@ -53,7 +53,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personalailabs.astraldeep.app.R
+import com.personalailabs.astraldeep.app.render.FormSubmissionState
 import com.personalailabs.astraldeep.app.render.Renderer
+import com.personalailabs.astraldeep.app.transport.ConnectionState
 import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
 import com.personalailabs.astraldeep.core.chrome.ChromeMenuModel
 import com.personalailabs.astraldeep.core.chrome.MenuItem
@@ -138,6 +140,14 @@ private fun RootScaffoldContent(
                             requestGeneration = state.privateSurfaceRequest?.requestGeneration,
                             loadFailed = state.privateSurfaceFailed,
                             onTimeout = vm::timeoutPrivateSurface,
+                            formState =
+                                FormSubmissionState(
+                                    connected = state.connection == ConnectionState.Connected,
+                                    pending = state.privateSurfaceRequest != null,
+                                    reloadRequired = state.surfaceReloadRequired,
+                                    outcomeRevision = state.surfaceOutcomeRevision,
+                                    error = state.surfaceErrorMessage,
+                                ),
                         )
                 }
             }

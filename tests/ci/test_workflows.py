@@ -382,6 +382,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "VoiceConversationUITests",
         "WorkspacePresentationUITests",
         "WorkspaceActionsUITests",
+        "SettingsControlsUITests",
         "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation",
     ):
         assert "-only-testing:AstralAppUITests/" + selector in first_login
@@ -390,7 +391,11 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "testDeterministicProcessRelaunchRestoresSemanticConversation \\\n"
     ) in first_login
     assert (
-        'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)'
+        'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n'
+        '            workspace_actions=(\n'
+        '              -only-testing:AstralAppUITests/WorkspaceActionsUITests\n'
+        '              -only-testing:AstralAppUITests/SettingsControlsUITests\n'
+        '            )'
         in first_login
     )
     assert '"${workspace_actions[@]}"' in first_login

@@ -158,6 +158,11 @@ extension View {
 final class ThemeStore {
     var palette = AstralPalette.midnight
 
+    var colorScheme: ColorScheme {
+        let color = palette.bg.resolve(in: EnvironmentValues())
+        return 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue > 0.5 ? .light : .dark
+    }
+
     func applyPreferences(_ json: JSONValue?) {
         let theme = json?["preferences"]?["theme"] ?? json?["theme"] ?? json
         apply(spec: theme)

@@ -149,6 +149,13 @@ final class AppModel: NSObject {
     var accountName = ""
     var connected = false
     var everConnected = false
+    var initialConnectionFailed = false
+    var surfaceFailureMessage: String?
+    private var ordinarySurfaceRequests: [String: OrdinarySurfaceRequest] = [:]
+    private var ordinarySurfaceGeneration: String?
+    private var ordinaryReadIntent: (generation: String, owner: DownloadOwner)?
+    private var parameterRequests: [String: String] = [:]
+    private var parameterFailures: Set<String> = []
     var screen: Screen = .chat
     var activeChatId: String?
 
@@ -181,6 +188,8 @@ final class AppModel: NSObject {
     var statusText: String?
     var errorBanner: String?
     var bannerIsError = true
+    private var warningBannerText: String?
+    var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
     var asyncDetached = false
     var operationStatuses: [String: OperationStatus] = [:]
@@ -206,6 +215,7 @@ final class AppModel: NSObject {
     var audit: [AuditEvent] = []
     var agentsLoading = false
     var historyLoading = false
+    var historyLoaded = false
     var auditLoading = false
 
     var chromeMenu: ChromeMenuModel?
@@ -408,6 +418,9 @@ final class AppModel: NSObject {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            retireOrdinarySurfaceRequests()
+            parameterRequests = [:]
+            parameterFailures = []
             resetViewportRefresh(clearSubmissionHistory: true)
             continuity.clear()
             resetChatState()
@@ -420,6 +433,13 @@ final class AppModel: NSObject {
         let account: ConversationAccount?
         let generation: Int
         let signedIn: Bool
+    }
+
+    private struct OrdinarySurfaceRequest {
+        let surface: String
+        let connection: String?
+        let owner: DownloadOwner
+        let socket: WSClient?
     }
 
     var downloadOwner: DownloadOwner {
@@ -848,7 +868,13 @@ final class AppModel: NSObject {
     }
 
     func bootstrap() async {
-        guard let stored = store.load() else { return }
+        let generation = sessionGeneration
+        let owner = downloadOwner
+        let authentication = authSession
+        let loaded = await Task.detached { [store] in store.load() }.value
+        guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+            authentication === authSession, let stored = loaded
+        else { return }
         tokens = stored.tokenSet
         enterSignedIn(resumedSession: true)
         if case .rejected = await refreshOutcome() {
@@ -999,6 +1025,12 @@ final class AppModel: NSObject {
         tokens = nil
         conversationAccount = nil
         signedIn = false
+        connected = false
+        everConnected = false
+        initialConnectionFailed = false
+        retireOrdinarySurfaceRequests()
+        parameterRequests = [:]
+        historyLoaded = false
         voice.close()
         resetViewportRefresh(clearSubmissionHistory: true)
         continuity.clear()
@@ -1023,6 +1055,8 @@ final class AppModel: NSObject {
     }
 
     func clearConversationForAccountRemoval() {
+        retireOrdinarySurfaceRequests()
+        parameterRequests = [:]
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
@@ -1250,6 +1284,13 @@ final class AppModel: NSObject {
         queueViewportRefresh(device)
     }
 
+    var viewportRefreshFailureMessage: String {
+        if canvas.dropWelcome().isEmpty, !turns.contains(where: { $0.role == "assistant" }) {
+            return "The dashboard layout could not update. Retry to refresh it."
+        }
+        return "The layout could not update. Your result is still available."
+    }
+
     private func resetViewportRefresh(clearSubmissionHistory: Bool = false) {
         if clearSubmissionHistory { viewportSubmissionIds.removeAll() }
         viewportRefreshFailed = false
@@ -1327,6 +1368,7 @@ final class AppModel: NSObject {
         case .connected:
             connected = true
             everConnected = true
+            initialConnectionFailed = false
             if continuity.connectionGeneration == nil {
                 refreshActiveChat()
             }
@@ -1339,6 +1381,11 @@ final class AppModel: NSObject {
             resetViewportRefresh()
             invalidateWorkRead()
             connected = false
+            initialConnectionFailed = !everConnected
+            if screen == .surface, !["guidance", "work"].contains(pendingSurfaceKey) {
+                surfaceFailureMessage = "The connection was lost. Reconnect and retry this screen."
+            }
+            retireOrdinarySurfaceRequests(preservingReadIntent: true)
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
             turnActive = false
@@ -1387,6 +1434,10 @@ final class AppModel: NSObject {
         if guidanceState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
             let generation = guidanceState.generation
         {
+            surfaceFailureMessage =
+                AdmissionRefusal(frame: frame)?.message
+                ?? OperationStatus(frame: frame)?.error["message"]?.stringValue
+                ?? "Private notes could not be loaded. Retry this screen."
             failGuidanceRequest(generation: generation)
             return
         }
@@ -1410,6 +1461,7 @@ final class AppModel: NSObject {
                 history = items.compactMap { ChatSummary(historyItem: $0) }
                 historyTitle = list.raw["title"]?.stringValue ?? "Recent chats"
                 historyLoading = false
+                historyLoaded = true
             } else if frame.renderComponents.contains(where: { $0.type == "skeleton" }) {
                 historyLoading = true
             }
@@ -1470,6 +1522,7 @@ final class AppModel: NSObject {
             history = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
             historyTitle = "Recent chats"
             historyLoading = false
+            historyLoaded = true
         case "ui_stream_data", "stream_data":
             if continuity.connectionGeneration == nil {
                 applyCanvasOps(streamFrameToOps(frame, activeChat: activeChatId, seqState: &seqState))
@@ -1511,6 +1564,8 @@ final class AppModel: NSObject {
             reduceAgentLifecycle(frame)
         case "user_preferences":
             themeStore.applyPreferences(frame.payload)
+        case "theme_apply":
+            themeStore.apply(spec: frame.payload["theme"] ?? frame.payload)
         case "workspace_timeline_mode":
             timelineReadOnly = frame.payload["active"]?.boolValue ?? frame.payload["on"]?.boolValue ?? false
         case "error":
@@ -1566,6 +1621,7 @@ final class AppModel: NSObject {
                 .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: ": ")
             if !text.isEmpty {
                 bannerIsError = frame.payload["level"]?.stringValue == "error"
+                warningBannerText = frame.payload["level"]?.stringValue == "warning" ? text : nil
                 errorBanner = text
             }
             if let chatId = nestedChatId(frame), chatId == activeChatId {
@@ -1600,6 +1656,7 @@ final class AppModel: NSObject {
             break
         case "auth_required":
             resetViewportRefresh()
+            retireOrdinarySurfaceRequests()
             Task { await self.handleAuthRequired() }
         default:
             break
@@ -1645,6 +1702,11 @@ final class AppModel: NSObject {
         current.isAuthoritativelyTerminal = status.terminal
         llmFirstLoginOperation = current
         if status.terminal {
+            if status.state != "completed" {
+                failOrdinarySurface(
+                    generation: status.requestGeneration,
+                    message: status.error["message"]?.stringValue ?? status.label)
+            }
             cancelLLMTimers()
             if authoritativeState == .completed {
                 advanceAfterLLMCompletionIfNeeded()
@@ -1664,6 +1726,11 @@ final class AppModel: NSObject {
         else { return }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
+            if status.state != "completed" {
+                failOrdinarySurface(
+                    generation: status.requestGeneration,
+                    message: status.error["message"]?.stringValue ?? status.label)
+            }
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
@@ -1721,6 +1788,7 @@ final class AppModel: NSObject {
             let submission = localOperationSubmissions.removeValue(forKey: refusal.submissionId)
         else { return false }
         componentPendingOperations.removeValue(forKey: refusal.submissionId)
+        failOrdinarySurface(generation: submission.requestGeneration, message: refusal.message)
         if operationOwnsActiveChatTurn(
             action: submission.action,
             requestGeneration: submission.requestGeneration)
@@ -2252,6 +2320,17 @@ final class AppModel: NSObject {
         let title = frame.payload["title"]?.stringValue ?? ""
         let components = AstralComponent.list(from: frame.payload["components"])
         if surfaceKey.isEmpty && components.isEmpty {
+            if frame.payload["request_generation"] != nil {
+                guard !mandatorySurface, screen == .surface, !pendingSurfaceKey.isEmpty,
+                    frame.payload["surface_key"] == .string(""), frame.payload["title"] == .string(""),
+                    frame.payload["region"] == .string("modal"), frame.payload["mode"] == .string("replace"),
+                    frame.payload["admin_only"] == .bool(false), frame.payload["components"] == .array([]),
+                    frame.payload["selection"] == nil,
+                    acceptsOrdinarySurface(frame, surface: pendingSurfaceKey)
+                else { return }
+                closeSurface()
+                return
+            }
             mandatorySurface = false
             if screen == .surface {
                 screen = .chat
@@ -2262,23 +2341,111 @@ final class AppModel: NSObject {
             return
         }
         if frame.surfaceMode == "mandatory" {
+            if frame.payload["request_generation"] != nil {
+                guard acceptsOrdinarySurface(frame, surface: surfaceKey) else { return }
+            }
             invalidateWorkRead()
+            retireOrdinarySurfaceRequests()
+            surfaceFailureMessage = nil
             mandatorySurface = true
             screen = .surface
             pendingSurfaceKey = surfaceKey
             pendingSurfaceParams = .object([:])
-            pendingSurface = SurfaceContent(surfaceKey: surfaceKey, title: title, components: components)
+            replaceOrdinarySurface(key: surfaceKey, title: title, components: components)
+            applySurfaceTheme(components)
             return
         }
         if screen == .surface && pendingSurfaceKey == surfaceKey {
-            pendingSurface = SurfaceContent(surfaceKey: surfaceKey, title: title, components: components)
+            guard acceptsOrdinarySurface(frame, surface: surfaceKey) else { return }
+            replaceOrdinarySurface(key: surfaceKey, title: title, components: components)
+            surfaceFailureMessage = nil
+            applySurfaceTheme(components)
             return
         }
+        if frame.payload["request_generation"] != nil { return }
         let text = [title, noticeText(components)].filter { !$0.isEmpty }.joined(separator: ": ")
         if !text.isEmpty {
             bannerIsError = true
             errorBanner = text
         }
+    }
+
+    private func applySurfaceTheme(_ components: [AstralComponent]) {
+        for component in components {
+            if component.type == "theme_apply" {
+                themeStore.apply(spec: component.raw["attributes"] ?? component.raw)
+            }
+            applySurfaceTheme(component.children)
+        }
+    }
+
+    private func replaceOrdinarySurface(key: String, title: String, components: [AstralComponent]) {
+        let retained =
+            surfaceContainsError(components) && components.allSatisfy { $0.type == "alert" }
+                && pendingSurface?.surfaceKey == key
+            ? pendingSurface?.components.filter { $0.type != "alert" } ?? [] : []
+        pendingSurface = SurfaceContent(surfaceKey: key, title: title, components: components + retained)
+    }
+
+    private func acceptsOrdinarySurface(_ frame: InboundFrame, surface: String) -> Bool {
+        guard signedIn, connected, let current = ordinarySurfaceGeneration,
+            let request = ordinarySurfaceRequests[current], request.surface == surface,
+            request.owner == downloadOwner, request.connection == continuity.connectionGeneration,
+            request.socket === ws
+        else { return false }
+        if let generation = frame.payload["request_generation"] {
+            guard generation.stringValue == current else { return false }
+        } else {
+            guard ordinarySurfaceRequests.count == 1 else { return false }
+        }
+        if surfaceContainsError(AstralComponent.list(from: frame.payload["components"])) {
+            parameterFailures.insert(current)
+        } else {
+            parameterFailures.remove(current)
+        }
+        ordinarySurfaceRequests.removeValue(forKey: current)
+        ordinarySurfaceGeneration = nil
+        return true
+    }
+
+    private func surfaceContainsError(_ components: [AstralComponent]) -> Bool {
+        components.contains {
+            ($0.type == "alert" && ["error", "danger"].contains($0.variant ?? ""))
+                || surfaceContainsError($0.children)
+        }
+    }
+
+    private func retireOrdinarySurfaceRequests(preservingReadIntent: Bool = false) {
+        ordinarySurfaceRequests = [:]
+        ordinarySurfaceGeneration = nil
+        if !preservingReadIntent { ordinaryReadIntent = nil }
+    }
+
+    private func failOrdinarySurface(generation: String, message: String) {
+        guard ordinarySurfaceGeneration == generation,
+            let request = ordinarySurfaceRequests[generation], request.owner == downloadOwner,
+            request.surface == pendingSurfaceKey, screen == .surface
+        else { return }
+        ordinarySurfaceRequests.removeValue(forKey: generation)
+        ordinarySurfaceGeneration = nil
+        surfaceFailureMessage = message
+    }
+
+    private func bindOrdinarySurfaceRequest(identity: ClientOperationIdentity, action: String, payload: JSONValue) {
+        let surface = action == "chrome_open" ? payload["surface"]?.stringValue : pendingSurfaceKey
+        guard let surface, !surface.isEmpty, !["guidance", "work"].contains(surface), action != "chrome_close",
+            action == "chrome_open" || screen == .surface
+        else { return }
+        if action == "chrome_open" {
+            ordinaryReadIntent = (identity.requestGeneration, downloadOwner)
+        }
+        ordinarySurfaceRequests = ordinarySurfaceRequests.filter { entry in
+            localOperationSubmissions.values.contains { $0.requestGeneration == entry.key }
+        }
+        ordinarySurfaceRequests[identity.requestGeneration] = OrdinarySurfaceRequest(
+            surface: surface, connection: continuity.connectionGeneration, owner: downloadOwner, socket: ws)
+        ordinarySurfaceGeneration = identity.requestGeneration
+        surfaceFailureMessage = nil
     }
 
     private func reduceError(_ frame: InboundFrame) {
@@ -2563,11 +2730,24 @@ final class AppModel: NSObject {
                 connectionGeneration: connectionGeneration)
         else { return false }
         localOperationSubmissions[submission.submissionId] = submission
+        if replay.action == "chrome_open", screen == .surface, replay.surface == pendingSurfaceKey,
+            !["guidance", "work"].contains(replay.surface),
+            ordinaryReadIntent?.generation == replay.identity.requestGeneration,
+            ordinaryReadIntent?.owner == downloadOwner
+        {
+            ordinarySurfaceRequests[replay.identity.requestGeneration] = OrdinarySurfaceRequest(
+                surface: replay.surface, connection: connectionGeneration, owner: downloadOwner, socket: ws)
+            ordinarySurfaceGeneration = replay.identity.requestGeneration
+            surfaceFailureMessage = nil
+        }
         if localSubmissionShowsActivity(submission) { statusText = submission.label }
         return true
     }
 
     private func clearLocalOperationSubmission(requestGeneration: String) {
+        if ordinarySurfaceGeneration != requestGeneration {
+            ordinarySurfaceRequests.removeValue(forKey: requestGeneration)
+        }
         for (submission, local) in localOperationSubmissions where local.requestGeneration == requestGeneration {
             componentPendingOperations.removeValue(forKey: submission)
         }
@@ -2745,6 +2925,7 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action == "chrome_open", mandatorySurface { return }
         if action == "compose_prompt" || (action == "chat_message" && pendingSurfaceKey == "agent_intro") {
             guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
                 pendingSurfaceKey == "agent_intro",
@@ -2774,6 +2955,27 @@ final class AppModel: NSObject {
             return
         }
         if action == "chrome_open" || action == "chrome_close" { invalidateWorkRead() }
+        if action == "chrome_open", let surface = payload["surface"]?.stringValue {
+            let current = screen == .surface && pendingSurfaceKey == surface ? pendingSurface : nil
+            if pendingSurfaceKey != surface {
+                parameterRequests = [:]
+                parameterFailures = []
+            }
+            retireOrdinarySurfaceRequests()
+            screen = .surface
+            pendingSurfaceKey = surface
+            pendingSurfaceParams = payload["params"] ?? .object([:])
+            pendingSurface = current
+            surfaceFailureMessage = nil
+            if !signedIn || !connected {
+                surfaceFailureMessage = "Connect before opening settings, then retry this screen."
+            }
+        }
+        if screen == .surface, action != "chrome_open", action != "chrome_close",
+            action.hasPrefix("chrome_") || action == "save_theme", paramPickerPending(action: action)
+        {
+            return
+        }
         var payload = payload
         if action == "attach_existing" {
             if stageExistingAttachment(payload) {
@@ -2865,6 +3067,19 @@ final class AppModel: NSObject {
         }
 
         let identity = ClientOperationIdentity.fresh()
+        if screen == .surface, !["guidance", "work"].contains(pendingSurfaceKey),
+            action != "chrome_close", payload["surface"] == nil,
+            action.hasPrefix("chrome_") || action == "save_theme"
+        {
+            var fields = payload.objectValue ?? [:]
+            fields["surface"] = .string(pendingSurfaceKey)
+            payload = .object(fields)
+        }
+        bindOrdinarySurfaceRequest(identity: identity, action: action, payload: payload)
+        if screen == .surface, action != "chrome_open", action != "chrome_close" {
+            parameterRequests[action] = identity.requestGeneration
+            parameterFailures.formIntersection(Set(parameterRequests.values))
+        }
         let chatId = operationChatId(action: action, payload: payload)
         beginLocalOperationSubmission(
             identity: identity,
@@ -2886,6 +3101,12 @@ final class AppModel: NSObject {
         fields: [String: JSONValue],
         payload: [String: JSONValue]
     ) -> Bool {
+        guard signedIn, connected, !timelineReadOnly, continuity.connectionGeneration != nil else {
+            bannerIsError = true
+            errorBanner = "Reconnect before changing settings. Your entered values are still available."
+            return false
+        }
+        guard !paramPickerPending(action: action) else { return false }
         var submittedPayload = payload
         submittedPayload["fields"] = .object(fields)
         if action.hasPrefix("chrome_note_") {
@@ -2915,6 +3136,8 @@ final class AppModel: NSObject {
         }
 
         let identity = ClientOperationIdentity.fresh()
+        bindOrdinarySurfaceRequest(identity: identity, action: action, payload: .object(submittedPayload))
+        parameterRequests[action] = identity.requestGeneration
         let submissionId = identity.submissionId
         let requestGeneration = identity.requestGeneration
         llmFirstLoginOperation = LLMFirstLoginOperation(
@@ -2950,6 +3173,55 @@ final class AppModel: NSObject {
                 payload: .object(submittedPayload),
                 submissionId: submissionId,
                 requestGeneration: requestGeneration))
+        return true
+    }
+
+    func paramPickerPending(action: String) -> Bool {
+        if action == "chrome_llm_save" { return llmFirstLoginOperation?.isLoading == true }
+        return localOperationSubmissions.values.contains {
+            $0.action == action && $0.chatId == nil && $0.requestGeneration == parameterRequests[action]
+                && ordinarySurfaceRequests[$0.requestGeneration] != nil
+        }
+    }
+
+    func paramPickerStatus(action: String) -> String? {
+        if action == "chrome_llm_save", let operation = llmFirstLoginOperation { return operation.presentedLabel }
+        if let request = parameterRequests[action], parameterFailures.contains(request) { return nil }
+        if let pending = localOperationSubmissions.values.first(where: {
+            $0.action == action && $0.chatId == nil && $0.requestGeneration == parameterRequests[action]
+        }) {
+            guard ordinarySurfaceRequests[pending.requestGeneration] != nil else {
+                return operationStatuses.values.first {
+                    $0.requestGeneration == pending.requestGeneration && $0.terminal
+                }?.label
+            }
+            return operationStatuses.values.first(where: { $0.requestGeneration == pending.requestGeneration })?.label
+                ?? pending.label
+        }
+        return operationStatuses.values.filter {
+            $0.action == action && $0.chatId == nil && $0.requestGeneration == parameterRequests[action]
+        }.max {
+            ($0.updatedAt, $0.sequence) < ($1.updatedAt, $1.sequence)
+        }?.label
+    }
+
+    func paramPickerCompleted(action: String) -> Bool {
+        if action == "chrome_llm_save" { return llmFirstLoginOperation?.state == .completed }
+        return operationStatuses.values.contains {
+            $0.action == action && $0.requestGeneration == parameterRequests[action] && $0.state == "completed"
+                && !parameterFailures.contains($0.requestGeneration)
+        }
+    }
+
+    @discardableResult
+    func saveThemeColor(key: String, value: String) -> Bool {
+        guard signedIn, connected, continuity.connectionGeneration != nil, !timelineReadOnly,
+            pendingSurfaceKey == "theme", screen == .surface,
+            ["bg", "surface", "primary", "secondary", "text", "muted", "accent"].contains(key),
+            Color(cssHex: value) != nil, !paramPickerPending(action: "save_theme")
+        else { return false }
+        sendEvent(
+            "save_theme", .object(["theme": .object(["color_key": .string(key), "color_value": .string(value)])]))
         return true
     }
 
@@ -3127,6 +3399,7 @@ final class AppModel: NSObject {
 
     func goTo(_ target: Screen) {
         if mandatorySurface { return }
+        retireOrdinarySurfaceRequests()
         if ["work", "guidance"].contains(pendingSurfaceKey) { closeSurface() }
         screen = target
         agentsLoading = target == .agents || agentsLoading
@@ -3152,24 +3425,7 @@ final class AppModel: NSObject {
     func openMenuItem(_ item: ChromeMenuItem) { openSurface(item.surface, params: item.params) }
 
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
-        if mandatorySurface { return }
-        if surface == "guidance" {
-            _ = sendGuidanceRequest(
-                action: "chrome_open", payload: .object(["surface": .string(surface), "params": params]))
-            return
-        }
-        if surface == "work" {
-            beginWorkRead(.object(["surface": .string(surface), "params": params]))
-            return
-        }
-        switch surface {
-        default:
-            sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
-            screen = .surface
-            pendingSurfaceKey = surface
-            pendingSurfaceParams = params
-            pendingSurface = nil
-        }
+        sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
     }
 
     func retryPendingSurface() {
@@ -3178,6 +3434,8 @@ final class AppModel: NSObject {
             retryGuidance()
             return
         }
+        retireOrdinarySurfaceRequests()
+        surfaceFailureMessage = nil
         sendEvent("chrome_open", .object(["surface": .string(pendingSurfaceKey), "params": pendingSurfaceParams]))
     }
 
@@ -3187,6 +3445,10 @@ final class AppModel: NSObject {
         if pendingSurfaceKey == "guidance" { closeGuidance() }
         if pendingSurfaceKey == "work" { closeWorkRead() }
         screen = .chat
+        retireOrdinarySurfaceRequests()
+        parameterRequests = [:]
+        parameterFailures = []
+        surfaceFailureMessage = nil
         pendingSurface = nil
         pendingSurfaceKey = ""
         pendingSurfaceParams = .object([:])
@@ -3216,14 +3478,18 @@ final class AppModel: NSObject {
         guard let generation, guidanceState.generation == generation else { return }
         invalidateGuidance()
         guidanceFailed = true
+        if surfaceFailureMessage == nil {
+            surfaceFailureMessage = "Private notes could not be loaded. Reconnect or retry without changing your notes."
+        }
     }
 
     func retryGuidance() {
         guard pendingSurfaceKey == "guidance" else { return }
+        surfaceFailureMessage = nil
         _ = sendGuidanceRequest(
             action: "chrome_open",
             payload: .object([
-                "surface": .string("guidance"), "params": pendingSurfaceParams,
+                "surface": .string("guidance"), "params": .object(["mode": .string("list")]),
             ]))
     }
 
@@ -3250,9 +3516,11 @@ final class AppModel: NSObject {
                         ])) == request
                 }) == true
         else { return false }
+        retireOrdinarySurfaceRequests()
         invalidateWorkRead()
         let generation = guidanceEpoch
         guidanceFailed = false
+        surfaceFailureMessage = nil
         _ = guidanceState.begin(request, generation: generation)
         screen = .surface
         pendingSurfaceKey = "guidance"
@@ -3335,6 +3603,7 @@ final class AppModel: NSObject {
                     WorkReadRequest(payload: .object($0.chromeOpenPayload)) == request
                 }) == true
         else { return }
+        retireOrdinarySurfaceRequests()
         invalidateWorkRead()
         let generation = workReadEpoch
         workReadState.begin(request, generation: generation)
@@ -3503,8 +3772,15 @@ final class AppModel: NSObject {
     }
 
     var connectionStripLabel: String? {
-        if !everConnected || connected { return nil }
-        return "Reconnecting…"
+        guard signedIn, !connected else { return nil }
+        if everConnected { return "Reconnecting…" }
+        return initialConnectionFailed ? "Couldn't connect. Check your connection and retry." : "Connecting…"
+    }
+
+    func retryConnection() {
+        guard signedIn, !connected else { return }
+        initialConnectionFailed = false
+        connectWS(resumed: true)
     }
 }
 

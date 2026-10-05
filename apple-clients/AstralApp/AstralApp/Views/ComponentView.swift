@@ -166,6 +166,7 @@ struct ComponentView: View {
             case "theme_apply":
                 Color.clear.frame(height: 0)
                     .onAppear { theme.apply(spec: component.raw["attributes"] ?? component.raw) }
+                    .onChange(of: component.raw) { _, raw in theme.apply(spec: raw["attributes"] ?? raw) }
             default:
                 fallbackView
             }
@@ -247,7 +248,16 @@ struct ComponentView: View {
     @ViewBuilder
     private var containerView: some View {
         let dir = component.raw["direction"]?.stringValue
-        if dir == "row" {
+        if let fill = containerFill(component) {
+            Rectangle().fill(fill.color).frame(maxWidth: .infinity).frame(height: fill.height)
+                .accessibilityHidden(true)
+        } else if dir == "row", !component.children.isEmpty,
+            component.children.allSatisfy({ containerFill($0) != nil })
+        {
+            HStack(spacing: 0) { childViews }
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: AstralRadius.sm))
+        } else if dir == "row" {
             let count = fittedColumns(authored: max(1, component.children.count))
             LazyVGrid(
                 columns: Array(
@@ -261,6 +271,15 @@ struct ComponentView: View {
             VStack(alignment: .leading, spacing: 8) { childViews }
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    private func containerFill(_ component: AstralComponent) -> (color: Color, height: CGFloat)? {
+        guard component.type == "container", component.children.isEmpty,
+            let css = component.raw["css"], let background = css["background"]?.stringValue,
+            let color = Color(cssHex: background), let raw = css["height"]?.stringValue,
+            raw.hasSuffix("px"), let height = Double(raw.dropLast(2)), height.isFinite, height > 0, height <= 1024
+        else { return nil }
+        return (color, CGFloat(height))
     }
 
     private var gridView: some View {
@@ -551,14 +570,18 @@ struct ComponentView: View {
     private var buttonView: some View {
         let label = component.label ?? component.title ?? "Continue"
         let variant = component.variant ?? "primary"
+        let action = component.raw["action"]?.stringValue ?? "component_action"
         let button = Button {
-            let action = component.raw["action"]?.stringValue ?? "component_action"
             model.emit(action, payload: component.raw["payload"]?.objectValue ?? [:])
         } label: {
             Text(label).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
         }
-        .disabled(component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false)
+        .disabled(
+            component.raw["disabled"]?.boolValue == true || component.raw["enabled"]?.boolValue == false
+                || (model.screen == .surface && (!model.connected || model.paramPickerPending(action: action)))
+        )
+        .accessibilityValue(model.paramPickerPending(action: action) ? "Submitting" : "Ready")
         if WorkspaceWelcome.isExample(component) {
             button.buttonStyle(WelcomeExampleButtonStyle(palette: p))
         } else {
@@ -1323,15 +1346,18 @@ struct ParamPickerComponent: View {
     @Environment(AppModel.self) var model
     @State private var values: [String: String] = [:]
     @State private var flags: [String: Bool] = [:]
+    @State private var validationError: String?
+    @State private var submittedAction: String?
     @State private var editingOwner = UUID()
-    @FocusState private var editingFocused: Bool
+    @FocusState private var editingField: String?
     private var p: AstralPalette { theme.palette }
 
-    private var fields: [JSONValue] { component.raw["fields"]?.arrayValue ?? [] }
-    private var actions: [JSONValue] { component.raw["actions"]?.arrayValue ?? [] }
+    private var form: ParameterForm? { ParameterForm(component: component) }
+    private var fields: [JSONValue] { form?.fields ?? [] }
+    private var actions: [ParameterAction] { form?.actions ?? [] }
     private var hasLLMSave: Bool {
         component.raw["submit_action"]?.stringValue == "chrome_llm_save"
-            || actions.contains { $0["action"]?.stringValue == "chrome_llm_save" }
+            || actions.contains { $0.action == "chrome_llm_save" }
     }
 
     var body: some View {
@@ -1340,7 +1366,9 @@ struct ParamPickerComponent: View {
                 formText(title)
                     .font(ConsoleTypography.headline).foregroundStyle(p.text)
                     .accessibilityIdentifier(
-                        hasLLMSave ? "llm-provider-form-title" : "param-picker-form-title")
+                        hasLLMSave ? "llm-provider-form-title" : "param-picker-form-title"
+                    )
+                    .onTapGesture { editingField = nil }
             }
             if let desc = component.raw["description"]?.stringValue, !desc.isEmpty {
                 formText(desc)
@@ -1350,23 +1378,33 @@ struct ParamPickerComponent: View {
             ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
                 fieldView(field)
             }
-            if actions.isEmpty {
-                let action = component.raw["submit_action"]?.stringValue
-                paramButton(
-                    label: component.raw["submit_label"]?.stringValue ?? "Submit",
-                    action: action,
-                    variant: "primary",
-                    payload: component.raw["submit_payload"]?.objectValue ?? [:])
-            } else {
-                HStack(spacing: 8) {
-                    ForEach(Array(actions.enumerated()), id: \.offset) { _, definition in
+            AstralToolbarLayout(wraps: true, spacing: 8, rightAligned: false) {
+                ForEach(Array(actions.enumerated()), id: \.offset) { _, definition in
+                    VStack(alignment: .leading, spacing: 4) {
                         paramButton(
-                            label: definition["label"]?.stringValue ?? "Submit",
-                            action: definition["action"]?.stringValue,
-                            variant: definition["variant"]?.stringValue ?? "secondary",
-                            payload: definition["payload"]?.objectValue ?? [:])
+                            label: definition.label, action: definition.action,
+                            variant: definition.variant, payload: definition.payload,
+                            available: definition.available)
+                        if definition.action != "chrome_llm_save", let action = definition.action,
+                            let status = model.paramPickerStatus(action: action)
+                        {
+                            Text(status).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("param-status-\(action)")
+                                .accessibilityAddTraits(.updatesFrequently)
+                        }
                     }
                 }
+            }
+            if actions.contains(where: { !$0.available }) {
+                Text("This form includes an unavailable action. Reload this screen and try again.")
+                    .font(ConsoleTypography.caption).foregroundStyle(p.error)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let validationError {
+                Text(validationError).font(ConsoleTypography.caption).foregroundStyle(p.error)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("param-validation-error")
             }
             if hasLLMSave, let operation = model.llmFirstLoginOperation {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1392,12 +1430,34 @@ struct ParamPickerComponent: View {
         .overlay(RoundedRectangle(cornerRadius: AstralRadius.lg).stroke(p.border))
         .onChange(of: values) { _, _ in updateEditing() }
         .onChange(of: flags) { _, _ in updateEditing() }
-        .onChange(of: editingFocused) { _, _ in updateEditing() }
+        .onChange(of: editingField) { _, _ in updateEditing() }
+        .onChange(of: component.raw) { old, new in
+            let oldFields = old["fields"]?.arrayValue ?? []
+            let newFields = new["fields"]?.arrayValue ?? []
+            let names = Set(newFields.compactMap { $0["name"]?.stringValue })
+            values = values.filter { names.contains($0.key) }
+            for field in newFields {
+                guard let name = field["name"]?.stringValue,
+                    let previous = oldFields.first(where: { $0["name"]?.stringValue == name }),
+                    previous["default"] != field["default"],
+                    values[name] == previous["default"]?.displayText
+                else { continue }
+                values.removeValue(forKey: name)
+            }
+            validationError = nil
+        }
+        .onChange(of: model.paramPickerCompleted(action: submittedAction ?? "")) { _, completed in
+            if completed {
+                for field in fields where (field["kind"]?.stringValue ?? field["type"]?.stringValue) == "password" {
+                    if let name = field["name"]?.stringValue { values.removeValue(forKey: name) }
+                }
+            }
+        }
         .onDisappear { model.setDirectEditing(editingOwner, active: false) }
     }
 
     private func updateEditing() {
-        model.setDirectEditing(editingOwner, active: editingFocused || !values.isEmpty || !flags.isEmpty)
+        model.setDirectEditing(editingOwner, active: editingField != nil || !values.isEmpty || !flags.isEmpty)
     }
 
     private func formText(_ text: String) -> Text {
@@ -1415,12 +1475,7 @@ struct ParamPickerComponent: View {
                 field,
                 values: values.mapValues(JSONValue.string).merging(flags.mapValues(JSONValue.bool)) { _, flag in flag })
         }
-        guard let vw = field["visible_when"],
-            let controller = vw["field"]?.stringValue,
-            let expected = vw["equals"]?.stringValue
-        else { return true }
-        let current = values[controller] ?? vw["default"]?.stringValue ?? ""
-        return current == expected
+        return form?.visible(field, values: values, flags: flags) ?? true
     }
 
     @ViewBuilder
@@ -1429,8 +1484,13 @@ struct ParamPickerComponent: View {
         let label = field["label"]?.stringValue ?? name
         let kind = field["kind"]?.stringValue ?? field["type"]?.stringValue ?? "text"
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+            Text(label + (field["required"]?.boolValue == true ? " *" : ""))
+                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
             fieldControl(field, name: name, label: label, kind: kind)
+            if let help = field["help"]?.stringValue, !help.isEmpty {
+                formText(help).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
@@ -1468,25 +1528,15 @@ struct ParamPickerComponent: View {
             .accessibilityValue(enabled ? "Enabled" : "Disabled")
     }
 
-    private func fieldOptions(_ field: JSONValue) -> [String] {
-        field["options"]?.arrayValue?.compactMap { $0.stringValue ?? $0["value"]?.stringValue } ?? []
-    }
-
-    private func selectedOption(_ field: JSONValue, name: String, options: [String]) -> String? {
-        if let current = values[name] { return current }
-        if guidanceSurface, let fallback = field["default"]?.stringValue { return fallback }
-        return options.first
-    }
-
     @ViewBuilder
     private func selectField(_ field: JSONValue, name: String, label: String) -> some View {
-        let options: [String] = fieldOptions(field)
+        let options: [ParameterOption] = form?.options(field) ?? []
         let selection: Binding<String> = Binding(
-            get: { selectedOption(field, name: name, options: options) ?? "" },
+            get: { form?.stringValue(field, values: values) ?? "" },
             set: { values[name] = $0 })
-        let spoken: String = selectedOption(field, name: name, options: options) ?? "Not selected"
+        let spoken: String = options.first(where: { $0.value == selection.wrappedValue })?.label ?? "Not selected"
         Picker(label, selection: selection) {
-            ForEach(options, id: \.self) { Text($0).tag($0) }
+            ForEach(options) { Text($0.label).tag($0.value) }
         }
         .pickerStyle(.menu).tint(p.primary)
         .accessibilityIdentifier("param-field-\(name)")
@@ -1496,23 +1546,23 @@ struct ParamPickerComponent: View {
 
     @ViewBuilder
     private func checklistField(_ field: JSONValue, name: String) -> some View {
-        let options: [String] = fieldOptions(field)
-        ForEach(options, id: \.self) { option in
-            checklistOption(name: name, option: option)
+        let options: [ParameterOption] = form?.options(field) ?? []
+        ForEach(options) { option in
+            checklistOption(field: field, name: name, option: option)
         }
     }
 
     @ViewBuilder
-    private func checklistOption(name: String, option: String) -> some View {
-        let key = "\(name).\(option)"
+    private func checklistOption(field: JSONValue, name: String, option: ParameterOption) -> some View {
+        let key = "\(name).\(option.value)"
         let isOn: Binding<Bool> = Binding(
-            get: { flags[key] ?? false },
+            get: { form?.selected(field, option: option.value, flags: flags) ?? false },
             set: { flags[key] = $0 })
-        Toggle(option, isOn: isOn)
+        Toggle(option.label, isOn: isOn)
             .font(ConsoleTypography.callout).tint(p.primary)
-            .accessibilityIdentifier("param-field-\(name)-\(option)")
-            .accessibilityLabel(option)
-            .accessibilityValue(flags[key] == true ? "Selected" : "Not selected")
+            .accessibilityIdentifier("param-field-\(name)-\(option.value)")
+            .accessibilityLabel(option.label)
+            .accessibilityValue(isOn.wrappedValue ? "Selected" : "Not selected")
     }
 
     @ViewBuilder
@@ -1526,7 +1576,7 @@ struct ParamPickerComponent: View {
             set: { values[name] = $0 })
         TextField(field["help"]?.stringValue ?? "", text: text)
             .textFieldStyle(.roundedBorder)
-            .focused($editingFocused)
+            .focused($editingField, equals: name)
             #if os(iOS)
                 .keyboardType(.decimalPad)
             #endif
@@ -1541,7 +1591,8 @@ struct ParamPickerComponent: View {
             set: { values[name] = $0 })
         SecureField(field["help"]?.stringValue ?? "", text: text)
             .textFieldStyle(.roundedBorder)
-            .focused($editingFocused)
+            .focused($editingField, equals: name)
+            .onSubmit { editingField = nil }
             .accessibilityIdentifier("param-field-\(name)")
             .accessibilityLabel(label)
     }
@@ -1552,6 +1603,7 @@ struct ParamPickerComponent: View {
             get: { values[name] ?? (field["default"]?.stringValue ?? "") },
             set: { values[name] = $0 })
         TextEditor(text: text)
+            .focused($editingField, equals: name)
             .frame(minHeight: 80)
             .autocorrectionDisabled(true)
             #if os(iOS)
@@ -1568,7 +1620,8 @@ struct ParamPickerComponent: View {
             set: { values[name] = $0 })
         TextField(field["help"]?.stringValue ?? "", text: text)
             .textFieldStyle(.roundedBorder)
-            .focused($editingFocused)
+            .focused($editingField, equals: name)
+            .onSubmit { editingField = nil }
             .autocorrectionDisabled(true)
             #if os(iOS)
                 .textInputAutocapitalization(.never)
@@ -1582,14 +1635,16 @@ struct ParamPickerComponent: View {
         label: String,
         action: String?,
         variant: String,
-        payload: [String: JSONValue]
+        payload: [String: JSONValue],
+        available: Bool
     ) -> some View {
         Button(label) {
             submit(action: action, payload: payload)
         }
         .buttonStyle(AstralButtonStyle(palette: p, variant: variant))
         .disabled(
-            (action == "chrome_llm_save" && (model.llmFirstLoginOperation?.isLoading ?? false))
+            !available || !model.connected || model.timelineReadOnly
+                || model.paramPickerPending(action: action ?? "")
                 || (guidanceSurface && (!model.connected || model.guidanceUpdate == nil))
         )
         .accessibilityIdentifier(
@@ -1597,36 +1652,23 @@ struct ParamPickerComponent: View {
         )
         .accessibilityLabel(label)
         .accessibilityValue(
-            action == "chrome_llm_save" && (model.llmFirstLoginOperation?.isLoading ?? false)
+            model.paramPickerPending(action: action ?? "")
                 ? "Submitting"
                 : "Ready")
     }
 
     private func submit(action: String?, payload: [String: JSONValue]) {
-        var collected: [String: JSONValue] = [:]
-        for field in fields {
-            guard let name = field["name"]?.stringValue else { continue }
-            let kind = field["kind"]?.stringValue ?? field["type"]?.stringValue ?? "text"
-            if kind == "checklist" {
-                let options =
-                    field["options"]?.arrayValue?.compactMap { $0.stringValue ?? $0["value"]?.stringValue } ?? []
-                let chosen = options.filter { flags["\(name).\($0)"] == true }
-                collected[name] = .array(chosen.map { .string($0) })
-            } else if let flag = flags[name] {
-                collected[name] = .bool(flag)
-            } else if let value = values[name] {
-                collected[name] = .string(value)
-            } else if let def = field["default"] {
-                collected[name] = def
-            }
-        }
+        guard let form else { return }
+        validationError = form.validationMessage(values: values, flags: flags)
+        guard validationError == nil else { return }
+        let collected = form.collected(values: values, flags: flags)
         if guidanceSurface {
             guard let request = GuidanceForm(component: component)?.request(values: collected) else { return }
             _ = model.sendGuidanceRequest(action: request.action, payload: request.payload)
             return
         }
         if let action {
-            _ = model.submitParamPicker(action: action, fields: collected, payload: payload)
+            if model.submitParamPicker(action: action, fields: collected, payload: payload) { submittedAction = action }
         } else if let template = component.raw["submit_message_template"]?.stringValue {
             var message = template
             if message.contains("{__values_json__}") {
@@ -1746,38 +1788,72 @@ struct ColorPickerComponent: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @State private var draft: String?
+    @State private var validationError: String?
     private var p: AstralPalette { theme.palette }
-
-    private let presets = ["#6366F1", "#8B5CF6", "#06B6D4", "#22C55E", "#F59E0B", "#EF4444"]
+    private var value: String { draft ?? component.raw["value"]?.stringValue ?? "#6366F1" }
+    private var label: String { component.label ?? "Color" }
 
     var body: some View {
-        HStack(spacing: 8) {
-            Text(component.label ?? "Color").foregroundStyle(p.text)
-            Spacer(minLength: 0)
-            Menu {
-                ForEach(presets, id: \.self) { hex in
-                    Button(hex) { choose(hex) }
-                }
-            } label: {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(cssHex: component.raw["value"]?.stringValue ?? "#6366F1") ?? p.primary)
-                    .frame(width: 28, height: 20)
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(p.border))
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+            HStack(spacing: 10) {
+                ColorPicker(
+                    label,
+                    selection: Binding(
+                        get: { Color(cssHex: value) ?? p.primary },
+                        set: { color in
+                            let resolved = color.resolve(in: EnvironmentValues())
+                            draft = String(
+                                format: "#%02X%02X%02X", Int((resolved.red * 255).rounded()),
+                                Int((resolved.green * 255).rounded()), Int((resolved.blue * 255).rounded()))
+                            validationError = nil
+                        }), supportsOpacity: false
+                )
+                .labelsHidden().accessibilityLabel("Choose \(label) color")
+                TextField(
+                    "#RRGGBB",
+                    text: Binding(
+                        get: { value },
+                        set: {
+                            draft = $0
+                            validationError = nil
+                        })
+                )
+                .font(ConsoleTypography.mono(13)).textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled(true)
+                #if os(iOS)
+                    .textInputAutocapitalization(.never)
+                #endif
+                .accessibilityLabel("\(label) color value")
+                .accessibilityIdentifier("theme-color-\(component.raw["color_key"]?.stringValue ?? "value")")
+                Button("Apply") { choose(value) }
+                    .buttonStyle(AstralButtonStyle(palette: p, variant: "secondary"))
+                    .disabled(!model.connected || model.paramPickerPending(action: "save_theme"))
+                    .accessibilityLabel("Apply \(label) color")
             }
-            .accessibilityLabel("Choose \(component.label ?? "theme") color")
+            if let validationError {
+                Text(validationError).font(ConsoleTypography.caption).foregroundStyle(p.error)
+            }
+        }
+        .onChange(of: component.raw["value"]) { _, _ in
+            if !model.paramPickerPending(action: "save_theme") { draft = nil }
         }
     }
 
-    private func choose(_ hex: String) {
+    private func choose(_ raw: String) {
+        let stripped = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hex = stripped.hasPrefix("#") ? stripped : "#" + stripped
+        guard Color(cssHex: hex) != nil else {
+            validationError = "Enter a six-digit hex color, such as #123ABC."
+            return
+        }
         guard let key = component.raw["color_key"]?.stringValue else { return }
-        theme.apply(spec: .object(["color_key": .string(key), "color_value": .string(hex)]))
-        model.emit(
-            "save_theme",
-            payload: [
-                "theme": .object([
-                    "color_key": .string(key), "color_value": .string(hex),
-                ])
-            ])
+        guard model.saveThemeColor(key: key, value: hex.uppercased()) else {
+            validationError = "Reconnect before saving your color."
+            return
+        }
+        validationError = nil
     }
 }
 

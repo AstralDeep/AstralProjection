@@ -3,6 +3,7 @@ chart condensation, table bounding, and fallback substitution.
 """
 
 from dataclasses import replace
+from copy import deepcopy
 
 import pytest
 
@@ -239,3 +240,96 @@ def test_host_action_budget_traverses_tab_content_and_ignores_non_dicts() -> Non
     assert out[0] == "unchanged"
     assert len(out[1]["tabs"][0]["content"]) == 1
     assert out[1]["tabs"][1]["content"] == []
+
+
+@pytest.mark.parametrize("device", ["ios", "macos", "android", "windows"])
+def test_native_form_action_metadata_survives_full_adaptation(device) -> None:
+    actions = [
+        {"label": label, "action": action, "payload": {"operation": operation,
+         "context": {"type": "not_a_component", "value": "retained"}}}
+        for label, action, operation in (
+            ("Load models", "chrome_llm_models", "load"),
+            ("Test connection", "chrome_llm_test", "test"),
+            ("Save", "chrome_llm_save", "save"),
+            ("Save TypeSafe key", "chrome_typesafe_save", "save"),
+        )
+    ]
+    original = {"type": "card", "content": [{"type": "param_picker",
+                "fields": [], "actions": actions}]}
+    snapshot = deepcopy(original)
+    profile = _profile(device, supported_types=frozenset({"card", "param_picker", "text"}))
+    adapted = ComponentAdapter.adapt([original], profile)
+    assert adapted[0]["content"][0]["actions"] == actions
+    assert original == snapshot
+
+
+def test_metadata_preservation_does_not_skip_typed_action_fallback() -> None:
+    component = {"type": "param_picker", "fields": [], "actions": [
+        {"label": "Save", "action": "save"},
+        {"type": "unsupported", "content": "Unavailable"},
+    ]}
+    output = ComponentAdapter._degrade_unsupported(component, {"param_picker", "text"})
+    assert output["actions"][0] == {"label": "Save", "action": "save"}
+    assert output["actions"][1]["type"] == "text"
+
+
+def test_form_descriptors_share_budget_with_buttons_and_submit_actions() -> None:
+    original = [
+        {"type": "button", "label": "First", "action": "first"},
+        {"type": "param_picker", "fields": [], "actions": [
+            {"label": "Save", "action": "save", "payload": {"value": 1}},
+            {"label": "Test", "action": "test"},
+        ]},
+        {"type": "param_picker", "fields": [], "submit_action": "other", "submit_payload": {"id": 1}},
+    ]
+    snapshot = deepcopy(original)
+    output = ComponentAdapter.adapt(original, _profile("ios", max_actions=2))
+    assert output[1]["actions"] == [original[1]["actions"][0]]
+    assert output[2]["type"] == "text"
+    assert original == snapshot
+
+
+@pytest.mark.parametrize("form", [
+    {"type": "param_picker", "fields": [], "actions": [{"label": "Save", "action": "save"}]},
+    {"type": "param_picker", "fields": [], "submit_action": "save"},
+    {"type": "param_picker", "fields": [], "submit_message_template": "Send {value}"},
+])
+def test_read_only_hosts_cannot_execute_forms(form) -> None:
+    result = ComponentAdapter.adapt([form], _profile("ios", supports_interactivity=False))
+    assert result[0]["type"] == "text"
+    assert "unavailable" in result[0]["content"].lower()
+    assert not any(key in result[0] for key in ("actions", "submit_action", "submit_message_template"))
+
+
+def test_single_form_submit_consumes_budget_and_preserves_identity_on_denial() -> None:
+    forms = [{"type": "param_picker", "id": name, "fields": [], "submit_action": name}
+             for name in ("save", "test")]
+    output = ComponentAdapter.adapt(forms, _profile("ios", max_actions=1))
+    assert output[0]["submit_action"] == "save"
+    assert output[1]["type"] == "text"
+    assert output[1]["id"] == "test"
+
+
+@pytest.mark.parametrize("limits", [
+    {"supports_interactivity": False},
+    {"max_actions": 1},
+])
+def test_implicit_color_save_obeys_host_limits_and_preserves_identity(limits) -> None:
+    picker = {"type": "color_picker", "id": "appearance", "title": "Appearance",
+              "colors": {"primary": "#123456"}, "role": "primary"}
+    original = [{"type": "button", "label": "First", "action": "first"}, picker]
+    snapshot = deepcopy(original)
+    output = ComponentAdapter.adapt(original, _profile(
+        "ios", supported_types=frozenset({"text", "button", "color_picker"}), **limits))
+    assert output[-1] == {"type": "text", "variant": "body", "id": "appearance",
+                          "content": "Appearance is unavailable on this device."}
+    assert original == snapshot
+
+
+def test_implicit_color_save_consumes_budget_without_limiting_accepted_theme() -> None:
+    theme = {"type": "theme_apply", "colors": {"primary": "#123456"}}
+    picker = {"type": "color_picker", "id": "appearance", "role": "primary"}
+    output = ComponentAdapter.adapt([theme, picker, {"type": "button", "action": "next"}],
+                                    _profile("ios", max_actions=1))
+    assert output == [theme, picker]
+    assert ComponentAdapter.adapt([theme], _profile("ios", supports_interactivity=False)) == [theme]

@@ -117,7 +117,13 @@ object Wire {
                 val request = root.strictString("request_generation")
                 if ((key == "guidance" && !GuidanceNotes.validSurface(root)) ||
                     (isPrivateChromeSurface(key) && (canonicalUuid4(request) == null || (root.str("mode") ?: "replace") != "replace")) ||
-                    (!isPrivateChromeSurface(key) && "request_generation" in root) ||
+                    (
+                        !isPrivateChromeSurface(key) && "request_generation" in root &&
+                            (
+                                root.strictString("surface_key") == null || canonicalUuid4(request) == null ||
+                                    (root.str("mode") ?: "replace") != "replace"
+                            )
+                    ) ||
                     (key != "guidance" && "selection" in root)
                 ) {
                     Inbound.Unknown(type)

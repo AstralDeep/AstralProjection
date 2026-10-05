@@ -2,9 +2,8 @@
 // keeps the first server terminal canonical, and the 10-second watchdog never invents a terminal.
 
 import AstralCore
-import XCTest
-
 @testable import AstralDeep
+import XCTest
 
 @MainActor
 final class LLMFirstLoginOperationTests: XCTestCase {
@@ -17,6 +16,8 @@ final class LLMFirstLoginOperationTests: XCTestCase {
 
     private func modelWithConnection() -> (AppModel, FrameLog) {
         let model = AppModel(tokenStore: InMemoryTokenStore())
+        model.signedIn = true
+        model.connected = true
         XCTAssertTrue(model.beginConversationConnection(connection))
         let log = FrameLog()
         model.outboundTap = { text in

@@ -1,9 +1,8 @@
 // Verifies scoped layout refresh preserves native presentation and rejects stale, failed, or busy hydration.
 
 import AstralCore
-import XCTest
-
 @testable import AstralDeep
+import XCTest
 
 @MainActor
 final class AppModelViewportSnapshotTests: XCTestCase {
@@ -30,14 +29,14 @@ final class AppModelViewportSnapshotTests: XCTestCase {
             """)!
     }
 
-    private func model() -> (AppModel, Frames) {
+    private func model(initialSnapshot: Bool = true) -> (AppModel, Frames) {
         let model = AppModel(tokenStore: InMemoryTokenStore())
         model.bindConversationAccount(ConversationAccount(issuer: "https://test.invalid", subject: "viewport-owner")!)
         model.signedIn = true
         model.connected = true
         _ = model.beginConversationConnection(connection)
         _ = model.openConversationRequest(chatId: chat, requestGeneration: generation, purpose: .hydration)
-        model.handleFrame(snapshot())
+        if initialSnapshot { model.handleFrame(snapshot()) }
 
         model.handleFrame(InboundFrame.parse("{\"type\":\"rote_config\",\"viewport_snapshot_supported\":true}")!)
         model.viewportRefreshInterval = 60_000_000_000
@@ -364,5 +363,61 @@ final class AppModelViewportSnapshotTests: XCTestCase {
         XCTAssertEqual(frames.values.count, 1)
         finish(model, frames)
         XCTAssertEqual(model.canvas.first?.raw["columns"]?.numberValue, 1)
+    }
+
+    func testZeroTurnWelcomeFailureIsAccurateAndRetryPreservesTheWelcome() async throws {
+        let (model, frames) = model(initialSnapshot: false)
+        func welcome(_ request: String) -> InboundFrame {
+            InboundFrame.parse(
+                """
+                {"type":"conversation_snapshot","schema_version":1,
+                "snapshot_id":"\(UUID().uuidString.lowercased())","chat_id":"\(chat)",
+                "connection_generation":"\(connection)","request_generation":"\(request)",
+                "snapshot_purpose":"hydration","render_revision":0,"committed_at":"2026-10-05T18:00:00Z",
+                "transcript":[],"canvas":{"target":"canvas","components":[
+                {"type":"text","component_id":"wel_heading","content":"Welcome"}]}}
+                """)!
+        }
+        let initial = UUID().uuidString.lowercased()
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: initial, purpose: .hydration))
+        model.handleFrame(welcome(initial))
+        XCTAssertTrue(model.turns.isEmpty)
+        XCTAssertEqual(model.canvas.first?.componentId, "wel_heading")
+        resize(model, width: 390)
+        model.viewportSendOverride = { _ in false }
+        await model.flushViewportRefresh()
+        XCTAssertTrue(model.viewportRefreshFailed)
+        XCTAssertEqual(
+            model.viewportRefreshFailureMessage, "The dashboard layout could not update. Retry to refresh it.")
+        XCTAssertEqual(model.canvas.first?.componentId, "wel_heading")
+        model.viewportSendOverride = { text in
+            frames.values.append(try! JSONValue.parse(Data(text.utf8)))
+            return true
+        }
+        model.retryViewportRefresh()
+        await model.flushViewportRefresh()
+        let request = try XCTUnwrap(frames.values.last?["request_generation"]?.stringValue)
+        model.handleFrame(welcome(request))
+        XCTAssertFalse(model.viewportRefreshFailed)
+        XCTAssertTrue(model.turns.isEmpty)
+        XCTAssertEqual(model.canvas.first?.componentId, "wel_heading")
+    }
+
+    func testInitialViewportWithoutSettledSnapshotNeverClaimsFailedSavedContent() async {
+        let model = AppModel(tokenStore: InMemoryTokenStore())
+        model.signedIn = true
+        model.connected = true
+        model.bindConversationAccount(ConversationAccount(issuer: "https://test.invalid", subject: "initial-owner")!)
+        _ = model.beginConversationConnection(connection)
+        model.handleFrame(InboundFrame.parse(#"{"type":"rote_config","viewport_snapshot_supported":true}"#)!)
+        var sent = 0
+        model.viewportSendOverride = { _ in
+            sent += 1
+            return false
+        }
+        resize(model, width: 390)
+        await model.flushViewportRefresh()
+        XCTAssertEqual(sent, 0)
+        XCTAssertFalse(model.viewportRefreshFailed)
     }
 }

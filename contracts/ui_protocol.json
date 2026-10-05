@@ -2,6 +2,25 @@
   "version": 1,
   "description": "Committed UI-protocol manifest (feature 044). Single source for the server->client WS frame vocabulary, the ui_event action vocabulary, and the component vocabulary. Backend, Windows, and Android test suites all assert against this file; adding a frame type, action, or component type REQUIRES editing it in the same PR (guards fail otherwise). See specs/044-native-client-parity/contracts/ui-protocol.md.",
   "presentation_contracts": {
+    "ordinary_settings_forms": {
+      "version": 1,
+      "components": ["param_picker", "color_picker", "theme_apply"],
+      "options": "String choices or objects with a string value and readable label. Labels are displayed, values submitted, and saved choices absent from refreshed catalogs remain recoverable.",
+      "defaults": "Untouched select, boolean and checklist controls display and submit their saved defaults; conditional fields use the same resolved form state.",
+      "actions": "Untyped label/action/payload descriptors are metadata, not renderable components. Adaptation preserves routing and labels, while host interactivity and action budgets still apply. Missing routing is explicitly unavailable.",
+      "native_result": {
+        "type": "chrome_surface",
+        "region": "modal",
+        "mode": "replace",
+        "request_generation": "Optional canonical lowercase UUID4 copied from the initiating request only for its registry-owned surface and current socket. The candidate server echoes every valid ordinary request generation.",
+        "ownership": "A supplied payload surface can only match the action handler's registry-owned surface; it cannot redirect a response to another form.",
+        "close": "An ordinary accepted action may echo its exact canonical request_generation on an empty surface_key modal replace close, with empty title/components, admin_only false and no selection. The server closes only the current socket/owner/generation; queued same-surface or different-surface navigation retires the previous request. Mandatory account setup transitions retain their authoritative uncorrelated close.",
+        "client": "Require the exact pending generation whenever an echo is present. Legacy uncorrelated ordinary results may settle only the current surface/socket's single pending operation. Navigation, close and disconnect retire it; guidance and work retain their mandatory strict fences. Legacy same-surface replies cannot provide the new correlation guarantee."
+      },
+      "appearance": "Accepted server theme_apply or account preferences own active appearance. Arbitrary web-supported hex colors may be entered and canceled; rejected saves do not change the accepted palette.",
+      "provider_save": "Validate input, authorization, sharing acknowledgement and same-endpoint blank-key reuse before encrypted persistence. Acknowledge the committed configuration before a separate bounded connection check. Failed external probes emit a warning that states settings remain saved; they never reclassify or erase a completed Save. Validation and persistence failures do not acknowledge a save. Explicit Test connection and Load models remain independent operations.",
+      "watch": "Generic forms and colors retain the existing advertised phone/desktop handoffs; scoped guidance forms keep their separate capability contract."
+    },
     "guidance_notes_088": {
       "version": 1,
       "fixture": "contracts/fixtures/guidance_088/notes_surface.json",

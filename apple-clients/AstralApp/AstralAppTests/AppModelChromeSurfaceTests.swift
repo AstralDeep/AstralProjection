@@ -3,9 +3,8 @@
 // pinned.
 
 import AstralCore
-import XCTest
-
 @testable import AstralDeep
+import XCTest
 
 @MainActor
 final class AppModelChromeSurfaceTests: XCTestCase {
@@ -25,6 +24,7 @@ final class AppModelChromeSurfaceTests: XCTestCase {
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
             tokenStore: InMemoryTokenStore(), defaults: defaults)
         model.signedIn = true
+        model.connected = true
         return model
     }
 

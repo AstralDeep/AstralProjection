@@ -117,6 +117,18 @@ class WireTest {
     }
 
     @Test
+    fun ordinary_surface_correlation_accepts_only_canonical_replace_frames() {
+        val generation = "11111111-1111-4111-8111-111111111111"
+        val raw = """{"type":"chrome_surface","surface_key":"llm","components":[],"request_generation":"$generation"}"""
+        assertEquals(generation, assertIs<Inbound.ChromeSurface>(Wire.decode(raw)).requestGeneration)
+        for (bad in listOf("null", "1", "\"stale\"", "\"11111111-1111-1111-8111-111111111111\"")) {
+            assertIs<Inbound.Unknown>(Wire.decode(raw.replace("\"$generation\"", bad)))
+        }
+        assertIs<Inbound.Unknown>(Wire.decode(raw.replace("\"components\":[]", "\"components\":[],\"mode\":\"mandatory\"")))
+        assertIs<Inbound.Unknown>(Wire.decode(raw.replace("\"components\":[]", "\"components\":[],\"selection\":{}")))
+    }
+
+    @Test
     fun decodes_ui_stream_data() {
         val r =
             assertIs<Inbound.UiStreamData>(

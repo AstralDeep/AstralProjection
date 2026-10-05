@@ -323,6 +323,139 @@ def test_settings_navigation_uses_rote_axis_and_server_menu(win, geometry):
     controls = dialog._navigation_inner.findChildren(QPushButton, "surfaceNavigationItem")
     next(control for control in controls if control.accessibleName() == "Theme").click()
     assert win.client.sent[-1] == ("chrome_open", {"surface": "theme", "params": {}})
+
+
+def test_nested_settings_navigation_owns_the_new_surface_and_rejects_stale_reply(win):
+    win._open_surface("author", "Author")
+    original = win._settings_ticket
+    win._on_chrome_surface({"surface_key": "author", "title": "Author", "components": [],
+                            "request_generation": original[3]})
+    win._emit("chrome_open", {"surface": "author", "params": {"view": "drafts"}})
+    current = win._settings_ticket
+    assert current is not None and current[3] != original[3]
+    assert win._surface_dialog._params == {"view": "drafts"}
+    win._on_chrome_surface({"surface_key": "author", "title": "Stale", "components": [],
+                            "request_generation": original[3]})
+    assert win._settings_ticket is current
+    win._on_chrome_surface({"surface_key": "author", "title": "Drafts", "components": [],
+                            "request_generation": current[3]})
+    assert win._settings_ticket is None
+    assert win._surface_dialog._title.text() == "Drafts"
+
+
+def test_settings_blank_close_settles_the_active_provider_save(win):
+    win._open_surface("llm", "Providers")
+    ticket = win._settings_ticket
+    win._on_chrome_surface({"surface_key": "llm", "title": "Providers", "components": [],
+                            "request_generation": ticket[3]})
+    assert win._emit("chrome_llm_save", {"fields": {"provider": "openai"}})
+    win._surface_dialog.set_mandatory(True)
+    win._on_chrome_surface({"surface_key": "", "components": []})
+    assert win._settings_ticket is None
+    assert not win._surface_dialog.isVisible()
+
+
+def test_settings_error_keeps_edits_and_reenables_retry(win):
+    from test_settings_controls import provider_form
+
+    win._open_surface("llm", "Providers")
+    ticket = win._settings_ticket
+    win._on_chrome_surface({"surface_key": "llm", "components": [provider_form()],
+                            "request_generation": ticket[3]})
+    dialog = win._surface_dialog
+    control = next(button for button in dialog._inner.findChildren(QPushButton) if button.property("form_action"))
+    control.click()
+    ticket = win._settings_ticket
+    control.click()
+    assert win._settings_ticket is ticket and not control.isEnabled()
+    win._on_chrome_surface({"surface_key": "error", "title": "Service unavailable", "components": [],
+                            "request_generation": ticket[3]})
+    assert win._settings_ticket is None and control.isEnabled()
+    assert dialog._status.text() == "Service unavailable"
+    assert not any(label.isVisible() and label.text() == "Load models…"
+                   for label in dialog._inner.findChildren(QLabel))
+
+
+def test_owned_alert_failure_preserves_loaded_form_controls(win):
+    from test_settings_controls import provider_form
+
+    win._open_surface("llm", "Providers")
+    ticket = win._settings_ticket
+    win._on_chrome_surface({"surface_key": "llm", "components": [provider_form()], "request_generation": ticket[3]})
+    control = next(button for button in win._surface_dialog._inner.findChildren(QPushButton) if button.property("form_action"))
+    control.click()
+    ticket = win._settings_ticket
+    win._on_chrome_surface({"surface_key": "llm", "components": [{"type": "alert", "variant": "error", "message": "Provider unavailable"}],
+                            "request_generation": ticket[3]})
+    assert win._settings_ticket is None and control.isEnabled()
+    assert win._surface_dialog._status.text() == "Provider unavailable"
+
+
+def test_settings_failed_submission_is_correlated_and_initial_load_has_retry(win):
+    win._open_surface("llm", "Providers")
+    ticket = win._settings_ticket
+    win._on_status("settings_failed:unrelated")
+    assert win._settings_ticket is ticket
+    win._on_status("settings_failed:" + ticket[3])
+    assert win._settings_ticket is None
+    assert win._surface_dialog._retry_btn is not None
+    assert "Couldn't send" in win._surface_dialog._status.text()
+
+
+def test_ordinary_settings_reject_missing_owner_and_physical_send_failure(win):
+    win.client.send_current_settings = lambda *args, **kwargs: False
+    win._open_surface("llm", "Providers")
+    assert win._settings_ticket is None
+    assert "Couldn't send" in win._surface_dialog._status.text()
+    win._resume_store.storage_key = ""
+    win._open_surface("theme", "Theme")
+    assert win._settings_ticket is None
+    assert "Couldn't send" in win._surface_dialog._status.text()
+
+
+def test_pending_settings_never_duplicate_and_authoritative_mandatory_redirect_retires_it(win):
+    win._open_surface("theme", "Theme")
+    ticket = win._settings_ticket
+    count = len(win.client.sent)
+    assert not win._send_settings("save_theme", {"theme": {"preset": "nord"}})
+    assert win._settings_ticket is ticket and len(win.client.sent) == count
+    win._on_chrome_surface({"surface_key": "llm", "mode": "mandatory", "title": "Set up provider", "components": []})
+    assert win._settings_ticket is None and win._surface_dialog._surface == "llm"
+    assert win._surface_dialog._mandatory
+
+
+def test_disconnect_retires_uncertain_settings_and_requires_a_reload(win):
+    win._open_surface("llm", "Providers")
+    ticket = win._settings_ticket
+    win._on_chrome_surface({"surface_key": "llm", "components": [], "request_generation": ticket[3]})
+    win._emit("chrome_llm_test", {"fields": {"provider": "openai"}})
+    win._on_status("reconnecting")
+    assert win._settings_ticket is None
+    assert win._surface_dialog._retry_btn is not None
+    assert any("Reload settings" in label.text() for label in win._surface_dialog._inner.findChildren(QLabel))
+    win._on_chrome_surface({"surface_key": "llm", "title": "Late legacy reply", "components": []})
+    assert win._surface_dialog._retry_btn is not None
+
+
+def test_settings_terminal_service_failure_releases_only_matching_request(win):
+    from astral_client.protocol import LocalOperationSubmission
+
+    win._open_surface("llm", "Providers")
+    ticket = win._settings_ticket
+    win._on_chrome_surface({"surface_key": "llm", "components": [], "request_generation": ticket[3]})
+    win._emit("chrome_llm_save", {"fields": {"provider": "openai"}})
+    ticket = win._settings_ticket
+    win._project_local_submission(LocalOperationSubmission(OTHER, ticket[3], "chrome_llm_save", None))
+    frame = {"type": "operation_status", "operation_id": CHAT, "action": "chrome_llm_save", "surface": "llm_settings",
+             "chat_id": None, "connection_generation": CONNECTION, "request_generation": ticket[3], "sequence": 1,
+             "state": "failed", "phase": "failed", "label": "Service unavailable", "terminal": True, "retryable": False,
+             "error": {"code": "provider_unavailable", "message": "Provider is unavailable"}, "retry_after_ms": None,
+             "updated_at": "2026-07-15T18:41:00Z"}
+    win._on_message(frame | {"request_generation": OTHER})
+    assert win._settings_ticket is ticket
+    win._on_message(frame)
+    assert win._settings_ticket is None
+    assert win._surface_dialog._status.text() == "Provider is unavailable"
     win._retry_surface("theme", {})
     assert win.client.sent[-1][1]["surface"] == "theme"
 

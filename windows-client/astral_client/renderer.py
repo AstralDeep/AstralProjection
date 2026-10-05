@@ -516,7 +516,9 @@ def _btn_label(label) -> str:
 
 
 def _r_button(c, ctx):
-    btn = QPushButton(_btn_label(c.get("label", "Button")))
+    label = c.get("label")
+    label_available = isinstance(label, str) and bool(label.strip())
+    btn = QPushButton(_btn_label(label if label_available else "Action unavailable"))
     variant = c.get("variant", "primary")
     if variant == "primary":
         btn.setObjectName("primary")
@@ -528,6 +530,9 @@ def _r_button(c, ctx):
         btn.setObjectName("ghost")
     action = c.get("action")
     payload = c.get("payload") or {}
+    btn.setProperty("surface_action", True)
+    btn.setProperty("server_disabled", c.get("disabled") is True or not action or not label_available)
+    btn.setEnabled(not btn.property("server_disabled"))
     if action:
         btn.clicked.connect(lambda: ctx.emit(action, dict(payload)))
     btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
@@ -553,6 +558,27 @@ def _fill_template(template: str, state: dict) -> str:
         return v if isinstance(v, str) else json.dumps(v)
 
     return re.sub(r"\{(\w+)\}", _repl, msg)
+
+
+def _field_options(field: dict) -> list[tuple[str, str]]:
+    options = []
+    seen = set()
+    for option in field.get("options") or []:
+        value = option.get("value") if isinstance(option, dict) else option
+        if not isinstance(value, (str, int, float)) or isinstance(value, bool):
+            continue
+        value = str(value)
+        if value in seen:
+            continue
+        label = option.get("label", value) if isinstance(option, dict) else value
+        options.append((value, label if isinstance(label, str) and label else value))
+        seen.add(value)
+    default = field.get("default")
+    for value in default if isinstance(default, list) else [default]:
+        if isinstance(value, str) and value and value not in seen:
+            options.append((value, value))
+            seen.add(value)
+    return options
 
 
 def _r_param_picker(c, ctx):
@@ -584,11 +610,14 @@ def _r_param_picker(c, ctx):
             lay.addWidget(_label(label, size=13, weight=500))
             combo = QComboBox()
             combo.setProperty("astral_control_key", json.dumps(["field", name, kind]))
-            opts = [str(o) for o in (field.get("options") or [])]
-            combo.addItems(opts)
-            if default is not None and str(default) in opts:
-                combo.setCurrentText(str(default))
-            getters[name] = lambda cb=combo: cb.currentText()
+            opts = _field_options(field)
+            combo.setProperty("astral_option_keys", True)
+            for value, option_label in opts:
+                combo.addItem(option_label, value)
+            saved = combo.findData(str(default)) if default is not None else -1
+            if saved >= 0:
+                combo.setCurrentIndex(saved)
+            getters[name] = lambda cb=combo: cb.currentData() or ""
             combos[name] = combo
             lay.addWidget(combo)
         elif kind == "checklist":
@@ -597,8 +626,8 @@ def _r_param_picker(c, ctx):
             chips: List = []
             row = QHBoxLayout()
             row.setSpacing(6)
-            for opt in field.get("options") or []:
-                btn = QPushButton(_btn_label(opt))
+            for opt, option_label in _field_options(field):
+                btn = QPushButton(_btn_label(option_label))
                 btn.setObjectName("chip")
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn.setCheckable(True)
@@ -651,7 +680,7 @@ def _r_param_picker(c, ctx):
         def _apply_visibility() -> None:
             for vw, widgets in conditional:
                 combo = combos.get(vw.get("field", ""))
-                current = (combo.currentText() if combo is not None
+                current = (combo.currentData() if combo is not None
                            else str(vw.get("default") or ""))
                 show = current == vw.get("equals")
                 for widget in widgets:
@@ -665,22 +694,49 @@ def _r_param_picker(c, ctx):
                     "variant": "primary", "payload": c.get("submit_payload") or {}}]
     row = QHBoxLayout()
     row.addStretch(1)
+    pending = _label("", color=T.MUTED, size=12)
+    pending.setProperty("form_pending_label", True)
+    pending.hide()
+    controls = []
+
+    def dispatch(action, payload, label):
+        if frame.property("form_pending"):
+            return
+        frame.setProperty("form_pending", True)
+        for control in controls:
+            control.setEnabled(False)
+        pending.setText(f"{label}…")
+        pending.show()
+        try:
+            accepted = ctx.emit(action, payload)
+            if accepted is False:
+                raise RuntimeError("not sent")
+        except Exception:
+            frame.setProperty("form_pending", False)
+            for control in controls:
+                control.setEnabled(not control.property("server_disabled"))
+            pending.setText("Couldn't send this action. Check your connection and retry.")
+
     if actions:
-        def _make(action, extra):
+        def _make(action, extra, label):
             def _s():
                 state = {k: g() for k, g in getters.items()}
-                ctx.emit(action, {"fields": state, **(extra or {})})
+                dispatch(action, {"fields": state, **(extra or {})}, label)
             return _s
         for a in actions:
-            if not isinstance(a, dict) or not a.get("action"):
+            if not isinstance(a, dict) or not a.get("action") or not a.get("label"):
                 continue
             btn = QPushButton(_btn_label(a.get("label") or "Submit"))
             if (a.get("variant") or "") == "primary":
                 btn.setObjectName("primary")
             btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
-            btn.clicked.connect(_make(a["action"], a.get("payload") or {}))
+            btn.clicked.connect(_make(a["action"], a.get("payload") or {}, a["label"]))
+            btn.setProperty("form_action", True)
+            btn.setProperty("server_disabled", a.get("disabled") is True)
+            btn.setEnabled(not btn.property("server_disabled"))
+            controls.append(btn)
             row.addWidget(btn)
-    else:
+    elif c.get("submit_message_template"):
         template = c.get("submit_message_template", "")
         submit = QPushButton(_btn_label(c.get("submit_label", "Submit")))
         submit.setObjectName("primary")
@@ -688,11 +744,16 @@ def _r_param_picker(c, ctx):
 
         def _submit():
             state = {k: g() for k, g in getters.items()}
-            ctx.emit("chat_message", {"message": _fill_template(template, state)})
+            dispatch("chat_message", {"message": _fill_template(template, state)}, c.get("submit_label", "Submit"))
 
         submit.clicked.connect(_submit)
+        submit.setProperty("form_action", True)
+        controls.append(submit)
         row.addWidget(submit)
+    if not controls:
+        lay.addWidget(_label("This action is unavailable. Reload this screen to retry.", color=T.MUTED, size=13))
     lay.addLayout(row)
+    lay.addWidget(pending)
     return frame
 
 
@@ -1441,19 +1502,18 @@ def _r_color_picker(c, ctx):
     swatch = QPushButton()
     swatch.setFixedSize(22, 22)
     swatch.setCursor(Qt.CursorShape.PointingHandCursor)
+    swatch.setProperty("surface_action", True)
+    swatch.setProperty("server_disabled", not key or c.get("disabled") is True)
+    swatch.setEnabled(not swatch.property("server_disabled"))
     _swatch_css = "background:%s; border:1px solid rgba(255,255,255,0.2); border-radius:4px;"
     swatch.setStyleSheet(_swatch_css % val)
     readout = _label(val, color=T.MUTED, size=12)
 
     def _pick():
         hexv = _choose_color(val, w, key)
-        if not hexv:
+        if not isinstance(hexv, str) or re.fullmatch(r"#[0-9A-Fa-f]{6}", hexv) is None or not key:
             return
-        swatch.setStyleSheet(_swatch_css % hexv)
-        readout.setText(hexv)
-        if key:
-            ctx.emit("save_theme", {"theme": {"color_key": key, "color_value": hexv}})
-            _apply_theme_via_ctx({"color_key": key, "color_value": hexv}, ctx)
+        ctx.emit("save_theme", {"theme": {"color_key": key, "color_value": hexv}})
 
     swatch.clicked.connect(_pick)
     lay.addWidget(swatch)

@@ -2,10 +2,9 @@
 // colors and clamped progress, and the New Chat button's native target at the web breakpoint.
 
 import AstralCore
+@testable import AstralDeep
 import SwiftUI
 import XCTest
-
-@testable import AstralDeep
 
 @MainActor
 final class WebPrimitiveStyleTests: XCTestCase {
@@ -63,6 +62,16 @@ final class WebPrimitiveStyleTests: XCTestCase {
         let wide = try render(#"{"type":"card","content":[]}"#, viewport: 700)
         XCTAssertEqual(compact.width, wide.width)
         XCTAssertEqual(wide.height - compact.height, 8)
+    }
+
+    func testServerPaletteSwatchesPaintAllColorsAtTheSpecifiedPreviewHeight() throws {
+        let image = try render(
+            ##"{"type":"container","direction":"row","children":[{"type":"container","css":{"background":"#123ABC","height":"32px"}},{"type":"container","css":{"background":"#12BC3A","height":"32px"}},{"type":"container","css":{"background":"#BC123A","height":"32px"}}]}"##
+        )
+        XCTAssertEqual(image.height, 72)
+        assertRGB(try rgb(image, x: 60, y: 36), [18, 58, 188])
+        assertRGB(try rgb(image, x: 180, y: 36), [18, 188, 58])
+        assertRGB(try rgb(image, x: 300, y: 36), [188, 18, 58])
     }
 
     func testMetricRendersCanonicalTitleVariantEdgeAndClampedProgress() throws {
