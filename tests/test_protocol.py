@@ -650,6 +650,7 @@ def test_release_workflows_are_explicitly_inert_read_only_and_projection_owned()
         "apple-ci.yml",
         "ci.yml",
         "pr-ci-notifications.yml",
+        "pr-triage.yml",
     }
 
     for path in workflows:
