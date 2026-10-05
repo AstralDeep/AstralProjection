@@ -90,3 +90,9 @@ To deactivate a release workflow, use an ordinary reviewed commit that restores
 its unconditional false job gates or moves that release file back to
 `workflows-disabled/`. Owner CI deactivation is a separate gate-policy change.
 Never delete or rewrite release tags as a rollback mechanism.
+
+The separate `pr-ci-notifications.yml` and `pr-triage.yml` workflows operate on
+trusted GitHub metadata only. The triage controller requests missing context and
+applies explicit current-head maintainer closure decisions under
+[the PR triage policy](../.github/PR_TRIAGE.md); neither controller qualifies,
+merges, publishes, or activates a product release.
