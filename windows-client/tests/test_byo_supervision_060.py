@@ -71,10 +71,16 @@ def _spawn(supervisor: ProcessSupervisor, script: str):
 def _emit_script(stdout_count, stdout_size, stderr_count, stderr_size, exit_code=0):
     return (
         "import os\n"
+        "def emit(fd, payload):\n"
+        "    remaining = memoryview(payload)\n"
+        "    while remaining:\n"
+        "        written = os.write(fd, remaining[:16384])\n"
+        "        if written <= 0: raise RuntimeError('output write made no progress')\n"
+        "        remaining = remaining[written:]\n"
         f"out = b'O' * {stdout_size} + b'\\n'\n"
         f"err = b'E' * {stderr_size} + b'\\n'\n"
-        f"for _ in range({stdout_count}): os.write(1, out)\n"
-        f"for _ in range({stderr_count}): os.write(2, err)\n"
+        f"emit(1, out * {stdout_count})\n"
+        f"emit(2, err * {stderr_count})\n"
         f"raise SystemExit({exit_code})\n"
     )
 
@@ -248,7 +254,11 @@ def test_full_neutral_output_vectors_are_drained_and_bounded() -> None:
             high["stderr"]["line_bytes"],
         ),
     )
-    high_snapshot = process.wait(timeout=10)
+    try:
+        high_snapshot = process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        supervisor.terminate_all(reason=TerminationReason.QUIT)
+        raise
     assert high_snapshot.stdout.total_lines == high["stdout"]["line_count"]
     assert high_snapshot.stderr.total_lines == high["stderr"]["line_count"]
     assert high_snapshot.stdout.dropped_bytes > 0
@@ -256,8 +266,9 @@ def test_full_neutral_output_vectors_are_drained_and_bounded() -> None:
     _assert_cleanup(high_snapshot)
 
     oversized = _VECTORS["oversized-logical-line"]["behavior"]
+    oversized_supervisor = ProcessSupervisor()
     process = _spawn(
-        ProcessSupervisor(),
+        oversized_supervisor,
         _emit_script(
             oversized["stdout"]["line_count"],
             oversized["stdout"]["line_bytes"],
@@ -265,7 +276,11 @@ def test_full_neutral_output_vectors_are_drained_and_bounded() -> None:
             0,
         ),
     )
-    oversized_snapshot = process.wait(timeout=10)
+    try:
+        oversized_snapshot = process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        oversized_supervisor.terminate_all(reason=TerminationReason.QUIT)
+        raise
     assert oversized_snapshot.stdout.overlong_lines >= 1
     assert oversized_snapshot.stdout.maximum_retained_line_bytes <= 65536
     _assert_cleanup(oversized_snapshot)

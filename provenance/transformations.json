@@ -2977,9 +2977,9 @@
       "sourcePath": "windows-client/tests/test_byo_supervision_060.py",
       "sourceBlob": "f47bc7a74113baf1015a0aec2e386652c41e4613",
       "sourceMode": "100644",
-      "resultSha256": "2c4c2fbe4eecc3a8838ff8950964965d343c9e02f9ca7af0652b179709c8c230",
+      "resultSha256": "c8d9af7124cf9f5d8624793e4ac4866edfb472cab373c00b2f749fb2fd7346b1",
       "task": "T166",
-      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: delete the 700-trial supervision soak test; every behaviour it repeated keeps its own single-trial test. Fair CI 2026-09-27: run the registry release check for two cycles on one supervisor instead of 100."
+      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: delete the 700-trial supervision soak test; every behaviour it repeated keeps its own single-trial test. Fair CI 2026-09-27: run the registry release check for two cycles on one supervisor instead of 100. Batch identical neutral output-vector bytes in bounded partial-write-safe chunks instead of thousands of child syscalls, retaining every count, ring/oversized bound and ten-second guard; terminate only owned fixture children before re-raising a timeout."
     },
     {
       "path": "windows-client/tests/test_canvas_convergence.py",
