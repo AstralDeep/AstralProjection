@@ -110,11 +110,9 @@ def _inline_escaped(s: str, *, links: bool = True) -> str:
 
     parts: list[str] = []
     cursor = 0
-    while cursor < len(s):
-        code = _CODE.search(s, cursor)
-        link = _next_link(s, cursor) if links else None
-        if code is None and link is None:
-            break
+    code = _CODE.search(s, cursor)
+    link = _next_link(s, cursor) if links else None
+    while code is not None or link is not None:
         if code is not None and (link is None or code.start() < link[0]):
             start, end = code.span()
             fragment = protect_code(code.group(1))
@@ -133,6 +131,10 @@ def _inline_escaped(s: str, *, links: bool = True) -> str:
             fragment = token
         parts.extend((s[cursor:start], fragment))
         cursor = end
+        if code is not None and code.start() < cursor:
+            code = _CODE.search(s, cursor)
+        if link is not None and link[0] < cursor:
+            link = _next_link(s, cursor)
     parts.append(s[cursor:])
     s = "".join(parts)
     s = _BOLD.sub(lambda m: f'<strong class="text-astral-text">{m.group(1) or m.group(2)}</strong>', s)

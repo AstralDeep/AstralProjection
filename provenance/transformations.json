@@ -2194,9 +2194,9 @@
       "sourcePath": "backend/webrender/sanitize.py",
       "sourceBlob": "bce994903a0bab3b4c38c20469f76e632c0f8367",
       "sourceMode": "100644",
-      "resultSha256": "75429bd1772829d8a0a06fd737446f8f425fce2df393d7da0ad73ca7bc8b6b9f",
+      "resultSha256": "27b3cb5b4a93dfaf53c850c9b65fca67cd491fb611ab3c726f3081b87b77f65f",
       "task": "T052",
-      "reason": "UI v2 checkpoint: protect inline code and link destinations from later emphasis substitutions, preserving escaped labels and safe URL handling; qualify markdown link regressions. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. AP-12 follow-up: parse Markdown link destinations with balanced parentheses, retaining escaped delimiters and applying bounded depth/length validation."
+      "reason": "UI v2 checkpoint: protect inline code and link destinations from later emphasis substitutions, preserving escaped labels and safe URL handling; qualify markdown link regressions. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. AP-12 follow-up: parse Markdown link destinations with balanced parentheses, retaining escaped delimiters and applying bounded depth/length validation. Retain competing code/link matches until consumed so token selection does not repeatedly search unchanged suffixes; qualify deterministic bounded-work and token-overlap regressions."
     },
     {
       "path": "backend/webrender/static/astral.css",

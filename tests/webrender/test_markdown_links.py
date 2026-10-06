@@ -8,6 +8,7 @@ from html.parser import HTMLParser
 import pytest
 
 from webrender import render_one
+from webrender import sanitize
 from webrender.sanitize import block_md, inline_md, plain_md
 
 
@@ -20,6 +21,25 @@ class _Links(HTMLParser):
     def handle_starttag(self, tag, attrs):
         if tag == "a":
             self.anchors.append(dict(attrs))
+
+
+class _PatternWork:
+    def __init__(self, pattern):
+        self.pattern = pattern
+        self.searched = 0
+
+    def search(self, text, start=0):
+        match = self.pattern.search(text, start)
+        self.searched += (len(text) if match is None else match.end()) - start
+        return match
+
+    def finditer(self, text, start=0):
+        cursor = start
+        for match in self.pattern.finditer(text, start):
+            self.searched += match.end() - cursor
+            cursor = match.end()
+            yield match
+        self.searched += len(text) - cursor
 
 
 @pytest.mark.parametrize("url", [
@@ -139,3 +159,34 @@ def test_user_text_cannot_forge_protected_fragment_tokens(monkeypatch):
     assert out.startswith(forged + " ")
     assert len(_Links(out).anchors) == 1
     assert out.count("<code") == 1
+
+
+@pytest.mark.parametrize("count", [128, 256, 512])
+@pytest.mark.parametrize("shape", [
+    "code_only", "links_only", "code_before_link", "links_before_code", "mixed", "malformed",
+])
+def test_token_search_work_is_bounded_by_input_length(monkeypatch, count, shape):
+    code = "`code` "
+    link = "[page](https://example.test/A_(B)) "
+    sources = {
+        "code_only": code * count,
+        "links_only": link * count,
+        "code_before_link": code * count + link,
+        "links_before_code": link * count + code,
+        "mixed": "`[literal](https://example.test/x)` [label `value`](https://example.test/y) " * count,
+        "malformed": "[invalid](has space) `code` " * count,
+    }
+    source = sources[shape]
+    code_work = _PatternWork(sanitize._CODE)
+    link_work = _PatternWork(sanitize._LINK_START)
+    monkeypatch.setattr(sanitize, "_CODE", code_work)
+    monkeypatch.setattr(sanitize, "_LINK_START", link_work)
+
+    out = inline_md(source)
+
+    assert code_work.searched + link_work.searched <= 4 * len(source)
+    expected_links = {
+        "code_only": 0, "links_only": count, "code_before_link": 1,
+        "links_before_code": count, "mixed": count, "malformed": 0,
+    }
+    assert len(_Links(out).anchors) == expected_links[shape]
