@@ -41,7 +41,6 @@ struct AstralWatchApp: App {
             .foregroundStyle(model.theme.palette.text)
             .background(model.theme.palette.bg)
             .preferredColorScheme(model.theme.colorScheme)
-            .toolbarColorScheme(model.theme.colorScheme, for: .navigationBar)
             .background {
                 GeometryReader { geometry in
                     Color.clear
