@@ -224,7 +224,7 @@ def _assert_windows_native_contract(text: str) -> None:
         "PYTHONPATH: windows-client",
         "PYTEST_ADDOPTS: -o faulthandler_timeout=60",
         r"python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `",
-        r"--cov=windows-client\astral_client --cov-branch `",
+        r"--cov=windows-client\astral_client --cov=windows-client\win_agent --cov-branch `",
         r"--cov-report=xml:build\075\coverage\windows-python.xml",
         r"python scripts\check_changed_coverage.py build\075\coverage\windows-python.xml `",
         r"--output build\075\coverage\windows-python-changed-coverage.json",
