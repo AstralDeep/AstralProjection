@@ -1647,7 +1647,7 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T015/T019/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Apply the shared accepted-palette color scheme to watch content while native navigation supplies system-clock contrast.",
-      "resultSha256": "85175a56deff2b4352b84f1c2a0220bdd99aa8a985bfbaa4c9fd07614ad84ed5"
+      "resultSha256": "61967b2b2c1f33b304c493374ee52f165d4c4d36841ad88ff39caa3f328f0809"
     },
     {
       "path": "apple-clients/AstralWatch/ConversationResumeStore.swift",
@@ -1701,7 +1701,7 @@
       "sourceMode": "100644",
       "task": "T057/T061/T060/T037/T015/T019/T025",
       "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native history: consume owner-scoped canonical ROTE rows without altering canvas or speech, request history on established sockets, and preserve same-owner HTTP fallback through reconnect while rejecting stale account results. Feature 088 committed continuation: Present the shared Work menu action and real List navigation, task loading, retry, timeout and disappearance retirement. Feature 088 private notes: preserve complete literal native guidance forms and server menu order; bind requests to the original connection and current owner surface, refuse replay, and retire values on navigation or uncertain completion. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Bind the already implemented native History cleanup that removes decorative stars and leading icon slots while retaining navigation. Fair CI 2026-09-27: the Work surface waits on the model's Work read timeout instead of its own sleep; the timer still starts with the view task and retires on cancellation. Keep native watch navigation dark for system-clock contrast while accepted palette roles own its content.",
-      "resultSha256": "4614b8d8b975bfa01a8f6ae98a2d8a3b750d25f60766d501aead66601cd1a122"
+      "resultSha256": "30e2e5ea3722077b19571c854678cbd47462ecc1a88712d65b492191ea017c2b"
     },
     {
       "path": "apple-clients/AstralWatch/WatchModel.swift",

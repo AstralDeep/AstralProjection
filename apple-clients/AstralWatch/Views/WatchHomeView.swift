@@ -11,9 +11,7 @@ struct WatchNavigationView: View {
     var body: some View {
         NavigationStack {
             WatchHomeView()
-                .toolbarBackground(.black, for: .navigationBar)
-                .toolbarBackground(.visible, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
+                .containerBackground(.black, for: .navigation)
         }
         .alert(
             model.consoleLabel("brand", fallback: "AstralDeep"),
