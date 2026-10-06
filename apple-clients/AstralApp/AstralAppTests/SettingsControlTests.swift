@@ -2,9 +2,10 @@
 // Uses AppModel's normal reducers and action submission without live credentials or chat queries.
 
 import AstralCore
-@testable import AstralDeep
 import SwiftUI
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class SettingsControlTests: XCTestCase {

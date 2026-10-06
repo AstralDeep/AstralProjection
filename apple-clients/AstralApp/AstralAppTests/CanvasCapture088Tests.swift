@@ -3,11 +3,12 @@
 // state.
 
 import AstralCore
-@testable import AstralDeep
 import Network
 import SwiftUI
 import WebKit
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class CanvasCapture088Tests: XCTestCase {

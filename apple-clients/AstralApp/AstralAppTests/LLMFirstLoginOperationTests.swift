@@ -2,8 +2,9 @@
 // keeps the first server terminal canonical, and the 10-second watchdog never invents a terminal.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class LLMFirstLoginOperationTests: XCTestCase {

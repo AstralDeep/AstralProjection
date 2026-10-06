@@ -2,10 +2,11 @@
 // Controlled clocks and held identity-provider responses verify expiry, rotation, cancellation, and recovery without real credentials.
 
 import AstralCore
-@testable import AstralDeep
 import CryptoKit
 import Network
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class AppModelSocketAuthenticationTests: XCTestCase {

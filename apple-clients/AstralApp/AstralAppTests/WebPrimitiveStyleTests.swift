@@ -2,9 +2,10 @@
 // colors and clamped progress, and the New Chat button's native target at the web breakpoint.
 
 import AstralCore
-@testable import AstralDeep
 import SwiftUI
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class WebPrimitiveStyleTests: XCTestCase {

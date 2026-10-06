@@ -1,8 +1,9 @@
 // Verifies ordinary SDUI forms display and submit one consistent set of server defaults and edits.
 // ParameterForm feeds the Apple settings renderer while guidance retains its stricter request validator.
 
-@testable import AstralCore
 import XCTest
+
+@testable import AstralCore
 
 final class ParameterFormTests: XCTestCase {
     private func form(_ fields: String, actions: String = "") throws -> ParameterForm {

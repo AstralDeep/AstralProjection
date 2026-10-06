@@ -3,8 +3,9 @@
 // pinned.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class AppModelChromeSurfaceTests: XCTestCase {

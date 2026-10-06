@@ -2,8 +2,9 @@
 // Sign-out and blocked startup tests use synchronized memory fixtures without accessing device credentials.
 
 import AstralCore
-@testable import AstralDeep
 import XCTest
+
+@testable import AstralDeep
 
 @MainActor
 final class AppModelTokenStorageTests: XCTestCase {
