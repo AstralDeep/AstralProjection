@@ -66,6 +66,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.personalailabs.astraldeep.app.R
+import com.personalailabs.astraldeep.app.render.FormSubmissionState
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.transport.ConnectionState
 import com.personalailabs.astraldeep.app.ui.theme.AstralWebStyle
@@ -398,22 +399,19 @@ internal fun ConsoleLanding(
             }
         }
         item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(console.label("start_here"), color = colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            if (presentation.scenarioColumns == 1) {
+                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(console.label("start_here"), color = colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    ConsoleCategoryFilters(console, category, onCategory, Modifier.fillMaxWidth())
+                }
+            } else {
                 Row(
-                    Modifier.weight(
-                        1f,
-                        fill = false,
-                    ).padding(
-                        start = 16.dp,
-                    ).border(1.dp, colors.outline, RoundedCornerShape(10.dp)).horizontalScroll(rememberScrollState()).padding(5.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    ConsoleButton(console.label("all_categories"), { onCategory(null) }, selected = category == null)
-                    console.catalog.categories.forEach {
-                            label ->
-                        ConsoleButton(label, { onCategory(label) }, selected = category == label)
-                    }
+                    Text(console.label("start_here"), color = colors.onSurface, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    ConsoleCategoryFilters(console, category, onCategory, Modifier.weight(1f, fill = false).padding(start = 16.dp))
                 }
             }
         }
@@ -461,6 +459,25 @@ internal fun ConsoleLanding(
                 }
                 repeat(presentation.scenarioColumns - row.size) { Spacer(Modifier.weight(1f)) }
             }
+        }
+    }
+}
+
+@Composable
+private fun ConsoleCategoryFilters(
+    console: ConsoleModel,
+    category: String?,
+    onCategory: (String?) -> Unit,
+    modifier: Modifier,
+) {
+    Row(
+        modifier.border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
+            .horizontalScroll(rememberScrollState()).padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        ConsoleButton(console.label("all_categories"), { onCategory(null) }, selected = category == null)
+        console.catalog.categories.forEach { label ->
+            ConsoleButton(label, { onCategory(label) }, selected = category == label)
         }
     }
 }
@@ -571,6 +588,14 @@ internal fun ConsoleSurfaceOverlay(
                                 state.privateSurfaceFailed,
                                 vm::timeoutPrivateSurface,
                                 showTitle = false,
+                                formState =
+                                    FormSubmissionState(
+                                        connected = state.connection == ConnectionState.Connected,
+                                        pending = state.privateSurfaceRequest != null,
+                                        reloadRequired = state.surfaceReloadRequired,
+                                        outcomeRevision = state.surfaceOutcomeRevision,
+                                        error = state.surfaceErrorMessage,
+                                    ),
                             )
                         }
                     }

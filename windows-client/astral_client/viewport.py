@@ -81,7 +81,7 @@ def capture_controls(root, *, strict=False):
             cursor = control.textCursor()
             position = (cursor.position(), cursor.anchor())
         elif kind == "choice":
-            value = control.currentText()
+            value = control.currentData() if control.property("astral_option_keys") else control.currentText()
         elif kind == "tab":
             page = control.currentWidget()
             value = page.property("astral_tab_key") if page is not None else None
@@ -104,7 +104,8 @@ def restore_controls(root, saved, *, strict=False):
         kind = key[-1]
         choices = None
         if kind in {"choice", "tab"}:
-            choices = ([control.itemText(i) for i in range(control.count())] if kind == "choice"
+            choices = ([(control.itemData(i) if control.property("astral_option_keys") else control.itemText(i))
+                        for i in range(control.count())] if kind == "choice"
                        else [control.widget(i).property("astral_tab_key") for i in range(control.count())])
             if choices.count(value) != 1 or value is None:
                 if strict:

@@ -30,7 +30,7 @@ final class LLMFirstLoginUITests: XCTestCase {
         focusAndType(apiKey, "ui-only-placeholder")
         let status = app.staticTexts["llm-save-status"]
         _ = status.exists
-        save.tap()
+        save.press()
         XCTAssertTrue(
             status.waitForExistence(timeout: 0.25),
             "Save must expose local-only submitting feedback within 250 ms")
@@ -67,7 +67,7 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(apiKey.waitForExistence(timeout: 5))
         focusAndType(apiKey, "invalid-ui-placeholder")
         let status = app.staticTexts["llm-save-status"]
-        save.tap()
+        save.press()
 
         XCTAssertTrue(
             waitForStatus(status, containingAny: ["Check your provider credentials"], timeout: 3))
@@ -85,7 +85,7 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(apiKey.waitForExistence(timeout: 5))
         focusAndType(apiKey, "unavailable-ui-placeholder")
         let status = app.staticTexts["llm-save-status"]
-        save.tap()
+        save.press()
 
         XCTAssertTrue(
             waitForStatus(status, containingAny: ["Provider unavailable"], timeout: 3))
@@ -103,7 +103,7 @@ final class LLMFirstLoginUITests: XCTestCase {
 
         let status = app.staticTexts["llm-save-status"]
         _ = status.exists
-        save.tap()
+        save.press()
         XCTAssertTrue(status.waitForExistence(timeout: 0.25))
         let acknowledgedAt = Date()
         let sceneExerciseStarted = Date()
@@ -119,7 +119,7 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(save.isEnabled)
         XCTAssertEqual(save.value as? String, "Ready")
 
-        save.tap()
+        save.press()
         XCTAssertTrue(save.isEnabled)
         let retainedStatus = app.staticTexts["llm-save-status"]
         XCTAssertEqual(retainedStatus.value as? String, "Unable to confirm; reconnecting")
@@ -142,7 +142,7 @@ final class LLMFirstLoginUITests: XCTestCase {
                 XCTFail("The provider field disappeared before the editing assertion completed")
                 return
             }
-            field.tap()
+            field.press()
             if fieldHasFocus(field) { break }
         }
         XCTAssertTrue(field.exists, "The provider field must remain available for typing")

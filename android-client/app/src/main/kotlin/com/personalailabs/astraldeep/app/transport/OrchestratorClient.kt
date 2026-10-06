@@ -612,6 +612,39 @@ class OrchestratorClient(
             true
         }
 
+    internal fun sendCurrentSettingsEvent(
+        surface: String,
+        action: String,
+        payload: JsonObject,
+        isCurrent: () -> Boolean,
+        onSubmission: (LocalSubmission, String) -> Unit,
+    ): Boolean =
+        synchronized(pending) {
+            val currentSocket = socket
+            val generation = connectionGeneration
+            val epoch = ownerEpoch
+            if (surface.isBlank() || isPrivateChromeSurface(surface) || !open || currentSocket == null ||
+                generation == null || !isCurrent()
+            ) {
+                return@synchronized false
+            }
+            val submission = newSubmission(action, null)
+            val fields =
+                buildJsonObject {
+                    payload.forEach { (key, value) -> put(key, value) }
+                    put("surface", surface)
+                }
+            val frame = Wire.encodeUiEvent(action, null, fields, submission.requestGeneration, submission.submissionId)
+            onSubmission(submission, generation)
+            if (!open || socket !== currentSocket || connectionGeneration != generation || ownerEpoch != epoch ||
+                !isCurrent() || !currentSocket.send(frame)
+            ) {
+                _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Settings action was not sent"))
+                return@synchronized false
+            }
+            true
+        }
+
     fun sendEvent(
         action: String,
         sessionId: String?,

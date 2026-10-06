@@ -9,10 +9,13 @@ import ast
 import dataclasses
 import io
 import json
+import queue
 import subprocess
 import sys
+import threading
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -61,6 +64,95 @@ class _RecordingPipe(io.BytesIO):
         super().close()
 
 
+class _ControlledPipe:
+    def __init__(self) -> None:
+        self.chunks: queue.Queue[bytes | OSError] = queue.Queue()
+        self.requests: queue.Queue[int] = queue.Queue()
+        self.close_called = False
+
+    def read(self, size: int) -> bytes:
+        self.requests.put(size)
+        chunk = self.chunks.get()
+        if isinstance(chunk, OSError):
+            raise chunk
+        return chunk
+
+    def close(self) -> None:
+        self.close_called = True
+        self.chunks.put(b"")
+
+
+@dataclasses.dataclass
+class _WaitingReader:
+    reader: BoundedStreamReader
+    pipe: _ControlledPipe
+    settled: threading.Event
+    result: list[bytes | Exception]
+    callback_entered: threading.Event
+    callback_lines: list[bytes]
+
+
+@contextmanager
+def _reader_waiter(
+    monkeypatch: pytest.MonkeyPatch,
+    prefix: bytes,
+    *,
+    block_callback: bytes | None = None,
+):
+    pipe = _ControlledPipe()
+    registered = threading.Event()
+    settled = threading.Event()
+    callback_entered = threading.Event()
+    release_callback = threading.Event()
+    result: list[bytes | Exception] = []
+    callback_lines: list[bytes] = []
+
+    def publish(line: bytes) -> None:
+        callback_lines.append(line)
+        if line == block_callback:
+            callback_entered.set()
+            release_callback.wait()
+
+    reader = BoundedStreamReader(
+        stream=OutputStream.STDOUT, pipe=pipe, on_line=publish
+    )
+    original_wait = reader._condition.wait
+
+    def wait(timeout: float | None = None) -> bool:
+        registered.set()
+        return original_wait(timeout)
+
+    def await_line() -> None:
+        try:
+            result.append(reader.wait_for_line(prefix=prefix, timeout=5))
+        except Exception as exc:
+            result.append(exc)
+        finally:
+            settled.set()
+
+    monkeypatch.setattr(reader._condition, "wait", wait)
+    threads = (
+        threading.Thread(target=reader.run, daemon=True),
+        threading.Thread(target=await_line, daemon=True),
+    )
+    started: list[threading.Thread] = []
+    try:
+        for thread in threads:
+            thread.start()
+            started.append(thread)
+        assert registered.wait(5)
+        assert pipe.requests.get(timeout=5) == DEFAULT_PROCESS_SUPERVISION_LIMITS.read_chunk_bytes
+        yield _WaitingReader(
+            reader, pipe, settled, result, callback_entered, callback_lines
+        )
+    finally:
+        release_callback.set()
+        pipe.close()
+        for thread in started:
+            thread.join(5)
+        assert all(not thread.is_alive() for thread in started)
+
+
 def _spawn(supervisor: ProcessSupervisor, script: str):
     return supervisor.spawn(
         process_id=uuid.uuid4(),
@@ -71,10 +163,16 @@ def _spawn(supervisor: ProcessSupervisor, script: str):
 def _emit_script(stdout_count, stdout_size, stderr_count, stderr_size, exit_code=0):
     return (
         "import os\n"
+        "def emit(fd, payload):\n"
+        "    remaining = memoryview(payload)\n"
+        "    while remaining:\n"
+        "        written = os.write(fd, remaining[:16384])\n"
+        "        if written <= 0: raise RuntimeError('output write made no progress')\n"
+        "        remaining = remaining[written:]\n"
         f"out = b'O' * {stdout_size} + b'\\n'\n"
         f"err = b'E' * {stderr_size} + b'\\n'\n"
-        f"for _ in range({stdout_count}): os.write(1, out)\n"
-        f"for _ in range({stderr_count}): os.write(2, err)\n"
+        f"emit(1, out * {stdout_count})\n"
+        f"emit(2, err * {stderr_count})\n"
         f"raise SystemExit({exit_code})\n"
     )
 
@@ -182,6 +280,98 @@ def test_reader_error_timeout_eof_and_tiny_ring_paths_are_bounded() -> None:
     assert tiny.snapshot().dropped_lines == 1
 
 
+def test_reader_publishes_multi_line_chunk_to_waiter_before_callbacks_finish(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b"alpha\nREADY payload\nomega\npar"
+    with _reader_waiter(monkeypatch, b"READY ", block_callback=b"alpha") as state:
+        state.pipe.chunks.put(payload)
+        assert state.callback_entered.wait(5)
+        assert state.settled.wait(5)
+        assert state.result == [b"READY payload"]
+        assert state.callback_lines == [b"alpha"]
+        snapshot = state.reader.snapshot()
+        assert snapshot.lines == (b"alpha", b"READY payload", b"omega")
+        assert snapshot.total_bytes == len(payload)
+        assert snapshot.total_lines == 3
+        assert snapshot.reader_done is False
+
+    snapshot = state.reader.snapshot()
+    assert state.callback_lines == [b"alpha", b"READY payload", b"omega", b"par"]
+    assert snapshot.lines == tuple(state.callback_lines)
+    assert snapshot.total_bytes == snapshot.retained_bytes == len(payload)
+    assert snapshot.total_lines == 4
+    assert snapshot.reader_done and snapshot.pipe_closed
+
+
+def test_reader_keeps_partial_chunks_pending_until_the_line_completes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with _reader_waiter(monkeypatch, b"READY ") as state:
+        for chunk in (b"REA", b"DY payload"):
+            state.pipe.chunks.put(chunk)
+            assert (
+                state.pipe.requests.get(timeout=5)
+                == DEFAULT_PROCESS_SUPERVISION_LIMITS.read_chunk_bytes
+            )
+            assert not state.settled.is_set()
+            assert state.reader.snapshot().total_lines == 0
+            assert state.callback_lines == []
+        state.pipe.chunks.put(b"\n")
+        assert state.settled.wait(5)
+        assert state.result == [b"READY payload"]
+
+    snapshot = state.reader.snapshot()
+    assert state.callback_lines == [b"READY payload"]
+    assert snapshot.total_bytes == len(b"READY payload\n")
+    assert snapshot.total_lines == 1
+    assert snapshot.reader_done and snapshot.pipe_closed
+
+
+def test_reader_publishes_eof_trailing_line_before_its_callback_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = b"READY payload"
+    with _reader_waiter(monkeypatch, b"READY ", block_callback=payload) as state:
+        state.pipe.chunks.put(payload)
+        assert (
+            state.pipe.requests.get(timeout=5)
+            == DEFAULT_PROCESS_SUPERVISION_LIMITS.read_chunk_bytes
+        )
+        assert not state.settled.is_set()
+        state.pipe.chunks.put(b"")
+        assert state.callback_entered.wait(5)
+        assert state.settled.wait(5)
+        assert state.result == [payload]
+        assert state.reader.snapshot().reader_done is False
+
+    snapshot = state.reader.snapshot()
+    assert state.callback_lines == [payload]
+    assert snapshot.lines == (payload,)
+    assert snapshot.total_bytes == snapshot.retained_bytes == len(payload)
+    assert snapshot.total_lines == 1
+    assert snapshot.reader_done and snapshot.pipe_closed
+
+
+@pytest.mark.parametrize("terminal", [b"", OSError("controlled read failure")])
+def test_reader_retires_waiting_missing_prefix_at_eof_or_read_failure(
+    monkeypatch: pytest.MonkeyPatch, terminal: bytes | OSError
+) -> None:
+    with _reader_waiter(monkeypatch, b"missing") as state:
+        state.pipe.chunks.put(terminal)
+        assert state.settled.wait(5)
+        assert len(state.result) == 1
+        assert isinstance(state.result[0], EOFError)
+
+    snapshot = state.reader.snapshot()
+    assert snapshot.lines == ()
+    assert snapshot.total_bytes == snapshot.total_lines == 0
+    assert snapshot.reader_done and snapshot.pipe_closed and state.pipe.close_called
+    assert snapshot.read_error == (
+        "OSError: controlled read failure" if isinstance(terminal, OSError) else None
+    )
+
+
 def test_supervisor_rejects_invalid_or_duplicate_spawn_ownership() -> None:
     supervisor = ProcessSupervisor()
     with pytest.raises(TypeError):
@@ -248,7 +438,11 @@ def test_full_neutral_output_vectors_are_drained_and_bounded() -> None:
             high["stderr"]["line_bytes"],
         ),
     )
-    high_snapshot = process.wait(timeout=10)
+    try:
+        high_snapshot = process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        supervisor.terminate_all(reason=TerminationReason.QUIT)
+        raise
     assert high_snapshot.stdout.total_lines == high["stdout"]["line_count"]
     assert high_snapshot.stderr.total_lines == high["stderr"]["line_count"]
     assert high_snapshot.stdout.dropped_bytes > 0
@@ -256,8 +450,9 @@ def test_full_neutral_output_vectors_are_drained_and_bounded() -> None:
     _assert_cleanup(high_snapshot)
 
     oversized = _VECTORS["oversized-logical-line"]["behavior"]
+    oversized_supervisor = ProcessSupervisor()
     process = _spawn(
-        ProcessSupervisor(),
+        oversized_supervisor,
         _emit_script(
             oversized["stdout"]["line_count"],
             oversized["stdout"]["line_bytes"],
@@ -265,7 +460,11 @@ def test_full_neutral_output_vectors_are_drained_and_bounded() -> None:
             0,
         ),
     )
-    oversized_snapshot = process.wait(timeout=10)
+    try:
+        oversized_snapshot = process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        oversized_supervisor.terminate_all(reason=TerminationReason.QUIT)
+        raise
     assert oversized_snapshot.stdout.overlong_lines >= 1
     assert oversized_snapshot.stdout.maximum_retained_line_bytes <= 65536
     _assert_cleanup(oversized_snapshot)

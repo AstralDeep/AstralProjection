@@ -44,6 +44,34 @@ class ParamPickerFieldsTest {
     }
 
     @Test
+    fun labeled_options_display_a_dropdown_and_submit_saved_keys() {
+        val saved =
+            field(
+                """{"name":"provider","kind":"select","default":"custom",
+                "options":[{"value":"openai","label":"OpenAI"},
+                {"value":"custom","label":"Custom OpenAI-compatible endpoint"}]}""",
+            )
+        assertTrue(rendersAsDropdown(saved))
+        assertEquals(listOf("openai", "custom"), fieldOptions(saved))
+        val fields = listOf(saved)
+        val payload = collectFields(fields, initialTexts(fields), initialBools(fields), initialChecks(fields))
+        assertEquals("custom", str(payload, "provider"))
+    }
+
+    @Test
+    fun labeled_checklists_keep_saved_keys_and_server_order() {
+        val selected =
+            field(
+                """{"name":"tools","kind":"checklist","default":["write"],
+                "options":[{"value":"read","label":"Read files"},
+                {"value":"write","label":"Write files"}]}""",
+            )
+        val fields = listOf(selected)
+        val payload = collectFields(fields, initialTexts(fields), initialBools(fields), initialChecks(fields))
+        assertEquals(listOf("write"), list(payload, "tools"))
+    }
+
+    @Test
     fun a_default_that_is_not_on_the_menu_falls_back_to_the_first_option() {
         val opts = listOf("openai", "xai")
         assertEquals("openai", selectInitial("gone-provider", opts))
@@ -52,9 +80,9 @@ class ParamPickerFieldsTest {
     }
 
     @Test
-    fun a_select_without_options_degrades_to_a_text_field_keeping_its_default() {
+    fun a_select_without_options_retains_a_selectable_saved_default() {
         val f = field("""{"name":"provider","kind":"select","default":"openai"}""")
-        assertFalse(rendersAsDropdown(f))
+        assertTrue(rendersAsDropdown(f))
         assertEquals("openai", initialTexts(listOf(f))["provider"])
         assertFalse(rendersAsDropdown(field("""{"name":"p","kind":"select","options":[]}""")))
     }
@@ -87,11 +115,22 @@ class ParamPickerFieldsTest {
     }
 
     @Test
-    fun a_checklist_default_seeds_the_checked_keys_and_drops_unknown_ones() {
+    fun a_checklist_default_keeps_saved_keys_missing_from_the_refreshed_catalog() {
         assertEquals(setOf("read", "write"), initialChecks(listOf(tools))["tools"])
         val stale = field("""{"name":"tools","kind":"checklist","default":["gone"],"options":["read"]}""")
-        assertEquals(emptySet(), initialChecks(listOf(stale))["tools"])
+        assertEquals(setOf("gone"), initialChecks(listOf(stale))["tools"])
+        assertEquals(listOf("read", "gone"), fieldOptions(stale))
         assertFalse(initialTexts(listOf(tools)).containsKey("tools"))
+    }
+
+    @Test
+    fun saved_scalar_and_array_choices_submit_without_catalog_replacement() {
+        val saved = field("""{"name":"provider","kind":"select","default":"saved","options":["openai"]}""")
+        val checklist = field("""{"name":"tools","kind":"checklist","default":["old","write"],"options":["read"]}""")
+        val fields = listOf(saved, checklist)
+        val payload = collectFields(fields, initialTexts(fields), initialBools(fields), initialChecks(fields))
+        assertEquals("saved", str(payload, "provider"))
+        assertEquals(listOf("old", "write"), list(payload, "tools"))
     }
 
     @Test

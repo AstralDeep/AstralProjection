@@ -224,6 +224,48 @@ async function registration(page) {
   return page.evaluate(() => window.__socketEvents.find((event) => event.frame.type === "register_ui"));
 }
 
+test("custom appearance waits for accepted server state and survives rejection", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty("--astral-primary", "17 34 51");
+    const input = document.createElement("input");
+    input.type = "color";
+    input.className = "astral-color-picker";
+    input.setAttribute("data-color-key", "primary");
+    input.value = "#112233";
+    document.body.append(input);
+  });
+  await page.locator(".astral-color-picker").fill("#2468ab");
+  const acceptedColor = () => page.evaluate(() => document.documentElement.style.getPropertyValue("--astral-primary"));
+  await expect.poll(acceptedColor).toBe("17 34 51");
+  const events = await page.evaluate(() => window.__socketEvents.map((event) => event.frame));
+  expect(events.filter((frame) => frame.type === "ui_event" && frame.action === "save_theme")).toHaveLength(1);
+  expect(events.filter((frame) => frame.type === "chat_message")).toHaveLength(0);
+  await receive(page, { type: "notification", level: "error", title: "Theme", body: "Save rejected" });
+  await expect.poll(acceptedColor).toBe("17 34 51");
+  await receive(page, { type: "user_preferences", preferences: { theme: { colors: { primary: "#2468ab" } } } });
+  await expect.poll(acceptedColor).toBe("36 104 171");
+});
+
+test("a saved provider connection warning preserves the successful form outcome", async ({ page }) => {
+  await installHarness(page, { locator: false });
+  await page.locator("#astral-input").fill("Retain this draft");
+  await receive(page, { type: "llm_config_ack", ok: true });
+  await receive(page, {
+    type: "notification", level: "warning", title: "Provider settings saved",
+    body: "Connection test failed. Your saved settings remain available.",
+  });
+  const warning = page.locator("#astral-toasts .astral-toast").last();
+  await expect(warning).toHaveClass("astral-toast astral-toast-warning");
+  await expect(warning).toContainText("Provider settings saved");
+  await expect(warning).toContainText("Your saved settings remain available.");
+  await expect(warning).toHaveCSS("background-color", "rgb(120, 53, 15)");
+  await expect(page.locator("#astral-input")).toHaveValue("Retain this draft");
+  expect(await page.evaluate(() => window.__socketEvents.filter((event) => event.frame.type === "chat_message"))).toHaveLength(0);
+  await receive(page, { type: "notification", level: {}, body: "Ordinary notice" });
+  await expect(page.locator("#astral-toasts .astral-toast").last()).toHaveClass("astral-toast astral-toast-info");
+});
+
 test("floating conversation restores to the right without losing its draft", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await installHarness(page);

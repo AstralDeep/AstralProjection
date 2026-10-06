@@ -1,5 +1,6 @@
 // Signed-in watch home: one-tap new conversation, bounded recent history (WatchHistoryRow), visible account
 // identity, and sign-out; launched from AstralWatchApp and the navigation harness.
+// Native navigation keeps a dark backdrop so the system clock stays readable across accepted palettes.
 
 import AstralCore
 import SwiftUI
@@ -8,16 +9,19 @@ struct WatchNavigationView: View {
     @Environment(WatchModel.self) private var model
 
     var body: some View {
-        NavigationStack { WatchHomeView() }
-            .alert(
-                model.consoleLabel("brand", fallback: "AstralDeep"),
-                isPresented: Binding(
-                    get: { model.handoffMessage != nil }, set: { if !$0 { model.handoffMessage = nil } }
-                )
-            ) {
-            } message: {
-                Text(verbatim: model.handoffMessage ?? "")
-            }
+        NavigationStack {
+            WatchHomeView()
+                .containerBackground(.black, for: .navigation)
+        }
+        .alert(
+            model.consoleLabel("brand", fallback: "AstralDeep"),
+            isPresented: Binding(
+                get: { model.handoffMessage != nil }, set: { if !$0 { model.handoffMessage = nil } }
+            )
+        ) {
+        } message: {
+            Text(verbatim: model.handoffMessage ?? "")
+        }
     }
 }
 

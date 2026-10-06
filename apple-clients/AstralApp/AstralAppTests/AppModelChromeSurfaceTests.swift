@@ -25,6 +25,7 @@ final class AppModelChromeSurfaceTests: XCTestCase {
             conversationResumeStore: ConversationResumeStore(defaults: defaults),
             tokenStore: InMemoryTokenStore(), defaults: defaults)
         model.signedIn = true
+        model.connected = true
         return model
     }
 

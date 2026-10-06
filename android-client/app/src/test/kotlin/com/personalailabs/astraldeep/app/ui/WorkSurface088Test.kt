@@ -117,14 +117,17 @@ class WorkSurface088Test {
         }
         val navigated = displayed.copy(pendingSurfaceKey = "theme", pendingSurface = null)
         val theme = Inbound.ChromeSurface("theme", "Theme loaded", emptyList())
-        assertEquals(theme, vm.reduce(navigated, theme).pendingSurface)
+        assertEquals(navigated, vm.reduce(navigated, theme))
+        val currentTheme = navigated.copy(privateSurfaceRequest = PrivateSurfaceRequest(second, connection, "theme"))
+        assertEquals(theme, vm.reduce(currentTheme, theme).pendingSurface)
         assertEquals(Screen.Chat, vm.reduce(navigated, Inbound.ChromeSurface("", "", emptyList())).screen)
     }
 
     @Test fun valid_wire_keeps_work_echo_and_legacy_registration_is_not_opted_in() {
         val frame = assertIs<Inbound.ChromeSurface>(Wire.decode("""{"type":"chrome_surface","surface_key":"work","request_generation":"$first","components":[]}"""))
         assertEquals(first, frame.requestGeneration)
-        assertIs<Inbound.Unknown>(Wire.decode("""{"type":"chrome_surface","surface_key":"theme","request_generation":"$first","components":[]}"""))
+        val ordinary = assertIs<Inbound.ChromeSurface>(Wire.decode("""{"type":"chrome_surface","surface_key":"theme","request_generation":"$first","components":[]}"""))
+        assertEquals(first, ordinary.requestGeneration)
         assertFalse(Wire.encodeRegisterUi("synthetic", null, com.personalailabs.astraldeep.core.protocol.DeviceCapabilities(800, 600)).contains("work_read_v1"))
     }
 
@@ -182,7 +185,8 @@ class WorkSurface088Test {
                 assertTrue(vm.state.value.privateSurfaceFailed)
                 assertNull(vm.state.value.privateSurfaceRequest)
                 vm.openSurface("theme")
-                assertFalse(vm.state.value.privateSurfaceFailed)
+                assertTrue(vm.state.value.privateSurfaceFailed)
+                assertTrue(vm.state.value.surfaceErrorMessage!!.contains("Couldn't send"))
             } finally {
                 vm.clearConversationForSignOut()
                 kotlinx.coroutines.Dispatchers.resetMain()

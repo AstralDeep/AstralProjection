@@ -2,10 +2,9 @@
 // Synthetic loopback transport exercises real WebSocket fencing without replacing user authentication.
 
 import AstralCore
+@testable import AstralWatch
 import SwiftUI
 import XCTest
-
-@testable import AstralWatch
 
 @MainActor
 final class ConsoleWatchTests: XCTestCase {
@@ -306,6 +305,30 @@ final class ConsoleWatchTests: XCTestCase {
         XCTAssertNotEqual(before, after)
         model.newConversation()
         XCTAssertNotEqual(after, try image(AnyView(WatchConsoleResultContent(model: model, entryID: "result"))))
+    }
+
+    func testStackHomeIntroCopyDoesNotDisplaceNavigationOnSmallWatches() throws {
+        let model = WatchModel()
+        try configured(model)
+        func height(_ width: CGFloat) throws -> CGFloat {
+            let renderer = ImageRenderer(
+                content: WatchConsoleHomeContent(model: model).environment(model)
+                    .frame(width: width).fixedSize(horizontal: false, vertical: true))
+            return try XCTUnwrap(renderer.uiImage).size.height
+        }
+        let widths: [CGFloat] = [162, 198, 216]
+        let original = try widths.map(height)
+        var menu = try XCTUnwrap(fixture("menu").objectValue)
+        var console = try XCTUnwrap(menu["console"]?.objectValue)
+        var labels = try XCTUnwrap(console["labels"]?.objectValue)
+        labels["title"] = .string("AstralDeep Console: welcome to your personal workspace")
+        labels["subtitle"] = .string(String(repeating: "Server-owned introductory copy. ", count: 12))
+        console["labels"] = .object(labels)
+        menu["console"] = .object(console)
+        model.handleFrame(InboundFrame(name: "chrome_menu", payload: .object(["model": .object(menu)])))
+        XCTAssertNotNil(model.console)
+        XCTAssertEqual(model.consolePresentation?.navigationMode, .stack)
+        XCTAssertEqual(try widths.map(height), original)
     }
 
     func testConsoleCatalogAndSettingsRenderAtSmallAndLargeWatchSizes() throws {

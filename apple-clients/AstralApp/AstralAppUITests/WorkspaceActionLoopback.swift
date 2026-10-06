@@ -43,16 +43,18 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
     private var socketPaused = false
     private let supportsWorkReads: Bool
     private let supportsGuidanceNotes: Bool
+    private let supportsSettingsControls: Bool
     private var workWire: [Data] = []
 
     init(
         replies: [Route: [Reply]], supportsWebSocket: Bool = false, supportsWorkReads: Bool = false,
-        supportsGuidanceNotes: Bool = false
+        supportsGuidanceNotes: Bool = false, supportsSettingsControls: Bool = false
     ) throws {
         self.replies = replies
         self.supportsWebSocket = supportsWebSocket
         self.supportsWorkReads = supportsWorkReads
         self.supportsGuidanceNotes = supportsGuidanceNotes
+        self.supportsSettingsControls = supportsSettingsControls
         let parameters = NWParameters.tcp
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
@@ -390,6 +392,9 @@ final class WorkspaceActionLoopback: @unchecked Sendable {
                         || (self.supportsGuidanceNotes
                             && ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"]
                                 .contains(action))
+                        || (self.supportsSettingsControls
+                            && ["save_theme", "chrome_llm_test", "chrome_llm_models", "chrome_typesafe_save"].contains(
+                                action))
                     {
                         self.workWire.append(payload)
                     } else if ["component_refine", "component_restore"].contains(action) {

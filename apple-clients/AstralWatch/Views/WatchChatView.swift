@@ -15,8 +15,10 @@ struct WatchChatView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     if !model.workspaceStarted {
                         if let console = model.console {
-                            Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)
-                            Text(verbatim: console.labels["subtitle"] ?? "").font(ConsoleTypography.footnote)
+                            if model.consolePresentation?.navigationMode != .stack {
+                                Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)
+                                Text(verbatim: console.labels["subtitle"] ?? "").font(ConsoleTypography.footnote)
+                            }
                             notices
                             inputArea
                             NavigationLink(console.labels["start_here"] ?? "") { WatchConsoleCatalogView() }

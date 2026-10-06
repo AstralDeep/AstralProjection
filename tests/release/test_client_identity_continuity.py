@@ -125,8 +125,8 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     assert versioned == original | navigation
     assert len(original) == 10 and len(navigation) == 4
     for key in original | navigation:
-        assert "CURRENT_PROJECT_VERSION = 63;" in configurations[key]
-        assert "MARKETING_VERSION = 1.7;" in configurations[key]
+        assert "CURRENT_PROJECT_VERSION = 67;" in configurations[key]
+        assert "MARKETING_VERSION = 1.8;" in configurations[key]
     for key in navigation:
         body = configurations[key]
         assert "SUPPORTED_PLATFORMS = watchsimulator;" in body

@@ -45,7 +45,7 @@ struct AstralApp: App {
                         return .systemAction(destination)
                     }
                 )
-                .preferredColorScheme(.dark)
+                .preferredColorScheme(model.themeStore.colorScheme)
                 .task {
                     #if DEBUG
                         if let scenario = FirstLoginUITestFixture.requestedScenario() {

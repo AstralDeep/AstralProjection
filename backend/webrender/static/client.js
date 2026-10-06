@@ -7205,7 +7205,7 @@
         break;
       }
       case "notification":
-        showToast((data.title ? data.title + ": " : "") + (data.body || ""), data.level === "error" ? "error" : "info");
+        showToast((data.title ? data.title + ": " : "") + (data.body || ""), data.level === "error" ? "error" : data.level === "warning" ? "warning" : "info");
         break;
       case "task_started": {
         var tsp = data.payload || {};
@@ -7294,7 +7294,7 @@
     var t = document.createElement("div");
     t.className = "astral-toast astral-toast-" + (kind || "info");
     t.style.cssText = "padding:10px 14px;border-radius:8px;font-size:13px;color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.4);"
-      + (kind === "error" ? "background:#7f1d1d;border:1px solid #b91c1c;" : "background:#1e293b;border:1px solid #334155;");
+      + (kind === "error" ? "background:#7f1d1d;border:1px solid #b91c1c;" : kind === "warning" ? "background:#78350f;border:1px solid #b45309;" : "background:#1e293b;border:1px solid #334155;");
     t.textContent = message;
     if (onTap) {
       t.style.cursor = "pointer";
@@ -7658,7 +7658,7 @@
       paginateSize(e.target.closest(".astral-pagination"), parseInt(e.target.value, 10));
     }
     if (e.target.classList && e.target.classList.contains("astral-color-picker")) {
-      var key = e.target.getAttribute("data-color-key"); setColor(key, e.target.value);
+      var key = e.target.getAttribute("data-color-key");
       action("save_theme", { theme: { color_key: key, color_value: e.target.value } });
     }
   });

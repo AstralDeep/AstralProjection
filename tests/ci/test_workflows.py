@@ -222,8 +222,9 @@ def _assert_windows_native_contract(text: str) -> None:
     for required in (
         "QT_QPA_PLATFORM: offscreen",
         "PYTHONPATH: windows-client",
+        "PYTEST_ADDOPTS: -o faulthandler_timeout=60",
         r"python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `",
-        r"--cov=windows-client\astral_client --cov-branch `",
+        r"--cov=windows-client\astral_client --cov=windows-client\win_agent --cov-branch `",
         r"--cov-report=xml:build\075\coverage\windows-python.xml",
         r"python scripts\check_changed_coverage.py build\075\coverage\windows-python.xml `",
         r"--output build\075\coverage\windows-python-changed-coverage.json",
@@ -382,6 +383,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "VoiceConversationUITests",
         "WorkspacePresentationUITests",
         "WorkspaceActionsUITests",
+        "SettingsControlsUITests",
         "ConversationContinuityUITests/testDeterministicProcessRelaunchRestoresSemanticConversation",
     ):
         assert "-only-testing:AstralAppUITests/" + selector in first_login
@@ -390,7 +392,11 @@ def _assert_apple_platform_contract(apple: str) -> None:
         "testDeterministicProcessRelaunchRestoresSemanticConversation \\\n"
     ) in first_login
     assert (
-        'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)'
+        'if [[ "${{ matrix.slug }}" == "ios" ]]; then\n'
+        '            workspace_actions=(\n'
+        '              -only-testing:AstralAppUITests/WorkspaceActionsUITests\n'
+        '              -only-testing:AstralAppUITests/SettingsControlsUITests\n'
+        '            )'
         in first_login
     )
     assert '"${workspace_actions[@]}"' in first_login
@@ -1062,8 +1068,8 @@ def test_release_activation_document_matches_current_workflow_inventory() -> Non
         "ci.yml",
         "android-ci.yml",
         "apple-ci.yml",
-        "claim-reply.yml",
         "pr-ci-notifications.yml",
+        "pr-triage.yml",
     }
     assert len(disabled) == 6
     assert disabled_jobs == 8
@@ -1138,8 +1144,8 @@ def test_three_owner_workflows_are_active_while_six_release_workflows_remain_ine
         "android-ci.yml",
         "apple-ci.yml",
         "ci.yml",
-        "claim-reply.yml",
         "pr-ci-notifications.yml",
+        "pr-triage.yml",
     }
     assert len(list(INACTIVE.glob("*.yml"))) == 6
 

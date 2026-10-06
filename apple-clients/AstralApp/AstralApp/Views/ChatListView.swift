@@ -11,7 +11,11 @@ struct HistoryView: View {
 
     var body: some View {
         Group {
-            if model.historyLoading && model.history.isEmpty {
+            if !model.connected && model.history.isEmpty {
+                Text("History is unavailable until the connection is restored.")
+                    .foregroundStyle(p.muted).multilineTextAlignment(.center).padding(24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if (model.historyLoading || !model.historyLoaded) && model.history.isEmpty {
                 SkeletonList()
             } else if model.history.isEmpty {
                 VStack(spacing: 8) {

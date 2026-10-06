@@ -175,6 +175,9 @@ data class UiState(
     val pendingSurface: Inbound.ChromeSurface? = null,
     val privateSurfaceRequest: PrivateSurfaceRequest? = null,
     val privateSurfaceFailed: Boolean = false,
+    val surfaceOutcomeRevision: Long = 0,
+    val surfaceErrorMessage: String? = null,
+    val surfaceReloadRequired: Boolean = false,
     val themePalette: ThemePalette? = null,
     val timelineReadOnly: Boolean = false,
     val mandatorySurface: Boolean = false,
@@ -832,7 +835,7 @@ class AppViewModel(
             }
             return
         }
-        if (action == "chrome_open" && isPrivateChromeSurface(surface)) {
+        if (action == "chrome_open" && surface.isNotBlank()) {
             openSurface(surface, payload["params"] as? JsonObject ?: JsonObject(emptyMap()))
             return
         }
@@ -863,6 +866,14 @@ class AppViewModel(
             return
         }
         if (_state.value.timelineReadOnly && isTimelineMutation(action)) return
+        val currentSurface = _state.value
+        if (currentSurface.screen == Screen.Surface && !isPrivateChromeSurface(currentSurface.pendingSurfaceKey) &&
+            action != "chrome_open" && action != "chrome_close" && action != "chat_message" &&
+            surfaceOperationOffered(currentSurface.pendingSurface, action, payload)
+        ) {
+            requestSettingsSurface(currentSurface.pendingSurfaceKey, currentSurface.pendingSurfaceParams, action, payload)
+            return
+        }
         if (action == "chat_message") {
             val message = (payload["message"] as? JsonPrimitive)?.contentOrNull ?: return
             sendChat(message)
@@ -891,6 +902,13 @@ class AppViewModel(
         failure: QueuedSubmissionFailure,
     ): UiState {
         if (s.pendingSubmissions[failure.submission.requestGeneration] != failure.submission) return s
+        if (s.privateSurfaceRequest?.let {
+                !isPrivateChromeSurface(it.surfaceKey) && it.requestGeneration == failure.submission.requestGeneration &&
+                    it.connectionGeneration == s.connectionGeneration
+            } == true
+        ) {
+            return failSettingsSurface(s, "Couldn't send this action. Reconnect and retry.")
+        }
         val retained =
             s.pendingSubmissions.filterValues {
                 it.submissionId != failure.submission.submissionId
@@ -1171,6 +1189,34 @@ class AppViewModel(
         return surface?.components?.any(::offered) == true
     }
 
+    private fun surfaceOperationOffered(
+        surface: Inbound.ChromeSurface?,
+        action: String,
+        payload: JsonObject,
+    ): Boolean {
+        fun matches(command: JsonObject): Boolean =
+            (command["action"] as? JsonPrimitive)?.contentOrNull == action &&
+                (command["payload"] as? JsonObject).orEmpty().all { (key, value) -> payload[key] == value }
+
+        fun offered(component: Component): Boolean =
+            when (component.type) {
+                "button" -> component.attributes["disabled"] != JsonPrimitive(true) && matches(component.attributes)
+                "param_picker" -> {
+                    val fields = payload["fields"] as? JsonObject
+                    fields != null &&
+                        (
+                            (component.attributes["submit_action"] as? JsonPrimitive)?.contentOrNull == action ||
+                                (component.attributes["actions"] as? JsonArray)?.any { it is JsonObject && matches(it) } == true
+                        )
+                }
+                "color_picker" ->
+                    action == "save_theme" &&
+                        (payload["theme"] as? JsonObject)?.get("color_key") == component.attributes["color_key"]
+                else -> false
+            } || component.children.any(::offered)
+        return surface?.components?.any(::offered) == true
+    }
+
     fun openSurface(
         surface: String,
         params: JsonObject = JsonObject(emptyMap()),
@@ -1180,21 +1226,7 @@ class AppViewModel(
             requestPrivateSurface(surface, params)
             return
         }
-        sendEvent(
-            "chrome_open",
-            buildJsonObject {
-                put("surface", surface)
-                put("params", params)
-            },
-        )
-        _state.value =
-            _state.value.copy(
-                screen = Screen.Surface,
-                pendingSurfaceKey = surface,
-                pendingSurfaceParams = params,
-                pendingSurface = null,
-                privateSurfaceFailed = false,
-            )
+        requestSettingsSurface(surface, params)
     }
 
     fun retryPendingSurface() {
@@ -1204,13 +1236,54 @@ class AppViewModel(
             return
         }
         if (st.pendingSurfaceKey.isNotBlank()) {
-            sendEvent(
-                "chrome_open",
-                buildJsonObject {
-                    put("surface", st.pendingSurfaceKey)
-                    put("params", st.pendingSurfaceParams)
-                },
+            requestSettingsSurface(st.pendingSurfaceKey, st.pendingSurfaceParams)
+        }
+    }
+
+    private fun requestSettingsSurface(
+        surface: String,
+        params: JsonObject,
+        action: String = "chrome_open",
+        payload: JsonObject =
+            buildJsonObject {
+                put("surface", surface)
+                put("params", params)
+            },
+    ) {
+        if (action != "chrome_open" &&
+            (_state.value.privateSurfaceRequest != null || _state.value.surfaceReloadRequired)
+        ) {
+            return
+        }
+        val owner = account
+        val epoch = workspaceEpoch
+        _state.update {
+            finishPrivateSurface(it).copy(
+                screen = Screen.Surface,
+                pendingSurfaceKey = surface,
+                pendingSurfaceParams = params,
+                pendingSurface = if (action == "chrome_open" && it.pendingSurfaceKey != surface) null else it.pendingSurface,
+                privateSurfaceFailed = false,
+                surfaceErrorMessage = null,
             )
+        }
+        var issued: PrivateSurfaceRequest? = null
+        val sent =
+            client.sendCurrentSettingsEvent(surface, action, payload, {
+                account == owner && workspaceEpoch == epoch && _state.value.screen == Screen.Surface &&
+                    _state.value.pendingSurfaceKey == surface && _state.value.privateSurfaceRequest == issued
+            }) { submission, connection ->
+                issued = PrivateSurfaceRequest(submission.requestGeneration, connection, surface, action)
+                _state.update { projectLocalSubmission(it, submission).copy(privateSurfaceRequest = issued) }
+            }
+        if (!sent && _state.value.privateSurfaceRequest == issued && _state.value.pendingSurfaceKey == surface) {
+            _state.update {
+                finishPrivateSurface(it).copy(
+                    privateSurfaceFailed = true,
+                    surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
+                    surfaceErrorMessage = "Couldn't send this action. Reconnect and retry.",
+                )
+            }
         }
     }
 
@@ -1252,7 +1325,14 @@ class AppViewModel(
 
     internal fun timeoutPrivateSurface(requestGeneration: String?) {
         if (requestGeneration != null && _state.value.privateSurfaceRequest?.requestGeneration == requestGeneration) {
-            _state.update { finishPrivateSurface(it).copy(privateSurfaceFailed = true) }
+            _state.update {
+                finishPrivateSurface(it).copy(
+                    privateSurfaceFailed = true,
+                    surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
+                    surfaceErrorMessage = "The server hasn't confirmed this action. Reload this screen before trying again.",
+                    surfaceReloadRequired = !isPrivateChromeSurface(it.pendingSurfaceKey),
+                )
+            }
         }
     }
 
@@ -1271,6 +1351,39 @@ class AppViewModel(
             pendingSurface = if (isPrivateChromeSurface(s.pendingSurfaceKey)) null else s.pendingSurface,
             privateSurfaceFailed = isPrivateChromeSurface(s.pendingSurfaceKey),
         )
+
+    private fun failSettingsSurface(
+        s: UiState,
+        message: String,
+        reloadRequired: Boolean = false,
+    ): UiState =
+        finishPrivateSurface(s).copy(
+            privateSurfaceFailed = true,
+            surfaceOutcomeRevision = s.surfaceOutcomeRevision + 1,
+            surfaceErrorMessage = message,
+            surfaceReloadRequired = reloadRequired,
+        )
+
+    private fun disconnectSurface(s: UiState): UiState =
+        if (s.privateSurfaceRequest?.let { !isPrivateChromeSurface(it.surfaceKey) } == true) {
+            failSettingsSurface(s, "The connection interrupted this action. Reload this screen before trying again.", true)
+        } else {
+            retirePrivateSurface(s)
+        }
+
+    private fun acceptedSurfacePalette(
+        s: UiState,
+        surface: Inbound.ChromeSurface,
+    ): ThemePalette? {
+        var palette = s.themePalette
+
+        fun apply(component: Component) {
+            if (component.type == "theme_apply") palette = themePaletteForSpec(palette, component.attributes)
+            component.children.forEach(::apply)
+        }
+        surface.components.forEach(::apply)
+        return palette
+    }
 
     private fun stageExistingAttachment(payload: JsonObject): Boolean {
         val id = (payload["attachment_id"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() } ?: return false
@@ -1419,7 +1532,7 @@ class AppViewModel(
     ): UiState =
         when (connection) {
             ConnectionState.AuthRequired ->
-                retirePrivateSurface(s.viewportRefresh?.let { restoreViewportRefresh(s, it) } ?: s).copy(
+                disconnectSurface(s.viewportRefresh?.let { restoreViewportRefresh(s, it) } ?: s).copy(
                     connection = connection,
                     consolePresentation = null,
                     viewportSnapshotSupported = false,
@@ -1427,7 +1540,7 @@ class AppViewModel(
                     pendingViewportConfig = null,
                 )
             ConnectionState.Disconnected ->
-                retirePrivateSurface(s).copy(
+                disconnectSurface(s).copy(
                     connection = connection,
                     consolePresentation = null,
                     viewportSnapshotSupported = false,
@@ -1544,6 +1657,56 @@ class AppViewModel(
             is Inbound.ChromeSurface ->
                 when {
                     s.screen == Screen.Surface && isPrivateChromeSurface(s.pendingSurfaceKey) && msg.surfaceKey != s.pendingSurfaceKey -> s
+                    msg.mode == "mandatory" && msg.requestGeneration == null && !isPrivateChromeSurface(msg.surfaceKey) ->
+                        retirePrivateSurface(s).copy(
+                            screen = Screen.Surface,
+                            pendingSurface = msg,
+                            pendingSurfaceKey = msg.surfaceKey,
+                            pendingSurfaceParams = JsonObject(emptyMap()),
+                            mandatorySurface = true,
+                            surfaceOutcomeRevision = s.surfaceOutcomeRevision + 1,
+                            surfaceReloadRequired = false,
+                            surfaceErrorMessage = null,
+                        )
+                    s.privateSurfaceRequest?.let { !isPrivateChromeSurface(it.surfaceKey) } == true -> {
+                        val request = s.privateSurfaceRequest!!
+                        if (request.connectionGeneration != s.connectionGeneration || s.screen != Screen.Surface ||
+                            s.pendingSurfaceKey != request.surfaceKey || msg.mode != "replace" ||
+                            msg.requestGeneration != null && msg.requestGeneration != request.requestGeneration ||
+                            msg.surfaceKey != request.surfaceKey && msg.surfaceKey != "error" &&
+                            !(msg.surfaceKey.isBlank() && msg.components.isEmpty())
+                        ) {
+                            s
+                        } else if (msg.surfaceKey == "error" ||
+                            msg.components.all { it.type in setOf("alert", "text") } &&
+                            msg.components.any { it.type == "alert" && it.attributes["variant"] == JsonPrimitive("error") }
+                        ) {
+                            failSettingsSurface(
+                                s,
+                                listOf(msg.title, noticeText(msg.components))
+                                    .filter { it.isNotBlank() }.joinToString(": ").ifBlank { "This action failed. Try again." },
+                            )
+                        } else if (msg.surfaceKey.isBlank()) {
+                            finishPrivateSurface(s).copy(
+                                screen = Screen.Chat,
+                                pendingSurface = null,
+                                pendingSurfaceKey = "",
+                                mandatorySurface = false,
+                                surfaceOutcomeRevision = s.surfaceOutcomeRevision + 1,
+                                surfaceReloadRequired = false,
+                                surfaceErrorMessage = null,
+                            )
+                        } else {
+                            finishPrivateSurface(s).copy(
+                                pendingSurface = msg,
+                                privateSurfaceFailed = false,
+                                themePalette = acceptedSurfacePalette(s, msg),
+                                surfaceOutcomeRevision = s.surfaceOutcomeRevision + 1,
+                                surfaceErrorMessage = null,
+                                surfaceReloadRequired = false,
+                            )
+                        }
+                    }
                     isPrivateChromeSurface(msg.surfaceKey) || msg.requestGeneration != null -> {
                         val request = s.privateSurfaceRequest
                         if (!isPrivateChromeSurface(msg.surfaceKey) || msg.mode != "replace" || request == null ||
@@ -1586,7 +1749,7 @@ class AppViewModel(
                             mandatorySurface = true,
                         )
                     s.screen == Screen.Surface && s.pendingSurfaceKey == msg.surfaceKey ->
-                        s.copy(pendingSurface = msg)
+                        s
                     else -> {
                         val text =
                             listOf(msg.title, noticeText(msg.components))
@@ -1632,7 +1795,7 @@ class AppViewModel(
                 if (text.isBlank()) {
                     s
                 } else {
-                    s.copy(banner = text, bannerKind = if (msg.level == "error") "error" else "info")
+                    s.copy(banner = text, bannerKind = msg.level?.takeIf { it == "error" || it == "warning" } ?: "info")
                 }
             }
             is Inbound.ComponentSaved ->
@@ -2169,6 +2332,13 @@ class AppViewModel(
         s: UiState,
         error: Inbound.ErrorFrame,
     ): UiState {
+        val request = s.privateSurfaceRequest
+        if (request != null && !isPrivateChromeSurface(request.surfaceKey) &&
+            request.requestGeneration == error.requestGeneration && request.connectionGeneration == s.connectionGeneration &&
+            error.connectionGeneration == s.connectionGeneration
+        ) {
+            return failSettingsSurface(s, error.message)
+        }
         val banner =
             if (error.code != null && error.code != "internal") {
                 "${error.message} (${error.code})"
@@ -2267,6 +2437,13 @@ class AppViewModel(
                 pendingOperation != null && pendingOperation.action == status.action
             }
         if (!inScope) return s
+        val settings = s.privateSurfaceRequest
+        if (settings != null && !isPrivateChromeSurface(settings.surfaceKey) &&
+            settings.requestGeneration == status.requestGeneration && settings.action == status.action &&
+            status.terminal && status.state != "completed"
+        ) {
+            return failSettingsSurface(s, status.error?.message ?: status.label)
+        }
         val current = s.operationStatuses[status.operationId]
         if (current != null && (current.terminal || status.sequence <= current.sequence)) {
             return s

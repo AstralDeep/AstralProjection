@@ -55,6 +55,7 @@ final class WatchModel {
     private(set) var turnSelection = TurnSelection.empty
     var handoffMessage: String?
     private var guidanceReadSelection = GuidanceRequest.list
+    private var guidanceAuthenticationRead: GuidanceRequest?
     @ObservationIgnored var audioHardwareProvider: () -> (microphone: Bool, output: Bool) = {
         WatchDeviceCapabilities.audio
     }
@@ -204,13 +205,8 @@ final class WatchModel {
 
     var serverBase = WatchOverrideSync.resolvedServerBase()
     @ObservationIgnored var activeChatId: String?
-    private let store: TokenStorage = {
-        #if canImport(Security)
-            KeychainTokenStore(service: "com.personalailabs.astraldeep.watch")
-        #else
-            InMemoryTokenStore()
-        #endif
-    }()
+    private let store: TokenStorage
+    @ObservationIgnored private let authenticationNow: () -> Date
 
     @ObservationIgnored private var overrideObserver: NSObjectProtocol?
 
@@ -218,9 +214,12 @@ final class WatchModel {
     @ObservationIgnored private var loginTask: Task<Void, Never>?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
     @ObservationIgnored private var ws: WSClient?
-    // Generation-fenced: a late refresh can't reuse wiped creds
     @ObservationIgnored private var refreshTask: Task<RefreshResult, Never>?
-    @ObservationIgnored private var refreshTaskGeneration = -1
+    @ObservationIgnored private var refreshContext: CredentialRefreshContext?
+    @ObservationIgnored private var refreshedWithinMarginAccessToken: String?
+    @ObservationIgnored private var registeredAccessToken: String?
+    @ObservationIgnored private var pendingRefreshedRegistrationToken: String?
+    @ObservationIgnored private var authenticationReadIntent: AuthenticationReadIntent?
     @ObservationIgnored private var sessionGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
@@ -271,13 +270,48 @@ final class WatchModel {
 
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
 
+    private struct AuthenticationOwner: Equatable {
+        let account: ConversationAccount?
+        let session: Int
+        let server: URL
+    }
+
+    private struct CredentialRefreshContext {
+        let id = UUID()
+        let owner: AuthenticationOwner
+        let socket: WSClient?
+        let connection: String?
+        let original: TokenSet
+    }
+
+    private struct SocketAuthenticationContext {
+        let owner: AuthenticationOwner
+        let socket: WSClient
+        let connection: String
+        let token: String
+    }
+
+    private struct AuthenticationReadIntent {
+        let owner: AuthenticationOwner
+        let socket: WSClient
+        let chatId: String?
+        let guidance: GuidanceRequest?
+        let work: WorkReadRequest?
+        let generation: String
+    }
+
+    private var authenticationOwner: AuthenticationOwner {
+        AuthenticationOwner(account: conversationAccount, session: sessionGeneration, server: serverBase)
+    }
+
     var deviceLogin: DeviceLoginClient {
         DeviceLoginClient(serverBase: serverBase)
     }
 
     var rest: RestClient {
-        RestClient(serverBase: serverBase) { [weak self] in
-            await self?.freshAccessToken()
+        let owner = authenticationOwner
+        return RestClient(serverBase: owner.server) { [weak self] in
+            await self?.freshAccessToken(for: owner)
         }
     }
 
@@ -285,13 +319,28 @@ final class WatchModel {
         self.init(conversationResumeStore: ConversationResumeStore())
     }
 
-    init(conversationResumeStore: ConversationResumeStore, webSocket: WSClient? = nil) {
+    init(
+        conversationResumeStore: ConversationResumeStore, webSocket: WSClient? = nil,
+        tokenStore: TokenStorage? = nil, authenticationNow: @escaping () -> Date = Date.init
+    ) {
         self.conversationResumeStore = conversationResumeStore
         self.ws = webSocket
+        self.store = tokenStore ?? Self.defaultTokenStore()
+        self.authenticationNow = authenticationNow
+    }
+
+    private static func defaultTokenStore() -> TokenStorage {
+        #if canImport(Security)
+            KeychainTokenStore(service: "com.personalailabs.astraldeep.watch")
+        #else
+            InMemoryTokenStore()
+        #endif
     }
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            authenticationReadIntent = nil
+            registeredAccessToken = nil
             ownerSurfaceControls = []
             chromeMenu = nil
             consolePresentation = nil
@@ -339,6 +388,7 @@ final class WatchModel {
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
+        registeredAccessToken = nil
         resetViewportRefresh(clearSubmissionHistory: true)
         invalidateConsoleSurface()
         chromeMenu = nil
@@ -472,27 +522,82 @@ final class WatchModel {
         }
     }
 
-    private func refreshOutcome() async -> RefreshResult {
-        if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
-            return await inFlight.value
-        }
-        guard let current = tokens else { return .rejected("no session") }
-        if !current.needsRefresh() { return .ok(current) }
-        return await runRefresh()
+    private func credentialHasExpired(_ set: TokenSet) -> Bool {
+        let now = authenticationNow()
+        return now >= set.expiresAt
+            || set.claims?["exp"]?.numberValue.map { $0 <= now.timeIntervalSince1970 } == true
     }
 
-    private func runRefresh() async -> RefreshResult {
-        guard let refresh = tokens?.refreshToken else { return .rejected("no refresh token") }
-        let generation = sessionGeneration
-        let broker = deviceLogin
-        let attempt = Task { await RefreshStrategy.broker(broker).attempt(refreshToken: refresh) }
-        refreshTask = attempt
-        refreshTaskGeneration = generation
+    private func credentialIsWithinRefreshMargin(_ set: TokenSet) -> Bool {
+        let now = authenticationNow()
+        return set.needsRefresh(now: now)
+            || set.claims?["exp"]?.numberValue.map { $0 <= now.addingTimeInterval(60).timeIntervalSince1970 } == true
+    }
+
+    private func refreshContextIsCurrent(_ context: CredentialRefreshContext) -> Bool {
+        context.owner == authenticationOwner && ws === context.socket
+            && continuity.connectionGeneration == context.connection
+    }
+
+    private func retireRefresh(_ context: CredentialRefreshContext) {
+        guard refreshContext?.id == context.id else { return }
+        refreshTask = nil
+        refreshContext = nil
+    }
+
+    private func refreshOutcome(force: Bool = false, renewSocket: Bool = true) async -> RefreshResult {
+        guard let current = tokens else { return .rejected("no session") }
+        guard phase != .signedIn || current.conversationAccount == conversationAccount else {
+            return .rejected("credentials do not match the session")
+        }
+        let needsRefresh =
+            credentialHasExpired(current)
+            || (refreshedWithinMarginAccessToken != current.accessToken && credentialIsWithinRefreshMargin(current))
+        if refreshTask == nil, !force, !needsRefresh {
+            if renewSocket { renewRegisteredSocket(ifChanged: current) }
+            return .ok(current)
+        }
+        guard let refresh = current.refreshToken else { return .rejected("no refresh token") }
+        let context: CredentialRefreshContext
+        let attempt: Task<RefreshResult, Never>
+        if let inFlight = refreshTask, let active = refreshContext, refreshContextIsCurrent(active) {
+            context = active
+            attempt = inFlight
+        } else {
+            refreshTask?.cancel()
+            context = CredentialRefreshContext(
+                owner: authenticationOwner, socket: ws, connection: continuity.connectionGeneration, original: current)
+            let broker = deviceLogin
+            attempt = Task { await RefreshStrategy.broker(broker).attempt(refreshToken: refresh) }
+            refreshTask = attempt
+            refreshContext = context
+        }
         let result = await attempt.value
-        if refreshTaskGeneration == generation { refreshTask = nil }
-        if case .ok(let set) = result, generation == sessionGeneration {
-            tokens = set
-            store.save(StoredTokens(from: set))
+        guard !Task.isCancelled, refreshContextIsCurrent(context) else {
+            retireRefresh(context)
+            return .transient("session changed")
+        }
+        if case .ok(let set) = result {
+            guard set.conversationAccount == context.original.conversationAccount,
+                phase != .signedIn || set.conversationAccount == context.owner.account,
+                !credentialHasExpired(set)
+            else {
+                retireRefresh(context)
+                return .rejected("refreshed credentials do not match the session")
+            }
+            guard tokens == context.original || tokens == set else {
+                retireRefresh(context)
+                return .transient("session changed")
+            }
+            if refreshContext?.id == context.id {
+                retireRefresh(context)
+                tokens = set
+                refreshedWithinMarginAccessToken = credentialIsWithinRefreshMargin(set) ? set.accessToken : nil
+                store.save(StoredTokens(from: set))
+            }
+            if renewSocket { renewRegisteredSocket(ifChanged: set) }
+        } else {
+            retireRefresh(context)
         }
         return result
     }
@@ -500,6 +605,13 @@ final class WatchModel {
     private func freshAccessToken() async -> String? {
         if case .ok(let set) = await refreshOutcome() { return set.accessToken }
         return nil
+    }
+
+    private func freshAccessToken(for owner: AuthenticationOwner) async -> String? {
+        guard !Task.isCancelled, authenticationOwner == owner else { return nil }
+        let token = await freshAccessToken()
+        guard !Task.isCancelled, authenticationOwner == owner else { return nil }
+        return token
     }
 
     private func enterSignedIn() {
@@ -529,6 +641,11 @@ final class WatchModel {
         sessionGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+        refreshContext = nil
+        refreshedWithinMarginAccessToken = nil
+        registeredAccessToken = nil
+        pendingRefreshedRegistrationToken = nil
+        authenticationReadIntent = nil
         wsTask?.cancel()
         wsTask = nil
         ws = nil
@@ -571,6 +688,8 @@ final class WatchModel {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
         conversationAccount = nil
+        registeredAccessToken = nil
+        authenticationReadIntent = nil
         chromeMenu = nil
         consolePresentation = nil
         resetViewportRefresh(clearSubmissionHistory: true)
@@ -596,32 +715,79 @@ final class WatchModel {
         #endif
     }
 
-    private func connectWS() {
+    private func connectWS(refreshedToken: String? = nil) {
         invalidateWorkRead()
         if workVisible { workReadFailed = true }
+        authenticationReadIntent = nil
+        registeredAccessToken = nil
+        pendingRefreshedRegistrationToken = refreshedToken
+        connected = false
         wsTask?.cancel()
         if let previous = ws { Task { await previous.stop() } }
         let client = WSClient(url: rest.webSocketURL)
         ws = client
+        let owner = authenticationOwner
         let resumeState = WatchRegistrationResumeState()
         wsTask = Task {
             let events = await client.events()
             await client.start(
                 onConnect: { [weak self] in
                     guard let self else { return nil }
-                    guard let token = await self.freshAccessToken() else { return nil }
+                    guard let token = await self.registrationToken(for: client, owner: owner) else { return nil }
                     let resumed = await resumeState.consume()
-                    return await self.registrationFrame(token: token, resumed: resumed)
+                    return await self.currentRegistrationFrame(
+                        token: token, resumed: resumed, socket: client, owner: owner)
                 },
                 onReplay: { [weak self] replay in
                     guard let self else { return false }
-                    return await self.replayQueuedOperation(replay)
+                    return await self.replayQueuedOperation(replay, socket: client, owner: owner)
                 })
             for await event in events {
-                guard !Task.isCancelled, self.ws === client else { break }
+                guard !Task.isCancelled, self.ws === client, self.authenticationOwner == owner else { break }
                 await self.handle(event)
             }
+            await client.stop()
         }
+    }
+
+    private func registrationToken(for socket: WSClient, owner: AuthenticationOwner) async -> String? {
+        guard !Task.isCancelled, ws === socket, authenticationOwner == owner else { return nil }
+        let result = await refreshOutcome(renewSocket: false)
+        guard !Task.isCancelled, ws === socket, authenticationOwner == owner else { return nil }
+        switch result {
+        case .ok(let set): return set.accessToken
+        case .rejected:
+            await signOut(revokeRemote: false)
+            return nil
+        case .transient: return nil
+        }
+    }
+
+    private func currentRegistrationFrame(
+        token: String, resumed: Bool, socket: WSClient, owner: AuthenticationOwner
+    ) -> String? {
+        guard !Task.isCancelled, ws === socket, authenticationOwner == owner, tokens?.accessToken == token else {
+            return nil
+        }
+        let intent = authenticationReadIntent.flatMap { current in
+            current.owner == owner && current.socket === socket && current.chatId == activeChatId
+                && current.generation == authenticationSurfaceGeneration(current) ? current : nil
+        }
+        let frame = registrationFrame(token: token, resumed: resumed)
+        registeredAccessToken = token
+        if let intent {
+            authenticationReadIntent = AuthenticationReadIntent(
+                owner: owner, socket: socket, chatId: intent.chatId, guidance: intent.guidance, work: intent.work,
+                generation: authenticationSurfaceGeneration(intent))
+        }
+        return frame
+    }
+
+    private func replayQueuedOperation(
+        _ replay: QueuedOperationReplay, socket: WSClient, owner: AuthenticationOwner
+    ) -> Bool {
+        guard !Task.isCancelled, ws === socket, authenticationOwner == owner else { return false }
+        return replayQueuedOperation(replay)
     }
 
     func handle(_ event: WSEvent) async {
@@ -671,6 +837,7 @@ final class WatchModel {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        if frame.name == "ready" || frame.name == "chrome_menu" { pendingRefreshedRegistrationToken = nil }
         if consumeViewportStatus(frame) { return }
         if frame.name == "error",
             ["viewport_snapshot_rejected", "viewport_snapshot_retryable"].contains(
@@ -744,6 +911,7 @@ final class WatchModel {
                 invalidateWorkRead(includeGuidance: false)
                 workVisible = false
             }
+            resumeAuthenticatedRead()
             return
         }
         if frame.name == "chrome_surface", frame.payload["surface_key"]?.stringValue == "guidance" {
@@ -914,7 +1082,8 @@ final class WatchModel {
             }
         case "auth_required":
             resetViewportRefresh()
-            Task { await self.handleAuthRequired() }
+            guard let context = socketAuthenticationContext else { return }
+            Task { await self.handleAuthRequired(context) }
         default:
             break
         }
@@ -1157,24 +1326,88 @@ final class WatchModel {
         continuity.clearChatKeepingConnection()
     }
 
-    private func handleAuthRequired() async {
-        guard let refused = tokens?.accessToken else {
-            await signOut()
+    private var socketAuthenticationContext: SocketAuthenticationContext? {
+        guard phase == .signedIn, let socket = ws, let connection = continuity.connectionGeneration,
+            let token = registeredAccessToken
+        else { return nil }
+        return SocketAuthenticationContext(
+            owner: authenticationOwner, socket: socket, connection: connection, token: token)
+    }
+
+    private func socketAuthenticationIsCurrent(_ context: SocketAuthenticationContext) -> Bool {
+        context.owner == authenticationOwner && ws === context.socket
+            && continuity.connectionGeneration == context.connection && registeredAccessToken == context.token
+    }
+
+    private func handleAuthRequired(_ context: SocketAuthenticationContext) async {
+        guard socketAuthenticationIsCurrent(context) else { return }
+        if pendingRefreshedRegistrationToken == context.token {
+            await signOut(revokeRemote: false)
             return
         }
-        let result: RefreshResult
-        if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
-            result = await inFlight.value
-        } else {
-            result = await runRefresh()
-        }
+        let result = await refreshOutcome(force: tokens?.accessToken == context.token, renewSocket: false)
+        guard !Task.isCancelled, socketAuthenticationIsCurrent(context) else { return }
         switch result {
-        case .ok(let set) where set.accessToken != refused:
-            break
+        case .ok(let set) where set.accessToken != context.token:
+            renewRegisteredSocket(ifChanged: set)
         case .ok, .rejected:
-            await signOut()
+            await signOut(revokeRemote: false)
         case .transient:
-            break
+            errorBanner = "The session could not reconnect. Retry when the connection is available."
+        }
+    }
+
+    private func renewRegisteredSocket(ifChanged set: TokenSet) {
+        guard phase == .signedIn, connected, let registeredAccessToken, registeredAccessToken != set.accessToken else {
+            return
+        }
+        let owner = authenticationOwner
+        let chatId = activeChatId
+        let defaultGuidance = guidanceVisible ? guidanceAuthenticationRead : nil
+        let work = workVisible ? workReadSelection : nil
+        let defaultWork = work?.params == .object(["mode": .string("list")]) ? work : nil
+        let interrupted =
+            !localOperationSubmissions.isEmpty || (guidanceVisible && defaultGuidance == nil)
+            || (work != nil && defaultWork == nil)
+        connectWS(refreshedToken: set.accessToken)
+        if let socket = ws, defaultGuidance != nil || defaultWork != nil {
+            authenticationReadIntent = AuthenticationReadIntent(
+                owner: owner, socket: socket, chatId: chatId, guidance: defaultGuidance, work: defaultWork,
+                generation: defaultGuidance != nil ? guidanceEpoch : workReadEpoch)
+        }
+        if interrupted { errorBanner = "The session refreshed. Review your entries and retry the action." }
+    }
+
+    private func authenticationSurfaceGeneration(_ intent: AuthenticationReadIntent) -> String {
+        intent.guidance != nil ? guidanceEpoch : workReadEpoch
+    }
+
+    private func resumeAuthenticatedRead() {
+        guard let intent = authenticationReadIntent else { return }
+        authenticationReadIntent = nil
+        guard intent.owner == authenticationOwner, intent.socket === ws, intent.chatId == activeChatId,
+            intent.generation == authenticationSurfaceGeneration(intent)
+        else { return }
+        if let guidance = intent.guidance, guidanceVisible {
+            guard
+                nativeGuidanceRequests.contains(guidance)
+                    || guidanceControls.contains(where: {
+                        GuidanceRequest(action: "chrome_open", payload: .object($0.chromeOpenPayload)) == guidance
+                    })
+            else {
+                guidanceFailed = true
+                errorBanner = "This destination is no longer available. Review the current settings."
+                return
+            }
+            _ = sendGuidanceRequest(action: "chrome_open", payload: guidance.payload)
+        } else if let work = intent.work, workVisible {
+            guard workControls.contains(where: { WorkReadRequest(payload: .object($0.chromeOpenPayload)) == work })
+            else {
+                workReadFailed = true
+                errorBanner = "This destination is no longer available. Review the current settings."
+                return
+            }
+            beginWorkRead(work.payload)
         }
     }
 
@@ -1217,13 +1450,15 @@ final class WatchModel {
         recentsGeneration = generation
         let session = sessionGeneration
         let account = conversationAccount
+        let server = serverBase
         recentsLoading = true
         let loaded = try? await load()
         guard recentsGeneration == generation, sessionGeneration == session,
             conversationAccount == account, !hasCanonicalRecents
         else { return }
-        if let loaded { recents = Array(loaded.prefix(10)) }
         recentsLoading = false
+        guard serverBase == server else { return }
+        if let loaded { recents = Array(loaded.prefix(10)) }
     }
 
     private func resetRecents() {
@@ -1240,6 +1475,7 @@ final class WatchModel {
         handoffMessage = nil
         invalidateWorkRead()
         guidanceVisible = false
+        guidanceAuthenticationRead = nil
         workReadSelection = nil
         workVisible = false
         entries = []
@@ -1301,6 +1537,7 @@ final class WatchModel {
         if request.action == "chrome_open" {
             guidanceReadSelection = request == .selection ? .selection : .list
         }
+        guidanceAuthenticationRead = request == .list || request == .selection ? request : nil
         guidanceVisible = true
         guidanceFailed = false
         let generation = guidanceEpoch
@@ -1337,6 +1574,7 @@ final class WatchModel {
         guard guidanceVisible else { return }
         invalidateGuidance()
         guidanceVisible = false
+        guidanceAuthenticationRead = nil
         let generation = guidanceEpoch
         guard connected, let socket = ws, let account = conversationAccount else { return }
         let session = sessionGeneration
@@ -1525,7 +1763,15 @@ final class WatchModel {
 
     private func rawSend(_ frame: String) {
         outboundTap?(frame)
-        Task { await ws?.send(frame) }
+        guard let socket = ws else { return }
+        let owner = authenticationOwner
+        let connection = continuity.connectionGeneration
+        Task {
+            guard !Task.isCancelled, ws === socket, authenticationOwner == owner,
+                continuity.connectionGeneration == connection
+            else { return }
+            await socket.send(frame)
+        }
     }
 
     private func sendCurrentConnectionVoice(_ frame: String) {
@@ -2577,17 +2823,18 @@ final class WatchModel {
             binding.deviceId == voiceDeviceId,
             binding.expiresAt > Date()
         else { return nil }
+        let owner = authenticationOwner
         let tokenProvider: @Sendable () async -> String?
         if let accessToken {
             tokenProvider = { accessToken }
         } else {
             tokenProvider =
                 voiceTokenProvider ?? { [weak self] in
-                    await self?.freshAccessToken()
+                    await self?.freshAccessToken(for: owner)
                 }
         }
         return WatchVoiceRESTClient(
-            serverBase: serverBase,
+            serverBase: owner.server,
             deviceId: voiceDeviceId,
             connectionGeneration: connection,
             controlBinding: binding,

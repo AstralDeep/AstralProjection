@@ -7,9 +7,8 @@ all eight release jobs carry `if: ${{ false }}`. This
 document records the preconditions for a later, separately reviewed release
 activation commit. It does not authorize that commit or any publication.
 
-The separate `.github/workflows/claim-reply.yml` community responder has only
-issue-comment authority and executes a pinned action without checking out code.
-It is outside product qualification and grants no release authority.
+The community points bot runs in the community website repository and credits
+verified bounty PR merges into `main`. It grants no product or release authority.
 
 The separate `.github/workflows/pr-ci-notifications.yml` controller reports current-head
 CI failures and requests maintainer review after all applicable qualification lanes pass.
@@ -91,3 +90,9 @@ To deactivate a release workflow, use an ordinary reviewed commit that restores
 its unconditional false job gates or moves that release file back to
 `workflows-disabled/`. Owner CI deactivation is a separate gate-policy change.
 Never delete or rewrite release tags as a rollback mechanism.
+
+The separate `pr-ci-notifications.yml` and `pr-triage.yml` workflows operate on
+trusted GitHub metadata only. The triage controller requests missing context and
+applies explicit current-head maintainer closure decisions under
+[the PR triage policy](../.github/PR_TRIAGE.md); neither controller qualifies,
+merges, publishes, or activates a product release.

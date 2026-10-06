@@ -224,6 +224,23 @@ These gates MUST NOT be weakened:
   protocol, chrome, theme, or layout change lands here across every in-scope client in the
   same feature, and AstralDeep adopts it by moving its pin under its own constitution.
 
+## Community Triage Controller
+
+- The separate `pr-triage.yml` metadata controller MAY use only `issues: write`
+  and `pull-requests: write` with the built-in short-lived token to request missing
+  issue context and apply explicit maintainer closure decisions. It MUST run only
+  on exact `refs/heads/main` through a reviewed, full-SHA-pinned community action,
+  serialize events and recovery, check out no repository code, execute no PR
+  input, download no artifacts, and use no secrets, OIDC, contents-write,
+  approval, rerun, merge, publishing, or release authority. Closure MUST verify
+  the deciding maintainer's immutable identity and current write permission,
+  concrete public rationale, and exact reviewed head; changed heads require
+  fresh review. Missing links only request context. No-op, unsupported completion,
+  duplicate, and superseded findings MUST be reviewed against useful independent
+  work before closure. Task issues, branches, and points remain unchanged.
+  Contract tests MUST preserve these boundaries; this controller neither qualifies
+  product changes nor replaces required review or release gates.
+
 ## Development Workflow
 
 - Changes land through pull requests qualified by the required gates unless the owner
@@ -254,4 +271,4 @@ These gates MUST NOT be weakened:
 - References to numbered constitution principles in records written before 2026-09-28,
   including the client READMEs, refer to the AstralDeep constitution v5.0.0.
 
-**Version**: 2.2.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-01
+**Version**: 2.3.0 | **Ratified**: 2026-09-28 | **Last Amended**: 2026-10-05
