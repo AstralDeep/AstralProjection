@@ -1645,9 +1645,9 @@
       "sourcePath": "apple-clients/AstralWatch/AstralWatchApp.swift",
       "sourceBlob": "25aa48938009986ec4fad7081aa3424b98ee2130",
       "sourceMode": "100644",
-      "task": "T057/T061/T060/T015",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures.",
-      "resultSha256": "f49ed7a3023145b36a728e3b6fe55f5a74d4e744ff6768d2718fdbfdab4fffba"
+      "task": "T057/T061/T060/T015/T019/T025",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Feature 088 native visual parity: align card, metric, chart, canvas and New chat styling with measured web tokens; retain safe Markdown targets, server-owned semantics and native accessibility. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Apply the shared accepted-palette color scheme to watchOS system chrome for readable light appearance.",
+      "resultSha256": "ebadb4cad032070719d44720259cf340d2cb9a658e48a8472b3fdc39539618d6"
     },
     {
       "path": "apple-clients/AstralWatch/ConversationResumeStore.swift",
@@ -1681,9 +1681,9 @@
       "sourcePath": "apple-clients/AstralWatch/Views/WatchChatView.swift",
       "sourceBlob": "64a9845bc5d933ab251797320c930160d5056114",
       "sourceMode": "100644",
-      "task": "T057/T061/T015",
-      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Fair CI 2026-09-27: lay out the wrist conversation in an eager stack; scrolling the lazy stack to its trailing Start here link re-laid it out without end and hung the catalog-to-chat UI test.",
-      "resultSha256": "6eff308e2b327bc71c1f12c978aea7e41fc21367bce7a2b201024748f15e7ddd"
+      "task": "T057/T061/T015/T019/T025",
+      "reason": "Feature 088 native checkpoint: align Apple workspace, server chrome, owner lifecycle, typography and isolated Plotly presentation; preserve watch capability handoffs and authenticated download boundaries. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Fair CI 2026-09-27: lay out the wrist conversation in an eager stack; scrolling the lazy stack to its trailing Start here link re-laid it out without end and hung the catalog-to-chat UI test. Conserve wrist conversation space by collapsing redundant introductory copy under the negotiated stack presentation.",
+      "resultSha256": "15a23adb276c2b942a460eb20047619badf1a0c15df48779600e29cffe29f7d5"
     },
     {
       "path": "apple-clients/AstralWatch/Views/WatchComponentView.swift",
