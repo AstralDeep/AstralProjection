@@ -85,6 +85,8 @@ final class ConversationContinuityUITests: XCTestCase {
     }
 
     private func assertSemanticConversation(timeout: TimeInterval) {
+        let disclosure = app.buttons["collapsed-chat-toggle"]
+        if disclosure.exists && disclosure.label == "Show conversation" { disclosure.press() }
         let required = [
             "Continuity question", "continuity.pdf", "Continuity total: 21",
             "Continuity component answer", "Restored continuity canvas",

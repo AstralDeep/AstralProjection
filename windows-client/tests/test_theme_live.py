@@ -95,7 +95,7 @@ def test_color_picker_renders(qapp, native_root):
     assert isinstance(w, QWidget)
 
 
-def test_color_picker_emits_save_theme_and_applies(qapp, monkeypatch, native_root):
+def test_color_picker_requests_save_before_server_application(qapp, monkeypatch, native_root):
     from PySide6.QtWidgets import QPushButton
 
     monkeypatch.setattr(rmod, "_choose_color", lambda *a, **k: "#FF8800")
@@ -106,6 +106,8 @@ def test_color_picker_emits_save_theme_and_applies(qapp, monkeypatch, native_roo
     w.findChild(QPushButton).click()
     assert seen[-1][0] == "save_theme"
     assert seen[-1][1]["theme"] == {"color_key": "accent", "color_value": "#FF8800"}
+    assert T.PALETTE["accent"] == "#06B6D4"
+    native_root(render, {"type": "theme_apply", "colors": {"accent": "#FF8800"}}, ctx)
     assert T.PALETTE["accent"] == "#FF8800"
 
 
@@ -136,7 +138,7 @@ def test_theme_apply_routes_through_ctx_callback(qapp, native_root):
     assert T.PALETTE == before
 
 
-def test_color_picker_routes_through_ctx_callback(qapp, monkeypatch, native_root):
+def test_color_picker_waits_for_theme_apply_callback(qapp, monkeypatch, native_root):
     from PySide6.QtWidgets import QPushButton
 
     monkeypatch.setattr(rmod, "_choose_color", lambda *a, **k: "#FF8800")
@@ -146,4 +148,6 @@ def test_color_picker_routes_through_ctx_callback(qapp, monkeypatch, native_root
     w = native_root(render, {"type": "color_picker", "color_key": "accent",
                 "value": "#06B6D4", "label": "Accent"}, ctx)
     w.findChild(QPushButton).click()
-    assert seen == [{"color_key": "accent", "color_value": "#FF8800"}]
+    assert seen == []
+    native_root(render, {"type": "theme_apply", "color_key": "accent", "color_value": "#FF8800"}, ctx)
+    assert seen == [{"type": "theme_apply", "color_key": "accent", "color_value": "#FF8800"}]

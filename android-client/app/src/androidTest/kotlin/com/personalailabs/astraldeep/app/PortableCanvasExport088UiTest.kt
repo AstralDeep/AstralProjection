@@ -8,8 +8,10 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.BitmapDrawable
+import android.net.Uri
 import android.view.View
 import android.view.ViewGroup
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
@@ -40,7 +42,9 @@ import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.exportScript
 import com.personalailabs.astraldeep.app.render.loadedCanvasPixels
 import com.personalailabs.astraldeep.app.render.renderOfflineCanvasExport
+import com.personalailabs.astraldeep.app.render.renderers.ChartDocument
 import com.personalailabs.astraldeep.app.render.renderers.ChartWebView
+import com.personalailabs.astraldeep.app.render.renderers.isolatedChartWebView
 import com.personalailabs.astraldeep.app.render.renderers.registerAllRenderers
 import com.personalailabs.astraldeep.app.ui.WorkspaceContext
 import com.personalailabs.astraldeep.app.ui.theme.AstralTheme
@@ -71,6 +75,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.net.ServerSocket
 import java.util.Base64
+import java.util.UUID
 
 class PortableCanvasExport088UiTest {
     @get:Rule val rule = createComposeRule()
@@ -82,6 +87,52 @@ class PortableCanvasExport088UiTest {
             is WebView -> listOf(view)
             is ViewGroup -> (0 until view.childCount).flatMap { webViews(view.getChildAt(it)) }
             else -> emptyList()
+        }
+
+    @Test fun chartOnlyServesItsCurrentMainFrameDocument() =
+        runBlocking {
+            withContext(Dispatchers.Main) {
+                val web = isolatedChartWebView(InstrumentationRegistry.getInstrumentation().targetContext)
+
+                fun request(
+                    url: String,
+                    mainFrame: Boolean = true,
+                    method: String = "GET",
+                ): WebResourceRequest =
+                    object : WebResourceRequest {
+                        override fun getUrl(): Uri = Uri.parse(url)
+
+                        override fun isForMainFrame(): Boolean = mainFrame
+
+                        override fun isRedirect(): Boolean = false
+
+                        override fun hasGesture(): Boolean = false
+
+                        override fun getMethod(): String = method
+
+                        override fun getRequestHeaders(): Map<String, String> = emptyMap()
+                    }
+                try {
+                    val first = ChartDocument(UUID.randomUUID().toString(), "<p>First document</p>".toByteArray())
+                    web.chartDocument = first
+                    val accepted = web.webViewClient.shouldInterceptRequest(web, request(first.url))!!
+                    assertEquals(200, accepted.statusCode)
+                    assertEquals("<p>First document</p>", accepted.data.bufferedReader().use { it.readText() })
+                    val current = ChartDocument(UUID.randomUUID().toString(), "<p>Current document</p>".toByteArray())
+                    web.chartDocument = current
+                    for (denied in listOf(request(first.url), request(current.url, mainFrame = false), request(current.url, method = "POST"), request("https://astral-chart.invalid/"), request("https://example.invalid/"))) {
+                        assertEquals(403, web.webViewClient.shouldInterceptRequest(web, denied)!!.statusCode)
+                    }
+                    val next = web.webViewClient.shouldInterceptRequest(web, request(current.url))!!
+                    assertEquals(200, next.statusCode)
+                    assertEquals("<p>Current document</p>", next.data.bufferedReader().use { it.readText() })
+                    web.chartDocument = null
+                    assertEquals(403, web.webViewClient.shouldInterceptRequest(web, request(current.url))!!.statusCode)
+                } finally {
+                    web.stopLoading()
+                    web.destroy()
+                }
+            }
         }
 
     @Test fun chartResizePreservesZoomAndDocumentWhileThemeReloadsCurrentAppearance() =
@@ -101,12 +152,26 @@ class PortableCanvasExport088UiTest {
             }
             val web = withContext(Dispatchers.Main) { webViews(activity().window.decorView).single() }
 
-            suspend fun settled() {
-                withTimeout(15000) {
-                    while (!web.exportScript("document.documentElement.dataset.nativeLayout || ''").matches(Regex("\"[0-9]+\""))) delay(50)
+            suspend fun nativeState(): String =
+                withContext(Dispatchers.Main) {
+                    val current = webViews(activity().window.decorView).singleOrNull()
+                    val currentDocument = (current as? ChartWebView)?.chartDocument
+                    val document = currentDocument?.bytes?.decodeToString()
+                    "attached=${web.isAttachedToWindow}, sameView=${current === web}, " +
+                        "url=${web.url}, requestedUrl=${currentDocument?.url}, " +
+                        "nativeAppearance=${document?.substringAfter("<style>html,body{")?.substringBefore("}")}"
+                }
+
+            suspend fun settled(stage: String) {
+                runCatching {
+                    withTimeout(15000) {
+                        while (!web.exportScript("document.documentElement.dataset.nativeLayout || ''").matches(Regex("\"[0-9]+\""))) delay(50)
+                    }
+                }.getOrElse {
+                    throw AssertionError("Chart layout did not settle after $stage: ${nativeState()}", it)
                 }
             }
-            settled()
+            settled("initial load")
             val generation = web.exportScript("document.querySelector('meta[name=astral-native-chart-generation]').content")
             val originalWidth = web.exportScript("document.getElementById('chart')._fullLayout.width").toDouble()
             web.exportScript("Plotly.relayout(document.getElementById('chart'), {'xaxis.range':[0.5,1.5]});true")
@@ -123,16 +188,20 @@ class PortableCanvasExport088UiTest {
             }.getOrElse {
                 throw AssertionError("Chart width $originalWidth did not resize: " + web.exportScript("[innerWidth,document.getElementById('chart')._fullLayout.width,document.documentElement.dataset.nativeLayout]"), it)
             }
-            settled()
+            settled("resize")
             assertEquals(generation, web.exportScript("document.querySelector('meta[name=astral-native-chart-generation]').content"))
             assertEquals("[0.5,1.5]", web.exportScript("document.getElementById('chart').layout.xaxis.range"))
             assertEquals("260", web.exportScript("document.getElementById('chart').layout.height"))
             rule.runOnIdle { preset = "daylight" }
             rule.waitForIdle()
-            withTimeout(10000) {
-                while (web.exportScript("document.querySelector('meta[name=astral-native-chart-generation]').content") == generation) delay(50)
+            runCatching {
+                withTimeout(10000) {
+                    while (web.exportScript("document.querySelector('meta[name=astral-native-chart-generation]').content") == generation) delay(50)
+                }
+            }.getOrElse {
+                throw AssertionError("Chart appearance did not reload: ${nativeState()}", it)
             }
-            settled()
+            settled("theme change")
             assertEquals("\"rgb(255, 255, 255)\"", web.exportScript("getComputedStyle(document.body).backgroundColor"))
         }
 

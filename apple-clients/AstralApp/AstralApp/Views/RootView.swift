@@ -54,7 +54,9 @@ struct RootView: View {
                 ConnectionStrip(label: label)
             }
             if let banner = model.errorBanner {
-                BannerBar(text: banner, isError: model.bannerIsError) { model.dismissBanner() }
+                BannerBar(text: banner, isError: model.bannerIsError, isWarning: model.bannerIsWarning) {
+                    model.dismissBanner()
+                }
             }
             ViewportRefreshNotice()
             surface
@@ -259,6 +261,9 @@ struct AstralTopBar: View {
     private var settingsMenu: some View {
         Menu {
             if !model.mandatorySurface {
+                if model.chromeMenu == nil {
+                    Text(model.connected ? "Settings are loading…" : "Settings are unavailable while connecting.")
+                }
                 ForEach(model.chromeMenu?.menu ?? []) { group in
                     Section(group.label) {
                         ForEach(group.items) { item in
@@ -301,8 +306,11 @@ struct AstralTopBar: View {
 struct AstralToolbarLayout: Layout {
     var wraps: Bool
     var spacing: CGFloat = 6
+    var rightAligned = true
 
-    static func frames(sizes: [CGSize], width: CGFloat, spacing: CGFloat, wraps: Bool) -> [CGRect] {
+    static func frames(
+        sizes: [CGSize], width: CGFloat, spacing: CGFloat, wraps: Bool, rightAligned: Bool = true
+    ) -> [CGRect] {
         var rows: [[CGRect]] = [[]]
         var x: CGFloat = 0
         var y: CGFloat = 0
@@ -319,13 +327,15 @@ struct AstralToolbarLayout: Layout {
             rowHeight = max(rowHeight, size.height)
         }
         return rows.flatMap { row in
-            let offset = max(0, width - (row.last?.maxX ?? 0))
+            let offset = rightAligned ? max(0, width - (row.last?.maxX ?? 0)) : 0
             return row.map { $0.offsetBy(dx: offset, dy: 0) }
         }
     }
 
     private func frames(_ subviews: Subviews, width: CGFloat) -> [CGRect] {
-        Self.frames(sizes: subviews.map { $0.sizeThatFits(.unspecified) }, width: width, spacing: spacing, wraps: wraps)
+        Self.frames(
+            sizes: subviews.map { $0.sizeThatFits(ProposedViewSize(width: width, height: nil)) }, width: width,
+            spacing: spacing, wraps: wraps, rightAligned: rightAligned)
     }
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -344,15 +354,26 @@ struct AstralToolbarLayout: Layout {
 }
 
 struct ConnectionStrip: View {
+    @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     let label: String
     var body: some View {
-        Text(label)
-            .font(ConsoleTypography.caption)
-            .foregroundStyle(theme.palette.muted)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14).padding(.vertical, 5)
-            .background(theme.palette.surface2)
+        HStack(spacing: 10) {
+            Text(label).frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            if model.initialConnectionFailed || model.everConnected {
+                Button("Retry") { model.retryConnection() }
+                    .buttonStyle(.plain).foregroundStyle(theme.palette.primary)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityIdentifier("connection-retry")
+                    .accessibilityLabel("Retry connection")
+            }
+        }
+        .font(ConsoleTypography.caption)
+        .foregroundStyle(theme.palette.muted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14).padding(.vertical, 5)
+        .background(theme.palette.surface2)
     }
 }
 
@@ -363,7 +384,7 @@ struct ViewportRefreshNotice: View {
     var body: some View {
         if model.viewportRefreshFailed {
             HStack(spacing: 8) {
-                Text("The layout could not update. Your result is still available.")
+                Text(model.viewportRefreshFailureMessage)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 Button("Retry layout") { model.retryViewportRefresh() }
                     .disabled(!model.connected)
@@ -380,10 +401,11 @@ struct BannerBar: View {
     @Environment(ThemeStore.self) var theme
     let text: String
     let isError: Bool
+    var isWarning = false
     let onDismiss: () -> Void
 
     var body: some View {
-        let color = isError ? theme.palette.error : theme.palette.info
+        let color = isError ? theme.palette.error : isWarning ? theme.palette.warning : theme.palette.info
         HStack(spacing: 8) {
             Text(text).font(ConsoleTypography.footnote).foregroundStyle(theme.palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)

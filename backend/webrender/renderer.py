@@ -15,6 +15,8 @@ from contextvars import ContextVar
 from typing import Any, Callable, Dict, List
 from urllib.parse import quote
 
+from astralprojection.form_options import form_options
+
 logger = logging.getLogger("webrender")
 
 PRIMITIVE_RENDERERS: Dict[str, Callable[[Dict[str, Any]], str]] = {}
@@ -186,20 +188,20 @@ def _param_field(field: Dict[str, Any]) -> str:
             f'class="astral-pp-field astral-field rounded bg-white/10 border border-white/10 px-2 py-1 text-astral-text w-40"></label>'
         )
     if kind == "checklist":
-        opts = field.get("options") or []
+        sel = set(value for value in default if isinstance(value, str)) if isinstance(default, list) else set()
+        opts = form_options(field.get("options"), sorted(sel))
         if not opts:
             inner = '<span class="text-xs text-astral-muted italic">(no options provided)</span>'
         else:
-            sel = set(default or []) if isinstance(default, list) else set()
             btns = []
-            for opt in opts:
+            for opt, option_label in opts:
                 on = opt in sel
                 ocls = ("bg-astral-primary/30 border-astral-primary text-white" if on
                         else "bg-white/5 border-white/10 text-astral-muted hover:bg-white/10")
                 btns.append(
                     f'<button type="button" data-field="{_attr(name)}" data-kind="checklist" data-value="{_attr(opt)}" '
                     f'aria-pressed="{"true" if on else "false"}" '
-                    f'class="astral-pp-field px-2 py-1 rounded text-xs border transition-colors {ocls}">{esc(opt)}</button>'
+                    f'class="astral-pp-field px-2 py-1 rounded text-xs border transition-colors {ocls}">{esc(option_label)}</button>'
                 )
             inner = f'<div class="flex flex-wrap gap-2 mt-1">{"".join(btns)}</div>'
         return (
@@ -207,9 +209,10 @@ def _param_field(field: Dict[str, Any]) -> str:
             f'{help_html}{inner}</div>'
         )
     if kind == "select":
-        opts = field.get("options") or []
+        opts = form_options(field.get("options"), (default,))
         options = "".join(
-            f'<option value="{_attr(o)}"{" selected" if o == default else ""}>{esc(o)}</option>' for o in opts
+            f'<option value="{_attr(value)}"{" selected" if value == default else ""}>{esc(label)}</option>'
+            for value, label in opts
         )
         return (
             f'<label class="flex flex-col gap-1 text-sm"><span class="text-astral-text font-medium">{esc(label)}</span>'

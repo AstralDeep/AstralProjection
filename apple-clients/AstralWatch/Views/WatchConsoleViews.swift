@@ -11,8 +11,9 @@ struct WatchConsoleHome: View {
         ScrollView {
             WatchConsoleHomeContent(model: model)
         }
-        .background(model.theme.palette.bg)
+        .background(model.theme.palette.bg, ignoresSafeAreaEdges: [])
         .navigationTitle(model.consoleLabel("brand"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -36,7 +37,7 @@ struct WatchConsoleAgentsView: View {
         ScrollView {
             WatchConsoleAgentsViewContent(model: model, query: $query)
         }
-        .background(model.theme.palette.bg)
+        .background(model.theme.palette.bg, ignoresSafeAreaEdges: [])
         .navigationTitle(model.consoleLabel("agent_directory"))
         .navigationDestination(
             isPresented: Binding(
@@ -54,7 +55,7 @@ struct WatchConsoleSettingsView: View {
         ScrollView {
             WatchConsoleSettingsViewContent(model: model)
         }
-        .background(model.theme.palette.bg)
+        .background(model.theme.palette.bg, ignoresSafeAreaEdges: [])
         .navigationTitle(model.chromeMenu?.settingsControl?.label ?? "")
         .modifier(WatchOwnerSurfaceNavigation())
     }
@@ -67,7 +68,7 @@ struct WatchConsoleActionsView: View {
         ScrollView {
             WatchConsoleActionsViewContent(model: model)
         }
-        .background(model.theme.palette.bg)
+        .background(model.theme.palette.bg, ignoresSafeAreaEdges: [])
         .navigationTitle(model.consoleLabel("more"))
         .modifier(WatchOwnerSurfaceNavigation())
     }
@@ -149,9 +150,11 @@ struct WatchConsoleHomeContent: View {
     var body: some View {
         if let console = model.console {
             VStack(alignment: .leading, spacing: 12) {
-                Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)
-                Text(verbatim: console.labels["subtitle"] ?? "").font(ConsoleTypography.caption)
-                    .foregroundStyle(model.theme.palette.muted)
+                if model.consolePresentation?.navigationMode != .stack {
+                    Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)
+                    Text(verbatim: console.labels["subtitle"] ?? "").font(ConsoleTypography.caption)
+                        .foregroundStyle(model.theme.palette.muted)
+                }
                 Button {
                     model.newConversation()
                     model.consoleChatVisible = true

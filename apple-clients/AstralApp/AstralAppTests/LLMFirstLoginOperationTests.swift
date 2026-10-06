@@ -17,6 +17,8 @@ final class LLMFirstLoginOperationTests: XCTestCase {
 
     private func modelWithConnection() -> (AppModel, FrameLog) {
         let model = AppModel(tokenStore: InMemoryTokenStore())
+        model.signedIn = true
+        model.connected = true
         XCTAssertTrue(model.beginConversationConnection(connection))
         let log = FrameLog()
         model.outboundTap = { text in

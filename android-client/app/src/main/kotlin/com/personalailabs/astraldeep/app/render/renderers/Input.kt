@@ -17,9 +17,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +34,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -49,6 +53,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.personalailabs.astraldeep.app.render.Download
 import com.personalailabs.astraldeep.app.render.Emit
+import com.personalailabs.astraldeep.app.render.LocalFormSubmissionState
 import com.personalailabs.astraldeep.app.render.LocalGuidanceNotes
 import com.personalailabs.astraldeep.app.render.Renderer
 import com.personalailabs.astraldeep.app.render.ThemeSink
@@ -69,13 +74,11 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
-private const val SUBMIT_FAILSAFE_MS = 12_000L
-
 fun Renderer.registerInputRenderers(): Renderer =
     apply {
         register("input") { c -> InputPrimitive(c, emit) }
         register("param_picker") { c -> ParamPickerPrimitive(c, emit) }
-        register("color_picker") { c -> ColorPickerPrimitive(c, emit, theme) }
+        register("color_picker") { c -> ColorPickerPrimitive(c, emit) }
         register("theme_apply") { c -> ThemeApplyPrimitive(c, theme) }
         register("code") { c -> CodePrimitive(c) }
         register("file_upload") { c -> FileActionButton(c, emit, c.str("label") ?: "Upload") }
@@ -137,9 +140,33 @@ internal fun fieldStr(
 
 internal fun fieldKind(f: JsonObject): String = fieldStr(f, "kind") ?: "text"
 
-// Options are server-owned; submit the key verbatim, never relabel
-internal fun fieldOptions(f: JsonObject): List<String> =
-    (f["options"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList()
+internal data class FieldOption(val value: String, val label: String)
+
+internal fun fieldOptionRows(f: JsonObject): List<FieldOption> {
+    val options =
+        (f["options"] as? JsonArray)?.mapNotNull { option ->
+            when (option) {
+                is JsonPrimitive -> option.takeIf { it.isString }?.contentOrNull?.let { FieldOption(it, it) }
+                is JsonObject ->
+                    fieldStr(
+                        option,
+                        "value",
+                    )?.let {
+                        FieldOption(it, fieldStr(option, "label")?.takeIf { label -> label.isNotBlank() } ?: it)
+                    }
+                else -> null
+            }
+        }.orEmpty()
+    val saved =
+        when (val default = f["default"]) {
+            is JsonPrimitive -> listOf(default)
+            is JsonArray -> default.filterIsInstance<JsonPrimitive>()
+            else -> emptyList()
+        }.filter { it.isString && it.content.isNotBlank() }.map { FieldOption(it.content, it.content) }
+    return (options + saved).distinctBy { it.value }
+}
+
+internal fun fieldOptions(f: JsonObject): List<String> = fieldOptionRows(f).map { it.value }
 
 internal fun rendersAsDropdown(f: JsonObject): Boolean = fieldKind(f) == "select" && fieldOptions(f).isNotEmpty()
 
@@ -235,6 +262,7 @@ private fun ParamPickerPrimitive(
     val texts = remember(c) { mutableStateMapOf<String, String>().apply { putAll(initialTexts(fields)) } }
     val bools = remember(c) { mutableStateMapOf<String, Boolean>().apply { putAll(initialBools(fields)) } }
     val checks = remember(c) { mutableStateMapOf<String, Set<String>>().apply { putAll(initialChecks(fields)) } }
+    val submission = LocalFormSubmissionState.current
     var focused by remember { mutableStateOf(false) }
     ViewportInteraction(focused || texts != initialTexts(fields) || bools != initialBools(fields) || checks != initialChecks(fields))
 
@@ -250,7 +278,6 @@ private fun ParamPickerPrimitive(
             }
             fields.forEach { f ->
                 val name = fieldStr(f, "name") ?: return@forEach
-                // Hidden fields still submit their state; only rendering stops
                 if (!fieldIsVisible(f, texts, guidanceNotes = LocalGuidanceNotes.current)) return@forEach
                 val label = fieldStr(f, "label") ?: name
                 val kind = fieldKind(f)
@@ -263,7 +290,7 @@ private fun ParamPickerPrimitive(
                     kind == "checklist" ->
                         ChecklistField(
                             label = label,
-                            options = fieldOptions(f),
+                            options = fieldOptionRows(f),
                             selected = checks[name] ?: emptySet(),
                             onToggle = { opt ->
                                 val on = checks[name] ?: emptySet()
@@ -273,7 +300,7 @@ private fun ParamPickerPrimitive(
                     rendersAsDropdown(f) ->
                         SelectField(
                             label = label,
-                            options = fieldOptions(f),
+                            options = fieldOptionRows(f),
                             selected = texts[name] ?: "",
                             onSelect = { texts[name] = it },
                         )
@@ -297,41 +324,52 @@ private fun ParamPickerPrimitive(
                 }
             }
             val actions = c.arr("actions")?.mapNotNull { it as? JsonObject } ?: emptyList()
-            var submitting by remember(c) { mutableStateOf(false) }
-            if (submitting) {
-                LaunchedEffect(Unit) {
-                    kotlinx.coroutines.delay(SUBMIT_FAILSAFE_MS)
-                    submitting = false
-                }
+            var submitting by remember(c) { mutableStateOf<String?>(null) }
+            var submittedRevision by remember(c) { mutableStateOf(submission.outcomeRevision) }
+            LaunchedEffect(submission.outcomeRevision, submission.connected) {
+                if (submission.outcomeRevision != submittedRevision || !submission.connected) submitting = null
+            }
+            if (submitting != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    Text("Saving…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("$submitting…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 FlowRow(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    if (actions.isNotEmpty()) {
-                        actions.forEach { a ->
-                            val action = (a["action"] as? JsonPrimitive)?.contentOrNull ?: return@forEach
-                            val alabel = (a["label"] as? JsonPrimitive)?.contentOrNull ?: "Submit"
+                    val offered =
+                        actions.filter {
+                            fieldStr(it, "action")?.isNotBlank() == true && fieldStr(it, "label")?.isNotBlank() == true
+                        }
+                    if (offered.isNotEmpty()) {
+                        offered.forEach { a ->
+                            val action = fieldStr(a, "action")!!
+                            val alabel = fieldStr(a, "label")!!
                             val extra = (a["payload"] as? JsonObject) ?: JsonObject(emptyMap())
-                            Button(onClick = {
-                                submitting = true
-                                emit.event(action, collect(extra))
-                            }) { Text(alabel) }
+                            Button(
+                                onClick = {
+                                    submittedRevision = submission.outcomeRevision
+                                    submitting = alabel
+                                    emit.event(action, collect(extra))
+                                },
+                                enabled =
+                                    submission.connected && !submission.pending && !submission.reloadRequired &&
+                                        (a["disabled"] as? JsonPrimitive)?.booleanOrNull != true,
+                            ) { Text(alabel) }
                         }
                     } else {
-                        c.str("submit_action")?.let { sa ->
+                        c.str("submit_action")?.takeIf { it.isNotBlank() }?.let { sa ->
                             val extra = (c.attributes["submit_payload"] as? JsonObject) ?: JsonObject(emptyMap())
                             Button(onClick = {
-                                submitting = true
+                                submittedRevision = submission.outcomeRevision
+                                submitting = c.str("submit_label") ?: "Save"
                                 emit.event(sa, collect(extra))
-                            }) {
+                            }, enabled = submission.connected && !submission.pending && !submission.reloadRequired) {
                                 Text(c.str("submit_label") ?: "Save")
                             }
-                        }
+                        } ?: Text("This action is unavailable. Reload this screen to retry.", color = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -342,7 +380,7 @@ private fun ParamPickerPrimitive(
 @Composable
 private fun SelectField(
     label: String,
-    options: List<String>,
+    options: List<FieldOption>,
     selected: String,
     onSelect: (String) -> Unit,
 ) {
@@ -366,16 +404,22 @@ private fun SelectField(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(selected, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    options.firstOrNull {
+                        it.value == selected
+                    }?.label ?: selected,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 Text("▾", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 options.forEach { opt ->
                     DropdownMenuItem(
-                        text = { Text(opt, color = MaterialTheme.colorScheme.onSurface) },
+                        text = { Text(opt.label, color = MaterialTheme.colorScheme.onSurface) },
                         onClick = {
                             open = false
-                            onSelect(opt)
+                            onSelect(opt.value)
                         },
                     )
                 }
@@ -388,7 +432,7 @@ private fun SelectField(
 @Composable
 private fun ChecklistField(
     label: String,
-    options: List<String>,
+    options: List<FieldOption>,
     selected: Set<String>,
     onToggle: (String) -> Unit,
 ) {
@@ -408,9 +452,9 @@ private fun ChecklistField(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 options.forEach { opt ->
                     FilterChip(
-                        selected = opt in selected,
-                        onClick = { onToggle(opt) },
-                        label = { Text(opt) },
+                        selected = opt.value in selected,
+                        onClick = { onToggle(opt.value) },
+                        label = { Text(opt.label) },
                     )
                 }
             }
@@ -422,19 +466,23 @@ private fun ChecklistField(
 private fun ColorPickerPrimitive(
     c: Component,
     emit: Emit,
-    theme: ThemeSink,
 ) {
     val key = c.str("color_key").orEmpty()
     val label = c.str("label") ?: key
-    var current by remember(c) { mutableStateOf(c.str("value") ?: "") }
-    var open by remember { mutableStateOf(false) }
+    val current = c.str("value") ?: ""
+    var draft by remember(c) { mutableStateOf(current) }
+    var open by remember(c) { mutableStateOf(false) }
+    val submission = LocalFormSubmissionState.current
     ViewportInteraction(open)
     Box {
         Row(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = key.isNotBlank()) { open = true }
+                    .clickable(enabled = key.isNotBlank() && submission.connected && !submission.pending && !submission.reloadRequired) {
+                        draft = current
+                        open = true
+                    }
                     .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -447,28 +495,62 @@ private fun ColorPickerPrimitive(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            channelSwatchOptions(key, current).forEach { hex ->
-                DropdownMenuItem(
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ColorSwatch(hex)
-                            Text(hex, color = MaterialTheme.colorScheme.onSurface)
+        if (open) {
+            AlertDialog(
+                onDismissRequest = {
+                    open = false
+                    draft = current
+                },
+                title = { Text("Choose $label") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = { draft = it },
+                            label = { Text("Hex color") },
+                            singleLine = true,
+                            isError = draft.isNotBlank() && hexToColor(draft) == null,
+                            supportingText = { Text("Enter a six-digit hex color, such as #123456.") },
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            ColorSwatch(draft)
+                            Text(draft)
                         }
-                    },
-                    onClick = {
-                        open = false
-                        current = hex
-                        val spec =
-                            buildJsonObject {
-                                put("color_key", key)
-                                put("color_value", hex)
+                        channelSwatchOptions(key, current).forEach { hex ->
+                            TextButton(onClick = { draft = hex }) {
+                                ColorSwatch(hex)
+                                Text(hex, Modifier.padding(start = 8.dp))
                             }
-                        theme.apply(spec)
-                        emit.event("save_theme", buildJsonObject { put("theme", spec) })
-                    },
-                )
-            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled =
+                            hexToColor(draft) != null && submission.connected && !submission.pending &&
+                                !submission.reloadRequired,
+                        onClick = {
+                            val value = "#" + draft.trim().removePrefix("#").uppercase()
+                            open = false
+                            emit.event(
+                                "save_theme",
+                                buildJsonObject {
+                                    putJsonObject("theme") {
+                                        put("color_key", key)
+                                        put("color_value", value)
+                                    }
+                                },
+                            )
+                        },
+                    ) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        open = false
+                        draft = current
+                    }) { Text("Cancel") }
+                },
+            )
         }
     }
 }

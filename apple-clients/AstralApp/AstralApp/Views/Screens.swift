@@ -184,6 +184,11 @@ struct SurfaceView: View {
             if let surface = model.pendingSurface {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 12) {
+                        if let message = model.surfaceFailureMessage {
+                            Text(message).foregroundStyle(p.error).font(ConsoleTypography.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("surface-failure-message")
+                        }
                         if !embedded {
                             HStack(alignment: .firstTextBaseline) {
                                 Text(surface.title.isEmpty ? "Settings" : surface.title)
@@ -194,25 +199,36 @@ struct SurfaceView: View {
                                 }
                             }
                         }
-                        ForEach(Array(surface.components.enumerated()), id: \.offset) { _, comp in
+                        ForEach(Array(zip(Self.componentKeys(surface.components), surface.components)), id: \.0) {
+                            key, comp in
                             ComponentView(component: comp)
                                 .environment(
                                     \.astralWorkReadSurface, ["work", "guidance"].contains(surface.surfaceKey)
                                 )
                                 .environment(\.astralGuidanceSurface, surface.surfaceKey == "guidance")
-                                .id(model.guidanceUpdate?.generation ?? "legacy")
+                                .id("\(surface.surfaceKey)-\(key)-\(model.guidanceUpdate?.generation ?? "legacy")")
+                        }
+                        if !surface.components.isEmpty, surface.components.allSatisfy({ $0.type == "alert" }),
+                            surface.components.contains(where: { ["error", "danger"].contains($0.variant ?? "") })
+                        {
+                            Button("Retry") { model.retryPendingSurface() }
+                                .buttonStyle(AstralButtonStyle(palette: p, variant: "primary"))
                         }
                     }
                     .padding(16)
                 }
-            } else if timedOut || model.workReadFailed
+                .scrollDismissesKeyboard(.immediately)
+            } else if timedOut || model.surfaceFailureMessage != nil || model.workReadFailed
                 || (model.pendingSurfaceKey == "guidance" && model.guidanceFailed)
             {
                 VStack(spacing: 12) {
                     Text("Couldn't load this screen")
                         .font(ConsoleTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
-                    Text("The server didn't send it in time. Check your connection and try again.")
-                        .font(ConsoleTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
+                    Text(
+                        model.surfaceFailureMessage
+                            ?? "The server didn't send it in time. Check your connection and try again."
+                    )
+                    .font(ConsoleTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
                     Button("Retry") {
                         timedOut = false
                         retryGeneration = UUID()
@@ -250,6 +266,23 @@ struct SurfaceView: View {
         }
     }
 
+    static func componentKeys(_ components: [AstralComponent]) -> [String] {
+        var occurrences: [String: Int] = [:]
+        return components.map { component in
+            let formFields = component.raw["fields"]?.arrayValue?.compactMap { $0["name"]?.stringValue }.joined(
+                separator: "|")
+            let identity =
+                component.componentId
+                ?? (component.type == "color_picker" ? component.raw["color_key"]?.stringValue : nil)
+                ?? (component.type == "param_picker" ? formFields : nil)
+                ?? component.type
+            let base = "\(component.type):\(identity)"
+            let occurrence = occurrences[base, default: 0]
+            occurrences[base] = occurrence + 1
+            return "\(base):\(occurrence)"
+        }
+    }
+
     private var closeButton: some View {
         Button {
             model.closeSurface()
@@ -260,6 +293,7 @@ struct SurfaceView: View {
                 .padding(6)
         }
         .buttonStyle(.plain)
+        .frame(minWidth: 44, minHeight: 44)
         .accessibilityLabel("Close")
     }
 

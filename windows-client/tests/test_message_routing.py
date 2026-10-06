@@ -41,6 +41,12 @@ class _FakeClient:
     def send_event(self, action, payload, session_id=None):
         self.sent.append((action, payload))
 
+    def send_current_settings(self, surface, action, payload, generation, *, is_current=None):
+        if is_current is not None and not is_current():
+            return False
+        self.sent.append((action, payload))
+        return True
+
     def send_chat(self, *a, **k):
         pass
 
@@ -95,6 +101,22 @@ def test_notification_frame_shows_banner(win):
     win._on_message({"type": "notification", "title": "Job done", "body": "report ready", "level": "info"})
     assert (not win._banner.isHidden())
     assert "Job done" in win._banner.text() and "report ready" in win._banner.text()
+
+
+def test_saved_provider_connection_warning_does_not_become_a_save_error(win):
+    win._user_prefs = {"provider": "custom"}
+    win._on_message({"type": "notification", "title": "Provider settings saved",
+                     "body": "Connection test failed. Your saved settings remain available.", "level": "warning"})
+    assert win._banner_kind == "warning"
+    assert "Provider settings saved" in win._banner.text()
+    assert win._user_prefs == {"provider": "custom"}
+
+
+@pytest.mark.parametrize("level", [None, {}, [], "unknown"])
+def test_notification_invalid_level_keeps_a_safe_banner(win, level):
+    win._on_message({"type": "notification", "body": "Settings remain saved", "level": level})
+    assert win._banner_kind == "info"
+    assert "Settings remain saved" in win._banner.text()
 
 
 def test_unknown_frame_is_logged_not_crashing(win, caplog):

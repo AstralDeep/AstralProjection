@@ -11,6 +11,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from html import escape
 
 from astralprojection.models import ChromeViewModel, ComponentView, LayoutView, ThemeView
+from astralprojection.form_options import form_options
 
 _ACTION_RE = re.compile(r"^[a-z][a-z0-9_.:-]*$")
 _FIELD_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:-]*$")
@@ -146,7 +147,12 @@ def field(
     if default is not None and normalized_kind != "password":
         result["default"] = default
     if options is not None:
-        result["options"] = [clean_text(item) for item in options]
+        result["options"] = [
+            {"value": clean_text(item["value"]), "label": clean_text(item.get("label") or item["value"])}
+            if isinstance(item, Mapping) else clean_text(item)
+            for item in options
+            if isinstance(item, str) or (isinstance(item, Mapping) and isinstance(item.get("value"), str))
+        ]
     if help_text is not None:
         result["help"] = clean_text(help_text)
     if visible_when is not None:
@@ -264,7 +270,6 @@ def _render_fields(component: Mapping[str, object]) -> str:
             checked = " checked" if raw.get("default") else ""
             control = f'<input type="checkbox" name="{escape(name)}"{checked}{described}>'
         elif kind in {"select", "checklist"}:
-            options = raw.get("options") or []
             multiple = " multiple" if kind == "checklist" else ""
             selected = (
                 {clean_text(item) for item in raw["default"]}
@@ -272,11 +277,10 @@ def _render_fields(component: Mapping[str, object]) -> str:
                 else {default}
             )
             option_html = "".join(
-                f'<option value="{escape(clean_text(option))}"'
-                f"{' selected' if clean_text(option) in selected else ''}>"
-                f"{escape(clean_text(option))}</option>"
-                for option in options
-                if not isinstance(option, Mapping)
+                f'<option value="{escape(clean_text(value))}"'
+                f"{' selected' if value in selected else ''}>"
+                f"{escape(clean_text(label))}</option>"
+                for value, label in form_options(raw.get("options"), sorted(selected))
             )
             control = f'<select name="{escape(name)}"{multiple}{described}>{option_html}</select>'
         else:

@@ -77,7 +77,7 @@ function presentation(width = 393, colors = theme, pixels = PIXEL, windowWidth =
 
 function renderCapture(input) {
   const python = process.env.PYTHON_BIN || "python3";
-  return JSON.parse(execFileSync(python, ["-c", "import sys,json;sys.path.insert(0,'backend');from webrender.export_presentation import render_presentation;print(json.dumps(render_presentation(sys.stdin.buffer.read())))"],
+  return JSON.parse(execFileSync(python, ["-c", "import sys,json;sys.path[:0]=['src','backend'];from webrender.export_presentation import render_presentation;print(json.dumps(render_presentation(sys.stdin.buffer.read())))"],
     { cwd: ROOT, input: JSON.stringify(input), encoding: "utf8" }));
 }
 

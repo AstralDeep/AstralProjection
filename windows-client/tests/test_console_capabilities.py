@@ -371,6 +371,58 @@ def test_guidance_frames_are_current_correlated_and_strip_claimed_authority(tran
     assert not client._pending
 
 
+def test_settings_frames_are_current_correlated_and_preserve_keys(transport):
+    client, loop = transport
+    request = str(uuid.uuid4())
+    body = {"fields": {"provider": "custom", "base_url": "https://example.test/v1"}}
+    assert client.send_current_settings("llm", "chrome_llm_models", body, request)
+    body["fields"]["provider"] = "changed"
+    flush(loop)
+    frame = client._ws.frames[0]
+    assert frame["session_id"] is None
+    assert frame["payload"]["surface"] == "llm"
+    assert frame["payload"]["fields"]["provider"] == "custom"
+    assert frame["connection_generation"] == CONNECTION
+    assert frame["request_generation"] == frame["payload"]["request_generation"] == request
+    assert frame["submission_id"] == frame["payload"]["submission_id"]
+    assert not client._pending
+
+
+@pytest.mark.parametrize("changed", ["owner", "socket", "loop", "connection", "stopped", "auth_hold", "disconnected"])
+def test_settings_rechecks_transport_owner_at_physical_send(transport, changed):
+    client, loop = transport
+    socket = client._ws
+    current = [True]
+    assert client.send_current_settings("theme", "save_theme", {"theme": {"color_key": "accent", "color_value": "#123456"}},
+                                        str(uuid.uuid4()), is_current=lambda: current[0])
+    if changed == "owner":
+        current[0] = False
+    elif changed == "socket":
+        client._ws = Socket()
+    elif changed == "loop":
+        client._loop = None
+    elif changed == "connection":
+        client.connection_generation = str(uuid.uuid4())
+    elif changed == "stopped":
+        client._stop = True
+    elif changed == "auth_hold":
+        client._auth_hold = True
+    elif changed == "disconnected":
+        client._connected = False
+    flush(loop)
+    assert not socket.frames and not client._pending
+
+
+@pytest.mark.parametrize("surface,action,payload", [("work", "chrome_open", {}), ("guidance", "chrome_open", {}),
+                                                   ("agent_intro", "chrome_open", {}), ("", "chrome_open", {}),
+                                                   ("theme", "Bad action", {}), ("theme", "save_theme", [])])
+def test_settings_sender_rejects_wrong_disposition_or_invalid_action(transport, surface, action, payload):
+    client, loop = transport
+    assert not client.send_current_settings(surface, action, payload, str(uuid.uuid4()))
+    flush(loop)
+    assert not client._ws.frames and not client._pending
+
+
 @pytest.mark.parametrize("changed", ["owner", "socket", "loop", "connection", "stopped", "auth_hold", "disconnected", "retired", "new_request", "predicate_failure"])
 def test_guidance_rechecks_owner_transport_and_generation_at_physical_send(transport, changed):
     client, loop = transport

@@ -149,6 +149,13 @@ final class AppModel: NSObject {
     var accountName = ""
     var connected = false
     var everConnected = false
+    var initialConnectionFailed = false
+    var surfaceFailureMessage: String?
+    private var ordinarySurfaceRequests: [String: OrdinarySurfaceRequest] = [:]
+    private var ordinarySurfaceGeneration: String?
+    private var ordinaryReadIntent: (generation: String, owner: DownloadOwner)?
+    private var parameterRequests: [String: String] = [:]
+    private var parameterFailures: Set<String> = []
     var screen: Screen = .chat
     var activeChatId: String?
 
@@ -181,6 +188,8 @@ final class AppModel: NSObject {
     var statusText: String?
     var errorBanner: String?
     var bannerIsError = true
+    private var warningBannerText: String?
+    var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
     var asyncDetached = false
     var operationStatuses: [String: OperationStatus] = [:]
@@ -206,6 +215,7 @@ final class AppModel: NSObject {
     var audit: [AuditEvent] = []
     var agentsLoading = false
     var historyLoading = false
+    var historyLoaded = false
     var auditLoading = false
 
     var chromeMenu: ChromeMenuModel?
@@ -270,8 +280,12 @@ final class AppModel: NSObject {
     }
 
     private let store: TokenStorage
+    @ObservationIgnored private let credentialClock: @Sendable () -> Date
     @ObservationIgnored private var tokens: TokenSet?
     @ObservationIgnored private var ws: WSClient?
+    @ObservationIgnored private var initialWebSocket: WSClient?
+    @ObservationIgnored private var registeredAccessToken: String?
+    @ObservationIgnored private var refreshedWithinMarginAccessToken: String?
     @ObservationIgnored private var wsTask: Task<Void, Never>?
     @ObservationIgnored private var authSession: ASWebAuthenticationSession?
     @ObservationIgnored private var seqState: [String: Int] = [:]
@@ -279,7 +293,10 @@ final class AppModel: NSObject {
     @ObservationIgnored private var statusLifecycle = StatusLifecycleReducer()
     @ObservationIgnored private var refreshTask: Task<RefreshResult, Never>?
     @ObservationIgnored private var refreshTaskGeneration = -1
+    @ObservationIgnored private var refreshContext: CredentialRefreshContext?
+    @ObservationIgnored private var authenticationReadIntent: AuthenticationReadIntent?
     @ObservationIgnored private var sessionGeneration = 0
+    @ObservationIgnored private var conversationNavigationGeneration = 0
     @ObservationIgnored private var conversationResumeStore: ConversationResumeStore
     @ObservationIgnored private var conversationAccount: ConversationAccount?
     @ObservationIgnored private var continuity = ConversationContinuityReducer()
@@ -352,11 +369,14 @@ final class AppModel: NSObject {
         tokenStore: TokenStorage,
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
-        voiceController: AppleVoiceSessionController? = nil
+        voiceController: AppleVoiceSessionController? = nil,
+        credentialClock: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.voice = voiceController ?? AppleVoiceSessionController()
         self.store = tokenStore
+        self.credentialClock = credentialClock
         self.ws = webSocket
+        self.initialWebSocket = webSocket
         self.conversationResumeStore = conversationResumeStore
         self.defaults = defaults
         let voiceDeviceKey = "astraldeep.voice.device-id.v1"
@@ -408,6 +428,9 @@ final class AppModel: NSObject {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            retireOrdinarySurfaceRequests()
+            parameterRequests = [:]
+            parameterFailures = []
             resetViewportRefresh(clearSubmissionHistory: true)
             continuity.clear()
             resetChatState()
@@ -420,6 +443,36 @@ final class AppModel: NSObject {
         let account: ConversationAccount?
         let generation: Int
         let signedIn: Bool
+    }
+
+    private struct OrdinarySurfaceRequest {
+        let surface: String
+        let connection: String?
+        let owner: DownloadOwner
+        let socket: WSClient?
+    }
+
+    private struct CredentialRefreshContext {
+        let id = UUID()
+        let owner: DownloadOwner
+        let authentication: ASWebAuthenticationSession?
+        let authority: URL
+        let original: TokenSet
+    }
+
+    private struct SocketAuthenticationContext {
+        let owner: DownloadOwner
+        let socket: WSClient
+        let connection: String
+        let token: String
+    }
+
+    private struct AuthenticationReadIntent {
+        let owner: DownloadOwner
+        let socket: WSClient?
+        let surface: String
+        let params: JSONValue
+        let generation: String?
     }
 
     var downloadOwner: DownloadOwner {
@@ -848,10 +901,17 @@ final class AppModel: NSObject {
     }
 
     func bootstrap() async {
-        guard let stored = store.load() else { return }
+        let generation = sessionGeneration
+        let owner = downloadOwner
+        let authentication = authSession
+        let loaded = await Task.detached { [store] in store.load() }.value
+        guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+            authentication === authSession, let stored = loaded
+        else { return }
         tokens = stored.tokenSet
         enterSignedIn(resumedSession: true)
-        if case .rejected = await refreshOutcome() {
+        let resumedOwner = downloadOwner
+        if case .rejected = await refreshOutcome(), resumedOwner == downloadOwner {
             await signOut(revokeRemote: false)
         }
     }
@@ -914,28 +974,80 @@ final class AppModel: NSObject {
         }
     }
 
-    private func refreshOutcome() async -> RefreshResult {
-        if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
-            return await inFlight.value
-        }
-        guard let current = tokens else { return .rejected("no session") }
-        if !current.needsRefresh() { return .ok(current) }
-        return await runRefresh()
+    private func credentialNeedsRefresh(_ set: TokenSet) -> Bool {
+        credentialHasExpired(set)
+            || (refreshedWithinMarginAccessToken != set.accessToken && credentialIsWithinRefreshMargin(set))
     }
 
-    private func runRefresh() async -> RefreshResult {
-        guard let refresh = tokens?.refreshToken, let oidc else {
+    private func credentialHasExpired(_ set: TokenSet) -> Bool {
+        let now = credentialClock()
+        return now >= set.expiresAt
+            || set.claims?["exp"]?.numberValue.map { $0 <= now.timeIntervalSince1970 } == true
+    }
+
+    private func credentialIsWithinRefreshMargin(_ set: TokenSet) -> Bool {
+        let now = credentialClock()
+        return set.needsRefresh(now: now)
+            || set.claims?["exp"]?.numberValue.map { $0 <= now.addingTimeInterval(60).timeIntervalSince1970 } == true
+    }
+
+    private func refreshOutcome(force: Bool = false, renewSocket: Bool = true) async -> RefreshResult {
+        guard let current = tokens else { return .rejected("no session") }
+        guard !signedIn || current.conversationAccount == conversationAccount else {
+            return .rejected("credentials do not match the session")
+        }
+        if refreshTask == nil, !force, !credentialNeedsRefresh(current) {
+            if renewSocket { renewRegisteredSocket(ifChanged: current) }
+            return .ok(current)
+        }
+        guard let refresh = current.refreshToken, let oidc else {
             return .rejected("no refresh token")
         }
-        let generation = sessionGeneration
-        let attempt = Task { await RefreshStrategy.direct(oidc).attempt(refreshToken: refresh) }
-        refreshTask = attempt
-        refreshTaskGeneration = generation
+        let context: CredentialRefreshContext
+        let attempt: Task<RefreshResult, Never>
+        if let inFlight = refreshTask, let active = refreshContext,
+            active.owner == downloadOwner, active.authentication === authSession,
+            active.authority == oidc.authority, refreshTaskGeneration == sessionGeneration
+        {
+            context = active
+            attempt = inFlight
+        } else {
+            refreshTask?.cancel()
+            context = CredentialRefreshContext(
+                owner: downloadOwner, authentication: authSession,
+                authority: oidc.authority, original: current)
+            attempt = Task { await RefreshStrategy.direct(oidc).attempt(refreshToken: refresh) }
+            refreshTask = attempt
+            refreshTaskGeneration = sessionGeneration
+            refreshContext = context
+        }
         let result = await attempt.value
-        if refreshTaskGeneration == generation { refreshTask = nil }
-        if case .ok(let set) = result, generation == sessionGeneration {
-            tokens = set
-            store.save(StoredTokens(from: set))
+        guard !Task.isCancelled, context.owner == downloadOwner,
+            context.authentication === authSession, context.authority == self.oidc?.authority
+        else { return .transient("session changed") }
+        if case .ok(let set) = result {
+            guard set.conversationAccount == context.original.conversationAccount,
+                !context.owner.signedIn || set.conversationAccount == context.owner.account,
+                !credentialHasExpired(set)
+            else {
+                if refreshContext?.id == context.id {
+                    refreshTask = nil
+                    refreshContext = nil
+                }
+                return .rejected("refreshed credentials do not match the session")
+            }
+            guard tokens == context.original || tokens == set else { return .transient("session changed") }
+            if refreshContext?.id == context.id {
+                refreshTask = nil
+                refreshContext = nil
+                tokens = set
+                refreshedWithinMarginAccessToken = credentialIsWithinRefreshMargin(set) ? set.accessToken : nil
+                store.save(StoredTokens(from: set))
+            }
+            if renewSocket { renewRegisteredSocket(ifChanged: set) }
+        } else if refreshContext?.id == context.id {
+            refreshTask = nil
+            refreshContext = nil
         }
         return result
     }
@@ -945,25 +1057,88 @@ final class AppModel: NSObject {
         return nil
     }
 
-    private func handleAuthRequired() async {
-        guard let refused = tokens?.accessToken else {
-            await signOut()
-            return
-        }
-        let result: RefreshResult
-        if let inFlight = refreshTask, refreshTaskGeneration == sessionGeneration {
-            result = await inFlight.value
-        } else {
-            result = await runRefresh()
-        }
+    private var socketAuthenticationContext: SocketAuthenticationContext? {
+        guard signedIn, let socket = ws, let connection = continuity.connectionGeneration,
+            let token = registeredAccessToken
+        else { return nil }
+        return SocketAuthenticationContext(owner: downloadOwner, socket: socket, connection: connection, token: token)
+    }
+
+    private func socketAuthenticationIsCurrent(_ context: SocketAuthenticationContext) -> Bool {
+        context.owner == downloadOwner && ws === context.socket
+            && continuity.connectionGeneration == context.connection && registeredAccessToken == context.token
+    }
+
+    private func authenticatedSocketIsCurrent(
+        _ socket: WSClient, owner: DownloadOwner, connection: String?
+    ) async -> Bool {
+        guard let context = socketAuthenticationContext, context.socket === socket,
+            context.owner == owner, context.connection == connection, connected
+        else { return false }
+        let result = await refreshOutcome()
+        guard !Task.isCancelled, socketAuthenticationIsCurrent(context), connected else { return false }
         switch result {
-        case .ok(let set) where set.accessToken != refused:
-            connectWS(resumed: true)
-        case .ok, .rejected:
-            await signOut()
-        case .transient:
-            break
+        case .ok(let set): return set.accessToken == context.token
+        case .rejected:
+            await signOut(revokeRemote: false)
+            return false
+        case .transient: return false
         }
+    }
+
+    private func handleAuthRequired(_ context: SocketAuthenticationContext) async {
+        guard socketAuthenticationIsCurrent(context) else { return }
+        let result = await refreshOutcome(force: tokens?.accessToken == context.token)
+        guard !Task.isCancelled, socketAuthenticationIsCurrent(context) else { return }
+        switch result {
+        case .ok(let set) where set.accessToken != context.token:
+            renewRegisteredSocket(ifChanged: set)
+        case .ok, .rejected:
+            await signOut(revokeRemote: false)
+        case .transient:
+            surfaceFailureMessage = "The session could not reconnect. Retry when the connection is available."
+        }
+    }
+
+    private func renewRegisteredSocket(ifChanged set: TokenSet) {
+        guard signedIn, connected, let registeredAccessToken, registeredAccessToken != set.accessToken else { return }
+        let owner = downloadOwner
+        let surface = screen == .surface ? pendingSurfaceKey : ""
+        let params = pendingSurfaceParams
+        let canReload =
+            pendingSurface == nil
+            && (params == .object([:]) || params == .object(["mode": .string("list")])
+                || (surface == "guidance" && params == GuidanceRequest.selection.payload["params"]))
+        let interrupted = !localOperationSubmissions.isEmpty || llmFirstLoginOperation?.isLoading == true
+        connectWS(resumed: true)
+        if canReload, !surface.isEmpty {
+            let generation =
+                surface == "guidance" ? guidanceEpoch : surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
+            authenticationReadIntent = AuthenticationReadIntent(
+                owner: owner, socket: ws, surface: surface, params: params, generation: generation)
+        } else if !surface.isEmpty, interrupted {
+            surfaceFailureMessage = "The session refreshed. Review your entries and retry the action."
+        }
+    }
+
+    private func resumeAuthenticatedRead() {
+        guard let intent = authenticationReadIntent else { return }
+        authenticationReadIntent = nil
+        let generation =
+            intent.surface == "guidance"
+            ? guidanceEpoch : intent.surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
+        guard intent.owner == downloadOwner, intent.socket === ws, screen == .surface,
+            pendingSurfaceKey == intent.surface, generation == intent.generation, !mandatorySurface
+        else { return }
+        if intent.surface == "guidance" {
+            retryGuidance()
+        } else {
+            openSurface(intent.surface, params: intent.params)
+        }
+    }
+
+    private func authenticationSurfaceGeneration(_ surface: String) -> String? {
+        surface == "guidance" ? guidanceEpoch : surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
     }
 
     private func enterSignedIn(resumedSession: Bool) {
@@ -992,6 +1167,11 @@ final class AppModel: NSObject {
         sessionGeneration += 1
         refreshTask?.cancel()
         refreshTask = nil
+        refreshContext = nil
+        registeredAccessToken = nil
+        refreshedWithinMarginAccessToken = nil
+        authenticationReadIntent = nil
+        initialWebSocket = nil
         wsTask?.cancel()
         wsTask = nil
         ws = nil
@@ -999,6 +1179,12 @@ final class AppModel: NSObject {
         tokens = nil
         conversationAccount = nil
         signedIn = false
+        connected = false
+        everConnected = false
+        initialConnectionFailed = false
+        retireOrdinarySurfaceRequests()
+        parameterRequests = [:]
+        historyLoaded = false
         voice.close()
         resetViewportRefresh(clearSubmissionHistory: true)
         continuity.clear()
@@ -1023,6 +1209,8 @@ final class AppModel: NSObject {
     }
 
     func clearConversationForAccountRemoval() {
+        retireOrdinarySurfaceRequests()
+        parameterRequests = [:]
         if let account = conversationAccount {
             _ = conversationResumeStore.clear(.accountRemoval, for: account)
         }
@@ -1250,6 +1438,13 @@ final class AppModel: NSObject {
         queueViewportRefresh(device)
     }
 
+    var viewportRefreshFailureMessage: String {
+        if canvas.dropWelcome().isEmpty, !turns.contains(where: { $0.role == "assistant" }) {
+            return "The dashboard layout could not update. Retry to refresh it."
+        }
+        return "The layout could not update. Your result is still available."
+    }
+
     private func resetViewportRefresh(clearSubmissionHistory: Bool = false) {
         if clearSubmissionHistory { viewportSubmissionIds.removeAll() }
         viewportRefreshFailed = false
@@ -1295,31 +1490,79 @@ final class AppModel: NSObject {
 
     private func connectWS(resumed initialResumed: Bool) {
         invalidateWorkRead()
+        retireOrdinarySurfaceRequests()
+        authenticationReadIntent = nil
+        registeredAccessToken = nil
+        connected = false
         wsTask?.cancel()
-        if let previous = ws {
+        let client = initialWebSocket ?? WSClient(url: rest.webSocketURL)
+        initialWebSocket = nil
+        if let previous = ws, previous !== client {
             Task { await previous.stop() }
         }
-        let client = WSClient(url: rest.webSocketURL)
         ws = client
+        let owner = downloadOwner
+        let server = serverBase
         let resumeState = AppRegistrationResumeState(initial: initialResumed)
         wsTask = Task {
             let events = await client.events()
             await client.start(
                 onConnect: { [weak self] in
                     guard let self else { return nil }
-                    guard let token = await self.freshAccessToken() else { return nil }
+                    guard let token = await self.registrationToken(for: client, owner: owner, server: server) else {
+                        return nil
+                    }
                     let resumed = await resumeState.consume()
-                    return await self.registrationFrame(token: token, resumed: resumed)
+                    return await self.currentRegistrationFrame(
+                        token: token, resumed: resumed, socket: client, owner: owner)
                 },
                 onReplay: { [weak self] replay in
                     guard let self else { return false }
-                    return await self.replayQueuedOperation(replay)
+                    return await self.replayQueuedOperation(replay, socket: client, owner: owner)
                 })
             for await event in events {
-                guard !Task.isCancelled, self.ws === client else { break }
+                guard !Task.isCancelled, self.ws === client, self.downloadOwner == owner else { break }
                 await self.handle(event)
             }
+            await client.stop()
         }
+    }
+
+    private func registrationToken(for socket: WSClient, owner: DownloadOwner, server: URL) async -> String? {
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner, serverBase == server else { return nil }
+        let result = await refreshOutcome(renewSocket: false)
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner, serverBase == server else { return nil }
+        switch result {
+        case .ok(let set): return set.accessToken
+        case .rejected:
+            await signOut(revokeRemote: false)
+            return nil
+        case .transient: return nil
+        }
+    }
+
+    private func currentRegistrationFrame(
+        token: String, resumed: Bool, socket: WSClient, owner: DownloadOwner
+    ) -> String? {
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner, tokens?.accessToken == token else { return nil }
+        let intent = authenticationReadIntent.flatMap { current in
+            current.owner == owner && current.socket === socket
+                && current.generation == authenticationSurfaceGeneration(current.surface) ? current : nil
+        }
+        registeredAccessToken = token
+        let frame = registrationFrame(token: token, resumed: resumed)
+        if let intent {
+            authenticationReadIntent = AuthenticationReadIntent(
+                owner: owner, socket: socket, surface: intent.surface, params: intent.params,
+                generation: authenticationSurfaceGeneration(intent.surface))
+        }
+        return frame
+    }
+
+    private func replayQueuedOperation(_ replay: QueuedOperationReplay, socket: WSClient, owner: DownloadOwner) -> Bool
+    {
+        guard !Task.isCancelled, ws === socket, downloadOwner == owner else { return false }
+        return replayQueuedOperation(replay)
     }
 
     func handle(_ event: WSEvent) async {
@@ -1327,6 +1570,8 @@ final class AppModel: NSObject {
         case .connected:
             connected = true
             everConnected = true
+            initialConnectionFailed = false
+            resumeAuthenticatedRead()
             if continuity.connectionGeneration == nil {
                 refreshActiveChat()
             }
@@ -1339,6 +1584,11 @@ final class AppModel: NSObject {
             resetViewportRefresh()
             invalidateWorkRead()
             connected = false
+            initialConnectionFailed = !everConnected
+            if screen == .surface, !["guidance", "work"].contains(pendingSurfaceKey) {
+                surfaceFailureMessage = "The connection was lost. Reconnect and retry this screen."
+            }
+            retireOrdinarySurfaceRequests(preservingReadIntent: true)
             voice.controlTransportDisconnected()
             clearPendingOperationSubmissions()
             turnActive = false
@@ -1387,6 +1637,10 @@ final class AppModel: NSObject {
         if guidanceState.matchesFailure(frame, connectionGeneration: continuity.connectionGeneration),
             let generation = guidanceState.generation
         {
+            surfaceFailureMessage =
+                AdmissionRefusal(frame: frame)?.message
+                ?? OperationStatus(frame: frame)?.error["message"]?.stringValue
+                ?? "Private notes could not be loaded. Retry this screen."
             failGuidanceRequest(generation: generation)
             return
         }
@@ -1410,6 +1664,7 @@ final class AppModel: NSObject {
                 history = items.compactMap { ChatSummary(historyItem: $0) }
                 historyTitle = list.raw["title"]?.stringValue ?? "Recent chats"
                 historyLoading = false
+                historyLoaded = true
             } else if frame.renderComponents.contains(where: { $0.type == "skeleton" }) {
                 historyLoading = true
             }
@@ -1470,6 +1725,7 @@ final class AppModel: NSObject {
             history = (frame.payload["chats"]?.arrayValue ?? []).compactMap { ChatSummary(json: $0) }
             historyTitle = "Recent chats"
             historyLoading = false
+            historyLoaded = true
         case "ui_stream_data", "stream_data":
             if continuity.connectionGeneration == nil {
                 applyCanvasOps(streamFrameToOps(frame, activeChat: activeChatId, seqState: &seqState))
@@ -1511,6 +1767,8 @@ final class AppModel: NSObject {
             reduceAgentLifecycle(frame)
         case "user_preferences":
             themeStore.applyPreferences(frame.payload)
+        case "theme_apply":
+            themeStore.apply(spec: frame.payload["theme"] ?? frame.payload)
         case "workspace_timeline_mode":
             timelineReadOnly = frame.payload["active"]?.boolValue ?? frame.payload["on"]?.boolValue ?? false
         case "error":
@@ -1566,6 +1824,7 @@ final class AppModel: NSObject {
                 .compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: ": ")
             if !text.isEmpty {
                 bannerIsError = frame.payload["level"]?.stringValue == "error"
+                warningBannerText = frame.payload["level"]?.stringValue == "warning" ? text : nil
                 errorBanner = text
             }
             if let chatId = nestedChatId(frame), chatId == activeChatId {
@@ -1600,7 +1859,10 @@ final class AppModel: NSObject {
             break
         case "auth_required":
             resetViewportRefresh()
-            Task { await self.handleAuthRequired() }
+            retireOrdinarySurfaceRequests()
+            if let context = socketAuthenticationContext {
+                Task { await self.handleAuthRequired(context) }
+            }
         default:
             break
         }
@@ -1645,6 +1907,11 @@ final class AppModel: NSObject {
         current.isAuthoritativelyTerminal = status.terminal
         llmFirstLoginOperation = current
         if status.terminal {
+            if status.state != "completed" {
+                failOrdinarySurface(
+                    generation: status.requestGeneration,
+                    message: status.error["message"]?.stringValue ?? status.label)
+            }
             cancelLLMTimers()
             if authoritativeState == .completed {
                 advanceAfterLLMCompletionIfNeeded()
@@ -1664,6 +1931,11 @@ final class AppModel: NSObject {
         else { return }
         operationStatuses = statusLifecycle.operations
         if status.terminal {
+            if status.state != "completed" {
+                failOrdinarySurface(
+                    generation: status.requestGeneration,
+                    message: status.error["message"]?.stringValue ?? status.label)
+            }
             let ownsActiveChatTurn = operationOwnsActiveChatTurn(
                 action: status.action,
                 requestGeneration: status.requestGeneration)
@@ -1721,6 +1993,7 @@ final class AppModel: NSObject {
             let submission = localOperationSubmissions.removeValue(forKey: refusal.submissionId)
         else { return false }
         componentPendingOperations.removeValue(forKey: refusal.submissionId)
+        failOrdinarySurface(generation: submission.requestGeneration, message: refusal.message)
         if operationOwnsActiveChatTurn(
             action: submission.action,
             requestGeneration: submission.requestGeneration)
@@ -2252,6 +2525,17 @@ final class AppModel: NSObject {
         let title = frame.payload["title"]?.stringValue ?? ""
         let components = AstralComponent.list(from: frame.payload["components"])
         if surfaceKey.isEmpty && components.isEmpty {
+            if frame.payload["request_generation"] != nil {
+                guard !mandatorySurface, screen == .surface, !pendingSurfaceKey.isEmpty,
+                    frame.payload["surface_key"] == .string(""), frame.payload["title"] == .string(""),
+                    frame.payload["region"] == .string("modal"), frame.payload["mode"] == .string("replace"),
+                    frame.payload["admin_only"] == .bool(false), frame.payload["components"] == .array([]),
+                    frame.payload["selection"] == nil,
+                    acceptsOrdinarySurface(frame, surface: pendingSurfaceKey)
+                else { return }
+                closeSurface()
+                return
+            }
             mandatorySurface = false
             if screen == .surface {
                 screen = .chat
@@ -2262,23 +2546,111 @@ final class AppModel: NSObject {
             return
         }
         if frame.surfaceMode == "mandatory" {
+            if frame.payload["request_generation"] != nil {
+                guard acceptsOrdinarySurface(frame, surface: surfaceKey) else { return }
+            }
             invalidateWorkRead()
+            retireOrdinarySurfaceRequests()
+            surfaceFailureMessage = nil
             mandatorySurface = true
             screen = .surface
             pendingSurfaceKey = surfaceKey
             pendingSurfaceParams = .object([:])
-            pendingSurface = SurfaceContent(surfaceKey: surfaceKey, title: title, components: components)
+            replaceOrdinarySurface(key: surfaceKey, title: title, components: components)
+            applySurfaceTheme(components)
             return
         }
         if screen == .surface && pendingSurfaceKey == surfaceKey {
-            pendingSurface = SurfaceContent(surfaceKey: surfaceKey, title: title, components: components)
+            guard acceptsOrdinarySurface(frame, surface: surfaceKey) else { return }
+            replaceOrdinarySurface(key: surfaceKey, title: title, components: components)
+            surfaceFailureMessage = nil
+            applySurfaceTheme(components)
             return
         }
+        if frame.payload["request_generation"] != nil { return }
         let text = [title, noticeText(components)].filter { !$0.isEmpty }.joined(separator: ": ")
         if !text.isEmpty {
             bannerIsError = true
             errorBanner = text
         }
+    }
+
+    private func applySurfaceTheme(_ components: [AstralComponent]) {
+        for component in components {
+            if component.type == "theme_apply" {
+                themeStore.apply(spec: component.raw["attributes"] ?? component.raw)
+            }
+            applySurfaceTheme(component.children)
+        }
+    }
+
+    private func replaceOrdinarySurface(key: String, title: String, components: [AstralComponent]) {
+        let retained =
+            surfaceContainsError(components) && components.allSatisfy { $0.type == "alert" }
+                && pendingSurface?.surfaceKey == key
+            ? pendingSurface?.components.filter { $0.type != "alert" } ?? [] : []
+        pendingSurface = SurfaceContent(surfaceKey: key, title: title, components: components + retained)
+    }
+
+    private func acceptsOrdinarySurface(_ frame: InboundFrame, surface: String) -> Bool {
+        guard signedIn, connected, let current = ordinarySurfaceGeneration,
+            let request = ordinarySurfaceRequests[current], request.surface == surface,
+            request.owner == downloadOwner, request.connection == continuity.connectionGeneration,
+            request.socket === ws
+        else { return false }
+        if let generation = frame.payload["request_generation"] {
+            guard generation.stringValue == current else { return false }
+        } else {
+            guard ordinarySurfaceRequests.count == 1 else { return false }
+        }
+        if surfaceContainsError(AstralComponent.list(from: frame.payload["components"])) {
+            parameterFailures.insert(current)
+        } else {
+            parameterFailures.remove(current)
+        }
+        ordinarySurfaceRequests.removeValue(forKey: current)
+        ordinarySurfaceGeneration = nil
+        return true
+    }
+
+    private func surfaceContainsError(_ components: [AstralComponent]) -> Bool {
+        components.contains {
+            ($0.type == "alert" && ["error", "danger"].contains($0.variant ?? ""))
+                || surfaceContainsError($0.children)
+        }
+    }
+
+    private func retireOrdinarySurfaceRequests(preservingReadIntent: Bool = false) {
+        ordinarySurfaceRequests = [:]
+        ordinarySurfaceGeneration = nil
+        if !preservingReadIntent { ordinaryReadIntent = nil }
+    }
+
+    private func failOrdinarySurface(generation: String, message: String) {
+        guard ordinarySurfaceGeneration == generation,
+            let request = ordinarySurfaceRequests[generation], request.owner == downloadOwner,
+            request.surface == pendingSurfaceKey, screen == .surface
+        else { return }
+        ordinarySurfaceRequests.removeValue(forKey: generation)
+        ordinarySurfaceGeneration = nil
+        surfaceFailureMessage = message
+    }
+
+    private func bindOrdinarySurfaceRequest(identity: ClientOperationIdentity, action: String, payload: JSONValue) {
+        let surface = action == "chrome_open" ? payload["surface"]?.stringValue : pendingSurfaceKey
+        guard let surface, !surface.isEmpty, !["guidance", "work"].contains(surface), action != "chrome_close",
+            action == "chrome_open" || screen == .surface
+        else { return }
+        if action == "chrome_open" {
+            ordinaryReadIntent = (identity.requestGeneration, downloadOwner)
+        }
+        ordinarySurfaceRequests = ordinarySurfaceRequests.filter { entry in
+            localOperationSubmissions.values.contains { $0.requestGeneration == entry.key }
+        }
+        ordinarySurfaceRequests[identity.requestGeneration] = OrdinarySurfaceRequest(
+            surface: surface, connection: continuity.connectionGeneration, owner: downloadOwner, socket: ws)
+        ordinarySurfaceGeneration = identity.requestGeneration
+        surfaceFailureMessage = nil
     }
 
     private func reduceError(_ frame: InboundFrame) {
@@ -2478,6 +2850,7 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        conversationNavigationGeneration += 1
         consoleFullscreen = false
         consoleResultCollapsed = false
         turnSelection = nil
@@ -2563,11 +2936,24 @@ final class AppModel: NSObject {
                 connectionGeneration: connectionGeneration)
         else { return false }
         localOperationSubmissions[submission.submissionId] = submission
+        if replay.action == "chrome_open", screen == .surface, replay.surface == pendingSurfaceKey,
+            !["guidance", "work"].contains(replay.surface),
+            ordinaryReadIntent?.generation == replay.identity.requestGeneration,
+            ordinaryReadIntent?.owner == downloadOwner
+        {
+            ordinarySurfaceRequests[replay.identity.requestGeneration] = OrdinarySurfaceRequest(
+                surface: replay.surface, connection: connectionGeneration, owner: downloadOwner, socket: ws)
+            ordinarySurfaceGeneration = replay.identity.requestGeneration
+            surfaceFailureMessage = nil
+        }
         if localSubmissionShowsActivity(submission) { statusText = submission.label }
         return true
     }
 
     private func clearLocalOperationSubmission(requestGeneration: String) {
+        if ordinarySurfaceGeneration != requestGeneration {
+            ordinarySurfaceRequests.removeValue(forKey: requestGeneration)
+        }
         for (submission, local) in localOperationSubmissions where local.requestGeneration == requestGeneration {
             componentPendingOperations.removeValue(forKey: submission)
         }
@@ -2745,6 +3131,7 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action == "chrome_open", mandatorySurface { return }
         if action == "compose_prompt" || (action == "chat_message" && pendingSurfaceKey == "agent_intro") {
             guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
                 pendingSurfaceKey == "agent_intro",
@@ -2774,6 +3161,27 @@ final class AppModel: NSObject {
             return
         }
         if action == "chrome_open" || action == "chrome_close" { invalidateWorkRead() }
+        if action == "chrome_open", let surface = payload["surface"]?.stringValue {
+            let current = screen == .surface && pendingSurfaceKey == surface ? pendingSurface : nil
+            if pendingSurfaceKey != surface {
+                parameterRequests = [:]
+                parameterFailures = []
+            }
+            retireOrdinarySurfaceRequests()
+            screen = .surface
+            pendingSurfaceKey = surface
+            pendingSurfaceParams = payload["params"] ?? .object([:])
+            pendingSurface = current
+            surfaceFailureMessage = nil
+            if !signedIn || !connected {
+                surfaceFailureMessage = "Connect before opening settings, then retry this screen."
+            }
+        }
+        if screen == .surface, action != "chrome_open", action != "chrome_close",
+            action.hasPrefix("chrome_") || action == "save_theme", paramPickerPending(action: action)
+        {
+            return
+        }
         var payload = payload
         if action == "attach_existing" {
             if stageExistingAttachment(payload) {
@@ -2865,6 +3273,19 @@ final class AppModel: NSObject {
         }
 
         let identity = ClientOperationIdentity.fresh()
+        if screen == .surface, !["guidance", "work"].contains(pendingSurfaceKey),
+            action != "chrome_close", payload["surface"] == nil,
+            action.hasPrefix("chrome_") || action == "save_theme"
+        {
+            var fields = payload.objectValue ?? [:]
+            fields["surface"] = .string(pendingSurfaceKey)
+            payload = .object(fields)
+        }
+        bindOrdinarySurfaceRequest(identity: identity, action: action, payload: payload)
+        if screen == .surface, action != "chrome_open", action != "chrome_close" {
+            parameterRequests[action] = identity.requestGeneration
+            parameterFailures.formIntersection(Set(parameterRequests.values))
+        }
         let chatId = operationChatId(action: action, payload: payload)
         beginLocalOperationSubmission(
             identity: identity,
@@ -2886,6 +3307,12 @@ final class AppModel: NSObject {
         fields: [String: JSONValue],
         payload: [String: JSONValue]
     ) -> Bool {
+        guard signedIn, connected, !timelineReadOnly, continuity.connectionGeneration != nil else {
+            bannerIsError = true
+            errorBanner = "Reconnect before changing settings. Your entered values are still available."
+            return false
+        }
+        guard !paramPickerPending(action: action) else { return false }
         var submittedPayload = payload
         submittedPayload["fields"] = .object(fields)
         if action.hasPrefix("chrome_note_") {
@@ -2915,6 +3342,8 @@ final class AppModel: NSObject {
         }
 
         let identity = ClientOperationIdentity.fresh()
+        bindOrdinarySurfaceRequest(identity: identity, action: action, payload: .object(submittedPayload))
+        parameterRequests[action] = identity.requestGeneration
         let submissionId = identity.submissionId
         let requestGeneration = identity.requestGeneration
         llmFirstLoginOperation = LLMFirstLoginOperation(
@@ -2953,13 +3382,116 @@ final class AppModel: NSObject {
         return true
     }
 
+    func paramPickerPending(action: String) -> Bool {
+        if action == "chrome_llm_save" { return llmFirstLoginOperation?.isLoading == true }
+        return localOperationSubmissions.values.contains {
+            $0.action == action && $0.chatId == nil && $0.requestGeneration == parameterRequests[action]
+                && ordinarySurfaceRequests[$0.requestGeneration] != nil
+        }
+    }
+
+    func paramPickerStatus(action: String) -> String? {
+        if action == "chrome_llm_save", let operation = llmFirstLoginOperation { return operation.presentedLabel }
+        if let request = parameterRequests[action], parameterFailures.contains(request) { return nil }
+        if let pending = localOperationSubmissions.values.first(where: {
+            $0.action == action && $0.chatId == nil && $0.requestGeneration == parameterRequests[action]
+        }) {
+            guard ordinarySurfaceRequests[pending.requestGeneration] != nil else {
+                return operationStatuses.values.first {
+                    $0.requestGeneration == pending.requestGeneration && $0.terminal
+                }?.label
+            }
+            return operationStatuses.values.first(where: { $0.requestGeneration == pending.requestGeneration })?.label
+                ?? pending.label
+        }
+        return operationStatuses.values.filter {
+            $0.action == action && $0.chatId == nil && $0.requestGeneration == parameterRequests[action]
+        }.max {
+            ($0.updatedAt, $0.sequence) < ($1.updatedAt, $1.sequence)
+        }?.label
+    }
+
+    func paramPickerCompleted(action: String) -> Bool {
+        if action == "chrome_llm_save" { return llmFirstLoginOperation?.state == .completed }
+        return operationStatuses.values.contains {
+            $0.action == action && $0.requestGeneration == parameterRequests[action] && $0.state == "completed"
+                && !parameterFailures.contains($0.requestGeneration)
+        }
+    }
+
+    @discardableResult
+    func saveThemeColor(key: String, value: String) -> Bool {
+        guard signedIn, connected, continuity.connectionGeneration != nil, !timelineReadOnly,
+            pendingSurfaceKey == "theme", screen == .surface,
+            ["bg", "surface", "primary", "secondary", "text", "muted", "accent"].contains(key),
+            Color(cssHex: value) != nil, !paramPickerPending(action: "save_theme")
+        else { return false }
+        sendEvent(
+            "save_theme", .object(["theme": .object(["color_key": .string(key), "color_value": .string(value)])]))
+        return true
+    }
+
     func emit(_ action: String, payload: [String: JSONValue] = [:]) {
         sendEvent(action, .object(payload))
     }
 
     private func rawSend(_ text: String) {
         outboundTap?(text)
-        Task { await ws?.send(text) }
+        guard let socket = ws else { return }
+        let owner = downloadOwner
+        let connection = continuity.connectionGeneration
+        let navigation = conversationNavigationGeneration
+        let chatId = activeChatId
+        Task {
+            let allowed: Bool
+            if connected {
+                allowed = await authenticatedSocketIsCurrent(socket, owner: owner, connection: connection)
+            } else {
+                let result = await refreshOutcome(renewSocket: false)
+                if case .ok = result {
+                    allowed = owner == downloadOwner && ws === socket && !Task.isCancelled
+                } else {
+                    allowed = false
+                }
+            }
+            guard allowed else {
+                if owner == downloadOwner {
+                    retireUnsentOperation(text)
+                    restoreUnsentQuery(text, navigation: navigation, chatId: chatId)
+                }
+                return
+            }
+            await socket.send(text)
+        }
+    }
+
+    private func retireUnsentOperation(_ text: String) {
+        guard let frame = InboundFrame.parse(text), let request = frame.payload["request_generation"]?.stringValue
+        else {
+            return
+        }
+        if parameterRequests.values.contains(request) {
+            parameterFailures.insert(request)
+            surfaceFailureMessage = "The action was not sent. Review your entries and retry after reconnecting."
+        }
+        if llmFirstLoginOperation?.submissionId == frame.payload["submission_id"]?.stringValue {
+            clearLLMFirstLoginOperation()
+        }
+        failOrdinarySurface(
+            generation: request, message: "The session could not update. Reconnect and retry this screen.")
+        clearLocalOperationSubmission(requestGeneration: request)
+    }
+
+    private func restoreUnsentQuery(_ text: String, navigation: Int, chatId: String?) {
+        guard navigation == conversationNavigationGeneration, activeChatId == chatId, screen == .chat,
+            let frame = InboundFrame.parse(text), frame.payload["action"]?.stringValue == "chat_message",
+            let message = frame.payload["payload"]?["message"]?.stringValue
+        else { return }
+        if composerDraft.isEmpty { composerDraft = message }
+        turnActive = false
+        statusText = nil
+        bannerIsError = true
+        errorBanner = "The message was not sent. Review it and try again after reconnecting."
     }
 
     @discardableResult
@@ -3089,6 +3621,7 @@ final class AppModel: NSObject {
         if let account = conversationAccount {
             guard conversationResumeStore.save(chatId: chatId, for: account) else { return }
         }
+        conversationNavigationGeneration += 1
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         let identity = ClientOperationIdentity.fresh()
@@ -3127,6 +3660,7 @@ final class AppModel: NSObject {
 
     func goTo(_ target: Screen) {
         if mandatorySurface { return }
+        retireOrdinarySurfaceRequests()
         if ["work", "guidance"].contains(pendingSurfaceKey) { closeSurface() }
         screen = target
         agentsLoading = target == .agents || agentsLoading
@@ -3152,24 +3686,7 @@ final class AppModel: NSObject {
     func openMenuItem(_ item: ChromeMenuItem) { openSurface(item.surface, params: item.params) }
 
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
-        if mandatorySurface { return }
-        if surface == "guidance" {
-            _ = sendGuidanceRequest(
-                action: "chrome_open", payload: .object(["surface": .string(surface), "params": params]))
-            return
-        }
-        if surface == "work" {
-            beginWorkRead(.object(["surface": .string(surface), "params": params]))
-            return
-        }
-        switch surface {
-        default:
-            sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
-            screen = .surface
-            pendingSurfaceKey = surface
-            pendingSurfaceParams = params
-            pendingSurface = nil
-        }
+        sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
     }
 
     func retryPendingSurface() {
@@ -3178,6 +3695,8 @@ final class AppModel: NSObject {
             retryGuidance()
             return
         }
+        retireOrdinarySurfaceRequests()
+        surfaceFailureMessage = nil
         sendEvent("chrome_open", .object(["surface": .string(pendingSurfaceKey), "params": pendingSurfaceParams]))
     }
 
@@ -3187,6 +3706,10 @@ final class AppModel: NSObject {
         if pendingSurfaceKey == "guidance" { closeGuidance() }
         if pendingSurfaceKey == "work" { closeWorkRead() }
         screen = .chat
+        retireOrdinarySurfaceRequests()
+        parameterRequests = [:]
+        parameterFailures = []
+        surfaceFailureMessage = nil
         pendingSurface = nil
         pendingSurfaceKey = ""
         pendingSurfaceParams = .object([:])
@@ -3216,15 +3739,19 @@ final class AppModel: NSObject {
         guard let generation, guidanceState.generation == generation else { return }
         invalidateGuidance()
         guidanceFailed = true
+        if surfaceFailureMessage == nil {
+            surfaceFailureMessage = "Private notes could not be loaded. Reconnect or retry without changing your notes."
+        }
     }
 
     func retryGuidance() {
-        guard pendingSurfaceKey == "guidance" else { return }
-        _ = sendGuidanceRequest(
-            action: "chrome_open",
-            payload: .object([
-                "surface": .string("guidance"), "params": pendingSurfaceParams,
-            ]))
+        guard screen == .surface, pendingSurfaceKey == "guidance" else { return }
+        let request: GuidanceRequest =
+            pendingSurfaceParams == GuidanceRequest.selection.payload["params"] ? .selection : .list
+        if !sendGuidanceRequest(action: request.action, payload: request.payload), surfaceFailureMessage == nil {
+            guidanceFailed = true
+            surfaceFailureMessage = "This screen is no longer available. Reopen it from the current menu."
+        }
     }
 
     @discardableResult
@@ -3250,9 +3777,11 @@ final class AppModel: NSObject {
                         ])) == request
                 }) == true
         else { return false }
+        retireOrdinarySurfaceRequests()
         invalidateWorkRead()
         let generation = guidanceEpoch
         guidanceFailed = false
+        surfaceFailureMessage = nil
         _ = guidanceState.begin(request, generation: generation)
         screen = .surface
         pendingSurfaceKey = "guidance"
@@ -3272,6 +3801,12 @@ final class AppModel: NSObject {
             return false
         }
         guidanceTask = Task { [weak self] in
+            guard let self, await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection) else {
+                if let self, self.guidanceEpoch == generation, self.downloadOwner == owner {
+                    self.failGuidanceRequest(generation: generation)
+                }
+                return
+            }
             let sent = await socket.sendCurrentGuidanceEvent(text) { [weak self] in
                 await MainActor.run {
                     guard let self else { return false }
@@ -3281,7 +3816,7 @@ final class AppModel: NSObject {
                         && self.continuity.connectionGeneration == connection
                 }
             }
-            guard let self, !Task.isCancelled, self.guidanceEpoch == generation,
+            guard !Task.isCancelled, self.guidanceEpoch == generation,
                 self.downloadOwner == owner, self.ws === socket
             else { return }
             if !sent { self.failGuidanceRequest(generation: generation) }
@@ -3335,6 +3870,7 @@ final class AppModel: NSObject {
                     WorkReadRequest(payload: .object($0.chromeOpenPayload)) == request
                 }) == true
         else { return }
+        retireOrdinarySurfaceRequests()
         invalidateWorkRead()
         let generation = workReadEpoch
         workReadState.begin(request, generation: generation)
@@ -3355,6 +3891,12 @@ final class AppModel: NSObject {
         }
         outboundTap?(text)
         workReadTask = Task { [weak self] in
+            guard let self, await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection) else {
+                if let self, self.workReadEpoch == generation, self.downloadOwner == owner {
+                    self.failWorkRead(generation: generation)
+                }
+                return
+            }
             let sent = await socket.sendCurrentWorkEvent(text) { [weak self] in
                 await MainActor.run {
                     guard let self else { return false }
@@ -3363,7 +3905,7 @@ final class AppModel: NSObject {
                         && self.continuity.connectionGeneration == connection
                 }
             }
-            guard let self, !Task.isCancelled, self.workReadEpoch == generation,
+            guard !Task.isCancelled, self.workReadEpoch == generation,
                 self.downloadOwner == owner, self.ws === socket
             else { return }
             if !sent { self.failWorkRead(generation: generation) }
@@ -3503,8 +4045,15 @@ final class AppModel: NSObject {
     }
 
     var connectionStripLabel: String? {
-        if !everConnected || connected { return nil }
-        return "Reconnecting…"
+        guard signedIn, !connected else { return nil }
+        if everConnected { return "Reconnecting…" }
+        return initialConnectionFailed ? "Couldn't connect. Check your connection and retry." : "Connecting…"
+    }
+
+    func retryConnection() {
+        guard signedIn, !connected else { return }
+        initialConnectionFailed = false
+        connectWS(resumed: true)
     }
 }
 

@@ -26,7 +26,7 @@ final class Accessibility060UITests: XCTestCase {
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(apiKey.isHittable)
 
-        apiKey.tap()
+        apiKey.press()
         #if os(iOS)
             XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 2))
         #endif
@@ -38,9 +38,16 @@ final class Accessibility060UITests: XCTestCase {
         XCTAssertEqual(save.label, "Save")
         XCTAssertEqual(save.value as? String, "Ready")
         XCTAssertTrue(save.isEnabled)
+        if !save.isHittable {
+            app.staticTexts["llm-provider-form-title"].press()
+            #if os(iOS)
+                XCTAssertTrue(waitForNonExistence(app.keyboards.firstMatch, timeout: 2))
+            #endif
+            if !save.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        }
         XCTAssertTrue(save.isHittable)
 
-        save.tap()
+        save.press()
         let status = app.descendants(matching: .any)["llm-save-status"]
         XCTAssertTrue(status.waitForExistence(timeout: 0.25))
         XCTAssertEqual(status.label, "AI provider setup status")
@@ -67,7 +74,7 @@ final class Accessibility060UITests: XCTestCase {
         XCTAssertTrue(composer.isEnabled)
         XCTAssertTrue(composer.isHittable)
 
-        composer.tap()
+        composer.press()
         let keyboard = app.keyboards.firstMatch
         XCTAssertTrue(keyboard.waitForExistence(timeout: 2))
         composer.typeText("runtime keyboard check")

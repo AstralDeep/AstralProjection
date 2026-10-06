@@ -3,6 +3,7 @@
 // state.
 
 import AstralCore
+import Network
 import SwiftUI
 import WebKit
 import XCTest
@@ -357,12 +358,15 @@ final class CanvasCapture088Tests: XCTestCase {
     }
 
     func testMountedTabsGridDisclosureAndImagePublishActualCaptureState() async throws {
-        URLProtocol.registerClass(CanvasCaptureImageProtocol.self)
-        defer { URLProtocol.unregisterClass(CanvasCaptureImageProtocol.self) }
+        let server = try CanvasCaptureImageServer(png: png)
+        server.start()
+        defer { server.stop() }
+        await fulfillment(of: [server.ready], timeout: 30)
+        let port = try XCTUnwrap(server.listener.port)
         let model = model()
         model.screen = .chat
         let source = try component(
-            #"{"type":"tabs","id":"tabs","tabs":[{"label":"First","children":[{"type":"grid","id":"grid","columns":4,"children":[{"type":"image","id":"loaded","url":"https://canvas-capture-fixture.invalid/loaded.png","caption":"Loaded caption"},{"type":"collapsible","title":"Collapsed details","children":[]}]},{"type":"container","direction":"row","children":[{"type":"text","content":"Measured row"}]}]},{"label":"Second","content":[]}]}"#
+            #"{"type":"tabs","id":"tabs","tabs":[{"label":"First","children":[{"type":"grid","id":"grid","columns":4,"children":[{"type":"image","id":"loaded","url":"http://127.0.0.1:\#(port.rawValue)/loaded.png","caption":"Loaded caption"},{"type":"collapsible","title":"Collapsed details","children":[]}]},{"type":"container","direction":"row","children":[{"type":"text","content":"Measured row"}]}]},{"label":"Second","content":[]}]}"#
         )
         model.canvas = [source]
         model.canvasCapture.setWindow(CGSize(width: 320, height: 900))
@@ -408,6 +412,11 @@ final class CanvasCapture088Tests: XCTestCase {
         let image = grid?["children"]?.arrayValue?.first
         XCTAssertGreaterThan(try XCTUnwrap(image?["width"]?.numberValue), 0)
         XCTAssertEqual(image?["caption"], .string("Loaded caption"))
+        XCTAssertEqual(server.requests, ["GET /loaded.png HTTP/1.1"])
+        let attachment = XCTAttachment(string: server.requests.joined(separator: "\n"))
+        attachment.name = "Canvas image fixture requests"
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     #if os(macOS)
@@ -541,52 +550,141 @@ final class CanvasCapture088Tests: XCTestCase {
         let coordinator = OfflineChartCoordinator()
         let webView = OfflineChartCoordinator.webView()
         webView.frame = CGRect(x: 0, y: 0, width: 296, height: 260)
+        #if os(macOS)
+            let window = NSWindow(
+                contentRect: webView.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = webView
+            window.contentView?.layoutSubtreeIfNeeded()
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+        #else
+            let window = UIWindow(frame: webView.frame)
+            let controller = UIViewController()
+            controller.view = webView
+            window.rootViewController = controller
+            window.isHidden = false
+            window.layoutIfNeeded()
+            webView.layoutIfNeeded()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+        #endif
+        func dismantle() async throws {
+            guard coordinator.document != nil else { return }
+            coordinator.dismantle(webView)
+            for _ in 0..<120 where coordinator.document != nil {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        XCTAssertTrue(webView.window === window)
         coordinator.update(
             webView, component: component, viewportWidth: 320, captureRegistry: registry, captureNode: node)
-        for _ in 0..<100 {
-            if coordinator.readyForCapture,
-                (try? await webView.evaluateJavaScript("document.documentElement.dataset.chartState")) as? String
-                    == "ready"
-            {
-                break
+        do {
+            for _ in 0..<100 {
+                if coordinator.readyForCapture,
+                    (try? await webView.evaluateJavaScript("document.documentElement.dataset.chartState")) as? String
+                        == "ready"
+                {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(50))
             }
-            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(coordinator.readyForCapture)
+            let state = try await webView.evaluateJavaScript("document.documentElement.dataset.chartState")
+            XCTAssertEqual(state as? String, "ready")
+            let before = try await coordinator.capturePixels(webView)
+            let _: Any? = try await withCheckedThrowingContinuation { continuation in
+                webView.callAsyncJavaScript(
+                    "await Plotly.relayout(document.getElementById('chart'), {'yaxis.range':[0,20]}); return true;",
+                    arguments: [:], in: nil, in: .page
+                ) { continuation.resume(with: $0.map { Optional($0) }) }
+            }
+            let after = try await coordinator.capturePixels(webView)
+            XCTAssertNotEqual(before, after)
+            try await dismantle()
+            XCTAssertNil(coordinator.document)
+            let capture = try JSONValue.parse(await registry.capture([component], isCurrent: { true }))
+            let pixels = try XCTUnwrap(capture["images"]?.arrayValue?.first?["data_url"]?.stringValue)
+            XCTAssertTrue(pixels.hasPrefix("data:image/png;base64,"))
+            XCTAssertGreaterThan(pixels.count, 100)
+        } catch {
+            try? await dismantle()
+            throw error
         }
-        let before = try await coordinator.capturePixels(webView)
-        let _: Any? = try await withCheckedThrowingContinuation { continuation in
-            webView.callAsyncJavaScript(
-                "await Plotly.relayout(document.getElementById('chart'), {'yaxis.range':[0,20]}); return true;",
-                arguments: [:], in: nil, in: .page
-            ) { continuation.resume(with: $0.map { Optional($0) }) }
-        }
-        let after = try await coordinator.capturePixels(webView)
-        XCTAssertNotEqual(before, after)
-        coordinator.dismantle(webView)
-        for _ in 0..<120 where coordinator.document != nil { try await Task.sleep(for: .milliseconds(50)) }
-        XCTAssertNil(coordinator.document)
-        let capture = try JSONValue.parse(await registry.capture([component], isCurrent: { true }))
-        let pixels = try XCTUnwrap(capture["images"]?.arrayValue?.first?["data_url"]?.stringValue)
-        XCTAssertTrue(pixels.hasPrefix("data:image/png;base64,"))
-        XCTAssertGreaterThan(pixels.count, 100)
     }
 }
 
-private final class CanvasCaptureImageProtocol: URLProtocol {
-    override class func canInit(with request: URLRequest) -> Bool {
-        request.url?.host == "canvas-capture-fixture.invalid"
+private final class CanvasCaptureImageServer: @unchecked Sendable {
+    let ready = XCTestExpectation(description: "canvas image loopback ready")
+    let listener: NWListener
+    private let png: Data
+    private let queue = DispatchQueue(label: "astral.canvas-image.loopback")
+    private var connections: [NWConnection] = []
+    private var observedRequests: [String] = []
+
+    init(png: Data) throws {
+        self.png = png
+        let parameters = NWParameters.tcp
+        parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
+        listener = try NWListener(using: parameters)
     }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        let bytes = Data(
-            base64Encoded:
-                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNITvv4HwAFpAK6buOwBAAAAABJRU5ErkJggg==")!
-        client?.urlProtocol(
-            self,
-            didReceive: HTTPURLResponse(
-                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "image/png"])!,
-            cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: bytes)
-        client?.urlProtocolDidFinishLoading(self)
+
+    var requests: [String] { queue.sync { observedRequests } }
+
+    func start() {
+        listener.stateUpdateHandler = { [weak self] state in
+            if case .ready = state { self?.ready.fulfill() }
+        }
+        listener.newConnectionHandler = { [weak self] connection in
+            guard let self else {
+                connection.cancel()
+                return
+            }
+            self.connections.append(connection)
+            connection.start(queue: self.queue)
+            self.receive(connection, accumulated: Data())
+        }
+        listener.start(queue: queue)
     }
-    override func stopLoading() {}
+
+    private func receive(_ connection: NWConnection, accumulated: Data) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 16384) { [weak self] data, _, complete, error in
+            guard let self, error == nil else {
+                connection.cancel()
+                return
+            }
+            var request = accumulated
+            request.append(data ?? Data())
+            guard request.count <= 16384 else {
+                connection.cancel()
+                return
+            }
+            guard let boundary = request.range(of: Data("\r\n\r\n".utf8)) else {
+                if complete { connection.cancel() } else { self.receive(connection, accumulated: request) }
+                return
+            }
+            let line =
+                String(decoding: request[..<boundary.lowerBound], as: UTF8.self)
+                .components(separatedBy: "\r\n").first ?? ""
+            self.observedRequests.append(line)
+            let success = line == "GET /loaded.png HTTP/1.1"
+            let body = success ? self.png : Data()
+            let header =
+                "HTTP/1.1 \(success ? 200 : 404) Fixture\r\nContent-Type: image/png\r\nContent-Length: \(body.count)\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n"
+            connection.send(
+                content: Data(header.utf8) + body,
+                completion: .contentProcessed { _ in connection.cancel() })
+        }
+    }
+
+    func stop() {
+        queue.sync {
+            listener.cancel()
+            for connection in connections { connection.cancel() }
+        }
+    }
 }

@@ -2779,6 +2779,22 @@ class OrchestratorClient(QObject):
             failure_status="guidance_failed:" + request_generation,
         )
 
+    def send_current_settings(
+        self, surface: str, action: str, payload: dict, request_generation: str, *, is_current=lambda: True,
+    ) -> bool:
+        _uuid4(request_generation, "request_generation")
+        if (not isinstance(surface, str) or not surface or surface in {"work", "guidance", "agent_intro"}
+                or not isinstance(payload, dict) or not isinstance(action, str) or _SNAKE_CASE.fullmatch(action) is None):
+            return False
+        safe_payload = copy.deepcopy(payload)
+        local = LocalOperationSubmission(str(uuid.uuid4()), request_generation, action, None)
+        safe_payload.update(surface=surface, submission_id=local.submission_id, request_generation=request_generation)
+        frame = {"type": "ui_event", "action": action, "session_id": None,
+                 "submission_id": local.submission_id, "request_generation": request_generation,
+                 "payload": safe_payload}
+        self.submission.emit(local)
+        return self._send_current_frame(frame, is_current=is_current, failure_status="settings_failed:" + request_generation)
+
     def retire_work_read(self, request_generation: str) -> None:
         if self._work_read_generation == request_generation:
             self._work_read_generation = None

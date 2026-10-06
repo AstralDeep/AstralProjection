@@ -1,5 +1,4 @@
-// Tests for the reconnect strip's show/label rule: visible only once a session has been live and then
-// degrades.
+// Verifies initial and interrupted connection status for the shared Android console.
 
 package com.personalailabs.astraldeep.app.ui
 
@@ -10,9 +9,9 @@ import kotlin.test.assertNull
 
 class ConnectionStripTest {
     @Test
-    fun hidden_before_the_first_connect() {
-        assertNull(connectionStripLabel(ConnectionState.Connecting, everConnected = false))
-        assertNull(connectionStripLabel(ConnectionState.Disconnected, everConnected = false))
+    fun initial_connecting_and_failure_remain_visible() {
+        assertEquals("Connecting…", connectionStripLabel(ConnectionState.Connecting, everConnected = false))
+        assertEquals("Unable to connect. Check your connection and retry.", connectionStripLabel(ConnectionState.Disconnected, everConnected = false))
     }
 
     @Test

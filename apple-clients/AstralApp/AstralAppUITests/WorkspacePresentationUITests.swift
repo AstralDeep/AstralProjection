@@ -33,7 +33,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             }
         }
         capture(app, name: "workspace-088-server-actions-native-wrap")
-        app.buttons["new-chat-button"].tap()
+        app.buttons["new-chat-button"].press()
         XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
         XCTAssertFalse(export.exists)
         XCTAssertFalse(share.exists)
@@ -58,17 +58,17 @@ final class WorkspacePresentationUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["3h"].exists)
         #endif
         capture(app, name: "workspace-088-history-server-rows")
-        preview.tap()
+        preview.press()
         XCTAssertTrue(historyResult("Opened second history row", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(historyResult("Opened first history row", in: app).exists)
-        app.buttons["Recent chats"].tap()
+        app.buttons["Recent chats"].press()
         XCTAssertTrue(preview.waitForExistence(timeout: 3))
         XCTAssertTrue(first.exists)
         #if os(iOS)
             XCTAssertTrue(app.staticTexts["2h"].exists)
             XCTAssertTrue(app.staticTexts["3h"].exists)
         #endif
-        first.tap()
+        first.press()
         XCTAssertTrue(historyResult("Opened first history row", in: app).waitForExistence(timeout: 5))
         XCTAssertFalse(historyResult("Opened second history row", in: app).exists)
     }
@@ -93,7 +93,7 @@ final class WorkspacePresentationUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(newChat.frame.width, 44)
         XCTAssertGreaterThanOrEqual(newChat.frame.height, 44)
         capture(app, name: "workspace-088-card-metrics-native-target")
-        newChat.tap()
+        newChat.press()
         XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 3))
         XCTAssertFalse(total.exists)
     }
@@ -102,9 +102,9 @@ final class WorkspacePresentationUITests: XCTestCase {
         func testRecentChatsToggleReturnsToTheSameWorkspaceAndDraft() {
             let app = launchNavigation()
             defer { app.terminate() }
-            app.buttons["Recent chats"].tap()
+            app.buttons["Recent chats"].press()
             XCTAssertTrue(app.staticTexts["First preview"].waitForExistence(timeout: 3))
-            app.buttons["Recent chats"].tap()
+            app.buttons["Recent chats"].press()
             XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
             XCTAssertFalse(app.staticTexts["First preview"].exists)
             XCTAssertEqual(
@@ -116,17 +116,17 @@ final class WorkspacePresentationUITests: XCTestCase {
         func testClosingPendingAndLoadedSurfacesPreservesWorkspaceAndDraft() {
             let app = launchNavigation()
             defer { app.terminate() }
-            app.buttons["Settings"].tap()
-            app.buttons["Appearance"].tap()
+            app.buttons["Settings"].press()
+            app.buttons["Appearance"].press()
             let close = app.buttons["Close"]
             XCTAssertTrue(close.waitForExistence(timeout: 3))
             guard close.exists else { return }
-            close.tap()
+            close.press()
             XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
-            app.buttons["Settings"].tap()
-            app.buttons["Activity log"].tap()
+            app.buttons["Settings"].press()
+            app.buttons["Activity log"].press()
             XCTAssertTrue(app.staticTexts["Synthetic activity details"].waitForExistence(timeout: 3))
-            close.tap()
+            close.press()
             XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
             XCTAssertEqual(
                 app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch.value as? String,
@@ -137,17 +137,17 @@ final class WorkspacePresentationUITests: XCTestCase {
         func testRetryRearmsSurfaceTimeoutAndTimedOutSurfaceCanClose() {
             let app = launchNavigation()
             defer { app.terminate() }
-            app.buttons["Settings"].tap()
-            app.buttons["Appearance"].tap()
+            app.buttons["Settings"].press()
+            app.buttons["Appearance"].press()
             let failure = app.staticTexts["Couldn't load this screen"]
             XCTAssertTrue(failure.waitForExistence(timeout: 14))
-            app.buttons["Retry"].tap()
+            app.buttons["Retry"].press()
             XCTAssertTrue(failure.waitForNonExistence(timeout: 3))
             XCTAssertTrue(failure.waitForExistence(timeout: 14))
             let close = app.buttons["Close"]
             XCTAssertTrue(close.exists)
             guard close.exists else { return }
-            close.tap()
+            close.press()
             XCTAssertTrue(app.staticTexts["Existing navigation result"].waitForExistence(timeout: 3))
             XCTAssertEqual(
                 app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch.value as? String,
@@ -165,7 +165,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             XCTAssertFalse(app.buttons["Close"].exists)
             XCTAssertFalse(app.buttons["Recent chats"].exists)
             XCTAssertFalse(app.buttons["new-chat-button"].exists)
-            app.buttons["Settings"].tap()
+            app.buttons["Settings"].press()
             XCTAssertFalse(app.buttons["Appearance"].exists)
             XCTAssertTrue(app.buttons["Sign out"].exists)
             capture(app, name: "workspace-navigation-mandatory-pin-keeps-only-signout")
@@ -188,33 +188,33 @@ final class WorkspacePresentationUITests: XCTestCase {
             defer { app.terminate() }
             let toggle = app.buttons["workspace-messages-toggle"]
             XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-            toggle.tap()
+            toggle.press()
             let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
-            composer.tap()
+            composer.press()
             composer.typeText("Draft to keep")
             let canvas = app.scrollViews["workspace-canvas-scroll"]
             for _ in 0..<10 {
                 if app.staticTexts["Overview pane is selected"].isHittable { break }
                 canvas.swipeUp(velocity: .slow)
             }
-            app.buttons["Measurements"].tap()
+            app.buttons["Measurements"].press()
             XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
             let menuRefine = app.buttons["component-action-review-details-refine"]
             XCTAssertTrue(menuRefine.waitForExistence(timeout: 3))
-            menuRefine.tap()
+            menuRefine.press()
             XCTAssertTrue(app.staticTexts["Refine Result details"].waitForExistence(timeout: 3))
             let submit = app.buttons["Refine"].firstMatch
             XCTAssertFalse(submit.isEnabled)
             let fields = app.textFields.matching(NSPredicate(format: "identifier != %@", "chat-composer-input"))
             XCTAssertEqual(fields.count, 1)
             let instruction = fields.firstMatch
-            instruction.tap()
+            instruction.press()
             instruction.typeText("   ")
             XCTAssertFalse(submit.isEnabled)
             instruction.typeText("Sort by total")
             XCTAssertTrue(submit.isEnabled)
             capture(app, name: "workspace-088-refine-edit-before-cancel")
-            app.buttons["Cancel"].tap()
+            app.buttons["Cancel"].press()
             XCTAssertFalse(app.staticTexts["Refine Result details"].exists)
             XCTAssertEqual(composer.value as? String, "Draft to keep")
             XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
@@ -236,23 +236,23 @@ final class WorkspacePresentationUITests: XCTestCase {
             XCTAssertTrue(app.staticTexts["How can I help?"].waitForExistence(timeout: 8))
             let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
             XCTAssertTrue((composer.value as? String ?? "").contains("First line"))
-            app.buttons["new-chat-button"].tap()
+            app.buttons["new-chat-button"].press()
             XCTAssertFalse((composer.value as? String ?? "").contains("First line"))
-            composer.tap()
+            composer.press()
             composer.typeText("/r")
             XCTAssertEqual(composer.value as? String, "/r")
             let suggestion = app.buttons["/research"]
             XCTAssertTrue(suggestion.waitForExistence(timeout: 3))
             XCTAssertFalse(app.buttons["/help"].exists)
-            suggestion.tap()
+            suggestion.press()
             XCTAssertEqual(composer.value as? String, "/research ")
             composer.typeText("Summarize the synthetic measurements")
             XCTAssertFalse(suggestion.exists)
             let background = app.buttons["Run in background"]
             XCTAssertEqual(background.value as? String, "Off")
-            background.tap()
+            background.press()
             XCTAssertEqual(background.value as? String, "On")
-            app.buttons["Send message"].tap()
+            app.buttons["Send message"].press()
             XCTAssertTrue(app.staticTexts["Workspace result"].waitForExistence(timeout: 5))
             XCTAssertEqual(background.value as? String, "Off")
             XCTAssertFalse((composer.value as? String ?? "").contains("/research"))
@@ -268,7 +268,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             defer { app.terminate() }
             let toggle = app.buttons["workspace-messages-toggle"]
             XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-            toggle.tap()
+            toggle.press()
             let canvas = app.scrollViews["workspace-canvas-scroll"]
             XCTAssertTrue(canvas.exists)
             for label in [
@@ -295,14 +295,14 @@ final class WorkspacePresentationUITests: XCTestCase {
             }
             XCTAssertEqual(details.value as? String, "Expanded")
             XCTAssertTrue(app.staticTexts["Overview pane is selected"].isHittable)
-            app.buttons["Measurements"].tap()
+            app.buttons["Measurements"].press()
             XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
             XCTAssertFalse(app.staticTexts["Overview pane is selected"].exists)
             capture(app, name: "workspace-088-rich-result-selected-tab")
-            details.tap()
+            details.press()
             XCTAssertEqual(details.value as? String, "Collapsed")
             XCTAssertFalse(app.staticTexts["Measurement pane is selected"].exists)
-            details.tap()
+            details.press()
             XCTAssertEqual(details.value as? String, "Expanded")
             XCTAssertTrue(app.staticTexts["Measurement pane is selected"].waitForExistence(timeout: 3))
             for _ in 0..<8 {
@@ -324,7 +324,7 @@ final class WorkspacePresentationUITests: XCTestCase {
             defer { app.terminate() }
             let toggle = app.buttons["workspace-messages-toggle"]
             XCTAssertTrue(toggle.waitForExistence(timeout: 8))
-            toggle.tap()
+            toggle.press()
             let canvas = app.scrollViews["workspace-canvas-scroll"]
             let chart = app.webViews.firstMatch
             let footer = app.staticTexts["Complete chart footer"]
@@ -344,7 +344,7 @@ final class WorkspacePresentationUITests: XCTestCase {
                 canvas.swipeDown(velocity: .slow)
             }
             XCTAssertTrue(app.staticTexts["Dice layout regression"].isHittable)
-            toggle.tap()
+            toggle.press()
             XCTAssertTrue(app.scrollViews["conversation-message-scroll"].waitForExistence(timeout: 3))
         #endif
     }
@@ -365,16 +365,16 @@ final class WorkspacePresentationUITests: XCTestCase {
             let canvas = app.scrollViews["workspace-canvas-scroll"]
             XCTAssertTrue(canvas.exists)
             for _ in 0..<5 {
-                toggle.tap()
+                toggle.press()
                 XCTAssertFalse(app.scrollViews["conversation-message-scroll"].exists)
                 canvas.swipeUp()
                 XCTAssertTrue(app.staticTexts["Canvas layout end"].waitForExistence(timeout: 3))
-                toggle.tap()
+                toggle.press()
                 XCTAssertTrue(app.scrollViews["conversation-message-scroll"].waitForExistence(timeout: 3))
                 canvas.swipeDown()
             }
             let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
-            composer.tap()
+            composer.press()
             composer.typeText("Still responsive")
             XCTAssertTrue((composer.value as? String ?? "").contains("Still responsive"))
             capture(app, name: "workspace-088-canvas-collapse-scroll-synthetic-fixture")
@@ -393,26 +393,26 @@ final class WorkspacePresentationUITests: XCTestCase {
         capture(app, name: "workspace-088-start-synthetic-fixture")
         XCTAssertTrue(app.buttons["Research brief"].exists)
         XCTAssertFalse(app.buttons["Business dashboard"].exists)
-        app.buttons["More examples"].tap()
+        app.buttons["More examples"].press()
         XCTAssertTrue(app.buttons["Business dashboard"].waitForExistence(timeout: 3))
         capture(app, name: "workspace-088-more-synthetic-fixture")
-        app.buttons["More examples"].tap()
+        app.buttons["More examples"].press()
 
         let composer = app.descendants(matching: .any).matching(identifier: "chat-composer-input").firstMatch
         XCTAssertTrue(composer.exists)
-        composer.tap()
+        composer.press()
         composer.typeText("Second line")
         XCTAssertTrue((composer.value as? String ?? "").contains("Second line"))
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = "workspace-088-multiline-composer"
         attachment.lifetime = .keepAlways
         add(attachment)
-        app.buttons["Send message"].tap()
+        app.buttons["Send message"].press()
         XCTAssertTrue(app.staticTexts["Workspace result"].waitForExistence(timeout: 5))
         capture(app, name: "workspace-088-work-synthetic-fixture")
         XCTAssertFalse(title.exists)
         XCTAssertFalse(app.buttons["Research brief"].exists)
-        app.buttons["New chat"].tap()
+        app.buttons["New chat"].press()
         XCTAssertTrue(title.waitForExistence(timeout: 3))
     }
     private func capture(_ app: XCUIApplication, name: String) {

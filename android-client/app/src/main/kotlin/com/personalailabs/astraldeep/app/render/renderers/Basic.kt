@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.personalailabs.astraldeep.app.render.Emit
+import com.personalailabs.astraldeep.app.render.LocalFormSubmissionState
 import com.personalailabs.astraldeep.app.render.LocalWorkReadText
 import com.personalailabs.astraldeep.app.render.MarkdownText
 import com.personalailabs.astraldeep.app.render.Renderer
@@ -188,8 +189,13 @@ private fun ButtonPrimitive(
     emit: Emit,
 ) {
     val action = c.str("action")
-    val label = c.str("label") ?: "Button"
-    val enabled = action != null && c.bool("disabled") != true
+    val label = c.str("label")?.takeIf { it.isNotBlank() }
+    val submission = LocalFormSubmissionState.current
+    val navigation = action in setOf("chrome_open", "chrome_close")
+    val enabled =
+        action?.isNotBlank() == true && label != null && c.bool("disabled") != true &&
+            (navigation || submission.connected && !submission.pending && !submission.reloadRequired)
+    val displayLabel = label ?: "Action unavailable"
     val onClick = { if (enabled && action != null) emit.event(action, c.payload()) }
     if (c.str("data-welcome") == "example" && c.id?.startsWith("wel_") != false) {
         OutlinedButton(
@@ -198,12 +204,12 @@ private fun ButtonPrimitive(
             border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
             modifier = Modifier.heightIn(min = 48.dp),
-        ) { Text(label) }
+        ) { Text(displayLabel) }
         return
     }
     when (c.str("variant") ?: "primary") {
         "secondary" ->
-            FilledTonalButton(onClick = onClick, enabled = enabled) { Text(label) }
+            FilledTonalButton(onClick = onClick, enabled = enabled) { Text(displayLabel) }
         "danger" ->
             Button(
                 onClick = onClick,
@@ -213,7 +219,7 @@ private fun ButtonPrimitive(
                         containerColor = Color(0xFFEF4444),
                         contentColor = Color.White,
                     ),
-            ) { Text(label) }
+            ) { Text(displayLabel) }
         else -> {
             val shape = ButtonDefaults.shape
             Button(
@@ -226,7 +232,7 @@ private fun ButtonPrimitive(
                         contentColor = Color.White,
                     ),
                 modifier = Modifier.background(AstralColors.AccentBrush, shape),
-            ) { Text(label) }
+            ) { Text(displayLabel) }
         }
     }
 }

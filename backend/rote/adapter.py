@@ -479,7 +479,8 @@ class ComponentAdapter:
         for key in ("content", "children", "actions", "overflow_actions", "buttons"):
             kids = comp.get(key)
             if isinstance(kids, list):
-                out[key] = [cls._degrade_unsupported(c, supported)
+                out[key] = [(dict(c) if key in {"actions", "overflow_actions", "buttons"}
+                             and "type" not in c else cls._degrade_unsupported(c, supported))
                             for c in kids if isinstance(c, dict)]
         tabs = comp.get("tabs")
         if isinstance(tabs, list):
@@ -576,21 +577,44 @@ class ComponentAdapter:
             return components
         budget = [max_actions if max_actions > 0 else None]
 
-        def walk(node):
+        def permit():
+            if read_only or budget[0] == 0:
+                return False
+            if budget[0] is not None:
+                budget[0] -= 1
+            return True
+
+        def unavailable(node):
+            label = node.get("title") or ("Appearance" if node.get("type") == "color_picker" else "Form")
+            return cls._carry_identity(node, {
+                "type": "text", "variant": "body",
+                "content": f"{label} is unavailable on this device.",
+            })
+
+        def walk(node, descriptor=False):
             if not isinstance(node, dict):
                 return node
-            if node.get("type") == "button" and node.get("action"):
-                if read_only:
-                    return None
-                if budget[0] is not None:
-                    if budget[0] <= 0:
-                        return None
-                    budget[0] -= 1
-                return node
+            if (node.get("type") == "button" or (descriptor and "type" not in node)) and node.get("action"):
+                return node if permit() else None
+            if node.get("type") == "color_picker" and not permit():
+                return unavailable(node)
+            form = node.get("type") == "param_picker"
+            if form and read_only:
+                return unavailable(node)
             out = dict(node)
             for key in ("children", "content", "actions", "overflow_actions", "buttons"):
                 if isinstance(out.get(key), list):
-                    out[key] = [w for w in (walk(c) for c in out[key]) if w is not None]
+                    out[key] = [w for w in (walk(c, key in {"actions", "overflow_actions", "buttons"})
+                                           for c in out[key]) if w is not None]
+            if form:
+                had_actions = any(isinstance(a, dict) and a.get("action") for a in node.get("actions") or [])
+                submit = bool(node.get("submit_action") or node.get("submit_message_template"))
+                if submit and not permit():
+                    for key in ("submit_action", "submit_payload", "submit_message_template"):
+                        out.pop(key, None)
+                has_actions = any(isinstance(a, dict) and a.get("action") for a in out.get("actions") or [])
+                if (had_actions or submit) and not has_actions and not (out.get("submit_action") or out.get("submit_message_template")):
+                    return unavailable(node)
             if isinstance(out.get("tabs"), list):
                 new_tabs = []
                 for tab in out["tabs"]:

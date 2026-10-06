@@ -179,7 +179,6 @@ class BoundedStreamReader:
             self._dropped_lines += 1
         self._partial.clear()
         self._partial_overlong = False
-        self._condition.notify_all()
         return line, was_overlong
 
     def _consume_locked(self, chunk: bytes) -> list[tuple[bytes, bool]]:
@@ -236,6 +235,8 @@ class BoundedStreamReader:
                     break
                 with self._condition:
                     completed = self._consume_locked(chunk)
+                    if completed:
+                        self._condition.notify_all()
                 self._publish(completed)
         except (OSError, ValueError) as exc:
             with self._condition:
@@ -248,6 +249,8 @@ class BoundedStreamReader:
                     if self._partial or self._partial_overlong
                     else []
                 )
+                if trailing:
+                    self._condition.notify_all()
             self._publish(trailing)
             self.close_pipe()
             with self._condition:

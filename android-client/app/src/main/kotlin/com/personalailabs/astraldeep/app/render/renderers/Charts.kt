@@ -55,6 +55,10 @@ fun Renderer.registerChartRenderers(): Renderer =
 
 internal const val CHART_ORIGIN = "https://astral-chart.invalid/"
 
+internal data class ChartDocument(val generation: String, val bytes: ByteArray) {
+    val url = "$CHART_ORIGIN?generation=$generation"
+}
+
 internal fun offlineChartHeight(
     component: Component,
     slotWidth: Int,
@@ -105,7 +109,7 @@ private object OfflineChartAssets {
 
 // Sandboxed: no app JS bridge and no network access, data only
 internal class ChartWebView(context: Context) : WebView(context) {
-    @Volatile var chartDocument: ByteArray? = null
+    @Volatile var chartDocument: ChartDocument? = null
     internal var exportPixels: CurrentChartPixels? = null
     private var layoutRevision = 0
     private var preferredHeight: Int? = null
@@ -131,13 +135,21 @@ internal class ChartWebView(context: Context) : WebView(context) {
         this.layoutFailure = onFailure
         val revision = ++layoutRevision
         val content = tag
+        val generation = chartDocument?.generation ?: return
         var applied = false
 
         fun check(attempt: Int) {
             postDelayed({
                 if (tag != content || tag == null || revision != layoutRevision) return@postDelayed
                 evaluateJavascript(
-                    "[document.documentElement.dataset.chartState,document.documentElement.dataset.nativeLayout].join(':')",
+                    """
+                    (function(){
+                      var generation=document.querySelector('meta[name=astral-native-chart-generation]');
+                      return generation && generation.content==='$generation'
+                        ? [document.documentElement.dataset.chartState,document.documentElement.dataset.nativeLayout].join(':')
+                        : 'loading:';
+                    })();
+                    """.trimIndent(),
                 ) { result ->
                     if (tag != content || revision != layoutRevision) return@evaluateJavascript
                     when {
@@ -205,9 +217,9 @@ internal fun isolatedChartWebView(context: Context): ChartWebView =
                 ): WebResourceResponse {
                     val document = chartDocument
                     if (request?.isForMainFrame == true && request.method == "GET" &&
-                        request.url.toString() == CHART_ORIGIN && document != null
+                        document != null && request.url.toString() == document.url
                     ) {
-                        return WebResourceResponse("text/html", "UTF-8", ByteArrayInputStream(document))
+                        return WebResourceResponse("text/html", "UTF-8", 200, "OK", emptyMap(), ByteArrayInputStream(document.bytes))
                     }
                     return WebResourceResponse("text/plain", "utf-8", 403, "Blocked", emptyMap(), ByteArrayInputStream(ByteArray(0)))
                 }
@@ -261,11 +273,16 @@ private fun OfflineChart(component: Component) {
                         web.exportPixels = CurrentChartPixels(web, generation)
                         capture?.registry?.pixels(capture.path, web.exportPixels)
                         web.tag = content
-                        web.chartDocument =
-                            document.getOrThrow().replace(
-                                "<head>", "<head><meta name=\"astral-native-chart-generation\" content=\"$generation\">",
-                            ).toByteArray(Charsets.UTF_8)
-                        web.loadUrl(CHART_ORIGIN)
+                        val nextDocument =
+                            ChartDocument(
+                                generation,
+                                document.getOrThrow().replace(
+                                    "<head>",
+                                    "<head><meta name=\"astral-native-chart-generation\" content=\"$generation\">",
+                                ).toByteArray(Charsets.UTF_8),
+                            )
+                        web.chartDocument = nextDocument
+                        web.loadUrl(nextDocument.url)
                     }
                     web.updateChartLayout(offlineChartHeight(component, 500, viewport)) { failed = true }
                 },

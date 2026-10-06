@@ -39,7 +39,8 @@ struct AstralWatchApp: App {
             )
             .tint(model.theme.palette.primary)
             .foregroundStyle(model.theme.palette.text)
-            .background(model.theme.palette.bg)
+            .background(model.theme.palette.bg, ignoresSafeAreaEdges: [])
+            .preferredColorScheme(model.theme.colorScheme)
             .background {
                 GeometryReader { geometry in
                     Color.clear

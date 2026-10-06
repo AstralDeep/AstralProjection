@@ -411,7 +411,10 @@ jobs:
           fi
           workspace_actions=()
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
-            workspace_actions=(-only-testing:AstralAppUITests/WorkspaceActionsUITests)
+            workspace_actions=(
+              -only-testing:AstralAppUITests/WorkspaceActionsUITests
+              -only-testing:AstralAppUITests/SettingsControlsUITests
+            )
           fi
           derived="$PWD/build/060/app-${{ matrix.slug }}-ui-dd"
           test_action='test'

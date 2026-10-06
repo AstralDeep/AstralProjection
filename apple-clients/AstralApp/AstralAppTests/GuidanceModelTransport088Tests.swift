@@ -96,32 +96,44 @@ final class GuidanceModelTransport088Tests: XCTestCase {
         #if os(watchOS)
             let model = WatchModel(
                 conversationResumeStore: ConversationResumeStore(defaults: defaults), webSocket: socket)
-        #else
-            let model = AppModel(tokenStore: InMemoryTokenStore(), defaults: defaults, webSocket: socket)
-            model.signedIn = true
-        #endif
-        model.bindConversationAccount(ConversationAccount(issuer: "https://iam.example.test", subject: "owner")!)
-        XCTAssertTrue(model.beginConversationConnection(connection))
-        let ready = expectation(description: "synthetic physical socket registered")
-        let events = await socket.events()
-        let consume = Task {
-            for await event in events {
-                if case .connected = event { ready.fulfill() }
-                if case .frame(let frame) = event { model.handleFrame(frame) }
+            model.bindConversationAccount(ConversationAccount(issuer: "https://iam.example.test", subject: "owner")!)
+            XCTAssertTrue(model.beginConversationConnection(connection))
+            let ready = expectation(description: "synthetic physical socket registered")
+            let events = await socket.events()
+            let consume: Task<Void, Never>? = Task {
+                for await event in events {
+                    if case .connected = event { ready.fulfill() }
+                    if case .frame(let frame) = event { model.handleFrame(frame) }
+                }
             }
-        }
-        await socket.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
-        await fulfillment(of: [ready], timeout: socketEventTimeout)
-        model.connected = true
+            await socket.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
+            await fulfillment(of: [ready], timeout: socketEventTimeout)
+            model.connected = true
+        #else
+            defaults.set("http://127.0.0.1:\(port.rawValue)", forKey: "serverBase")
+            let store = InMemoryTokenStore()
+            let token =
+                "fixture." + PKCE.base64url(Data(#"{"iss":"https://iam.example.test","sub":"owner"}"#.utf8))
+                + ".fixture"
+            store.save(StoredTokens(from: TokenSet(accessToken: token, refreshToken: nil, expiresIn: 3600)))
+            let model = AppModel(tokenStore: store, defaults: defaults, webSocket: socket)
+            let consume: Task<Void, Never>? = nil
+            await model.bootstrap()
+            try await waitUntil("normal registered socket") { model.connected }
+            XCTAssertTrue(model.beginConversationConnection(connection))
+        #endif
         model.handleFrame(menu)
         do { try await body(model, socket, peer) } catch {
             await socket.stop()
-            consume.cancel()
+            consume?.cancel()
             throw error
         }
         close(model)
         await socket.stop()
-        consume.cancel()
+        consume?.cancel()
+        #if !os(watchOS)
+            await model.signOut(revokeRemote: false)
+        #endif
     }
 
     func testActualReadResponseNavigationAndCloseStayOnOneSocketAndNeverQueue() async throws {

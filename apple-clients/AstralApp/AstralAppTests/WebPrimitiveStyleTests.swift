@@ -65,6 +65,16 @@ final class WebPrimitiveStyleTests: XCTestCase {
         XCTAssertEqual(wide.height - compact.height, 8)
     }
 
+    func testServerPaletteSwatchesPaintAllColorsAtTheSpecifiedPreviewHeight() throws {
+        let image = try render(
+            ##"{"type":"container","direction":"row","children":[{"type":"container","css":{"background":"#123ABC","height":"32px"}},{"type":"container","css":{"background":"#12BC3A","height":"32px"}},{"type":"container","css":{"background":"#BC123A","height":"32px"}}]}"##
+        )
+        XCTAssertEqual(image.height, 72)
+        assertRGB(try rgb(image, x: 60, y: 36), [18, 58, 188])
+        assertRGB(try rgb(image, x: 180, y: 36), [18, 188, 58])
+        assertRGB(try rgb(image, x: 300, y: 36), [188, 18, 58])
+    }
+
     func testMetricRendersCanonicalTitleVariantEdgeAndClampedProgress() throws {
         let image = try render(
             #"{"type":"metric","title":"Total","value":18,"subtitle":"Six dice","variant":"success","progress":2}"#)

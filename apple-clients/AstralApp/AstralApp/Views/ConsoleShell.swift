@@ -98,7 +98,9 @@ struct ConsoleShell: View {
             ConsoleHeader(presentation: presentation)
             if let label = model.connectionStripLabel { ConnectionStrip(label: label) }
             if let banner = model.errorBanner {
-                BannerBar(text: banner, isError: model.bannerIsError) { model.dismissBanner() }
+                BannerBar(text: banner, isError: model.bannerIsError, isWarning: model.bannerIsWarning) {
+                    model.dismissBanner()
+                }
             }
             ViewportRefreshNotice()
             ZStack {
@@ -347,19 +349,18 @@ struct ConsoleLanding: View {
                     Text(console.labels["subtitle"] ?? "").font(ConsoleTypography.subheadline).foregroundStyle(p.muted)
                     Divider().overlay(p.border).padding(.top, 8)
                 }
-                HStack(spacing: 16) {
-                    Text(console.labels["start_here"] ?? "").font(ConsoleTypography.sans(18).bold()).fixedSize()
-                    Spacer(minLength: 0)
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            filter(nil, label: console.labels["all_categories"] ?? "")
-                            ForEach(console.catalog.categories, id: \.self) { filter($0, label: $0) }
-                        }
-                        .padding(5)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 14) {
+                        Text(console.labels["start_here"] ?? "").font(ConsoleTypography.sans(18).bold())
+                            .fixedSize(horizontal: true, vertical: false)
+                        Spacer(minLength: 0)
+                        filters.frame(minWidth: 120, maxWidth: 420)
                     }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 420).background(p.text.opacity(0.025), in: RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.border))
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text(console.labels["start_here"] ?? "").font(ConsoleTypography.sans(18).bold())
+                            .fixedSize(horizontal: false, vertical: true)
+                        filters
+                    }
                 }
                 LazyVGrid(
                     columns: Array(
@@ -389,8 +390,21 @@ struct ConsoleLanding: View {
         .buttonStyle(.plain).accessibilityAddTraits(category == value ? .isSelected : [])
     }
 
+    private var filters: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                filter(nil, label: console.labels["all_categories"] ?? "")
+                ForEach(console.catalog.categories, id: \.self) { filter($0, label: $0) }
+            }
+            .padding(5)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(p.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.text.opacity(0.09)))
+    }
+
     private func scenarioCard(_ scenario: ConsoleScenario) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(scenario.category).font(ConsoleTypography.caption).foregroundStyle(p.muted)
                 Spacer()
@@ -400,6 +414,7 @@ struct ConsoleLanding: View {
             }
             Text(scenario.title).font(ConsoleTypography.subheadline.bold()).foregroundStyle(p.text)
             Text(scenario.description).font(ConsoleTypography.caption).foregroundStyle(p.muted)
+                .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 Button(console.labels["run"] ?? "") { model.useConsoleScenario(scenario, run: true) }
@@ -409,10 +424,11 @@ struct ConsoleLanding: View {
                     .buttonStyle(ConsoleButtonStyle(primary: false, minimumHeight: presentation.minimumControlHeight))
                     .accessibilityLabel("Load the prompt for: \(scenario.title)")
             }
+            .padding(.top, 4)
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(p.surface.opacity(0.65), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(p.border))
+        .background(p.surface.opacity(0.6), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(p.text.opacity(0.09)))
     }
 }
 
