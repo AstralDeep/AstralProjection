@@ -550,33 +550,71 @@ final class CanvasCapture088Tests: XCTestCase {
         let coordinator = OfflineChartCoordinator()
         let webView = OfflineChartCoordinator.webView()
         webView.frame = CGRect(x: 0, y: 0, width: 296, height: 260)
+        #if os(macOS)
+            let window = NSWindow(
+                contentRect: webView.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.contentView = webView
+            window.contentView?.layoutSubtreeIfNeeded()
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+        #else
+            let window = UIWindow(frame: webView.frame)
+            let controller = UIViewController()
+            controller.view = webView
+            window.rootViewController = controller
+            window.isHidden = false
+            window.layoutIfNeeded()
+            webView.layoutIfNeeded()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+        #endif
+        func dismantle() async throws {
+            guard coordinator.document != nil else { return }
+            coordinator.dismantle(webView)
+            for _ in 0..<120 where coordinator.document != nil {
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        XCTAssertTrue(webView.window === window)
         coordinator.update(
             webView, component: component, viewportWidth: 320, captureRegistry: registry, captureNode: node)
-        for _ in 0..<100 {
-            if coordinator.readyForCapture,
-                (try? await webView.evaluateJavaScript("document.documentElement.dataset.chartState")) as? String
-                    == "ready"
-            {
-                break
+        do {
+            for _ in 0..<100 {
+                if coordinator.readyForCapture,
+                    (try? await webView.evaluateJavaScript("document.documentElement.dataset.chartState")) as? String
+                        == "ready"
+                {
+                    break
+                }
+                try await Task.sleep(for: .milliseconds(50))
             }
-            try await Task.sleep(for: .milliseconds(50))
+            XCTAssertTrue(coordinator.readyForCapture)
+            let state = try await webView.evaluateJavaScript("document.documentElement.dataset.chartState")
+            XCTAssertEqual(state as? String, "ready")
+            let before = try await coordinator.capturePixels(webView)
+            let _: Any? = try await withCheckedThrowingContinuation { continuation in
+                webView.callAsyncJavaScript(
+                    "await Plotly.relayout(document.getElementById('chart'), {'yaxis.range':[0,20]}); return true;",
+                    arguments: [:], in: nil, in: .page
+                ) { continuation.resume(with: $0.map { Optional($0) }) }
+            }
+            let after = try await coordinator.capturePixels(webView)
+            XCTAssertNotEqual(before, after)
+            try await dismantle()
+            XCTAssertNil(coordinator.document)
+            let capture = try JSONValue.parse(await registry.capture([component], isCurrent: { true }))
+            let pixels = try XCTUnwrap(capture["images"]?.arrayValue?.first?["data_url"]?.stringValue)
+            XCTAssertTrue(pixels.hasPrefix("data:image/png;base64,"))
+            XCTAssertGreaterThan(pixels.count, 100)
+        } catch {
+            try? await dismantle()
+            throw error
         }
-        let before = try await coordinator.capturePixels(webView)
-        let _: Any? = try await withCheckedThrowingContinuation { continuation in
-            webView.callAsyncJavaScript(
-                "await Plotly.relayout(document.getElementById('chart'), {'yaxis.range':[0,20]}); return true;",
-                arguments: [:], in: nil, in: .page
-            ) { continuation.resume(with: $0.map { Optional($0) }) }
-        }
-        let after = try await coordinator.capturePixels(webView)
-        XCTAssertNotEqual(before, after)
-        coordinator.dismantle(webView)
-        for _ in 0..<120 where coordinator.document != nil { try await Task.sleep(for: .milliseconds(50)) }
-        XCTAssertNil(coordinator.document)
-        let capture = try JSONValue.parse(await registry.capture([component], isCurrent: { true }))
-        let pixels = try XCTUnwrap(capture["images"]?.arrayValue?.first?["data_url"]?.stringValue)
-        XCTAssertTrue(pixels.hasPrefix("data:image/png;base64,"))
-        XCTAssertGreaterThan(pixels.count, 100)
     }
 }
 

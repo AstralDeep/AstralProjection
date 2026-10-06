@@ -28,7 +28,9 @@ final class WatchConsoleNavigationUITests: XCTestCase {
         app.launchEnvironment["ASTRAL_WATCH_NAVIGATION_PEER"] =
             "ws://127.0.0.1:\(try XCTUnwrap(peer.port))/watch-navigation"
         app.launch()
-        XCTAssertTrue(app.staticTexts["AstralDeep Console"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["Start here"].waitForExistence(timeout: 10), app.debugDescription)
+        XCTAssertTrue(app.buttons["New Chat"].exists, app.debugDescription)
+        XCTAssertFalse(app.staticTexts["AstralDeep Console"].exists, app.debugDescription)
     }
 
     override func tearDownWithError() throws {

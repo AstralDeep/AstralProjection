@@ -145,6 +145,7 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
           PYTHONPATH: windows-client
+          PYTEST_ADDOPTS: -o faulthandler_timeout=60
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `

@@ -144,7 +144,7 @@ async function setup(page, { width = 320, font = "100%", landing = { agents: [],
     window.__frames = [];
     window.__sockets = [];
     window.requestIdleCallback = () => 0;
-    window.fetch = async () => ({ json: async () => ({ authenticated: true,
+    window.fetch = async () => ({ status: 200, ok: true, json: async () => ({ authenticated: true,
       access_token: "fixture-owner-token", resumed: true, user_id: "owner" }) });
     class Socket {
       static OPEN = 1;
