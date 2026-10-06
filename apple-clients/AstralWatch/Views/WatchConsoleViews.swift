@@ -13,6 +13,7 @@ struct WatchConsoleHome: View {
         }
         .background(model.theme.palette.bg)
         .navigationTitle(model.consoleLabel("brand"))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 
@@ -149,9 +150,11 @@ struct WatchConsoleHomeContent: View {
     var body: some View {
         if let console = model.console {
             VStack(alignment: .leading, spacing: 12) {
-                Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)
-                Text(verbatim: console.labels["subtitle"] ?? "").font(ConsoleTypography.caption)
-                    .foregroundStyle(model.theme.palette.muted)
+                if model.consolePresentation?.navigationMode != .stack {
+                    Text(verbatim: console.labels["title"] ?? "").font(ConsoleTypography.title3)
+                    Text(verbatim: console.labels["subtitle"] ?? "").font(ConsoleTypography.caption)
+                        .foregroundStyle(model.theme.palette.muted)
+                }
                 Button {
                     model.newConversation()
                     model.consoleChatVisible = true
