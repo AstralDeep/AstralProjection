@@ -107,6 +107,31 @@ final class WorkReadTransport088Tests: XCTestCase {
         }
     }
 
+    func testEvidenceReadCloseUseOnlyRegisteredCurrentTransportAndRefuseGenericReplay() async throws {
+        let open = Outbound.uiEvent(
+            action: "chrome_open", sessionId: nil,
+            payload: .object([
+                "surface": .string("evidence"), "params": .object(["kind": .string("usage")]),
+            ]))
+        let close = Outbound.uiEvent(
+            action: "chrome_close", sessionId: nil, payload: .object(["surface": .string("evidence")]))
+        try await connected { client, peer in
+            await client.send(open)
+            await client.send(close)
+            let stale = await client.sendCurrentChromeEvent(open) { false }
+            XCTAssertFalse(stale)
+            let opened = await client.sendCurrentChromeEvent(open) { true }
+            let closed = await client.sendCurrentChromeEvent(close) { true }
+            XCTAssertTrue(opened)
+            XCTAssertTrue(closed)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
+            XCTAssertEqual(peer.reads, [open, close])
+            await client.stop()
+            let refused = await client.sendCurrentChromeEvent(open) { true }
+            XCTAssertFalse(refused)
+        }
+    }
+
     func testOnlyClosedReadAndCloseReachRegisteredLoopbackOnce() async throws {
         try await connected { client, peer in
             let request = WorkReadRequest(

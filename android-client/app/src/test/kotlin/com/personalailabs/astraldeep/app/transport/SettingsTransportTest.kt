@@ -6,6 +6,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import okhttp3.Request
 import okhttp3.WebSocket
 import okio.ByteString
@@ -75,6 +76,40 @@ class SettingsTransportTest {
             assertFalse(client.sendCurrentSettingsEvent(surface, "chrome_open", buildJsonObject { put("surface", surface) }, { true }) { _, _ -> error("private") })
         }
         assertTrue(socket.frames.isEmpty())
+    }
+
+    @Test
+    fun evidence_payload_is_unscoped_fresh_current_connection_and_never_replayed() {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val payload =
+            buildJsonObject {
+                put("surface", "evidence")
+                putJsonObject("params") { put("kind", "usage") }
+            }
+        for (action in listOf("chrome_open", "chrome_close")) {
+            client.sendEvent(action, "44444444-4444-4444-8444-444444444444", payload)
+            assertTrue(client.pendingActions().isEmpty())
+        }
+        val socket = Socket()
+        client.installOpenSocketForTest(socket)
+        client.replayPendingForTest(connection, {}, {}, { true })
+        var previous: String? = null
+        repeat(2) {
+            assertTrue(
+                client.sendCurrentSettingsEvent("evidence", "chrome_open", payload, { true }) { submission, _ ->
+                    assertFalse(submission.requestGeneration == previous)
+                    previous = submission.requestGeneration
+                },
+            )
+        }
+        for (raw in socket.frames) {
+            val frame = Json.parseToJsonElement(raw).jsonObject
+            assertEquals("null", frame.getValue("session_id").toString())
+            val fields = frame.getValue("payload").jsonObject
+            assertEquals(setOf("surface", "params", "request_generation", "submission_id"), fields.keys)
+            assertEquals(payload["params"], fields["params"])
+        }
+        assertTrue(client.pendingActions().isEmpty())
     }
 
     private class Socket : WebSocket {

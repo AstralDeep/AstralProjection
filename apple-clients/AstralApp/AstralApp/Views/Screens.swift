@@ -203,7 +203,8 @@ struct SurfaceView: View {
                             key, comp in
                             ComponentView(component: comp)
                                 .environment(
-                                    \.astralWorkReadSurface, ["work", "guidance"].contains(surface.surfaceKey)
+                                    \.astralWorkReadSurface,
+                                    ["work", "guidance", "evidence"].contains(surface.surfaceKey)
                                 )
                                 .environment(\.astralGuidanceSurface, surface.surfaceKey == "guidance")
                                 .id("\(surface.surfaceKey)-\(key)-\(model.guidanceUpdate?.generation ?? "legacy")")
@@ -253,6 +254,7 @@ struct SurfaceView: View {
             timedOut = false
             let workGeneration = model.workReadState.generation
             let guidanceGeneration = model.guidanceState.generation
+            let evidenceGeneration = model.evidenceReadGeneration
             if model.pendingSurface != nil { return }
             do {
                 try await Task.sleep(nanoseconds: 10_000_000_000)
@@ -262,6 +264,7 @@ struct SurfaceView: View {
             guard !Task.isCancelled, model.pendingSurface == nil else { return }
             if model.pendingSurfaceKey == "work" { model.failWorkRead(generation: workGeneration) }
             if model.pendingSurfaceKey == "guidance" { model.failGuidanceRequest(generation: guidanceGeneration) }
+            if model.pendingSurfaceKey == "evidence" { model.failEvidenceRead(generation: evidenceGeneration) }
             timedOut = true
         }
     }
@@ -298,7 +301,7 @@ struct SurfaceView: View {
     }
 
     private var surfaceTaskKey: String {
-        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")"
+        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")-\(model.evidenceReadGeneration ?? "")"
     }
 }
 

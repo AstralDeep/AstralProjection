@@ -656,6 +656,7 @@ class OrchestratorClient(
         onSubmission(submission)
         if (action == "update_device" && payload["snapshot_purpose"] != null ||
             isGuidanceNoteAction(action) || action == "chrome_turn_selection_set" ||
+            (payload["surface"] as? JsonPrimitive)?.contentOrNull == "evidence" ||
             action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
         ) {
             _queuedFailures.tryEmit(QueuedSubmissionFailure(submission, "Private surface request requires a current connection"))
