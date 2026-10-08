@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Exports bounded, repository-normalized Swift line coverage from an xcresult archive
-via the documented per-file xccov interface; consumed by
+via one documented xccov archive query; consumed by
 merge_xccov_line_coverage.py.
 """
 
@@ -227,37 +227,39 @@ def _tracked_swift_sources(
     return sources
 
 
-def _archive_file_list(
+def _archive_contents(
     repo: Path, xcresult: Path, *, export_deadline: float | None = None
-) -> list[str]:
+) -> dict[str, Any]:
     output = _bounded_command(
-        ["xcrun", "xccov", "view", "--archive", "--file-list", str(xcresult)],
+        ["xcrun", "xccov", "view", "--archive", "--json", str(xcresult)],
         cwd=repo,
-        max_stdout_bytes=MAX_FILE_LIST_BYTES,
+        max_stdout_bytes=MAX_TOTAL_XCCOV_BYTES,
         export_deadline=export_deadline,
     )
-    if not output.endswith(b"\n"):
-        raise ExportError("invalid_file_list", "xccov file list is truncated")
-    try:
-        paths = output[:-1].decode("utf-8", "strict").split("\n")
-    except UnicodeDecodeError as exc:
-        raise ExportError("invalid_file_list", "xccov file list is not UTF-8") from exc
-    if not paths or len(paths) > MAX_ARCHIVE_FILES or any(not path for path in paths):
+    if len(output) > MAX_TOTAL_XCCOV_BYTES:
+        raise ExportError("input_budget_exceeded", "xccov output exceeds its cumulative byte bound")
+    document = _strict_json(output)
+    if not isinstance(document, dict) or not document or len(document) > MAX_ARCHIVE_FILES:
         raise ExportError("invalid_file_list", "xccov file list is empty or exceeds its bound")
-    seen: set[str] = set()
-    for path in paths:
+    inventory_bytes = 0
+    for path in document:
+        try:
+            path_bytes = path.encode("utf-8", "strict")
+        except UnicodeEncodeError as exc:
+            raise ExportError("invalid_source_path", "coverage source path is not UTF-8") from exc
+        inventory_bytes += len(path_bytes) + 1
         if (
-            path in seen
-            or not path.startswith("/")
+            not path.startswith("/")
             or not path.endswith(".swift")
             or "\\" in path
+            or "\n" in path
             or "\r" in path
             or "\x00" in path
-            or len(path.encode("utf-8")) > MAX_PATH_BYTES
+            or len(path_bytes) > MAX_PATH_BYTES
+            or inventory_bytes > MAX_FILE_LIST_BYTES
         ):
             raise ExportError("invalid_file_list", "xccov file list has an invalid duplicate path")
-        seen.add(path)
-    return paths
+    return document
 
 
 def _normalize_archive_path(raw_path: str) -> str | None:
@@ -546,9 +548,9 @@ def export_xccov(
         repo.as_posix() if archive_repo_root is None else archive_repo_root
     )
     tracked = _tracked_swift_sources(repo, platform, export_deadline=deadline)
-    archive_paths = _archive_file_list(repo, bundle, export_deadline=deadline)
+    archive = _archive_contents(repo, bundle, export_deadline=deadline)
     selected: dict[str, str] = {}
-    for raw_path in archive_paths:
+    for raw_path in archive:
         archive_prefix = f"{archive_root}/"
         if raw_path.startswith(archive_prefix):
             try:
@@ -592,21 +594,11 @@ def export_xccov(
             repo, relative_path, export_deadline=deadline
         )
         remaining_input = MAX_TOTAL_XCCOV_BYTES - total_xccov_bytes
-        content = _bounded_command(
-            [
-                "xcrun",
-                "xccov",
-                "view",
-                "--archive",
-                "--file",
-                raw_path,
-                "--json",
-                str(bundle),
-            ],
-            cwd=repo,
-            max_stdout_bytes=min(MAX_FILE_JSON_BYTES, remaining_input),
-            export_deadline=deadline,
-        )
+        content = json.dumps(
+            {raw_path: archive[raw_path]}, separators=(",", ":")
+        ).encode("utf-8")
+        if len(content) > min(MAX_FILE_JSON_BYTES, remaining_input):
+            raise ExportError("producer_output_too_large", "coverage producer exceeded its byte bound")
         total_xccov_bytes += len(content)
         observations = _normalize_observations(
             content,

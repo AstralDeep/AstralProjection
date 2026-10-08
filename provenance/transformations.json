@@ -1214,8 +1214,8 @@
       "sourceBlob": "732806a9a9d545466f73d846ac5a5bd5ecc007ba",
       "sourceMode": "100644",
       "task": "T060/T006/T011/T016/T017/T020/T024/T025",
-      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Feature 088 CI fixture repair: validate both explicit test gates and exact loopback port constraints before enabling the DEBUG-only completion handshake. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Ordinary Apple settings parity: retain form defaults and labeled wire values, correlate current surface operations, preserve errors and saved-provider warnings, render accepted account palettes, support arbitrary color cancellation, and make dashboard and keyboard controls reachable. Correct test imports to the pinned Apple CI ordering with ordinary modules before testable modules; assertions and lint policy remain intact.",
-      "resultSha256": "53a3c36640a848c5eb89a1bc65e7e18023a1a46d74852d625baa277806faab74"
+      "reason": "Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Feature 088 CI fixture repair: validate both explicit test gates and exact loopback port constraints before enabling the DEBUG-only completion handshake. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Ordinary Apple settings parity: retain form defaults and labeled wire values, correlate current surface operations, preserve errors and saved-provider warnings, render accepted account palettes, support arbitrary color cancellation, and make dashboard and keyboard controls reachable. Correct test imports to the pinned Apple CI ordering with ordinary modules before testable modules; assertions and lint policy remain intact. Fair bounded CI: prove a draft edited while completion is held cannot change submitted credentials or create a second submission, and only the first authoritative terminal advances the mandatory provider screen; retain production timers and memory-only credentials.",
+      "resultSha256": "0659b117e689b17b92919a4bbeb70dbecf0268e1b68b2f4b5f6b0e262023f0fe"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppTests/StatusLifecycleTests.swift",
@@ -1259,8 +1259,8 @@
       "sourceBlob": "ed02627859c931e8c2685ddee43e2307ffd2c7bb",
       "sourceMode": "100644",
       "task": "T060/T010/T024/T025",
-      "reason": "Feature 088 native CI fixture repair: Hold the bounded DEBUG-only completion peer until actual active-state editing, duplicate-control, and phase checks finish; keep 250ms feedback and five-second terminal dismissal bounds with no automation-time deduction. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Native settings UI qualification uses the correct macOS click and iOS tap input, keeps secure-field and provider terminal assertions, and opens the collapsed conversation drawer before checking preserved text and attachments.",
-      "resultSha256": "29d7afcd8d94e2c4505b76c06228f9841a7f843654ae5f47f1b470f01a1d80cd"
+      "reason": "Feature 088 native CI fixture repair: Hold the bounded DEBUG-only completion peer until actual active-state editing, duplicate-control, and phase checks finish; keep 250ms feedback and five-second terminal dismissal bounds with no automation-time deduction. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Native settings UI qualification uses the correct macOS click and iOS tap input, keeps secure-field and provider terminal assertions, and opens the collapsed conversation drawer before checking preserved text and attachments. Fair bounded CI: type the append before starting the bounded held completion, retain post-submission editable, single-flight, phase and loopback-wire assertions, and verify completion through form dismissal and the composer. Replace shared-runner elapsed-time performance assertions with semantic state checks while preserving actual watchdog, scene, editability and retry behavior; the eight-second fixture and ten-second production watchdog remain unchanged.",
+      "resultSha256": "6a130c1ad7282bfb512361dd95a897913a5f3885c087cbdf1a977df0354e565b"
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift",
@@ -2302,9 +2302,9 @@
       "sourcePath": "scripts/export_xccov_line_coverage.py",
       "sourceBlob": "fb8854fb6756f735e3f6b99bc2430b9fde30b196",
       "sourceMode": "100644",
-      "resultSha256": "d2085688ab1df1e0948496d777b9ef71b5b7de4c535f4419d24b291fffd35ac4",
+      "resultSha256": "6d99f6e94fa161a2e0606456d5fe3829d008ad2ee8ef351aeac29b5a6321f239",
       "task": "T062",
-      "reason": "Bind original iOS xccov observations to exact source bytes and retained compiler mapping domains without manufacturing coverage rows or counts. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: accept discarded subrange integers up to the unsigned 64-bit bound xccov prints and locate every refused subrange, line count or non-executable count by file, line and field; line counts keep the signed 64-bit bound."
+      "reason": "Bind original iOS xccov observations to exact source bytes and retained compiler mapping domains without manufacturing coverage rows or counts. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: accept discarded subrange integers up to the unsigned 64-bit bound xccov prints and locate every refused subrange, line count or non-executable count by file, line and field; line counts keep the signed 64-bit bound. Fair bounded CI: read the documented whole archive JSON once, preserving strict path and current-checkout selection, every existing byte, file, observation and deadline bound, raw line arrays, and native-domain validation; real archive parity replaces repeated extraction overhead without changing qualification gates."
     },
     {
       "path": "scripts/run_android_next_major_canary.py",
