@@ -2977,9 +2977,9 @@
       "sourcePath": "windows-client/tests/test_byo_supervision_060.py",
       "sourceBlob": "f47bc7a74113baf1015a0aec2e386652c41e4613",
       "sourceMode": "100644",
-      "resultSha256": "92eb53d310b799c0f8d6654d4bad0856f486205c9111fc07c7754899fb719631",
-      "task": "T166",
-      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: delete the 700-trial supervision soak test; every behaviour it repeated keeps its own single-trial test. Fair CI 2026-09-27: run the registry release check for two cycles on one supervisor instead of 100. Batch identical neutral output-vector bytes in bounded partial-write-safe chunks instead of thousands of child syscalls, retaining every count, ring/oversized bound and ten-second guard; terminate only owned fixture children before re-raising a timeout. Cover waiting-reader visibility with Event-controlled chunk, callback, partial-line, EOF and read-failure cases while retaining every original conformance vector and lifecycle bound."
+      "resultSha256": "e59f2bd56767324301ca888bf884f1fed42d4b4b04241cdd2a207e3d94fc8133",
+      "task": "T166/T026",
+      "reason": "Consume the standalone packaged process-supervision vectors instead of the removed monorepo fixture path. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Fair CI 2026-09-27: delete the 700-trial supervision soak test; every behaviour it repeated keeps its own single-trial test. Fair CI 2026-09-27: run the registry release check for two cycles on one supervisor instead of 100. Batch identical neutral output-vector bytes in bounded partial-write-safe chunks instead of thousands of child syscalls, retaining every count, ring/oversized bound and ten-second guard; terminate only owned fixture children before re-raising a timeout. Cover waiting-reader visibility with Event-controlled chunk, callback, partial-line, EOF and read-failure cases while retaining every original conformance vector and lifecycle bound. Close physical output pipes outside the reader state condition, serialize pending closes, and cover concurrent publication, EOF, snapshots and preserved close-failure retry behavior without changing supervision bounds."
     },
     {
       "path": "windows-client/tests/test_canvas_convergence.py",
@@ -3391,9 +3391,9 @@
       "sourcePath": "windows-client/win_agent/process_supervision.py",
       "sourceBlob": "626db7a3ffacace8a8e5f2da6595fdee2156c5a1",
       "sourceMode": "100644",
-      "resultSha256": "8ca76f7a2ce08a7eab232f4f79ac7c960a4f7b7b906cf9bd6b3648c43f6ed0ba",
-      "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Notify waiting consumers once after each completed read chunk or EOF fragment has been committed under the shared condition, retaining line order, bounds and publication before callbacks."
+      "resultSha256": "b5ddb32541618d1242a490341bc6a5d619599af92bff88a57460701ad4adc0a2",
+      "task": "T063/T026",
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Notify waiting consumers once after each completed read chunk or EOF fragment has been committed under the shared condition, retaining line order, bounds and publication before callbacks. Close physical output pipes outside the reader state condition, serialize pending closes, and cover concurrent publication, EOF, snapshots and preserved close-failure retry behavior without changing supervision bounds."
     },
     {
       "path": "windows-client/win_agent/tools.py",
