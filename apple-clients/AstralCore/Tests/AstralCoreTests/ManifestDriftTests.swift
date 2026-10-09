@@ -258,6 +258,50 @@ final class ManifestDriftTests: XCTestCase {
         XCTAssertEqual(ClientDispositions.watch.frames["notification"], .handled)
     }
 
+    func testEvidenceInspectionPinsExistingModalFramesAndWatchHandoff() throws {
+        let root = try JSONValue.parse(Data(contentsOf: Self.manifestURL()))
+        let contract = try XCTUnwrap(root["presentation_contracts"]?["evidence_inspection"])
+        XCTAssertEqual(contract["version"], .number(1))
+        XCTAssertEqual(contract["surface_key"], .string("evidence"))
+        XCTAssertEqual(contract["navigation"]?["action"], .string("chrome_open"))
+        XCTAssertEqual(
+            contract["dispositions"],
+            .object([
+                "browser": .string("correlated_modal"), "windows": .string("correlated_modal"),
+                "android": .string("correlated_modal"), "macos": .string("correlated_modal"),
+                "ios": .string("correlated_modal"), "watchos": .string("phone_desktop_handoff"),
+            ]))
+        let fixtureURL = try Self.manifestURL().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("contracts/fixtures/evidence/inspection_surface.json")
+        let fixture = try JSONValue.parse(Data(contentsOf: fixtureURL))
+        XCTAssertEqual(fixture["version"], .number(1))
+        let generation = try XCTUnwrap(fixture["request"]?["request_generation"]?.stringValue)
+        XCTAssertEqual(continuityUUID4(generation), generation)
+        XCTAssertEqual(fixture["request"]?["action"], .string("chrome_open"))
+        XCTAssertEqual(fixture["request"]?["payload"]?["surface"], .string("evidence"))
+        for (name, response, type) in [
+            ("native_frame", "native_response", "chrome_surface"),
+            ("web_frame", "web_response", "chrome_render"),
+        ] {
+            let frame = try XCTUnwrap(fixture[name]?.objectValue)
+            let fields = try XCTUnwrap(contract[response]?["exact_fields"]?.arrayValue?.compactMap(\.stringValue))
+            XCTAssertEqual(Set(frame.keys), Set(fields))
+            XCTAssertEqual(frame["type"], .string(type))
+            XCTAssertEqual(frame["surface_key"], .string("evidence"))
+            XCTAssertEqual(frame["region"], .string("modal"))
+            XCTAssertEqual(frame["mode"], .string("replace"))
+            XCTAssertEqual(frame["request_generation"], .string(generation))
+        }
+        XCTAssertFalse(ClientDispositions.allPushTypes.contains { $0.hasPrefix("evidence") })
+        let watch = AstralComponent.list(from: fixture["watch_components"])
+        XCTAssertEqual(watch.count, fixture["watch_components"]?.arrayValue?.count)
+        XCTAssertTrue(watch.allSatisfy { ["badge", "keyvalue", "alert"].contains($0.type) })
+        let source = try XCTUnwrap(fixture["source_text"]?.stringValue)
+        XCTAssertFalse(watch.flatMap(\.keyValuePairs).contains { $0.1 == source })
+        XCTAssertTrue(watch.contains { $0.raw["message"]?.stringValue?.contains("phone or desktop") == true })
+        XCTAssertEqual(ClientDispositions.watch.frames["chrome_surface"], .handled)
+    }
+
     func testWatchNativeSetIsWithinProfileVocabulary() {
         // Charts/tables/code are degraded server-side; watch must not claim them
         let native = Set(ClientDispositions.watch.nativeComponentTypes)

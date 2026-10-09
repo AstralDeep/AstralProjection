@@ -139,6 +139,7 @@ class BoundedStreamReader:
         self._overlong_lines = 0
         self._maximum_retained_line_bytes = 0
         self._reader_done = False
+        self._pipe_closing = False
         self._pipe_closed = False
         self._read_error: str | None = None
 
@@ -208,14 +209,21 @@ class BoundedStreamReader:
 
     def close_pipe(self) -> None:
         with self._condition:
-            if self._pipe_closed:
+            if self._pipe_closed or self._pipe_closing:
                 return
+            self._pipe_closing = True
+        closed = False
+        try:
             try:
                 self._pipe.close()
             except (OSError, ValueError):
                 pass
-            self._pipe_closed = True
-            self._condition.notify_all()
+            closed = True
+        finally:
+            with self._condition:
+                self._pipe_closed = closed
+                self._pipe_closing = False
+                self._condition.notify_all()
 
     def _read_chunk(self) -> bytes:
         read = getattr(self._pipe, "read", None)
@@ -240,7 +248,7 @@ class BoundedStreamReader:
                 self._publish(completed)
         except (OSError, ValueError) as exc:
             with self._condition:
-                if not self._pipe_closed:
+                if not self._pipe_closed and not self._pipe_closing:
                     self._read_error = f"{type(exc).__name__}: {exc}"
         finally:
             with self._condition:

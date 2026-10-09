@@ -115,7 +115,20 @@ object Wire {
             "chrome_surface" -> {
                 val key = root.str("surface_key").orEmpty()
                 val request = root.strictString("request_generation")
-                if ((key == "guidance" && !GuidanceNotes.validSurface(root)) ||
+                val evidenceEnvelopeValid =
+                    key in setOf("evidence", "") &&
+                        root.keys ==
+                        setOf(
+                            "type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation",
+                        ) &&
+                        root.strictString("surface_key") != null && canonicalUuid4(request) != null &&
+                        root.strictString("region") == "modal" &&
+                        root.strictString("mode") == "replace" && root["admin_only"] == JsonPrimitive(false) &&
+                        root.strictString("title") != null && root.arr("components")?.all { component ->
+                            component is JsonObject && component.strictString("type") in setOf("alert", "badge", "keyvalue", "button")
+                        } == true
+                if ((key == "evidence" && !evidenceEnvelopeValid) ||
+                    (key == "guidance" && !GuidanceNotes.validSurface(root)) ||
                     (isPrivateChromeSurface(key) && (canonicalUuid4(request) == null || (root.str("mode") ?: "replace") != "replace")) ||
                     (
                         !isPrivateChromeSurface(key) && "request_generation" in root &&
@@ -135,6 +148,7 @@ object Wire {
                         mode = root.str("mode") ?: "replace",
                         requestGeneration = request,
                         selection = TurnSelection.fromJson(root["selection"]),
+                        evidenceEnvelopeValid = evidenceEnvelopeValid,
                     )
                 }
             }

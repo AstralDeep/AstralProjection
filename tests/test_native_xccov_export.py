@@ -40,10 +40,8 @@ def native_export(tmp_path, monkeypatch):
     def run(command, **kwargs):
         if command[0] == "git":
             return original(command, **kwargs)
-        if "--file-list" in command:
-            return (str(repo / paths[0]) + "\n").encode()
-        path = command[command.index("--file") + 1]
-        return json.dumps({path: rows}).encode()
+        assert command == ["xcrun", "xccov", "view", "--archive", "--json", str(bundle)]
+        return json.dumps({str(repo / paths[0]): rows}).encode()
     monkeypatch.setattr(exporter, "_bounded_command", run)
     return repo, bundle, paths, domain, rows
 
@@ -186,3 +184,119 @@ def test_non_executable_line_with_a_count_is_refused_where_it_occurs():
     assert refused.value.message == (
         f"non-executable line has an execution count at {_ARCHIVE_SOURCE} line 2"
     )
+
+
+def _bulk_bytes(native_export, monkeypatch, content):
+    original = exporter._bounded_command
+    calls = []
+
+    def run(command, **kwargs):
+        if command[0] == "git":
+            return original(command, **kwargs)
+        calls.append((command, kwargs))
+        assert command == ["xcrun", "xccov", "view", "--archive", "--json", str(native_export[1])]
+        return content
+
+    monkeypatch.setattr(exporter, "_bounded_command", run)
+    return calls
+
+
+def test_one_bulk_query_keeps_exact_sorted_rows_and_excludes_vendor_sources(native_export, monkeypatch):
+    repo, bundle, paths, _domain, rows = native_export
+    content = json.dumps({
+        str(repo / paths[1]): rows,
+        "/vendor/ThirdParty.swift": [{"line": 1, "isExecutable": True, "executionCount": 1000}],
+        str(repo / paths[0]): rows,
+    }).encode()
+    calls = _bulk_bytes(native_export, monkeypatch, content)
+    output = repo / "build/bulk.json"
+    value = exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform="ios")
+    assert value == {path: rows for path in sorted(paths)}
+    assert list(json.loads(output.read_bytes())) == sorted(paths)
+    assert len(calls) == 1
+    assert calls[0][1]["max_stdout_bytes"] == exporter.MAX_TOTAL_XCCOV_BYTES
+    assert calls[0][1]["export_deadline"] is not None
+
+
+@pytest.mark.parametrize("content", [
+    b"[]", b"{}", b"null", b"{", b'{"/vendor/NaN.swift":NaN}',
+    b'{"/vendor/Duplicate.swift":[],"/vendor/Duplicate.swift":[]}',
+    b'{"relative.swift":[]}', b'{"/wrong.txt":[]}', b'{"/wrong\\\\path.swift":[]}',
+    b'{"/wrong\\npath.swift":[]}', b'{"/wrong\\rpath.swift":[]}', b'{"/wrong\\u0000path.swift":[]}',
+    b'{"/vendor/Only.swift":[]}', b'{"/wrong\\ud800.swift":[]}', b'\xff',
+])
+def test_bulk_json_and_path_denials_leave_no_output(native_export, monkeypatch, content):
+    repo, bundle, _paths, _domain, _rows = native_export
+    _bulk_bytes(native_export, monkeypatch, content)
+    output = repo / "build/bulk.json"
+    with pytest.raises(exporter.ExportError):
+        exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform="ios")
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("bound", [
+    "MAX_TOTAL_XCCOV_BYTES", "MAX_ARCHIVE_FILES", "MAX_FILE_LIST_BYTES", "MAX_PATH_BYTES",
+    "MAX_FILE_JSON_BYTES", "MAX_TOTAL_OBSERVATIONS", "MAX_OUTPUT_BYTES",
+])
+def test_bulk_export_preserves_every_capacity_bound(native_export, monkeypatch, bound):
+    repo, bundle, paths, _domain, rows = native_export
+    content = json.dumps({str(repo / path): rows for path in paths}).encode()
+    _bulk_bytes(native_export, monkeypatch, content)
+    monkeypatch.setattr(exporter, bound, 32 if bound == "MAX_FILE_JSON_BYTES" else 1)
+    output = repo / "build/bulk.json"
+    with pytest.raises(exporter.ExportError):
+        exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform="ios")
+    assert not output.exists()
+
+
+def test_bulk_query_failure_is_not_retried_or_published(native_export, monkeypatch):
+    repo, bundle, _paths, _domain, _rows = native_export
+    original = exporter._bounded_command
+    calls = []
+
+    def run(command, **kwargs):
+        if command[0] == "git":
+            return original(command, **kwargs)
+        calls.append(command)
+        raise exporter.ExportError("producer_timeout", "coverage producer timed out")
+
+    monkeypatch.setattr(exporter, "_bounded_command", run)
+    output = repo / "build/bulk.json"
+    with pytest.raises(exporter.ExportError, match="coverage producer timed out"):
+        exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform="ios")
+    assert len(calls) == 1
+    assert not output.exists()
+
+
+def test_bulk_export_refuses_another_checkout_and_expired_deadline(native_export, monkeypatch):
+    repo, bundle, paths, _domain, rows = native_export
+    output = repo / "build/bulk.json"
+    _bulk_bytes(native_export, monkeypatch, json.dumps({"/another/" + paths[0]: rows}).encode())
+    with pytest.raises(exporter.ExportError) as foreign:
+        exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform="ios")
+    assert foreign.value.code == "unsafe_archive_source"
+    assert not output.exists()
+
+    original = exporter._bounded_command
+
+    def run(command, **kwargs):
+        if command[0] == "git":
+            return original(command, **kwargs)
+        monkeypatch.setattr(exporter.time, "monotonic", lambda: kwargs["export_deadline"] + 1)
+        return json.dumps({str(repo / paths[0]): rows}).encode()
+
+    monkeypatch.setattr(exporter, "_bounded_command", run)
+    with pytest.raises(exporter.ExportError) as expired:
+        exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform="ios")
+    assert expired.value.code == "export_timeout"
+    assert not output.exists()
+
+
+@pytest.mark.parametrize("platform", ["ios", "macos", "watchos"])
+def test_bulk_query_keeps_existing_platform_source_roots(native_export, monkeypatch, platform):
+    repo, bundle, paths, _domain, rows = native_export
+    _bulk_bytes(native_export, monkeypatch, json.dumps({str(repo / path): rows for path in paths}).encode())
+    output = repo / "build/bulk.json"
+    report = exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform=platform)
+    expected = paths[1:] if platform == "watchos" else paths
+    assert report == {path: rows for path in expected}

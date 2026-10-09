@@ -21,6 +21,94 @@
       "provider_save": "Validate input, authorization, sharing acknowledgement and same-endpoint blank-key reuse before encrypted persistence. Acknowledge the committed configuration before a separate bounded connection check. Failed external probes emit a warning that states settings remain saved; they never reclassify or erase a completed Save. Validation and persistence failures do not acknowledge a save. Explicit Test connection and Load models remain independent operations.",
       "watch": "Generic forms and colors retain the existing advertised phone/desktop handoffs; scoped guidance forms keep their separate capability contract."
     },
+    "evidence_inspection": {
+      "version": 1,
+      "fixture": "contracts/fixtures/evidence/inspection_surface.json",
+      "surface_key": "evidence",
+      "authority": "Host authenticates the original registered human and current session, binds a fresh read-only operation to the current owner, conversation and connection, and rechecks source permissions, integrity, privacy and fixed expiry before delivery. Presentation supplies no authority.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "params": [
+          {
+            "kind": "source | preview",
+            "reference": "opaque obs_ reference",
+            "offset": "non-negative UTF-8 byte offset"
+          },
+          {
+            "view_id": "opaque view_ reference"
+          },
+          {
+            "kind": "usage"
+          }
+        ],
+        "identity": "fresh canonical lowercase UUID4 request_generation per request, including retry",
+        "delivery": "current connection only; never queue or reconnect-replay"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "exact_fields": [
+          "type",
+          "region",
+          "html",
+          "mode",
+          "surface_key",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "html": "shared escaped and sanitized Projection rendering"
+      },
+      "retirement": [
+        "new evidence inspection",
+        "surface navigation or close",
+        "conversation navigation or send",
+        "timeout",
+        "owner or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept exactly one complete reply with the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated replies. The host performs a final current-operation and source check after every awaited read.",
+      "content": {
+        "types": [
+          "alert",
+          "badge",
+          "keyvalue",
+          "button"
+        ],
+        "text": "Literal untrusted source, preview or generated text in temporary modal values; never durable conversation, workspace, completion summary, source instructions or executable links. Durable cards contain bounded host-owned labels, opaque references, digests, byte positions and usage only.",
+        "page_utf8_bytes": 16384,
+        "preview_utf8_bytes": 1024,
+        "keyvalue_label": "An explicit label takes precedence; otherwise key names the row. Values remain literal untrusted text."
+      },
+      "dispositions": {
+        "browser": "correlated_modal",
+        "windows": "correlated_modal",
+        "android": "correlated_modal",
+        "macos": "correlated_modal",
+        "ios": "correlated_modal",
+        "watchos": "phone_desktop_handoff"
+      },
+      "watch": "Host omits generic modal inspection actions and renders content-free metadata with an explicit phone or desktop handoff. Source text is not sent to the watch."
+    },
     "guidance_notes_088": {
       "version": 1,
       "fixture": "contracts/fixtures/guidance_088/notes_surface.json",

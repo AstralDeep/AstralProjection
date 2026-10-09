@@ -108,6 +108,7 @@ data class PrivateSurfaceRequest(
     val connectionGeneration: String,
     val surfaceKey: String,
     val action: String = "chrome_open",
+    val conversationId: String? = null,
 )
 
 data class UiState(
@@ -846,7 +847,9 @@ class AppViewModel(
             }
             return
         }
-        if (action == "chrome_close" && isPrivateChromeSurface(_state.value.pendingSurfaceKey)) {
+        if (action == "chrome_close" &&
+            (isPrivateChromeSurface(_state.value.pendingSurfaceKey) || _state.value.pendingSurfaceKey == "evidence")
+        ) {
             _state.update {
                 retirePrivateSurface(it).copy(screen = Screen.Chat, pendingSurfaceKey = "", pendingSurfaceParams = JsonObject(emptyMap()))
             }
@@ -952,7 +955,15 @@ class AppViewModel(
         background: Boolean = false,
     ): UiState {
         val live = s.canvas.dropWelcome()
-        return s.copy(
+        val current =
+            if (s.pendingSurfaceKey == "evidence") {
+                retirePrivateSurface(
+                    s,
+                ).copy(screen = Screen.Chat, pendingSurfaceKey = "")
+            } else {
+                s
+            }
+        return current.copy(
             workspaceStarted = true,
             canvas = live,
             preTurnCanvas = live,
@@ -1257,12 +1268,14 @@ class AppViewModel(
         }
         val owner = account
         val epoch = workspaceEpoch
+        val chat = _state.value.activeChatId
         _state.update {
             finishPrivateSurface(it).copy(
                 screen = Screen.Surface,
                 pendingSurfaceKey = surface,
                 pendingSurfaceParams = params,
-                pendingSurface = if (action == "chrome_open" && it.pendingSurfaceKey != surface) null else it.pendingSurface,
+                pendingSurface =
+                    if (action == "chrome_open" && (it.pendingSurfaceKey != surface || surface == "evidence")) null else it.pendingSurface,
                 privateSurfaceFailed = false,
                 surfaceErrorMessage = null,
             )
@@ -1271,14 +1284,15 @@ class AppViewModel(
         val sent =
             client.sendCurrentSettingsEvent(surface, action, payload, {
                 account == owner && workspaceEpoch == epoch && _state.value.screen == Screen.Surface &&
-                    _state.value.pendingSurfaceKey == surface && _state.value.privateSurfaceRequest == issued
+                    _state.value.pendingSurfaceKey == surface && _state.value.privateSurfaceRequest == issued &&
+                    (surface != "evidence" || _state.value.activeChatId == chat)
             }) { submission, connection ->
-                issued = PrivateSurfaceRequest(submission.requestGeneration, connection, surface, action)
+                issued = PrivateSurfaceRequest(submission.requestGeneration, connection, surface, action, chat)
                 _state.update { projectLocalSubmission(it, submission).copy(privateSurfaceRequest = issued) }
             }
         if (!sent && _state.value.privateSurfaceRequest == issued && _state.value.pendingSurfaceKey == surface) {
             _state.update {
-                finishPrivateSurface(it).copy(
+                (if (it.pendingSurfaceKey == "evidence") retirePrivateSurface(it) else finishPrivateSurface(it)).copy(
                     privateSurfaceFailed = true,
                     surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
                     surfaceErrorMessage = "Couldn't send this action. Reconnect and retry.",
@@ -1326,7 +1340,7 @@ class AppViewModel(
     internal fun timeoutPrivateSurface(requestGeneration: String?) {
         if (requestGeneration != null && _state.value.privateSurfaceRequest?.requestGeneration == requestGeneration) {
             _state.update {
-                finishPrivateSurface(it).copy(
+                (if (it.pendingSurfaceKey == "evidence") retirePrivateSurface(it) else finishPrivateSurface(it)).copy(
                     privateSurfaceFailed = true,
                     surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
                     surfaceErrorMessage = "The server hasn't confirmed this action. Reload this screen before trying again.",
@@ -1348,7 +1362,8 @@ class AppViewModel(
 
     private fun retirePrivateSurface(s: UiState): UiState =
         finishPrivateSurface(s).copy(
-            pendingSurface = if (isPrivateChromeSurface(s.pendingSurfaceKey)) null else s.pendingSurface,
+            pendingSurface =
+                if (isPrivateChromeSurface(s.pendingSurfaceKey) || s.pendingSurfaceKey == "evidence") null else s.pendingSurface,
             privateSurfaceFailed = isPrivateChromeSurface(s.pendingSurfaceKey),
         )
 
@@ -1365,7 +1380,9 @@ class AppViewModel(
         )
 
     private fun disconnectSurface(s: UiState): UiState =
-        if (s.privateSurfaceRequest?.let { !isPrivateChromeSurface(it.surfaceKey) } == true) {
+        if (s.pendingSurfaceKey == "evidence") {
+            retirePrivateSurface(s).copy(surfaceReloadRequired = true)
+        } else if (s.privateSurfaceRequest?.let { !isPrivateChromeSurface(it.surfaceKey) } == true) {
             failSettingsSurface(s, "The connection interrupted this action. Reload this screen before trying again.", true)
         } else {
             retirePrivateSurface(s)
@@ -1656,6 +1673,15 @@ class AppViewModel(
             }
             is Inbound.ChromeSurface ->
                 when {
+                    (s.pendingSurfaceKey == "evidence" || msg.surfaceKey == "evidence") &&
+                        (
+                            s.connection != ConnectionState.Connected || s.screen != Screen.Surface ||
+                                s.pendingSurfaceKey != "evidence" || s.privateSurfaceRequest?.surfaceKey != "evidence" ||
+                                s.privateSurfaceRequest.connectionGeneration != s.connectionGeneration ||
+                                s.privateSurfaceRequest.conversationId != s.activeChatId ||
+                                msg.requestGeneration != s.privateSurfaceRequest.requestGeneration || msg.requestGeneration == null ||
+                                !msg.evidenceEnvelopeValid || msg.mode != "replace" || msg.surfaceKey !in setOf("evidence", "")
+                        ) -> s
                     s.screen == Screen.Surface && isPrivateChromeSurface(s.pendingSurfaceKey) && msg.surfaceKey != s.pendingSurfaceKey -> s
                     msg.mode == "mandatory" && msg.requestGeneration == null && !isPrivateChromeSurface(msg.surfaceKey) ->
                         retirePrivateSurface(s).copy(
@@ -1846,7 +1872,14 @@ class AppViewModel(
     ): UiState {
         val switchingChats =
             binding.chatId != null && s.activeChatId != null && binding.chatId != s.activeChatId
-        val current = if (s.connectionGeneration != binding.connectionGeneration) retirePrivateSurface(s) else s
+        val current =
+            if (s.connectionGeneration != binding.connectionGeneration ||
+                s.pendingSurfaceKey == "evidence" && binding.chatId != null && binding.chatId != s.activeChatId
+            ) {
+                retirePrivateSurface(s)
+            } else {
+                s
+            }
         return current.copy(
             activeChatId = binding.chatId ?: s.activeChatId,
             connectionGeneration = binding.connectionGeneration,

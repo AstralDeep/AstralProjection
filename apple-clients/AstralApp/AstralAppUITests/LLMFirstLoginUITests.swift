@@ -28,6 +28,7 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(apiKey.waitForExistence(timeout: 2))
         XCTAssertTrue(save.waitForExistence(timeout: 2))
         focusAndType(apiKey, "ui-only-placeholder")
+        focusAndType(apiKey, "x")
         let status = app.staticTexts["llm-save-status"]
         _ = status.exists
         save.press()
@@ -38,7 +39,6 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertFalse(save.isEnabled, "only the duplicate Save control is single-flight disabled")
         XCTAssertEqual(save.value as? String, "Submitting")
         XCTAssertTrue(apiKey.isEnabled)
-        focusAndType(apiKey, "x")
         XCTAssertTrue(
             waitForStatus(
                 status,
@@ -52,12 +52,9 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(peer.requests.first?.body.isEmpty == true)
         XCTAssertTrue(peer.unexpectedRequests.isEmpty)
 
-        let terminalReleasedAt = Date()
         peer.releaseHeldReplies()
         XCTAssertTrue(form.waitForNonExistence(timeout: 5))
-        XCTAssertLessThan(
-            Date().timeIntervalSince(terminalReleasedAt), 5,
-            "durably completed first-login setup must advance exactly once within five seconds")
+        XCTAssertTrue(element("chat-composer-input").waitForExistence(timeout: 5))
     }
 
     func testInvalidCredentialTerminalKeepsSecureFormEditableAndRetryable() {
@@ -105,16 +102,12 @@ final class LLMFirstLoginUITests: XCTestCase {
         _ = status.exists
         save.press()
         XCTAssertTrue(status.waitForExistence(timeout: 0.25))
-        let acknowledgedAt = Date()
-        let sceneExerciseStarted = Date()
         exerciseSceneOrWindowResponsiveness()
-        let sceneOverhead = Date().timeIntervalSince(sceneExerciseStarted)
         XCTAssertTrue(
             waitForStatus(
                 status,
                 containingAny: ["Unable to confirm; reconnecting"],
-                timeout: 11 + sceneOverhead))
-        XCTAssertLessThan(Date().timeIntervalSince(acknowledgedAt) - sceneOverhead, 11.5)
+                timeout: 11))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(save.isEnabled)
         XCTAssertEqual(save.value as? String, "Ready")

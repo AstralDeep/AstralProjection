@@ -391,9 +391,8 @@ def _r_keyvalue(c, ctx):
         )
         bl = _vbox(2, (12, 8, 12, 8))
         box.setLayout(bl)
-        bl.addWidget(
-            _label(str(item.get("label", "")).upper(), color=T.MUTED, size=11, bold=True)
-        )
+        item_label = item.get("label", item.get("key", ""))
+        bl.addWidget(_label(str(item_label).upper(), color=T.MUTED, size=11, bold=True))
         bl.addWidget(_label(item.get("value", ""), size=14, bold=True))
         if item.get("hint"):
             bl.addWidget(_label(str(item["hint"]), color=T.MUTED, size=11))

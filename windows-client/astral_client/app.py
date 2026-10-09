@@ -1337,6 +1337,9 @@ class SurfaceDialog(QDialog):
         self._timer.stop()
         if callable(self._timeout_observer):
             self._timeout_observer()
+        if self._surface == "evidence":
+            self._surface_payload = None
+            self._retained_controls = None
         self._status.setVisible(False)
         if self._surface_payload is not None:
             self._retained_controls = _capture_controls(self._inner)
@@ -2626,6 +2629,16 @@ class MainWindow(QMainWindow):
         self._retire_guidance()
         self._retire_settings()
         self._surface_owner = None
+        if self._surface_dialog is not None and self._surface_dialog._surface == "evidence":
+            self._surface_dialog.set_surface("Evidence inspection", [])
+
+    def _retire_evidence(self) -> None:
+        dialog = self._surface_dialog
+        if dialog is not None and dialog._surface == "evidence":
+            self._retire_settings()
+            self._surface_owner = None
+            dialog.set_surface("Evidence inspection", [])
+            dialog.close()
 
     def _console_open_surface(self, surface: str, title: str, params: dict) -> None:
         if self._console_model is None:
@@ -2671,7 +2684,8 @@ class MainWindow(QMainWindow):
         return (self._settings_ticket is ticket and ticket[0] is self.client
                 and ticket[1] == getattr(self.client, "connection_generation", None)
                 and ticket[2] == self._resume_store.storage_key and dialog is not None
-                and dialog.isVisible() and dialog._surface == ticket[4])
+                and dialog.isVisible() and dialog._surface == ticket[4]
+                and (ticket[4] != "evidence" or ticket[5] == self.active_chat))
 
     def _send_settings(self, action: str, payload: dict) -> bool:
         dialog = self._surface_dialog
@@ -2683,7 +2697,7 @@ class MainWindow(QMainWindow):
         if not callable(sender) or not _canonical_uuid4(connection) or not owner:
             dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
             return False
-        ticket = (self.client, connection, owner, str(uuid.uuid4()), dialog._surface)
+        ticket = (self.client, connection, owner, str(uuid.uuid4()), dialog._surface, self.active_chat)
         self._settings_ticket = ticket
         sent = sender(dialog._surface, action, payload, ticket[3], is_current=lambda: self._settings_current(ticket))
         if not sent and self._settings_ticket is ticket:
@@ -2885,6 +2899,7 @@ class MainWindow(QMainWindow):
 
     def _set_active_chat(self, chat_id: Optional[str], *, persist: bool = True) -> None:
         if self.active_chat != chat_id:
+            self._retire_evidence()
             self._viewport.retire()
             self._viewport.applied = self._viewport.desired = None
             self._viewport.retry_required = False
@@ -3022,6 +3037,7 @@ class MainWindow(QMainWindow):
         )
 
     def _clear_transient_conversation(self) -> None:
+        self._retire_evidence()
         self._continuity.clear_transient()
         self._transient_canvas_components.clear()
         self._transient_chat_lines.clear()
@@ -3251,6 +3267,21 @@ class MainWindow(QMainWindow):
     def _on_chrome_surface(self, msg: dict) -> None:
         dialog = self._surface_dialog
         ticket = self._settings_ticket
+        evidence = (msg.get("surface_key") == "evidence" or ticket is not None and ticket[4] == "evidence"
+                    or dialog is not None and dialog.isVisible() and dialog._surface == "evidence")
+        if evidence and (
+            ticket is None or ticket[4] != "evidence" or not self._settings_current(ticket)
+            or set(msg) != {"type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation"}
+            or msg.get("type") != "chrome_surface" or not isinstance(msg.get("surface_key"), str)
+            or msg["surface_key"] not in {"evidence", ""}
+            or msg.get("region") != "modal" or msg.get("mode") != "replace" or msg.get("admin_only") is not False
+            or not _canonical_uuid4(msg.get("request_generation")) or msg["request_generation"] != ticket[3]
+            or not isinstance(msg.get("title"), str) or not isinstance(msg.get("components"), list)
+            or any(not isinstance(row, dict) or not isinstance(row.get("type"), str)
+                   or row["type"] not in {"alert", "badge", "keyvalue", "button"}
+                   for row in msg["components"])
+        ):
+            return
         if (ticket is not None and msg.get("mode") == "mandatory"
                 and msg.get("request_generation") is None and msg.get("surface_key") not in {"work", "guidance", "agent_intro"}):
             self._retire_settings()
@@ -3849,6 +3880,7 @@ class MainWindow(QMainWindow):
         atts = self._sendable_attachments()
         if not text and not atts:
             return
+        self._retire_evidence()
         self._input.clear()
         generation = (
             self._begin_conversation_request("commit", self.active_chat)
@@ -3883,6 +3915,14 @@ class MainWindow(QMainWindow):
         self._clear_sent_attachments()
 
     def _emit(self, action: str, payload: dict) -> None:
+        if action == "chat_message":
+            self._retire_evidence()
+        if action == "chrome_close" and (
+            payload.get("surface") == "evidence"
+            or self._surface_dialog is not None and self._surface_dialog._surface == "evidence"
+        ):
+            self._retire_evidence()
+            return
         if action == "compose_prompt":
             self._compose_surface_prompt(payload)
             return
@@ -3994,6 +4034,7 @@ class MainWindow(QMainWindow):
                     self._surface_dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
             return
         if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
+            self._retire_evidence()
             if self._settings_ticket is not None and self._surface_dialog is not None and self._surface_dialog.isVisible():
                 self._surface_dialog._on_timeout("The connection interrupted this action. Reload settings before trying again.")
             self._viewport.retire(reset=True)

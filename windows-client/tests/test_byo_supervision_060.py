@@ -280,6 +280,79 @@ def test_reader_error_timeout_eof_and_tiny_ring_paths_are_bounded() -> None:
     assert tiny.snapshot().dropped_lines == 1
 
 
+@pytest.mark.parametrize("terminal", [b"READY payload\n", OSError("closing read")])
+def test_reader_publication_and_snapshot_progress_while_pipe_close_blocks(terminal) -> None:
+    close_entered = threading.Event()
+    release_close = threading.Event()
+    reader_settled = threading.Event()
+
+    class ClosingPipe(_ControlledPipe):
+        close_count = 0
+
+        def close(self) -> None:
+            self.close_count += 1
+            close_entered.set()
+            release_close.wait()
+            super().close()
+
+    pipe = ClosingPipe()
+    callbacks: list[bytes] = []
+    reader = BoundedStreamReader(
+        stream=OutputStream.STDOUT,
+        pipe=pipe,
+        on_line=callbacks.append,
+        on_eof=lambda _: reader_settled.set(),
+    )
+    threads = [
+        threading.Thread(target=reader.run, daemon=True),
+        threading.Thread(target=reader.close_pipe, daemon=True),
+    ]
+    try:
+        threads[0].start()
+        assert pipe.requests.get(timeout=5) == DEFAULT_PROCESS_SUPERVISION_LIMITS.read_chunk_bytes
+        threads[1].start()
+        assert close_entered.wait(5)
+        pipe.chunks.put(terminal)
+        pipe.chunks.put(b"")
+        assert reader_settled.wait(5)
+        snapshot = reader.snapshot()
+        assert snapshot.reader_done and not snapshot.pipe_closed
+        assert snapshot.read_error is None
+        assert callbacks == ([terminal.rstrip(b"\n")] if isinstance(terminal, bytes) else [])
+        reader.close_pipe()
+        assert pipe.close_count == 1
+    finally:
+        release_close.set()
+        for thread in threads:
+            if thread.ident is not None:
+                thread.join(5)
+        assert all(not thread.is_alive() for thread in threads)
+    assert reader.snapshot().pipe_closed
+    assert pipe.close_called and pipe.close_count == 1
+
+
+@pytest.mark.parametrize("error", [OSError("close failure"), ValueError("already closed"), RuntimeError("close failure")])
+def test_reader_close_failure_preserves_the_error_contract_and_allows_retry(error) -> None:
+    class FailingClosePipe(_RecordingPipe):
+        def close(self) -> None:
+            if not self.close_called:
+                self.close_called = True
+                raise error
+            super().close()
+
+    pipe = FailingClosePipe(b"")
+    reader = BoundedStreamReader(stream=OutputStream.STDOUT, pipe=pipe)
+    if isinstance(error, RuntimeError):
+        with pytest.raises(RuntimeError, match="close failure"):
+            reader.close_pipe()
+        assert not reader.snapshot().pipe_closed
+    else:
+        reader.close_pipe()
+        assert reader.snapshot().pipe_closed
+    reader.close_pipe()
+    assert reader.snapshot().pipe_closed
+
+
 def test_reader_publishes_multi_line_chunk_to_waiter_before_callbacks_finish(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -2671,7 +2671,7 @@ class OrchestratorClient(QObject):
         )
         local.validate()
         self.submission.emit(local)
-        if _is_guidance_event(action, safe_payload) or action == "update_device":
+        if _is_guidance_event(action, safe_payload) or action == "update_device" or safe_payload.get("surface") == "evidence":
             self._safe_status("send_rejected:" + action)
             return local
         if action == "chrome_open" and safe_payload.get("surface") == "work":

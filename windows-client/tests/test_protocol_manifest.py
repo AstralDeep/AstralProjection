@@ -5,6 +5,7 @@ client-local-action and voice-disposition drift guards.
 
 import json
 from pathlib import Path
+from uuid import UUID
 
 from astral_client.protocol_manifest import (
     CLASSIFICATION,
@@ -197,3 +198,35 @@ def test_manifest_declares_exact_admission_refusal_contract():
         "additional_fields": False,
         "codes": ADMISSION_REFUSAL_CODES,
     }
+
+
+def test_evidence_inspection_uses_existing_correlated_modal_and_watch_handoff():
+    data = _manifest()
+    contract = data["presentation_contracts"]["evidence_inspection"]
+    fixture = json.loads((REPO_ROOT / contract["fixture"]).read_text(encoding="utf-8"))
+    assert contract["version"] == fixture["version"] == 1
+    assert contract["surface_key"] == "evidence"
+    assert contract["navigation"]["action"] == fixture["request"]["action"] == "chrome_open"
+    assert fixture["request"]["payload"]["surface"] == "evidence"
+    assert contract["dispositions"] == {
+        "browser": "correlated_modal", "windows": "correlated_modal", "android": "correlated_modal",
+        "macos": "correlated_modal", "ios": "correlated_modal", "watchos": "phone_desktop_handoff",
+    }
+    generation = fixture["request"]["request_generation"]
+    assert str(UUID(generation)) == generation and UUID(generation).version == 4
+    for name, contract_name, frame_type in (
+        ("native_frame", "native_response", "chrome_surface"),
+        ("web_frame", "web_response", "chrome_render"),
+    ):
+        frame = fixture[name]
+        assert set(frame) == set(contract[contract_name]["exact_fields"])
+        assert frame["type"] == frame_type and frame["request_generation"] == generation
+        assert frame["region"] == "modal" and frame["mode"] == "replace" and frame["surface_key"] == "evidence"
+    assert is_handled("chrome_surface")
+    assert len(data["accept_actions"]) == 138 and len(_manifest_push_types()) == 72
+    assert not any(name.startswith("evidence") for name in _manifest_push_types())
+    assert {component["type"] for component in fixture["native_frame"]["components"]} <= set(data["component_types"])
+    watch = fixture["watch_components"]
+    assert json.dumps(fixture["source_text"], ensure_ascii=False) not in json.dumps(watch, ensure_ascii=False)
+    assert all(component["type"] in {"badge", "keyvalue", "alert"} for component in watch)
+    assert any("phone or desktop" in component.get("message", "") for component in watch)

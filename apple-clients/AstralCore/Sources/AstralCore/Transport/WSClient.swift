@@ -116,6 +116,7 @@ public actor WSClient {
     public func send(_ text: String) {
         guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text),
             !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text),
+            !ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text)
         else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
