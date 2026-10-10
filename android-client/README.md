@@ -86,6 +86,34 @@ The app authenticates **only** via Keycloak OIDC (AppAuth PKCE) — there is no
 dev-token or mock-auth shortcut (the unused `DevAuth` path was removed in feature
 044).
 
+An explicit deployment build retains the registered `astral-mobile` public client
+and `com.personalailabs.astraldeep:/oauth2redirect` callback. Supply all three
+endpoint properties together:
+
+```bash
+./gradlew :app:assembleDebug \
+  -PastralApiBase=https://backend.example.invalid \
+  -PastralWebSocketUrl=wss://backend.example.invalid/ws \
+  -PastralKeycloakAuthority=https://iam.example.invalid/realms/Astral
+```
+
+REST and WebSocket must use the same TLS origin, with the REST origin at `/` and
+the WebSocket path at `/ws`. Keycloak must be a canonical HTTPS realm authority.
+Credentials, query strings, fragments, insecure schemes and partial profiles are
+rejected during Gradle configuration and by the Android-free runtime validator.
+Optional `astralOidcClientId` and `astralOidcRedirectUri` properties may only
+restate the registered identities. The backend must allow the mobile client and
+provision its public PKCE/S256 callback; the normal server session and AppAuth
+flows remain required. A secure staging build uses the same stock application
+code and certificate verification as a release build, with its compiled endpoint
+profile bound to the retained APK digest.
+
+Without an explicit profile, the existing debug loopback and release deployment
+values are preserved. This does not make insecure debug endpoints eligible for
+secure sign-in. `:app:verifyDeploymentBuildProfile` exercises accepted and denied
+build profiles and runs before every APK build; `:core:test` and the app JVM tests
+also verify runtime validation and generated configuration consumption.
+
 ## Instrumented / UI tests (emulator)
 
 ```bash

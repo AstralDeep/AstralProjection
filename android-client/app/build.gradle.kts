@@ -13,6 +13,7 @@ import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.compile.JavaCompile
 import org.jlleitschuh.gradle.ktlint.tasks.BaseKtLintCheckTask
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
@@ -133,6 +134,95 @@ check(currentVersionCode >= migrationVersionCodeFloor) {
     "Android versionCode must not regress below the AstralProjection migration floor"
 }
 
+object AndroidDeploymentProfiles {
+    fun validate(
+        api: String,
+        websocket: String,
+        issuer: String,
+        client: String,
+        redirect: String,
+    ) {
+        fun endpoint(
+            value: String,
+            scheme: String,
+        ): URI {
+            require(value.length in 1..2048 && value.all { it.code in 33..126 }) { "Invalid deployment URI" }
+            val uri = runCatching { URI(value) }.getOrElse { throw IllegalArgumentException("Invalid deployment URI") }
+            require(
+                uri.scheme == scheme && uri.host != null && uri.rawUserInfo == null &&
+                    uri.rawQuery == null && uri.rawFragment == null && uri.port in -1..65535 && uri.port != 0 &&
+                    uri.rawPath == uri.path && uri.normalize() == uri,
+            ) { "Invalid deployment URI" }
+            return uri
+        }
+        val backend = endpoint(api, "https")
+        val socket = endpoint(websocket, "wss")
+        val authority = endpoint(issuer, "https")
+        require(backend.path in setOf("", "/") && socket.path == "/ws") { "Invalid backend deployment path" }
+        require(
+            backend.host.equals(socket.host, ignoreCase = true) &&
+                (if (backend.port == -1) 443 else backend.port) == (if (socket.port == -1) 443 else socket.port),
+        ) {
+            "REST and WebSocket deployment origins differ"
+        }
+        require(Regex("/(?:[A-Za-z0-9._~-]+/)*realms/[A-Za-z0-9._~-]+").matches(authority.path)) {
+            "Invalid Keycloak realm authority"
+        }
+        require(client == "astral-mobile" && redirect == "com.personalailabs.astraldeep:/oauth2redirect") {
+            "Registered Android OIDC identity cannot change"
+        }
+    }
+}
+
+abstract class VerifyAndroidDeploymentProfileTask : DefaultTask() {
+    @TaskAction
+    fun verify() {
+        val valid =
+            listOf(
+                "https://example.invalid",
+                "wss://example.invalid/ws",
+                "https://iam.example.invalid/realms/Astral",
+                "astral-mobile",
+                "com.personalailabs.astraldeep:/oauth2redirect",
+            )
+        AndroidDeploymentProfiles.validate(valid[0], valid[1], valid[2], valid[3], valid[4])
+        AndroidDeploymentProfiles.validate("https://example.invalid:443/", valid[1], valid[2], valid[3], valid[4])
+        val invalid =
+            listOf(
+                0 to "http://example.invalid", 0 to "https://owner:secret@example.invalid", 0 to "https://example.invalid/api",
+                0 to "https://example.invalid?key=value", 0 to "https://example.invalid#fragment", 0 to "https://example.invalid:0",
+                0 to "https://example.invalid:65536", 1 to "ws://example.invalid/ws", 1 to "wss://foreign.invalid/ws",
+                1 to "wss://example.invalid:9443/ws", 1 to "wss://example.invalid/other", 2 to "https://iam.example.invalid",
+                2 to "https://iam.example.invalid/realms/Astral/", 2 to "https://iam.example.invalid/realms/%41stral",
+                3 to "other-client", 4 to "other:/oauth2redirect",
+            )
+        for ((position, value) in invalid) {
+            val candidate = valid.toMutableList().apply { this[position] = value }
+            check(
+                runCatching { AndroidDeploymentProfiles.validate(candidate[0], candidate[1], candidate[2], candidate[3], candidate[4]) }
+                    .exceptionOrNull() is IllegalArgumentException,
+            ) { "Unsafe deployment profile was accepted" }
+        }
+    }
+}
+
+val deploymentProperties =
+    listOf("astralApiBase", "astralWebSocketUrl", "astralKeycloakAuthority", "astralOidcClientId", "astralOidcRedirectUri")
+val deploymentValues = deploymentProperties.map { providers.gradleProperty(it).orNull }
+val explicitDeployment = deploymentValues.any { it != null }
+if (explicitDeployment) {
+    require(deploymentValues.take(3).all { it != null }) { "Explicit deployment requires API, WebSocket and Keycloak authority together" }
+    AndroidDeploymentProfiles.validate(
+        deploymentValues[0]!!,
+        deploymentValues[1]!!,
+        deploymentValues[2]!!,
+        deploymentValues[3] ?: "astral-mobile",
+        deploymentValues[4] ?: "com.personalailabs.astraldeep:/oauth2redirect",
+    )
+}
+val verifyAndroidDeploymentProfile = tasks.register<VerifyAndroidDeploymentProfileTask>("verifyDeploymentBuildProfile")
+tasks.named("preBuild") { dependsOn(verifyAndroidDeploymentProfile) }
+
 val canonicalVoiceFixture =
     rootProject.layout.projectDirectory.file(
         "../contracts/fixtures/voice_065/client_conformance.json",
@@ -195,6 +285,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme
+        buildConfigField("boolean", "ASTRAL_EXPLICIT_DEPLOYMENT", explicitDeployment.toString())
+        buildConfigField("String", "ASTRAL_KEYCLOAK_AUTHORITY", "\"${deploymentValues[2] ?: "https://iam.ai.uky.edu/realms/Astral"}\"")
+        buildConfigField("String", "ASTRAL_OIDC_CLIENT_ID", "\"${deploymentValues[3] ?: "astral-mobile"}\"")
+        buildConfigField(
+            "String",
+            "ASTRAL_OIDC_REDIRECT_URI",
+            "\"${deploymentValues[4] ?: "com.personalailabs.astraldeep:/oauth2redirect"}\"",
+        )
     }
 
     buildFeatures {
@@ -216,9 +314,13 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            buildConfigField("String", "ASTRAL_API_BASE", "\"${deploymentValues[0] ?: "http://10.0.2.2:8001"}\"")
+            buildConfigField("String", "ASTRAL_WS_URL", "\"${deploymentValues[1] ?: "ws://10.0.2.2:8001/ws"}\"")
         }
         release {
             isMinifyEnabled = false
+            buildConfigField("String", "ASTRAL_API_BASE", "\"${deploymentValues[0] ?: "https://sandbox.ai.uky.edu"}\"")
+            buildConfigField("String", "ASTRAL_WS_URL", "\"${deploymentValues[1] ?: "wss://sandbox.ai.uky.edu/ws"}\"")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.findByName("release")
         }
