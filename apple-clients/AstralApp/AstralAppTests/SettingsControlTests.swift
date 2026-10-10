@@ -96,7 +96,8 @@ final class SettingsControlTests: XCTestCase {
         model.openSurface("safety")
         let initial = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
         model.handleFrame(safetySurface(initial))
-        model.sendEvent("chrome_safety_resume", .object(["surface": .string("safety"), "expected_revision": .number(7)]))
+        model.sendEvent(
+            "chrome_safety_resume", .object(["surface": .string("safety"), "expected_revision": .number(7)]))
         let request = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
         var failed = safetySurface(request).payload.objectValue!
         failed["components"] = .array([
