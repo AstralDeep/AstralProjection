@@ -107,7 +107,13 @@ for (const surface of ["work", "evidence", "safety"]) {
           await page.getByRole("button", {name: "Safety control", exact: true}).click();
           const sent = await page.evaluate(action => window.__frames.filter(frame => frame.action === action).at(-1), name);
           expect(sent.session_id).toBeUndefined();
-          expect(sent.payload).toEqual({surface: "safety", ...(name === "chrome_safety_resume" ? {expected_revision: 7} : {}), submission_id: sent.submission_id, request_generation: sent.request_generation});
+          expect(sent.payload).toEqual({surface: "safety", ...(name === "chrome_safety_resume" ? {expected_revision: 7} : {})});
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+          expect(sent.submission_id).toMatch(uuid);
+          expect(sent.request_generation).toMatch(uuid);
+          const registeredConnection = await page.evaluate(() => window.__frames.filter(frame => frame.type === "register_ui").at(-1).connection_generation);
+          expect(sent.connection_generation).toBe(registeredConnection);
+          expect(sent.connection_generation).toMatch(uuid);
           await receive(page, reply(sent, "Safety control acknowledged"));
           await expect(page.getByText("Safety control acknowledged")).toBeVisible();
         });

@@ -5714,6 +5714,10 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
+    if (safetyAction) {
+      delete submission.payload.submission_id;
+      delete submission.payload.request_generation;
+    }
     var frame = {
       type: "ui_event",
       action: name,
