@@ -1296,6 +1296,7 @@ class AppViewModel(
                     privateSurfaceFailed = true,
                     surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
                     surfaceErrorMessage = "Couldn't send this action. Reconnect and retry.",
+                    surfaceReloadRequired = surface == "safety",
                 )
             }
         }
@@ -1376,12 +1377,14 @@ class AppViewModel(
             privateSurfaceFailed = true,
             surfaceOutcomeRevision = s.surfaceOutcomeRevision + 1,
             surfaceErrorMessage = message,
-            surfaceReloadRequired = reloadRequired,
+            surfaceReloadRequired = reloadRequired || s.pendingSurfaceKey == "safety",
         )
 
     private fun disconnectSurface(s: UiState): UiState =
         if (s.pendingSurfaceKey == "evidence") {
             retirePrivateSurface(s).copy(surfaceReloadRequired = true)
+        } else if (s.pendingSurfaceKey == "safety") {
+            failSettingsSurface(s, "The connection changed. Reload this screen before trying again.", true)
         } else if (s.privateSurfaceRequest?.let { !isPrivateChromeSurface(it.surfaceKey) } == true) {
             failSettingsSurface(s, "The connection interrupted this action. Reload this screen before trying again.", true)
         } else {
@@ -1673,6 +1676,13 @@ class AppViewModel(
             }
             is Inbound.ChromeSurface ->
                 when {
+                    (s.pendingSurfaceKey == "safety" || msg.surfaceKey == "safety") &&
+                        (
+                            s.connection != ConnectionState.Connected || s.screen != Screen.Surface ||
+                                s.pendingSurfaceKey != "safety" || s.privateSurfaceRequest?.surfaceKey != "safety" ||
+                                s.privateSurfaceRequest.connectionGeneration != s.connectionGeneration || msg.mode != "replace" ||
+                                msg.requestGeneration == null || msg.requestGeneration != s.privateSurfaceRequest.requestGeneration
+                        ) -> s
                     (s.pendingSurfaceKey == "evidence" || msg.surfaceKey == "evidence") &&
                         (
                             s.connection != ConnectionState.Connected || s.screen != Screen.Surface ||

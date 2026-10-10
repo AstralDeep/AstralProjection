@@ -8,6 +8,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Authenticator
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.ConnectionPool
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
@@ -26,6 +27,7 @@ class ServerSessionTransport(
 ) {
     private val http =
         client.newBuilder()
+            .connectionPool(ConnectionPool(0, 5, TimeUnit.MINUTES))
             .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
             .cookieJar(CookieJar.NO_COOKIES).authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE)
             .callTimeout(30, TimeUnit.SECONDS).connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
@@ -153,14 +155,20 @@ class ServerSessionTransport(
                                     }
                                     if (it.code != 200) throw ServerSessionException(ServerSessionException.Reason.UNAVAILABLE)
                                     val body = it.body ?: sessionInvalid()
+                                    val length = body.contentLength()
                                     if (body.contentType()?.let { type -> type.type == "application" && type.subtype == "json" } != true ||
-                                        body.contentLength() > 32768
+                                        length > 32768
                                     ) {
                                         sessionInvalid()
                                     }
                                     val source = body.source()
-                                    if (source.request(32769)) sessionInvalid()
-                                    val bytes = source.readByteArray()
+                                    val bytes =
+                                        if (length >= 0) {
+                                            source.readByteArray(length)
+                                        } else {
+                                            if (source.request(32769)) sessionInvalid()
+                                            source.buffer.readByteArray()
+                                        }
                                     Reply(
                                         bytes.decodeToString(throwOnInvalidSequence = true),
                                         it.headers.values("Set-Cookie"),

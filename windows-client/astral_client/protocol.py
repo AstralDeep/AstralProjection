@@ -1949,6 +1949,24 @@ def _is_guidance_event(action, payload) -> bool:
     ) or (action in {"chrome_open", "chrome_close"} and payload.get("surface") == "guidance")
 
 
+def _is_safety_event(action, payload) -> bool:
+    return action in {"chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"} or payload.get("surface") == "safety"
+
+
+def _safety_payload(action, payload) -> dict:
+    fields = {"chrome_open": {"surface", "params"}, "chrome_safety_stop": {"surface"},
+              "chrome_safety_resume": {"surface", "expected_revision"}, "chrome_safety_verify": {"surface"}}
+    if action not in fields or set(payload) != fields[action] or payload.get("surface") != "safety":
+        raise WindowsProtocolError("Safety request is invalid")
+    if action == "chrome_open" and (type(payload["params"]) is not dict or payload["params"]):
+        raise WindowsProtocolError("Safety navigation is invalid")
+    if action == "chrome_safety_resume":
+        revision = payload["expected_revision"]
+        if type(revision) is not int or not 0 < revision <= 9007199254740991:
+            raise WindowsProtocolError("Safety revision is invalid")
+    return copy.deepcopy(payload)
+
+
 def _guidance_payload(action, payload) -> dict:
     allowed = {"chrome_open", "chrome_close", "chrome_note_search", "chrome_note_save",
                "chrome_note_toggle", "chrome_note_forget", "chrome_turn_selection_set"}
@@ -2494,7 +2512,7 @@ class OrchestratorClient(QObject):
             or not isinstance(payload, dict)
         ):
             return None
-        if action == "update_device" or _is_guidance_event(action, payload):
+        if action == "update_device" or _is_guidance_event(action, payload) or _is_safety_event(action, payload):
             return None
         submission_id = frame.get("submission_id")
         request_generation = frame.get("request_generation")
@@ -2671,7 +2689,8 @@ class OrchestratorClient(QObject):
         )
         local.validate()
         self.submission.emit(local)
-        if _is_guidance_event(action, safe_payload) or action == "update_device" or safe_payload.get("surface") == "evidence":
+        if (_is_guidance_event(action, safe_payload) or _is_safety_event(action, safe_payload)
+                or action == "update_device" or safe_payload.get("surface") == "evidence"):
             self._safe_status("send_rejected:" + action)
             return local
         if action == "chrome_open" and safe_payload.get("surface") == "work":
@@ -2786,9 +2805,19 @@ class OrchestratorClient(QObject):
         if (not isinstance(surface, str) or not surface or surface in {"work", "guidance", "agent_intro"}
                 or not isinstance(payload, dict) or not isinstance(action, str) or _SNAKE_CASE.fullmatch(action) is None):
             return False
-        safe_payload = copy.deepcopy(payload)
+        safety = surface == "safety" or _is_safety_event(action, payload)
+        if safety:
+            if surface != "safety":
+                return False
+            try:
+                safe_payload = _safety_payload(action, payload)
+            except WindowsProtocolError:
+                return False
+        else:
+            safe_payload = copy.deepcopy(payload)
         local = LocalOperationSubmission(str(uuid.uuid4()), request_generation, action, None)
-        safe_payload.update(surface=surface, submission_id=local.submission_id, request_generation=request_generation)
+        if not safety:
+            safe_payload.update(surface=surface, submission_id=local.submission_id, request_generation=request_generation)
         frame = {"type": "ui_event", "action": action, "session_id": None,
                  "submission_id": local.submission_id, "request_generation": request_generation,
                  "payload": safe_payload}

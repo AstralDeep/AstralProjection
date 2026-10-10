@@ -9,6 +9,193 @@ import XCTest
 
 @MainActor
 final class SettingsControlTests: XCTestCase {
+    func testSafetyControlsAreNeverSubmittedOffline() {
+        let model = model()
+        model.screen = .surface
+        model.pendingSurfaceKey = "safety"
+        model.connected = false
+        var frames: [String] = []
+        model.outboundTap = { frames.append($0) }
+        for action in SafetySurfaceRequest.actions {
+            let payload: JSONValue = .object(["surface": .string("safety"), "expected_revision": .number(7)])
+            model.sendEvent(action, payload)
+        }
+        XCTAssertTrue(frames.isEmpty)
+        XCTAssertNotNil(model.surfaceFailureMessage)
+        XCTAssertTrue(model.localOperationSubmissions.isEmpty)
+    }
+
+    func testSettledSafetyRequiresExplicitCurrentReadAfterConnectionOrAuthenticationLoss() async throws {
+        for transition in ["disconnect", "authentication", "registration", "owner"] {
+            let model = model()
+            model.connected = true
+            XCTAssertTrue(model.beginConversationConnection("11111111-1111-4111-8111-111111111111"))
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            model.openSurface("safety")
+            let original = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+            let reply = safetySurface(original)
+            model.handleFrame(reply)
+            XCTAssertNotNil(model.pendingSurface, transition)
+            XCTAssertNil(model.surfaceFailureMessage, transition)
+            let staleControls = SafetySurfaceRequest.actions.map { action in
+                var fields: [String: JSONValue] = ["surface": .string("safety")]
+                if action == "chrome_safety_resume" { fields["expected_revision"] = .number(7) }
+                let payload = JSONValue.object(fields)
+                return { model.sendEvent(action, payload) }
+            }
+            switch transition {
+            case "disconnect": await model.handle(.disconnected(reason: "Synthetic disconnect"))
+            case "authentication": model.handleFrame(InboundFrame(name: "auth_required", payload: .object([:])))
+            case "registration":
+                XCTAssertTrue(model.beginConversationConnection("22222222-2222-4222-8222-222222222222"))
+            default:
+                model.bindConversationAccount(
+                    ConversationAccount(issuer: "https://iam.example.test", subject: "other")!)
+            }
+            XCTAssertNil(model.pendingSurface, transition)
+            model.handleFrame(reply)
+            XCTAssertNil(model.pendingSurface, transition)
+            XCTAssertTrue(model.beginConversationConnection("33333333-3333-4333-8333-333333333333"))
+            let beforeReconnect = sent.count
+            await model.handle(.connected)
+            XCTAssertEqual(sent.count, beforeReconnect, transition)
+            for control in staleControls { control() }
+            XCTAssertEqual(sent.count, beforeReconnect, transition)
+            XCTAssertNil(model.pendingSurface, transition)
+            model.openSurface("safety")
+            XCTAssertEqual(sent.count, beforeReconnect + 1, transition)
+            XCTAssertEqual(sent.last?["action"], .string("chrome_open"), transition)
+            let current = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+            XCTAssertNotEqual(current, original, transition)
+            for control in staleControls { control() }
+            XCTAssertEqual(sent.count, beforeReconnect + 1, transition)
+            model.handleFrame(reply)
+            var uncorrelated = safetySurface(current).payload.objectValue!
+            uncorrelated.removeValue(forKey: "request_generation")
+            model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(uncorrelated)))
+            var appended = safetySurface(current).payload.objectValue!
+            appended["mode"] = .string("append")
+            model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(appended)))
+            XCTAssertNil(model.pendingSurface, transition)
+            model.handleFrame(safetySurface(current))
+            XCTAssertNotNil(model.pendingSurface, transition)
+            XCTAssertNil(model.surfaceFailureMessage, transition)
+            model.sendEvent("chrome_safety_verify", .object(["surface": .string("safety")]))
+            XCTAssertEqual(sent.count, beforeReconnect + 2, transition)
+            XCTAssertEqual(sent.last?["action"], .string("chrome_safety_verify"), transition)
+        }
+    }
+
+    func testSafetyReadFailureCannotAuthorizeARetainedControl() throws {
+        let model = model()
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection("11111111-1111-4111-8111-111111111111"))
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openSurface("safety")
+        let initial = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+        model.handleFrame(safetySurface(initial))
+        model.sendEvent(
+            "chrome_safety_resume", .object(["surface": .string("safety"), "expected_revision": .number(7)]))
+        let request = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+        var failed = safetySurface(request).payload.objectValue!
+        failed["components"] = .array([
+            .object(["type": .string("alert"), "variant": .string("error"), "message": .string("Status unavailable")])
+        ])
+        model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(failed)))
+        XCTAssertEqual(model.pendingSurface?.components.map(\.type), ["alert"])
+        model.sendEvent("chrome_safety_stop", .object(["surface": .string("safety")]))
+        XCTAssertEqual(sent.count, 2)
+        model.retryPendingSurface()
+        XCTAssertEqual(sent.last?["action"], .string("chrome_open"))
+        let current = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+        model.handleFrame(safetySurface(current))
+        model.sendEvent("chrome_safety_stop", .object(["surface": .string("safety")]))
+        XCTAssertEqual(sent.count, 4)
+        XCTAssertEqual(sent.last?["action"], .string("chrome_safety_stop"))
+    }
+
+    func testSafetyRefusalAndTimeoutRetireControlsAndRecoverThroughExplicitRead() throws {
+        for failure in ["refusal", "timeout"] {
+            for settled in [false, true] {
+                let model = model()
+                model.connected = true
+                XCTAssertTrue(model.beginConversationConnection("11111111-1111-4111-8111-111111111111"))
+                model.mandatorySurface = true
+                var sent: [JSONValue] = []
+                model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+                model.openSurface("safety")
+                if settled {
+                    let initial = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+                    model.handleFrame(safetySurface(initial))
+                    model.sendEvent("chrome_safety_stop", .object(["surface": .string("safety")]))
+                    XCTAssertNotNil(model.pendingSurface)
+                }
+                let request = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+                let submission = try XCTUnwrap(sent.last?["submission_id"]?.stringValue)
+                if failure == "timeout" {
+                    model.failSafetyRequest(generation: nil)
+                    model.failSafetyRequest(generation: "11111111-1111-4111-8111-111111111111")
+                    XCTAssertEqual(model.safetyRequestGeneration, request)
+                    model.failSafetyRequest(generation: request)
+                } else {
+                    model.handleFrame(
+                        InboundFrame(
+                            name: "error",
+                            payload: .object([
+                                "type": .string("error"), "submission_id": .string(submission),
+                                "accepted": .bool(false), "code": .string("operation_failed"),
+                                "message": .string("Status unavailable"), "retryable": .bool(true),
+                                "retry_after_ms": .null,
+                            ])))
+                }
+                XCTAssertNil(model.pendingSurface, failure)
+                XCTAssertNil(model.safetyRequestGeneration, failure)
+                XCTAssertNotNil(model.surfaceFailureMessage, failure)
+                XCTAssertNil(model.localOperationSubmissions[submission], failure)
+                XCTAssertTrue(model.mandatorySurface)
+                model.handleFrame(safetySurface(request))
+                XCTAssertNil(model.pendingSurface, failure)
+                let beforeRetry = sent.count
+                model.sendEvent("chrome_safety_verify", .object(["surface": .string("safety")]))
+                XCTAssertEqual(sent.count, beforeRetry, failure)
+                model.retryPendingSurface()
+                XCTAssertEqual(sent.count, beforeRetry + 1, failure)
+                XCTAssertEqual(sent.last?["action"], .string("chrome_open"), failure)
+                let current = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+                XCTAssertNotEqual(current, request, failure)
+                model.failSafetyRequest(generation: request)
+                model.handleFrame(safetySurface(request))
+                XCTAssertNil(model.pendingSurface, failure)
+                XCTAssertEqual(model.safetyRequestGeneration, current, failure)
+                model.handleFrame(safetySurface(current))
+                XCTAssertNotNil(model.pendingSurface, failure)
+                XCTAssertNil(model.surfaceFailureMessage, failure)
+                model.sendEvent("chrome_safety_verify", .object(["surface": .string("safety")]))
+                XCTAssertEqual(sent.count, beforeRetry + 2, failure)
+            }
+        }
+    }
+
+    private func safetySurface(_ generation: String) -> InboundFrame {
+        InboundFrame(
+            name: "chrome_surface",
+            payload: .object([
+                "type": .string("chrome_surface"), "surface_key": .string("safety"),
+                "title": .string("Emergency stop"), "region": .string("modal"),
+                "mode": .string("replace"), "admin_only": .bool(false),
+                "request_generation": .string(generation),
+                "components": .array([
+                    .object([
+                        "type": .string("button"), "label": .string("Verify stopped work"),
+                        "action": .string("chrome_safety_verify"),
+                        "payload": .object(["surface": .string("safety")]),
+                    ])
+                ]),
+            ]))
+    }
+
     func testUncertainGuidanceWriteRetryReturnsToListAndKeepsOfflineFailureVisible() {
         let model = model()
         model.screen = .surface

@@ -112,6 +112,121 @@ class SettingsTransportTest {
         assertTrue(client.pendingActions().isEmpty())
     }
 
+    @Test
+    fun safety_current_sender_preserves_exact_payload_and_never_queues() {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val socket = Socket()
+        client.installOpenSocketForTest(socket)
+        client.replayPendingForTest(connection, {}, {}, { true })
+        val payloads =
+            mapOf(
+                "chrome_open" to
+                    buildJsonObject {
+                        put("surface", "safety")
+                        putJsonObject("params") {}
+                    },
+                "chrome_safety_stop" to buildJsonObject { put("surface", "safety") },
+                "chrome_safety_resume" to
+                    buildJsonObject {
+                        put("surface", "safety")
+                        put("expected_revision", 7)
+                    },
+                "chrome_safety_verify" to buildJsonObject { put("surface", "safety") },
+            )
+        for ((action, payload) in payloads) {
+            var issued: LocalSubmission? = null
+            assertTrue(
+                client.sendCurrentSettingsEvent("safety", action, payload, { true }) { submission, generation ->
+                    issued = submission
+                    assertEquals(connection, generation)
+                },
+            )
+            val frame = Json.parseToJsonElement(socket.frames.last()).jsonObject
+            assertEquals(payload, frame.getValue("payload"))
+            assertEquals(issued!!.requestGeneration, frame.getValue("request_generation").jsonPrimitive.content)
+            assertEquals(issued!!.submissionId, frame.getValue("submission_id").jsonPrimitive.content)
+            assertEquals(connection, frame.getValue("connection_generation").jsonPrimitive.content)
+            assertEquals("null", frame.getValue("session_id").toString())
+        }
+        for ((surface, action, payload) in listOf(
+            Triple("theme", "chrome_safety_stop", buildJsonObject { put("surface", "safety") }),
+            Triple("safety", "save_theme", buildJsonObject { put("surface", "safety") }),
+            Triple(
+                "safety",
+                "chrome_safety_resume",
+                buildJsonObject {
+                    put("surface", "safety")
+                    put("expected_revision", true)
+                },
+            ),
+            Triple(
+                "safety",
+                "chrome_safety_stop",
+                buildJsonObject {
+                    put("surface", "safety")
+                    put("owner_id", "forged")
+                },
+            ),
+        )) {
+            assertFalse(client.sendCurrentSettingsEvent(surface, action, payload, { true }) { _, _ -> error("invalid issued") })
+        }
+        assertEquals(4, socket.frames.size)
+        assertTrue(client.pendingActions().isEmpty())
+    }
+
+    @Test
+    fun safety_custody_send_failures_generic_sender_and_legacy_queue_never_replay() {
+        val payload =
+            buildJsonObject {
+                put("surface", "safety")
+                put("expected_revision", 7)
+            }
+        for (change in listOf("owner", "socket", "generation", "navigation", "failure")) {
+            val client = OrchestratorClient("ws://localhost:9/ws")
+            val socket = Socket()
+            client.installOpenSocketForTest(socket)
+            client.replayPendingForTest(connection, {}, {}, { true })
+            var current = true
+            assertFalse(
+                client.sendCurrentSettingsEvent("safety", "chrome_safety_resume", payload, { current }) { _, _ ->
+                    when (change) {
+                        "owner" -> client.clearOwnerSession()
+                        "socket" -> client.installOpenSocketForTest(Socket())
+                        "generation" -> client.replayPendingForTest("33333333-3333-4333-8333-333333333333", {}, {}, { true })
+                        "failure" -> socket.accept = false
+                        else -> current = false
+                    }
+                },
+            )
+            assertTrue(socket.frames.isEmpty())
+            assertTrue(client.pendingActions().isEmpty())
+        }
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        assertFalse(client.sendCurrentSettingsEvent("safety", "chrome_safety_resume", payload, { true }) { _, _ -> error("offline issued") })
+        for (action in listOf("chrome_open", "chrome_close", "chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify")) {
+            client.sendEvent(action, null, payload)
+            assertTrue(client.pendingActions().isEmpty())
+            val local = LocalSubmission(action, null, "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444")
+            val old =
+                buildJsonObject {
+                    put("type", "ui_event")
+                    put("action", action)
+                    put("submission_id", local.submissionId)
+                    put("request_generation", local.requestGeneration)
+                    putJsonObject("payload") {
+                        payload.forEach(::put)
+                        put("submission_id", local.submissionId)
+                        put("request_generation", local.requestGeneration)
+                    }
+                }.toString()
+            assertFalse(client.validQueuedIdentity(old, local))
+        }
+        val socket = Socket()
+        client.installOpenSocketForTest(socket)
+        client.replayPendingForTest(connection, {}, {}, { true })
+        assertTrue(socket.frames.isEmpty())
+    }
+
     private class Socket : WebSocket {
         val frames = mutableListOf<String>()
         var accept = true

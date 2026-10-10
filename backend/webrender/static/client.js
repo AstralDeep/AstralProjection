@@ -5692,15 +5692,19 @@
   function action(name, payload, exposeStatus) {
     var noteAction = ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"].indexOf(name) !== -1;
     var selectionAction = name === "chrome_turn_selection_set";
-    var ownerSurface = noteAction || selectionAction ? "guidance"
-      : name === "chrome_open" && payload && ["work", "guidance", "evidence"].indexOf(payload.surface) !== -1
+    var safetyAction = ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"].indexOf(name) !== -1;
+    var ownerSurface = safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
+      : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety"].indexOf(payload.surface) !== -1
         ? payload.surface : null;
-    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction) retireOwnerSurface();
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction) retireOwnerSurface();
     if (noteAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
     }
     if (selectionAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { view: "selection" } });
+    }
+    if (safetyAction) {
+      showModalSkeleton("chrome_open", { surface: "safety", params: {} });
     }
     if ((name === "new_chat" || name === "load_chat") && ownerSurfaceRequest) {
       retireOwnerSurface(); setModal("");
@@ -5710,6 +5714,10 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
+    if (safetyAction) {
+      delete submission.payload.submission_id;
+      delete submission.payload.request_generation;
+    }
     var frame = {
       type: "ui_event",
       action: name,
@@ -7112,7 +7120,7 @@
         break;
       }
       case "chrome_render":
-        if (data.surface_key === "work" || data.surface_key === "guidance" || data.surface_key === "evidence") { receiveOwnerSurface(data); break; }
+        if (data.surface_key === "work" || data.surface_key === "guidance" || data.surface_key === "evidence" || data.surface_key === "safety") { receiveOwnerSurface(data); break; }
         if (data.region === "modal" && ownerSurfaceRequest) break;
         if (data.region === "modal") setModal(data.html || "");
         else if (data.region === "topbar") {
@@ -7631,8 +7639,8 @@
       var act = btn.getAttribute("data-action"); var payload = {};
       try { payload = JSON.parse(btn.getAttribute("data-payload") || "{}"); } catch (_) {}
       var compHost = btn.closest && btn.closest("[data-component-id]");
-      if (compHost && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
-      if (!payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence"))) {
+      if (compHost && payload.surface !== "safety" && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
+      if (payload.surface !== "safety" && !payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence"))) {
         payload.chat_id = activeChatId;
       }
       if (timelineMode && compHost && act && act.indexOf("chrome_") !== 0) {
@@ -8276,7 +8284,7 @@
   function showModalRetry() {
     modalSkeletonTimer = null;
     if (!modalRoot || !modalSkeletonRequest) return;
-    if (modalSkeletonRequest.action === "chrome_open" && ["work", "guidance", "evidence"].indexOf(modalSkeletonRequest.payload.surface) !== -1) {
+    if (modalSkeletonRequest.action === "chrome_open" && ["work", "guidance", "evidence", "safety"].indexOf(modalSkeletonRequest.payload.surface) !== -1) {
       retireOwnerSurface();
     }
     if (!setDialogPane(RETRY_BODY_HTML)) modalRoot.innerHTML = modalShellHtml(RETRY_BODY_HTML);
@@ -8369,11 +8377,11 @@
   function closeModal() {
     if (!modalRoot || !modalRoot.innerHTML) return;
     if (modalIsMandatory()) return;
-    var evidence = ownerSurfaceRequest && ownerSurfaceRequest.surface === "evidence"
-      || modalSkeletonRequest && modalSkeletonRequest.payload.surface === "evidence"
+    var currentOwnerSurface = ownerSurfaceRequest && ["evidence", "safety"].indexOf(ownerSurfaceRequest.surface) !== -1
+      || modalSkeletonRequest && ["evidence", "safety"].indexOf(modalSkeletonRequest.payload.surface) !== -1
         && modalRoot.querySelector(".astral-modal-retry");
     setModal("");
-    if (evidence) {
+    if (currentOwnerSurface) {
       retireOwnerSurface();
       modalSkeletonRequest = null;
       return;

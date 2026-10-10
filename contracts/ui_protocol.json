@@ -21,6 +21,43 @@
       "provider_save": "Validate input, authorization, sharing acknowledgement and same-endpoint blank-key reuse before encrypted persistence. Acknowledge the committed configuration before a separate bounded connection check. Failed external probes emit a warning that states settings remain saved; they never reclassify or erase a completed Save. Validation and persistence failures do not acknowledge a save. Explicit Test connection and Load models remain independent operations.",
       "watch": "Generic forms and colors retain the existing advertised phone/desktop handoffs; scoped guidance forms keep their separate capability contract."
     },
+    "owner_safety": {
+      "version": 1,
+      "fixture": "contracts/fixtures/safety/owner_stop.json",
+      "surface_key": "safety",
+      "navigation": {
+        "action": "chrome_open",
+        "payload": {
+          "surface": "safety",
+          "params": {}
+        }
+      },
+      "actions": {
+        "chrome_safety_stop": [
+          "surface"
+        ],
+        "chrome_safety_resume": [
+          "surface",
+          "expected_revision"
+        ],
+        "chrome_safety_verify": [
+          "surface"
+        ]
+      },
+      "authority": "The host rechecks the currently authenticated human owner, write permission for stop/resume, current durable revision and delivery generation. Client components never supply authority.",
+      "resume_revision": "Positive exact JSON integer; portable client controls support revisions through 9007199254740991 and fail closed beyond that bound.",
+      "transport": "Current authenticated connection only; no offline queue or reconnect replay. Responses use the existing correlated chrome_surface/chrome_render modal replacement. Account, connection or navigation changes retire requests.",
+      "status": "Local durable stop and supported interrupted work are separate from remote acknowledgment. Missing responders remain pending, unreachable or unknown. Reachability never implies acknowledgment.",
+      "dispositions": {
+        "browser": "correlated_owner_controls",
+        "windows": "correlated_owner_controls",
+        "android": "correlated_owner_controls",
+        "macos": "correlated_owner_controls",
+        "ios": "correlated_owner_controls",
+        "watchos": "correlated_owner_controls"
+      },
+      "watch": "At most two primary buttons: stop and verify while running, resume and verify while engaged. Supported status remains visible; explicit resume is never inferred from reconnect."
+    },
     "evidence_inspection": {
       "version": 1,
       "fixture": "contracts/fixtures/evidence/inspection_surface.json",
@@ -3990,6 +4027,9 @@
     "chrome_perms_save",
     "chrome_profile_save",
     "chrome_safe_set",
+    "chrome_safety_resume",
+    "chrome_safety_stop",
+    "chrome_safety_verify",
     "chrome_skill_toggle",
     "chrome_theme_preset",
     "chrome_tour_event",

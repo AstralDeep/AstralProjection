@@ -16,22 +16,35 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.Call
+import okhttp3.Connection
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
+import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okhttp3.internal.http2.Http2Stream
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
+import okhttp3.mockwebserver.internal.duplex.DuplexResponseBody
+import okio.Buffer
+import okio.buffer
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.math.BigInteger
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -46,6 +59,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ServerSocketFactory
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
@@ -158,6 +172,116 @@ class ServerSession088Test {
         assertFailsWith<ServerSessionException> { fence.publish(next) { error("late logout") } }
     }
 
+    @Test fun probe_succeeds_after_server_closes_previous_idle_tls_connection() =
+        runBlocking<Unit> {
+            Fixture(trackSockets = true).use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
+                repeat(2) {
+                    f.server.enqueue(json(anonymous).setHeader("X-Astral-Session-Custody", "server_v1"))
+                }
+                assertTrue(transport.probe())
+                assertEquals(0, f.server.takeRequest().sequenceNumber)
+                f.acceptedSockets.single().close()
+                assertTrue(transport.probe())
+                assertEquals(0, f.server.takeRequest().sequenceNumber)
+                assertEquals(2, f.server.requestCount)
+            }
+        }
+
+    @Test fun completed_http2_custody_body_does_not_read_again_after_its_connection_is_released() =
+        runBlocking<Unit> {
+            Fixture().use { f ->
+                val protocols = CopyOnWriteArrayList<Protocol>()
+                val supplied =
+                    f.client.newBuilder().eventListener(
+                        object : EventListener() {
+                            override fun connectionAcquired(
+                                call: Call,
+                                connection: Connection,
+                            ) {
+                                protocols.add(connection.protocol())
+                            }
+                        },
+                    ).build()
+                val transport = ServerSessionTransport(scope(f.origin), supplied) { now }
+                val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
+                f.server.enqueue(
+                    MockResponse().setHeader("Content-Type", "application/json")
+                        .setHeader("Content-Length", anonymous.length)
+                        .setHeader("X-Astral-Session-Custody", "server_v1")
+                        .setBody(
+                            object : DuplexResponseBody {
+                                override fun onRequest(
+                                    request: RecordedRequest,
+                                    http2Stream: Http2Stream,
+                                ) {
+                                    http2Stream.getSink().buffer().apply {
+                                        writeUtf8(anonymous)
+                                        flush()
+                                    }
+                                }
+                            },
+                        ),
+                )
+                assertTrue(transport.probe())
+                assertEquals(listOf(Protocol.HTTP_2), protocols.toList())
+                assertEquals(1, f.server.requestCount)
+            }
+        }
+
+    @Test fun custody_calls_use_fresh_tls_connections_without_borrowing_the_supplied_pool() =
+        runBlocking<Unit> {
+            Fixture(trackSockets = true).use { f ->
+                f.server.enqueue(json("{}"))
+                f.client.newCall(Request.Builder().url(f.origin).build()).execute().use { it.body!!.string() }
+                assertEquals(0, f.server.takeRequest().sequenceNumber)
+                assertEquals(1, f.client.connectionPool.idleConnectionCount())
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                f.server.enqueue(json("{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"))
+                assertFalse(transport.probe())
+                f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader))
+                val session = transport.exchange(ServerAuthorizationCode(transport.scope, "original-code", "v".repeat(43)))
+                f.server.enqueue(json(refreshed()))
+                val current = transport.refresh(session)
+                f.server.enqueue(json("{\"outcome\":\"revoked\",\"revoked\":true,\"queued\":false}"))
+                assertTrue(transport.logout(current))
+                repeat(4) { assertEquals(0, f.server.takeRequest().sequenceNumber) }
+                assertEquals(5, f.server.requestCount)
+                assertEquals(1, f.client.connectionPool.idleConnectionCount())
+                f.server.enqueue(json("{}"))
+                f.client.newCall(Request.Builder().url(f.origin).build()).execute().use { it.body!!.string() }
+                assertEquals(1, f.server.takeRequest().sequenceNumber)
+            }
+        }
+
+    @Test fun fixed_and_chunked_custody_bodies_keep_size_utf8_and_truncation_guards() =
+        runBlocking<Unit> {
+            Fixture(trackSockets = true).use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
+                val maximum = anonymous.padEnd(32768)
+                for (response in listOf(
+                    json(maximum),
+                    json(anonymous).setChunkedBody(anonymous, 17),
+                    json(maximum).setChunkedBody(maximum, 1024),
+                )) {
+                    f.server.enqueue(response.setHeader("X-Astral-Session-Custody", "server_v1"))
+                    assertTrue(transport.probe())
+                }
+                for (response in listOf(
+                    json(maximum + " "),
+                    json(anonymous).setChunkedBody(maximum + " ", 1024),
+                    json(anonymous).setBody(Buffer().write(byteArrayOf(0xc3.toByte(), 0x28))),
+                    json(anonymous).setHeader("Content-Length", anonymous.length + 1).setSocketPolicy(SocketPolicy.DISCONNECT_AT_END),
+                )) {
+                    f.server.enqueue(response)
+                    assertFailsWith<ServerSessionException> { transport.probe() }
+                }
+                assertEquals(7, f.server.requestCount)
+            }
+        }
+
     @Test fun lost_exchange_acknowledgement_has_one_send_and_storage_failure_never_publishes() =
         runBlocking<Unit> {
             Fixture().use { f ->
@@ -211,9 +335,10 @@ class ServerSession088Test {
         }
     }
 
-    private class Fixture : AutoCloseable {
+    private class Fixture(trackSockets: Boolean = false) : AutoCloseable {
         val server = MockWebServer()
         val client: OkHttpClient
+        val acceptedSockets = CopyOnWriteArrayList<Socket>()
 
         // MockWebServer's own url() uses a reverse-DNS host, not loopback
         val origin: String get() = "https://localhost:${server.port}/"
@@ -230,6 +355,32 @@ class ServerSession088Test {
             val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(store) }
             val ssl = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, trust.trustManagers, null) }
             server.useHttps(ssl.socketFactory, false)
+            if (trackSockets) {
+                server.protocols = listOf(Protocol.HTTP_1_1)
+                server.serverSocketFactory =
+                    object : ServerSocketFactory() {
+                        override fun createServerSocket(): ServerSocket =
+                            object : ServerSocket() {
+                                override fun accept(): Socket = super.accept().also(acceptedSockets::add)
+                            }
+
+                        override fun createServerSocket(port: Int): ServerSocket =
+                            createServerSocket().apply { bind(InetSocketAddress(port)) }
+
+                        override fun createServerSocket(
+                            port: Int,
+                            backlog: Int,
+                        ): ServerSocket =
+                            createServerSocket().apply { bind(InetSocketAddress(port), backlog) }
+
+                        override fun createServerSocket(
+                            port: Int,
+                            backlog: Int,
+                            address: InetAddress,
+                        ): ServerSocket =
+                            createServerSocket().apply { bind(InetSocketAddress(address, port), backlog) }
+                    }
+            }
             server.start()
             client = OkHttpClient.Builder().sslSocketFactory(ssl.socketFactory, trust.trustManagers.single() as X509TrustManager).build()
         }
@@ -548,7 +699,26 @@ class ServerSession088Test {
             }
         }
 
-    @Test fun real_websocket_upgrade_carries_cookie_but_never_serializes_it_or_uses_global_jar() =
+    @Test fun socket_ticket_origin_is_canonical_and_bound_to_the_validated_deployment() {
+        for ((backend, expected) in listOf(
+            "https://EXAMPLE.com:443/" to "https://example.com",
+            "https://Example.com:8443/" to "https://example.com:8443",
+            "https://[0:0:0:0:0:0:0:1]:443/" to "https://[::1]",
+            "https://[::1]:8443/" to "https://[::1]:8443",
+        )) {
+            val transport = ServerSessionTransport(scope(backend), OkHttpClient()) { now }
+            val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
+            val controller = ServerSessionCoordinator(transport, memory) { now }
+            assertTrue(controller.restore())
+            val url = expected.replaceFirst("https://", "wss://") + "/ws"
+            assertEquals(expected, controller.socketTicket(url, token).origin)
+            for (bad in listOf(url + "?token=x", url.replace("/ws", "/different"), "wss://unrelated.invalid/ws")) {
+                assertFailsWith<ServerSessionException> { controller.socketTicket(bad, token) }
+            }
+        }
+    }
+
+    @Test fun real_websocket_upgrade_carries_cookie_and_origin_without_serializing_cookie_or_using_global_jar() =
         runBlocking<Unit> {
             Fixture().use { f ->
                 val jarReads = AtomicInteger()
@@ -588,7 +758,9 @@ class ServerSession088Test {
                 val url = f.socketOrigin + "ws"
                 val client = OrchestratorClient(url, supplied, serverSession = { controller })
                 withTimeout(5000) { client.stream(token, DeviceCapabilities(screenWidth = 400, screenHeight = 800)).first { it is Inbound.AuthRequired } }
-                assertEquals(cookie, f.server.takeRequest().getHeader("Cookie"))
+                val upgrade = f.server.takeRequest()
+                assertEquals(cookie, upgrade.getHeader("Cookie"))
+                assertEquals(listOf(f.origin.removeSuffix("/")), upgrade.headers.values("Origin"))
                 assertEquals(0, jarReads.get())
                 controller.retire()
                 withTimeout(1000) { client.stream(token, DeviceCapabilities(screenWidth = 400, screenHeight = 800)).first { it is Inbound.AuthRequired } }

@@ -154,6 +154,7 @@ final class AppModel: NSObject {
     private var ordinarySurfaceRequests: [String: OrdinarySurfaceRequest] = [:]
     private var ordinarySurfaceGeneration: String?
     var evidenceReadGeneration: String? { pendingSurfaceKey == "evidence" ? ordinarySurfaceGeneration : nil }
+    var safetyRequestGeneration: String? { pendingSurfaceKey == "safety" ? ordinarySurfaceGeneration : nil }
     private var ordinaryReadIntent: (generation: String, owner: DownloadOwner)?
     private var parameterRequests: [String: String] = [:]
     private var parameterFailures: Set<String> = []
@@ -867,6 +868,10 @@ final class AppModel: NSObject {
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
         if pendingSurfaceKey == "evidence" { closeSurface() }
+        if pendingSurfaceKey == "safety" {
+            retireOrdinarySurfaceRequests()
+            surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
+        }
         resetViewportRefresh(clearSubmissionHistory: true)
         invalidateWorkRead()
         clearPendingOperationSubmissions()
@@ -1109,7 +1114,7 @@ final class AppModel: NSObject {
         let surface = screen == .surface ? pendingSurfaceKey : ""
         let params = pendingSurfaceParams
         let canReload =
-            surface != "evidence" && pendingSurface == nil
+            !["evidence", "safety"].contains(surface) && pendingSurface == nil
             && (params == .object([:]) || params == .object(["mode": .string("list")])
                 || (surface == "guidance" && params == GuidanceRequest.selection.payload["params"]))
         let interrupted = !localOperationSubmissions.isEmpty || llmFirstLoginOperation?.isLoading == true
@@ -1131,7 +1136,8 @@ final class AppModel: NSObject {
             intent.surface == "guidance"
             ? guidanceEpoch : intent.surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
         guard intent.owner == downloadOwner, intent.socket === ws, screen == .surface,
-            pendingSurfaceKey == intent.surface, intent.surface != "evidence", generation == intent.generation,
+            pendingSurfaceKey == intent.surface, !["evidence", "safety"].contains(intent.surface),
+            generation == intent.generation,
             !mandatorySurface
         else { return }
         if intent.surface == "guidance" {
@@ -1864,6 +1870,9 @@ final class AppModel: NSObject {
         case "auth_required":
             resetViewportRefresh()
             retireOrdinarySurfaceRequests()
+            if pendingSurfaceKey == "safety" {
+                surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
+            }
             if let context = socketAuthenticationContext {
                 Task { await self.handleAuthRequired(context) }
             }
@@ -2488,6 +2497,12 @@ final class AppModel: NSObject {
 
     private func reduceChromeSurface(_ frame: InboundFrame) {
         let surfaceKey = frame.payload["surface_key"]?.stringValue ?? ""
+        if pendingSurfaceKey == "safety" || surfaceKey == "safety" {
+            guard screen == .surface, pendingSurfaceKey == "safety", frame.surfaceMode == "replace",
+                let generation = frame.payload["request_generation"]?.stringValue,
+                generation == ordinarySurfaceGeneration
+            else { return }
+        }
         if pendingSurfaceKey == "evidence" || surfaceKey == "evidence" {
             guard screen == .surface, pendingSurfaceKey == "evidence",
                 let fields = frame.payload.objectValue,
@@ -2612,7 +2627,7 @@ final class AppModel: NSObject {
 
     private func replaceOrdinarySurface(key: String, title: String, components: [AstralComponent]) {
         let retained =
-            surfaceContainsError(components) && components.allSatisfy { $0.type == "alert" }
+            key != "safety" && surfaceContainsError(components) && components.allSatisfy { $0.type == "alert" }
                 && pendingSurface?.surfaceKey == key
             ? pendingSurface?.components.filter { $0.type != "alert" } ?? [] : []
         pendingSurface = SurfaceContent(surfaceKey: key, title: title, components: components + retained)
@@ -2649,8 +2664,8 @@ final class AppModel: NSObject {
     private func retireOrdinarySurfaceRequests(preservingReadIntent: Bool = false) {
         ordinarySurfaceRequests = [:]
         ordinarySurfaceGeneration = nil
-        if pendingSurfaceKey == "evidence" { pendingSurface = nil }
-        if !preservingReadIntent || pendingSurfaceKey == "evidence" { ordinaryReadIntent = nil }
+        if ["evidence", "safety"].contains(pendingSurfaceKey) { pendingSurface = nil }
+        if !preservingReadIntent || ["evidence", "safety"].contains(pendingSurfaceKey) { ordinaryReadIntent = nil }
     }
 
     private func failOrdinarySurface(generation: String, message: String) {
@@ -2660,6 +2675,7 @@ final class AppModel: NSObject {
         else { return }
         ordinarySurfaceRequests.removeValue(forKey: generation)
         ordinarySurfaceGeneration = nil
+        if pendingSurfaceKey == "safety" { pendingSurface = nil }
         surfaceFailureMessage = message
     }
 
@@ -3164,12 +3180,27 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if SafetySurfaceRequest.actions.contains(action) || payload["surface"]?.stringValue == "safety" {
+            guard signedIn, connected, SafetySurfaceRequest(action: action, payload: payload) != nil else {
+                surfaceFailureMessage = "Safety controls were not sent. Reconnect and check current stop status."
+                return
+            }
+            if SafetySurfaceRequest.actions.contains(action) {
+                guard screen == .surface, pendingSurfaceKey == "safety", let surface = pendingSurface,
+                    surface.surfaceKey == "safety", !surfaceContainsError(surface.components),
+                    ordinarySurfaceGeneration == nil, surfaceFailureMessage == nil
+                else {
+                    surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
+                    return
+                }
+            }
+        }
         if action == "chrome_close", pendingSurfaceKey == "evidence" || payload["surface"]?.stringValue == "evidence" {
             if pendingSurfaceKey == "evidence" { closeSurface() }
             return
         }
         if action == "chat_message", pendingSurfaceKey == "evidence" { closeSurface() }
-        if action == "chrome_open", mandatorySurface { return }
+        if action == "chrome_open", mandatorySurface, payload["surface"]?.stringValue != "safety" { return }
         if action == "compose_prompt" || (action == "chat_message" && pendingSurfaceKey == "agent_intro") {
             guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
                 pendingSurfaceKey == "agent_intro",
@@ -3481,7 +3512,8 @@ final class AppModel: NSObject {
         let connection = continuity.connectionGeneration
         let navigation = conversationNavigationGeneration
         let chatId = activeChatId
-        let evidence = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
+        let safety = SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
+        let evidence = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text) || safety
         let evidenceGeneration = InboundFrame.parse(text)?.payload["request_generation"]?.stringValue
         Task {
             let allowed: Bool
@@ -3512,7 +3544,7 @@ final class AppModel: NSObject {
                         return self.signedIn && self.connected && self.downloadOwner == owner && self.ws === socket
                             && self.continuity.connectionGeneration == connection && self.activeChatId == chatId
                             && self.conversationNavigationGeneration == navigation
-                            && self.pendingSurfaceKey == "evidence"
+                            && self.pendingSurfaceKey == (safety ? "safety" : "evidence")
                             && self.screen == .surface && self.ordinarySurfaceGeneration == evidenceGeneration
                     }
                 }
@@ -3764,6 +3796,13 @@ final class AppModel: NSObject {
         retireOrdinarySurfaceRequests()
         clearLocalOperationSubmission(requestGeneration: generation)
         surfaceFailureMessage = "The server didn't send it in time. Check your connection and try again."
+    }
+
+    func failSafetyRequest(generation: String?) {
+        guard let generation, pendingSurfaceKey == "safety", ordinarySurfaceGeneration == generation else { return }
+        failOrdinarySurface(
+            generation: generation, message: "The server didn't send it in time. Check your connection and try again.")
+        clearLocalOperationSubmission(requestGeneration: generation)
     }
 
     func closeSurface() {

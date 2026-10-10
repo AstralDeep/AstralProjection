@@ -1,4 +1,4 @@
-// Tests the packaged web client's correlated Work and evidence modals against controlled socket
+// Tests the packaged web client's correlated Work, evidence and safety modals against controlled socket
 // replies, including navigation, account changes, failures and reconnect retirement.
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -32,7 +32,7 @@ test.afterAll(async () => {
   await writeFile(resolve(coverageOutput), JSON.stringify(rawCoverage) + "\n", { mode: 0o600 });
 });
 
-for (const surface of ["work", "evidence"]) {
+for (const surface of ["work", "evidence", "safety"]) {
   test.describe(`${surface} request freshness`, () => {
     async function setup(page) {
       await page.addInitScript(() => {
@@ -64,7 +64,7 @@ for (const surface of ["work", "evidence"]) {
       await page.route("https://work-read.example/**", route => route.fulfill({
         contentType: "text/html", body: `<!doctype html><html><body>
           <button id="astral-newchat-btn">New chat fixture</button><a id="logout" href="/auth/logout">Sign out fixture</a><header id="astral-topbar">
-          <button data-ui-action="chrome_open" data-ui-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : {kind: "usage"})}}'>Open ${surface} fixture</button>
+          <button data-ui-action="chrome_open" data-ui-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : surface === "evidence" ? {kind: "usage"} : {})}}'>Open ${surface} fixture</button>
           <button data-ui-action="chrome_open" data-ui-payload='{"surface":"agents"}'>Open other fixture</button>
           </header><div id="astral-history"></div><div id="astral-status"></div>
           <section id="astral-canvas"></section><div id="astral-chat"></div>
@@ -90,6 +90,53 @@ for (const surface of ["work", "evidence"]) {
 
     async function receive(page, frame) {
       await page.evaluate(value => window.__sockets.at(-1).receive(value), frame);
+    }
+
+    if (surface === "safety") {
+      async function offerSafety(page, name) {
+        const request = await open(page);
+        const frame = reply(request);
+        const payload = {surface: "safety", ...(name === "chrome_safety_resume" ? {expected_revision: 7} : {})};
+        frame.html = `<div class="astral-modal-card" role="dialog" data-component-id="fixture-component"><button class="astral-action" data-action="${name}" data-payload='${JSON.stringify(payload)}'>Safety control</button><button class="astral-modal-close">Close</button></div>`;
+        await receive(page, frame);
+      }
+      for (const name of ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"]) {
+        test(`${name} preserves the offered payload and current connection`, async ({page}) => {
+          await setup(page);
+          await offerSafety(page, name);
+          await page.getByRole("button", {name: "Safety control", exact: true}).click();
+          const sent = await page.evaluate(action => window.__frames.filter(frame => frame.action === action).at(-1), name);
+          expect(sent.session_id).toBeUndefined();
+          expect(sent.payload).toEqual({surface: "safety", ...(name === "chrome_safety_resume" ? {expected_revision: 7} : {})});
+          const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+          expect(sent.submission_id).toMatch(uuid);
+          expect(sent.request_generation).toMatch(uuid);
+          const registeredConnection = await page.evaluate(() => window.__frames.filter(frame => frame.type === "register_ui").at(-1).connection_generation);
+          expect(sent.connection_generation).toBe(registeredConnection);
+          expect(sent.connection_generation).toMatch(uuid);
+          await receive(page, reply(sent, "Safety control acknowledged"));
+          await expect(page.getByText("Safety control acknowledged")).toBeVisible();
+        });
+        test(`${name} never queues while disconnected`, async ({page}) => {
+          await setup(page);
+          await offerSafety(page, name);
+          await page.evaluate(() => { window.__sockets.at(-1).readyState = 3; });
+          await page.getByRole("button", {name: "Safety control", exact: true}).click();
+          await page.evaluate(() => { window.__sockets.at(-1).readyState = 1; window.__sockets.at(-1).onopen?.(); });
+          expect(await page.evaluate(action => window.__frames.filter(frame => frame.action === action).length, name)).toBe(0);
+        });
+      }
+      test("an uncertain resume retries status without replaying resume", async ({page}) => {
+        await setup(page);
+        await page.clock.install();
+        await offerSafety(page, "chrome_safety_resume");
+        await page.getByRole("button", {name: "Safety control", exact: true}).click();
+        await page.clock.fastForward(6100);
+        await page.getByRole("button", {name: "Retry", exact: true}).click();
+        expect(await page.evaluate(() => window.__frames.filter(frame => frame.action === "chrome_safety_resume").length)).toBe(1);
+        expect(await page.evaluate(() => window.__frames.at(-1).action)).toBe("chrome_open");
+        expect(await page.evaluate(() => window.__frames.at(-1).payload.surface)).toBe("safety");
+      });
     }
 
     test("only the newest read can display and a duplicate cannot replace it", async ({ page }) => {
@@ -230,7 +277,7 @@ for (const surface of ["work", "evidence"]) {
       await receive(page, { type: "chat_created", payload: { chat_id: "3359fc9b-7e28-46bb-9563-a606f9be737c" } });
       const pending = await open(page);
       const frame = reply(pending);
-      frame.html = `<button class="astral-action" data-action="chrome_open" data-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : {kind: "usage"})}}'>Refresh ${surface} fixture</button>`;
+      frame.html = `<button class="astral-action" data-action="chrome_open" data-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : surface === "evidence" ? {kind: "usage"} : {})}}'>Refresh ${surface} fixture</button>`;
       await receive(page, frame);
       await page.getByRole("button", { name: `Refresh ${surface} fixture`, exact: true }).click();
       const next = await page.evaluate(key => window.__frames.filter(frame => frame.action === "chrome_open"
@@ -286,7 +333,7 @@ for (const surface of ["work", "evidence"]) {
       await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
     });
 
-    for (const other of ["work", "guidance", "evidence"].filter(value => value !== surface)) {
+    for (const other of ["work", "guidance", "evidence", "safety"].filter(value => value !== surface)) {
       test(`a correlated ${other} reply cannot paint this surface`, async ({ page }) => {
         await setup(page);
         const frame = reply(await open(page), "Cross-surface source");
@@ -296,9 +343,9 @@ for (const surface of ["work", "evidence"]) {
       });
     }
 
-    if (surface === "evidence") {
+    if (surface === "evidence" || surface === "safety") {
       for (const phase of ["displayed", "timed out"]) {
-        test(`closing ${phase} evidence cannot enter the reconnect queue`, async ({ page }) => {
+        test(`closing ${phase} ${surface} cannot enter the reconnect queue`, async ({ page }) => {
           await setup(page);
           if (phase === "timed out") await page.clock.install();
           const pending = await open(page);
@@ -319,6 +366,8 @@ for (const surface of ["work", "evidence"]) {
         });
       }
 
+    }
+    if (surface === "evidence") {
       test("extra envelope fields cannot disclose evidence", async ({ page }) => {
         await setup(page);
         const frame = reply(await open(page), "Malformed source envelope");

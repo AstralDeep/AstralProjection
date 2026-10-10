@@ -1,17 +1,24 @@
-// Central app configuration: orchestrator WS/REST endpoints (debug via the emulator's 10.0.2.2 alias, release
-// via TLS) and Keycloak OIDC constants used by OidcAuth and MainActivity.
+// Validates the compiled deployment profile before exposing endpoints to MainActivity and OidcAuth.
+// Gradle retains the shipped defaults and permits only explicit secure deployment overrides.
 
 package com.personalailabs.astraldeep.app
 
+import com.personalailabs.astraldeep.core.deployment.ClientDeploymentProfile
+
 object AppConfig {
-    // Emulator loopback is 10.0.2.2, not localhost
-    val WS_URL: String = if (BuildConfig.DEBUG) "ws://10.0.2.2:8001/ws" else "wss://sandbox.ai.uky.edu/ws"
+    private val deployment =
+        ClientDeploymentProfile(
+            BuildConfig.ASTRAL_API_BASE,
+            BuildConfig.ASTRAL_WS_URL,
+            BuildConfig.ASTRAL_KEYCLOAK_AUTHORITY,
+            BuildConfig.ASTRAL_OIDC_CLIENT_ID,
+            BuildConfig.ASTRAL_OIDC_REDIRECT_URI,
+            allowShippedDebug = BuildConfig.DEBUG && !BuildConfig.ASTRAL_EXPLICIT_DEPLOYMENT,
+        )
 
-    val API_BASE: String = if (BuildConfig.DEBUG) "http://10.0.2.2:8001" else "https://sandbox.ai.uky.edu"
-
-    const val KEYCLOAK_AUTHORITY: String = "https://iam.ai.uky.edu/realms/Astral"
-
-    const val OIDC_CLIENT_ID: String = "astral-mobile"
-
-    const val OIDC_REDIRECT_URI: String = "com.personalailabs.astraldeep:/oauth2redirect"
+    val WS_URL: String = deployment.websocketUrl
+    val API_BASE: String = deployment.apiBase
+    val KEYCLOAK_AUTHORITY: String = deployment.keycloakAuthority
+    val OIDC_CLIENT_ID: String = deployment.clientId
+    val OIDC_REDIRECT_URI: String = deployment.redirectUri
 }

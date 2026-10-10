@@ -309,11 +309,15 @@ object Wire {
         require(submissionId == null || canonicalUuid4(submissionId) != null) {
             "submissionId must be a canonical UUID4"
         }
+        val safety = SafetySurfaceRequest.isEvent(action, payload)
+        require(!safety || requestGeneration != null && submissionId != null && SafetySurfaceRequest.validPayload(action, payload)) {
+            "Safety requests require exact payload and envelope correlation"
+        }
         val identifiedPayload =
             buildJsonObject {
                 payload.forEach(::put)
-                if (submissionId != null) put("submission_id", submissionId)
-                if (requestGeneration != null) put("request_generation", requestGeneration)
+                if (!safety && submissionId != null) put("submission_id", submissionId)
+                if (!safety && requestGeneration != null) put("request_generation", requestGeneration)
             }
         return buildJsonObject {
             put("type", "ui_event")

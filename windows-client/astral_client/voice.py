@@ -778,11 +778,12 @@ class QtLocalSpeechAdapter(QObject):
         helper: Optional[Any] = None,
         tts: Optional[Any] = None,
         schedule: Optional[Callable[[int, Callable[[], None]], None]] = None,
+        parent: Optional[QObject] = None,
     ) -> None:
-        super().__init__()
+        super().__init__(parent)
         self.audio = audio
         self.helper = helper or WindowsSpeechHelper()
-        self.tts = tts or _QtTextToSpeechBackend()
+        self.tts = tts or _QtTextToSpeechBackend(self)
         self._schedule = schedule or QTimer.singleShot
         self._on_final: Optional[Callable[[str], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
@@ -2645,7 +2646,7 @@ class VoiceController(QObject):
         self.audio = audio or QtAudioBackend(self)
         self.http = http or VoiceHttpClient(http_base, token_provider)
         self.media = media or LiveKitRoomSession()
-        self.local_speech = local_speech or QtLocalSpeechAdapter(audio=self.audio)
+        self.local_speech = local_speech or QtLocalSpeechAdapter(audio=self.audio, parent=self)
         self._local_schedule = local_schedule or QTimer.singleShot
         self._local_now = local_now or (lambda: datetime.now(timezone.utc))
         self._run_async = run_async or self._start_thread
