@@ -24,7 +24,8 @@ final class ConsoleWatchTests: XCTestCase {
         XCTAssertFalse(surface.permits(AstralComponent(json: button())!))
         fields["components"] = .array([button()])
         XCTAssertNil(WatchConsoleSurface(frame: InboundFrame(name: "chrome_surface", payload: .object(fields))))
-        let model = WatchModel(tokenStore: InMemoryTokenStore())
+        let model = WatchModel(
+            conversationResumeStore: ConversationResumeStore(), tokenStore: InMemoryTokenStore())
         model.openSafetySurface()
         XCTAssertTrue(model.consoleSurfaceFailed)
         XCTAssertNil(model.consoleSurfaceGeneration)
