@@ -9,6 +9,22 @@ import XCTest
 
 @MainActor
 final class SettingsControlTests: XCTestCase {
+    func testSafetyControlsAreNeverSubmittedOffline() {
+        let model = model()
+        model.screen = .surface
+        model.pendingSurfaceKey = "safety"
+        model.connected = false
+        var frames: [String] = []
+        model.outboundTap = { frames.append($0) }
+        for action in SafetySurfaceRequest.actions {
+            let payload: JSONValue = .object(["surface": .string("safety"), "expected_revision": .number(7)])
+            model.sendEvent(action, payload)
+        }
+        XCTAssertTrue(frames.isEmpty)
+        XCTAssertNotNil(model.surfaceFailureMessage)
+        XCTAssertTrue(model.localOperationSubmissions.isEmpty)
+    }
+
     func testUncertainGuidanceWriteRetryReturnsToListAndKeepsOfflineFailureVisible() {
         let model = model()
         model.screen = .surface

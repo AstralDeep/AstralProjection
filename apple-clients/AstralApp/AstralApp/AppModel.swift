@@ -3164,12 +3164,18 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if SafetySurfaceRequest.actions.contains(action) || payload["surface"]?.stringValue == "safety" {
+            guard signedIn, connected, SafetySurfaceRequest(action: action, payload: payload) != nil else {
+                surfaceFailureMessage = "Safety controls were not sent. Reconnect and check current stop status."
+                return
+            }
+        }
         if action == "chrome_close", pendingSurfaceKey == "evidence" || payload["surface"]?.stringValue == "evidence" {
             if pendingSurfaceKey == "evidence" { closeSurface() }
             return
         }
         if action == "chat_message", pendingSurfaceKey == "evidence" { closeSurface() }
-        if action == "chrome_open", mandatorySurface { return }
+        if action == "chrome_open", mandatorySurface, payload["surface"]?.stringValue != "safety" { return }
         if action == "compose_prompt" || (action == "chat_message" && pendingSurfaceKey == "agent_intro") {
             guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
                 pendingSurfaceKey == "agent_intro",
@@ -3481,7 +3487,8 @@ final class AppModel: NSObject {
         let connection = continuity.connectionGeneration
         let navigation = conversationNavigationGeneration
         let chatId = activeChatId
-        let evidence = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
+        let safety = SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
+        let evidence = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text) || safety
         let evidenceGeneration = InboundFrame.parse(text)?.payload["request_generation"]?.stringValue
         Task {
             let allowed: Bool
@@ -3512,7 +3519,7 @@ final class AppModel: NSObject {
                         return self.signedIn && self.connected && self.downloadOwner == owner && self.ws === socket
                             && self.continuity.connectionGeneration == connection && self.activeChatId == chatId
                             && self.conversationNavigationGeneration == navigation
-                            && self.pendingSurfaceKey == "evidence"
+                            && self.pendingSurfaceKey == (safety ? "safety" : "evidence")
                             && self.screen == .surface && self.ordinarySurfaceGeneration == evidenceGeneration
                     }
                 }

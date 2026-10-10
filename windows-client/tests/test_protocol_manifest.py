@@ -70,7 +70,7 @@ def test_persistent_assignment_actions_use_existing_generic_surface():
 def test_feature_088_guidance_actions_are_closed_and_not_desktop_frames():
     data = _manifest()
     actions = data["accept_actions"]
-    assert len(actions) == len(set(actions)) == 138
+    assert len(actions) == len(set(actions)) == 141
     assert {"chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set"} <= set(actions)
     guidance = ["guidance_notes_088", "guidance_skills_088", "guidance_agents_088", "guidance_selection_088"]
     contracts = data["presentation_contracts"]
@@ -84,7 +84,7 @@ def test_feature_088_guidance_actions_are_closed_and_not_desktop_frames():
 def test_feature_088_save_recurring_and_saved_results_are_closed_and_not_desktop_frames():
     data = _manifest()
     actions = data["accept_actions"]
-    assert len(actions) == len(set(actions)) == 138
+    assert len(actions) == len(set(actions)) == 141
     assert {"chrome_work_result_save", "chrome_job_stop"} <= set(actions)
     contracts = data["presentation_contracts"]
     names = ["work_save_088", "recurring_work_088", "saved_results_088"]
@@ -223,7 +223,7 @@ def test_evidence_inspection_uses_existing_correlated_modal_and_watch_handoff():
         assert frame["type"] == frame_type and frame["request_generation"] == generation
         assert frame["region"] == "modal" and frame["mode"] == "replace" and frame["surface_key"] == "evidence"
     assert is_handled("chrome_surface")
-    assert len(data["accept_actions"]) == 138 and len(_manifest_push_types()) == 72
+    assert len(data["accept_actions"]) == 141 and len(_manifest_push_types()) == 72
     assert not any(name.startswith("evidence") for name in _manifest_push_types())
     assert {component["type"] for component in fixture["native_frame"]["components"]} <= set(data["component_types"])
     watch = fixture["watch_components"]

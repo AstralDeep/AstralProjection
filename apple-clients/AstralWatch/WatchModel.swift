@@ -50,6 +50,7 @@ final class WatchModel {
     private(set) var consoleSurfaceFailed = false
     private(set) var consoleSurfaceGeneration: String?
     private var consoleAgentID: String?
+    private var consoleSurfaceKey = "agent_intro"
     private var consoleSurfaceEpoch = UUID().uuidString.lowercased()
     @ObservationIgnored private var consoleSurfaceTask: Task<Void, Never>?
     private(set) var turnSelection = TurnSelection.empty
@@ -270,7 +271,7 @@ final class WatchModel {
 
     @ObservationIgnored var currentConnectionVoiceSendOverride: ((String) -> Void)?
 
-    private struct AuthenticationOwner: Equatable {
+    private struct AuthenticationOwner: Equatable, Sendable {
         let account: ConversationAccount?
         let session: Int
         let server: URL
@@ -284,7 +285,7 @@ final class WatchModel {
         let original: TokenSet
     }
 
-    private struct SocketAuthenticationContext {
+    private struct SocketAuthenticationContext: Sendable {
         let owner: AuthenticationOwner
         let socket: WSClient
         let connection: String
@@ -862,7 +863,7 @@ final class WatchModel {
             theme.apply(spec: frame.payload["theme"] ?? frame.payload)
             return
         }
-        if frame.name == "chrome_surface", frame.payload["surface_key"]?.stringValue == "agent_intro" {
+        if frame.name == "chrome_surface", frame.payload["surface_key"]?.stringValue == consoleSurfaceKey {
             guard connected, conversationAccount != nil, consoleSurfaceVisible,
                 let update = WatchConsoleSurface(frame: frame),
                 update.generation == consoleSurfaceGeneration
@@ -3152,6 +3153,8 @@ extension WatchModel {
             _ = sendGuidanceRequest(action: "chrome_open", payload: payload)
         } else if reference.surface == "work" {
             beginWorkRead(payload)
+        } else if reference.surface == "safety" {
+            openSafetySurface()
         }
     }
 
@@ -3185,6 +3188,7 @@ extension WatchModel {
         guidanceVisible = false
         workVisible = false
         consoleAgentID = agent.id
+        consoleSurfaceKey = "agent_intro"
         consoleSurfaceVisible = true
         consoleSurfaceFailed = false
         let generation = consoleSurfaceEpoch
@@ -3221,8 +3225,59 @@ extension WatchModel {
     }
 
     func retryConsoleSurface() {
+        if consoleSurfaceKey == "safety" {
+            openSafetySurface()
+            return
+        }
         guard let agent = console?.catalog.agents.first(where: { $0.id == consoleAgentID }) else { return }
         openAgent(agent)
+    }
+
+    func openSafetySurface() {
+        invalidateConsoleSurface()
+        invalidateWorkRead()
+        guidanceVisible = false
+        workVisible = false
+        consoleSurfaceKey = "safety"
+        consoleSurfaceVisible = true
+        _ = sendSafetyRequest(
+            action: "chrome_open", payload: .object(["surface": .string("safety"), "params": .object([:])]))
+    }
+
+    @discardableResult
+    private func sendSafetyRequest(action: String, payload: JSONValue) -> Bool {
+        guard connected, consoleSurfaceVisible, consoleSurfaceKey == "safety",
+            consoleSurfaceGeneration == nil, let context = socketAuthenticationContext,
+            SafetySurfaceRequest(action: action, payload: payload) != nil
+        else {
+            consoleSurfaceFailed = true
+            return false
+        }
+        let generation = UUID().uuidString.lowercased()
+        let epoch = consoleSurfaceEpoch
+        consoleSurfaceGeneration = generation
+        consoleSurfaceFailed = false
+        let text = Outbound.uiEvent(action: action, sessionId: nil, payload: payload, requestGeneration: generation)
+        outboundTap?(text)
+        consoleSurfaceTask = Task { [weak self] in
+            let sent = await context.socket.sendCurrentChromeEvent(text) { [weak self] in
+                await MainActor.run {
+                    guard let self else { return false }
+                    return self.connected && self.socketAuthenticationIsCurrent(context)
+                        && self.consoleSurfaceVisible && self.consoleSurfaceKey == "safety"
+                        && self.consoleSurfaceEpoch == epoch && self.consoleSurfaceGeneration == generation
+                }
+            }
+            guard let self, !Task.isCancelled, self.consoleSurfaceEpoch == epoch else { return }
+            if sent {
+                do { try await Task.sleep(nanoseconds: 10_000_000_000) } catch { return }
+            }
+            guard !Task.isCancelled, self.consoleSurfaceGeneration == generation else { return }
+            self.consoleSurfaceFailed = true
+            self.consoleSurfaceGeneration = nil
+            self.consoleSurface = nil
+        }
+        return true
     }
 
     private func invalidateConsoleSurface() {
@@ -3238,6 +3293,7 @@ extension WatchModel {
 
     func closeConsoleSurface() {
         guard consoleSurfaceVisible else { return }
+        let key = consoleSurfaceKey
         invalidateConsoleSurface()
         let generation = consoleSurfaceEpoch
         guard connected, let account = conversationAccount, let socket = ws else { return }
@@ -3245,7 +3301,7 @@ extension WatchModel {
         let connection = continuity.connectionGeneration
         let text = Outbound.uiEvent(
             action: "chrome_close", sessionId: nil,
-            payload: .object(["surface": .string("agent_intro")]), requestGeneration: generation)
+            payload: .object(["surface": .string(key)]), requestGeneration: generation)
         consoleSurfaceTask = Task { [weak self] in
             _ = await socket.sendCurrentChromeEvent(text) { [weak self] in
                 await MainActor.run {
@@ -3263,6 +3319,9 @@ extension WatchModel {
         guard connected, consoleSurfaceVisible, consoleSurface?.permits(component) == true,
             let action = component.raw["action"]?.stringValue
         else { return false }
+        if consoleSurfaceKey == "safety", let payload = component.raw["payload"] {
+            return sendSafetyRequest(action: action, payload: payload)
+        }
         if action == "chrome_open" {
             guard component.raw["payload"]?["params"]?["agent_id"]?.stringValue == consoleAgentID,
                 let item = chromeMenu?.allItems.first(where: { $0.surface == "agents" }),

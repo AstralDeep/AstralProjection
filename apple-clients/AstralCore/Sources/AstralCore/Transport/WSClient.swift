@@ -117,6 +117,7 @@ public actor WSClient {
         guard !WorkReadRequest.claimsCurrentConnectionSemantics(frameText: text),
             !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
+            !SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text)
         else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
@@ -170,7 +171,7 @@ public actor WSClient {
     public func sendCurrentChromeEvent(
         _ text: String, isCurrent: @Sendable () async -> Bool
     ) async -> Bool {
-        guard ConsoleSurfaceRequest(frameText: text) != nil,
+        guard ConsoleSurfaceRequest(frameText: text) != nil || SafetySurfaceRequest(frameText: text) != nil,
             established, let current = task, current.state == .running
         else { return false }
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)

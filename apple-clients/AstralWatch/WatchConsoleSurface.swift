@@ -15,7 +15,8 @@ struct WatchConsoleSurface: Equatable {
             Set(p.keys) == [
                 "type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation",
             ],
-            p["type"]?.stringValue == "chrome_surface", p["surface_key"]?.stringValue == "agent_intro",
+            p["type"]?.stringValue == "chrome_surface", let key = p["surface_key"]?.stringValue,
+            ["agent_intro", "safety"].contains(key),
             p["region"]?.stringValue == "modal", p["mode"]?.stringValue == "replace",
             p["admin_only"]?.boolValue == false,
             let title = p["title"]?.stringValue, title.utf8.count <= 4096,
@@ -27,8 +28,8 @@ struct WatchConsoleSurface: Equatable {
             let encoded = try? frame.payload.encoded(), encoded.count <= 1024 * 1024
         else { return nil }
         var count = 0
-        guard rows.allSatisfy({ Self.valid($0, count: &count) }) else { return nil }
-        self.key = "agent_intro"
+        guard rows.allSatisfy({ Self.valid($0, count: &count, safety: key == "safety") }) else { return nil }
+        self.key = key
         self.title = title
         self.generation = generation
         components = rows.compactMap(AstralComponent.init(json:))
@@ -38,18 +39,18 @@ struct WatchConsoleSurface: Equatable {
         func contains(_ current: AstralComponent) -> Bool {
             current == component || current.children.contains(where: contains)
         }
-        return components.contains(where: contains) && Self.button(component.raw)
+        return components.contains(where: contains) && Self.button(component.raw, safety: key == "safety")
     }
 
-    private static func valid(_ value: JSONValue, count: inout Int, depth: Int = 0) -> Bool {
+    private static func valid(_ value: JSONValue, count: inout Int, depth: Int = 0, safety: Bool = false) -> Bool {
         count += 1
         guard count <= 256, depth <= 8, let p = value.objectValue, let type = p["type"]?.stringValue,
             ["text", "alert", "badge", "card", "container", "list", "keyvalue", "button"].contains(type)
         else { return false }
-        if type == "button" { return button(value) }
+        if type == "button" { return button(value, safety: safety) }
         for key in ["children", "content"] {
             if let children = p[key]?.arrayValue,
-                !children.allSatisfy({ valid($0, count: &count, depth: depth + 1) })
+                !children.allSatisfy({ valid($0, count: &count, depth: depth + 1, safety: safety) })
             {
                 return false
             }
@@ -57,11 +58,15 @@ struct WatchConsoleSurface: Equatable {
         return true
     }
 
-    private static func button(_ value: JSONValue) -> Bool {
+    private static func button(_ value: JSONValue, safety: Bool = false) -> Bool {
         guard value["type"]?.stringValue == "button", value["disabled"]?.boolValue == false,
             value["local"]?.boolValue == false, let payload = value["payload"]?.objectValue,
             let action = value["action"]?.stringValue
         else { return false }
+        if safety {
+            return SafetySurfaceRequest.actions.contains(action)
+                && SafetySurfaceRequest(action: action, payload: .object(payload)) != nil
+        }
         if ["chat_message", "compose_prompt"].contains(action) {
             guard Set(payload.keys) == ["message"], let text = payload["message"]?.stringValue else { return false }
             return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && text.utf8.count <= 32_000
