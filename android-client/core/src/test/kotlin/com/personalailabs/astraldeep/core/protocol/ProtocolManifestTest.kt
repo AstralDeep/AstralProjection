@@ -33,10 +33,12 @@ class ProtocolManifestTest {
             val fields = button.jsonObject
             val action = fields.getValue("action").jsonPrimitive.content
             val payload = fields.getValue("payload").jsonObject
-            val frame = Json.parseToJsonElement(Wire.encodeUiEvent(action, null, payload, generation)).jsonObject
+            val submission = "44444444-4444-4444-8444-444444444444"
+            val frame = Json.parseToJsonElement(Wire.encodeUiEvent(action, null, payload, generation, submission)).jsonObject
             assertEquals(action, frame.getValue("action").jsonPrimitive.content)
             assertEquals(generation, frame.getValue("request_generation").jsonPrimitive.content)
-            for ((key, value) in payload) assertEquals(value, frame.getValue("payload").jsonObject[key])
+            assertEquals(submission, frame.getValue("submission_id").jsonPrimitive.content)
+            assertEquals(payload, frame.getValue("payload"))
         }
     }
 

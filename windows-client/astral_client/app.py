@@ -1388,6 +1388,9 @@ class SurfaceDialog(QDialog):
 
     def fail_operation(self, message: str) -> None:
         self._timer.stop()
+        if self._surface == "safety":
+            self._on_timeout(message + " Reload status before trying again.")
+            return
         if self._surface_payload is None:
             self._on_timeout(message)
         self._status.setText(message)
@@ -3281,6 +3284,11 @@ class MainWindow(QMainWindow):
                    or row["type"] not in {"alert", "badge", "keyvalue", "button"}
                    for row in msg["components"])
         ):
+            return
+        safety = (msg.get("surface_key") == "safety" or ticket is not None and ticket[4] == "safety"
+                  or dialog is not None and dialog.isVisible() and dialog._surface == "safety")
+        if safety and (ticket is None or ticket[4] != "safety" or not self._settings_current(ticket)
+                       or msg.get("mode", "replace") != "replace" or msg.get("request_generation") != ticket[3]):
             return
         if (ticket is not None and msg.get("mode") == "mandatory"
                 and msg.get("request_generation") is None and msg.get("surface_key") not in {"work", "guidance", "agent_intro"}):

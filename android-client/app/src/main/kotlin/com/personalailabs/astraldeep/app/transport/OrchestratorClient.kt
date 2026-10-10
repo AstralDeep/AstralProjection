@@ -12,6 +12,7 @@ import com.personalailabs.astraldeep.core.protocol.ChatAttachment
 import com.personalailabs.astraldeep.core.protocol.ConversationResume
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
 import com.personalailabs.astraldeep.core.protocol.Inbound
+import com.personalailabs.astraldeep.core.protocol.SafetySurfaceRequest
 import com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent
 import com.personalailabs.astraldeep.core.protocol.VoiceTranscript
 import com.personalailabs.astraldeep.core.protocol.Wire
@@ -628,13 +629,26 @@ class OrchestratorClient(
             ) {
                 return@synchronized false
             }
+            if ((surface == "safety" || SafetySurfaceRequest.isEvent(action, payload)) &&
+                (surface != "safety" || !SafetySurfaceRequest.validPayload(action, payload))
+            ) {
+                return@synchronized false
+            }
             val submission = newSubmission(action, null)
             val fields =
                 buildJsonObject {
                     payload.forEach { (key, value) -> put(key, value) }
                     put("surface", surface)
                 }
-            val frame = Wire.encodeUiEvent(action, null, fields, submission.requestGeneration, submission.submissionId)
+            val encoded = Wire.encodeUiEvent(action, null, fields, submission.requestGeneration, submission.submissionId)
+            val frame =
+                if (surface == "safety") {
+                    JsonObject(
+                        Json.parseToJsonElement(encoded).jsonObject + ("connection_generation" to JsonPrimitive(generation)),
+                    ).toString()
+                } else {
+                    encoded
+                }
             onSubmission(submission, generation)
             if (!open || socket !== currentSocket || connectionGeneration != generation || ownerEpoch != epoch ||
                 !isCurrent() || !currentSocket.send(frame)
@@ -656,6 +670,7 @@ class OrchestratorClient(
         onSubmission(submission)
         if (action == "update_device" && payload["snapshot_purpose"] != null ||
             isGuidanceNoteAction(action) || action == "chrome_turn_selection_set" ||
+            SafetySurfaceRequest.isEvent(action, payload) ||
             (payload["surface"] as? JsonPrimitive)?.contentOrNull == "evidence" ||
             action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
         ) {
@@ -779,6 +794,7 @@ class OrchestratorClient(
                 .getOrNull() ?: return false
         val payload = root["payload"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: return false
         val action = (root["action"] as? JsonPrimitive)?.contentOrNull ?: return false
+        if (SafetySurfaceRequest.isEvent(action, payload)) return false
         val topSubmission = (root["submission_id"] as? JsonPrimitive)?.contentOrNull
         val topRequest = (root["request_generation"] as? JsonPrimitive)?.contentOrNull
         val payloadSubmission = (payload["submission_id"] as? JsonPrimitive)?.contentOrNull
