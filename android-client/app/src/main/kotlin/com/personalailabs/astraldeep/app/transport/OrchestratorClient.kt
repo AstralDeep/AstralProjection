@@ -217,7 +217,10 @@ class OrchestratorClient(
                 }
             val request =
                 Request.Builder().url(url).apply {
-                    if (custody != null) header("Cookie", custody.cookie)
+                    if (custody != null) {
+                        header("Cookie", custody.cookie)
+                        header("Origin", custody.origin)
+                    }
                 }.build()
 
             fun current(): Boolean = custody == null || custodyOwner?.isCurrent(custody) == true

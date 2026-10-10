@@ -699,7 +699,26 @@ class ServerSession088Test {
             }
         }
 
-    @Test fun real_websocket_upgrade_carries_cookie_but_never_serializes_it_or_uses_global_jar() =
+    @Test fun socket_ticket_origin_is_canonical_and_bound_to_the_validated_deployment() {
+        for ((backend, expected) in listOf(
+            "https://EXAMPLE.com:443/" to "https://example.com",
+            "https://Example.com:8443/" to "https://example.com:8443",
+            "https://[0:0:0:0:0:0:0:1]:443/" to "https://[::1]",
+            "https://[::1]:8443/" to "https://[::1]:8443",
+        )) {
+            val transport = ServerSessionTransport(scope(backend), OkHttpClient()) { now }
+            val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
+            val controller = ServerSessionCoordinator(transport, memory) { now }
+            assertTrue(controller.restore())
+            val url = expected.replaceFirst("https://", "wss://") + "/ws"
+            assertEquals(expected, controller.socketTicket(url, token).origin)
+            for (bad in listOf(url + "?token=x", url.replace("/ws", "/different"), "wss://unrelated.invalid/ws")) {
+                assertFailsWith<ServerSessionException> { controller.socketTicket(bad, token) }
+            }
+        }
+    }
+
+    @Test fun real_websocket_upgrade_carries_cookie_and_origin_without_serializing_cookie_or_using_global_jar() =
         runBlocking<Unit> {
             Fixture().use { f ->
                 val jarReads = AtomicInteger()
@@ -739,7 +758,9 @@ class ServerSession088Test {
                 val url = f.socketOrigin + "ws"
                 val client = OrchestratorClient(url, supplied, serverSession = { controller })
                 withTimeout(5000) { client.stream(token, DeviceCapabilities(screenWidth = 400, screenHeight = 800)).first { it is Inbound.AuthRequired } }
-                assertEquals(cookie, f.server.takeRequest().getHeader("Cookie"))
+                val upgrade = f.server.takeRequest()
+                assertEquals(cookie, upgrade.getHeader("Cookie"))
+                assertEquals(listOf(f.origin.removeSuffix("/")), upgrade.headers.values("Origin"))
                 assertEquals(0, jarReads.get())
                 controller.retire()
                 withTimeout(1000) { client.stream(token, DeviceCapabilities(screenWidth = 400, screenHeight = 800)).first { it is Inbound.AuthRequired } }

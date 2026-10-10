@@ -121,6 +121,7 @@ class ServerSessionCoordinator internal constructor(
 
     class SocketTicket internal constructor(internal val session: ServerSession, internal val epoch: Long) {
         internal val cookie: String get() = session.cookie
+        internal val origin: String get() = session.scope.origin.toString().removeSuffix("/")
 
         override fun toString(): String = "ServerSessionSocketTicket(private)"
     }
