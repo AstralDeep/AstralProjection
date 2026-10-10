@@ -729,6 +729,11 @@ class ConsoleShell(QWidget):
 
     def __init__(self, rail, canvas, composer, chips, status, parent=None):
         super().__init__(parent)
+        for widget in (rail, canvas, composer, chips, status):
+            previous_parent = widget.parentWidget()
+            previous_layout = previous_parent.layout() if previous_parent is not None else None
+            if previous_layout is not None:
+                previous_layout.removeWidget(widget)
         self.setObjectName("consoleShell")
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.model = None
