@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from html import escape as html_escape
 from typing import Any, Callable, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -1204,9 +1204,19 @@ def _fetch_image_bytes(url: str):
         return None
 
 
-class _AsyncImageLabel(QLabel):
-    _loaded = Signal(object)
+class _ImageResult(QObject):
+    loaded = Signal(object)
 
+
+def _fetch_image(result: _ImageResult, url: str) -> None:
+    raw = _fetch_image_bytes(url)
+    try:
+        result.loaded.emit(raw)
+    except RuntimeError:
+        pass
+
+
+class _AsyncImageLabel(QLabel):
     def __init__(self, url: str, alt: str, maxw: int, parent=None):
         super().__init__(parent)
         self._maxw = maxw
@@ -1214,18 +1224,13 @@ class _AsyncImageLabel(QLabel):
         self.setWordWrap(True)
         self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.setStyleSheet(f"color:{T.MUTED}; font-size:12px; background:transparent;")
-        self._loaded.connect(self._apply_bytes)
+        self._result = _ImageResult(self)
+        self._result.loaded.connect(self._apply_bytes)
         threading.Thread(
-            target=self._fetch, args=(url,), name="astral-image", daemon=True
+            target=_fetch_image, args=(self._result, url), name="astral-image", daemon=True
         ).start()
 
-    def _fetch(self, url: str) -> None:
-        raw = _fetch_image_bytes(url)
-        try:
-            self._loaded.emit(raw)
-        except RuntimeError:
-            pass
-
+    @Slot(object)
     def _apply_bytes(self, raw: object) -> None:
         if not raw:
             return
