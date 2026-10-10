@@ -1337,7 +1337,7 @@ class SurfaceDialog(QDialog):
         self._timer.stop()
         if callable(self._timeout_observer):
             self._timeout_observer()
-        if self._surface == "evidence":
+        if self._surface in {"evidence", "safety"}:
             self._surface_payload = None
             self._retained_controls = None
         self._status.setVisible(False)
@@ -2697,6 +2697,10 @@ class MainWindow(QMainWindow):
         sender = getattr(self.client, "send_current_settings", None)
         connection = getattr(self.client, "connection_generation", None)
         owner = self._resume_store.storage_key
+        if (dialog._surface == "safety" and action != "chrome_open"
+                and (dialog._surface_payload is None or self._surface_owner != (self.client, connection, owner))):
+            dialog.fail_operation("Safety status is no longer current.")
+            return False
         if not callable(sender) or not _canonical_uuid4(connection) or not owner:
             dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
             return False
@@ -4043,7 +4047,8 @@ class MainWindow(QMainWindow):
             return
         if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
             self._retire_evidence()
-            if self._settings_ticket is not None and self._surface_dialog is not None and self._surface_dialog.isVisible():
+            if (self._surface_dialog is not None and self._surface_dialog.isVisible()
+                    and (self._settings_ticket is not None or self._surface_dialog._surface == "safety")):
                 self._surface_dialog._on_timeout("The connection interrupted this action. Reload settings before trying again.")
             self._viewport.retire(reset=True)
             self._retire_work_read()

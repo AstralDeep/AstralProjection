@@ -111,6 +111,36 @@ class SafetySurfaceReducerTest {
     }
 
     @Test
+    fun settled_safety_requires_a_fresh_read_after_connection_or_authentication_loss() {
+        val settled = model.reduce(pending(), engaged())
+        assertNull(settled.privateSurfaceRequest)
+        assertFalse(settled.surfaceReloadRequired)
+        for (lost in listOf(ConnectionState.Disconnected, ConnectionState.AuthRequired)) {
+            val interrupted = model.reduceConnectionState(settled, lost)
+            assertTrue(interrupted.surfaceReloadRequired)
+            assertTrue(interrupted.privateSurfaceFailed)
+            assertNull(interrupted.privateSurfaceRequest)
+            assertEquals(settled.pendingSurface, interrupted.pendingSurface)
+            val reconnected = model.reduceConnectionState(interrupted, ConnectionState.Connected)
+            assertTrue(reconnected.surfaceReloadRequired)
+            assertEquals(reconnected, model.reduce(reconnected, engaged()))
+            val nextConnection = "44444444-4444-4444-8444-444444444444"
+            val nextRequest = "55555555-5555-4555-8555-555555555555"
+            val reading =
+                reconnected.copy(
+                    connectionGeneration = nextConnection,
+                    privateSurfaceRequest = PrivateSurfaceRequest(nextRequest, nextConnection, "safety"),
+                )
+            assertEquals(reading, model.reduce(reading, engaged()))
+            val fresh = model.reduce(reading, engaged().copy(requestGeneration = nextRequest))
+            assertFalse(fresh.surfaceReloadRequired)
+            assertFalse(fresh.privateSurfaceFailed)
+            assertNull(fresh.privateSurfaceRequest)
+            assertEquals(UiState(), model.reduce(UiState(), engaged().copy(requestGeneration = nextRequest)))
+        }
+    }
+
+    @Test
     fun actual_navigation_timeout_retry_and_owner_change_never_queue_or_replay_a_write() =
         runTest {
             Dispatchers.setMain(StandardTestDispatcher(testScheduler))

@@ -1383,6 +1383,8 @@ class AppViewModel(
     private fun disconnectSurface(s: UiState): UiState =
         if (s.pendingSurfaceKey == "evidence") {
             retirePrivateSurface(s).copy(surfaceReloadRequired = true)
+        } else if (s.pendingSurfaceKey == "safety") {
+            failSettingsSurface(s, "The connection changed. Reload this screen before trying again.", true)
         } else if (s.privateSurfaceRequest?.let { !isPrivateChromeSurface(it.surfaceKey) } == true) {
             failSettingsSurface(s, "The connection interrupted this action. Reload this screen before trying again.", true)
         } else {

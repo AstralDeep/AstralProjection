@@ -137,3 +137,73 @@ def test_safety_current_response_and_uncertain_resume_retry_reload_status(safety
     assert win.client.sent[-1][0] == "chrome_open"
     assert win.client.sent[-1][1] == {"surface": "safety", "params": {}}
     assert win._settings_ticket[3] != pending[3]
+
+
+def _settled_safety(win, state):
+    win._open_surface("safety", "Emergency stop")
+    ticket = win._settings_ticket
+    components = json.loads((ROOT / "contracts/fixtures/safety/owner_stop.json").read_text(encoding="utf-8"))[state]
+    response = {"surface_key": "safety", "components": components, "mode": "replace",
+                "request_generation": ticket[3]}
+    win._on_chrome_surface(response)
+    assert win._settings_ticket is None
+    return response, components[0]["action"], components[0]["payload"]
+
+
+@pytest.mark.parametrize("state", ["running", "engaged"])
+@pytest.mark.parametrize("status", ["closed:1006", "connecting", "reconnecting:1", "auth_required"])
+def test_settled_safety_disconnect_requires_fresh_status_before_controls(safety_window_fixture, state, status):
+    win = safety_window_fixture
+    response, action, payload = _settled_safety(win, state)
+    dialog = win._surface_dialog
+    before = len(win.client.sent)
+    win._on_status(status)
+    assert dialog._surface_payload is None
+    assert dialog._retained_controls is None
+    assert not any(button.text() in {"Stop everything now", "Resume explicitly"}
+                   for button in dialog._inner.findChildren(QPushButton))
+    win.client.connection_generation = str(uuid.uuid4())
+    win._on_status("connected")
+    assert not any(name.startswith("chrome_safety_") for name, _ in win.client.sent[before:])
+    before = len(win.client.sent)
+    win._on_chrome_surface(response)
+    assert win._emit(action, payload) is False
+    assert len(win.client.sent) == before
+    dialog._retry_btn.click()
+    assert win.client.sent[-1] == ("chrome_open", {"surface": "safety", "params": {}})
+    fresh = win._settings_ticket
+    assert fresh is not None and fresh[3] != response["request_generation"]
+    win._on_chrome_surface(response)
+    assert win._settings_ticket is fresh and dialog._surface_payload is None
+    win._on_chrome_surface(response | {"request_generation": fresh[3]})
+    assert win._settings_ticket is None and dialog._surface_payload is not None
+    button = next(button for button in dialog._inner.findChildren(QPushButton)
+                  if button.text() in {"Stop everything now", "Resume explicitly"})
+    button.click()
+    assert win.client.sent[-1] == (action, payload)
+
+
+@pytest.mark.parametrize("state", ["running", "engaged"])
+@pytest.mark.parametrize("changed", ["owner", "connection", "socket"])
+def test_settled_safety_controls_cannot_adopt_changed_custody(safety_window_fixture, state, changed):
+    win = safety_window_fixture
+    _, action, payload = _settled_safety(win, state)
+    sent = win.client.sent
+    before = len(sent)
+    if changed == "owner":
+        win._resume_store.storage_key = "different-synthetic-owner"
+    elif changed == "connection":
+        win.client.connection_generation = str(uuid.uuid4())
+    else:
+        from types import SimpleNamespace
+
+        original = win.client
+        win.client = SimpleNamespace(connection_generation=original.connection_generation,
+            send_current_settings=original.send_current_settings)
+    try:
+        assert win._emit(action, payload) is False
+        assert len(sent) == before and win._settings_ticket is None
+        assert win._surface_dialog._surface_payload is None
+    finally:
+        if changed == "socket":
+            win.client = original
