@@ -8,6 +8,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.Authenticator
 import okhttp3.Call
 import okhttp3.Callback
+import okhttp3.ConnectionPool
 import okhttp3.CookieJar
 import okhttp3.FormBody
 import okhttp3.MediaType.Companion.toMediaType
@@ -26,6 +27,7 @@ class ServerSessionTransport(
 ) {
     private val http =
         client.newBuilder()
+            .connectionPool(ConnectionPool(0, 5, TimeUnit.MINUTES))
             .followRedirects(false).followSslRedirects(false).retryOnConnectionFailure(false)
             .cookieJar(CookieJar.NO_COOKIES).authenticator(Authenticator.NONE).proxyAuthenticator(Authenticator.NONE)
             .callTimeout(30, TimeUnit.SECONDS).connectTimeout(10, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)

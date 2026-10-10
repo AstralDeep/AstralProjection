@@ -21,6 +21,8 @@ import okhttp3.CookieJar
 import okhttp3.Dns
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
@@ -32,6 +34,9 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.math.BigInteger
 import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -46,6 +51,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ServerSocketFactory
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
@@ -158,6 +164,48 @@ class ServerSession088Test {
         assertFailsWith<ServerSessionException> { fence.publish(next) { error("late logout") } }
     }
 
+    @Test fun probe_succeeds_after_server_closes_previous_idle_tls_connection() =
+        runBlocking<Unit> {
+            Fixture(trackSockets = true).use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
+                repeat(2) {
+                    f.server.enqueue(json(anonymous).setHeader("X-Astral-Session-Custody", "server_v1"))
+                }
+                assertTrue(transport.probe())
+                assertEquals(0, f.server.takeRequest().sequenceNumber)
+                f.acceptedSockets.single().close()
+                assertTrue(transport.probe())
+                assertEquals(0, f.server.takeRequest().sequenceNumber)
+                assertEquals(2, f.server.requestCount)
+            }
+        }
+
+    @Test fun custody_calls_use_fresh_tls_connections_without_borrowing_the_supplied_pool() =
+        runBlocking<Unit> {
+            Fixture(trackSockets = true).use { f ->
+                f.server.enqueue(json("{}"))
+                f.client.newCall(Request.Builder().url(f.origin).build()).execute().use { it.body!!.string() }
+                assertEquals(0, f.server.takeRequest().sequenceNumber)
+                assertEquals(1, f.client.connectionPool.idleConnectionCount())
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                f.server.enqueue(json("{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"))
+                assertFalse(transport.probe())
+                f.server.enqueue(json(issued()).setHeader("Set-Cookie", cookieHeader))
+                val session = transport.exchange(ServerAuthorizationCode(transport.scope, "original-code", "v".repeat(43)))
+                f.server.enqueue(json(refreshed()))
+                val current = transport.refresh(session)
+                f.server.enqueue(json("{\"outcome\":\"revoked\",\"revoked\":true,\"queued\":false}"))
+                assertTrue(transport.logout(current))
+                repeat(4) { assertEquals(0, f.server.takeRequest().sequenceNumber) }
+                assertEquals(5, f.server.requestCount)
+                assertEquals(1, f.client.connectionPool.idleConnectionCount())
+                f.server.enqueue(json("{}"))
+                f.client.newCall(Request.Builder().url(f.origin).build()).execute().use { it.body!!.string() }
+                assertEquals(1, f.server.takeRequest().sequenceNumber)
+            }
+        }
+
     @Test fun lost_exchange_acknowledgement_has_one_send_and_storage_failure_never_publishes() =
         runBlocking<Unit> {
             Fixture().use { f ->
@@ -211,9 +259,10 @@ class ServerSession088Test {
         }
     }
 
-    private class Fixture : AutoCloseable {
+    private class Fixture(trackSockets: Boolean = false) : AutoCloseable {
         val server = MockWebServer()
         val client: OkHttpClient
+        val acceptedSockets = CopyOnWriteArrayList<Socket>()
 
         // MockWebServer's own url() uses a reverse-DNS host, not loopback
         val origin: String get() = "https://localhost:${server.port}/"
@@ -230,6 +279,32 @@ class ServerSession088Test {
             val trust = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm()).apply { init(store) }
             val ssl = SSLContext.getInstance("TLS").apply { init(keys.keyManagers, trust.trustManagers, null) }
             server.useHttps(ssl.socketFactory, false)
+            if (trackSockets) {
+                server.protocols = listOf(Protocol.HTTP_1_1)
+                server.serverSocketFactory =
+                    object : ServerSocketFactory() {
+                        override fun createServerSocket(): ServerSocket =
+                            object : ServerSocket() {
+                                override fun accept(): Socket = super.accept().also(acceptedSockets::add)
+                            }
+
+                        override fun createServerSocket(port: Int): ServerSocket =
+                            createServerSocket().apply { bind(InetSocketAddress(port)) }
+
+                        override fun createServerSocket(
+                            port: Int,
+                            backlog: Int,
+                        ): ServerSocket =
+                            createServerSocket().apply { bind(InetSocketAddress(port), backlog) }
+
+                        override fun createServerSocket(
+                            port: Int,
+                            backlog: Int,
+                            address: InetAddress,
+                        ): ServerSocket =
+                            createServerSocket().apply { bind(InetSocketAddress(address, port), backlog) }
+                    }
+            }
             server.start()
             client = OkHttpClient.Builder().sslSocketFactory(ssl.socketFactory, trust.trustManagers.single() as X509TrustManager).build()
         }
