@@ -16,9 +16,12 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import okhttp3.Call
+import okhttp3.Connection
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.Dns
+import okhttp3.EventListener
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Protocol
@@ -26,9 +29,14 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import okhttp3.internal.http2.Http2Stream
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.RecordedRequest
 import okhttp3.mockwebserver.SocketPolicy
+import okhttp3.mockwebserver.internal.duplex.DuplexResponseBody
+import okio.Buffer
+import okio.buffer
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -181,6 +189,47 @@ class ServerSession088Test {
             }
         }
 
+    @Test fun completed_http2_custody_body_does_not_read_again_after_its_connection_is_released() =
+        runBlocking<Unit> {
+            Fixture().use { f ->
+                val protocols = CopyOnWriteArrayList<Protocol>()
+                val supplied =
+                    f.client.newBuilder().eventListener(
+                        object : EventListener() {
+                            override fun connectionAcquired(
+                                call: Call,
+                                connection: Connection,
+                            ) {
+                                protocols.add(connection.protocol())
+                            }
+                        },
+                    ).build()
+                val transport = ServerSessionTransport(scope(f.origin), supplied) { now }
+                val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
+                f.server.enqueue(
+                    MockResponse().setHeader("Content-Type", "application/json")
+                        .setHeader("Content-Length", anonymous.length)
+                        .setHeader("X-Astral-Session-Custody", "server_v1")
+                        .setBody(
+                            object : DuplexResponseBody {
+                                override fun onRequest(
+                                    request: RecordedRequest,
+                                    http2Stream: Http2Stream,
+                                ) {
+                                    http2Stream.getSink().buffer().apply {
+                                        writeUtf8(anonymous)
+                                        flush()
+                                    }
+                                }
+                            },
+                        ),
+                )
+                assertTrue(transport.probe())
+                assertEquals(listOf(Protocol.HTTP_2), protocols.toList())
+                assertEquals(1, f.server.requestCount)
+            }
+        }
+
     @Test fun custody_calls_use_fresh_tls_connections_without_borrowing_the_supplied_pool() =
         runBlocking<Unit> {
             Fixture(trackSockets = true).use { f ->
@@ -203,6 +252,33 @@ class ServerSession088Test {
                 f.server.enqueue(json("{}"))
                 f.client.newCall(Request.Builder().url(f.origin).build()).execute().use { it.body!!.string() }
                 assertEquals(1, f.server.takeRequest().sequenceNumber)
+            }
+        }
+
+    @Test fun fixed_and_chunked_custody_bodies_keep_size_utf8_and_truncation_guards() =
+        runBlocking<Unit> {
+            Fixture(trackSockets = true).use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val anonymous = "{\"authenticated\":false,\"access_token\":\"\",\"resumed\":false,\"reason\":\"no_session\"}"
+                val maximum = anonymous.padEnd(32768)
+                for (response in listOf(
+                    json(maximum),
+                    json(anonymous).setChunkedBody(anonymous, 17),
+                    json(maximum).setChunkedBody(maximum, 1024),
+                )) {
+                    f.server.enqueue(response.setHeader("X-Astral-Session-Custody", "server_v1"))
+                    assertTrue(transport.probe())
+                }
+                for (response in listOf(
+                    json(maximum + " "),
+                    json(anonymous).setChunkedBody(maximum + " ", 1024),
+                    json(anonymous).setBody(Buffer().write(byteArrayOf(0xc3.toByte(), 0x28))),
+                    json(anonymous).setHeader("Content-Length", anonymous.length + 1).setSocketPolicy(SocketPolicy.DISCONNECT_AT_END),
+                )) {
+                    f.server.enqueue(response)
+                    assertFailsWith<ServerSessionException> { transport.probe() }
+                }
+                assertEquals(7, f.server.requestCount)
             }
         }
 

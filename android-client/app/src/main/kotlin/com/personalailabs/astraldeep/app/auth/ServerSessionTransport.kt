@@ -155,14 +155,20 @@ class ServerSessionTransport(
                                     }
                                     if (it.code != 200) throw ServerSessionException(ServerSessionException.Reason.UNAVAILABLE)
                                     val body = it.body ?: sessionInvalid()
+                                    val length = body.contentLength()
                                     if (body.contentType()?.let { type -> type.type == "application" && type.subtype == "json" } != true ||
-                                        body.contentLength() > 32768
+                                        length > 32768
                                     ) {
                                         sessionInvalid()
                                     }
                                     val source = body.source()
-                                    if (source.request(32769)) sessionInvalid()
-                                    val bytes = source.readByteArray()
+                                    val bytes =
+                                        if (length >= 0) {
+                                            source.readByteArray(length)
+                                        } else {
+                                            if (source.request(32769)) sessionInvalid()
+                                            source.buffer.readByteArray()
+                                        }
                                     Reply(
                                         bytes.decodeToString(throwOnInvalidSequence = true),
                                         it.headers.values("Set-Cookie"),
