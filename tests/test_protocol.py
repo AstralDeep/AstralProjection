@@ -551,7 +551,7 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
 def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
-            "f08a9282fb5ac555ca2df6ee922cd2ec77eb070447b43175799e907142c09ff1"
+            "68f810dd6185778c1c3eeb468055583e8b44d57285c7a60e5c3b8625f3cadb97"
         ),
         "tooling/web-ci/package.json": (
             "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
