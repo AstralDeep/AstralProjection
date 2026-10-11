@@ -1,11 +1,15 @@
 """Dependency-free REST client for the Windows desktop's chrome surfaces that don't ride
-the WebSocket (audit log, attachments, sign-out revocation); Bearer-authed against
-the orchestrator, consumed by app.py's dialogs.
+the WebSocket (audit log, attachments, bounded downloads, sign-out revocation); Bearer-authed
+against the orchestrator, consumed by app.py's dialogs. Downloads stream under a hard byte
+limit with declared-length, overflow and truncation checks, and complete bytes reach the
+destination through a temporary-sibling replace.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 import urllib.error
 import urllib.request
 import uuid
@@ -146,15 +150,70 @@ def fetch_json(url: str, token: str, *, timeout: int = 20, opener=urllib.request
         raise RestError(0, f"bad JSON: {exc}")
 
 
-def fetch_bytes(url: str, token: str, *, timeout: int = 60, opener=urllib.request.urlopen) -> bytes:
+DOWNLOAD_LIMIT = 64 * 1024 * 1024
+_DOWNLOAD_CHUNK = 256 * 1024
+
+
+def _declared_length(headers: object) -> Optional[int]:
+    try:
+        raw = headers.get("Content-Length") if headers is not None else None
+    except Exception:  # noqa: BLE001
+        return None
+    if raw is None:
+        return None
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+def fetch_bytes(url: str, token: str, *, timeout: int = 60, opener=urllib.request.urlopen,
+                limit: int = DOWNLOAD_LIMIT) -> bytes:
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     try:
         with opener(req, timeout=timeout) as r:
-            return r.read(64 * 1024 * 1024)
+            declared = _declared_length(getattr(r, "headers", None))
+            if declared is not None and declared > limit:
+                raise RestError(0, f"download too large: the server declared {declared} bytes "
+                                   f"over the {limit} byte download limit")
+            body = bytearray()
+            while True:
+                chunk = r.read(min(_DOWNLOAD_CHUNK, limit + 1 - len(body)))
+                if not chunk:
+                    break
+                body += chunk
+                if len(body) > limit:
+                    raise RestError(0, f"download too large: the body exceeded the {limit} "
+                                       f"byte download limit")
+            if declared is not None and len(body) < declared:
+                raise RestError(0, f"download truncated: received {len(body)} of {declared} "
+                                   f"declared bytes")
+            return bytes(body)
     except urllib.error.HTTPError as exc:
         raise RestError(exc.code, exc.reason or "HTTP error")
+    except RestError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise RestError(0, str(exc))
+
+
+def write_download(path: str, data: bytes) -> None:
+    directory = os.path.dirname(os.path.abspath(path)) or "."
+    handle, temp_path = tempfile.mkstemp(
+        dir=directory, prefix=os.path.basename(path) + ".", suffix=".part")
+    try:
+        with os.fdopen(handle, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temp_path, path)
+    except BaseException:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        raise
 
 
 def upload_attachment(http_base: str, token: str, filename: str, mime: str,
