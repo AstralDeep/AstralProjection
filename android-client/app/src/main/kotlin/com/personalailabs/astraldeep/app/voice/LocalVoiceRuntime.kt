@@ -481,7 +481,7 @@ internal class LocalVoiceRuntime(
                         if (active === activeAnnouncement && announcementAuthorityCurrent(payload)) {
                             if (!active.started) {
                                 active.started = true
-                                sendPlayoutEvent(payload, "started")
+                                sendPlayoutEvent(payload, "started", null)
                                 onEvent(
                                     LocalVoiceUiEvent(
                                         phase = if (payload.string("kind") == "greeting") "greeting" else "speaking_progress",
