@@ -51,15 +51,41 @@ PROOF = "b" * 64
 ANNOUNCEMENT = "00000000-0000-4000-8000-000000000010"
 
 
-def test_client_local_v2_fixture_maps_to_closed_dispositions_and_builds_final():
+def _local_conformance_fixture() -> dict:
     fixture_path = (
         Path(__file__).resolve().parents[2]
         / "contracts/fixtures/voice_075/client_local_conformance.json"
     )
-    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+    return json.loads(fixture_path.read_text(encoding="utf-8"))
+
+
+def _materialize_local_vector(vectors: list[dict], vector: dict) -> dict:
+    base = next(item for item in vectors if item["id"] == vector["base_vector"])
+    payload = dict(base["payload"])
+    for mutation in vector["mutations"]:
+        path = [part for part in mutation["path"].split("/") if part]
+        assert path
+        target = payload
+        for key in path[:-1]:
+            target = target[key]
+        if mutation["op"] == "repeat":
+            target[path[-1]] = mutation["value"] * mutation["count"]
+        elif mutation["op"] == "remove":
+            del target[path[-1]]
+        else:
+            target[path[-1]] = mutation["value"]
+    return payload
+
+
+def test_client_local_v2_fixture_maps_to_closed_dispositions_and_builds_final():
+    fixture = _local_conformance_fixture()
     assert fixture["schema_version"] == "2"
     assert fixture["contract"] == "client_local/v1"
     for vector in fixture["vectors"]:
+        if "payload" not in vector:
+            payload = _materialize_local_vector(fixture["vectors"], vector)
+            assert parse_voice_local_frame(payload) is None, vector["id"]
+            continue
         payload = vector["payload"]
         if vector["shape"] in {"client_local_capability", "voice_capability_v2"}:
             parsed = parse_client_local_capability(payload)
@@ -69,6 +95,78 @@ def test_client_local_v2_fixture_maps_to_closed_dispositions_and_builds_final():
         assert parsed.disposition == vector["expected_disposition"]
         if parsed.disposition == "final":
             assert build_voice_local_final(parsed) == payload
+
+
+def test_client_local_v2_scalar_limit_vectors_accept_and_reject_by_unicode_scalars():
+    vectors = _local_conformance_fixture()["vectors"]
+    by_id = {vector["id"]: vector for vector in vectors}
+
+    accepted = (
+        "L-P02-local-final",
+        "L-P05-final-ascii-scalar-boundary",
+        "L-P06-final-supplementary-scalars",
+        "L-P07-final-combining-scalars",
+        "L-P08-final-zwj-scalars",
+    )
+    for identifier in accepted:
+        payload = by_id[identifier]["payload"]
+        parsed = parse_voice_local_frame(payload)
+        assert parsed is not None, identifier
+        assert parsed.disposition == "final", identifier
+        assert build_voice_local_final(parsed) == payload, identifier
+        text = payload["text"]
+        assert len(text) <= 8000, identifier
+        assert (
+            payload["text_digest_sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+        ), identifier
+
+    for identifier in (
+        "L-N04-final-over-ascii-scalar-limit",
+        "L-N05-final-supplementary-over-scalar-limit",
+        "L-N06-final-combining-over-scalar-limit",
+        "L-N07-final-zwj-over-scalar-limit",
+    ):
+        payload = _materialize_local_vector(vectors, by_id[identifier])
+        assert len(payload["text"]) > 8000, identifier
+        assert parse_voice_local_frame(payload) is None, identifier
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "\ud800",
+        "\udfff",
+        "a\ud800b",
+        "\udc00\ud83d",
+        "\ud83d\ud83d",
+        "e\u0301" * 4000 + "\ud800",
+    ),
+)
+def test_client_local_v2_rejects_malformed_scalar_sequences_without_raising(text: str):
+    payload = next(
+        vector["payload"]
+        for vector in _local_conformance_fixture()["vectors"]
+        if vector["id"] == "L-P02-local-final"
+    ).copy()
+    payload["text"] = text
+    assert parse_voice_local_frame(payload) is None
+
+
+def test_client_local_v2_keeps_valid_supplementary_bytes_and_digest_unchanged():
+    payload = next(
+        vector["payload"]
+        for vector in _local_conformance_fixture()["vectors"]
+        if vector["id"] == "L-P06-final-supplementary-scalars"
+    ).copy()
+    text = payload["text"]
+    digest = payload["text_digest_sha256"]
+    parsed = parse_voice_local_frame(payload)
+    assert parsed is not None
+    rebuilt = build_voice_local_final(parsed)
+    assert rebuilt is not None
+    assert rebuilt["text"] == text
+    assert rebuilt["text_digest_sha256"] == digest
+    assert rebuilt["text"].encode("utf-8") == text.encode("utf-8")
 
 
 def test_client_local_v2_fails_closed_on_undeclared_fields():

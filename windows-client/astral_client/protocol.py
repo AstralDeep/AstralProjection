@@ -426,6 +426,7 @@ def parse_voice_local_frame(payload: object) -> Optional[VoiceLocalValue]:
             or not isinstance(text, str)
             or not text.strip()
             or len(text) > 8000
+            or any(unicodedata.category(char) == "Cs" for char in text)
             or not isinstance(payload.get("text_digest_sha256"), str)
             or re.fullmatch(r"[0-9a-f]{64}", payload["text_digest_sha256"]) is None
             or not isinstance(payload.get("recognized_locale"), str)

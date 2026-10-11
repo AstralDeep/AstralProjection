@@ -528,24 +528,75 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
         "local_final",
         "announcement",
         "playout",
+        "rejected_final",
     }
-    assert len(vectors) == 7
+    assert len(vectors) == 15
     assert len({vector["id"] for vector in vectors}) == len(vectors)
     closed_dispositions = set(local["required_dispositions"])
     assert closed_dispositions == set(fixture["closed_dispositions"])
-    assert {vector["expected_disposition"] for vector in vectors} <= closed_dispositions
+    assert {
+        vector["expected_disposition"]
+        for vector in vectors
+        if "expected_disposition" in vector
+    } <= closed_dispositions
 
     exact_shapes = {**local["exact_frame_fields"], **local["exact_rest_fields"]}
+    mutation_ops = {"add", "replace", "remove", "repeat"}
 
     def assert_exact_keys(payload: dict[str, object], expected: set[str]) -> None:
         assert set(payload) == expected
 
     for vector in vectors:
+        if "payload" not in vector:
+            assert vector["category"] == "rejected_final"
+            assert "expected_disposition" not in vector
+            assert vector["base_vector"] in {item["id"] for item in vectors}
+            assert vector["expected_error"] in local["closed_reasons"]
+            for mutation in vector["mutations"]:
+                assert set(mutation) <= {"op", "path", "value", "count"}
+                assert mutation["op"] in mutation_ops
+                assert mutation["path"].startswith("/")
+            continue
         payload = vector["payload"]
         exact = set(exact_shapes[vector["shape"]])
         assert_exact_keys(payload, exact)
         with pytest.raises(AssertionError):
             assert_exact_keys({**payload, "unexpected": "forbidden"}, exact)
+
+
+def test_voice_075_scalar_limit_vectors_are_boundary_exact_and_digest_bound() -> None:
+    fixture = json.loads(VOICE_075_FIXTURE.read_text(encoding="utf-8"))
+    vectors = {vector["id"]: vector for vector in fixture["vectors"]}
+
+    def materialize(vector: dict[str, object]) -> dict[str, object]:
+        payload = dict(vectors[vector["base_vector"]]["payload"])
+        for mutation in vector["mutations"]:
+            assert mutation["op"] == "repeat"
+            path = mutation["path"].lstrip("/")
+            payload[path] = mutation["value"] * mutation["count"]
+        return payload
+
+    positive_ids = (
+        "L-P05-final-ascii-scalar-boundary",
+        "L-P06-final-supplementary-scalars",
+        "L-P07-final-combining-scalars",
+        "L-P08-final-zwj-scalars",
+    )
+    negative_ids = (
+        "L-N04-final-over-ascii-scalar-limit",
+        "L-N05-final-supplementary-over-scalar-limit",
+        "L-N06-final-combining-over-scalar-limit",
+        "L-N07-final-zwj-over-scalar-limit",
+    )
+    for identifier in positive_ids:
+        payload = vectors[identifier]["payload"]
+        text = payload["text"]
+        assert len(text) <= 8000
+        assert payload["text_digest_sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    for identifier in negative_ids:
+        text = materialize(vectors[identifier])["text"]
+        assert len(text) > 8000
+        assert 8001 <= len(text) <= 16002
 
 
 def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
