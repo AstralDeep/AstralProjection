@@ -2076,7 +2076,7 @@ final class AppleVoiceSessionController {
         let chatChanged = connection?.visibleChatId != chatId && chatId != nil
         connection?.visibleChatId = chatId
         rebuildBinding()
-        if speechBackend == "client_local", chatChanged, let local = localSession,
+        if speechBackend == "client_local", chatChanged, let current = localSession,
             let chatId
         {
             local.controlChanging(chatChanged: true)
@@ -2084,13 +2084,13 @@ final class AppleVoiceSessionController {
                 guard let self, let binding = self.currentBinding() else { return }
                 guard
                     let updated = await self.api.updateLocal(
-                        binding: binding, session: local,
+                        binding: binding, session: current,
                         fields: ["visible_chat_id": .string(chatId)])
                 else {
                     self.feedback("error", "stale_generation")
                     return
                 }
-                guard self.localSession?.sessionId == local.sessionId, self.local != nil
+                guard self.localSession?.sessionId == current.sessionId, self.local != nil
                 else { return }
                 self.localSession = updated
                 self.local?.updateSpeechRevision(updated.speechRevision)
@@ -3340,15 +3340,15 @@ final class AppleVoiceSessionController {
             return
         }
         if speechBackend == "client_local" {
-            guard let local = localSession else { return }
-            if enabled && !local.chatContextSynced {
+            guard let current = localSession else { return }
+            if enabled && !current.chatContextSynced {
                 feedback("connecting", "chat_context_unavailable")
                 return
             }
             local?.controlChanging(microphoneEnabled: enabled)
             guard
                 let updated = await api.updateLocal(
-                    binding: binding, session: local,
+                    binding: binding, session: current,
                     fields: ["microphone_enabled": .bool(enabled)])
             else {
                 feedback("error", "stale_generation")
@@ -3389,11 +3389,11 @@ final class AppleVoiceSessionController {
             return
         }
         if speechBackend == "client_local" {
-            guard let local = localSession else { return }
+            guard let current = localSession else { return }
             local?.controlChanging(speechMuted: muted)
             guard
                 let updated = await api.updateLocal(
-                    binding: binding, session: local,
+                    binding: binding, session: current,
                     fields: ["speech_muted": .bool(muted)])
             else {
                 feedback("error", "stale_generation")
@@ -3453,11 +3453,11 @@ final class AppleVoiceSessionController {
             return
         }
         if speechBackend == "client_local" {
-            guard let local = localSession else { return }
+            guard let current = localSession else { return }
             local?.stopSpeech()
             if await api.stopSpeech(
-                binding: binding, sessionId: local.sessionId,
-                generation: local.generation, revision: local.speechRevision)
+                binding: binding, sessionId: current.sessionId,
+                generation: current.generation, revision: current.speechRevision)
             {
                 local?.stopSpeechConfirmed()
             } else {
@@ -3503,7 +3503,7 @@ final class AppleVoiceSessionController {
         recoveryRequired = false
         if speechBackend == "client_local" {
             local?.suspend(reason: "local_recognition_cancelled")
-            guard let binding = currentBinding(), let local = localSession else {
+            guard let binding = currentBinding(), let current = localSession else {
                 local?.close()
                 localSession = nil
                 speechBackend = "llm_factory"
@@ -3511,8 +3511,8 @@ final class AppleVoiceSessionController {
                 return
             }
             let fence = AppleVoiceSessionFence(
-                sessionId: local.sessionId, generation: local.generation,
-                mediaGrantRevision: local.speechRevision)
+                sessionId: current.sessionId, generation: current.generation,
+                mediaGrantRevision: current.speechRevision)
             let ended = await api.end(binding: binding, fence: fence)
             local?.close()
             localSession = nil

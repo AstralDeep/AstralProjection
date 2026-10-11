@@ -2220,7 +2220,7 @@ private final class DeferredVoicePermission {
 }
 
 @MainActor
-private final class FakeVoiceAPI: AppleVoiceControlAPI {
+final class FakeVoiceAPI: AppleVoiceControlAPI {
     var startOutcome: AppleVoiceStartOutcome = .failed("voice_unavailable", nil)
     var takeoverOutcome: AppleVoiceStartOutcome = .failed("voice_unavailable", nil)
     var refreshOutcomes: [AppleVoiceRefreshOutcome] = []
@@ -2358,7 +2358,7 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
 }
 
 @MainActor
-private final class FakeVoiceMedia: AppleVoiceMediaClient {
+final class FakeVoiceMedia: AppleVoiceMediaClient {
     var eventHandler: ((AppleVoiceMediaEvent) -> Void)?
     var connectCount = 0
     var microphoneValues: [Bool] = []

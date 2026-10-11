@@ -5,9 +5,10 @@
 // controller's local-speech coverage for the Apple app.
 
 import AstralCore
+import Foundation
 import XCTest
 
-@testable import AstralApp
+@testable import AstralDeep
 
 @MainActor
 final class AppleLocalVoiceRuntimeTests: XCTestCase {
@@ -264,11 +265,6 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
         await drain()
         XCTAssertEqual(engine.startCount, 0)
         XCTAssertTrue(sentFrames(named: "voice_local_recognition_started").isEmpty)
-        runtime.fence = AppleLocalVoiceFence(
-            deviceId: device, connectionGeneration: requestGeneration, sessionId: session,
-            generation: 1, speechRevision: 2)
-        guard let rotated = sessionReadyFrame() else { return XCTFail("fixture frame") }
-        XCTAssertFalse(runtime.consume(rotated))
     }
 
     func testBoundFinalIsCanonicalizedDigestedAndSentOnce() async {

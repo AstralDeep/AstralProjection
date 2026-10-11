@@ -3,6 +3,7 @@
 // report guaranteed-local processing unless the recognizer proves on-device support and both
 // permissions are authorized, and it never sends audio or text off the device.
 
+import AstralCore
 import AVFoundation
 import Foundation
 import Speech

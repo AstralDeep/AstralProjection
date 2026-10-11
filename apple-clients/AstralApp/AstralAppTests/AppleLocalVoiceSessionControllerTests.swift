@@ -5,9 +5,10 @@
 // server returns 404.
 
 import AstralCore
+import Foundation
 import XCTest
 
-@testable import AstralApp
+@testable import AstralDeep
 
 @MainActor
 final class AppleLocalVoiceSessionControllerTests: XCTestCase {

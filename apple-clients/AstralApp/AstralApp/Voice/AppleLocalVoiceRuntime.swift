@@ -851,7 +851,7 @@ final class AppleLocalVoiceRuntime {
         playout = nil
     }
 
-    private func stopOwners(
+    func stopOwners(
         _ reason: String, reportRecognition: Bool = true, reportPlayout: Bool = true
     ) {
         readyAuthorized = false
