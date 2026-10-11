@@ -2248,9 +2248,9 @@
       "sourcePath": "backend/webrender/targets/mcp_renderer.py",
       "sourceBlob": "14b797116584bafab9b0a119214db994a7637e36",
       "sourceMode": "100644",
-      "resultSha256": "2d4c3bd51bcefb8e13ef152ce4b8c82e9d96ae6214459b29040e85f00d30f2a1",
+      "resultSha256": "ba7ddee7a47e6695d614830dfbcff2f8f3113369babd8fa816805136a7f424e7",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. MCP output bounding: measure every limit in UTF-8 bytes with the truncation marker included, bound blocks, whole-result bytes and traversal nodes during the walk instead of serializing unbounded intermediates, route headers/rows/items JSON through the depth-honoring budgeted writer that filters private keys at every level and closes truncated lists with a [truncated] element, cut only between whole Unicode scalars, replace lone surrogates with U+FFFD, and append one omission-marker block when limits drop components, so independently hosted MCP tools cannot return arbitrarily large results."
     },
     {
       "path": "backend/webrender/targets/stub_renderer.py",
