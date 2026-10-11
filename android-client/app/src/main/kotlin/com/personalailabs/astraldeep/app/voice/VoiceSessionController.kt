@@ -1274,6 +1274,7 @@ class VoiceSessionController(
                 media.disconnect()
                 feedback("error", outcome.reason, outcome.message)
             }
+            is VoiceStartOutcome.LocalStarted -> Unit
             is VoiceStartOutcome.Started -> {
                 if (!validStart(outcome, currentBinding)) {
                     media.disconnect()
@@ -2537,11 +2538,10 @@ class OkHttpVoiceControlApi(
                     val parsed =
                         raw.takeIf { it.isNotBlank() }
                             ?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
-                    if (response.code == 409 && parsed?.opaque("current_session_id") != null) {
-                        val current = parsed.opaque("current_session_id")!!
+                    if (response.code == 409 && parsed != null && parsed.opaque("current_session_id") != null) {
                         return@use VoiceStartOutcome.TakeoverRequired(
                             VoiceTakeoverTarget(
-                                sessionId = current,
+                                sessionId = requireNotNull(parsed.opaque("current_session_id")),
                                 deviceKind = parsed.str("device_kind") ?: "unknown",
                                 deviceLabel = parsed.str("device_label"),
                                 generation = parsed.positiveInt("generation") ?: 1,

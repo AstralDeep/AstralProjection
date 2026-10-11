@@ -64,7 +64,7 @@ internal fun canonicalizeLocalFinal(
 
 internal fun validLocalAnnouncementText(value: String): Boolean {
     if (value.isEmpty() || value.normalizeNfc() != value) return false
-    return value.none { it == '\u0000' || Character.getType(it) == Character.CONTROL }
+    return value.none { it == '\u0000' || Character.getType(it).toInt() == Character.CONTROL.toInt() }
 }
 
 internal fun sha256Hex(value: String): String =
@@ -72,14 +72,16 @@ internal fun sha256Hex(value: String): String =
 
 private fun String.normalizeNfc(): String = Normalizer.normalize(this, Normalizer.Form.NFC)
 
-private fun Char.hasOtherUnicodeCategory(): Boolean =
-    Character.getType(this) in intArrayOf(
-        Character.CONTROL,
-        Character.FORMAT,
-        Character.PRIVATE_USE,
-        Character.SURROGATE,
-        Character.UNASSIGNED,
+private val OTHER_UNICODE_CATEGORIES =
+    setOf(
+        Character.CONTROL.toInt(),
+        Character.FORMAT.toInt(),
+        Character.PRIVATE_USE.toInt(),
+        Character.SURROGATE.toInt(),
+        Character.UNASSIGNED.toInt(),
     )
+
+private fun Char.hasOtherUnicodeCategory(): Boolean = Character.getType(this) in OTHER_UNICODE_CATEGORIES
 
 internal class LocalVoiceRuntime(
     private val scope: CoroutineScope,

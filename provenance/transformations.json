@@ -432,7 +432,7 @@
       "sourceMode": "100644",
       "task": "T056/T060",
       "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Native console parity: consume negotiated server chrome and ROTE geometry, retain current conversation and voice identity, and qualify native rendering, transport and interaction behavior. Client-local speech runtime: select the server-chosen client_local backend through the v2 capability and session routes on the existing voice-control binding and UI socket, drive the on-device SpeechRecognizer/TextToSpeech engine through the ready handshake, server turn binding, immutable final submission with exact acknowledgements and bounded announcements, keep typed fallback for denied or unsupported devices, and preserve the remote LiveKit path and frozen fixture bytes.",
-      "resultSha256": "e9e60de45220f8a83402a3b1e09c41234346f9c2d6e470505b7e51b69fa05324"
+      "resultSha256": "478f32071f648b28bc64ae2850b8eaf7912abef348310bb780158da589e41794"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
