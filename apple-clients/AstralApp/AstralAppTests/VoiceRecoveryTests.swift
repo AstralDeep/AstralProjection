@@ -212,7 +212,29 @@ private final class RecoveryVoiceAPI: AppleVoiceControlAPI {
         return .refreshed(self.session(revision: revision), grant(revision: revision))
     }
 
-    func stopSpeech(binding: AppleVoiceUIBinding, session: AppleVoiceRestSession) async -> Bool { true }
+    func stopSpeech(
+        binding: AppleVoiceUIBinding, sessionId: String, generation: Int, revision: Int
+    ) async -> Bool { true }
+
+    func capabilityV2(binding: AppleVoiceUIBinding) async ->
+        (status: Int, payload: JSONValue?)
+    { (404, nil) }
+
+    func startLocal(
+        binding: AppleVoiceUIBinding, activationId: String, chatId: String,
+        capability: [String: JSONValue]
+    ) async -> AppleLocalStartOutcome { .failed("voice_unavailable", nil) }
+
+    func takeoverLocal(
+        binding: AppleVoiceUIBinding, activationId: String,
+        target: AppleVoiceTakeoverTarget, chatId: String, capability: [String: JSONValue]
+    ) async -> AppleLocalStartOutcome { .failed("voice_unavailable", nil) }
+
+    func updateLocal(
+        binding: AppleVoiceUIBinding, session: AppleLocalVoiceSession,
+        fields: [String: JSONValue]
+    ) async -> AppleLocalVoiceSession? { session }
+
     func consent(binding: AppleVoiceUIBinding, session: AppleVoiceRestSession, resultId: String, turnId: String) async
         -> Bool
     { true }

@@ -1114,8 +1114,8 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
       "sourceBlob": "f361e8ffee74f4cecccd6cd2b7b5b39850f35f8a",
       "sourceMode": "100644",
-      "resultSha256": "26d2dd9a313e56318353ea97bb81ca6cf32742f11fd72dac4582b08c50bc81d7",
-      "task": "T065/T066/T015",
+      "resultSha256": "744f346f665966fe7d7e3984988184e467d0d989fb7daeeccdc231be175c3ec6",
+      "task": "T065/T066/T067/T068",
       "reason": "Fence delayed Apple voice activation across End, close, authentication expiry, and connection replacement, and compensating-end stale successful start or takeover results before media can connect. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures."
     },
     {
@@ -1231,8 +1231,8 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
       "sourceBlob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
       "sourceMode": "100644",
-      "resultSha256": "0dec09419349105b6fca125689d52b50d6f8c51335d776bc6cd1a65a464df65d",
-      "task": "T065/T066/T060/T015",
+      "resultSha256": "c2dba2ee127b2ab7696321a7fa8dfd3bc62b621a0d51c3ef9f183714a2d719b2",
+      "task": "T065/T066",
       "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures."
     },
     {
@@ -1279,6 +1279,15 @@
       "resultSha256": "a8fccb8744afdfaf1d90b26f9a0cf92a542389dcaa324d982efbc428f09dd6b3",
       "task": "T063",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+    },
+    {
+      "path": "apple-clients/AstralApp/Info.plist",
+      "sourcePath": "apple-clients/AstralApp/Info.plist",
+      "sourceBlob": "ec2a120865633b1e12fa257d17215c754701ce3d",
+      "sourceMode": "100644",
+      "resultSha256": "eedfb10b916080f48e1c0eec3913ee028952a8068d08787a9114c87975a96992",
+      "task": "T066/T068",
+      "reason": "Add NSSpeechRecognitionUsageDescription to the invoking iOS/macOS app target so the on-device SFSpeechRecognizer authorization prompt can be presented for client-local voice conversations; the watch target keeps its remote-PCM-only disposition and declares no speech usage."
     },
     {
       "path": "apple-clients/AstralCore/Package.swift",
@@ -1438,8 +1447,8 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
       "sourceBlob": "d19d554b034c250545b3c018df3039a8d7e2091c",
       "sourceMode": "100644",
-      "resultSha256": "f5426c0cf52fbad093f8bba7893f115a503fca0eca844772ae028ca0c13e5c6f",
-      "task": "T050/T071",
+      "resultSha256": "8aa36505025e464734c01059fae198e3a1ea0a715640388b26191f683ea8129c",
+      "task": "T065/T066/T071",
       "reason": "Implement strict Apple client-local voice capability, frame, disposition, bound-final, and canonical content-free playout protocol models. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
     },
     {

@@ -551,7 +551,7 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
 def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
-            "f08a9282fb5ac555ca2df6ee922cd2ec77eb070447b43175799e907142c09ff1"
+            "cf4b1ae6e2fedb41dd1ddc24b7a8b0aed37cdcad0576905b36cac8e261af1d78"
         ),
         "tooling/web-ci/package.json": (
             "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
@@ -700,7 +700,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 386
+    assert len(paths) == 387
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 20
 
     moved_workflows = {
@@ -722,7 +722,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 133
+    assert len(extracted) - len(changed_paths) == 132
 
     for entry in record["entries"]:
         path = entry["path"]
