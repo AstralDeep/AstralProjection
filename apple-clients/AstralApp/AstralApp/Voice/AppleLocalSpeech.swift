@@ -158,7 +158,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
         @unknown default: "unavailable"
         }
         let locale = Locale(identifier: AppleLocalSpeechObservation.configuredLocale)
-        guard let recognizer = SFSpeechRecognizer(forLocale: locale), recognizer.isAvailable else {
+        guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
             return AppleLocalSpeechObservation(
                 hasMicrophone: hasMicrophone, hasAudioOutput: hasAudioOutput,
                 microphonePermission: microphonePermission,
@@ -189,7 +189,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
         reportedFinal = false
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else { return false }
         let locale = Locale(identifier: AppleLocalSpeechObservation.configuredLocale)
-        guard let recognizer = SFSpeechRecognizer(forLocale: locale), recognizer.isAvailable,
+        guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable,
             recognizer.supportsOnDeviceRecognition == true
         else { return false }
         activateAudioSession()
@@ -275,49 +275,40 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
         speakPhase = onPhase
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
-        utterance.locale = Locale(identifier: AppleLocalSpeechObservation.configuredLocale)
         synthesizer.speak(utterance)
         return true
     }
 
-    nonisolated func speechSynthesizer(
+    func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
         utterance: AVSpeechUtterance
     ) {
         guard characterRange.location == 0 else { return }
-        Task { @MainActor in
-            self.speakPhase?("started")
-        }
+        speakPhase?("started")
     }
 
-    nonisolated func speechSynthesizer(
+    func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
     ) {
-        Task { @MainActor in
-            self.speakPhase?("finished")
-            self.speakPhase = nil
-        }
+        speakPhase?("finished")
+        speakPhase = nil
     }
 
-    nonisolated func speechSynthesizer(
+    func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance
     ) {
-        Task { @MainActor in
-            self.speakPhase?("interrupted")
-            self.speakPhase = nil
-        }
+        speakPhase?("interrupted")
+        speakPhase = nil
     }
 
-    nonisolated func speechSynthesizer(
+    func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         didEncounterError utterance: AVSpeechUtterance,
         error: any Error
     ) {
-        Task { @MainActor in
-            self.speakPhase?("failed")
-            self.speakPhase = nil
-        }
+        speakPhase?("failed")
+        speakPhase = nil
     }
 
     func stopAll() async {

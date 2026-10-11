@@ -869,7 +869,7 @@ final class AppleLocalVoiceRuntime {
             active.epoch = playoutEpoch
             playout = nil
         }
-        let queued = announcementQueue
+        var queued = announcementQueue
         announcementQueue = []
         if reportPlayout {
             for payload in queued {

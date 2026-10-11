@@ -755,7 +755,8 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
         reset()
         await readyHandshake()
         runtime.updateSpeechRevision(3)
-        let staleBound = turnBoundFrame(clientTurnId: "stale", recognitionSequence: 1)
+        let staleBound = turnBoundFrame(
+            clientTurnId: "00000000-0000-4000-8000-000000000099", recognitionSequence: 1)
         XCTAssertNotNil(staleBound)
         XCTAssertFalse(runtime.consume(staleBound!))
         var rotated = commonBinding(extra: [:])
