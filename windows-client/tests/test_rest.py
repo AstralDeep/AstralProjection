@@ -578,3 +578,23 @@ def test_write_download_survives_temp_cleanup_failure(tmp_path, monkeypatch):
     assert "replace denied" in str(ei.value)
     assert destination.read_bytes() == b"original"
     assert len(list(tmp_path.glob("*.part"))) == 1
+
+
+def test_write_download_survives_close_failure_after_open_failure(tmp_path, monkeypatch):
+    destination = tmp_path / "keep.bin"
+    destination.write_bytes(b"original")
+
+    def fail_fdopen(fd, *args):
+        raise OSError("fdopen refused")
+
+    def fail_close(fd):
+        raise OSError("close refused")
+
+    monkeypatch.setattr(os, "fdopen", fail_fdopen)
+    monkeypatch.setattr(os, "close", fail_close)
+
+    with pytest.raises(OSError) as ei:
+        write_download(str(destination), b"replacement")
+
+    assert "fdopen refused" in str(ei.value)
+    assert destination.read_bytes() == b"original"

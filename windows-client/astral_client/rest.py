@@ -202,13 +202,20 @@ def write_download(path: str, data: bytes) -> None:
     directory = os.path.dirname(os.path.abspath(path)) or "."
     handle, temp_path = tempfile.mkstemp(
         dir=directory, prefix=os.path.basename(path) + ".", suffix=".part")
+    owned = True
     try:
         with os.fdopen(handle, "wb") as fh:
+            owned = False
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
         os.replace(temp_path, path)
     except BaseException:
+        if owned:
+            try:
+                os.close(handle)
+            except OSError:
+                pass
         try:
             os.unlink(temp_path)
         except OSError:

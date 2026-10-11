@@ -2779,9 +2779,9 @@
       "sourcePath": "windows-client/astral_client/rest.py",
       "sourceBlob": "84a9af9da43fdf9890c26e025d8d79ab946f55cb",
       "sourceMode": "100644",
-      "resultSha256": "f28848de6b222a39a0e08a6102de7265567b39950e5c1597b021036f04fef68c",
+      "resultSha256": "965b81a71579166200d3c645aabbe5cc9e928c4f4b7af4c152ea4a5c14284cfc",
       "task": "T063/T026",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Reject oversized downloads instead of saving truncated success: fetch_bytes streams bounded chunks with declared-length rejection, overflow detection and truncation checks, and write_download commits complete bytes through a temporary sibling replace that preserves the existing file on any failure."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Reject oversized downloads instead of saving truncated success: fetch_bytes streams bounded chunks with declared-length rejection, overflow detection and truncation checks, and write_download commits complete bytes through a temporary sibling replace that preserves the existing file on any failure. Close the owned temporary-file descriptor before sibling cleanup so a failed fdopen cannot strand the .part file on platforms that refuse to unlink open handles, and cover the close-failure guard without asserting platform-specific deletion outcomes."
     },
     {
       "path": "windows-client/astral_client/streaming.py",
@@ -3157,9 +3157,9 @@
       "sourcePath": "windows-client/tests/test_rest.py",
       "sourceBlob": "a5c29d8752df22e47a86fa01e7d95a9e2b58e00f",
       "sourceMode": "100644",
-      "resultSha256": "9b2258cf05319219ea5c6662deac72fd84a3005a43bc0d23ebfbef6a26587ddd",
+      "resultSha256": "f4807f40358b35dcd827ea6881c82d1c357c8069d6b7975d9795092b6c292c6a",
       "task": "T063/T026",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Cover bounded download streaming with zero-byte, exact-limit, limit-plus-one, declared-length, chunked-overflow, truncation, interrupted-read and production-limit fixtures, plus atomic save writes that preserve the destination on replace, fsync, write and open failures."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Cover bounded download streaming with zero-byte, exact-limit, limit-plus-one, declared-length, chunked-overflow, truncation, interrupted-read and production-limit fixtures, plus atomic save writes that preserve the destination on replace, fsync, write and open failures. Add the close-failure regression that keeps the original refusal error and the existing destination intact regardless of platform deletion semantics."
     },
     {
       "path": "windows-client/tests/test_runtime_reliability_protocol_060.py",
