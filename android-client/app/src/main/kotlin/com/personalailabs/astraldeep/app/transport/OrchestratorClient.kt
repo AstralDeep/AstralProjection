@@ -442,6 +442,12 @@ class OrchestratorClient(
         return currentSocket.send(frame)
     }
 
+    fun sendVoiceLocalFrame(frame: String): Boolean {
+        val currentSocket = socket
+        if (!open || currentSocket == null) return false
+        return currentSocket.send(frame)
+    }
+
     fun createChatForVoice(): LocalSubmission? {
         val currentSocket = socket
         val currentGeneration = connectionGeneration
