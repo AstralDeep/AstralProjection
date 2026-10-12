@@ -173,7 +173,15 @@ def test_expired_access_token_refreshes_with_live_server_custody(monkeypatch):
     assert value.refresh() is not None
 
 
-@pytest.mark.parametrize("reply,status,destination,mime", [(b'{}', 200, SERVER, "application/json"), (b'{}', 201, SERVER, "application/json"), (b'{}', 200, SERVER + "/other", "application/json"), (b'{}', 200, SERVER, "text/html"), (b'x' * 32769, 200, SERVER, "application/json"), (b'[]', 200, SERVER, "application/json"), (b'{"authenticated":false,"authenticated":true}', 200, SERVER, "application/json")])
+@pytest.mark.parametrize("reply,status,destination,mime", [
+    pytest.param(b'{}', 200, SERVER, "application/json", id="empty-object"),
+    pytest.param(b'{}', 201, SERVER, "application/json", id="wrong-status"),
+    pytest.param(b'{}', 200, SERVER + "/other", "application/json", id="redirected-destination"),
+    pytest.param(b'{}', 200, SERVER, "text/html", id="non-json-mime"),
+    pytest.param(b'x' * 32769, 200, SERVER, "application/json", id="oversized-body"),
+    pytest.param(b'[]', 200, SERVER, "application/json", id="non-object-body"),
+    pytest.param(b'{"authenticated":false,"authenticated":true}', 200, SERVER, "application/json", id="duplicate-identity-key"),
+])
 def test_session_http_transport_bounds_identity_and_never_redirects(monkeypatch, reply, status, destination, mime):
     from email.message import Message
     from types import SimpleNamespace
