@@ -36,8 +36,27 @@ final class MeshSurfaceRequestTests: XCTestCase {
         for (action, payload) in cases {
             XCTAssertNotNil(MeshSurfaceRequest(action: action, payload: payload))
             let frame = Outbound.uiEvent(action: action, sessionId: nil, payload: payload)
+            let encoded = try JSONValue.parse(Data(frame.utf8))
+            XCTAssertEqual(encoded["payload"], payload, action)
+            XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(encoded["submission_id"]?.stringValue)))
+            XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(encoded["request_generation"]?.stringValue)))
             XCTAssertNotNil(MeshSurfaceRequest(frameText: frame), action)
             XCTAssertTrue(MeshSurfaceRequest.claimsCurrentConnectionSemantics(frameText: frame))
+            XCTAssertNil(QueuedOperationReplay(frameText: frame))
+            var invalidFrame = encoded.objectValue!
+            for field in ["submission_id", "request_generation"] {
+                invalidFrame[field] = .string("foreign")
+                XCTAssertNil(
+                    MeshSurfaceRequest(
+                        frameText: String(decoding: try JSONValue.object(invalidFrame).encoded(), as: UTF8.self)))
+                invalidFrame[field] = encoded[field]
+            }
+            var duplicated = payload.objectValue!
+            duplicated["submission_id"] = encoded["submission_id"]
+            invalidFrame["payload"] = .object(duplicated)
+            XCTAssertNil(
+                MeshSurfaceRequest(
+                    frameText: String(decoding: try JSONValue.object(invalidFrame).encoded(), as: UTF8.self)))
             var fields = payload.objectValue!
             fields["unexpected"] = .bool(true)
             XCTAssertNil(MeshSurfaceRequest(action: action, payload: .object(fields)))

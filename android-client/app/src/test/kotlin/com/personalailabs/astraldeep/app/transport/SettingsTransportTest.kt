@@ -254,8 +254,54 @@ class SettingsTransportTest {
         assertEquals(1, socket.frames.size)
         val frame = Json.parseToJsonElement(socket.frames.single()).jsonObject
         assertEquals("mesh", frame["payload"]!!.jsonObject["surface"]!!.jsonPrimitive.content)
+        assertEquals(setOf("surface", "member_id"), frame["payload"]!!.jsonObject.keys)
         assertEquals("null", frame["session_id"].toString())
         assertTrue(client.pendingActions().isEmpty())
+    }
+
+    @Test
+    fun every_mesh_management_control_emits_exact_fields_with_outer_correlation() {
+        val id = "a".repeat(32)
+        val cases =
+            mapOf(
+                "chrome_mesh_create" to
+                    buildJsonObject {
+                        putJsonObject("fields") {
+                            put("label", "Phone")
+                            put("device_key", """{"kty":"OKP","crv":"Ed25519","x":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}""")
+                            put("scopes", "tools:read")
+                            put("ttl_seconds", "3600")
+                        }
+                    },
+                "chrome_mesh_confirm" to buildJsonObject { put("invite_id", id) },
+                "chrome_mesh_reject" to buildJsonObject { put("invite_id", id) },
+                "chrome_mesh_remove_invitation" to buildJsonObject { put("invite_id", id) },
+                "chrome_mesh_revoke" to buildJsonObject { put("member_id", id) },
+                "chrome_mesh_rename" to
+                    buildJsonObject {
+                        put("member_id", id)
+                        putJsonObject("fields") { put("label", "Desktop") }
+                    },
+            )
+        for ((action, payload) in cases) {
+            val client = OrchestratorClient("ws://localhost:9/ws")
+            val socket = Socket()
+            client.installOpenSocketForTest(socket)
+            client.replayPendingForTest(connection, {}, {}, { true })
+            var issued: LocalSubmission? = null
+            assertTrue(client.sendCurrentSettingsEvent("mesh", action, payload, { true }) { submission, _ -> issued = submission })
+            val frame = Json.parseToJsonElement(socket.frames.single()).jsonObject
+            val expected =
+                buildJsonObject {
+                    payload.forEach(::put)
+                    put("surface", "mesh")
+                }
+            assertEquals(expected, frame["payload"], action)
+            assertEquals(issued!!.submissionId, frame["submission_id"]!!.jsonPrimitive.content)
+            assertEquals(issued!!.requestGeneration, frame["request_generation"]!!.jsonPrimitive.content)
+            assertEquals("null", frame["session_id"].toString())
+            assertTrue(client.pendingActions().isEmpty())
+        }
     }
 
     private class Socket : WebSocket {

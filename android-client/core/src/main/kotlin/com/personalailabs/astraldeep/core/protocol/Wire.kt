@@ -310,14 +310,18 @@ object Wire {
             "submissionId must be a canonical UUID4"
         }
         val safety = SafetySurfaceRequest.isEvent(action, payload)
+        val mesh = MeshSurfaceRequest.isEvent(action, payload)
         require(!safety || requestGeneration != null && submissionId != null && SafetySurfaceRequest.validPayload(action, payload)) {
             "Safety requests require exact payload and envelope correlation"
+        }
+        require(!mesh || requestGeneration != null && submissionId != null && MeshSurfaceRequest.validPayload(action, payload)) {
+            "Mesh requests require exact payload and envelope correlation"
         }
         val identifiedPayload =
             buildJsonObject {
                 payload.forEach(::put)
-                if (!safety && submissionId != null) put("submission_id", submissionId)
-                if (!safety && requestGeneration != null) put("request_generation", requestGeneration)
+                if (!safety && !mesh && submissionId != null) put("submission_id", submissionId)
+                if (!safety && !mesh && requestGeneration != null) put("request_generation", requestGeneration)
             }
         return buildJsonObject {
             put("type", "ui_event")

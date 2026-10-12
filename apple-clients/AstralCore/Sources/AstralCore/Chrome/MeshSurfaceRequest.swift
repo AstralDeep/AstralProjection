@@ -44,13 +44,17 @@ public struct MeshSurfaceRequest: Equatable, Sendable {
     }
 
     public init?(frameText: String) {
-        guard frameText.utf8.count <= 16384, let replay = QueuedOperationReplay(frameText: frameText),
-            let frame = InboundFrame.parse(frameText), frame.payload["session_id"] == .null,
-            var fields = frame.payload["payload"]?.objectValue
+        guard frameText.utf8.count <= 16384, let frame = InboundFrame.parse(frameText), frame.name == "ui_event",
+            let root = frame.payload.objectValue,
+            Set(root.keys) == [
+                "type", "action", "session_id", "submission_id", "request_generation", "payload",
+            ],
+            frame.payload["session_id"] == .null,
+            continuityUUID4(frame.payload["submission_id"]?.stringValue) != nil,
+            continuityUUID4(frame.payload["request_generation"]?.stringValue) != nil,
+            let action = frame.payload["action"]?.stringValue, let payload = frame.payload["payload"]
         else { return nil }
-        fields.removeValue(forKey: "submission_id")
-        fields.removeValue(forKey: "request_generation")
-        self.init(action: replay.action, payload: .object(fields))
+        self.init(action: action, payload: payload)
     }
 
     public static func claimsCurrentConnectionSemantics(frameText: String) -> Bool {

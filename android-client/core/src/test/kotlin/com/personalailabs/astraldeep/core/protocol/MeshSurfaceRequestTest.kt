@@ -5,6 +5,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -35,6 +37,12 @@ class MeshSurfaceRequestTest {
         for ((action, payload) in cases) {
             assertTrue(MeshSurfaceRequest.isEvent(action, payload))
             assertTrue(MeshSurfaceRequest.validPayload(action, payload), action)
+            val request = "11111111-1111-4111-8111-111111111111"
+            val submission = "22222222-2222-4222-8222-222222222222"
+            val frame = body(Wire.encodeUiEvent(action, null, payload, request, submission))
+            assertEquals(payload, frame["payload"], action)
+            assertEquals(JsonPrimitive(request), frame["request_generation"])
+            assertEquals(JsonPrimitive(submission), frame["submission_id"])
             assertFalse(MeshSurfaceRequest.validPayload(action, JsonObject(payload + ("unexpected" to JsonPrimitive(true)))))
             assertFalse(MeshSurfaceRequest.validPayload(action, JsonObject(payload + ("surface" to JsonPrimitive("other")))))
         }
@@ -43,6 +51,16 @@ class MeshSurfaceRequestTest {
             assertFalse(MeshSurfaceRequest.validPayload(action, body("""{"surface":"mesh"}""")))
         }
         assertFalse(MeshSurfaceRequest.isEvent("ordinary", JsonObject(emptyMap())))
+    }
+
+    @Test
+    fun mesh_wire_rejects_missing_outer_identity_and_client_local_actions() {
+        val request = "11111111-1111-4111-8111-111111111111"
+        val submission = "22222222-2222-4222-8222-222222222222"
+        assertFailsWith<IllegalArgumentException> { Wire.encodeUiEvent("chrome_mesh_create", null, create(), null, submission) }
+        assertFailsWith<IllegalArgumentException> { Wire.encodeUiEvent("chrome_mesh_create", null, create(), request, null) }
+        assertFailsWith<IllegalArgumentException> { Wire.encodeUiEvent("chrome_mesh_identity", null, create(), request, submission) }
+        assertFailsWith<IllegalArgumentException> { Wire.encodeUiEvent("chrome_mesh_create", null, create("{}"), request, submission) }
     }
 
     @Test

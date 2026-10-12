@@ -148,6 +148,59 @@ import XCTest
         }
     }
 
+    func testOwnerMeshCallerKeepsEveryControlPayloadExactAtEncoding() async throws {
+        let id = String(repeating: "a", count: 32)
+        let cases: [String: JSONValue] = [
+            "chrome_mesh_create": .object([
+                "fields": .object([
+                    "label": .string("Phone"),
+                    "device_key": .string(
+                        #"{"kty":"OKP","crv":"Ed25519","x":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#),
+                    "scopes": .string("tools:read"), "ttl_seconds": .string("3600"),
+                ])
+            ]),
+            "chrome_mesh_confirm": .object(["invite_id": .string(id)]),
+            "chrome_mesh_reject": .object(["invite_id": .string(id)]),
+            "chrome_mesh_remove_invitation": .object(["invite_id": .string(id)]),
+            "chrome_mesh_revoke": .object(["member_id": .string(id)]),
+            "chrome_mesh_rename": .object(["member_id": .string(id), "fields": .object(["label": .string("Desktop")])]),
+        ]
+        for (action, payload) in cases {
+            let (model, _, session) = try model()
+            model.serverSessionTransport = { _ in
+                ServerSessionReply(
+                    body: .object([
+                        "authenticated": .bool(true), "access_token": .string(session.accessToken),
+                        "resumed": .bool(true), "user_id": .string(session.owner),
+                    ]))
+            }
+            await model.bootstrap()
+            model.connected = true
+            model.screen = .surface
+            model.pendingSurfaceKey = "mesh"
+            model.pendingSurface = AppModel.SurfaceContent(
+                surfaceKey: "mesh", title: "Mesh devices",
+                components: [
+                    AstralComponent(
+                        json: .object([
+                            "type": .string("button"), "label": .string("Manage"),
+                            "action": .string(action), "payload": payload,
+                        ]))!
+                ])
+            var emitted: JSONValue?
+            model.outboundTap = { emitted = try! JSONValue.parse(Data($0.utf8)) }
+            model.sendEvent(action, payload)
+            let frame = try XCTUnwrap(emitted, action)
+            var fields = payload.objectValue!
+            fields["surface"] = .string("mesh")
+            XCTAssertEqual(frame["payload"], .object(fields), action)
+            XCTAssertEqual(frame["session_id"], .null)
+            XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(frame["submission_id"]?.stringValue)))
+            XCTAssertNotNil(UUID(uuidString: try XCTUnwrap(frame["request_generation"]?.stringValue)))
+            await model.signOut(revokeRemote: false)
+        }
+    }
+
     private actor Gate {
         private var continuation: CheckedContinuation<Void, Never>?
         private var released = false
