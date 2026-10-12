@@ -7,6 +7,9 @@ whole-result, and traversal-node budgets that bound every rendered result.
 from __future__ import annotations
 
 from decimal import Decimal
+import json
+
+import pytest
 
 from webrender.registry import TARGET_RENDERERS
 from webrender.targets.mcp_renderer import install, render_mcp
@@ -213,3 +216,28 @@ def test_renderer_spends_the_whole_result_budget_at_the_tail() -> None:
     ]
     assert blocks[-1]["text"] == "type: t\nrows: \n[truncated]"
     assert sum(len(block["text"].encode("utf-8")) for block in blocks) <= 256 * 1024
+
+
+@pytest.mark.parametrize("remaining", range(12, 181))
+@pytest.mark.parametrize(
+    "rows",
+    [
+        [["", [], [1]]],
+        [["", {}]],
+        [{"a": {"b": [1]}}],
+        [["\\\"\n🌧" * 100]],
+        [[], [], []],
+    ],
+)
+def test_renderer_keeps_nested_json_valid_at_every_result_tail(remaining, rows) -> None:
+    components = [{"type": "text", "content": "x" * 70000} for _ in range(3)]
+    components.append({"type": "text", "content": "x" * (65536 - remaining)})
+    components.append({"type": "table", "rows": rows})
+    blocks = render_mcp(components)
+
+    assert sum(len(block["text"].encode("utf-8")) for block in blocks) <= 256 * 1024
+    tail = blocks[-1]["text"].removesuffix("\n[truncated]")
+    if "rows: " in tail:
+        encoded_rows = tail.partition("rows: ")[2]
+        if encoded_rows:
+            assert isinstance(json.loads(encoded_rows), list)

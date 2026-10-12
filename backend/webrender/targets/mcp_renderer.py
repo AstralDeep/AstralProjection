@@ -120,10 +120,12 @@ class _Budget:
         self.parts.append(data.decode("utf-8"))
         self.bytes_left -= len(data)
 
-    def open(self, bracket: str) -> None:
+    def open(self, bracket: str) -> bool:
         self.raw(bracket)
-        if not self.exhausted:
-            self.opened += 1
+        if self.exhausted:
+            return False
+        self.opened += 1
+        return True
 
     def close(self, bracket: str) -> None:
         if not self.opened:
@@ -173,7 +175,8 @@ def _json_text(value: Any, budget: _Budget, depth: int) -> None:
         return
     if isinstance(value, dict):
         opened_at = len(budget.parts)
-        budget.open("{")
+        if not budget.open("{"):
+            return
         kept = 0
         for key, item in value.items():
             if budget.stopped or not budget.visit():
@@ -198,7 +201,8 @@ def _json_text(value: Any, budget: _Budget, depth: int) -> None:
         return
     if isinstance(value, list):
         opened_at = len(budget.parts)
-        budget.open("[")
+        if not budget.open("["):
+            return
         guard = min(_LIST_RESERVE, budget._cap())
         budget.reserved += guard
         total = len(value)
