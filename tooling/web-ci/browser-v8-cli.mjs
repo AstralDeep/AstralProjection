@@ -8,7 +8,11 @@ import { TextDecoder } from "node:util";
 
 import { BROWSER_COVERAGE_PRODUCER, convertPlaywrightV8Coverage } from "./coverage-conversion.mjs";
 
-const SOURCE_PATH = "backend/webrender/static/client.js";
+const SOURCE_PATHS = new Map([
+  ["/static/client.js", "backend/webrender/static/client.js"],
+  ["/static/mesh-custody.js", "backend/webrender/static/mesh-custody.js"],
+  ["/static/mesh-enrollment.js", "backend/webrender/static/mesh-enrollment.js"],
+]);
 const MAX_REPORT_BYTES = 64 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 256 * 1024 * 1024;
 const MAX_ENTRIES = 1024;
@@ -23,28 +27,28 @@ function readRegular(path, maximum) {
   return new TextDecoder("utf-8", { fatal: true }).decode(readFileSync(path));
 }
 
-function browserEntry(entry, source) {
+function browserEntry(entry) {
   if (entry === null || typeof entry !== "object" || Array.isArray(entry)
       || Object.keys(entry).sort().join(",") !== "functions,scriptId,source,url"
-      || typeof entry.scriptId !== "string" || !entry.scriptId || entry.source !== source) {
+      || typeof entry.scriptId !== "string" || !entry.scriptId || typeof entry.source !== "string") {
     fail("entry shape or candidate source does not match");
   }
-  if (entry.url === "") return;
+  if (entry.url === "") return SOURCE_PATHS.get("/static/client.js");
   let url;
   try { url = new URL(entry.url); } catch { fail("entry has no browser asset URL"); }
-  if (!["http:", "https:"].includes(url.protocol) || url.pathname !== "/static/client.js"
+  if (!["http:", "https:"].includes(url.protocol) || !SOURCE_PATHS.has(url.pathname)
       || url.username || url.password || url.search || url.hash) fail("entry belongs to another coverage lane");
+  return SOURCE_PATHS.get(url.pathname);
 }
 
 export async function convertBrowserV8Reports({ inputs, repoRoot }) {
   if (!Array.isArray(inputs) || inputs.length === 0 || inputs.length > 32) fail("input count is empty or excessive");
-  const sourceFile = resolve(realpathSync(repoRoot), SOURCE_PATH);
-  if (realpathSync(sourceFile) !== sourceFile) fail("candidate source must not traverse a symbolic link");
-  const source = readRegular(sourceFile, 4 * 1024 * 1024);
+  const root = realpathSync(repoRoot);
+  const sources = new Map();
   const seen = new Set();
   let totalBytes = 0;
   let count = 0;
-  let record;
+  const records = new Map();
   for (const input of inputs) {
     const canonical = realpathSync(input);
     if (seen.has(canonical)) fail("duplicate input report");
@@ -56,19 +60,28 @@ export async function convertBrowserV8Reports({ inputs, repoRoot }) {
     if (!Array.isArray(entries) || entries.length === 0) fail("report must contain a nonempty raw browser array");
     for (const entry of entries) {
       if (++count > MAX_ENTRIES) fail("entry count exceeds bound");
-      browserEntry(entry, source);
-      const document = await convertPlaywrightV8Coverage([entry], () => SOURCE_PATH);
+      const path = browserEntry(entry);
+      const sourceFile = resolve(root, path);
+      if (realpathSync(sourceFile) !== sourceFile) fail("candidate source must not traverse a symbolic link");
+      if (!sources.has(path)) sources.set(path, readRegular(sourceFile, 4 * 1024 * 1024));
+      const source = sources.get(path);
+      if (entry.source !== source) fail("entry shape or candidate source does not match");
+      const document = await convertPlaywrightV8Coverage([entry], () => path);
       if (readRegular(sourceFile, 4 * 1024 * 1024) !== source) fail("candidate source changed during conversion");
-      const observed = document.coverage[SOURCE_PATH];
+      const observed = document.coverage[path];
+      const record = records.get(path);
       if (!record) {
-        record = observed;
+        records.set(path, observed);
       } else {
         if (JSON.stringify(record.statementMap) !== JSON.stringify(observed.statementMap)) fail("inconsistent statement map");
         for (const [id, hits] of Object.entries(observed.s)) record.s[id] = record.s[id] > 0 || hits > 0 ? 1 : 0;
       }
     }
   }
-  return { ...BROWSER_COVERAGE_PRODUCER, coverage: { [SOURCE_PATH]: record } };
+  for (const [path, source] of sources) {
+    if (readRegular(resolve(root, path), 4 * 1024 * 1024) !== source) fail("candidate source changed during conversion");
+  }
+  return { ...BROWSER_COVERAGE_PRODUCER, coverage: Object.fromEntries([...records].sort(([left], [right]) => left.localeCompare(right))) };
 }
 
 function argumentsFrom(argv) {
