@@ -1,5 +1,5 @@
-# CI-only, Python 3.11 lock for the Linux x86_64/aarch64 and Windows x86_64 owner jobs.
-# Regenerate with a resolver that emits hashes for every supported wheel.
+# CI-only, Python 3.11 lock for the Linux x86_64, Linux aarch64, and Windows x86_64
+# owner jobs. Regenerate with a resolver that emits hashes for every supported wheel.
 --only-binary=:all:
 
 annotated-types==0.8.0 --hash=sha256:f072f4d804ea359e4eaf198b1af7a8b0943881a87f31bb764f8bf219bb9419e0
@@ -22,7 +22,7 @@ pygments==2.21.0 --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2
 pyproject-hooks==1.2.0 --hash=sha256:9e5c6bfa8dcc30091c74b0cf803c81fdd29d94f01992a7707bc97babb1141913
 pytest==9.1.1 --hash=sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c
 pytest-cov==7.0.0 --hash=sha256:3b8e9558b16cc1479da72058bdecf8073661c7f57f7d3c5f22a1c23507f2d861
-ruff==0.15.21 ; sys_platform == "linux" --hash=sha256:bab0905d2f29e0d9fbc3c373ed23db0095edaa3f71f1f4f519ec15134d9e85c8 --hash=sha256:01d65b4831c6b2a4ba8ee6faa84049d44d982b7a706e622c4094c509e51673be
+ruff==0.15.21 ; sys_platform == "linux" --hash=sha256:bab0905d2f29e0d9fbc3c373ed23db0095edaa3f71f1f4f519ec15134d9e85c8
 ruff==0.15.21 ; sys_platform == "win32" --hash=sha256:d4b8d9a2f0f12b816b50447f6eccb9f4bb01a6b82c86b50fb3b5354b458dc6d3
 ruff==0.15.21 ; sys_platform == "darwin" --hash=sha256:e6312e41bc96791299614995ea3a977c5857c3b5662b1ecef6755b02b87cb646
 setuptools==83.0.0 --hash=sha256:29b23c360f22f414dc7336bb39178cc7bcbf6021ed2733cde173f09dba19abb3
