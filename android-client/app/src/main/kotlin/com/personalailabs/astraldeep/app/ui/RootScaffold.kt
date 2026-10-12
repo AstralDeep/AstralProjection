@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -33,6 +35,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -43,12 +46,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,6 +74,17 @@ fun RootScaffold(
     onSignOut: () -> Unit,
     onWorkspaceAction: (TopBarControl) -> Unit,
 ) {
+    val meshState by vm.state.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboardManager.current
+    meshState.meshPublicIdentity?.let { identity ->
+        AlertDialog(
+            onDismissRequest = vm::dismissMeshIdentity,
+            title = { Text("Public device identity") },
+            text = { SelectionContainer { Text(identity) } },
+            confirmButton = { TextButton(onClick = { clipboard.setText(AnnotatedString(identity)) }) { Text("Copy public identity") } },
+            dismissButton = { TextButton(onClick = vm::dismissMeshIdentity) { Text("Done") } },
+        )
+    }
     CompositionLocalProvider(LocalViewportInteraction provides vm::viewportInteraction) {
         RootScaffoldContent(vm, renderer, onSignOut, onWorkspaceAction)
     }

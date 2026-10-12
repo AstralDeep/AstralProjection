@@ -333,3 +333,9 @@ activate the extracted workflow in this repository.
   26.5 against Xcode 26.6 (build 17F113). Its fail-closed `apple-required`
   aggregate requires every platform result and matrix success marker.
 - Known gaps: `KNOWN-ISSUES.md`.
+
+### Mesh devices and protected session custody
+
+Fresh iOS/macOS sign-in exchanges the authorization code and PKCE verifier through the configured HTTPS server's `server_v1` custody endpoint. The server keeps the refresh grant; the client keeps the exact-server session cookie in a separate `ThisDeviceOnly` Keychain namespace. Restoration authenticates that cookie and owner through `/auth/session` before opening a socket. Socket handshakes send the configured server Origin and scoped cookie; refresh, server/account changes, and sign-out retire stale work. Expired access is renewed before remote logout. An offline or refused revocation remains explicitly unconfirmed after the local wipe.
+
+The shared **Mesh devices** screen offers owner management and joining-device enrollment. Generate or copy this device's public identity, create a pending request, confirm its fingerprint from another owner session, and paste the returned current-server enrollment link on the original joining device. Its account/server-scoped Ed25519 seed stays in protected Keychain storage across normal app restarts and is purged on sign-out or an account/server change. Redemption signs the exact challenge, uses a separate cookie-free transport, and proves the minted DPoP identity through `/api/mesh/me` before retaining the safe member ID. No private key, link payload, or member bearer is durably stored. This native flow manages enrollment and inventory through owner authentication; member tool invocation/session renewal remains the SDK's separate transport. Watch uses the shared explicit phone/desktop form handoff and receives no private key or grant.

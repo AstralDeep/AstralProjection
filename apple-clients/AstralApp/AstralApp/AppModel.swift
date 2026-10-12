@@ -126,6 +126,10 @@ final class AppModel: NSObject {
 
     var serverBaseText: String {
         didSet {
+            if oldValue != serverBaseText {
+                retireMeshCustody()
+                retireServerSession()
+            }
             defaults.set(serverBaseText, forKey: "serverBase")
             #if os(iOS)
                 WatchOverrideSync.shared.push(serverBaseText)
@@ -133,7 +137,13 @@ final class AppModel: NSObject {
         }
     }
     var authorityText: String {
-        didSet { defaults.set(authorityText, forKey: "authority") }
+        didSet {
+            if oldValue != authorityText {
+                retireMeshCustody()
+                retireServerSession()
+            }
+            defaults.set(authorityText, forKey: "authority")
+        }
     }
 
     #if os(macOS)
@@ -151,6 +161,12 @@ final class AppModel: NSObject {
     var everConnected = false
     var initialConnectionFailed = false
     var surfaceFailureMessage: String?
+    var meshPublicIdentity: String?
+    @ObservationIgnored private var meshCustody: MeshEnrollmentCustody?
+    @ObservationIgnored private var meshOperation: Task<Void, Never>?
+    @ObservationIgnored private var meshOperationEpoch = 0
+    @ObservationIgnored var meshKeyStorage: any MeshKeyStorage = KeychainMeshKeyStorage()
+    @ObservationIgnored var meshTransport: (URLRequest) async throws -> JSONValue = MeshEnrollmentHTTP.request
     private var ordinarySurfaceRequests: [String: OrdinarySurfaceRequest] = [:]
     private var ordinarySurfaceGeneration: String?
     var evidenceReadGeneration: String? { pendingSurfaceKey == "evidence" ? ordinarySurfaceGeneration : nil }
@@ -158,7 +174,9 @@ final class AppModel: NSObject {
     private var ordinaryReadIntent: (generation: String, owner: DownloadOwner)?
     private var parameterRequests: [String: String] = [:]
     private var parameterFailures: Set<String> = []
-    var screen: Screen = .chat
+    var screen: Screen = .chat {
+        didSet { if oldValue != screen { cancelMeshPresentation() } }
+    }
     var activeChatId: String?
 
     var composerDraft = ""
@@ -230,7 +248,9 @@ final class AppModel: NSObject {
     var console: ConsoleModel? { chromeMenu?.console }
     var pendingSurfaceKey = ""
     var pendingSurfaceParams: JSONValue = .object([:])
-    var pendingSurface: SurfaceContent?
+    var pendingSurface: SurfaceContent? {
+        didSet { if oldValue != pendingSurface { cancelMeshPresentation() } }
+    }
     var workReadState = WorkReadState()
     var guidanceUpdate: GuidanceSurfaceUpdate?
     var guidanceState = GuidanceRequestState()
@@ -284,6 +304,13 @@ final class AppModel: NSObject {
     private let store: TokenStorage
     @ObservationIgnored private let credentialClock: @Sendable () -> Date
     @ObservationIgnored private var tokens: TokenSet?
+    @ObservationIgnored private var serverSession: ServerSession?
+    @ObservationIgnored private var serverCustodyRequired = false
+    @ObservationIgnored var serverSessionStorage: any MeshKeyStorage = KeychainMeshKeyStorage(
+        service: "com.personalailabs.astraldeep.server-session")
+    @ObservationIgnored var serverSessionTransport: @Sendable (URLRequest) async throws -> ServerSessionReply = {
+        try await ServerSessionHTTP.request($0)
+    }
     @ObservationIgnored private var ws: WSClient?
     @ObservationIgnored private var initialWebSocket: WSClient?
     @ObservationIgnored private var registeredAccessToken: String?
@@ -376,6 +403,10 @@ final class AppModel: NSObject {
     ) {
         self.voice = voiceController ?? AppleVoiceSessionController()
         self.store = tokenStore
+        if tokenStore is InMemoryTokenStore {
+            meshKeyStorage = InMemoryMeshKeyStorage()
+            serverSessionStorage = InMemoryMeshKeyStorage()
+        }
         self.credentialClock = credentialClock
         self.ws = webSocket
         self.initialWebSocket = webSocket
@@ -430,6 +461,7 @@ final class AppModel: NSObject {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            retireMeshCustody()
             retireOrdinarySurfaceRequests()
             parameterRequests = [:]
             parameterFailures = []
@@ -912,6 +944,36 @@ final class AppModel: NSObject {
         let generation = sessionGeneration
         let owner = downloadOwner
         let authentication = authSession
+        if let oidc, let scope = try? ServerSessionScope(server: serverBase, oidc: oidc) {
+            do {
+                if let data = try serverSessionStorage.load(scope.storageKey) {
+                    let restored = try JSONDecoder().decode(ServerSession.self, from: data)
+                    guard restored.scope == scope, restored.cookieExpiresAt > credentialClock() else {
+                        throw ServerSessionError.retired
+                    }
+                    let refreshed = try await ServerSessionTransport(scope: scope, transport: serverSessionTransport)
+                        .refresh(restored)
+                    guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                        authentication === authSession, self.oidc?.authority == oidc.authority,
+                        (try? ServerSessionScope(server: serverBase, oidc: oidc)) == scope
+                    else { return }
+                    try serverSessionStorage.save(JSONEncoder().encode(refreshed), key: scope.storageKey)
+                    serverSession = refreshed
+                    serverCustodyRequired = true
+                    tokens = refreshed.tokenSet
+                    enterSignedIn(resumedSession: true)
+                    return
+                }
+            } catch {
+                guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
+                    authentication === authSession
+                else { return }
+                retireServerSession()
+                store.wipe()
+                signInError = "The saved server session could not be resumed. Sign in again."
+                return
+            }
+        }
         let loaded = await Task.detached { [store] in store.load() }.value
         guard !Task.isCancelled, generation == sessionGeneration, owner == downloadOwner,
             authentication === authSession, let stored = loaded
@@ -929,15 +991,20 @@ final class AppModel: NSObject {
             signInError = "Set the Keycloak realm URL first."
             return
         }
+        retireMeshCustody()
+        retireServerSession()
+        authSession?.cancel()
         signInError = nil
         let verifier = PKCE.makeVerifier()
         let state = PKCE.makeVerifier()
+        let generation = sessionGeneration
         let url = oidc.authorizeURL(state: state, challenge: PKCE.challenge(for: verifier))
 
         let session = ASWebAuthenticationSession(url: url, callbackURLScheme: AstralConfig.redirectScheme) {
             [weak self] callback, error in
             guard let self else { return }
             Task { @MainActor in
+                guard generation == self.sessionGeneration else { return }
                 if let error {
                     self.signInError = error.localizedDescription
                     return
@@ -960,26 +1027,71 @@ final class AppModel: NSObject {
     }
 
     private func exchange(code: String, verifier: String, oidc: OIDCConfig) async {
-        let request = NoStoreHTTP.request(
-            url: oidc.tokenEndpoint,
-            method: "POST",
-            body: Data(oidc.tokenRequestBody(code: code, verifier: verifier).utf8),
-            contentType: "application/x-www-form-urlencoded")
+        let generation = sessionGeneration
+        let authentication = authSession
+        let server = serverBase
         do {
-            let (data, response) = try await NoStoreHTTP.session.data(for: request)
-            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-            guard status == 200, let json = try? JSONValue.parse(data),
-                let set = TokenSet(json: json)
-            else {
-                signInError = "Token exchange failed (HTTP \(status))."
-                return
-            }
-            tokens = set
-            store.save(StoredTokens(from: set))
+            let scope = try ServerSessionScope(server: server, oidc: oidc)
+            let transport = ServerSessionTransport(scope: scope, transport: serverSessionTransport)
+            let result = try await transport.exchange(code: code, verifier: verifier)
+            guard !Task.isCancelled, generation == sessionGeneration, authSession === authentication,
+                serverBase == server, self.oidc?.authority == oidc.authority
+            else { return }
+            try serverSessionStorage.retainOnly(scope.storageKey)
+            try serverSessionStorage.save(JSONEncoder().encode(result), key: scope.storageKey)
+            serverSession = result
+            serverCustodyRequired = true
+            tokens = result.tokenSet
+            store.wipe()
             enterSignedIn(resumedSession: false)
         } catch {
-            signInError = error.localizedDescription
+            if generation == sessionGeneration, authSession === authentication, serverBase == server {
+                signInError = "The server could not establish this session. Start sign-in again."
+            }
         }
+    }
+
+    private func retireServerSession() {
+        sessionGeneration += 1
+        refreshTask?.cancel()
+        refreshTask = nil
+        refreshContext = nil
+        serverSession = nil
+        do { try serverSessionStorage.retainOnly(nil) } catch {
+            signInError = "The protected server session could not be cleared. Retry sign-out."
+        }
+    }
+
+    private func refreshServerSession() async -> RefreshResult {
+        guard let session = serverSession, let oidc,
+            let scope = try? ServerSessionScope(server: serverBase, oidc: oidc), scope == session.scope
+        else { return .rejected("server session required") }
+        let generation = sessionGeneration
+        do {
+            let transport = ServerSessionTransport(scope: scope, transport: serverSessionTransport)
+            let result = try await transport.refresh(session)
+            guard !Task.isCancelled, generation == sessionGeneration, serverSession == session,
+                self.oidc.map({ try? ServerSessionScope(server: serverBase, oidc: $0) }) == scope
+            else { return .transient("session changed") }
+            try serverSessionStorage.save(JSONEncoder().encode(result), key: scope.storageKey)
+            serverSession = result
+            return .ok(result.tokenSet)
+        } catch ServerSessionError.retired { return .rejected("server session expired") } catch ServerSessionError
+            .invalid
+        { return .rejected("server session invalid") } catch { return .transient("server session unavailable") }
+    }
+
+    private func serverSocketHeaders(url: URL, owner: DownloadOwner, server: URL) async -> [String: String]? {
+        guard !Task.isCancelled, downloadOwner == owner, serverBase == server else { return nil }
+        guard serverCustodyRequired else { return [:] }
+        guard case .ok = await refreshOutcome(renewSocket: false),
+            !Task.isCancelled, downloadOwner == owner, serverBase == server
+        else { return nil }
+        guard let session = serverSession, let oidc,
+            let scope = try? ServerSessionScope(server: serverBase, oidc: oidc), scope == session.scope,
+            let token = tokens?.accessToken
+        else { return nil }
+        return try? session.socketHeaders(url: url, token: token, now: credentialClock())
     }
 
     private func credentialNeedsRefresh(_ set: TokenSet) -> Bool {
@@ -1008,8 +1120,8 @@ final class AppModel: NSObject {
             if renewSocket { renewRegisteredSocket(ifChanged: current) }
             return .ok(current)
         }
-        guard let refresh = current.refreshToken, let oidc else {
-            return .rejected("no refresh token")
+        guard let oidc, serverCustodyRequired || current.refreshToken != nil else {
+            return .rejected("no session renewal")
         }
         let context: CredentialRefreshContext
         let attempt: Task<RefreshResult, Never>
@@ -1024,7 +1136,11 @@ final class AppModel: NSObject {
             context = CredentialRefreshContext(
                 owner: downloadOwner, authentication: authSession,
                 authority: oidc.authority, original: current)
-            attempt = Task { await RefreshStrategy.direct(oidc).attempt(refreshToken: refresh) }
+            if serverCustodyRequired {
+                attempt = Task { await self.refreshServerSession() }
+            } else {
+                attempt = Task { await RefreshStrategy.direct(oidc).attempt(refreshToken: current.refreshToken!) }
+            }
             refreshTask = attempt
             refreshTaskGeneration = sessionGeneration
             refreshContext = context
@@ -1050,7 +1166,7 @@ final class AppModel: NSObject {
                 refreshContext = nil
                 tokens = set
                 refreshedWithinMarginAccessToken = credentialIsWithinRefreshMargin(set) ? set.accessToken : nil
-                store.save(StoredTokens(from: set))
+                if !serverCustodyRequired { store.save(StoredTokens(from: set)) }
             }
             if renewSocket { renewRegisteredSocket(ifChanged: set) }
         } else if refreshContext?.id == context.id {
@@ -1166,9 +1282,13 @@ final class AppModel: NSObject {
     }
 
     func signOut(revokeRemote: Bool = true) async {
+        retireMeshCustody()
         // Local wipe must precede the async revoke call, before any suspension
         let access = tokens?.accessToken
         let refresh = tokens?.refreshToken
+        let custody = serverSession
+        retireServerSession()
+        serverCustodyRequired = false
         let logoutClient = RestClient(serverBase: serverBase) { access }
         let socket = ws
         if let account = conversationAccount {
@@ -1213,12 +1333,17 @@ final class AppModel: NSObject {
         audit = []
 
         await socket?.stop()
-        if revokeRemote, let refresh {
+        if revokeRemote, let custody {
+            _ = try? await ServerSessionTransport(scope: custody.scope, transport: serverSessionTransport).logout(
+                custody)
+        } else if revokeRemote, let refresh {
             _ = try? await logoutClient.logout(clientId: clientId, refreshToken: refresh)
         }
     }
 
     func clearConversationForAccountRemoval() {
+        retireMeshCustody()
+        retireServerSession()
         retireOrdinarySurfaceRequests()
         parameterRequests = [:]
         if let account = conversationAccount {
@@ -1505,7 +1630,16 @@ final class AppModel: NSObject {
         registeredAccessToken = nil
         connected = false
         wsTask?.cancel()
-        let client = initialWebSocket ?? WSClient(url: rest.webSocketURL)
+        let socketURL = rest.webSocketURL
+        let socketOwner = downloadOwner
+        let socketServer = serverBase
+        let client =
+            initialWebSocket
+            ?? WSClient(
+                url: socketURL,
+                requestHeaders: { [weak self] in
+                    await self?.serverSocketHeaders(url: socketURL, owner: socketOwner, server: socketServer)
+                })
         initialWebSocket = nil
         if let previous = ws, previous !== client {
             Task { await previous.stop() }
@@ -3179,7 +3313,135 @@ final class AppModel: NSObject {
                 snapshotPurpose: .commit))
     }
 
+    private func cancelMeshPresentation() {
+        meshOperationEpoch += 1
+        meshOperation?.cancel()
+        meshOperation = nil
+        meshPublicIdentity = nil
+    }
+
+    private func retireMeshCustody() {
+        cancelMeshPresentation()
+        do { try meshKeyStorage.retainOnly(nil) } catch {
+            surfaceFailureMessage = "The local device identity could not be cleared. Retry sign-out."
+        }
+        meshCustody = nil
+    }
+
+    private func meshActionOffered(_ action: String, payload: JSONValue) -> Bool {
+        func matches(_ raw: JSONValue) -> Bool {
+            raw["action"] == .string(action)
+                && (raw["payload"]?.objectValue ?? [:]).allSatisfy { payload[$0.key] == $0.value }
+        }
+        func offered(_ component: AstralComponent) -> Bool {
+            if component.type == "button", component.raw["disabled"] != .bool(true), matches(component.raw) {
+                return true
+            }
+            if component.type == "param_picker", payload["fields"]?.objectValue != nil,
+                component.raw["submit_action"] == .string(action)
+                    || component.raw["actions"]?.arrayValue?.contains(where: matches) == true
+            {
+                return true
+            }
+            return component.children.contains(where: offered)
+        }
+        return pendingSurface?.components.contains(where: offered) == true
+    }
+
+    private func performMeshAction(_ action: String, payload: JSONValue) {
+        guard meshOperation == nil, let account = conversationAccount, let socket = ws,
+            let scope = try? MeshEnrollmentScope(server: serverBase, account: account)
+        else {
+            surfaceFailureMessage = "Connect securely before using device enrollment."
+            return
+        }
+        let owner = downloadOwner
+        let server = serverBase
+        let connection = continuity.connectionGeneration
+        let navigation = conversationNavigationGeneration
+        let surface = pendingSurface
+        let surfaceGeneration = ordinarySurfaceGeneration
+        meshOperationEpoch += 1
+        let operation = meshOperationEpoch
+        if let custody = meshCustody, custody.scope != scope {
+            retireMeshCustody()
+            return
+        }
+        let custody = meshCustody ?? MeshEnrollmentCustody(scope: scope, storage: meshKeyStorage)
+        meshCustody = custody
+        meshOperation = Task { [weak self] in
+            guard let self else { return }
+            defer { if self.meshOperationEpoch == operation { self.meshOperation = nil } }
+            @MainActor func current() -> Bool {
+                !Task.isCancelled && self.meshOperationEpoch == operation && self.downloadOwner == owner
+                    && self.serverBase == server && self.ws === socket
+                    && self.pendingSurface == surface && self.ordinarySurfaceGeneration == surfaceGeneration
+                    && self.connected && self.screen == .surface && self.pendingSurfaceKey == "mesh"
+                    && self.continuity.connectionGeneration == connection
+                    && self.conversationNavigationGeneration == navigation
+            }
+            guard await self.authenticatedSocketIsCurrent(socket, owner: owner, connection: connection), current()
+            else { return }
+            do {
+                if action == "chrome_mesh_redeem" {
+                    guard Set(payload.objectValue?.keys.map { $0 } ?? []) == ["fields"],
+                        let fields = payload["fields"]?.objectValue, Set(fields.keys) == ["link"],
+                        let link = fields["link"]?.stringValue
+                    else { throw MeshEnrollmentError.invalid }
+                    _ = try await custody.redeem(link: link, current: current, transport: self.meshTransport)
+                    guard current() else { return }
+                    self.errorBanner = "This device joined your mesh."
+                    self.bannerIsError = false
+                    self.openSurface("mesh")
+                } else {
+                    let identity = try custody.publicIdentity(current: current)
+                    guard current() else { return }
+                    if action == "chrome_mesh_identity" {
+                        guard payload.objectValue?.isEmpty == true else { throw MeshEnrollmentError.invalid }
+                        self.meshPublicIdentity = String(decoding: try identity.encoded(), as: UTF8.self)
+                    } else {
+                        guard Set(payload.objectValue?.keys.map { $0 } ?? []) == ["fields"],
+                            var fields = payload["fields"]?.objectValue,
+                            Set(fields.keys) == ["label", "device_key", "scopes", "ttl_seconds"]
+                        else { throw MeshEnrollmentError.invalid }
+                        fields["device_key"] = .string(String(decoding: try identity.encoded(), as: UTF8.self))
+                        self.sendEvent(action, .object(["fields": .object(fields)]))
+                    }
+                }
+            } catch {
+                if current() {
+                    self.surfaceFailureMessage = "Device enrollment was not completed. Check approval and retry."
+                }
+            }
+        }
+    }
+
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action.hasPrefix("chrome_mesh_") {
+            guard signedIn, connected, screen == .surface, pendingSurfaceKey == "mesh", !mandatorySurface,
+                ordinarySurfaceGeneration == nil, !paramPickerPending(action: action),
+                meshActionOffered(action, payload: payload)
+            else { return }
+            guard serverSession?.owner == conversationAccount?.subject else {
+                surfaceFailureMessage = "Sign in again to confirm this server session before managing mesh devices."
+                return
+            }
+            if ["chrome_mesh_identity", "chrome_mesh_redeem"].contains(action)
+                || (action == "chrome_mesh_create" && payload["fields"]?["device_key"]?.stringValue?.isEmpty == true)
+            {
+                performMeshAction(action, payload: payload)
+                return
+            }
+            if action == "chrome_mesh_create" {
+                guard let raw = payload["fields"]?["device_key"]?.stringValue,
+                    let identity = try? JSONValue.parse(Data(raw.utf8)),
+                    (try? MeshEnrollmentCustody.validatePublicIdentity(identity)) != nil
+                else {
+                    surfaceFailureMessage = "The public device identity is invalid."
+                    return
+                }
+            }
+        }
         if SafetySurfaceRequest.actions.contains(action) || payload["surface"]?.stringValue == "safety" {
             guard signedIn, connected, SafetySurfaceRequest(action: action, payload: payload) != nil else {
                 surfaceFailureMessage = "Safety controls were not sent. Reconnect and check current stop status."
@@ -3513,7 +3775,10 @@ final class AppModel: NSObject {
         let navigation = conversationNavigationGeneration
         let chatId = activeChatId
         let safety = SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text)
-        let evidence = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text) || safety
+        let mesh =
+            InboundFrame.parse(text)?.payload["action"]?.stringValue?.hasPrefix("chrome_mesh_") == true
+            || InboundFrame.parse(text)?.payload["payload"]?["surface"]?.stringValue == "mesh"
+        let evidence = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text) || safety || mesh
         let evidenceGeneration = InboundFrame.parse(text)?.payload["request_generation"]?.stringValue
         Task {
             let allowed: Bool
@@ -3544,7 +3809,7 @@ final class AppModel: NSObject {
                         return self.signedIn && self.connected && self.downloadOwner == owner && self.ws === socket
                             && self.continuity.connectionGeneration == connection && self.activeChatId == chatId
                             && self.conversationNavigationGeneration == navigation
-                            && self.pendingSurfaceKey == (safety ? "safety" : "evidence")
+                            && self.pendingSurfaceKey == (mesh ? "mesh" : safety ? "safety" : "evidence")
                             && self.screen == .surface && self.ordinarySurfaceGeneration == evidenceGeneration
                     }
                 }
@@ -3777,6 +4042,7 @@ final class AppModel: NSObject {
     func openMenuItem(_ item: ChromeMenuItem) { openSurface(item.surface, params: item.params) }
 
     func openSurface(_ surface: String, params: JSONValue = .object([:])) {
+        cancelMeshPresentation()
         sendEvent("chrome_open", .object(["surface": .string(surface), "params": params]))
     }
 

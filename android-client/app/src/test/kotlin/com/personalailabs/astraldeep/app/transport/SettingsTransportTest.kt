@@ -227,6 +227,37 @@ class SettingsTransportTest {
         assertTrue(socket.frames.isEmpty())
     }
 
+    @Test
+    fun mesh_management_uses_closed_current_payloads_and_never_queues_local_controls() {
+        val client = OrchestratorClient("ws://localhost:9/ws")
+        val payload = buildJsonObject { put("member_id", "a".repeat(32)) }
+        val actions = listOf("chrome_mesh_revoke", "chrome_mesh_identity", "chrome_mesh_redeem")
+        for (action in actions) {
+            client.sendEvent(action, null, payload)
+            assertTrue(client.pendingActions().isEmpty())
+            val local = LocalSubmission(action, null, "33333333-3333-4333-8333-333333333333", "44444444-4444-4444-8444-444444444444")
+            val old =
+                buildJsonObject {
+                    put("type", "ui_event")
+                    put("action", action)
+                    putJsonObject("payload") { payload.forEach(::put) }
+                }.toString()
+            assertFalse(client.validQueuedIdentity(old, local))
+        }
+        val socket = Socket()
+        client.installOpenSocketForTest(socket)
+        client.replayPendingForTest(connection, {}, {}, { true })
+        assertFalse(client.sendCurrentSettingsEvent("mesh", "chrome_mesh_identity", payload, { true }) { _, _ -> error("local issued") })
+        assertFalse(client.sendCurrentSettingsEvent("mesh", "chrome_mesh_redeem", payload, { true }) { _, _ -> error("local issued") })
+        assertFalse(client.sendCurrentSettingsEvent("mesh", "chrome_mesh_revoke", payload, { false }) { _, _ -> error("stale issued") })
+        assertTrue(client.sendCurrentSettingsEvent("mesh", "chrome_mesh_revoke", payload, { true }) { _, _ -> })
+        assertEquals(1, socket.frames.size)
+        val frame = Json.parseToJsonElement(socket.frames.single()).jsonObject
+        assertEquals("mesh", frame["payload"]!!.jsonObject["surface"]!!.jsonPrimitive.content)
+        assertEquals("null", frame["session_id"].toString())
+        assertTrue(client.pendingActions().isEmpty())
+    }
+
     private class Socket : WebSocket {
         val frames = mutableListOf<String>()
         var accept = true

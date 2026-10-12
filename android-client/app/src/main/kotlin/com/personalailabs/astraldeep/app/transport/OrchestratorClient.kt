@@ -12,6 +12,7 @@ import com.personalailabs.astraldeep.core.protocol.ChatAttachment
 import com.personalailabs.astraldeep.core.protocol.ConversationResume
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
 import com.personalailabs.astraldeep.core.protocol.Inbound
+import com.personalailabs.astraldeep.core.protocol.MeshSurfaceRequest
 import com.personalailabs.astraldeep.core.protocol.SafetySurfaceRequest
 import com.personalailabs.astraldeep.core.protocol.VoicePlayoutEvent
 import com.personalailabs.astraldeep.core.protocol.VoiceTranscript
@@ -637,6 +638,12 @@ class OrchestratorClient(
             ) {
                 return@synchronized false
             }
+            val meshPayload = JsonObject(payload + ("surface" to JsonPrimitive(surface)))
+            if (MeshSurfaceRequest.isEvent(action, meshPayload) &&
+                (surface != "mesh" || !MeshSurfaceRequest.validPayload(action, meshPayload))
+            ) {
+                return@synchronized false
+            }
             val submission = newSubmission(action, null)
             val fields =
                 buildJsonObject {
@@ -673,7 +680,7 @@ class OrchestratorClient(
         onSubmission(submission)
         if (action == "update_device" && payload["snapshot_purpose"] != null ||
             isGuidanceNoteAction(action) || action == "chrome_turn_selection_set" ||
-            SafetySurfaceRequest.isEvent(action, payload) ||
+            SafetySurfaceRequest.isEvent(action, payload) || MeshSurfaceRequest.isEvent(action, payload) ||
             (payload["surface"] as? JsonPrimitive)?.contentOrNull == "evidence" ||
             action == "chrome_open" && isPrivateChromeSurface((payload["surface"] as? JsonPrimitive)?.contentOrNull.orEmpty())
         ) {
@@ -797,7 +804,7 @@ class OrchestratorClient(
                 .getOrNull() ?: return false
         val payload = root["payload"]?.let { runCatching { it.jsonObject }.getOrNull() } ?: return false
         val action = (root["action"] as? JsonPrimitive)?.contentOrNull ?: return false
-        if (SafetySurfaceRequest.isEvent(action, payload)) return false
+        if (SafetySurfaceRequest.isEvent(action, payload) || MeshSurfaceRequest.isEvent(action, payload)) return false
         val topSubmission = (root["submission_id"] as? JsonPrimitive)?.contentOrNull
         val topRequest = (root["request_generation"] as? JsonPrimitive)?.contentOrNull
         val payloadSubmission = (payload["submission_id"] as? JsonPrimitive)?.contentOrNull

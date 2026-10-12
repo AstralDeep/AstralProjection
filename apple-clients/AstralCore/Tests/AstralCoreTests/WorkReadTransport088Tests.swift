@@ -1,11 +1,10 @@
 // Tests for Work-surface read transport: closed read/close delivery exactly once, cancellation and
 // stopped-socket suppression, guidance-open isolation from replay, and post-refusal send refusal.
 
+@testable import AstralCore
 import Foundation
 import Network
 import XCTest
-
-@testable import AstralCore
 
 final class WorkReadTransport088Tests: XCTestCase {
     private let socketEventTimeout: TimeInterval = 30
@@ -81,6 +80,35 @@ final class WorkReadTransport088Tests: XCTestCase {
         let sent = await client.sendCurrentViewportEvent(viewportFrame()) { true }
         XCTAssertFalse(sent)
         await client.stop()
+    }
+
+    func testMeshOwnerActionsUseCurrentSocketAndLocalActionsNeverReachServer() async throws {
+        let open = Outbound.uiEvent(
+            action: "chrome_open", sessionId: nil,
+            payload: .object(["surface": .string("mesh"), "params": .object([:])]))
+        let revoke = Outbound.uiEvent(
+            action: "chrome_mesh_revoke", sessionId: nil,
+            payload: .object(["surface": .string("mesh"), "member_id": .string(String(repeating: "a", count: 32))]))
+        let local = Outbound.uiEvent(
+            action: "chrome_mesh_identity", sessionId: nil, payload: .object(["surface": .string("mesh")]))
+        try await connected { client, peer in
+            await client.send(open)
+            await client.send(revoke)
+            await client.send(local)
+            let stale = await client.sendCurrentChromeEvent(revoke) { false }
+            let localSent = await client.sendCurrentChromeEvent(local) { true }
+            XCTAssertFalse(stale)
+            XCTAssertFalse(localSent)
+            let opened = await client.sendCurrentChromeEvent(open) { true }
+            let revoked = await client.sendCurrentChromeEvent(revoke) { true }
+            XCTAssertTrue(opened)
+            XCTAssertTrue(revoked)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
+            XCTAssertEqual(peer.reads, [open, revoke])
+            await client.stop()
+            let stopped = await client.sendCurrentChromeEvent(revoke) { true }
+            XCTAssertFalse(stopped)
+        }
     }
 
     func testConsoleReadCloseAndStaleOrDisconnectedRefusal() async throws {
