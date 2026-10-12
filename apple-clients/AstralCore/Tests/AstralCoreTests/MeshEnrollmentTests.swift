@@ -1,9 +1,9 @@
 // Verifies native mesh custody, challenge signatures, DPoP member acceptance, and refusal fences.
 // Exercises MeshEnrollmentCustody with real CryptoKit keys and an isolated storage/HTTP boundary.
 
-@testable import AstralCore
 import CryptoKit
 import XCTest
+@testable import AstralCore
 
 @MainActor final class MeshEnrollmentTests: XCTestCase {
     final class Storage: MeshKeyStorage, @unchecked Sendable {

@@ -1,9 +1,9 @@
 // Exercises fresh server custody exchange, scoped socket cookies, refresh, logout, and malformed responses.
 // Synthetic JWTs and injected transport keep provider behavior deterministic.
 
-@testable import AstralCore
 import Foundation
 import XCTest
+@testable import AstralCore
 
 final class ServerSessionTests: XCTestCase {
     private func scope(_ server: String = "https://example.test") throws -> ServerSessionScope {

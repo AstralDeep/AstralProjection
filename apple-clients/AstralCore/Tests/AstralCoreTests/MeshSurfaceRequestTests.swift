@@ -1,9 +1,9 @@
 // Verifies closed mesh owner payloads and explicit refusal of local or queued actions.
 // Shared wire encoding exercises envelope correlation and current-connection classification.
 
-@testable import AstralCore
 import Foundation
 import XCTest
+@testable import AstralCore
 
 final class MeshSurfaceRequestTests: XCTestCase {
     private let identity = String(repeating: "a", count: 32)

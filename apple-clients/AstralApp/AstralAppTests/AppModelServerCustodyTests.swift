@@ -2,9 +2,9 @@
 // Held refreshes and foreign identities exercise account/server retirement without provider network calls.
 
 import AstralCore
-@testable import AstralDeep
 import Foundation
 import XCTest
+@testable import AstralDeep
 
 @MainActor final class AppModelServerCustodyTests: XCTestCase {
     private func model() throws -> (AppModel, InMemoryMeshKeyStorage, ServerSession) {
