@@ -26,6 +26,7 @@ from PySide6.QtCore import QObject, QSettings, Signal
 from PySide6.QtGui import QGuiApplication, QInputDevice, QPointingDevice
 
 from . import __version__
+from .auth import Session
 from .console import parse_turn_selection
 from .settings import create_settings
 
@@ -2007,6 +2008,7 @@ class OrchestratorClient(QObject):
         host_id: Optional[str] = None,
         device_id: Optional[str] = None,
         work_reads: bool = False,
+        session: Optional[Session] = None,
     ):
         super().__init__()
         self.url = url
@@ -2015,6 +2017,12 @@ class OrchestratorClient(QObject):
         self._guidance_generation = None
         self._device_update_generation = 0
         self.token = token
+        self._auth_session = None
+        if session is not None and session.server_base is not None:
+            if session.access_token != token:
+                raise WindowsProtocolError("Session credentials changed")
+            session.websocket_headers(url)
+            self._auth_session = copy.copy(session)
         self.device = device or device_caps()
         self.device_id = _uuid4(
             device_id or load_or_create_voice_device_id(),
@@ -2216,15 +2224,25 @@ class OrchestratorClient(QObject):
             self._restart_after_exit = False
             raise
 
-    def renew_credentials(self, token: str) -> bool:
+    def renew_credentials(self, token: str, *, session: Optional[Session] = None) -> bool:
         if (not isinstance(token, str) or not token.strip() or len(token) > 16384
                 or any(ord(character) < 32 for character in token)):
             return False
+        custody = None
+        if session is not None and session.server_base is not None:
+            try:
+                if session.access_token != token:
+                    return False
+                session.websocket_headers(self.url)
+                custody = copy.copy(session)
+            except ValueError:
+                return False
         with self._lifecycle_lock:
             if self._stop:
                 return False
             loop, ws = self._loop, self._ws
             self.token = token
+            self._auth_session = custody
             self._auth_revision += 1
             self._authenticated_revision = None
             self._auth_hold = False
@@ -2377,7 +2395,15 @@ class OrchestratorClient(QObject):
 
     async def _main(self) -> None:
         self._safe_status("connecting")
-        async with websockets.connect(self.url, max_size=16 * 1024 * 1024, ping_interval=20) as ws:
+        with self._lifecycle_lock:
+            selected_revision = self._auth_revision
+            session = self._auth_session
+            kwargs = session.websocket_headers(self.url) if session is not None else {}
+        async with websockets.connect(self.url, max_size=16 * 1024 * 1024, ping_interval=20, **kwargs) as ws:
+            with self._lifecycle_lock:
+                if (self._stop or (selected_revision != self._auth_revision
+                                  and (session is not None or self._auth_session is not None))):
+                    return
             self._ws = ws
             self._had_session = True
             registration = self._register_frame()
