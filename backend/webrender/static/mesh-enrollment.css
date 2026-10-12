@@ -1,0 +1,39 @@
+/* Styles the dedicated joining-device page using the shared Astral theme tokens.
+   The bounded form stays keyboard reachable and fits narrow or enlarged layouts. */
+.astral-mesh-page {
+  margin: 0;
+  min-height: 100vh;
+  overflow: auto;
+  background: rgb(var(--astral-bg));
+  color: rgb(var(--astral-text));
+  font-family: var(--astral-font);
+  line-height: 1.5;
+}
+.astral-mesh-enrollment {
+  display: grid;
+  gap: var(--space-4);
+  width: min(calc(100% - 2rem), 36rem);
+  margin: 2rem auto;
+  overflow-wrap: anywhere;
+}
+.astral-mesh-enrollment h1,
+.astral-mesh-enrollment p { margin: 0; }
+.astral-mesh-enrollment h1 { font-size: 1.5rem; font-weight: var(--weight-semibold); }
+.astral-mesh-enrollment label { display: grid; gap: var(--space-2); }
+.astral-mesh-enrollment a { color: rgb(var(--astral-text)); text-decoration: underline; }
+.astral-mesh-enrollment textarea,
+.astral-mesh-enrollment button {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgb(var(--astral-muted));
+  border-radius: var(--space-2);
+  padding: var(--space-3);
+  background: rgb(var(--astral-surface));
+  color: rgb(var(--astral-text));
+  font: inherit;
+}
+.astral-mesh-enrollment textarea { min-height: 6em; resize: vertical; }
+.astral-mesh-enrollment button { cursor: pointer; font-weight: var(--weight-semibold); }
+.astral-mesh-enrollment button:disabled { cursor: progress; opacity: .6; }
+.astral-mesh-enrollment :focus-visible { outline: 2px solid rgb(var(--astral-accent)); outline-offset: 3px; }

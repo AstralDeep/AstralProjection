@@ -443,6 +443,12 @@
     if (!identity || !crypto.subtle) return false;
     var nextKey = await activeChatStorageKey(identity.issuer, identity.subject);
     if (!nextKey || accountSignedOut) return false;
+    if (meshIdentity && (meshIdentity.issuer !== identity.issuer || meshIdentity.subject !== identity.subject)) {
+      var retiredMeshIdentity = meshIdentity;
+      meshIdentity = null;
+      if (window.AstralMeshCustody) await window.AstralMeshCustody.purge(retiredMeshIdentity);
+    }
+    meshIdentity = { issuer: identity.issuer, subject: identity.subject };
     var previousKey = activeChatLocatorKey;
     if (!previousKey) {
       try { previousKey = sessionStorage.getItem(ACCOUNT_SESSION_KEY); } catch (e) {}
@@ -5689,14 +5695,65 @@
     }
   }
 
-  function action(name, payload, exposeStatus) {
+  var meshIdentity = null;
+  var meshPending = false;
+
+  async function meshLocalAction(name, payload) {
+    if (meshPending || !isSocketReady() || accountSignedOut || !meshIdentity || !modalRoot ||
+        !modalRoot.querySelector('[data-ui-action="chrome_mesh_create"]')) {
+      showToast("Open Mesh devices while connected before enrolling.", "error");
+      return;
+    }
+    meshPending = true;
+    var socket = ws;
+    var connection = connectionGeneration;
+    var privacy = accountPrivacyEpoch;
+    var identity = meshIdentity;
+    var modal = modalRoot.innerHTML;
+    var current = function () { return !accountSignedOut && meshIdentity === identity && ws === socket &&
+      connectionGeneration === connection && isSocketReady() && accountPrivacyEpoch === privacy && modalRoot.innerHTML === modal; };
+    try {
+      if (name === "chrome_mesh_identity") {
+        var key = await window.AstralMeshCustody.publicIdentity(identity, current);
+        if (current()) {
+          var output = document.createElement("textarea");
+          output.readOnly = true; output.value = JSON.stringify(key); output.setAttribute("aria-label", "This device public identity");
+          modalRoot.appendChild(output); output.select();
+          modal = modalRoot.innerHTML;
+          var copied = false;
+          try { await navigator.clipboard.writeText(output.value); copied = true; } catch (_clipboardError) {}
+          if (current()) showToast(copied ? "Public identity copied. Share it with your owner device."
+            : "Public identity selected below. Copy it and share it with your owner device.", "info");
+        }
+      } else if (name === "chrome_mesh_redeem") {
+        await window.AstralMeshCustody.redeem(identity, payload.fields && payload.fields.link, current);
+        if (current()) { showToast("This device is enrolled.", "success"); action("chrome_open", { surface: "mesh", params: {} }); }
+      } else {
+        var fields = await window.AstralMeshCustody.prepare(identity, payload.fields, current);
+        if (current()) action("chrome_mesh_create", Object.assign({}, payload, { fields: fields }), true, true);
+      }
+    } catch (_error) {
+      if (current()) showToast("Enrollment refused. Use the original joining device and current owner account; confirm the request before retrying.", "error");
+    } finally { meshPending = false; }
+  }
+
+  function action(name, payload, exposeStatus, meshPrepared) {
+    if (name === "chrome_mesh_identity" || name === "chrome_mesh_redeem" || name === "chrome_mesh_create" && !meshPrepared) {
+      meshLocalAction(name, payload || {});
+      return;
+    }
+    var meshAction = name.indexOf("chrome_mesh_") === 0;
+    if (meshAction && (!isSocketReady() || accountSignedOut)) {
+      showToast("Reconnect and reopen Mesh devices before changing enrollment.", "error");
+      return;
+    }
     var noteAction = ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"].indexOf(name) !== -1;
     var selectionAction = name === "chrome_turn_selection_set";
     var safetyAction = ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"].indexOf(name) !== -1;
-    var ownerSurface = safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
-      : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety"].indexOf(payload.surface) !== -1
+    var ownerSurface = meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
+      : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety", "mesh"].indexOf(payload.surface) !== -1
         ? payload.surface : null;
-    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction) retireOwnerSurface();
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction) retireOwnerSurface();
     if (noteAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
     }
@@ -7120,7 +7177,7 @@
         break;
       }
       case "chrome_render":
-        if (data.surface_key === "work" || data.surface_key === "guidance" || data.surface_key === "evidence" || data.surface_key === "safety") { receiveOwnerSurface(data); break; }
+        if (data.surface_key === "work" || data.surface_key === "guidance" || data.surface_key === "evidence" || data.surface_key === "safety" || data.surface_key === "mesh") { receiveOwnerSurface(data); break; }
         if (data.region === "modal" && ownerSurfaceRequest) break;
         if (data.region === "modal") setModal(data.html || "");
         else if (data.region === "topbar") {
@@ -7580,6 +7637,12 @@
     var link = event.target.closest && event.target.closest('a[href^="/auth/logout"]');
     if (link) {
       accountSignedOut = true;
+      if (meshIdentity && window.AstralMeshCustody) {
+        event.preventDefault();
+        var logoutUrl = link.href;
+        window.AstralMeshCustody.purge(meshIdentity).catch(function () {}).then(function () { location.assign(logoutUrl); });
+      }
+      meshIdentity = null;
       var voiceFence = currentVoiceFence();
       voiceRecoverySuppressed = true;
       clearVoiceBindingRenewal();
@@ -8377,8 +8440,8 @@
   function closeModal() {
     if (!modalRoot || !modalRoot.innerHTML) return;
     if (modalIsMandatory()) return;
-    var currentOwnerSurface = ownerSurfaceRequest && ["evidence", "safety"].indexOf(ownerSurfaceRequest.surface) !== -1
-      || modalSkeletonRequest && ["evidence", "safety"].indexOf(modalSkeletonRequest.payload.surface) !== -1
+    var currentOwnerSurface = ownerSurfaceRequest && ["evidence", "safety", "mesh"].indexOf(ownerSurfaceRequest.surface) !== -1
+      || modalSkeletonRequest && ["evidence", "safety", "mesh"].indexOf(modalSkeletonRequest.payload.surface) !== -1
         && modalRoot.querySelector(".astral-modal-retry");
     setModal("");
     if (currentOwnerSurface) {

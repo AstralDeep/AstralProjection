@@ -122,6 +122,8 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
     web = _job_block(text, "web")
     assert "NODE_V8_COVERAGE=" in web
     assert "node --test tooling/web-ci/tests/offline-worker-088.test.mjs" in web
+    assert "node --test tests/mesh-custody.browser.test.mjs" in web
+    assert "playwright test tests/mesh-enrollment.spec.js" in web
     assert "--output build/088/offline-javascript.json" in web
     assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in web
     assert 'for name in ("service-worker.js", "offline-registration.js")' in web
