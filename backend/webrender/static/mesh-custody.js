@@ -162,7 +162,8 @@
       headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner_id: identity.subject, member_id: result.member.member_id }) });
     fence(current);
     var nonce = (await boundedJson(nonceResponse)).nonce;
-    decode(nonce, 32);
+    if (typeof nonce !== "string" || !/^[a-f0-9]{32}\.[A-Za-z0-9_-]{43}$/.test(nonce)) refuse();
+    decode(nonce.slice(33), 32);
     var tokenHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(result.access_token));
     var header = { typ: "dpop+jwt", alg: "EdDSA", jwk: local.publicKey };
     var claims = { jti: crypto.randomUUID(), htm: "GET", htu: location.origin + "/api/mesh/me",

@@ -18,6 +18,9 @@ const payload = Buffer.from(JSON.stringify({ v: 1, o: owner, i: "abc123", t: Buf
 
 test("joining device retains its own key and only proves the exact confirmed challenge", async () => {
   let requests = 0;
+  let meRequests = 0;
+  const issuedNonce = "0123456789abcdef0123456789abcdef." + Buffer.alloc(32, 27).toString("base64url");
+  let nonce = issuedNonce;
   let expectedKey;
   let denied = false;
   let sessionOwner = owner;
@@ -36,9 +39,10 @@ test("joining device retains its own key and only proves the exact confirmed cha
     }
     if (request.url === "/api/mesh/nonce") {
       response.setHeader("Content-Type", "application/json");
-      response.end(JSON.stringify({ nonce: Buffer.alloc(32, 27).toString("base64url") })); return;
+      response.end(JSON.stringify({ nonce })); return;
     }
     if (request.url === "/api/mesh/me") {
+      meRequests++;
       assert.equal(request.headers.authorization, "DPoP ephemeral-synthetic");
       assert.equal(request.headers.cookie, undefined);
       if (meArrived) { meArrived(); await new Promise(resolve => { releaseMe = resolve; }); }
@@ -50,6 +54,7 @@ test("joining device retains its own key and only proves the exact confirmed cha
       assert.equal(claims.htm, "GET"); assert.equal(claims.htu, `http://127.0.0.1:${server.address().port}/api/mesh/me`);
       assert.equal(claims.ath, createHash("sha256").update("ephemeral-synthetic").digest("base64url"));
       assert.equal(claims.nonce, request.headers["dpop-nonce"]);
+      assert.equal(claims.nonce, issuedNonce);
       assert(verify(null, Buffer.from(parts[0] + "." + parts[1]), createPublicKey({ key: expectedKey, format: "jwk" }), Buffer.from(parts[2], "base64url")));
       response.setHeader("Content-Type", "application/json");
       if (switched) sessionOwner = "replacement-owner";
@@ -128,6 +133,13 @@ test("joining device retains its own key and only proves the exact confirmed cha
     badMember = false;
     const member = await page.evaluate(async ({ identity, link }) => window.AstralMeshCustody.redeem(identity, link, () => true), { identity, link });
     assert.equal(member.member_id, "member1"); assert.equal(member.device_key.x, key.x);
+    const beforeMalformedNonce = meRequests;
+    for (const malformed of [null, Buffer.alloc(32, 27).toString("base64url"), "g".repeat(32) + issuedNonce.slice(32), issuedNonce + "=", issuedNonce + "\n", issuedNonce.slice(0, -1) + "B", "a".repeat(2049)]) {
+      nonce = malformed;
+      await assert.rejects(page.evaluate(async ({ identity, link }) => window.AstralMeshCustody.redeem(identity, link, () => true), { identity, link }));
+      assert.equal(meRequests, beforeMalformedNonce);
+    }
+    nonce = issuedNonce;
     for (const bad of [`https://foreign.example/enroll#${payload}`, `${origin}/enroll?token=bad#${payload}`, `${origin}/other#${payload}`, `${origin}/enroll#%%%`]) {
       await assert.rejects(page.evaluate(async ({ identity, link }) => window.AstralMeshCustody.redeem(identity, link, () => true), { identity, link: bad }));
     }
