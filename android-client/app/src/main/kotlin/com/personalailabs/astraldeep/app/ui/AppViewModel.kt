@@ -270,6 +270,7 @@ class AppViewModel(
     private val resumeStore: ConversationResumeStore? = null,
     private val voiceController: VoiceSessionController? = null,
     private val meshStorage: MeshKeyStorage? = null,
+    private val meshServerBase: String = AppConfig.API_BASE,
 ) : ViewModel() {
     private data class PendingVoiceActivation(
         val action: String,
@@ -348,7 +349,15 @@ class AppViewModel(
         this.device = device
         val nextAccount = ConversationResumeStore.accountFromAccessToken(token)
         val previousAccount = account
-        if (previousAccount != nextAccount) retireMeshCustody()
+        val meshRetained =
+            if (previousAccount == null && nextAccount != null) {
+                val scope = runCatching { MeshEnrollmentScope(meshServerBase, nextAccount.issuer, nextAccount.subject) }.getOrNull()
+                if (scope == null) retireMeshCustody() else meshStorage?.retainOnlyMesh(scope.storageKey) ?: true
+            } else if (previousAccount != nextAccount) {
+                retireMeshCustody()
+            } else {
+                true
+            }
         if (previousAccount != nextAccount) workspaceEpoch++
         if (previousAccount != null && nextAccount != null && previousAccount != nextAccount) {
             viewModelScope.coroutineContext.cancelChildren()
@@ -365,6 +374,9 @@ class AppViewModel(
                 )
         } else if (_state.value.activeChatId == null && locatedChat != null) {
             _state.value = _state.value.copy(activeChatId = locatedChat)
+        }
+        if (!meshRetained) {
+            _state.update { it.copy(surfaceErrorMessage = "The protected device identity could not be restored. Retry sign-in.") }
         }
         session?.cancel()
         snapshotTimeout?.cancel()
@@ -841,7 +853,7 @@ class AppViewModel(
         val owner = account ?: return
         val storage = meshStorage ?: return
         if (meshOperation?.isActive == true) return
-        val scope = runCatching { MeshEnrollmentScope(AppConfig.API_BASE, owner.issuer, owner.subject) }.getOrNull()
+        val scope = runCatching { MeshEnrollmentScope(meshServerBase, owner.issuer, owner.subject) }.getOrNull()
         if (scope == null) {
             _state.update { it.copy(surfaceErrorMessage = "Connect securely before using device enrollment.") }
             return

@@ -5,6 +5,7 @@ import CryptoKit
 import Foundation
 
 public enum ServerSessionError: Error { case invalid, unavailable, retired, storage }
+public enum ServerSessionLogoutOutcome: Sendable { case revoked, queued, unconfirmed }
 
 public struct ServerSessionScope: Codable, Equatable, Sendable {
     public let server: URL
@@ -153,6 +154,10 @@ public struct ServerSessionTransport: Sendable {
     }
 
     public func logout(_ session: ServerSession) async throws -> Bool {
+        try await logoutOutcome(session) != .unconfirmed
+    }
+
+    public func logoutOutcome(_ session: ServerSession) async throws -> ServerSessionLogoutOutcome {
         let current: ServerSession
         if session.tokenSet.claims?["exp"]?.numberValue.map({ $0 <= Date().timeIntervalSince1970 }) == true {
             current = try await refresh(session)
@@ -170,10 +175,10 @@ public struct ServerSessionTransport: Sendable {
         guard Set(reply.body.objectValue?.keys.map { $0 } ?? []) == ["outcome", "revoked", "queued"] else {
             throw ServerSessionError.invalid
         }
-        switch reply.body["outcome"]?.stringValue {
-        case "revoked": return reply.body["revoked"] == .bool(true) && reply.body["queued"] == .bool(false)
-        case "queued": return reply.body["revoked"] == .bool(false) && reply.body["queued"] == .bool(true)
-        case "unconfirmed": return false
+        switch (reply.body["outcome"], reply.body["revoked"], reply.body["queued"]) {
+        case (.string("revoked"), .bool(true), .bool(false)): return .revoked
+        case (.string("queued"), .bool(false), .bool(true)): return .queued
+        case (.string("unconfirmed"), .bool(false), .bool(false)): return .unconfirmed
         default: throw ServerSessionError.invalid
         }
     }

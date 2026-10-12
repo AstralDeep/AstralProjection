@@ -85,6 +85,69 @@ import XCTest
         XCTAssertNil(try storage.load(session.scope.storageKey))
     }
 
+    func testRestoredOwnerPreservesProtectedKeyAndRetiresForeignScopes() async throws {
+        let (model, _, session) = try model()
+        let storage = InMemoryMeshKeyStorage()
+        let account = ConversationAccount(issuer: session.scope.issuer, subject: session.owner)!
+        let scope = try MeshEnrollmentScope(server: session.scope.server, account: account)
+        let custody = MeshEnrollmentCustody(scope: scope, storage: storage)
+        let identity = try custody.publicIdentity(current: { true })
+        let raw = try XCTUnwrap(storage.load(scope.storageKey))
+        let foreign = try MeshEnrollmentScope(server: URL(string: "https://foreign.test")!, account: account)
+        try storage.save(raw, key: foreign.storageKey)
+        model.meshKeyStorage = storage
+        model.serverSessionTransport = { _ in
+            ServerSessionReply(
+                body: .object([
+                    "authenticated": .bool(true), "access_token": .string(session.accessToken),
+                    "resumed": .bool(true), "user_id": .string(session.owner),
+                ]))
+        }
+        await model.bootstrap()
+        XCTAssertTrue(model.signedIn)
+        XCTAssertNotNil(try storage.load(scope.storageKey))
+        XCTAssertNil(try storage.load(foreign.storageKey))
+        XCTAssertEqual(try custody.publicIdentity(current: { true }), identity)
+        model.bindConversationAccount(ConversationAccount(issuer: account.issuer, subject: "other")!)
+        XCTAssertNil(try storage.load(scope.storageKey))
+        await model.signOut(revokeRemote: false)
+    }
+
+    func testLogoutReportsQueuedAndUnconfirmedWithoutKeepingLocalAuthority() async throws {
+        for outcome in ["revoked", "queued", "unconfirmed", "offline"] {
+            let (model, storage, session) = try model()
+            model.serverSessionTransport = { request in
+                if request.httpMethod == "GET" {
+                    return ServerSessionReply(
+                        body: .object([
+                            "authenticated": .bool(true), "access_token": .string(session.accessToken),
+                            "resumed": .bool(true), "user_id": .string(session.owner),
+                        ]))
+                }
+                if outcome == "offline" { throw ServerSessionError.unavailable }
+                return ServerSessionReply(
+                    body: .object([
+                        "outcome": .string(outcome), "revoked": .bool(outcome == "revoked"),
+                        "queued": .bool(outcome == "queued"),
+                    ]))
+            }
+            await model.bootstrap()
+            await model.signOut()
+            XCTAssertFalse(model.signedIn)
+            XCTAssertFalse(model.connected)
+            XCTAssertNil(try storage.load(session.scope.storageKey))
+            if outcome == "revoked" {
+                XCTAssertNil(model.signInError)
+            } else if outcome == "queued" {
+                XCTAssertEqual(model.signInError, "Signed out on this device. Server session revocation is queued.")
+            } else {
+                XCTAssertEqual(
+                    model.signInError,
+                    "Signed out on this device. The server could not confirm session revocation.")
+            }
+        }
+    }
+
     private actor Gate {
         private var continuation: CheckedContinuation<Void, Never>?
         private var released = false

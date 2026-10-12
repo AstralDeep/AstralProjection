@@ -181,6 +181,35 @@ final class ServerSessionTests: XCTestCase {
         }
     }
 
+    func testLogoutRejectsInconsistentResultsAndReportsUnconfirmed() async throws {
+        let scope = try scope()
+        let session = try ServerSession(
+            scope: scope, owner: "owner", accessToken: access(), cookie: "astral_session=synthetic",
+            cookieExpiresAt: Date().addingTimeInterval(3600))
+        let unconfirmed = ServerSessionTransport(scope: scope) { _ in
+            ServerSessionReply(
+                body: .object([
+                    "outcome": .string("unconfirmed"), "revoked": .bool(false), "queued": .bool(false),
+                ]))
+        }
+        let outcome = try await unconfirmed.logoutOutcome(session)
+        XCTAssertEqual(outcome, .unconfirmed)
+        let accepted = try await unconfirmed.logout(session)
+        XCTAssertFalse(accepted)
+        for result: JSONValue in [
+            .object(["outcome": .string("unconfirmed"), "revoked": .bool(true), "queued": .bool(false)]),
+            .object(["outcome": .string("queued"), "revoked": .bool(true), "queued": .bool(true)]),
+            .object(["outcome": .string("revoked"), "revoked": .bool(false), "queued": .bool(false)]),
+            .object(["outcome": .string("other"), "revoked": .bool(false), "queued": .bool(false)]),
+        ] {
+            let refused = ServerSessionTransport(scope: scope) { _ in ServerSessionReply(body: result) }
+            do {
+                _ = try await refused.logoutOutcome(session)
+                XCTFail("accepted")
+            } catch {}
+        }
+    }
+
     private actor Requests {
         var paths: [String] = []
         func append(_ request: URLRequest) { paths.append(request.url!.path) }

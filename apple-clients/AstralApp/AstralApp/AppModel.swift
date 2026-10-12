@@ -461,7 +461,16 @@ final class AppModel: NSObject {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
-            retireMeshCustody()
+            if conversationAccount != nil {
+                retireMeshCustody()
+            } else if serverSession?.owner == account.subject, serverSession?.scope.issuer == account.issuer {
+                do {
+                    let scope = try MeshEnrollmentScope(server: serverBase, account: account)
+                    try meshKeyStorage.retainOnly(scope.storageKey)
+                } catch {
+                    surfaceFailureMessage = "The protected device identity could not be restored. Retry sign-in."
+                }
+            }
             retireOrdinarySurfaceRequests()
             parameterRequests = [:]
             parameterFailures = []
@@ -1332,10 +1341,17 @@ final class AppModel: NSObject {
         historyTitle = "Recent chats"
         audit = []
 
+        let logoutGeneration = sessionGeneration
         await socket?.stop()
         if revokeRemote, let custody {
-            _ = try? await ServerSessionTransport(scope: custody.scope, transport: serverSessionTransport).logout(
-                custody)
+            let outcome = try? await ServerSessionTransport(scope: custody.scope, transport: serverSessionTransport)
+                .logoutOutcome(custody)
+            guard sessionGeneration == logoutGeneration, !signedIn, signInError == nil else { return }
+            if outcome == .queued {
+                signInError = "Signed out on this device. Server session revocation is queued."
+            } else if outcome != .revoked {
+                signInError = "Signed out on this device. The server could not confirm session revocation."
+            }
         } else if revokeRemote, let refresh {
             _ = try? await logoutClient.logout(clientId: clientId, refreshToken: refresh)
         }
