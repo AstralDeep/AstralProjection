@@ -23,6 +23,7 @@ from astral_client.mesh import (
 class Settings:
     def __init__(self):
         self.values = {}
+        self.error = 0
 
     def value(self, name, default, **_):
         return self.values.get(name, default)
@@ -32,6 +33,9 @@ class Settings:
 
     def sync(self):
         pass
+
+    def status(self):
+        return self.error
 
     def remove(self, name):
         self.values.pop(name, None)
@@ -94,6 +98,77 @@ def test_key_persists_protected_and_challenge_is_exact():
     assert settings.values == {}
     with pytest.raises(MeshCustodyError):
         device.redemption(grant()[0])
+
+
+@pytest.mark.parametrize("phase", ["initial", "key_write", "member_write"])
+def test_cached_values_never_hide_a_durable_settings_failure(phase):
+    settings = Settings()
+    device = custody(settings)
+    if phase == "initial":
+        settings.error = 1
+    elif phase == "member_write":
+        device.public_identity()
+
+    def failed_sync():
+        settings.error = 1
+
+    settings.sync = failed_sync
+    with pytest.raises(MeshCustodyError):
+        if phase == "member_write":
+            device.save_member({"owner_id": "owner", "member_id": "member1"})
+        else:
+            device.public_identity()
+    with pytest.raises(MeshCustodyError):
+        device.public_identity()
+
+
+def test_retired_context_never_sends_a_redemption_or_keeps_a_proof_key():
+    device = custody()
+    device.public_identity()
+    body, public = device.redemption(grant()[0])
+    requests = []
+
+    def opener(request, timeout):
+        requests.append(request)
+        raise AssertionError("Retired request crossed the HTTP boundary")
+
+    device.opener = opener
+    with pytest.raises(MeshCustodyError):
+        device.redeem(body, public, current=lambda: False)
+    assert requests == [] and device._proof_key is None
+
+
+def test_response_retirement_refuses_before_nonce_or_member_persistence():
+    device = custody()
+    device.public_identity()
+    body, public = device.redemption(grant()[0])
+    current = [True]
+    requests = []
+
+    class Reply:
+        status = 200
+
+        def __init__(self, request):
+            self.request = request
+
+        def geturl(self):
+            return self.request.full_url
+
+        def read(self, _):
+            current[0] = False
+            return b"{}"
+
+    @contextmanager
+    def opener(request, timeout):
+        requests.append(request.full_url)
+        yield Reply(request)
+
+    device.opener = opener
+    with pytest.raises(MeshCustodyError):
+        device.redeem(body, public, current=lambda: current[0])
+    assert requests == ["https://mesh.example/api/mesh/enrollment/redeem"]
+    assert device._proof_key is None
+    assert device.settings.value(device.scope + "/member", "") == ""
 
 
 def test_distinct_devices_and_server_account_scopes():

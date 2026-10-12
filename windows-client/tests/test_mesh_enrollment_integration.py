@@ -36,9 +36,9 @@ class Custody:
         return {"payload": "synthetic", "signature": "synthetic"}, self.public
 
     def redeem(self, body, public, *, current=lambda: True):
-        self.calls.append(("redeem", body, public))
         if self.failure == "network" or not current():
             raise MeshCustodyError()
+        self.calls.append(("redeem", body, public))
         return self.member
 
     def save_member(self, member):
@@ -104,11 +104,12 @@ def test_pending_redemption_cannot_cross_owner_transport_or_surface(mesh_window,
     window._emit("chrome_mesh_redeem", {"fields": {"link": "synthetic-link"}})
     pending = workers.pop()
     if transition == "owner":
-        window._auth_generation += 1
+        window._invalidate_auth()
     elif transition == "transport":
+        window._on_status("reconnecting:1")
         window.client.connection_generation = str(uuid.uuid4())
     elif transition == "surface":
-        window._surface_dialog._surface = "settings"
+        window._console_open_surface("settings", "Settings", {})
     elif transition == "closed":
         window._surface_closed()
     elif transition == "timeout":
@@ -117,6 +118,7 @@ def test_pending_redemption_cannot_cross_owner_transport_or_surface(mesh_window,
         window._on_status("closed")
     pending()
     assert not device.saved
+    assert not any(row[0] == "redeem" for row in device.calls)
     assert all(row[0] != "This device is enrolled." for row in notices)
 
 
@@ -139,6 +141,18 @@ def test_closed_or_foreign_surface_cannot_generate_or_submit_identity(mesh_windo
     window._surface_dialog.hide()
     window._emit("chrome_mesh_create", {"fields": {}})
     assert not device.calls and notices[-1][1] == "error"
+
+
+def test_closed_mesh_dialog_clears_one_time_payload_and_widgets(mesh_window):
+    window, _, _ = mesh_window
+    dialog = window._surface_dialog
+    dialog.set_surface("Mesh devices", [{"type": "text", "content": "synthetic-one-time-link"}])
+    assert dialog._surface_payload
+    assert dialog._lay.count()
+    window._surface_closed()
+    assert dialog._surface_payload == []
+    assert dialog._lay.count() == 1
+    assert dialog._lay.itemAt(0).spacerItem() is not None
 
 
 def test_key_protection_failure_stays_a_static_denial(mesh_window):

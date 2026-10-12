@@ -174,7 +174,14 @@ class MeshDeviceCustody:
         self.opener = opener or build_opener(_NoRedirect()).open
         self._proof_key = None
 
+    def _sync(self):
+        self.settings.sync()
+        status = self.settings.status()
+        if getattr(status, "value", status) != 0:
+            _refuse()
+
     def _device(self, create=False):
+        self._sync()
         saved = self.settings.value(self.scope, "", type=str)
         if not saved:
             if not create:
@@ -183,7 +190,7 @@ class MeshDeviceCustody:
             raw = private.private_bytes(Encoding.Raw, PrivateFormat.Raw, NoEncryption())
             protected = self.protection.transform(raw)
             self.settings.setValue(self.scope, _encode(protected))
-            self.settings.sync()
+            self._sync()
             if self.settings.value(self.scope, "", type=str) != _encode(protected):
                 _refuse()
             return private
@@ -315,8 +322,9 @@ class MeshDeviceCustody:
             self._proof_key = None
 
     def save_member(self, member):
+        self._sync()
         self.settings.setValue(self.scope + "/member", json.dumps(member, separators=(",", ":")))
-        self.settings.sync()
+        self._sync()
         if self.settings.value(self.scope + "/member", "", type=str) != json.dumps(
             member, separators=(",", ":")
         ):
