@@ -3,8 +3,10 @@
 # Extends the FULL default ruleset (nothing disabled). The allowlist below
 # excuses ONLY synthetic test fixtures — the deterministic "afk_" framework
 # credential secret round-tripped through the connections chrome surface tests
-# and its committed contract fixture. These are not real credentials; the
-# server never issues this value and no live system accepts it.
+# and its committed contract fixture, and the synthetic reviewer-session token
+# in the AP-08 installed-wheel example, whose decoded payload is the literal
+# string "signature_token" and which no live system issues or accepts. These
+# are not real credentials.
 
 [extend]
 useDefault = true
@@ -23,4 +25,8 @@ regexes = [
   # tests/chrome/test_connections.py). Anchored so nearby credential-like
   # values stay subject to the default rule set.
   '''^afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c$''',
+  # The exact synthetic reviewer-session token in the AP-08 installed-wheel
+  # example (examples/mcp_a2a_host). Exact literal so every other credential-
+  # like value stays subject to the default rule set.
+  '''\beyJhbGciOiJIUzI1NiJ9\.eyJzdWIiOiIxMTQifQ\.c2lnbmF0dXJlX3Rva2Vu\b''',
 ]
