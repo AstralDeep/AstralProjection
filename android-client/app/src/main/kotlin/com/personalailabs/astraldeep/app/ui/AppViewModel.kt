@@ -855,7 +855,12 @@ class AppViewModel(
         if (meshOperation?.isActive == true) return
         val scope = runCatching { MeshEnrollmentScope(meshServerBase, owner.issuer, owner.subject) }.getOrNull()
         if (scope == null) {
-            _state.update { it.copy(surfaceErrorMessage = "Connect securely before using device enrollment.") }
+            _state.update {
+                it.copy(
+                    surfaceErrorMessage = "Connect securely before using device enrollment.",
+                    surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
+                )
+            }
             return
         }
         val epoch = workspaceEpoch
@@ -901,7 +906,12 @@ class AppViewModel(
                     }
                 } catch (_: Exception) {
                     if (current()) {
-                        _state.update { it.copy(surfaceErrorMessage = "Device enrollment was not completed. Check approval and retry.") }
+                        _state.update {
+                            it.copy(
+                                surfaceErrorMessage = "Device enrollment was not completed. Check approval and retry.",
+                                surfaceOutcomeRevision = it.surfaceOutcomeRevision + 1,
+                            )
+                        }
                     }
                 } finally {
                     if (meshOperationEpoch == operation) meshOperation = null

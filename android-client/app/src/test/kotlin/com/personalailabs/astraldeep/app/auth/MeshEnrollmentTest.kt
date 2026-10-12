@@ -168,7 +168,7 @@ class MeshEnrollmentTest {
                         }
                         "/api/mesh/nonce" -> {
                             assertEquals(null, request.header("Authorization"))
-                            buildJsonObject { put("nonce", "challenge.random") }
+                            buildJsonObject { put("nonce", "11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA") }
                         }
                         "/api/mesh/me" -> {
                             assertEquals("DPoP test-dpop-session", request.header("Authorization"))
@@ -176,7 +176,8 @@ class MeshEnrollmentTest {
                             val claims = sessionObject(decode(parts[1]).decodeToString())
                             assertEquals("GET", claims.string("htm"))
                             assertEquals("https://app.invalid/api/mesh/me", claims.string("htu"))
-                            assertEquals("challenge.random", claims.string("nonce"))
+                            assertEquals("11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA", claims.string("nonce"))
+                            assertEquals("11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA", request.header("DPoP-Nonce"))
                             assertEquals(encode(MessageDigest.getInstance("SHA-256").digest("test-dpop-session".encodeToByteArray())), claims.string("ath"))
                             verify.verify(decode(parts[2]), (parts[0] + "." + parts[1]).encodeToByteArray())
                             assertFalse(storage.values.values.single().contains(memberId))
@@ -241,7 +242,7 @@ class MeshEnrollmentTest {
                                 if (failure == "retired") current = false
                                 session(expected, type = if (failure == "token") "Bearer" else "DPoP", expires = if (failure == "expired") 0 else 300)
                             }
-                            request.url.encodedPath.endsWith("nonce") -> buildJsonObject { put("nonce", "challenge.random") }
+                            request.url.encodedPath.endsWith("nonce") -> buildJsonObject { put("nonce", "11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA") }
                             else -> {
                                 if (failure == "storage") storage.fail = true
                                 buildJsonObject { put("member", if (failure == "me") member(key, owner = "foreign") else expected) }

@@ -119,14 +119,23 @@ import XCTest
                     ])
                 case "/api/mesh/nonce":
                     XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
-                    return .object(["nonce": .string("challenge.random"), "expires_in": .number(30)])
+                    return .object([
+                        "nonce": .string(
+                            "11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA"),
+                        "expires_in": .number(30),
+                    ])
                 case "/api/mesh/me":
                     XCTAssertEqual(request.value(forHTTPHeaderField: "Authorization"), "DPoP test-dpop-session")
                     let parts = request.value(forHTTPHeaderField: "DPoP")!.split(separator: ".").map(String.init)
                     let claims = try JSONValue.parse(self.decoded(parts[1]))
                     XCTAssertEqual(claims["htu"], .string("https://app.invalid/api/mesh/me"))
                     XCTAssertEqual(claims["htm"], .string("GET"))
-                    XCTAssertEqual(claims["nonce"], .string("challenge.random"))
+                    XCTAssertEqual(
+                        claims["nonce"],
+                        .string("11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA"))
+                    XCTAssertEqual(
+                        request.value(forHTTPHeaderField: "DPoP-Nonce"),
+                        "11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA")
                     XCTAssertTrue(
                         publicKey.isValidSignature(self.decoded(parts[2]), for: Data((parts[0] + "." + parts[1]).utf8)))
                     XCTAssertFalse(
@@ -197,7 +206,10 @@ import XCTest
                             ])
                         }
                         if request.url!.path.hasSuffix("nonce") {
-                            return .object(["nonce": .string("challenge.random")])
+                            return .object([
+                                "nonce": .string(
+                                    "11111111111111111111111111111111.AwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwAwA")
+                            ])
                         }
                         if failure == "storage" { storage.fail = true }
                         return .object([

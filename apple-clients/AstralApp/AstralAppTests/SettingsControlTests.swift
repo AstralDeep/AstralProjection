@@ -407,6 +407,84 @@ final class SettingsControlTests: XCTestCase {
         XCTAssertEqual(model.themeStore.palette, expected.palette)
     }
 
+    #if os(iOS)
+        func testSettingsTextInputRetainsEditsAcrossLongSurfaceScrolling() async throws {
+            let model = model()
+            model.connected = true
+            let filler = (0..<24).map { index in
+                AstralComponent(
+                    type: "text",
+                    raw: .object([
+                        "type": .string("text"),
+                        "content": .string(
+                            "Section \(index): " + String(repeating: "Surface instructions. ", count: 20)),
+                    ]))
+            }
+            let form = AstralComponent(
+                type: "param_picker",
+                raw: .object([
+                    "type": .string("param_picker"), "title": .string("Enrollment"),
+                    "fields": .array([
+                        .object([
+                            "name": .string("label"), "label": .string("Device name"),
+                            "kind": .string("text"), "default": .string("Original"),
+                        ])
+                    ]),
+                ]))
+            model.pendingSurface = AppModel.SurfaceContent(
+                surfaceKey: "mesh", title: "Mesh devices", components: filler + [form])
+            let controller = UIHostingController(
+                rootView: SurfaceView(embedded: true).environment(model).environment(model.themeStore))
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+            window.rootViewController = controller
+            window.isHidden = false
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+            func descendants<T: UIView>(_ view: UIView, _ type: T.Type) -> [T] {
+                (view as? T).map { [$0] } ?? view.subviews.flatMap { descendants($0, type) }
+            }
+            func layout() async {
+                for _ in 0..<4 {
+                    await Task.yield()
+                    window.layoutIfNeeded()
+                    controller.view.layoutIfNeeded()
+                }
+            }
+            await layout()
+            let scroll = try XCTUnwrap(
+                descendants(controller.view, UIScrollView.self).first { $0.contentSize.height > $0.bounds.height })
+            for _ in 0..<3 {
+                scroll.setContentOffset(
+                    CGPoint(x: 0, y: max(0, scroll.contentSize.height - scroll.bounds.height)), animated: false)
+                await layout()
+            }
+            let field = try XCTUnwrap(descendants(controller.view, UITextField.self).first { $0.text == "Original" })
+            XCTAssertTrue(field.becomeFirstResponder())
+            field.text = "Retained device label"
+            field.sendActions(for: .editingChanged)
+            field.resignFirstResponder()
+            await layout()
+            for offset in [scroll.contentSize.height - scroll.bounds.height, 0, scroll.contentSize.height / 2, 0] {
+                scroll.setContentOffset(CGPoint(x: 0, y: max(0, offset)), animated: false)
+                await layout()
+                XCTAssertEqual(field.text, "Retained device label")
+            }
+            let notice = AstralComponent(
+                type: "alert",
+                raw: .object([
+                    "type": .string("alert"), "message": .string("Inventory updated"),
+                ]))
+            model.pendingSurface = AppModel.SurfaceContent(
+                surfaceKey: "mesh", title: "Mesh devices", components: [notice] + filler + [form])
+            await layout()
+            XCTAssertEqual(
+                descendants(controller.view, UITextField.self).first { $0.text == "Retained device label" }?.text,
+                "Retained device label")
+        }
+    #endif
+
     func testSettingsFormAndColorIdentitySurviveInsertedServerNotices() throws {
         let controls = AstralComponent.list(
             from: try JSONValue.parse(

@@ -183,7 +183,7 @@ struct SurfaceView: View {
         Group {
             if let surface = model.pendingSurface {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                         if let message = model.surfaceFailureMessage {
                             Text(message).foregroundStyle(p.error).font(ConsoleTypography.callout)
                                 .fixedSize(horizontal: false, vertical: true)
