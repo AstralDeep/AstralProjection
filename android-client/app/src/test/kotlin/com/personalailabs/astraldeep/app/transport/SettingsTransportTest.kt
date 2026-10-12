@@ -264,6 +264,7 @@ class SettingsTransportTest {
         val id = "a".repeat(32)
         val cases =
             mapOf(
+                "chrome_open" to buildJsonObject { putJsonObject("params") { put("view", "invitations") } },
                 "chrome_mesh_create" to
                     buildJsonObject {
                         putJsonObject("fields") {

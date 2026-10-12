@@ -74,6 +74,24 @@ final class MeshSurfaceRequestTests: XCTestCase {
         XCTAssertNil(MeshSurfaceRequest(frameText: String(repeating: "x", count: 16385)))
     }
 
+    func testOnlyServerOwnedInventoryTabsAreNavigable() throws {
+        for view in ["members", "invitations"] {
+            let payload: JSONValue = .object(["surface": .string("mesh"), "params": .object(["view": .string(view)])])
+            let wire = Outbound.uiEvent(action: "chrome_open", sessionId: nil, payload: payload)
+            XCTAssertNotNil(MeshSurfaceRequest(frameText: wire))
+            XCTAssertEqual(try JSONValue.parse(Data(wire.utf8))["payload"], payload)
+        }
+        for params: JSONValue in [
+            .null, .array([]), .bool(true), .object(["view": .bool(true)]), .object(["view": .string("unknown")]),
+            .object(["view": .string("members"), "created": .string("secret")]),
+            .object(["created": .string("secret")]),
+        ] {
+            let wire = Outbound.uiEvent(
+                action: "chrome_open", sessionId: nil, payload: .object(["surface": .string("mesh"), "params": params]))
+            XCTAssertNil(MeshSurfaceRequest(frameText: wire))
+        }
+    }
+
     func testMalformedPublicIdentityFieldsAndForeignSessionAreDenied() {
         for raw in [
             "", "broken", "{}", "[]", String(repeating: "x", count: 2049),

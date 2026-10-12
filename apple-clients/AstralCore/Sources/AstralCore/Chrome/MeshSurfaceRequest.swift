@@ -16,7 +16,11 @@ public struct MeshSurfaceRequest: Equatable, Sendable {
         guard let body = payload.objectValue, body["surface"] == .string("mesh") else { return nil }
         switch action {
         case "chrome_open":
-            guard Set(body.keys) == ["surface", "params"], body["params"] == .object([:]) else { return nil }
+            guard Set(body.keys) == ["surface", "params"], let params = body["params"]?.objectValue,
+                params.isEmpty
+                    || Set(params.keys) == ["view"]
+                        && ["members", "invitations"].contains(params["view"]?.stringValue ?? "")
+            else { return nil }
         case "chrome_close":
             guard Set(body.keys) == ["surface"] else { return nil }
         case "chrome_mesh_confirm", "chrome_mesh_reject", "chrome_mesh_remove_invitation":

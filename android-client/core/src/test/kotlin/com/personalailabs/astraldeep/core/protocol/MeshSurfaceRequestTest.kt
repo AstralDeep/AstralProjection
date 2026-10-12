@@ -54,6 +54,19 @@ class MeshSurfaceRequestTest {
     }
 
     @Test
+    fun server_owned_mesh_tabs_retain_exact_known_navigation() {
+        for (view in listOf("members", "invitations")) {
+            val payload = body("""{"surface":"mesh","params":{"view":"$view"}}""")
+            assertTrue(MeshSurfaceRequest.validPayload("chrome_open", payload))
+            val frame = body(Wire.encodeUiEvent("chrome_open", null, payload, "11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"))
+            assertEquals(payload, frame["payload"])
+        }
+        for (params in listOf("null", "[]", "true", """{"view":true}""", """{"view":"unknown"}""", """{"view":"members","created":"secret"}""", """{"created":"secret"}""")) {
+            assertFalse(MeshSurfaceRequest.validPayload("chrome_open", body("""{"surface":"mesh","params":$params}""")))
+        }
+    }
+
+    @Test
     fun mesh_wire_rejects_missing_outer_identity_and_client_local_actions() {
         val request = "11111111-1111-4111-8111-111111111111"
         val submission = "22222222-2222-4222-8222-222222222222"

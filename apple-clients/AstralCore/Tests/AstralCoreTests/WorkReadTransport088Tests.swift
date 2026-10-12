@@ -85,7 +85,7 @@ final class WorkReadTransport088Tests: XCTestCase {
     func testMeshOwnerActionsUseCurrentSocketAndLocalActionsNeverReachServer() async throws {
         let open = Outbound.uiEvent(
             action: "chrome_open", sessionId: nil,
-            payload: .object(["surface": .string("mesh"), "params": .object([:])]))
+            payload: .object(["surface": .string("mesh"), "params": .object(["view": .string("invitations")])]))
         let id = String(repeating: "a", count: 32)
         let cases: [String: JSONValue] = [
             "chrome_mesh_create": .object([

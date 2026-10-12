@@ -21,7 +21,7 @@ object MeshSurfaceRequest {
         if (text(payload["surface"]) != "mesh") return false
         val fields = payload["fields"] as? JsonObject
         return when (action) {
-            "chrome_open" -> payload.keys == setOf("surface", "params") && (payload["params"] as? JsonObject)?.isEmpty() == true
+            "chrome_open" -> payload.keys == setOf("surface", "params") && navigation(payload["params"])
             "chrome_close" -> payload.keys == setOf("surface")
             "chrome_mesh_confirm", "chrome_mesh_reject", "chrome_mesh_remove_invitation" ->
                 payload.keys == setOf("surface", "invite_id") && identity(payload["invite_id"])
@@ -35,6 +35,11 @@ object MeshSurfaceRequest {
                     bounded(fields["scopes"], 256) && bounded(fields["ttl_seconds"], 16) && publicKey(text(fields["device_key"]))
             else -> false
         }
+    }
+
+    private fun navigation(value: kotlinx.serialization.json.JsonElement?): Boolean {
+        val params = value as? JsonObject ?: return false
+        return params.isEmpty() || params.keys == setOf("view") && text(params["view"]) in setOf("members", "invitations")
     }
 
     private fun identity(value: kotlinx.serialization.json.JsonElement?): Boolean = text(value)?.matches(Regex("[a-f0-9]{32}")) == true
