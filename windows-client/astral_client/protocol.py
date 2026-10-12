@@ -1971,8 +1971,10 @@ def _mesh_payload(action, payload) -> dict:
     }
     if action not in fields or set(payload) != fields[action] or payload.get("surface") != "mesh":
         raise WindowsProtocolError("Mesh request is invalid")
-    if action == "chrome_open" and (type(payload["params"]) is not dict or payload["params"]):
-        raise WindowsProtocolError("Mesh navigation is invalid")
+    if action == "chrome_open":
+        params = payload["params"]
+        if type(params) is not dict or (params and (set(params) != {"view"} or params["view"] not in ("members", "invitations"))):
+            raise WindowsProtocolError("Mesh navigation is invalid")
     if action not in {"chrome_open", "chrome_close", "chrome_mesh_create"}:
         identity = payload.get("member_id" if "member_id" in fields[action] else "invite_id")
         if type(identity) is not str or re.fullmatch(r"[a-f0-9]{32}", identity) is None:

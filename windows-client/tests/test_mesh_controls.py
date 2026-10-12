@@ -30,7 +30,12 @@ CONTROLS = [
     ("chrome_mesh_revoke", {"surface": "mesh", "member_id": IDENTITY}),
     ("chrome_mesh_remove_invitation", {"surface": "mesh", "invite_id": IDENTITY}),
 ]
-NAVIGATION = [("chrome_open", {"surface": "mesh", "params": {}}), ("chrome_close", {"surface": "mesh"})]
+NAVIGATION = [
+    ("chrome_open", {"surface": "mesh", "params": {}}),
+    ("chrome_open", {"surface": "mesh", "params": {"view": "members"}}),
+    ("chrome_open", {"surface": "mesh", "params": {"view": "invitations"}}),
+    ("chrome_close", {"surface": "mesh"}),
+]
 
 
 @pytest.mark.parametrize("action,body", CONTROLS + NAVIGATION)
@@ -64,6 +69,9 @@ def test_mesh_physical_wire_has_exact_body_and_outer_correlation(mesh_transport_
     ("mesh", "chrome_mesh_confirm", {"surface": "mesh", "invite_id": "../foreign"}),
     ("mesh", "chrome_mesh_confirm", {"surface": "mesh", "invite_id": True}),
     ("mesh", "chrome_open", {"surface": "mesh", "params": {"owner_id": "foreign"}}),
+    ("mesh", "chrome_open", {"surface": "mesh", "params": {"view": "members", "created": "private"}}),
+    ("mesh", "chrome_open", {"surface": "mesh", "params": {"view": "unknown"}}),
+    ("mesh", "chrome_open", {"surface": "mesh", "params": {"view": []}}),
     ("mesh", "chrome_open", {"surface": "mesh", "params": []}),
     ("mesh", "chrome_close", {"surface": "mesh", "fields": {}}),
     ("mesh", "chrome_mesh_rename", {"surface": "mesh", "member_id": IDENTITY, "fields": {}}),
