@@ -28,6 +28,7 @@ from PySide6.QtGui import QGuiApplication, QInputDevice, QPointingDevice
 from . import __version__
 from .auth import Session
 from .console import parse_turn_selection
+from .mesh import public_key
 from .settings import create_settings
 
 
@@ -1954,6 +1955,46 @@ def _is_safety_event(action, payload) -> bool:
     return action in {"chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"} or payload.get("surface") == "safety"
 
 
+def _is_mesh_event(action, payload) -> bool:
+    return (isinstance(action, str) and action.startswith("chrome_mesh_")) or payload.get("surface") == "mesh"
+
+
+def _mesh_payload(action, payload) -> dict:
+    fields = {
+        "chrome_open": {"surface", "params"}, "chrome_close": {"surface"},
+        "chrome_mesh_create": {"surface", "fields"},
+        "chrome_mesh_confirm": {"surface", "invite_id"},
+        "chrome_mesh_reject": {"surface", "invite_id"},
+        "chrome_mesh_remove_invitation": {"surface", "invite_id"},
+        "chrome_mesh_revoke": {"surface", "member_id"},
+        "chrome_mesh_rename": {"surface", "member_id", "fields"},
+    }
+    if action not in fields or set(payload) != fields[action] or payload.get("surface") != "mesh":
+        raise WindowsProtocolError("Mesh request is invalid")
+    if action == "chrome_open" and (type(payload["params"]) is not dict or payload["params"]):
+        raise WindowsProtocolError("Mesh navigation is invalid")
+    if action not in {"chrome_open", "chrome_close", "chrome_mesh_create"}:
+        identity = payload.get("member_id" if "member_id" in fields[action] else "invite_id")
+        if type(identity) is not str or re.fullmatch(r"[a-f0-9]{32}", identity) is None:
+            raise WindowsProtocolError("Mesh identity is invalid")
+    if action in {"chrome_mesh_create", "chrome_mesh_rename"}:
+        limits = {"label": 256}
+        if action == "chrome_mesh_create":
+            limits.update(device_key=2048, scopes=256, ttl_seconds=16)
+        values = payload["fields"]
+        if type(values) is not dict or set(values) != set(limits):
+            raise WindowsProtocolError("Mesh fields are invalid")
+        try:
+            if any(type(values[key]) is not str or not 0 < len(values[key].encode("utf-8")) <= limit
+                   for key, limit in limits.items()):
+                raise ValueError
+            if action == "chrome_mesh_create":
+                public_key(json.loads(values["device_key"]))
+        except (ValueError, TypeError, RecursionError, UnicodeError):
+            raise WindowsProtocolError("Mesh fields are invalid") from None
+    return copy.deepcopy(payload)
+
+
 def _safety_payload(action, payload) -> dict:
     fields = {"chrome_open": {"surface", "params"}, "chrome_safety_stop": {"surface"},
               "chrome_safety_resume": {"surface", "expected_revision"}, "chrome_safety_verify": {"surface"}}
@@ -2538,7 +2579,8 @@ class OrchestratorClient(QObject):
             or not isinstance(payload, dict)
         ):
             return None
-        if action == "update_device" or _is_guidance_event(action, payload) or _is_safety_event(action, payload):
+        if (action == "update_device" or _is_guidance_event(action, payload)
+                or _is_safety_event(action, payload) or _is_mesh_event(action, payload)):
             return None
         submission_id = frame.get("submission_id")
         request_generation = frame.get("request_generation")
@@ -2716,6 +2758,7 @@ class OrchestratorClient(QObject):
         local.validate()
         self.submission.emit(local)
         if (_is_guidance_event(action, safe_payload) or _is_safety_event(action, safe_payload)
+                or _is_mesh_event(action, safe_payload)
                 or action == "update_device" or safe_payload.get("surface") == "evidence"):
             self._safe_status("send_rejected:" + action)
             return local
@@ -2832,6 +2875,7 @@ class OrchestratorClient(QObject):
                 or not isinstance(payload, dict) or not isinstance(action, str) or _SNAKE_CASE.fullmatch(action) is None):
             return False
         safety = surface == "safety" or _is_safety_event(action, payload)
+        mesh = surface == "mesh" or _is_mesh_event(action, payload)
         if safety:
             if surface != "safety":
                 return False
@@ -2839,10 +2883,17 @@ class OrchestratorClient(QObject):
                 safe_payload = _safety_payload(action, payload)
             except WindowsProtocolError:
                 return False
+        elif mesh:
+            if surface != "mesh":
+                return False
+            try:
+                safe_payload = _mesh_payload(action, payload)
+            except WindowsProtocolError:
+                return False
         else:
             safe_payload = copy.deepcopy(payload)
         local = LocalOperationSubmission(str(uuid.uuid4()), request_generation, action, None)
-        if not safety:
+        if not safety and not mesh:
             safe_payload.update(surface=surface, submission_id=local.submission_id, request_generation=request_generation)
         frame = {"type": "ui_event", "action": action, "session_id": None,
                  "submission_id": local.submission_id, "request_generation": request_generation,
