@@ -3471,8 +3471,7 @@ class MainWindow(QMainWindow):
                 if not token:
                     raise rest.RestError(401, "Sign-in is being renewed. Retry the action when connected.")
                 data = rest.fetch_bytes(full, token)
-                with open(save_path, "wb") as fh:
-                    fh.write(data)
+                rest.write_download(save_path, data)
                 self._download_done.emit({"path": save_path, "error": None})
             except Exception as exc:  # noqa: BLE001
                 self._download_done.emit({"path": None, "error": str(exc)})
