@@ -3076,9 +3076,9 @@
       "sourcePath": "windows-client/tests/test_launch_timing.py",
       "sourceBlob": "03017c56f3898f940b6f82b76f47700f73109bfc",
       "sourceMode": "100644",
-      "resultSha256": "0482a8b693b405ecf0f558572ee4651c4570db11480d4764f4dade22ce78a1e4",
+      "resultSha256": "72dc029afaf2fcacfabfae47c37d233ddfd0953c74845665606487947337afd8",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Windows native console v2: bind the native shell, truthful capability negotiation, existing primitive rendering, appearance, authenticated actions and voice cleanup with their Windows regression and package checks. Keep the launch fixture constructor compatible with the optional server-custodied session transport while preserving existing timing and launch assertions."
     },
     {
       "path": "windows-client/tests/test_message_routing.py",
