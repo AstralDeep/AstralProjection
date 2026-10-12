@@ -5771,7 +5771,7 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
-    if (safetyAction) {
+    if (safetyAction || meshAction) {
       delete submission.payload.submission_id;
       delete submission.payload.request_generation;
     }

@@ -73,12 +73,35 @@ test("current mesh frame displays controls and create submits only this device p
   expect(Object.keys(key).sort()).toEqual(["crv", "kty", "x"]);
   expect(key.crv).toBe("Ed25519"); expect(key.x).toHaveLength(43);
   expect(submitted.payload.fields).not.toHaveProperty("link");
+  expect(Object.keys(submitted.payload)).toEqual(["fields"]);
+  expect(submitted.submission_id).toMatch(/^[0-9a-f-]{36}$/);
   expect(submitted.session_id).toBeUndefined(); expect(submitted.request_generation).not.toBe(request.request_generation);
   await receive(page, request, "<p>Stale enrollment secret</p>");
   await expect(page.getByText("Stale enrollment secret")).toHaveCount(0);
   await receive(page, submitted, "<p>Current owner result</p>");
   await expect(page.getByText("Current owner result")).toBeVisible();
 });
+
+for (const [action, payload] of [
+  ["chrome_mesh_confirm", { invite_id: "synthetic-invite" }],
+  ["chrome_mesh_reject", { invite_id: "synthetic-invite" }],
+  ["chrome_mesh_remove_invitation", { invite_id: "synthetic-invite" }],
+  ["chrome_mesh_rename", { member_id: "synthetic-member", fields: { label: "Renamed" } }],
+  ["chrome_mesh_revoke", { member_id: "synthetic-member" }],
+]) {
+  test(`${action} keeps correlation exclusively in the frame envelope`, async ({ page }) => {
+    await setup(page);
+    const request = await open(page);
+    await receive(page, request, `<div class="astral-modal-card" role="dialog"><button data-ui-action="${action}" data-ui-payload='${JSON.stringify(payload)}'>Submit control</button></div>`);
+    await page.getByRole("button", { name: "Submit control", exact: true }).click();
+    const frame = await page.evaluate(name => window.__frames.find(value => value.action === name), action);
+    expect(frame.payload).toEqual(payload);
+    expect(frame.submission_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(frame.request_generation).toMatch(/^[0-9a-f-]{36}$/);
+    expect(frame.request_generation).not.toBe(request.request_generation);
+    expect(frame.session_id).toBeUndefined();
+  });
+}
 
 test("private identities are refused and local public identity never becomes a socket event", async ({ page }) => {
   await setup(page); await receive(page, await open(page), FORM);
