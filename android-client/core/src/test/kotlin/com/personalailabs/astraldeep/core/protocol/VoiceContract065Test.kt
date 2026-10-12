@@ -86,74 +86,52 @@ class VoiceContract065Test {
             if (vector["payload"] == null) {
                 val materialized = materializeLocalNegative(vector)
                 assertNull(LocalVoiceFrame.fromJson(materialized), vector.getValue("id").jsonPrimitive.content)
-                return@forEach
-            }
-            val payload = vector.getValue("payload").jsonObject
-            val expected = vector.getValue("expected_disposition").jsonPrimitive.content
-            val disposition =
-                when (vector.getValue("shape").jsonPrimitive.content) {
-                    "client_local_capability", "voice_capability_v2" -> LocalVoiceCapability.fromJson(payload)?.disposition
-                    else -> LocalVoiceFrame.fromJson(payload)?.disposition
+            } else {
+                val payload = vector.getValue("payload").jsonObject
+                val expected = vector.getValue("expected_disposition").jsonPrimitive.content
+                val disposition =
+                    when (vector.getValue("shape").jsonPrimitive.content) {
+                        "client_local_capability", "voice_capability_v2" -> LocalVoiceCapability.fromJson(payload)?.disposition
+                        else -> LocalVoiceFrame.fromJson(payload)?.disposition
+                    }
+                assertEquals(expected, disposition?.wireValue, vector.getValue("id").jsonPrimitive.content)
+                if (expected == "final") {
+                    assertEquals(payload, Json.parseToJsonElement(Wire.encodeVoiceLocalFinal(requireNotNull(LocalVoiceFrame.fromJson(payload)))))
                 }
-            assertEquals(expected, disposition?.wireValue, vector.getValue("id").jsonPrimitive.content)
-            if (expected == "final") {
-                assertEquals(payload, Json.parseToJsonElement(Wire.encodeVoiceLocalFinal(requireNotNull(LocalVoiceFrame.fromJson(payload)))))
             }
         }
     }
 
     @Test
     fun feature075FinalLimitsCountUnicodeScalarsAndRejectMalformedSequences() {
-        fun finalFrame(text: String): JsonObject =
-            JsonObject(
-                mapOf(
-                    "type" to JsonPrimitive("voice_local_final"),
-                    "schema_version" to JsonPrimitive("2"),
-                    "speech_backend" to JsonPrimitive("client_local"),
-                    "device_id" to JsonPrimitive(DEVICE_ID),
-                    "connection_generation" to JsonPrimitive(CONNECTION_ID),
-                    "session_id" to JsonPrimitive("00000000-0000-4000-8000-000000000003"),
-                    "generation" to JsonPrimitive(1),
-                    "speech_revision" to JsonPrimitive(2),
-                    "client_turn_id" to JsonPrimitive("00000000-0000-4000-8000-000000000005"),
-                    "turn_id" to JsonPrimitive("00000000-0000-4000-8000-000000000006"),
-                    "submission_id" to JsonPrimitive("00000000-0000-4000-8000-000000000007"),
-                    "request_generation" to JsonPrimitive("00000000-0000-4000-8000-000000000008"),
-                    "chat_id" to JsonPrimitive("00000000-0000-4000-8000-000000000004"),
-                    "chat_context_revision" to JsonPrimitive(3),
-                    "recognition_sequence" to JsonPrimitive(1),
-                    "final" to JsonPrimitive(true),
-                    "recognized_locale" to JsonPrimitive("en-US"),
-                    "text" to JsonPrimitive(text),
-                    "text_digest_sha256" to JsonPrimitive("0".repeat(64)),
-                ),
+        val accepted =
+            listOf(
+                "a".repeat(8000),
+                "\uD83D\uDE00".repeat(5000),
+                "e\u0301".repeat(4000),
+                "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66".repeat(1142) + "a".repeat(6),
             )
-
-        val accepted = listOf(
-            "a".repeat(8000),
-            "\uD83D\uDE00".repeat(5000),
-            "e\u0301".repeat(4000),
-            "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66".repeat(1142) + "a".repeat(6),
-        )
         accepted.forEach { text ->
-            val frame = requireNotNull(LocalVoiceFrame.fromJson(finalFrame(text)))
+            val frame = requireNotNull(LocalVoiceFrame.fromJson(localFinalFrame(text)))
             assertEquals(LocalVoiceDisposition.FINAL, frame.disposition)
-            assertEquals(finalFrame(text), Json.parseToJsonElement(Wire.encodeVoiceLocalFinal(frame)))
+            assertEquals(localFinalFrame(text), Json.parseToJsonElement(Wire.encodeVoiceLocalFinal(frame)))
         }
 
-        listOf(
-            "a".repeat(8001),
-            "\uD83D\uDE00".repeat(8001),
-            "e\u0301".repeat(4001),
-            "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66".repeat(1143),
-            "\uD800",
-            "\uDFFF",
-            "a\uD800b",
-            "\uDC00\uD83D",
-            "\uD83D\uD83D",
-            "e\u0301".repeat(4000) + "\uD800",
-        ).forEach { text ->
-            assertNull(LocalVoiceFrame.fromJson(finalFrame(text)), text.take(8))
+        val rejected =
+            listOf(
+                "a".repeat(8001),
+                "\uD83D\uDE00".repeat(8001),
+                "e\u0301".repeat(4001),
+                "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66".repeat(1143),
+                "\uD800",
+                "\uDFFF",
+                "a\uD800b",
+                "\uDC00\uD83D",
+                "\uD83D\uD83D",
+                "e\u0301".repeat(4000) + "\uD800",
+            )
+        rejected.forEach { text ->
+            assertNull(LocalVoiceFrame.fromJson(localFinalFrame(text)), text.take(8))
         }
     }
 
@@ -274,6 +252,24 @@ class VoiceContract065Test {
                 .joinToString("") { "%02x".format(it) }
         assertEquals("bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143", digest)
     }
+
+    private fun localFinalFrame(text: String): JsonObject =
+        localLifecycleFrame(
+            "voice_local_final",
+            mapOf(
+                "client_turn_id" to JsonPrimitive("00000000-0000-4000-8000-000000000005"),
+                "turn_id" to JsonPrimitive("00000000-0000-4000-8000-000000000006"),
+                "submission_id" to JsonPrimitive("00000000-0000-4000-8000-000000000007"),
+                "request_generation" to JsonPrimitive("00000000-0000-4000-8000-000000000008"),
+                "chat_id" to JsonPrimitive("00000000-0000-4000-8000-000000000004"),
+                "chat_context_revision" to JsonPrimitive(3),
+                "recognition_sequence" to JsonPrimitive(1),
+                "final" to JsonPrimitive(true),
+                "recognized_locale" to JsonPrimitive("en-US"),
+                "text" to JsonPrimitive(text),
+                "text_digest_sha256" to JsonPrimitive("0".repeat(64)),
+            ),
+        )
 
     private fun localLifecycleFrame(
         type: String,

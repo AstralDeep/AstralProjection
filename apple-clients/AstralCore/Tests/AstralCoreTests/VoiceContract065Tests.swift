@@ -51,7 +51,7 @@ final class VoiceContract065Tests: XCTestCase {
         for vector in root["vectors"]?.arrayValue ?? [] {
             if vector["payload"] == nil {
                 let materialized = try materializeLocalNegative(vector, root: root)
-                let bytes = try JSONValue.object(materialized).encoded()
+                let bytes = try materialized.encoded()
                 let frame = InboundFrame.parse(String(decoding: bytes, as: UTF8.self))
                 XCTAssertNil(VoiceLocalFrame(frame: frame), vector["id"]?.stringValue ?? "")
                 continue

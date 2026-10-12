@@ -907,7 +907,7 @@
       "sourcePath": "android-client/core/src/test/kotlin/com/personalailabs/astraldeep/core/protocol/VoiceContract065Test.kt",
       "sourceBlob": "91a34fb1ac6831ef090e90a79ad5bada51106a0e",
       "sourceMode": "100644",
-      "resultSha256": "ed1d4763e89aa88633daa554038cbdf36c8e99841d3c0779483ae137b4a2ee6b",
+      "resultSha256": "6e8a37a71e3c22a4223e9ad7793e592ebf7e0a13b8c1abc87080499b1b6f98c1",
       "task": "T054/T013/T014/T071",
       "reason": "Bind the Android voice conformance consumer to both standalone remote-v1 and client-local-v1 Projection fixtures, including canonical playout phases. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Feature AP-03: count local voice final limits in Unicode scalars exactly on every client and reject malformed scalar sequences without changing valid submitted bytes: the Android decoder replaces the UTF-16 String.length check with code-point counting that fails closed on unpaired surrogates, the Apple voice_local_final guard counts scalars through strict UTF-8 validation and InboundFrame.parse now rejects ill-formed UTF-8 bytes and unpaired JSON surrogate escapes before decoding, the Windows client rejects surrogate code points in voice_local_final text, and the shared voice_075 conformance fixture gains 8000/8001-scalar ASCII, supplementary-plane, combining mark and ZWJ boundary vectors with matching drift guards in every client."
     },
@@ -1609,7 +1609,7 @@
       "sourcePath": "apple-clients/AstralCore/Tests/AstralCoreTests/VoiceContract065Tests.swift",
       "sourceBlob": "9b3048e2704f78c916bb1c48f789602c075bbd1d",
       "sourceMode": "100644",
-      "resultSha256": "b2f9fc7634903a96bed33b9ff29ca148440d46c82cd4d95d896400cdfe818ec7",
+      "resultSha256": "65470a0106c1949a11110f104dd5b65c425b8c9d610ad774c751bb931a9c7bbe",
       "task": "T049/T071/T015",
       "reason": "Exercise Apple client-local fixture parsing, bound-final construction, canonical playout phases, semantic denials, and unchanged remote-v1 proof behavior. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Feature AP-03: count local voice final limits in Unicode scalars exactly on every client and reject malformed scalar sequences without changing valid submitted bytes: the Android decoder replaces the UTF-16 String.length check with code-point counting that fails closed on unpaired surrogates, the Apple voice_local_final guard counts scalars through strict UTF-8 validation and InboundFrame.parse now rejects ill-formed UTF-8 bytes and unpaired JSON surrogate escapes before decoding, the Windows client rejects surrogate code points in voice_local_final text, and the shared voice_075 conformance fixture gains 8000/8001-scalar ASCII, supplementary-plane, combining mark and ZWJ boundary vectors with matching drift guards in every client."
     },
