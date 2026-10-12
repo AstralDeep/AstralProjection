@@ -103,6 +103,21 @@ for (const [action, payload] of [
   });
 }
 
+for (const view of ["members", "invitations"]) {
+  test(`Mesh ${view} tab navigation preserves its exact current envelope`, async ({ page }) => {
+    await setup(page);
+    const request = await open(page);
+    const payload = { surface: "mesh", params: { view } };
+    await receive(page, request, `<div class="astral-modal-card" role="dialog"><button data-ui-action="chrome_open" data-ui-payload='${JSON.stringify(payload)}'>Open tab</button></div>`);
+    await page.getByRole("button", { name: "Open tab", exact: true }).click();
+    const frame = await page.evaluate(() => window.__frames.filter(value => value.action === "chrome_open").at(-1));
+    expect(frame.payload).toEqual(payload);
+    expect(frame.submission_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(frame.request_generation).not.toBe(request.request_generation);
+    expect(frame.session_id).toBeUndefined();
+  });
+}
+
 test("private identities are refused and local public identity never becomes a socket event", async ({ page }) => {
   await setup(page); await receive(page, await open(page), FORM);
   await page.getByLabel("Other device identity").fill('{"kty":"OKP","crv":"Ed25519","x":"bad","d":"private"}');
