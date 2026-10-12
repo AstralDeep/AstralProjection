@@ -1,4 +1,4 @@
-// UI tests for watch Work-surface navigation: the real timeout/retry/detail/back read lifecycle, and
+// UI tests for watch Work-surface navigation: the controlled timeout/retry/detail/back read lifecycle, and
 // back-navigation cancelling a pending read while rejecting its late response, via a scripted
 // WatchNavigationPeer.
 
@@ -21,6 +21,7 @@ final class WatchWorkNavigationUITests: XCTestCase {
         let port = try XCTUnwrap(peer.port)
         app = XCUIApplication()
         app.launchEnvironment["ASTRAL_WATCH_NAVIGATION_PEER"] = "ws://127.0.0.1:\(port)/watch-navigation"
+        app.launchEnvironment["ASTRAL_WATCH_NAVIGATION_CLOCK"] = "controlled"
         app.launch()
         XCTAssertTrue(app.buttons["Work records"].waitForExistence(timeout: 10), app.debugDescription)
     }
@@ -69,6 +70,20 @@ final class WatchWorkNavigationUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Work records"].waitForExistence(timeout: 5), app.debugDescription)
     }
 
+    private func advanceClock(for request: [String: Any], milliseconds: Int, status: String = "advanced") throws {
+        let generation = try XCTUnwrap(request["request_generation"] as? String)
+        let command = peer.advanceClock(generation: generation, milliseconds: milliseconds)
+        waitForClock(command, status: status)
+    }
+
+    private func waitForClock(_ command: String, status: String) {
+        let acknowledged = XCTNSPredicateExpectation(
+            predicate: NSPredicate { [peer] _, _ in
+                peer!.clockAcknowledgements[command] == status
+            }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [acknowledged], timeout: 5), .completed)
+    }
+
     private func screenshot(_ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name
@@ -81,6 +96,11 @@ final class WatchWorkNavigationUITests: XCTestCase {
         app.buttons["Work records"].tap()
         let first = try frame(0, action: "chrome_open", mode: "list")
         let unavailable = app.staticTexts["This view is unavailable. Reconnect and retry."]
+        try advanceClock(for: first, milliseconds: 10001, status: "rejected")
+        try advanceClock(for: first, milliseconds: 9999)
+        XCTAssertFalse(unavailable.exists)
+        XCTAssertFalse(app.buttons["Retry"].exists)
+        try advanceClock(for: first, milliseconds: 1)
         XCTAssertTrue(unavailable.waitForExistence(timeout: timeoutPathGuard), app.debugDescription)
         screenshot("Actual Work read timeout")
         peer.respond(to: first, title: "Stale timeout response")
@@ -113,12 +133,18 @@ final class WatchWorkNavigationUITests: XCTestCase {
     func testBackDuringPendingReadCancelsViewTaskAndRejectsLateResponse() throws {
         app.buttons["Work records"].tap()
         let pending = try frame(0, action: "chrome_open", mode: "list")
+        let generation = try XCTUnwrap(pending["request_generation"] as? String)
+        let waiting = peer.advanceClock(generation: generation, milliseconds: 0, emptyRegistrationProbe: true)
+        waitForClock(waiting, status: "waiting")
         backToHome()
+        waitForClock(waiting, status: "retired")
         _ = try frame(1, action: "chrome_close")
         peer.respond(to: pending, title: "Late pending response")
         app.buttons["Work records"].tap()
         let current = try frame(2, action: "chrome_open", mode: "list")
         XCTAssertNotEqual(pending["request_generation"] as? String, current["request_generation"] as? String)
+        try advanceClock(for: pending, milliseconds: 10000, status: "retired")
+        XCTAssertFalse(app.staticTexts["This view is unavailable. Reconnect and retry."].exists)
         peer.respond(to: current, title: "Current reopened view")
         XCTAssertTrue(app.staticTexts["Current reopened view"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.staticTexts["Late pending response"].exists)
@@ -135,12 +161,14 @@ final class WatchNavigationPeer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "astral.watch-navigation.test-peer")
     private var connections: [NWConnection] = []
     private var received: [[String: Any]] = []
+    private var acknowledgements: [String: String] = [:]
     private var failures: [String] = []
     private var count = 0
     private let consoleFixture: [String: Any]?
     private var connectionGeneration: String?
     var port: UInt16? { listener.port?.rawValue }
     var frames: [[String: Any]] { queue.sync { received } }
+    var clockAcknowledgements: [String: String] { queue.sync { acknowledgements } }
     var errors: [String] { queue.sync { failures } }
 
     init(consoleFixture: [String: Any]? = nil) throws {
@@ -222,6 +250,15 @@ final class WatchNavigationPeer: @unchecked Sendable {
                     ], to: connection)
             } else if value["type"] as? String == "ui_event", value["action"] as? String == "get_history" {
                 // Connection hook only; history was sent above.
+            } else if value["type"] as? String == "ui_event",
+                value["action"] as? String == "navigation_test_clock_ack",
+                let payload = value["payload"] as? [String: Any],
+                let command = payload["command_id"] as? String,
+                UUID(uuidString: command)?.uuidString.lowercased() == command,
+                let status = payload["status"] as? String,
+                ["advanced", "retired", "rejected", "waiting"].contains(status)
+            {
+                self.acknowledgements[command] = status
             } else if ["chrome_open", "chrome_close"].contains(value["action"] as? String ?? "") {
                 self.received.append(value)
             } else if self.consoleFixture != nil,
@@ -242,6 +279,20 @@ final class WatchNavigationPeer: @unchecked Sendable {
             metadata: [NWProtocolWebSocket.Metadata(opcode: .text)])
         connection.send(
             content: data, contentContext: context, isComplete: true, completion: .contentProcessed { _ in })
+    }
+
+    func advanceClock(generation: String, milliseconds: Int, emptyRegistrationProbe: Bool = false) -> String {
+        let command = UUID().uuidString.lowercased()
+        queue.async {
+            guard let connection = self.connections.first else { return }
+            var payload: [String: Any] = [
+                "type": "navigation_test_clock", "request_generation": generation,
+                "command_id": command, "milliseconds": milliseconds,
+            ]
+            if emptyRegistrationProbe { payload["empty_registration_probe"] = true }
+            self.send(payload, to: connection)
+        }
+        return command
     }
 
     func respond(to request: [String: Any], title: String, detailButton: Bool = false, surface: String = "work") {

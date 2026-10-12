@@ -406,10 +406,8 @@ jobs:
             exit 1
           fi
           dest='${{ matrix.destination }}'
-          repetition_relaunch=()
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
             dest="platform=iOS Simulator,id=${{ steps.ios_sim.outputs.udid }}"
-            repetition_relaunch=(-test-repetition-relaunch-enabled YES)
           fi
           workspace_actions=()
           if [[ "${{ matrix.slug }}" == "ios" ]]; then
@@ -439,7 +437,6 @@ jobs:
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
             -test-iterations 3 \
-            ${repetition_relaunch[@]+"${repetition_relaunch[@]}"} \
             -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppUITests/LLMFirstLoginUITests \

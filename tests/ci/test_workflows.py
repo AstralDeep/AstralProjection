@@ -1255,7 +1255,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     assert xcode[-1][-1] == ("test-without-building" if platform == "ios" else "test")
     assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
-    _assert_retried_test_run(xcode, relaunch=platform == "ios" and lane == "ui")
+    _assert_retried_test_run(xcode)
     if lane == "ui":
         selectors = {arg for arg in xcode[-1] if arg.startswith("-only-testing:")}
         assert "-only-testing:AstralAppUITests/WorkspacePresentationUITests" in selectors
@@ -1277,7 +1277,7 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
         )
 
 
-def _assert_retried_test_run(xcode, *, relaunch=False):
+def _assert_retried_test_run(xcode):
     runs = [call for call in xcode if "-resultBundlePath" in call]
     assert runs == [xcode[-1]]
     run = xcode[-1]
@@ -1289,10 +1289,7 @@ def _assert_retried_test_run(xcode, *, relaunch=False):
     )] == ["YES", "120", "300", "3"]
     assert run.count("-retry-tests-on-failure") == 1
     assert not [call for call in xcode[:-1] if "-retry-tests-on-failure" in call]
-    assert run.count("-test-repetition-relaunch-enabled") == int(relaunch)
-    if relaunch:
-        assert run[run.index("-test-repetition-relaunch-enabled") + 1] == "YES"
-    assert not [call for call in xcode[:-1] if "-test-repetition-relaunch-enabled" in call]
+    assert not [call for call in xcode if "-test-repetition-relaunch-enabled" in call]
 
 
 def test_apple_core_ios_builds_once_then_runs_one_retried_suite(tmp_path):
@@ -1401,9 +1398,7 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
     assert result.returncode == (65 if platform == "macos" else 1), result.stderr
     suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
     assert len(suites) == 1
-    _assert_retried_test_run(
-        [call for call in calls if call[0] == "xcodebuild"], relaunch=platform == "ios"
-    )
+    _assert_retried_test_run([call for call in calls if call[0] == "xcodebuild"])
     assert "-retry-tests-on-failure" in suites[0]
     assert suites[0][suites[0].index("-default-test-execution-time-allowance") + 1] == "120"
     assert not [call for call in calls if call[0] == "xcrun"]
