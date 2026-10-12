@@ -17,7 +17,7 @@ import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QSettings, QTimer, QUrl, Signal
+from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QSettings, QTimer, QUrl, Signal
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -2417,6 +2417,14 @@ class MainWindow(QMainWindow):
         self._start_integrity_check()
         self._schedule_auth_refresh()
 
+    def event(self, event) -> bool:
+        event_type = event.type()
+        handled = super().event(event)
+        if (event_type in (QEvent.Type.ScreenChangeInternal, QEvent.Type.DevicePixelRatioChange)
+                and getattr(self, "_viewport_timer", None) is not None):
+            self._screen_changed(self.screen())
+        return handled
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         timer = getattr(self, "_viewport_timer", None)
@@ -2425,11 +2433,7 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        handle = self.windowHandle()
-        if handle is not None and not getattr(self, "_screen_observed", False):
-            self._screen_observed = True
-            handle.screenChanged.connect(self._screen_changed)
-            self._screen_changed(handle.screen())
+        self._screen_changed(self.screen())
 
     def _screen_changed(self, screen) -> None:
         previous = getattr(self, "_observed_screen", None)
