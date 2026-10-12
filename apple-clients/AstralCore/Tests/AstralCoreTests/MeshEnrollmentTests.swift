@@ -2,6 +2,7 @@
 // Exercises MeshEnrollmentCustody with real CryptoKit keys and an isolated storage/HTTP boundary.
 
 import CryptoKit
+import Security
 import XCTest
 @testable import AstralCore
 
@@ -221,6 +222,39 @@ import XCTest
         let storage = KeychainMeshKeyStorage(service: service)
         defer { try? storage.retainOnly(nil) }
         let first = try custody(storage)
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: "entitlement-probe",
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
+            kSecValueData as String: Data([1]),
+        ]
+        let status = SecItemAdd(query as CFDictionary, nil)
+        if status == errSecMissingEntitlement {
+            for operation in [
+                { try storage.save(Data([1]), key: first.scope.storageKey) },
+                { _ = try storage.load(first.scope.storageKey) },
+                { _ = try first.publicIdentity(current: { true }) },
+            ] {
+                XCTAssertThrowsError(try operation()) { error in
+                    guard case MeshEnrollmentError.storage = error else {
+                        return XCTFail("unentitled custody must report storage denial")
+                    }
+                }
+            }
+            var result: AnyObject?
+            let lookup: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: first.scope.storageKey,
+                kSecReturnData as String: true,
+            ]
+            XCTAssertEqual(SecItemCopyMatching(lookup as CFDictionary, &result), errSecMissingEntitlement)
+            XCTAssertNil(result)
+            return
+        }
+        guard status == errSecSuccess else { return XCTFail("unexpected protected storage status \(status)") }
+        XCTAssertEqual(SecItemDelete(query as CFDictionary), errSecSuccess)
         let identity = try first.publicIdentity(current: { true })
         let reloaded = try custody(KeychainMeshKeyStorage(service: service))
         XCTAssertEqual(try reloaded.publicIdentity(current: { true }), identity)
@@ -230,6 +264,9 @@ import XCTest
         XCTAssertNotNil(try storage.load(first.scope.storageKey))
         try first.retire()
         XCTAssertNil(try storage.load(first.scope.storageKey))
+    }
+
+    func testInMemoryStorageRetainsOnlySelectedScope() throws {
         let memory = InMemoryMeshKeyStorage()
         try memory.save(Data([1]), key: "one")
         try memory.save(Data([2]), key: "two")
