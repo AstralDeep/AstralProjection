@@ -9,6 +9,7 @@ import base64
 import ctypes
 import hashlib
 import json
+import re
 import sys
 import time
 import uuid
@@ -280,7 +281,9 @@ class MeshDeviceCustody:
                 ),
                 current,
             )["nonce"]
-            _decode(nonce, 32)
+            if type(nonce) is not str or re.fullmatch(r"[a-f0-9]{32}\.[A-Za-z0-9_-]{43}", nonce) is None:
+                _refuse()
+            _decode(nonce[33:], 32)
             header = {"typ": "dpop+jwt", "alg": "EdDSA", "jwk": public}
             claims = {
                 "jti": uuid.uuid4().hex,
