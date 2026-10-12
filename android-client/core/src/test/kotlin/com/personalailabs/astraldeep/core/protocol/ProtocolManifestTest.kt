@@ -74,6 +74,21 @@ class ProtocolManifestTest {
 
     private fun manifestRoot() = Json.parseToJsonElement(manifestFile().readText()).jsonObject
 
+    @Test
+    fun mesh_manifest_classifies_owner_and_local_controls_with_watch_handoff() {
+        val root = manifestRoot()
+        val contract = root.getValue("presentation_contracts").jsonObject.getValue("mesh_enrollment").jsonObject
+        assertEquals("mesh", contract.getValue("surface_key").jsonPrimitive.content)
+        assertEquals(ProtocolManifest.meshActions, contract.getValue("actions").jsonObject.keys)
+        assertEquals(ProtocolManifest.meshLocalActions, contract.getValue("local_actions").jsonArray.map { it.jsonPrimitive.content }.toSet())
+        assertEquals(
+            ProtocolManifest.meshActions,
+            root.getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }.filter { it.startsWith("chrome_mesh_") }.toSet(),
+        )
+        assertEquals("platform protected device key", contract.getValue("clients").jsonObject.getValue("android").jsonPrimitive.content)
+        assertTrue(contract.getValue("clients").jsonObject.getValue("watch").jsonPrimitive.content.contains("handoff"))
+    }
+
     private fun evidenceFixture() =
         Json.parseToJsonElement(File(manifestFile().parentFile, "fixtures/evidence/inspection_surface.json").readText()).jsonObject
 
@@ -114,7 +129,7 @@ class ProtocolManifestTest {
             assertEquals("modal", frame.getValue("region").jsonPrimitive.content)
             assertEquals("replace", frame.getValue("mode").jsonPrimitive.content)
         }
-        assertEquals(141, root.getValue("accept_actions").jsonArray.size)
+        assertEquals(147, root.getValue("accept_actions").jsonArray.size)
         assertEquals(72, manifestPushTypes().size)
         assertTrue(ProtocolManifest.isHandled("chrome_surface"))
         assertTrue(manifestPushTypes().none { it.startsWith("evidence") })
@@ -228,7 +243,7 @@ class ProtocolManifestTest {
     fun feature_088_guidance_actions_are_closed_and_contracted_without_new_frames() {
         val root = manifestRoot()
         val actions = root.getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(141, actions.size, "Closed accepted-action inventory including native prompt loading")
+        assertEquals(147, actions.size, "Closed accepted-action inventory including native prompt loading")
         assertEquals(actions.size, actions.toSet().size)
         assertTrue(actions.containsAll(listOf("chrome_declarative_view", "chrome_declarative_command", "chrome_turn_selection_set")))
         val contracts = root.getValue("presentation_contracts").jsonObject
@@ -249,7 +264,7 @@ class ProtocolManifestTest {
     fun feature_088_save_recurring_and_saved_results_are_closed_and_contracted_without_new_frames() {
         val root = manifestRoot()
         val actions = root.getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }
-        assertEquals(141, actions.size, "Closed accepted-action inventory including native prompt loading")
+        assertEquals(147, actions.size, "Closed accepted-action inventory including native prompt loading")
         assertEquals(actions.size, actions.toSet().size)
         assertTrue(actions.containsAll(listOf("chrome_work_result_save", "chrome_job_stop")))
         val contracts = root.getValue("presentation_contracts").jsonObject

@@ -107,7 +107,7 @@ class ServerSessionCoordinator internal constructor(
             old
         }
 
-    suspend fun logout(retired: ServerSession): Boolean = transport.logout(retired)
+    suspend fun logout(retired: ServerSession): Boolean = transport.logout(transport.refresh(retired))
 
     internal fun <T> withToken(
         token: String,

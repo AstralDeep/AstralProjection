@@ -548,7 +548,7 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
             assert_exact_keys({**payload, "unexpected": "forbidden"}, exact)
 
 
-def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
+def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
             "68f810dd6185778c1c3eeb468055583e8b44d57285c7a60e5c3b8625f3cadb97"
@@ -560,7 +560,7 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"
         ),
         "windows-client/requirements.in": (
-            "1f1055a2d6317d3bdebe9ef7e7d7e37f429151aef529224702d5b0eac7693bbd"
+            "697e2bc0786468f3621d2e043af81d6721e6734816cbe00eca7901958921a58f"
         ),
         "windows-client/requirements.txt": (
             "d301d1e3a1b523fda5c1488693cf9a7a4336504c0d168bd0f4e220c8b0302c95"
@@ -578,13 +578,13 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "5e2d075903b5cd264613e7538c7c51b1484fe2ed489d4ead3e6b4ba0cf3911c4"
         ),
         "android-client/app/gradle.lockfile": (
-            "ae8b335179a021b46e0a3326b22d5e6d5e908370a215fa67d764a42bd0497d37"
+            "dc9eaa61e7e5dec01334bf04642b03304e41d5ef321203ffdb8e999f32b45c35"
         ),
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
         "android-client/gradle/libs.versions.toml": (
-            "5c954c7873e551a917f931d5221422e4d74918d6724dd2b684ccde3e2ed9ecff"
+            "a93ad97e4fb1ab31546fbe0d2b3db0a69eb0578d01e7e134cbad2f9652e41d5c"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"

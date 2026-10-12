@@ -116,4 +116,7 @@ import AstralDeep implementation packages. The authoritative protocol version
 and digest are available as `astralprojection.UI_PROTOCOL_VERSION` and
 `astralprojection.UI_PROTOCOL_SHA256`.
 
+[Mesh device controls](docs/mesh-enrollment.md) describes the shared management
+actions, joining-device key custody, two-device confirmation and client scope.
+
 Canonical repository: <https://github.com/AstralDeep/AstralProjection>

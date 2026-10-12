@@ -12,6 +12,8 @@ on:
       - 'contracts/fixtures/voice_075/client_local_conformance.json'
       - 'scripts/android_coverage.py'
       - 'tests/test_android_coverage.py'
+      - 'scripts/run_android_emulator.py'
+      - 'tests/test_android_emulator.py'
       - 'contracts/assets/**'
       - 'contracts/fixtures/workspace_088/**'
       - 'backend/webrender/static/vendor/plotly.min.js'
@@ -26,6 +28,8 @@ on:
       - 'contracts/fixtures/voice_075/client_local_conformance.json'
       - 'scripts/android_coverage.py'
       - 'tests/test_android_coverage.py'
+      - 'scripts/run_android_emulator.py'
+      - 'tests/test_android_emulator.py'
       - 'contracts/assets/**'
       - 'contracts/fixtures/workspace_088/**'
       - 'backend/webrender/static/vendor/plotly.min.js'
@@ -180,14 +184,10 @@ jobs:
             --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage"
 
       - name: Run every synthetic device scenario on the exact coverage APK
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
-        with:
-          api-level: 34
-          arch: x86_64
-          working-directory: android-client
-          script: |
-            python3 ../scripts/android_coverage.py device --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" --serial emulator-5554 --lane fixtures
-            python3 ../scripts/android_coverage.py report --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" --lanes fixtures
+        run: >-
+          python3 ../scripts/run_android_emulator.py
+          --root "$GITHUB_WORKSPACE" --sdk "$ANDROID_HOME"
+          --output "$GITHUB_WORKSPACE/build/088/android-coverage"
 
       - name: Retain raw probes, exact APKs and native combined coverage
         if: ${{ always() }}

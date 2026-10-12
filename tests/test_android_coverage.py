@@ -511,16 +511,14 @@ def test_native_collector_workflow_requires_prepared_exact_apks_all_fixtures_and
     workflow = (root / ".github/workflows/android-ci.yml").read_text()
     instrumented = workflow.partition("  instrumented:\n")[2].partition("  android-required:\n")[0]
     assert ":app:prepareCoverageInputs --no-configuration-cache" in instrumented
-    assert "--serial emulator-5554 --lane fixtures" in instrumented
-    assert "--lanes fixtures" in instrumented
+    assert "python3 ../scripts/run_android_emulator.py" in instrumented
+    assert '--root "$GITHUB_WORKSPACE" --sdk "$ANDROID_HOME"' in instrumented
     assert "android-app-device-and-unit-coverage" in instrumented
     assert "connectedDebugAndroidTest" not in instrumented
     assert "continue-on-error" not in instrumented
     assert "secrets." not in instrumented
-    assert (
-        instrumented.index(":app:prepareCoverageInputs")
-        < instrumented.index("--lane fixtures")
-        < instrumented.index("--lanes fixtures")
+    assert instrumented.index(":app:prepareCoverageInputs") < instrumented.index(
+        "run_android_emulator.py"
     )
 
 
@@ -533,7 +531,7 @@ def test_emulator_action_physical_lines_preserve_complete_coverage_commands(tmp_
     step = workflow.partition(
         "      - name: Run every synthetic device scenario on the exact coverage APK\n"
     )[2].partition("\n      - name:")[0]
-    script = step.partition("          script: |\n")[2]
+    script = step.partition("        run: >-\n")[2]
     assert script
     workspace = tmp_path.resolve() / "workspace with spaces"
     workspace.mkdir()
@@ -544,39 +542,33 @@ def test_emulator_action_physical_lines_preserve_complete_coverage_commands(tmp_
         "with open(os.environ['ARGUMENT_RECORD'], 'a') as output:\n"
         "    output.write(json.dumps(sys.argv[1:]) + '\\n')\n"
     )
-    prefix = (
-        f"python3() {{ {shlex.quote(sys.executable)} {shlex.quote(str(recorder))} "
-        '"$@"; }\n'
+    prefix = f'python3() {{ {shlex.quote(sys.executable)} {shlex.quote(str(recorder))} "$@"; }}\n'
+    sdk = tmp_path / "sdk with spaces"
+    result = subprocess.run(
+        [shell, "-c", prefix + " ".join(line.strip() for line in script.splitlines())],
+        cwd=workspace,
+        env={
+            **os.environ,
+            "GITHUB_WORKSPACE": str(workspace),
+            "ANDROID_HOME": str(sdk),
+            "ARGUMENT_RECORD": str(record),
+        },
+        capture_output=True,
+        text=True,
+        timeout=10,
     )
-    for line in script.splitlines():
-        if not line.strip():
-            continue
-        result = subprocess.run(
-            [shell, "-c", prefix + line.strip()],
-            cwd=workspace,
-            env={
-                **os.environ,
-                "GITHUB_WORKSPACE": str(workspace),
-                "ARGUMENT_RECORD": str(record),
-            },
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        assert result.returncode == 0, result.stderr
+    assert result.returncode == 0, result.stderr
     invocations = [json.loads(line) for line in record.read_text().splitlines()]
-    assert len(invocations) == 2
+    assert len(invocations) == 1
     calls = []
-    monkeypatch.setattr(c, "device", lambda *args: calls.append(("device", args)))
-    monkeypatch.setattr(c, "report", lambda *args: calls.append(("report", args)))
+    from scripts import run_android_emulator as emulator
+
+    monkeypatch.setattr(emulator, "qualify", lambda *args: calls.append(args))
     for args in invocations:
-        assert args.pop(0) == "../scripts/android_coverage.py"
-        assert c.main(args) == 0
+        assert args.pop(0) == "../scripts/run_android_emulator.py"
+        assert emulator.main(args) == 0
     output = workspace / "build/088/android-coverage"
-    assert calls == [
-        ("device", (workspace, output, "adb", "emulator-5554", "fixtures", None)),
-        ("report", (workspace, output, ["fixtures"])),
-    ]
+    assert calls == [(workspace, sdk, output)]
 
 
 @pytest.mark.parametrize("failed", [False, True])
