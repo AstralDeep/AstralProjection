@@ -3,6 +3,8 @@ All responses, dialogs and workers are isolated test inputs, and destinations li
 """
 
 import os
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from threading import Thread
 from types import SimpleNamespace
 
 import pytest
@@ -145,3 +147,80 @@ def test_download_without_destination_choice_does_nothing(win, workers, monkeypa
     win._download("/api/result", "result.bin")
 
     assert workers == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_size", "error"),
+    [
+        ("complete", 23, None),
+        ("empty", 0, None),
+        ("exact_limit", appmod.rest.DOWNLOAD_LIMIT, None),
+        ("declared_overflow", None, "too large"),
+        ("unframed_overflow", None, "too large"),
+        ("chunked_overflow", None, "too large"),
+        ("truncated", None, "truncated"),
+    ],
+)
+def test_download_real_http_response_reaches_native_save_feedback(
+    win, workers, tmp_path, monkeypatch, mode, expected_size, error,
+):
+    requests = []
+
+    class DownloadHandler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            requests.append((self.path, self.headers.get("Authorization")))
+            self.send_response(200)
+            size = expected_size if expected_size is not None else appmod.rest.DOWNLOAD_LIMIT + 1
+            if mode == "truncated":
+                size = 21
+            if mode == "chunked_overflow":
+                self.send_header("Transfer-Encoding", "chunked")
+            elif mode != "unframed_overflow":
+                self.send_header("Content-Length", str(size))
+            self.end_headers()
+            if mode == "declared_overflow":
+                return
+            if mode == "truncated":
+                self.wfile.write(b"partial")
+                return
+            remaining = size
+            chunk = b"D" * 65536
+            while remaining:
+                body = chunk[:min(remaining, len(chunk))]
+                if mode == "chunked_overflow":
+                    self.wfile.write(f"{len(body):x}\r\n".encode("ascii"))
+                self.wfile.write(body)
+                if mode == "chunked_overflow":
+                    self.wfile.write(b"\r\n")
+                remaining -= len(body)
+            if mode == "chunked_overflow":
+                self.wfile.write(b"0\r\n\r\n")
+
+    server = HTTPServer(("127.0.0.1", 0), DownloadHandler)
+    worker = Thread(target=lambda: server.serve_forever(poll_interval=0.01), daemon=True)
+    worker.start()
+    destination = tmp_path / "result.bin"
+    destination.write_bytes(b"keep me")
+    choose(monkeypatch, destination)
+    try:
+        win._download(f"http://127.0.0.1:{server.server_port}/api/result", "result.bin")
+        workers.pop()()
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join()
+
+    assert requests == [("/api/result", "Bearer dev-token")]
+    if error:
+        assert destination.read_bytes() == b"keep me"
+        assert "Download failed" in win.topbar._mark.toolTip()
+        assert error in win.topbar._mark.toolTip()
+    else:
+        assert destination.stat().st_size == expected_size
+        assert destination.read_bytes() == b"D" * expected_size
+        assert win.topbar._mark.toolTip() == "Saved result.bin"
+    assert list(tmp_path.glob("*.part")) == []
+    assert win._viewport_downloads == 0
