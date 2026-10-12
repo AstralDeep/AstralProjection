@@ -1933,9 +1933,9 @@
       "sourcePath": "backend/rote/rote.py",
       "sourceBlob": "5a6b618640b472236ee36a71cf9c60ba91f35bc4",
       "sourceMode": "100644",
-      "resultSha256": "48db0788bada0cbec71d78277e34d83dcf2d0b3b0add3896c213b85a5cc398fd",
+      "resultSha256": "90c02f65f98c0fee92333dfe65c19e042de6c16a66f63f3d35fa462b90dda69f",
       "task": "T060/T061/T015",
-      "reason": "Feature 088 component actions: expose a detached socket-scoped copy of original cached components so legacy viewport fallback rebuilds host-owned metadata after adaptation without mutating the cache. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery."
+      "reason": "Feature 088 component actions: expose a detached socket-scoped copy of original cached components so legacy viewport fallback rebuilds host-owned metadata after adaptation without mutating the cache. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Scoped viewport hydration retains the settled conversation and local interaction state while applying server-adapted layouts after correlated delivery. Enforce configured browser host action limits during adaptation and device updates while retaining canonical component identities."
     },
     {
       "path": "backend/webrender/__init__.py",
