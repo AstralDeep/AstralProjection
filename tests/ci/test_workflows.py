@@ -958,9 +958,10 @@ def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> No
     assert 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' in instrumented
     assert "sudo udevadm control --reload-rules" in instrumented
     assert "sudo udevadm trigger --name-match=kvm" in instrumented
-    assert "api-level: 34" in instrumented
-    assert "arch: x86_64" in instrumented
-    assert "working-directory: android-client" in instrumented
+    assert "python3 ../scripts/run_android_emulator.py" in instrumented
+    assert '--root "$GITHUB_WORKSPACE" --sdk "$ANDROID_HOME"' in instrumented
+    assert '--output "$GITHUB_WORKSPACE/build/088/android-coverage"' in instrumented
+    assert "reactivecircus/android-emulator-runner@" not in instrumented
     assert (
         "./gradlew -PastralCoverage=true :app:prepareCoverageInputs "
         "--no-configuration-cache --no-daemon --stacktrace"
