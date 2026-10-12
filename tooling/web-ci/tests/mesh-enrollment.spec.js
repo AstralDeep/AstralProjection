@@ -35,7 +35,7 @@ async function setup(page) {
   });
   await page.route("https://mesh-controls.example/**", route => route.fulfill({ contentType: "text/html", body: `<!doctype html><html><body>
     <header id="astral-topbar"><button data-ui-action="chrome_open" data-ui-payload='{"surface":"mesh","params":{}}'>Open Mesh devices</button>
-    <button data-ui-action="chrome_open" data-ui-payload='{"surface":"agents"}'>Open other surface</button></header>
+    <button data-ui-action="chrome_open" data-ui-payload='{"surface":"llm"}'>Open other surface</button></header>
     <div id="astral-history"></div><div id="astral-status"></div><section id="astral-canvas"></section><div id="astral-chat"></div>
     <form id="astral-form"><input id="astral-input"><button type="submit">Send</button></form><div id="astral-modal"></div></body></html>` }));
   await page.goto("https://mesh-controls.example/");
@@ -109,4 +109,20 @@ test("closing the current surface fences asynchronous enrollment and never repor
   await page.waitForFunction(() => window.__meshStillCurrent === false);
   await expect(page.getByText("This device is enrolled.", { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => window.__frames.some(frame => frame.action === "chrome_mesh_redeem"))).toBe(false);
+});
+
+test("obsolete mesh close replies cannot dismiss a reopened mesh or ordinary settings modal", async ({ page }) => {
+  await setup(page);
+  const old = await open(page);
+  await receive(page, old, FORM);
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  expect(await page.evaluate(() => window.__frames.some(frame => frame.action === "chrome_close"))).toBe(false);
+  const current = await open(page);
+  await receive(page, current, FORM);
+  await receive(page, old, "");
+  await expect(page.getByRole("button", { name: "Create request", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open other surface", exact: true }).click();
+  await page.evaluate(() => window.__sockets.at(-1).receive({ type: "chrome_render", region: "modal", mode: "replace", html: "<p>Current LLM settings</p>" }));
+  await receive(page, old, "");
+  await expect(page.getByText("Current LLM settings", { exact: true })).toBeVisible();
 });
