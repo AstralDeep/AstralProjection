@@ -105,11 +105,20 @@ They render the structured `components` of each frame themselves
 - Keys in `_PRIVATE_KEYS` (`action`, `attributes`, `component_id`, `css`,
   `events`, `handler`, `html`, `onclick`, `owner_user_id`, `payload`,
   `script`, `token`) are dropped, compared case-insensitively.
-- Lists are kept only under `headers`, `rows` and `items`, serialized as JSON.
-  Other nested lists and objects, such as chart data, are not serialized.
-- Each block is capped at 64 KiB with a `[truncated]` marker, and nesting
-  deeper than 12 becomes `[nested content omitted]`. A component with nothing
-  portable becomes `[<type> component has no portable text representation]`.
+- Lists are kept only under `headers`, `rows` and `items`, serialized as JSON
+  by the same bounded walk: nesting deeper than 12 becomes
+  `"[nested content omitted]"`, private keys are dropped at every level, and a
+  list that stops early closes its brackets and carries a `"[truncated]"`
+  element. Other nested lists and objects, such as chart data, are not serialized.
+- Output is bounded in UTF-8 bytes while it is built, never by serializing an
+  unbounded intermediate: each block is at most 64 KiB including its
+  `\n[truncated]` marker, one render emits at most 256 component blocks whose
+  text totals at most 256 KiB, the traversal visits at most 20000 nodes per
+  render, and truncation only ever cuts between whole Unicode scalars (lone
+  surrogates become U+FFFD). When limits drop components, one trailing
+  `[result truncated: N component(s) omitted]` block is appended when it fits
+  the remaining result budget. A component with nothing portable becomes
+  `[<type> component has no portable text representation]`.
 
 ## `stubtext`
 
