@@ -107,7 +107,7 @@ class VoiceContract065Test {
         val accepted =
             listOf(
                 "a".repeat(8000),
-                "\uD83D\uDE00".repeat(5000),
+                "\uD83D\uDE00".repeat(8000),
                 "e\u0301".repeat(4000),
                 "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66".repeat(1142) + "a".repeat(6),
             )

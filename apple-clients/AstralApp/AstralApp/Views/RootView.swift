@@ -29,6 +29,19 @@ struct RootView: View {
             }
         }
         .background(rootBackground.ignoresSafeArea())
+        .sheet(
+            isPresented: Binding(
+                get: { model.meshPublicIdentity != nil }, set: { if !$0 { model.meshPublicIdentity = nil } })
+        ) {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Public device identity").font(.headline)
+                if let identity = model.meshPublicIdentity {
+                    Text(identity).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                    ShareLink("Share public identity", item: identity)
+                }
+                Button("Done") { model.meshPublicIdentity = nil }
+            }.padding()
+        }
     }
 
     private var rootBackground: some View { p.bg }

@@ -265,7 +265,7 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             val vm: AppViewModel =
-                viewModel(factory = AppViewModel.factory(client, rest, conversationResumeStore, voiceController))
+                viewModel(factory = AppViewModel.factory(client, rest, conversationResumeStore, voiceController, store))
             val uiState by vm.state.collectAsStateWithLifecycle()
             AstralTheme(palette = uiState.themePalette) {
                 val renderer =

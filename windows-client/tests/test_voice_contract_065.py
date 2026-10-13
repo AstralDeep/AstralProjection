@@ -158,8 +158,10 @@ def test_client_local_v2_keeps_valid_supplementary_bytes_and_digest_unchanged():
         for vector in _local_conformance_fixture()["vectors"]
         if vector["id"] == "L-P06-final-supplementary-scalars"
     ).copy()
-    text = payload["text"]
-    digest = payload["text_digest_sha256"]
+    text = "\U0001f600" * 8000
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    payload["text"] = text
+    payload["text_digest_sha256"] = digest
     parsed = parse_voice_local_frame(payload)
     assert parsed is not None
     rebuilt = build_voice_local_final(parsed)

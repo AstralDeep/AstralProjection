@@ -900,8 +900,13 @@ public enum Outbound {
         {
             return "{}"
         }
-        object["submission_id"] = .string(submissionId)
-        object["request_generation"] = .string(requestGeneration)
+        if action.hasPrefix("chrome_mesh_") || object["surface"] == .string("mesh") {
+            object.removeValue(forKey: "submission_id")
+            object.removeValue(forKey: "request_generation")
+        } else {
+            object["submission_id"] = .string(submissionId)
+            object["request_generation"] = .string(requestGeneration)
+        }
         if let snapshotPurpose {
             object["snapshot_purpose"] = .string(snapshotPurpose.rawValue)
         }

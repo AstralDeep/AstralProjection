@@ -143,3 +143,9 @@ Principle IX; `next-major-readiness` is advisory.
 - Per the Projection constitution's Development Workflow, final correctness is
   verified on a real device/emulator against the live backend — unit tests + the
   CI build are necessary but not sufficient.
+
+## Mesh devices
+
+The shared **Mesh devices** screen uses the existing fresh `server_v1` owner session and current authenticated socket for management. A blank enrollment public key generates or restores this device's account/server-scoped Ed25519 identity; public identities can be copied to another owner device for approval. Paste the approved current-server enrollment link on the original joining device. The client signs the exact possession challenge and verifies its minted DPoP member identity through `/api/mesh/me` using a separate transport without owner cookies or bearer headers. Changed owners, sockets, surfaces, failures, and rejected proofs never publish successful enrollment or queued replay.
+
+The private seed and safe member ID live in AndroidX encrypted preferences, survive normal restarts, and are purged on explicit sign-out/account/server changes. Member bearer tokens and link payloads are not durably stored. This flow provides owner-authenticated enrollment and inventory management; the SDK owns member tool invocation and session renewal. Tink Android 1.8.0, already present in the locked AndroidX Security dependency graph, is explicitly declared for Ed25519 signing.

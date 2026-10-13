@@ -215,7 +215,6 @@
             XCTAssertEqual(UIPasteboard.general.changeCount, clipboardBefore)
             copy.tap()
             XCTAssertTrue(app.buttons["Copied"].exists)
-            XCTAssertGreaterThan(UIPasteboard.general.changeCount, clipboardBefore)
             XCTAssertTrue(peer.nativePreviewRequests.isEmpty)
             app.buttons["Share link"].tap()
             let activity = app.otherElements["ActivityListView"]
@@ -231,6 +230,15 @@
             try XCTUnwrap(dismissRegion).tap()
             XCTAssertTrue(activity.waitForNonExistence(timeout: 3))
             app.buttons["Close"].firstMatch.tap()
+            let composer = app.textFields["chat-composer-input"]
+            XCTAssertTrue(composer.waitForExistence(timeout: 3))
+            composer.tap()
+            composer.press(forDuration: 1)
+            let paste = app.menuItems["Paste"]
+            XCTAssertTrue(paste.waitForExistence(timeout: 3))
+            paste.tap()
+            let shareURL = "http://127.0.0.1:\(try XCTUnwrap(peer.port))/share/synthetic_workspace_ui_link"
+            XCTAssertTrue((composer.value as? String ?? "").contains(shareURL))
             let shareRequest = try XCTUnwrap(peer.requests.first { $0.route == .share })
             XCTAssertEqual(
                 try JSONSerialization.jsonObject(with: shareRequest.body) as? [String: String],

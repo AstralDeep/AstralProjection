@@ -44,6 +44,8 @@ export const NODE_LANE_SOURCE_PATHS = Object.freeze([
 
 export const BROWSER_LANE_SOURCE_PATHS = Object.freeze([
   "backend/webrender/static/client.js",
+  "backend/webrender/static/mesh-custody.js",
+  "backend/webrender/static/mesh-enrollment.js",
 ]);
 
 export const OFFLINE_NODE_SOURCE_PATHS = Object.freeze([

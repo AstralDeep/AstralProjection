@@ -52,7 +52,7 @@ final class VoiceContract065Tests: XCTestCase {
             if vector["payload"] == nil {
                 let materialized = try materializeLocalNegative(vector, root: root)
                 let bytes = try materialized.encoded()
-                let frame = InboundFrame.parse(String(decoding: bytes, as: UTF8.self))
+                let frame = try XCTUnwrap(InboundFrame.parse(String(decoding: bytes, as: UTF8.self)))
                 XCTAssertNil(VoiceLocalFrame(frame: frame), vector["id"]?.stringValue ?? "")
                 continue
             }
@@ -106,7 +106,7 @@ final class VoiceContract065Tests: XCTestCase {
         let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}"
         for text in [
             String(repeating: "a", count: 8000),
-            String(repeating: "\u{1F600}", count: 5000),
+            String(repeating: "\u{1F600}", count: 8000),
             String(repeating: "e\u{0301}", count: 4000),
             String(repeating: family, count: 1142) + String(repeating: "a", count: 6),
         ] {
@@ -139,7 +139,7 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertTrue(frameJSONUnicodeIsWellFormed(Data(#"{"t":"\ud83d\ude00\\u005cu"}"#.utf8)))
     }
 
-    func testVoiceLocalFinalRejectsIllFormedNativeStrings() throws {
+    func testVoiceLocalFinalRejectsMalformedWireStringsAndAcceptsSupplementaryPair() throws {
         func localFrame(_ text: String) -> InboundFrame {
             InboundFrame(
                 name: "voice_local_final",
@@ -165,10 +165,17 @@ final class VoiceContract065Tests: XCTestCase {
                     "text_digest_sha256": .string(String(repeating: "0", count: 64)),
                 ]))
         }
-        let illFormed = String(decoding: [UInt16(0x61), UInt16(0xD800)], as: UTF16.self)
-        XCTAssertNil(VoiceLocalFrame(frame: localFrame(illFormed)))
-        let wellFormed = String(decoding: [UInt16(0x61), UInt16(0x1F600)], as: UTF16.self)
-        XCTAssertEqual(try XCTUnwrap(VoiceLocalFrame(frame: localFrame(wellFormed))).disposition, .final)
+        let template = String(decoding: try localFrame("WIRE_TEXT").payload.encoded(), as: UTF8.self)
+        for escaped in [#"a\ud800"#, #"a\udfff"#, #"\ud800a"#, #"\ud800\ud800"#, #"\udc00\ud83d"#] {
+            XCTAssertNil(InboundFrame.parse(template.replacingOccurrences(of: "WIRE_TEXT", with: escaped)))
+        }
+        let wellFormed = String(decoding: [UInt16(0x61), UInt16(0xD83D), UInt16(0xDE00)], as: UTF16.self)
+        let wire = template.replacingOccurrences(of: "WIRE_TEXT", with: #"a\ud83d\ude00"#)
+        let frame = try XCTUnwrap(InboundFrame.parse(wire))
+        XCTAssertEqual(frame.payload["text"]?.stringValue, wellFormed)
+        let final = try XCTUnwrap(VoiceLocalFrame(frame: frame))
+        XCTAssertEqual(final.disposition, .final)
+        XCTAssertEqual(Outbound.voiceLocalFinal(final), localFrame(wellFormed).payload)
     }
 
     private func materializeLocalNegative(_ vector: JSONValue, root: JSONValue) throws -> JSONValue {
