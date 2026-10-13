@@ -76,6 +76,16 @@ ruff check src backend tests scripts
 python -m build
 ```
 
+All three owner workflows report on every PR and main push. Native applicability
+uses the immutable event base and head, including deleted paths. Shared contracts,
+server-owned chrome, ROTE, tooling, workflow, and coverage-script changes require both native lanes.
+Unrelated web or Windows edits record native lanes as not applicable; unexpected
+skips, failed classification, cancellations, and missing results fail closed.
+Main rules require `required`, `Required · Android aggregate`, and
+`Required · Apple aggregate`, with the branch up to date before merge.
+The immutable review receipt flags removed tests, added skips, swallowed test errors,
+and qualification-policy changes for maintainer scrutiny.
+
 Platform-specific client gates remain documented in each client directory.
 Apple compilation and signing require macOS/Xcode; Android release signing and
 all store submissions require operator-owned credentials and external store
