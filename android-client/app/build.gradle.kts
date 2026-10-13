@@ -234,7 +234,7 @@ val canonicalLocalVoiceFixture =
         "../contracts/fixtures/voice_075/client_local_conformance.json",
     )
 val canonicalLocalVoiceFixtureSha256 =
-    "59b77d9acbfd4c40ec9c2eaa50c30e30090c8da7ff7026786d1f77d8c5984b04"
+    "9350d77e327112435246d7a574979bd6869d3c6e42d365890f59e2d70743b849"
 val voiceFixtureUnitOutput =
     layout.buildDirectory.file(
         "generated/voice-fixture-065/testResources/voice_065/client_conformance.json",

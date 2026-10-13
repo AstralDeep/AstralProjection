@@ -49,6 +49,13 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertEqual(root["schema_version"]?.stringValue, "2")
         XCTAssertEqual(root["contract"]?.stringValue, "client_local/v1")
         for vector in root["vectors"]?.arrayValue ?? [] {
+            if vector["payload"] == nil {
+                let materialized = try materializeLocalNegative(vector, root: root)
+                let bytes = try materialized.encoded()
+                let frame = try XCTUnwrap(InboundFrame.parse(String(decoding: bytes, as: UTF8.self)))
+                XCTAssertNil(VoiceLocalFrame(frame: frame), vector["id"]?.stringValue ?? "")
+                continue
+            }
             let payload = try XCTUnwrap(vector["payload"])
             let expected = try XCTUnwrap(vector["expected_disposition"]?.stringValue)
             if vector["shape"]?.stringValue == "client_local_capability" {
@@ -63,6 +70,123 @@ final class VoiceContract065Tests: XCTestCase {
                 }
             }
         }
+    }
+
+    func testVoiceLocalFinalLimitsCountUnicodeScalarsAndRejectMalformedSequences() throws {
+        func finalFrame(_ text: String) -> [String: JSONValue] {
+            [
+                "type": .string("voice_local_final"),
+                "schema_version": .string("2"),
+                "speech_backend": .string("client_local"),
+                "device_id": .string("00000000-0000-4000-8000-000000000001"),
+                "connection_generation": .string("00000000-0000-4000-8000-000000000002"),
+                "session_id": .string("00000000-0000-4000-8000-000000000003"),
+                "generation": .number(1),
+                "speech_revision": .number(2),
+                "client_turn_id": .string("00000000-0000-4000-8000-000000000005"),
+                "turn_id": .string("00000000-0000-4000-8000-000000000006"),
+                "submission_id": .string("00000000-0000-4000-8000-000000000007"),
+                "request_generation": .string("00000000-0000-4000-8000-000000000008"),
+                "chat_id": .string("00000000-0000-4000-8000-000000000004"),
+                "chat_context_revision": .number(3),
+                "recognition_sequence": .number(1),
+                "final": .bool(true),
+                "recognized_locale": .string("en-US"),
+                "text": .string(text),
+                "text_digest_sha256": .string(String(repeating: "0", count: 64)),
+            ]
+        }
+        func parsedFinal(_ text: String) throws -> VoiceLocalFrame? {
+            let object = JSONValue.object(finalFrame(text))
+            let frame = try XCTUnwrap(
+                InboundFrame.parse(String(decoding: try object.encoded(), as: UTF8.self)))
+            return VoiceLocalFrame(frame: frame)
+        }
+
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}\u{200D}\u{1F466}"
+        for text in [
+            String(repeating: "a", count: 8000),
+            String(repeating: "\u{1F600}", count: 8000),
+            String(repeating: "e\u{0301}", count: 4000),
+            String(repeating: family, count: 1142) + String(repeating: "a", count: 6),
+        ] {
+            let local = try XCTUnwrap(try parsedFinal(text))
+            XCTAssertEqual(local.disposition, .final)
+            XCTAssertEqual(Outbound.voiceLocalFinal(local), JSONValue.object(finalFrame(text)))
+        }
+        for text in [
+            String(repeating: "a", count: 8001),
+            String(repeating: "\u{1F600}", count: 8001),
+            String(repeating: "e\u{0301}", count: 4001),
+            String(repeating: family, count: 1143),
+        ] {
+            XCTAssertNil(try parsedFinal(text), String(text.prefix(8)))
+        }
+    }
+
+    func testInboundFramesRejectMalformedUnicodeSequencesWithoutChangingValidBytes() throws {
+        XCTAssertNotNil(InboundFrame.parse(#"{"type":"x","text":"\ud83d\ude00"}"#))
+        XCTAssertNotNil(InboundFrame.parse(#"{"type":"x","text":"\\ud800"}"#))
+        XCTAssertNil(InboundFrame.parse(#"{"type":"x","text":"a\ud800"}"#))
+        XCTAssertNil(InboundFrame.parse(#"{"type":"x","text":"a\udfff"}"#))
+        XCTAssertNil(InboundFrame.parse(#"{"type":"x","text":"\ud800a"}"#))
+        XCTAssertNil(InboundFrame.parse(#"{"type":"x","text":"\ud800\ud800"}"#))
+        XCTAssertFalse(frameJSONUnicodeIsWellFormed(Data([0x61, 0xED, 0xA0, 0x80])))
+        XCTAssertFalse(frameJSONUnicodeIsWellFormed(Data([0x61, 0xC0, 0x80])))
+        XCTAssertFalse(frameJSONUnicodeIsWellFormed(Data([0x61, 0xF4, 0x90, 0x80, 0x80])))
+        XCTAssertFalse(frameJSONUnicodeIsWellFormed(Data([0x61, 0x80])))
+        XCTAssertTrue(frameJSONUnicodeIsWellFormed(Data("a\u{1F600}\u{FFFD}".utf8)))
+        XCTAssertTrue(frameJSONUnicodeIsWellFormed(Data(#"{"t":"\ud83d\ude00\\u005cu"}"#.utf8)))
+    }
+
+    func testVoiceLocalFinalRejectsMalformedWireStringsAndAcceptsSupplementaryPair() throws {
+        func localFrame(_ text: String) -> InboundFrame {
+            InboundFrame(
+                name: "voice_local_final",
+                payload: .object([
+                    "type": .string("voice_local_final"),
+                    "schema_version": .string("2"),
+                    "speech_backend": .string("client_local"),
+                    "device_id": .string("00000000-0000-4000-8000-000000000001"),
+                    "connection_generation": .string("00000000-0000-4000-8000-000000000002"),
+                    "session_id": .string("00000000-0000-4000-8000-000000000003"),
+                    "generation": .number(1),
+                    "speech_revision": .number(2),
+                    "client_turn_id": .string("00000000-0000-4000-8000-000000000005"),
+                    "turn_id": .string("00000000-0000-4000-8000-000000000006"),
+                    "submission_id": .string("00000000-0000-4000-8000-000000000007"),
+                    "request_generation": .string("00000000-0000-4000-8000-000000000008"),
+                    "chat_id": .string("00000000-0000-4000-8000-000000000004"),
+                    "chat_context_revision": .number(3),
+                    "recognition_sequence": .number(1),
+                    "final": .bool(true),
+                    "recognized_locale": .string("en-US"),
+                    "text": .string(text),
+                    "text_digest_sha256": .string(String(repeating: "0", count: 64)),
+                ]))
+        }
+        let template = String(decoding: try localFrame("WIRE_TEXT").payload.encoded(), as: UTF8.self)
+        for escaped in [#"a\ud800"#, #"a\udfff"#, #"\ud800a"#, #"\ud800\ud800"#, #"\udc00\ud83d"#] {
+            XCTAssertNil(InboundFrame.parse(template.replacingOccurrences(of: "WIRE_TEXT", with: escaped)))
+        }
+        let wellFormed = String(decoding: [UInt16(0x61), UInt16(0xD83D), UInt16(0xDE00)], as: UTF16.self)
+        let wire = template.replacingOccurrences(of: "WIRE_TEXT", with: #"a\ud83d\ude00"#)
+        let frame = try XCTUnwrap(InboundFrame.parse(wire))
+        XCTAssertEqual(frame.payload["text"]?.stringValue, wellFormed)
+        let final = try XCTUnwrap(VoiceLocalFrame(frame: frame))
+        XCTAssertEqual(final.disposition, .final)
+        XCTAssertEqual(Outbound.voiceLocalFinal(final), localFrame(wellFormed).payload)
+    }
+
+    private func materializeLocalNegative(_ vector: JSONValue, root: JSONValue) throws -> JSONValue {
+        let baseId = try XCTUnwrap(vector["base_vector"]?.stringValue)
+        let base = try XCTUnwrap(
+            root["vectors"]?.arrayValue?.first { $0["id"]?.stringValue == baseId })
+        var payload = try XCTUnwrap(base["payload"])
+        for mutation in vector["mutations"]?.arrayValue ?? [] {
+            payload = mutate(payload, mutation: mutation)
+        }
+        return payload
     }
 
     func testClientLocalV2RejectsExtraFieldAndCannotCreateRemoteOrigin() throws {

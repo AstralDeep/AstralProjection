@@ -1778,7 +1778,8 @@ public struct VoiceLocalFrame: Sendable, Equatable {
             disposition = .ready
         case "voice_local_final":
             guard object["final"]?.boolValue == true, let text = object["text"]?.stringValue,
-                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, text.count <= 8_000,
+                !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                let finalScalars = voiceFinalUnicodeScalars(text), finalScalars <= 8_000,
                 voiceLanguage(object["recognized_locale"]) != nil,
                 voiceMatches(object["text_digest_sha256"]?.stringValue ?? "", voiceSHA256Pattern)
             else { return nil }
@@ -1809,6 +1810,42 @@ public struct VoiceLocalFrame: Sendable, Equatable {
         type = frame.name
         payload = frame.payload
     }
+}
+
+private func voiceFinalUnicodeScalars(_ text: String) -> Int? {
+    let units = Array(text.utf8)
+    var scalars = 0
+    var index = 0
+    while index < units.count {
+        let byte = units[index]
+        switch byte {
+        case 0x00...0x7F:
+            scalars += 1
+            index += 1
+        case 0xC2...0xDF:
+            guard index + 1 < units.count, units[index + 1] & 0xC0 == 0x80 else { return nil }
+            scalars += 1
+            index += 2
+        case 0xE0...0xEF:
+            guard index + 2 < units.count, units[index + 1] & 0xC0 == 0x80, units[index + 2] & 0xC0 == 0x80
+            else { return nil }
+            if byte == 0xE0, units[index + 1] < 0xA0 { return nil }
+            if byte == 0xED, units[index + 1] > 0x9F { return nil }
+            scalars += 1
+            index += 3
+        case 0xF0...0xF4:
+            guard index + 3 < units.count, units[index + 1] & 0xC0 == 0x80, units[index + 2] & 0xC0 == 0x80,
+                units[index + 3] & 0xC0 == 0x80
+            else { return nil }
+            if byte == 0xF0, units[index + 1] < 0x90 { return nil }
+            if byte == 0xF4, units[index + 1] > 0x8F { return nil }
+            scalars += 1
+            index += 4
+        default:
+            return nil
+        }
+    }
+    return scalars
 }
 
 private func voiceLocalRuntime(_ object: [String: JSONValue]) -> Bool {
