@@ -86,9 +86,15 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
         "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov-branch "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
+    assert "run: python scripts/check_regression_effectiveness.py" in _step_block(
+        python, "Prove focused regression effectiveness"
+    )
+    diagnostic = _step_block(python, "Record test and qualification changes for maintainer review")
+    assert f"BASE_SHA: {EVENT_BASE_SHA}" in diagnostic
+    assert "HEAD_SHA: ${{ github.sha }}" in diagnostic
     record = _step_block(python, "Record changed Python coverage for the event range")
     assert f"BASE_SHA: {EVENT_BASE_SHA}" in record
     assert (
@@ -102,14 +108,15 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
 def test_every_changed_line_gate_records_an_event_range_decision() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
     gated = [
-        job_id for job_id in sorted(_job_ids(text))
+        job_id
+        for job_id in sorted(_job_ids(text))
         if "check_changed_coverage.py" in _job_block(text, job_id)
     ]
 
     assert gated == ["python", "windows-package", "windows-tests"]
     assert "diff-cover" not in text
     assert text.count("check_changed_coverage.py") == 3
-    assert text.count(f"BASE_SHA: {EVENT_BASE_SHA}") == 3
+    assert text.count(f"BASE_SHA: {EVENT_BASE_SHA}") == 4
     for job_id in gated:
         job = _job_block(text, job_id)
         assert "fetch-depth: 0" in job, job_id
@@ -176,7 +183,11 @@ def _assert_offline_smoke_retry(lines: list[str]) -> None:
         "python -m pytest `",
         f"windows-client\\tests\\test_packaged_release.py::{target} `",
         "-q -p no:cacheprovider",
-        "if ($LASTEXITCODE -eq 0) { exit 0 }",
+        "if ($LASTEXITCODE -eq 0) {",
+        "$disposition = if ($attempt -eq 1) { 'first attempt passed' } else { 'passed after retry' }",
+        'Add-Content $env:GITHUB_STEP_SUMMARY "Windows frozen smoke: $disposition (attempt $attempt)"',
+        "exit 0",
+        "}",
         "}",
         "exit $LASTEXITCODE",
     ]
@@ -562,7 +573,9 @@ def test_frozen_windows_smoke_retry_keeps_other_tests_single_run_and_fails_close
     assert retry.count("python -m pytest") == 1
     assert f"test_packaged_release.py::{target}" in retry
     assert "test_helper_integrity_075.py" not in retry
-    assert "if ($LASTEXITCODE -eq 0) { exit 0 }" in retry
+    assert "if ($LASTEXITCODE -eq 0) {" in retry
+    assert "first attempt passed" in retry and "passed after retry" in retry
+    assert "exit 0" in retry
     assert retry.rstrip().endswith("exit $LASTEXITCODE")
 
 
@@ -830,12 +843,14 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
 
     assert _job_ids(android) == {
+        "changes",
         "build-test",
         "next-major-readiness",
         "instrumented",
         "android-required",
     }
     assert _job_ids(apple) == {
+        "changes",
         "swift-lint",
         "core-tests",
         "core-ios-tests",
@@ -849,56 +864,17 @@ def test_native_ci_is_active_and_uses_standalone_paths() -> None:
     assert "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'" in android
 
 
-def test_apple_ci_runs_when_its_coverage_exporter_changes() -> None:
-    apple = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
-    triggers = apple.partition("on:\n")[2].partition("\npermissions:\n")[0]
-    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
-    pull_request = triggers.partition("  pull_request:\n")[2]
-
-    assert '- "scripts/**"' in push
-    assert '- "scripts/**"' in pull_request
-
-
 @pytest.mark.parametrize("workflow_name", ("android-ci.yml", "apple-ci.yml"))
-def test_native_ci_push_and_pull_request_watch_voice_075_fixture(workflow_name: str) -> None:
-    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
+def test_native_ci_always_reports_an_immutable_applicability_decision(workflow_name):
+    text = (ACTIVE / workflow_name).read_text()
     triggers = text.partition("on:\n")[2].partition("\npermissions:\n")[0]
-    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
-    pull_request = triggers.partition("  pull_request:\n")[2].partition("\n  schedule:\n")[0]
-    path = "contracts/fixtures/voice_075/client_local_conformance.json"
-
-    assert push.count(path) == 1
-    assert pull_request.count(path) == 1
-
-
-@pytest.mark.parametrize("workflow_name", ("android-ci.yml", "apple-ci.yml"))
-@pytest.mark.parametrize("event_name", ("push", "pull_request"))
-def test_native_ci_voice_075_path_guard_rejects_missing_event_filter(
-    workflow_name: str,
-    event_name: str,
-) -> None:
-    text = (ACTIVE / workflow_name).read_text(encoding="utf-8")
-    path = "contracts/fixtures/voice_075/client_local_conformance.json"
-    lines = text.splitlines(keepends=True)
-    start = lines.index(f"  {event_name}:\n")
-    end = next(
-        (
-            index
-            for index in range(start + 1, len(lines))
-            if lines[index].startswith("  ") and not lines[index].startswith("    ")
-        ),
-        len(lines),
-    )
-    event_path = next(
-        index for index in range(start, end) if path in lines[index]
-    )
-    mutated = "".join(lines[:event_path] + lines[event_path + 1 :])
-
-    triggers = mutated.partition("on:\n")[2].partition("\npermissions:\n")[0]
-    push = triggers.partition("  push:\n")[2].partition("\n  pull_request:\n")[0]
-    pull_request = triggers.partition("  pull_request:\n")[2].partition("\n  schedule:\n")[0]
-    with pytest.raises(AssertionError):
-        assert push.count(path) == 1 and pull_request.count(path) == 1
+    assert "  push:\n    branches: [main]\n  pull_request:\n    branches: [main]" in triggers
+    assert "paths:" not in triggers
+    changes = _job_block(text, "changes")
+    assert "fetch-depth: 0" in changes
+    assert "BASE_SHA: " + EVENT_BASE_SHA in changes
+    assert "HEAD_SHA: ${{ github.sha }}" in changes
+    assert 'python3 scripts/ci_lanes.py --base "$BASE_SHA" --head "$HEAD_SHA"' in changes
 
 
 def test_native_ci_is_independently_read_only_secret_free_and_sha_pinned() -> None:
@@ -1127,10 +1103,10 @@ def test_native_ci_aggregates_run_fail_closed_after_required_jobs() -> None:
     apple_required = _job_block(apple, "apple-required")
 
     assert "if: ${{ always() }}" in android_required
-    assert "needs:\n      - build-test\n      - instrumented" in android_required
+    assert "needs:\n      - changes\n      - build-test\n      - instrumented" in android_required
     assert "next-major-readiness" not in android_required
     assert "if: ${{ always() }}" in apple_required
-    assert "needs:\n      - swift-lint\n      - core-tests" in apple_required
+    assert "needs:\n      - changes\n      - swift-lint\n      - core-tests" in apple_required
     for job_id in (
         "swift-lint",
         "core-tests",
@@ -1182,9 +1158,14 @@ def test_ios_witness_collects_after_one_coverage_build_and_retains_selected_bina
     _assert_ios_domain_collection((ACTIVE / "apple-ci.yml").read_text())
 
 
-@pytest.mark.parametrize("old,new", [("test-without-building", "test"),
-                                      ("--lane core", "--lane unit"),
-                                      ("--native-domain", "--discard-domain")])
+@pytest.mark.parametrize(
+    "old,new",
+    [
+        ("test-without-building", "test"),
+        ("--lane core", "--lane unit"),
+        ("--native-domain", "--discard-domain"),
+    ],
+)
 def test_ios_mapping_collection_guard_refuses_lane_rebuild_or_domain_loss(old, new):
     text = (ACTIVE / "apple-ci.yml").read_text()
     assert old in text
@@ -1424,7 +1405,9 @@ def test_apple_first_login_refuses_an_existing_result_bundle(tmp_path, platform,
     assert calls == []
 
 
-@pytest.mark.parametrize("failing_command", ["none", "AstralWatch", "AstralWatchNavigation", "merge"])
+@pytest.mark.parametrize(
+    "failing_command", ["none", "AstralWatch", "AstralWatchNavigation", "merge"]
+)
 def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_command):
     bash = "/bin/bash" if Path("/bin/bash").is_file() else shutil.which("bash")
     if bash is None:
