@@ -2,7 +2,6 @@
 // runtime frame classification, and per-client (iOS, macOS, watch) disposition completeness.
 
 import XCTest
-
 @testable import AstralCore
 
 final class ManifestDriftTests: XCTestCase {
@@ -108,9 +107,30 @@ final class ManifestDriftTests: XCTestCase {
             "component_types drift — update Dispositions.swift + parity matrix")
         XCTAssertEqual(manifest.pushTypes.count, 72)
         XCTAssertEqual(manifest.componentTypes.count, 41)
-        XCTAssertEqual(manifest.acceptActions.count, 141)
+        XCTAssertEqual(manifest.acceptActions.count, 147)
         XCTAssertTrue(Set(manifest.acceptActions).isSuperset(of: ["chrome_work_result_save", "chrome_job_stop"]))
         XCTAssertEqual(Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_note_") }), GuidanceRequest.noteActions)
+    }
+
+    func testMeshOwnerAndLocalActionsHaveExplicitNativeAndWatchDispositions() throws {
+        let manifest = try loadManifest()
+        XCTAssertEqual(
+            Set(manifest.acceptActions.filter { $0.hasPrefix("chrome_mesh_") }),
+            MeshSurfaceRequest.actions)
+        let document = try JSONValue.parse(Data(contentsOf: Self.manifestURL()))
+        XCTAssertEqual(
+            Set(
+                document["presentation_contracts"]?["mesh_enrollment"]?["local_actions"]?.arrayValue?.compactMap(
+                    \.stringValue) ?? []),
+            MeshSurfaceRequest.localActions)
+        for client in [ClientDispositions.ios, ClientDispositions.macos] {
+            XCTAssertEqual(client.meshActions, MeshSurfaceRequest.actions)
+            XCTAssertEqual(client.meshLocalActions, MeshSurfaceRequest.localActions)
+            XCTAssertEqual(client.meshCustodyDisposition, "protected_device_key")
+        }
+        XCTAssertTrue(ClientDispositions.watch.meshActions.isEmpty)
+        XCTAssertTrue(ClientDispositions.watch.meshLocalActions.isEmpty)
+        XCTAssertEqual(ClientDispositions.watch.meshCustodyDisposition, "phone_desktop_handoff")
     }
 
     func testPersistentAssignmentActionsUseExistingSurfaceFrames() throws {

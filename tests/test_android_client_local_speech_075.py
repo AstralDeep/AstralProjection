@@ -5,6 +5,7 @@ keep the server-selected activation on the shared authenticated dispatch, and re
 acceptance-criteria scenario suites to stay present in the Android lanes that run them.
 """
 
+import hashlib
 import re
 from pathlib import Path
 
@@ -214,4 +215,7 @@ def test_frozen_voice_fixture_guards_stay_pinned() -> None:
     text = core_test.read_text(encoding="utf-8")
     assert "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143" in text
     build = (ROOT / "android-client/app/build.gradle.kts").read_text(encoding="utf-8")
-    assert "59b77d9acbfd4c40ec9c2eaa50c30e30090c8da7ff7026786d1f77d8c5984b04" in build
+    digest = re.search(r'val canonicalLocalVoiceFixtureSha256\s*=\s*"([a-f0-9]{64})"', build)
+    assert digest is not None
+    fixture = ROOT / "contracts/fixtures/voice_075/client_local_conformance.json"
+    assert digest[1] == hashlib.sha256(fixture.read_bytes()).hexdigest()

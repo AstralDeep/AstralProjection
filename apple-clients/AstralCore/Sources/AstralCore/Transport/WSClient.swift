@@ -84,8 +84,11 @@ public actor WSClient {
     private var onConnect: (@Sendable () async -> String?)?
     private var onReplay: (@Sendable (QueuedOperationReplay) async -> Bool)?
 
-    public init(url: URL) {
+    private let requestHeaders: @Sendable () async -> [String: String]?
+
+    public init(url: URL, requestHeaders: @escaping @Sendable () async -> [String: String]? = { [:] }) {
         self.url = url
+        self.requestHeaders = requestHeaders
     }
 
     public func events() -> AsyncStream<WSEvent> {
@@ -118,6 +121,7 @@ public actor WSClient {
             !GuidanceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
+            !MeshSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text)
         else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
@@ -171,7 +175,9 @@ public actor WSClient {
     public func sendCurrentChromeEvent(
         _ text: String, isCurrent: @Sendable () async -> Bool
     ) async -> Bool {
-        guard ConsoleSurfaceRequest(frameText: text) != nil || SafetySurfaceRequest(frameText: text) != nil,
+        guard
+            ConsoleSurfaceRequest(frameText: text) != nil || SafetySurfaceRequest(frameText: text) != nil
+                || MeshSurfaceRequest(frameText: text) != nil,
             established, let current = task, current.state == .running
         else { return false }
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
@@ -230,7 +236,15 @@ public actor WSClient {
 
     private func runLoop() async {
         while running {
-            let task = NoStoreHTTP.session.webSocketTask(with: url)
+            guard let headers = await requestHeaders(), running else {
+                continuation?.yield(.disconnected(reason: "waiting for session custody"))
+                guard running else { break }
+                try? await Task.sleep(nanoseconds: UInt64(backoffNext() * 1_000_000_000))
+                continue
+            }
+            var request = NoStoreHTTP.request(url: url)
+            for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+            let task = NoStoreHTTP.session.webSocketTask(with: request)
             self.task = task
             established = false
             task.resume()

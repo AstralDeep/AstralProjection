@@ -528,19 +528,35 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
         "local_final",
         "announcement",
         "playout",
+        "rejected_final",
     }
-    assert len(vectors) == 7
+    assert len(vectors) == 15
     assert len({vector["id"] for vector in vectors}) == len(vectors)
     closed_dispositions = set(local["required_dispositions"])
     assert closed_dispositions == set(fixture["closed_dispositions"])
-    assert {vector["expected_disposition"] for vector in vectors} <= closed_dispositions
+    assert {
+        vector["expected_disposition"]
+        for vector in vectors
+        if "expected_disposition" in vector
+    } <= closed_dispositions
 
     exact_shapes = {**local["exact_frame_fields"], **local["exact_rest_fields"]}
+    mutation_ops = {"add", "replace", "remove", "repeat"}
 
     def assert_exact_keys(payload: dict[str, object], expected: set[str]) -> None:
         assert set(payload) == expected
 
     for vector in vectors:
+        if "payload" not in vector:
+            assert vector["category"] == "rejected_final"
+            assert "expected_disposition" not in vector
+            assert vector["base_vector"] in {item["id"] for item in vectors}
+            assert vector["expected_error"] in local["closed_reasons"]
+            for mutation in vector["mutations"]:
+                assert set(mutation) <= {"op", "path", "value", "count"}
+                assert mutation["op"] in mutation_ops
+                assert mutation["path"].startswith("/")
+            continue
         payload = vector["payload"]
         exact = set(exact_shapes[vector["shape"]])
         assert_exact_keys(payload, exact)
@@ -548,10 +564,45 @@ def test_voice_075_fixture_vectors_use_closed_dispositions_and_reject_extra_keys
             assert_exact_keys({**payload, "unexpected": "forbidden"}, exact)
 
 
-def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> None:
+def test_voice_075_scalar_limit_vectors_are_boundary_exact_and_digest_bound() -> None:
+    fixture = json.loads(VOICE_075_FIXTURE.read_text(encoding="utf-8"))
+    vectors = {vector["id"]: vector for vector in fixture["vectors"]}
+
+    def materialize(vector: dict[str, object]) -> dict[str, object]:
+        payload = dict(vectors[vector["base_vector"]]["payload"])
+        for mutation in vector["mutations"]:
+            assert mutation["op"] == "repeat"
+            path = mutation["path"].lstrip("/")
+            payload[path] = mutation["value"] * mutation["count"]
+        return payload
+
+    positive_ids = (
+        "L-P05-final-ascii-scalar-boundary",
+        "L-P06-final-supplementary-scalars",
+        "L-P07-final-combining-scalars",
+        "L-P08-final-zwj-scalars",
+    )
+    negative_ids = (
+        "L-N04-final-over-ascii-scalar-limit",
+        "L-N05-final-supplementary-over-scalar-limit",
+        "L-N06-final-combining-over-scalar-limit",
+        "L-N07-final-zwj-over-scalar-limit",
+    )
+    for identifier in positive_ids:
+        payload = vectors[identifier]["payload"]
+        text = payload["text"]
+        assert len(text) <= 8000
+        assert payload["text_digest_sha256"] == hashlib.sha256(text.encode("utf-8")).hexdigest()
+    for identifier in negative_ids:
+        text = materialize(vectors[identifier])["text"]
+        assert len(text) > 8000
+        assert 8001 <= len(text) <= 16002
+
+
+def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
-            "f08a9282fb5ac555ca2df6ee922cd2ec77eb070447b43175799e907142c09ff1"
+            "68f810dd6185778c1c3eeb468055583e8b44d57285c7a60e5c3b8625f3cadb97"
         ),
         "tooling/web-ci/package.json": (
             "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
@@ -560,7 +611,7 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "d0e6a477342e1d6ab3c95264a1ddde32dbb3fb1afb8288d9fac24e7f51dc0db8"
         ),
         "windows-client/requirements.in": (
-            "1f1055a2d6317d3bdebe9ef7e7d7e37f429151aef529224702d5b0eac7693bbd"
+            "697e2bc0786468f3621d2e043af81d6721e6734816cbe00eca7901958921a58f"
         ),
         "windows-client/requirements.txt": (
             "d301d1e3a1b523fda5c1488693cf9a7a4336504c0d168bd0f4e220c8b0302c95"
@@ -578,13 +629,13 @@ def test_feature_075_adds_no_third_party_runtime_model_or_lock_dependency() -> N
             "5e2d075903b5cd264613e7538c7c51b1484fe2ed489d4ead3e6b4ba0cf3911c4"
         ),
         "android-client/app/gradle.lockfile": (
-            "ae8b335179a021b46e0a3326b22d5e6d5e908370a215fa67d764a42bd0497d37"
+            "dc9eaa61e7e5dec01334bf04642b03304e41d5ef321203ffdb8e999f32b45c35"
         ),
         "android-client/core/gradle.lockfile": (
             "aee1fb50d70d15c9c7be9def38101135e607b42ba440477c6a8e3043333cfc49"
         ),
         "android-client/gradle/libs.versions.toml": (
-            "5c954c7873e551a917f931d5221422e4d74918d6724dd2b684ccde3e2ed9ecff"
+            "a93ad97e4fb1ab31546fbe0d2b3db0a69eb0578d01e7e134cbad2f9652e41d5c"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
             "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"

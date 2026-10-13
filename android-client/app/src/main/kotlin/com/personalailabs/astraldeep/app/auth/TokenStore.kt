@@ -1,5 +1,5 @@
-// Encrypted persistence for the AppAuth AuthState via AndroidX Security EncryptedSharedPreferences; only the
-// refresh token needs to survive process death. Implements ServerSessionPersistence.
+// AndroidX encrypted persistence for AppAuth grants, exact-server session cookies, and scoped mesh seeds.
+// Implements ServerSessionPersistence and MeshKeyStorage for the native authentication and enrollment controllers.
 
 package com.personalailabs.astraldeep.app.auth
 
@@ -10,11 +10,11 @@ import net.openid.appauth.AuthState
 import java.security.MessageDigest
 import java.time.Instant
 
-class TokenStore(context: Context) : ServerSessionPersistence {
+class TokenStore(context: Context, file: String = FILE) : ServerSessionPersistence, MeshKeyStorage {
     private val prefs =
         EncryptedSharedPreferences.create(
             context,
-            FILE,
+            file,
             MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
@@ -29,6 +29,20 @@ class TokenStore(context: Context) : ServerSessionPersistence {
     fun clear() {
         prefs.edit().remove(KEY).apply()
     }
+
+    override fun loadMesh(key: String): String? = prefs.getString("mesh.$key", null)
+
+    override fun saveMesh(
+        key: String,
+        value: String,
+    ): Boolean = prefs.edit().putString("mesh.$key", value).commit()
+
+    override fun removeMesh(key: String): Boolean = prefs.edit().remove("mesh.$key").commit()
+
+    override fun retainOnlyMesh(key: String?): Boolean =
+        prefs.edit().apply {
+            prefs.all.keys.filter { it.startsWith("mesh.") && it != "mesh.$key" }.forEach(::remove)
+        }.commit()
 
     override fun loadSession(
         scope: ServerSessionScope,

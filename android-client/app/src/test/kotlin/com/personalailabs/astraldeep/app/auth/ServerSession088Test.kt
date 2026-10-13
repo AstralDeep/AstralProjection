@@ -30,6 +30,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okhttp3.internal.http2.Http2Stream
+import okhttp3.mockwebserver.Dispatcher
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
@@ -82,12 +83,13 @@ class ServerSession088Test {
     private fun jwt(
         user: String,
         suffix: String = "signature",
+        expiry: Long = 1900000000,
     ): String {
         val payload =
             buildJsonObject {
                 put("iss", issuer)
                 put("sub", user)
-                put("exp", 1900000000)
+                put("exp", expiry)
             }.toString()
         return "header.${Base64.getUrlEncoder().withoutPadding().encodeToString(payload.encodeToByteArray())}.$suffix"
     }
@@ -696,6 +698,129 @@ class ServerSession088Test {
                 assertNull(memory.value)
                 assertEquals(1, memory.saves)
                 assertFailsWith<ServerSessionException> { controller.exchange(attempt, ServerAuthorizationCode(transport.scope, "code", "v".repeat(43))) }
+            }
+        }
+
+    @Test fun retired_logout_renews_expired_access_without_restoring_local_custody() =
+        runBlocking<Unit> {
+            Fixture().use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val expired = jwt(owner, "oldsignature", now.minusSeconds(1).epochSecond)
+                val renewed = jwt(owner, "newsignature")
+                val memory = Memory().apply { value = ServerSession(transport.scope, owner, expired, cookie, now.plusSeconds(3600)) }
+                val controller = ServerSessionCoordinator(transport, memory) { now }
+                assertTrue(controller.restore())
+                val retired = assertNotNull(controller.retire())
+                assertNull(memory.value)
+                f.server.enqueue(json(refreshed(renewed)))
+                f.server.enqueue(json("{\"outcome\":\"revoked\",\"revoked\":true,\"queued\":false}"))
+                assertTrue(controller.logout(retired))
+                val refresh = f.server.takeRequest()
+                assertEquals("/auth/session", refresh.path)
+                assertEquals(cookie, refresh.getHeader("Cookie"))
+                assertNull(refresh.getHeader("Authorization"))
+                val logout = f.server.takeRequest()
+                assertEquals("/api/auth/logout", logout.path)
+                assertEquals(cookie, logout.getHeader("Cookie"))
+                assertEquals("Bearer $renewed", logout.getHeader("Authorization"))
+                assertEquals("server_v1", logout.getHeader("X-Astral-Session-Custody"))
+                assertEquals("{\"session_custody\":\"server_v1\"}", logout.body.readUtf8())
+                assertEquals(2, f.server.requestCount)
+                assertNull(memory.value)
+                assertEquals(0, memory.saves)
+                assertFailsWith<ServerSessionException> { controller.socketTicket(f.socketOrigin + "ws", renewed) }
+            }
+        }
+
+    @Test fun retired_logout_denies_foreign_retired_and_unavailable_refresh_without_restoring_local_custody() =
+        runBlocking<Unit> {
+            for (reply in listOf(
+                json(refreshed(jwt("other"), "other")),
+                MockResponse().setResponseCode(401),
+                MockResponse().setResponseCode(503),
+                MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AFTER_REQUEST),
+            )) {
+                Fixture().use { f ->
+                    val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                    val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
+                    val controller = ServerSessionCoordinator(transport, memory) { now }
+                    assertTrue(controller.restore())
+                    val retired = assertNotNull(controller.retire())
+                    f.server.enqueue(reply)
+                    assertFailsWith<ServerSessionException> { controller.logout(retired) }
+                    val refresh = f.server.takeRequest()
+                    assertEquals("/auth/session", refresh.path)
+                    assertEquals(cookie, refresh.getHeader("Cookie"))
+                    assertNull(refresh.getHeader("Authorization"))
+                    assertEquals(1, f.server.requestCount)
+                    assertNull(memory.value)
+                    assertEquals(0, memory.saves)
+                    assertFailsWith<ServerSessionException> { controller.socketTicket(f.socketOrigin + "ws", token) }
+                }
+            }
+        }
+
+    @Test fun retired_logout_denial_keeps_local_custody_erased() =
+        runBlocking<Unit> {
+            for (status in listOf(401, 503)) {
+                Fixture().use { f ->
+                    val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                    val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
+                    val controller = ServerSessionCoordinator(transport, memory) { now }
+                    assertTrue(controller.restore())
+                    val retired = assertNotNull(controller.retire())
+                    f.server.enqueue(json(refreshed()))
+                    f.server.enqueue(MockResponse().setResponseCode(status))
+                    assertFailsWith<ServerSessionException> { controller.logout(retired) }
+                    assertEquals("/auth/session", f.server.takeRequest().path)
+                    assertEquals("/api/auth/logout", f.server.takeRequest().path)
+                    assertEquals(2, f.server.requestCount)
+                    assertNull(memory.value)
+                    assertEquals(0, memory.saves)
+                    assertFailsWith<ServerSessionException> { controller.socketTicket(f.socketOrigin + "ws", token) }
+                }
+            }
+        }
+
+    @Test fun retired_logout_cannot_replace_a_newer_signed_in_owner() =
+        runBlocking<Unit> {
+            Fixture().use { f ->
+                val transport = ServerSessionTransport(scope(f.origin), f.client) { now }
+                val memory = Memory().apply { value = ServerSession(transport.scope, owner, token, cookie, now.plusSeconds(3600)) }
+                val controller = ServerSessionCoordinator(transport, memory) { now }
+                assertTrue(controller.restore())
+                val retired = assertNotNull(controller.retire())
+                val refreshEntered = CountDownLatch(1)
+                val releaseRefresh = CountDownLatch(1)
+                val newOwner = "new-owner"
+                val newToken = jwt(newOwner, "newsignature")
+                f.server.dispatcher =
+                    object : Dispatcher() {
+                        override fun dispatch(request: RecordedRequest): MockResponse =
+                            when (request.path) {
+                                "/auth/session" -> {
+                                    refreshEntered.countDown()
+                                    check(releaseRefresh.await(3, TimeUnit.SECONDS))
+                                    json(refreshed())
+                                }
+                                "/auth/token" -> json(issued(newToken, newOwner)).setHeader("Set-Cookie", cookieHeader.replace(cookie, "astral_session=new.session"))
+                                "/api/auth/logout" -> json("{\"outcome\":\"revoked\",\"revoked\":true,\"queued\":false}")
+                                else -> MockResponse().setResponseCode(404)
+                            }
+                    }
+                val cleanup = async(Dispatchers.Default) { controller.logout(retired) }
+                assertTrue(refreshEntered.await(3, TimeUnit.SECONDS))
+                val attempt = controller.begin()
+                assertEquals(newToken, controller.exchange(attempt, ServerAuthorizationCode(transport.scope, "new-code", "v".repeat(43))))
+                val ticket = controller.socketTicket(f.socketOrigin + "ws", newToken)
+                releaseRefresh.countDown()
+                assertTrue(cleanup.await())
+                assertTrue(controller.isCurrent(ticket))
+                assertEquals(newOwner, assertNotNull(memory.value).userId)
+                assertEquals(newToken, assertNotNull(memory.value).accessToken)
+                assertEquals("astral_session=new.session", assertNotNull(memory.value).cookie)
+                assertEquals(1, memory.saves)
+                assertEquals(3, f.server.requestCount)
             }
         }
 

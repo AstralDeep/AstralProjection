@@ -5,35 +5,10 @@ name: android-ci
 on:
   push:
     branches: [main]
-    paths:
-      - 'android-client/**'
-      - 'contracts/ui_protocol.json'
-      - 'contracts/fixtures/voice_065/client_conformance.json'
-      - 'contracts/fixtures/voice_075/client_local_conformance.json'
-      - 'scripts/android_coverage.py'
-      - 'tests/test_android_coverage.py'
-      - 'contracts/assets/**'
-      - 'contracts/fixtures/workspace_088/**'
-      - 'backend/webrender/static/vendor/plotly.min.js'
-      - 'scripts/run_android_next_major_canary.py'
-      - 'tests/test_android_next_major_canary.py'
-      - '.github/workflows/android-ci.yml'
   pull_request:
-    paths:
-      - 'android-client/**'
-      - 'contracts/ui_protocol.json'
-      - 'contracts/fixtures/voice_065/client_conformance.json'
-      - 'contracts/fixtures/voice_075/client_local_conformance.json'
-      - 'scripts/android_coverage.py'
-      - 'tests/test_android_coverage.py'
-      - 'contracts/assets/**'
-      - 'contracts/fixtures/workspace_088/**'
-      - 'backend/webrender/static/vendor/plotly.min.js'
-      - 'scripts/run_android_next_major_canary.py'
-      - 'tests/test_android_next_major_canary.py'
-      - '.github/workflows/android-ci.yml'
+    branches: [main]
   schedule:
-    - cron: '0 7 * * *' # nightly — runs the instrumented emulator job
+    - cron: '0 7 * * *'
   workflow_dispatch: {}
 
 permissions:
@@ -51,7 +26,29 @@ defaults:
     working-directory: android-client
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.classify.outputs.android }}
+      apple: ${{ steps.classify.outputs.apple }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+      - name: Classify the immutable event range
+        id: classify
+        working-directory: .
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: >-
+          python3 scripts/ci_lanes.py --base "$BASE_SHA" --head "$HEAD_SHA"
+          --output build/ci/native-lanes.json --github-output "$GITHUB_OUTPUT"
+
   build-test:
+    needs: [changes]
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -140,10 +137,9 @@ jobs:
           path: build/060/android-next-major-readiness.json
           if-no-files-found: error
 
-  # Instrumented Compose UI tests are a required Feature 065 client-conformance
-  # gate. They run for the same path-filtered pull requests as the JVM suites,
-  # as well as the existing nightly and manual invocations.
   instrumented:
+    needs: [changes]
+    if: needs.changes.outputs.android == 'true'
     name: Required · instrumented UI tests (emulator)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -180,14 +176,10 @@ jobs:
             --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage"
 
       - name: Run every synthetic device scenario on the exact coverage APK
-        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
-        with:
-          api-level: 34
-          arch: x86_64
-          working-directory: android-client
-          script: |
-            python3 ../scripts/android_coverage.py device --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" --serial emulator-5554 --lane fixtures
-            python3 ../scripts/android_coverage.py report --root "$GITHUB_WORKSPACE" --output "$GITHUB_WORKSPACE/build/088/android-coverage" --lanes fixtures
+        run: >-
+          python3 ../scripts/run_android_emulator.py
+          --root "$GITHUB_WORKSPACE" --sdk "$ANDROID_HOME"
+          --output "$GITHUB_WORKSPACE/build/088/android-coverage"
 
       - name: Retain raw probes, exact APKs and native combined coverage
         if: ${{ always() }}
@@ -204,11 +196,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - changes
       - build-test
       - instrumented
     steps:
-      - name: Enforce every Android conformance and coverage producer
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+      - name: Enforce applicability and every Android result
         working-directory: .
         run: |
-          [[ '${{ needs.build-test.result }}' == 'success' ]]
-          [[ '${{ needs.instrumented.result }}' == 'success' ]]
+          [[ '${{ needs.changes.result }}' == 'success' ]]
+          python3 scripts/ci_lanes.py --applicable '${{ needs.changes.outputs.android }}' \
+            --results '${{ needs.build-test.result }}' '${{ needs.instrumented.result }}' \
+            >> "$GITHUB_STEP_SUMMARY"
