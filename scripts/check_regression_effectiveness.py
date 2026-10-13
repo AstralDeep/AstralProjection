@@ -60,26 +60,22 @@ def classify_result(returncode, report, test_name, mutant):
     if document.findall(".//error") or document.findall(".//skipped"):
         raise ValueError("collection, execution error, or skip is not a mutation kill")
     failures = document.findall(".//failure")
-    if any(
-        any(
-            word in ET.tostring(failure, encoding="unicode")
-            for word in (
-                "ImportError",
-                "ModuleNotFoundError",
-                "SyntaxError",
-                "NameError",
-                "AttributeError",
-            )
-        )
-        for failure in failures
-    ):
-        raise ValueError("broken imports or execution are not a mutation kill")
     if not mutant:
         if returncode or failures:
             raise ValueError("unmodified acceptance control failed")
         return "passed"
     if returncode != 1 or len(failures) != 1:
         raise ValueError("mutation survived or pytest did not report a behavioral failure")
+    failure = failures[0]
+    kind, message = failure.get("type", ""), failure.get("message", "")
+    if kind:
+        behavioral = kind in {"AssertionError", "Failed", "_pytest.outcomes.Failed"}
+    else:
+        behavioral = message in {"AssertionError", "Failed"} or message.startswith(
+            ("assert ", "AssertionError:", "Failed: ")
+        )
+    if not behavioral:
+        raise ValueError("execution errors are not behavioral assertion kills")
     return "killed"
 
 
