@@ -8,7 +8,7 @@ from copy import deepcopy
 import pytest
 
 from rote import lod
-from rote.adapter import ComponentAdapter
+from rote.adapter import ComponentAdapter, declared_action_count
 from rote.capabilities import DeviceProfile
 
 
@@ -333,3 +333,98 @@ def test_implicit_color_save_consumes_budget_without_limiting_accepted_theme() -
                                     _profile("ios", max_actions=1))
     assert output == [theme, picker]
     assert ComponentAdapter.adapt([theme], _profile("ios", supports_interactivity=False)) == [theme]
+
+
+def test_declared_action_count_is_shared_across_actionable_primitive_shapes() -> None:
+    assert declared_action_count({"type": "button", "action": "go"}) == 1
+    assert declared_action_count({"type": "button", "label": "Inert"}) == 0
+    assert declared_action_count({"type": "file_upload", "action": "attach_file"}) == 1
+    assert declared_action_count({"type": "file_upload", "label": "Upload"}) == 0
+    assert declared_action_count({"type": "param_picker", "fields": [], "submit_action": "save"}) == 1
+    assert declared_action_count({"type": "param_picker", "fields": [],
+                                  "submit_message_template": "Run {value}"}) == 1
+    assert declared_action_count({"type": "param_picker", "fields": [],
+                                  "actions": [{"label": "Noop"}, {"action": "go"}],
+                                  "submit_action": "save"}) == 2
+    assert declared_action_count({"type": "param_picker", "fields": []}) == 0
+    assert declared_action_count({"type": "text", "content": "x"}) == 0
+
+
+def test_actionable_file_upload_is_withdrawn_for_read_only_hosts() -> None:
+    original = {"type": "file_upload", "id": "up1", "label": "Upload Scan", "action": "attach_file"}
+    output = ComponentAdapter.adapt([original], _profile("browser", supports_interactivity=False))
+    assert output[0]["type"] == "text"
+    assert "unavailable" in output[0]["content"].lower()
+    assert output[0]["id"] == "up1"
+    assert "action" not in output[0]
+
+
+def test_file_upload_without_action_is_not_budgeted_or_withdrawn() -> None:
+    upload = {"type": "file_upload", "id": "up1", "label": "Upload Scan"}
+    original = [{"type": "button", "id": "b1", "label": "Go", "action": "go"}, upload]
+    output = ComponentAdapter.adapt(original, _profile("browser", max_actions=1))
+    assert output[0] == original[0]
+    assert output[1] == upload
+
+
+def test_actionable_file_upload_shares_budget_with_buttons() -> None:
+    original = [
+        {"type": "button", "id": "b1", "label": "Go", "action": "go"},
+        {"type": "file_upload", "id": "up1", "label": "Upload Scan", "action": "attach_file"},
+    ]
+    output = ComponentAdapter.adapt(original, _profile("browser", max_actions=1))
+    assert output[0]["type"] == "button"
+    assert output[1]["type"] == "text"
+    assert output[1]["id"] == "up1"
+    assert "action" not in output[1]
+
+    reversed_out = ComponentAdapter.adapt(
+        [dict(original[1]), dict(original[0])], _profile("browser", max_actions=1))
+    assert len(reversed_out) == 1
+    assert reversed_out[0]["type"] == "file_upload"
+    assert reversed_out[0]["action"] == "attach_file"
+
+
+def test_budget_covers_actionable_primitives_nested_in_tabs_and_cards() -> None:
+    original = [{"type": "tabs", "tabs": [{"label": "One", "content": [
+        {"type": "card", "content": [
+            {"type": "file_upload", "id": "f1", "label": "Docs", "action": "a1"},
+            {"type": "file_upload", "id": "f2", "label": "Images", "action": "a2"},
+            {"type": "param_picker", "id": "f3", "fields": [],
+             "submit_message_template": "Run {value}"},
+            {"type": "action_group", "buttons": [{"action": "a3"}]},
+        ]}]}]}]
+    output = ComponentAdapter.adapt(original, _profile("browser", max_actions=2))
+    kept = output[0]["tabs"][0]["content"][0]["content"]
+    assert [c["id"] for c in kept if c.get("type") == "file_upload"] == ["f1", "f2"]
+    assert [c["action"] for c in kept if c.get("type") == "file_upload"] == ["a1", "a2"]
+    assert kept[2]["type"] == "text" and kept[2]["id"] == "f3"
+    assert "submit_message_template" not in kept[2]
+    assert kept[3]["buttons"] == []
+
+
+def test_submit_template_only_form_is_counted_against_budget() -> None:
+    original = [
+        {"type": "param_picker", "id": "f1", "fields": [], "submit_message_template": "Run {value}"},
+        {"type": "param_picker", "id": "f2", "fields": [], "submit_message_template": "Send {x}"},
+    ]
+    output = ComponentAdapter.adapt(original, _profile("ios", max_actions=1))
+    assert output[0]["submit_message_template"] == "Run {value}"
+    assert output[1]["type"] == "text"
+    assert output[1]["id"] == "f2"
+
+
+def test_zero_and_unlimited_budgets_keep_authorized_behavior() -> None:
+    components = [
+        {"type": "button", "id": "b1", "label": "Go", "action": "go"},
+        {"type": "file_upload", "id": "up1", "label": "Upload", "action": "attach_file"},
+        {"type": "param_picker", "id": "f1", "fields": [], "submit_action": "save",
+         "actions": [{"label": "Test", "action": "test"}]},
+    ]
+    snapshot = deepcopy(components)
+    unlimited = ComponentAdapter.adapt(components, _profile("ios"))
+    assert unlimited[0]["action"] == "go"
+    assert unlimited[1]["action"] == "attach_file"
+    assert unlimited[2]["submit_action"] == "save"
+    assert unlimited[2]["actions"] == components[2]["actions"]
+    assert components == snapshot

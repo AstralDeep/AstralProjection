@@ -38,8 +38,22 @@ jobs:
       - run: python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
       - run: python -m pip install --no-deps --no-build-isolation .
       - run: ruff check src backend tests scripts windows-client
+      - name: Record test and qualification changes for maintainer review
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: >-
+          python scripts/ci_review_diagnostics.py --base "$BASE_SHA" --head "$HEAD_SHA"
+          --output build/ci/review-diagnostics.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-review-diagnostics
+          path: build/ci/review-diagnostics.json
+          if-no-files-found: error
       - run: mkdir -p build/074/coverage
-      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
+      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
+      - name: Prove focused regression effectiveness
+        run: python scripts/check_regression_effectiveness.py
       - name: Record changed Python coverage for the event range
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
@@ -107,7 +121,7 @@ jobs:
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace/tooling/web-ci \
             "$image" \
-            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && corepack npm exec -- playwright test tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js tests/native-export-088.spec.js tests/work-reads-088.spec.js tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js tests/native-chart-088.spec.js tests/first-task-088.spec.js tests/selection-088.spec.js --browser=chromium --workers=1'
+            /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && node --test tests/mesh-custody.browser.test.mjs && corepack npm exec -- playwright test tests/mesh-enrollment.spec.js tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js tests/native-export-088.spec.js tests/work-reads-088.spec.js tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js tests/native-chart-088.spec.js tests/first-task-088.spec.js tests/selection-088.spec.js --browser=chromium --workers=1'
       - name: Enforce portable export executable-line coverage
         shell: bash
         run: |
@@ -335,7 +349,11 @@ jobs:
             python -m pytest `
               windows-client\tests\test_packaged_release.py::test_actual_frozen_gui_retains_selected_profile_during_offline_retry `
               -q -p no:cacheprovider
-            if ($LASTEXITCODE -eq 0) { exit 0 }
+            if ($LASTEXITCODE -eq 0) {
+              $disposition = if ($attempt -eq 1) { 'first attempt passed' } else { 'passed after retry' }
+              Add-Content $env:GITHUB_STEP_SUMMARY "Windows frozen smoke: $disposition (attempt $attempt)"
+              exit 0
+            }
           }
           exit $LASTEXITCODE
 

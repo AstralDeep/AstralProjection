@@ -34,6 +34,7 @@ const NODE_PATHS = [
   "tooling/web-ci/release-runner.mjs",
 ];
 const BROWSER_PATH = "backend/webrender/static/client.js";
+const BROWSER_PATHS = [BROWSER_PATH, "backend/webrender/static/mesh-custody.js", "backend/webrender/static/mesh-enrollment.js"];
 const OFFLINE_PATHS = ["backend/webrender/static/offline-registration.js", "backend/webrender/static/service-worker.js"];
 const EXPORT_PATHS = ["backend/webrender/static/canvas-export-host.js", "backend/webrender/static/canvas-export.js"];
 
@@ -50,7 +51,7 @@ function record(path, hits) {
 
 function fixture() {
   const repoRoot = mkdtempSync(resolve(tmpdir(), "projection-coverage-union-cli-"));
-  for (const path of [...NODE_PATHS, BROWSER_PATH, ...OFFLINE_PATHS, ...EXPORT_PATHS]) {
+  for (const path of [...NODE_PATHS, ...BROWSER_PATHS, ...OFFLINE_PATHS, ...EXPORT_PATHS]) {
     mkdirSync(resolve(repoRoot, path, ".."), { recursive: true });
     writeFileSync(resolve(repoRoot, path), "const alpha = 1;\nalpha;\n", "utf8");
   }
@@ -62,9 +63,7 @@ function fixture() {
   };
   const browserDocument = {
     ...BROWSER_COVERAGE_PRODUCER,
-    coverage: {
-      [BROWSER_PATH]: record(BROWSER_PATH, { 0: 2, 1: 0 }),
-    },
+    coverage: Object.fromEntries(BROWSER_PATHS.map(path => [path, record(path, { 0: 2, 1: 0 })])),
   };
   const node = resolve(repoRoot, "node.json");
   const browser = resolve(repoRoot, "browser.json");

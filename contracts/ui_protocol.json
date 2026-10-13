@@ -3049,6 +3049,33 @@
         "legacy": "Clients without negotiation keep ordinary capability updates. No client may accept post-snapshot transient frames or equal-revision replacements in a completed generation.",
         "layout_ack": "The scoped rote_config carries matching chat_id, connection_generation and request_generation; clients apply its layout only with the matching accepted snapshot."
       }
+    },
+    "mesh_enrollment": {
+      "version": 1,
+      "surface_key": "mesh",
+      "actions": {
+        "chrome_mesh_create": "fields",
+        "chrome_mesh_confirm": "invite_id",
+        "chrome_mesh_reject": "invite_id",
+        "chrome_mesh_rename": "fields",
+        "chrome_mesh_revoke": "member_id",
+        "chrome_mesh_remove_invitation": "invite_id"
+      },
+      "local_actions": [
+        "chrome_mesh_identity",
+        "chrome_mesh_redeem"
+      ],
+      "custody": "The joining device generates an account and server scoped Ed25519 signing key. Blank create.device_key uses its local public identity; pasted public identities enroll the other device holding that key. Private keys never travel in a form or link.",
+      "joining": "Create a pending request on the joining device, or share its public identity with an owner device. Confirm the exact fingerprint from another owner session. Return the one-time current-server /enroll#payload link to the original joining device; it signs the exact decoded 32-byte challenge and redeems through the existing mesh REST boundary.",
+      "transport": "Current authenticated connection only. Owner, socket, surface and request generation changes retire controls and asynchronous custody work. Never queue, reconnect replay, persist link payloads or bearer tokens.",
+      "clients": {
+        "web": "nonextractable IndexedDB CryptoKey",
+        "windows": "protected local device key",
+        "android": "platform protected device key",
+        "ios": "ThisDeviceOnly Keychain Ed25519 key",
+        "macos": "ThisDeviceOnly Keychain Ed25519 key",
+        "watch": "Existing generic form handoff to signed-in phone or desktop; no private key or grant forwarded."
+      }
     }
   },
   "frame_contracts": {
@@ -4019,6 +4046,12 @@
     "chrome_machine_retrust",
     "chrome_memory_delete",
     "chrome_memory_update",
+    "chrome_mesh_confirm",
+    "chrome_mesh_create",
+    "chrome_mesh_reject",
+    "chrome_mesh_remove_invitation",
+    "chrome_mesh_rename",
+    "chrome_mesh_revoke",
     "chrome_note_forget",
     "chrome_note_save",
     "chrome_note_search",
@@ -4092,7 +4125,9 @@
   "client_local_actions": [
     "attach_existing",
     "computer_host_consent",
-    "compose_prompt"
+    "compose_prompt",
+    "chrome_mesh_identity",
+    "chrome_mesh_redeem"
   ],
   "additive_fields": [
     {

@@ -19,7 +19,7 @@ let linkedVoiceFixture = packageRoot.appendingPathComponent(
 let expectedVoiceFixtureSHA256 =
     "bc98077594fa8d51dd664fadefaa48cf596a94e7fb2a961a972dbabca4f02143"
 let expectedLocalVoiceFixtureSHA256 =
-    "59b77d9acbfd4c40ec9c2eaa50c30e30090c8da7ff7026786d1f77d8c5984b04"
+    "9350d77e327112435246d7a574979bd6869d3c6e42d365890f59e2d70743b849"
 
 func sha256(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()

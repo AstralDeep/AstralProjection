@@ -4,21 +4,8 @@ name: apple-ci
 on:
   push:
     branches: [main]
-    paths:
-      - "apple-clients/**"
-      - "contracts/ui_protocol.json"
-      - "contracts/fixtures/voice_065/client_conformance.json"
-      - "contracts/fixtures/voice_075/client_local_conformance.json"
-      - "scripts/**"
-      - ".github/workflows/apple-ci.yml"
   pull_request:
-    paths:
-      - "apple-clients/**"
-      - "contracts/ui_protocol.json"
-      - "contracts/fixtures/voice_065/client_conformance.json"
-      - "contracts/fixtures/voice_075/client_local_conformance.json"
-      - "scripts/**"
-      - ".github/workflows/apple-ci.yml"
+    branches: [main]
 
 permissions:
   contents: read
@@ -39,7 +26,29 @@ env:
   COVERAGE_ROOT: build/060/coverage
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      android: ${{ steps.classify.outputs.android }}
+      apple: ${{ steps.classify.outputs.apple }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          fetch-depth: 0
+      - name: Classify the immutable event range
+        id: classify
+        working-directory: .
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: >-
+          python3 scripts/ci_lanes.py --base "$BASE_SHA" --head "$HEAD_SHA"
+          --output build/ci/native-lanes.json --github-output "$GITHUB_OUTPUT"
+
   swift-lint:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
     name: Required · strict recursive swift-format
     runs-on: macos-26
     timeout-minutes: 15
@@ -70,6 +79,8 @@ jobs:
           apple-clients/AstralCore apple-clients/AstralApp apple-clients/AstralWatch
 
   core-tests:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
     name: Required · AstralCore tests and drift guard
     runs-on: macos-26
     timeout-minutes: 20
@@ -121,6 +132,8 @@ jobs:
           retention-days: 14
 
   core-ios-tests:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
     name: Required · actual iOS AstralCore coverage
     runs-on: macos-26
     timeout-minutes: 30
@@ -202,8 +215,23 @@ jobs:
           path: build/060/coverage/apple-ios-core-xccov.json
           if-no-files-found: error
           retention-days: 1
+      - name: Disclose per-test retry outcomes
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -d "$COVERAGE_ROOT" ]]; then
+            for result in "$COVERAGE_ROOT"/*.xcresult; do
+              [[ -d "$result" ]] || continue
+              xcrun xcresulttool get test-results tests --path "$result" --compact \
+                > "$result-retry-input.json" || printf '{}' > "$result-retry-input.json"
+              python3 scripts/ci_retry_diagnostics.py --input "$result-retry-input.json" \
+                --output "$result-retry-diagnostics.json" >> "$GITHUB_STEP_SUMMARY"
+            done
+          fi
 
   app-unit-tests:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
     timeout-minutes: 30
@@ -331,8 +359,23 @@ jobs:
           path: ${{ runner.temp }}/apple-required/app-unit-${{ matrix.slug }}.ok
           if-no-files-found: error
           retention-days: 1
+      - name: Disclose per-test retry outcomes
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -d "$COVERAGE_ROOT" ]]; then
+            for result in "$COVERAGE_ROOT"/*.xcresult; do
+              [[ -d "$result" ]] || continue
+              xcrun xcresulttool get test-results tests --path "$result" --compact \
+                > "$result-retry-input.json" || printf '{}' > "$result-retry-input.json"
+              python3 scripts/ci_retry_diagnostics.py --input "$result-retry-input.json" \
+                --output "$result-retry-diagnostics.json" >> "$GITHUB_STEP_SUMMARY"
+            done
+          fi
 
   first-login-ui:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} first-login and voice UI
     runs-on: macos-26
     timeout-minutes: 30
@@ -498,8 +541,23 @@ jobs:
           path: ${{ runner.temp }}/apple-required/first-login-${{ matrix.slug }}.ok
           if-no-files-found: error
           retention-days: 1
+      - name: Disclose per-test retry outcomes
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -d "$COVERAGE_ROOT" ]]; then
+            for result in "$COVERAGE_ROOT"/*.xcresult; do
+              [[ -d "$result" ]] || continue
+              xcrun xcresulttool get test-results tests --path "$result" --compact \
+                > "$result-retry-input.json" || printf '{}' > "$result-retry-input.json"
+              python3 scripts/ci_retry_diagnostics.py --input "$result-retry-input.json" \
+                --output "$result-retry-diagnostics.json" >> "$GITHUB_STEP_SUMMARY"
+            done
+          fi
 
   watch-continuity:
+    needs: [changes]
+    if: needs.changes.outputs.apple == 'true'
     name: Required · watchOS 26.5 continuity coverage
     runs-on: macos-26
     timeout-minutes: 30
@@ -602,6 +660,19 @@ jobs:
             build/060/coverage/apple-watchos-xccov.json
           if-no-files-found: error
           retention-days: 14
+      - name: Disclose per-test retry outcomes
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [[ -d "$COVERAGE_ROOT" ]]; then
+            for result in "$COVERAGE_ROOT"/*.xcresult; do
+              [[ -d "$result" ]] || continue
+              xcrun xcresulttool get test-results tests --path "$result" --compact \
+                > "$result-retry-input.json" || printf '{}' > "$result-retry-input.json"
+              python3 scripts/ci_retry_diagnostics.py --input "$result-retry-input.json" \
+                --output "$result-retry-diagnostics.json" >> "$GITHUB_STEP_SUMMARY"
+            done
+          fi
 
   apple-required:
     name: Required · Apple aggregate
@@ -611,6 +682,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     needs:
+      - changes
       - swift-lint
       - core-tests
       - core-ios-tests
@@ -620,55 +692,71 @@ jobs:
     steps:
       - name: Check out candidate for source-bound coverage union
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Enforce applicability and every Apple result
+        shell: bash
+        run: |
+          [[ '${{ needs.changes.result }}' == 'success' ]]
+          python3 scripts/ci_lanes.py --applicable '${{ needs.changes.outputs.apple }}' \
+            --results '${{ needs.swift-lint.result }}' '${{ needs.core-tests.result }}' '${{ needs.core-ios-tests.result }}' '${{ needs.app-unit-tests.result }}' '${{ needs.first-login-ui.result }}' '${{ needs.watch-continuity.result }}' >> "$GITHUB_STEP_SUMMARY"
       # `needs.<matrix-job>.result` can report the result of only one matrix
       # child. Requiring one current-run artifact from every child prevents a
       # later successful sibling from hiding a failed platform.
       - name: Require iOS app-unit success
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-app-unit-ios
           path: ${{ runner.temp }}/apple-required/app-unit-ios
       - name: Require macOS app-unit success
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-app-unit-macos
           path: ${{ runner.temp }}/apple-required/app-unit-macos
       - name: Require iOS first-login success
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-first-login-ios
           path: ${{ runner.temp }}/apple-required/first-login-ios
       - name: Require macOS first-login success
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-first-login-macos
           path: ${{ runner.temp }}/apple-required/first-login-macos
       - name: Download iOS app-unit coverage
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-app-unit-ios-coverage
           path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/unit
       - name: Download iOS first-login coverage
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-first-login-ios-coverage
           path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/ui
       - name: Download macOS app-unit coverage
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-app-unit-macos-coverage
           path: ${{ github.workspace }}/build/060/coverage/union-inputs/macos/unit
       - name: Download macOS first-login coverage
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-first-login-macos-coverage
           path: ${{ github.workspace }}/build/060/coverage/union-inputs/macos/ui
       - name: Download actual iOS Core coverage
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: apple-required-core-ios-coverage
           path: ${{ github.workspace }}/build/060/coverage/union-inputs/ios/core
       - name: Union required unit and UI coverage by platform
+        if: needs.changes.outputs.apple == 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -687,6 +775,7 @@ jobs:
             --ui-input "${GITHUB_WORKSPACE}/build/060/coverage/union-inputs/macos/ui/apple-macos-first-login-xccov.json" \
             --output "${COVERAGE_ROOT}/apple-macos-xccov.json"
       - name: Publish platform coverage unions
+        if: needs.changes.outputs.apple == 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: apple-required-platform-union-coverage
@@ -696,6 +785,7 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - name: Enforce every non-waivable Apple result
+        if: needs.changes.outputs.apple == 'true'
         shell: bash
         run: |
           [[ '${{ needs.swift-lint.result }}' == 'success' ]]

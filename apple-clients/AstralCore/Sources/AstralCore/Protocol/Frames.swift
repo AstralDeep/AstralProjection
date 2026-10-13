@@ -14,7 +14,8 @@ public struct InboundFrame: Sendable, Equatable {
     }
 
     public static func parse(_ text: String) -> InboundFrame? {
-        guard let data = text.data(using: .utf8),
+        let data = Data(text.utf8)
+        guard frameJSONUnicodeIsWellFormed(data),
             let json = try? JSONValue.parse(data),
             let type = json["type"]?.stringValue, !type.isEmpty
         else { return nil }
@@ -80,6 +81,91 @@ public struct InboundFrame: Sendable, Equatable {
         if let status, !status.isEmpty { return status }
         return nil
     }
+}
+
+func frameJSONUnicodeIsWellFormed(_ data: Data) -> Bool {
+    let units = [UInt8](data)
+    var index = 0
+    while index < units.count {
+        let byte = units[index]
+        switch byte {
+        case 0x00...0x7F:
+            index += 1
+        case 0xC2...0xDF:
+            guard index + 1 < units.count, units[index + 1] & 0xC0 == 0x80 else { return false }
+            index += 2
+        case 0xE0...0xEF:
+            guard index + 2 < units.count, units[index + 1] & 0xC0 == 0x80, units[index + 2] & 0xC0 == 0x80
+            else { return false }
+            if byte == 0xE0, units[index + 1] < 0xA0 { return false }
+            if byte == 0xED, units[index + 1] > 0x9F { return false }
+            index += 3
+        case 0xF0...0xF4:
+            guard index + 3 < units.count, units[index + 1] & 0xC0 == 0x80, units[index + 2] & 0xC0 == 0x80,
+                units[index + 3] & 0xC0 == 0x80
+            else { return false }
+            if byte == 0xF0, units[index + 1] < 0x90 { return false }
+            if byte == 0xF4, units[index + 1] > 0x8F { return false }
+            index += 4
+        default:
+            return false
+        }
+    }
+    return frameEscapedSurrogatesArePaired(units)
+}
+
+private func frameEscapedSurrogatesArePaired(_ units: [UInt8]) -> Bool {
+    var index = 0
+    var insideString = false
+    while index < units.count {
+        let byte = units[index]
+        if !insideString {
+            if byte == 0x22 { insideString = true }
+            index += 1
+            continue
+        }
+        if byte == 0x22 {
+            insideString = false
+            index += 1
+            continue
+        }
+        if byte != 0x5C {
+            index += 1
+            continue
+        }
+        guard index + 1 < units.count else { return false }
+        if units[index + 1] != 0x75 {
+            index += 2
+            continue
+        }
+        guard let first = frameHexQuad(units, index + 2) else { return false }
+        if (0xDC00...0xDFFF).contains(first) { return false }
+        guard (0xD800...0xDBFF).contains(first) else {
+            index += 6
+            continue
+        }
+        guard index + 7 < units.count, units[index + 6] == 0x5C, units[index + 7] == 0x75,
+            let second = frameHexQuad(units, index + 8), (0xDC00...0xDFFF).contains(second)
+        else { return false }
+        index += 12
+    }
+    return true
+}
+
+private func frameHexQuad(_ units: [UInt8], _ start: Int) -> Int? {
+    guard start + 3 < units.count else { return nil }
+    var value = 0
+    for offset in start...(start + 3) {
+        let digit: Int
+        switch units[offset] {
+        case 0x30...0x39: digit = Int(units[offset] - 0x30)
+        case 0x41...0x46: digit = Int(units[offset] - 0x41) + 10
+        case 0x61...0x66: digit = Int(units[offset] - 0x61) + 10
+        default: return nil
+        }
+        value = value * 16 + digit
+    }
+    return value
 }
 
 private let maximumExactJSONInteger = UInt64(9_007_199_254_740_991)
@@ -814,8 +900,13 @@ public enum Outbound {
         {
             return "{}"
         }
-        object["submission_id"] = .string(submissionId)
-        object["request_generation"] = .string(requestGeneration)
+        if action.hasPrefix("chrome_mesh_") || object["surface"] == .string("mesh") {
+            object.removeValue(forKey: "submission_id")
+            object.removeValue(forKey: "request_generation")
+        } else {
+            object["submission_id"] = .string(submissionId)
+            object["request_generation"] = .string(requestGeneration)
+        }
         if let snapshotPurpose {
             object["snapshot_purpose"] = .string(snapshotPurpose.rawValue)
         }

@@ -35,7 +35,8 @@ const NODE_PATHS = Object.freeze([
   "tooling/web-ci/product-isolation.mjs",
   "tooling/web-ci/release-runner.mjs",
 ]);
-const BROWSER_PATHS = Object.freeze(["backend/webrender/static/client.js"]);
+const BROWSER_PATHS = Object.freeze(["backend/webrender/static/client.js",
+  "backend/webrender/static/mesh-custody.js", "backend/webrender/static/mesh-enrollment.js"]);
 const OFFLINE_PATHS = ["backend/webrender/static/offline-registration.js", "backend/webrender/static/service-worker.js"];
 const EXPORT_PATHS = ["backend/webrender/static/canvas-export-host.js", "backend/webrender/static/canvas-export.js"];
 
@@ -128,6 +129,7 @@ test("missing, cross-lane, and unknown source paths fail closed", () => {
       node.coverage[BROWSER_PATHS[0]] = structuredClone(record(BROWSER_PATHS[0]));
     },
     (_node, browser) => { browser.coverage = {}; },
+    ...BROWSER_PATHS.slice(1).map(path => (_node, browser) => { delete browser.coverage[path]; }),
     (_node, browser) => {
       browser.coverage[NODE_PATHS[0]] = structuredClone(record(NODE_PATHS[0]));
     },
@@ -267,7 +269,7 @@ test("all four lanes are disjoint and preserve zero-hit observations", () => {
   const value = fixture();
   const result = unionCanonicalCoverage(value);
   assert.equal(result.producer_version, 3);
-  assert.equal(Object.keys(result.coverage).length, 13);
+  assert.equal(Object.keys(result.coverage).length, 15);
   for (const path of [...OFFLINE_PATHS, ...EXPORT_PATHS]) {
     assert.deepEqual(result.coverage[path].s, { 0: 1, 1: 0 });
     assert.deepEqual(result.coverage[path].statementMap, record(path).statementMap);

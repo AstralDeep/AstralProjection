@@ -35,7 +35,7 @@ def test_default_and_feature_enabled_inventory_is_role_filtered() -> None:
     ]
     assert [group.key for group in enabled.menu] == ["account", "help", "admin"]
     account_keys = [item.key for item in enabled.menu[0].items]
-    assert account_keys[-2:] == ["my-agents", "remote-machines"]
+    assert account_keys[-3:] == ["my-agents", "remote-machines", "mesh-devices"]
 
 
 def test_native_serialization_omits_web_only_tour_and_admin_group() -> None:
@@ -117,11 +117,21 @@ def test_connections_does_not_disturb_the_other_flagged_account_items() -> None:
         ["user"], byo_enabled=True, remote_enabled=True, computer_enabled=True,
         connections_enabled=True,
     )
-    assert [item.key for item in both.menu[0].items][-4:] == [
-        "my-agents", "remote-machines", "my-computers", "connections",
+    assert [item.key for item in both.menu[0].items][-5:] == [
+        "my-agents", "remote-machines", "my-computers", "mesh-devices", "connections",
     ]
     without = build_menu_model(["user"], byo_enabled=True, remote_enabled=True,
                                computer_enabled=True)
     assert [item.key for item in without.menu[0].items] == [
         item.key for item in both.menu[0].items if item.key != "connections"
     ]
+
+
+def test_mesh_management_is_a_shared_owner_surface_without_watch_key_forwarding() -> None:
+    payload = menu_model_dict(["user"], include_admin=False, include_tour=False)
+    item = next(item for item in payload["menu"][0]["items"] if item["key"] == "mesh-devices")
+    assert item == {
+        "key": "mesh-devices", "label": "Mesh devices", "surface": "mesh",
+        "params": {}, "admin_only": False,
+    }
+    assert project_watch_menu_model(payload)["menu"] == []

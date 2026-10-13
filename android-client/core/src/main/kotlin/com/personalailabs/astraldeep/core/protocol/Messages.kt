@@ -332,7 +332,19 @@ data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposit
                         }
                     "voice_local_recognition_started" -> LocalVoiceDisposition.READY
                     "voice_local_turn_bound" -> LocalVoiceDisposition.READY
-                    "voice_local_final" -> if (value["final"]?.jsonPrimitive?.booleanOrNull == true && !value.string("text").isNullOrBlank() && value.string("text")!!.length <= 8000 && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true && value.string("recognized_locale")?.matches(Regex("^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")) == true) LocalVoiceDisposition.FINAL else return null
+                    "voice_local_final" -> {
+                        val text = value.string("text")
+                        if (
+                            value["final"]?.jsonPrimitive?.booleanOrNull == true && !text.isNullOrBlank() &&
+                            localFinalUnicodeScalars(text)?.let { it <= 8000 } == true &&
+                            value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true &&
+                            value.string("recognized_locale")?.matches(Regex("^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")) == true
+                        ) {
+                            LocalVoiceDisposition.FINAL
+                        } else {
+                            return null
+                        }
+                    }
                     "voice_local_recognition_failed" -> if (value.string("reason") in reasons) LocalVoiceDisposition.REJECTED else return null
                     "voice_local_final_rejected" -> if (value.string("reason") in reasons && value.string("retry_policy") in setOf("none", "explicit_user_retry")) LocalVoiceDisposition.REJECTED else return null
                     "voice_local_announcement" -> if ((value.string("text")?.toByteArray()?.size ?: 601) <= 600 && value.string("kind") in localKinds && value.string("output_policy") == "lifecycle" && value.string("locale")?.matches(Regex("^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")) == true && value.string("text_digest_sha256")?.matches(Regex("^[0-9a-f]{64}$")) == true && value["foreground_required"]?.jsonPrimitive?.booleanOrNull != null) LocalVoiceDisposition.SPEAKING else return null
@@ -345,6 +357,24 @@ data class LocalVoiceFrame(val type: String, val disposition: LocalVoiceDisposit
 }
 
 private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
+
+private fun localFinalUnicodeScalars(text: String): Int? {
+    var scalars = 0
+    var index = 0
+    while (index < text.length) {
+        val unit = text[index]
+        if (unit.isLowSurrogate()) return null
+        if (!unit.isHighSurrogate()) {
+            scalars += 1
+            index += 1
+            continue
+        }
+        if (index + 1 >= text.length || !text[index + 1].isLowSurrogate()) return null
+        scalars += 1
+        index += 2
+    }
+    return scalars
+}
 
 private fun JsonObject.int(key: String): Int? = this[key]?.jsonPrimitive?.intOrNull
 

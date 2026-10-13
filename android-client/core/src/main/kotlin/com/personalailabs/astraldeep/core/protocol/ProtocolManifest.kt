@@ -6,6 +6,16 @@ package com.personalailabs.astraldeep.core.protocol
 object ProtocolManifest {
     const val HANDLED = "handled"
     const val IGNORED = "ignored"
+    val meshActions =
+        setOf(
+            "chrome_mesh_create",
+            "chrome_mesh_confirm",
+            "chrome_mesh_reject",
+            "chrome_mesh_rename",
+            "chrome_mesh_revoke",
+            "chrome_mesh_remove_invitation",
+        )
+    val meshLocalActions = setOf("chrome_mesh_identity", "chrome_mesh_redeem")
 
     val classification: Map<String, String> =
         mapOf(
