@@ -7,12 +7,29 @@ import copy
 import pytest
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QApplication
+from shiboken6 import isValid
 
 from test_console_shell import CONNECTION, GEOMETRY, MENU
 from test_console_shell import win as shell_window  # noqa: F401
 from test_message_routing import win as window_fixture  # noqa: F401
 from astral_client.typography import Paragraph
 from astral_client import theme as T
+
+
+@pytest.mark.parametrize("field", ["rail", "_composer", "_chips_bar", "status"])
+def test_console_transition_retires_transferred_native_layout_items(request, field):
+    window = request.getfixturevalue("window_fixture")
+    widget = window.topbar._mark if field == "status" else getattr(window, field)
+    parent = widget.parentWidget()
+    layout = parent.layout()
+    item = layout.itemAt(layout.indexOf(widget))
+    assert item.widget() is widget
+    window._on_message({"type": "chrome_menu", "model": copy.deepcopy(MENU)})
+    window._on_message({"type": "rote_config", "device_profile": {"console": GEOMETRY[5]["presentation"]}})
+    assert not isValid(item)
+    assert isValid(widget)
+    assert layout.indexOf(widget) == -1
+    assert widget.parentWidget() is not parent
 
 
 @pytest.mark.parametrize("width", [1440, 1280, 1024, 834, 768, 390, 320])

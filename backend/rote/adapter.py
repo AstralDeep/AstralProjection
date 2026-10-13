@@ -18,6 +18,18 @@ _WEB_089_TYPES = frozenset({
 })
 
 
+def declared_action_count(node: Dict) -> int:
+    kind = node.get("type")
+    if kind in ("button", "file_upload"):
+        return 1 if node.get("action") else 0
+    if kind == "param_picker":
+        entries = sum(1 for entry in node.get("actions") or []
+                      if isinstance(entry, dict) and entry.get("action"))
+        return entries + int(bool(node.get("submit_action")
+                                  or node.get("submit_message_template")))
+    return 0
+
+
 class ComponentAdapter:
     @staticmethod
     def adapt_guidance_surface(state: Dict, profile: DeviceProfile, *, surface_capabilities=()) -> List[Dict]:
@@ -42,10 +54,8 @@ class ComponentAdapter:
                     or kind not in {"text", "alert", "badge", "card", "button", "param_picker"}
                     or (supported is not None and kind not in supported)):
                 raise ValueError("guidance_surface_unavailable")
-            if kind == "button":
-                actions += 1
-            elif kind == "param_picker":
-                actions += len(node.get("actions") or []) or int(bool(node.get("submit_action")))
+            if kind in ("button", "param_picker"):
+                actions += declared_action_count(node)
             elif kind == "card":
                 for child in node["content"]:
                     visit(child, depth + 1)
@@ -585,7 +595,12 @@ class ComponentAdapter:
             return True
 
         def unavailable(node):
-            label = node.get("title") or ("Appearance" if node.get("type") == "color_picker" else "Form")
+            kind = node.get("type")
+            label = node.get("title")
+            if not label and kind == "file_upload":
+                label = node.get("label") or "Upload"
+            if not label:
+                label = "Appearance" if kind == "color_picker" else "Form"
             return cls._carry_identity(node, {
                 "type": "text", "variant": "body",
                 "content": f"{label} is unavailable on this device.",
@@ -597,6 +612,8 @@ class ComponentAdapter:
             if (node.get("type") == "button" or (descriptor and "type" not in node)) and node.get("action"):
                 return node if permit() else None
             if node.get("type") == "color_picker" and not permit():
+                return unavailable(node)
+            if node.get("type") == "file_upload" and node.get("action") and not permit():
                 return unavailable(node)
             form = node.get("type") == "param_picker"
             if form and read_only:

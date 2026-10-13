@@ -5,6 +5,8 @@ noop/cache/raw/adapted result classification.
 
 from __future__ import annotations
 
+from copy import deepcopy
+
 import pytest
 
 from rote.capabilities import DeviceType
@@ -109,3 +111,31 @@ def test_empty_registration_and_update_use_default_profile() -> None:
     profile, components, changed = runtime.update_device(socket, {})
     assert profile.device_type is DeviceType.BROWSER
     assert components is None and changed is False
+
+
+@pytest.mark.parametrize("delivery", ["adapt", "viewport_update"])
+@pytest.mark.parametrize("restriction", ["budget", "read_only"])
+def test_browser_delivery_enforces_host_limits_without_changing_canonical_cache(monkeypatch, delivery, restriction):
+    config = ('{"browser":{"max_actions":1}}' if restriction == "budget"
+              else '{"browser":{"supports_interactivity":false}}')
+    monkeypatch.setenv("ROTE_HOST_CONFIG", config)
+    runtime, socket = ROTE(), object()
+    profile = {"device_type": "browser", "viewport_width": 1280}
+    runtime.register_device(socket, profile)
+    components = [
+        {"type": "param_picker", "component_id": "form", "title": "Form", "fields": [],
+         "submit_message_template": "Synthetic {value}"},
+        {"type": "file_upload", "component_id": "upload", "label": "Upload", "action": "upload"},
+    ]
+    canonical = deepcopy(components)
+    if delivery == "adapt":
+        rendered = runtime.adapt(socket, components)
+    else:
+        runtime.remember_components(socket, components)
+        _, rendered, changed = runtime.update_device(socket, {**profile, "viewport_width": 1440})
+        assert changed
+    assert rendered[0]["type"] == ("param_picker" if restriction == "budget" else "text")
+    assert rendered[1] == {"type": "text", "variant": "body", "content": "Upload is unavailable on this device.",
+                           "component_id": "upload"}
+    assert components == canonical
+    assert runtime.get_cached_components(socket) == canonical

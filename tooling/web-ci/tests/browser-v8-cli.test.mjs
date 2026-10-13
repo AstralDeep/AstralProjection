@@ -12,6 +12,7 @@ import { BROWSER_COVERAGE_PRODUCER } from "../coverage-conversion.mjs";
 
 const CLI = resolve(import.meta.dirname, "../browser-v8-cli.mjs");
 const PATH = "backend/webrender/static/client.js";
+const MESH_PATHS = ["backend/webrender/static/mesh-custody.js", "backend/webrender/static/mesh-enrollment.js"];
 const SOURCE = "const first = 1;\nconst second = 2;\nconst never = 3;\n";
 
 function observation(line = 0, url = "https://candidate.invalid/static/client.js") {
@@ -27,6 +28,7 @@ function fixture(entries = [observation()]) {
   const source = resolve(root, PATH);
   mkdirSync(resolve(source, ".."), { recursive: true });
   writeFileSync(source, SOURCE);
+  for (const path of MESH_PATHS) writeFileSync(resolve(root, path), SOURCE);
   const input = resolve(root, "raw.json");
   writeFileSync(input, JSON.stringify(entries));
   return { root, source, input, inputs: [input], repoRoot: root };
@@ -40,6 +42,28 @@ test("unions independent browser observations without inventing an unobserved li
   assert.deepEqual(Object.fromEntries(Object.entries(report).filter(([key]) => key !== "coverage")), BROWSER_COVERAGE_PRODUCER);
   assert.deepEqual(Object.keys(report.coverage), [PATH]);
   assert.deepEqual(report.coverage[PATH].s, { 0: 1, 1: 1, 2: 0 });
+});
+
+test("maps only the two Mesh browser assets and keeps their observed lines separate", async () => {
+  const entries = [observation(), observation(1, "https://candidate.invalid/static/mesh-custody.js"),
+    observation(2, "https://candidate.invalid/static/mesh-enrollment.js")];
+  const report = await convertBrowserV8Reports(fixture(entries));
+  assert.deepEqual(Object.keys(report.coverage), [PATH, ...MESH_PATHS]);
+  assert.deepEqual(report.coverage[PATH].s, { 0: 1, 1: 0, 2: 0 });
+  assert.deepEqual(report.coverage[MESH_PATHS[0]].s, { 0: 0, 1: 1, 2: 0 });
+  assert.deepEqual(report.coverage[MESH_PATHS[1]].s, { 0: 0, 1: 0, 2: 1 });
+});
+
+test("Mesh observations retain exact current bytes and browser URL restrictions", async () => {
+  for (const path of MESH_PATHS) {
+    const url = `https://candidate.invalid/static/${path.split("/").at(-1)}`;
+    for (const entry of [{ ...observation(0, url), source: SOURCE + "const stale = 4;\n" },
+      observation(0, url + "?v=old"), observation(0, url + "#fragment"),
+      observation(0, url.replace("https://", "https://user:password@")),
+      observation(0, url.replace("https://candidate.invalid", "file:///repo"))]) {
+      await assert.rejects(convertBrowserV8Reports(fixture([entry])));
+    }
+  }
 });
 
 test("multiple observations within one raw file preserve successful hits", async () => {

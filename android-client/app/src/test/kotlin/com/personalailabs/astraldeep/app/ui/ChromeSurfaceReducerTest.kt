@@ -5,23 +5,227 @@ package com.personalailabs.astraldeep.app.ui
 
 import com.personalailabs.astraldeep.app.rest.AstralRest
 import com.personalailabs.astraldeep.app.transport.ConnectionState
+import com.personalailabs.astraldeep.app.transport.ConversationGenerationBinding
 import com.personalailabs.astraldeep.app.transport.LocalSubmission
 import com.personalailabs.astraldeep.app.transport.OrchestratorClient
 import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.OperationStatusError
+import com.personalailabs.astraldeep.core.protocol.Wire
 import com.personalailabs.astraldeep.core.sdui.Component
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.setMain
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class ChromeSurfaceReducerTest {
     private val vm = AppViewModel(OrchestratorClient("ws://localhost:9/ws"), AstralRest("http://localhost:9"))
+
+    private fun evidenceFixture(): JsonObject {
+        var directory: File? = File(".").absoluteFile
+        while (directory != null) {
+            val candidate = File(directory, "contracts/fixtures/evidence/inspection_surface.json")
+            if (candidate.isFile) return Json.parseToJsonElement(candidate.readText()).jsonObject
+            directory = directory.parentFile
+        }
+        error("evidence inspection fixture missing")
+    }
+
+    private fun pendingEvidence(): Pair<UiState, Inbound.ChromeSurface> {
+        val frame = assertIs<Inbound.ChromeSurface>(Wire.decode(evidenceFixture().getValue("native_frame").jsonObject))
+        val connection = "22222222-2222-4222-8222-222222222222"
+        val start =
+            UiState(
+                connection = ConnectionState.Connected,
+                connectionGeneration = connection,
+                activeChatId = "44444444-4444-4444-8444-444444444444",
+                screen = Screen.Surface,
+                pendingSurfaceKey = "evidence",
+                privateSurfaceRequest = PrivateSurfaceRequest(frame.requestGeneration!!, connection, "evidence", conversationId = "44444444-4444-4444-8444-444444444444"),
+            )
+        return start to frame
+    }
+
+    @Test
+    fun evidence_current_generation_releases_one_literal_modal_reply() {
+        val (start, frame) = pendingEvidence()
+        val settled = vm.reduce(start, frame)
+        assertEquals(frame, settled.pendingSurface)
+        assertNull(settled.privateSurfaceRequest)
+        assertEquals(start.canvas, settled.canvas)
+        assertEquals(start.turns, settled.turns)
+        assertEquals(settled, vm.reduce(settled, frame.copy(title = "Duplicate")))
+        val source = frame.components.single { it.type == "keyvalue" }.attributes.getValue("items").jsonArray.single().jsonObject
+        assertEquals(evidenceFixture().getValue("source_text"), source.getValue("value"))
+    }
+
+    @Test
+    fun evidence_stale_uncorrelated_unsolicited_and_close_replies_never_release_text() {
+        val (start, frame) = pendingEvidence()
+        for (invalid in listOf(
+            frame.copy(requestGeneration = null),
+            frame.copy(requestGeneration = "33333333-3333-4333-8333-333333333333"),
+            frame.copy(requestGeneration = "bad"),
+            frame.copy(mode = "mandatory"),
+            frame.copy(surfaceKey = "other"),
+            surface(""),
+            surface("llm", "Uncorrelated", mode = "mandatory"),
+        )) assertEquals(start, vm.reduce(start, invalid))
+        val unsolicited = UiState(connection = ConnectionState.Connected)
+        assertEquals(unsolicited, vm.reduce(unsolicited, frame))
+        assertEquals(unsolicited, vm.reduce(unsolicited, frame.copy(requestGeneration = null)))
+        for (changed in listOf(start.copy(activeChatId = null), start.copy(connectionGeneration = "33333333-3333-4333-8333-333333333333"))) {
+            assertEquals(changed, vm.reduce(changed, frame))
+        }
+        val closed = vm.reduce(start, frame.copy(surfaceKey = "", title = "", components = emptyList()))
+        assertNull(closed.privateSurfaceRequest)
+        assertNull(closed.pendingSurface)
+        assertEquals(Screen.Chat, closed.screen)
+        assertNull(vm.reduce(closed, frame).pendingSurface)
+        val rawClose =
+            JsonObject(
+                evidenceFixture().getValue("native_frame").jsonObject +
+                    mapOf(
+                        "surface_key" to JsonPrimitive(""), "title" to JsonPrimitive(""), "components" to JsonArray(emptyList()),
+                    ),
+            )
+        val malformed = assertIs<Inbound.ChromeSurface>(Wire.decode(JsonObject(rawClose - "region")))
+        assertEquals(start, vm.reduce(start, malformed))
+        assertFalse(malformed.evidenceEnvelopeValid)
+        val wireClose = assertIs<Inbound.ChromeSurface>(Wire.decode(rawClose))
+        assertTrue(wireClose.evidenceEnvelopeValid)
+        assertEquals(Screen.Chat, vm.reduce(start, wireClose).screen)
+    }
+
+    @Test
+    fun evidence_disconnect_and_conversation_send_erase_temporary_text() {
+        val (start, frame) = pendingEvidence()
+        for (state in listOf(start, vm.reduce(start, frame))) {
+            for (connection in listOf(ConnectionState.Disconnected, ConnectionState.AuthRequired)) {
+                val retired = vm.reduceConnectionState(state, connection)
+                assertNull(retired.pendingSurface)
+                assertNull(retired.privateSurfaceRequest)
+                assertNull(vm.reduce(retired, frame).pendingSurface)
+            }
+            val sent = vm.armTurn(state)
+            assertNull(sent.pendingSurface)
+            assertNull(sent.privateSurfaceRequest)
+            assertNull(vm.reduce(sent, frame).pendingSurface)
+            for (binding in listOf(
+                ConversationGenerationBinding("33333333-3333-4333-8333-333333333333", state.activeChatId, null, null),
+                ConversationGenerationBinding(state.connectionGeneration!!, "55555555-5555-4555-8555-555555555555", null, null),
+            )) {
+                val bound = vm.bindConversationGeneration(state, binding)
+                assertNull(bound.pendingSurface)
+                assertNull(bound.privateSurfaceRequest)
+                assertNull(vm.reduce(bound, frame).pendingSurface)
+            }
+        }
+    }
+
+    @Test
+    fun evidence_actual_navigation_retry_timeout_owner_and_failed_send_retire_without_queue() =
+        kotlinx.coroutines.test.runTest {
+            kotlinx.coroutines.Dispatchers.setMain(kotlinx.coroutines.test.StandardTestDispatcher(testScheduler))
+            val client = OrchestratorClient("ws://localhost:9/ws")
+            val model = AppViewModel(client, AstralRest("http://localhost:9"))
+            val connection = "22222222-2222-4222-8222-222222222222"
+            val socket = EvidenceSocket()
+
+            fun token(owner: String): String =
+                "header." +
+                    java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(
+                        """{"iss":"https://example.invalid/realm","sub":"$owner"}""".toByteArray(),
+                    ) + ".signature"
+            try {
+                model.start(token("owner-a"), com.personalailabs.astraldeep.core.protocol.DeviceCapabilities(800, 600))
+                client.installOpenSocketForTest(socket)
+                client.replayPendingForTest(connection, {}, {}, { true })
+                val payload = evidenceFixture().getValue("request").jsonObject.getValue("payload").jsonObject
+                model.sendEvent("chrome_open", payload)
+                val first = model.state.value.privateSurfaceRequest!!
+                model.retryPendingSurface()
+                val retry = model.state.value.privateSurfaceRequest!!
+                assertFalse(first.requestGeneration == retry.requestGeneration)
+                model.timeoutPrivateSurface(first.requestGeneration)
+                assertEquals(retry, model.state.value.privateSurfaceRequest)
+                model.timeoutPrivateSurface(retry.requestGeneration)
+                assertNull(model.state.value.privateSurfaceRequest)
+                assertNull(model.state.value.pendingSurface)
+                assertTrue(model.state.value.privateSurfaceFailed)
+                model.retryPendingSurface()
+                val current = model.state.value.privateSurfaceRequest!!
+                assertFalse(current.requestGeneration == retry.requestGeneration)
+                for (raw in socket.frames) {
+                    val frame = Json.parseToJsonElement(raw).jsonObject
+                    assertEquals("null", frame.getValue("session_id").toString())
+                    assertEquals(setOf("surface", "params", "submission_id", "request_generation"), frame.getValue("payload").jsonObject.keys)
+                }
+                val sent = socket.frames.size
+                model.sendEvent("chrome_close", buildJsonObject { put("surface", "evidence") })
+                assertEquals(sent, socket.frames.size)
+                assertNull(model.state.value.privateSurfaceRequest)
+                assertEquals(Screen.Chat, model.state.value.screen)
+                model.openSurface("evidence", payload.getValue("params").jsonObject)
+                model.newChat()
+                assertNull(model.state.value.privateSurfaceRequest)
+                model.openSurface("evidence")
+                model.goTo(Screen.Chat)
+                assertNull(model.state.value.privateSurfaceRequest)
+                model.openSurface("evidence")
+                model.start(token("owner-b"), com.personalailabs.astraldeep.core.protocol.DeviceCapabilities(800, 600))
+                assertNull(model.state.value.privateSurfaceRequest)
+                assertNull(model.state.value.pendingSurface)
+                assertTrue(client.pendingActions().isEmpty())
+                client.installOpenSocketForTest(socket)
+                client.replayPendingForTest(connection, {}, {}, { true })
+                socket.accept = false
+                model.openSurface("evidence")
+                assertNull(model.state.value.privateSurfaceRequest)
+                assertTrue(model.state.value.privateSurfaceFailed)
+                assertNull(model.state.value.pendingSurface)
+            } finally {
+                model.clearConversationForSignOut()
+                kotlinx.coroutines.Dispatchers.resetMain()
+            }
+        }
+
+    private class EvidenceSocket : okhttp3.WebSocket {
+        val frames = mutableListOf<String>()
+        var accept = true
+
+        override fun request(): okhttp3.Request = okhttp3.Request.Builder().url("ws://localhost:9/ws").build()
+
+        override fun queueSize(): Long = 0
+
+        override fun send(text: String): Boolean {
+            if (accept) frames.add(text)
+            return accept
+        }
+
+        override fun send(bytes: okio.ByteString): Boolean = false
+
+        override fun close(
+            code: Int,
+            reason: String?,
+        ): Boolean = true
+
+        override fun cancel() = Unit
+    }
 
     @Test
     fun audit_and_agents_open_shared_server_surface_with_filters_and_preserve_draft() {

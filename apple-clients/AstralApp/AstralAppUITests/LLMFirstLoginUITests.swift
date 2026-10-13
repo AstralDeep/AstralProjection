@@ -28,6 +28,7 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(apiKey.waitForExistence(timeout: 2))
         XCTAssertTrue(save.waitForExistence(timeout: 2))
         focusAndType(apiKey, "ui-only-placeholder")
+        focusAndType(apiKey, "x")
         let status = app.staticTexts["llm-save-status"]
         _ = status.exists
         save.press()
@@ -38,10 +39,8 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertFalse(save.isEnabled, "only the duplicate Save control is single-flight disabled")
         XCTAssertEqual(save.value as? String, "Submitting")
         XCTAssertTrue(apiKey.isEnabled)
-        focusAndType(apiKey, "x")
         XCTAssertTrue(
             waitForStatus(
-                status,
                 containingAny: ["Waiting to check", "Checking your provider credentials", "Saving credentials"],
                 timeout: 1.25),
             "an operation still active after one second must expose its current phase")
@@ -52,12 +51,9 @@ final class LLMFirstLoginUITests: XCTestCase {
         XCTAssertTrue(peer.requests.first?.body.isEmpty == true)
         XCTAssertTrue(peer.unexpectedRequests.isEmpty)
 
-        let terminalReleasedAt = Date()
         peer.releaseHeldReplies()
         XCTAssertTrue(form.waitForNonExistence(timeout: 5))
-        XCTAssertLessThan(
-            Date().timeIntervalSince(terminalReleasedAt), 5,
-            "durably completed first-login setup must advance exactly once within five seconds")
+        XCTAssertTrue(element("chat-composer-input").waitForExistence(timeout: 5))
     }
 
     func testInvalidCredentialTerminalKeepsSecureFormEditableAndRetryable() {
@@ -66,11 +62,10 @@ final class LLMFirstLoginUITests: XCTestCase {
         let save = app.buttons["llm-save-button"]
         XCTAssertTrue(apiKey.waitForExistence(timeout: 5))
         focusAndType(apiKey, "invalid-ui-placeholder")
-        let status = app.staticTexts["llm-save-status"]
         save.press()
 
         XCTAssertTrue(
-            waitForStatus(status, containingAny: ["Check your provider credentials"], timeout: 3))
+            waitForStatus(containingAny: ["Check your provider credentials"], timeout: 3))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(waitForEnabled(save, enabled: true, timeout: 2))
         XCTAssertEqual(save.value as? String, "Ready")
@@ -84,11 +79,10 @@ final class LLMFirstLoginUITests: XCTestCase {
         let save = app.buttons["llm-save-button"]
         XCTAssertTrue(apiKey.waitForExistence(timeout: 5))
         focusAndType(apiKey, "unavailable-ui-placeholder")
-        let status = app.staticTexts["llm-save-status"]
         save.press()
 
         XCTAssertTrue(
-            waitForStatus(status, containingAny: ["Provider unavailable"], timeout: 3))
+            waitForStatus(containingAny: ["Provider unavailable"], timeout: 3))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(save.isEnabled)
         XCTAssertTrue(element("llm-provider-form-title").exists)
@@ -105,16 +99,11 @@ final class LLMFirstLoginUITests: XCTestCase {
         _ = status.exists
         save.press()
         XCTAssertTrue(status.waitForExistence(timeout: 0.25))
-        let acknowledgedAt = Date()
-        let sceneExerciseStarted = Date()
         exerciseSceneOrWindowResponsiveness()
-        let sceneOverhead = Date().timeIntervalSince(sceneExerciseStarted)
         XCTAssertTrue(
             waitForStatus(
-                status,
                 containingAny: ["Unable to confirm; reconnecting"],
-                timeout: 11 + sceneOverhead))
-        XCTAssertLessThan(Date().timeIntervalSince(acknowledgedAt) - sceneOverhead, 11.5)
+                timeout: 11))
         XCTAssertTrue(apiKey.isEnabled)
         XCTAssertTrue(save.isEnabled)
         XCTAssertEqual(save.value as? String, "Ready")
@@ -162,18 +151,17 @@ final class LLMFirstLoginUITests: XCTestCase {
     }
 
     private func waitForStatus(
-        _ status: XCUIElement,
         containingAny fragments: [String],
         timeout: TimeInterval
     ) -> Bool {
-        let predicate = NSPredicate { candidate, _ in
-            guard let element = candidate as? XCUIElement,
-                let value = element.value as? String
-            else { return false }
-            return fragments.contains { value.localizedCaseInsensitiveContains($0) }
-        }
-        let expectation = XCTNSPredicateExpectation(predicate: predicate, object: status)
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+        let predicate = NSCompoundPredicate(andPredicateWithSubpredicates: [
+            NSPredicate(format: "identifier == %@", "llm-save-status"),
+            NSCompoundPredicate(
+                orPredicateWithSubpredicates: fragments.map {
+                    NSPredicate(format: "value CONTAINS[c] %@", $0)
+                }),
+        ])
+        return app.staticTexts.matching(predicate).firstMatch.waitForExistence(timeout: timeout)
     }
 
     private func waitForEnabled(

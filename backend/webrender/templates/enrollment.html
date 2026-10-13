@@ -1,0 +1,28 @@
+<!-- A dedicated joining-device page consumes mesh-custody.js after clearing the URL fragment. Deep owns
+     this route's session checks and response security headers. -->
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Enroll this device · AstralDeep</title>
+  <script nonce="%%ASTRAL_NONCE%%">window.__ASTRAL_ENROLLMENT__ = location.hash.slice(1); history.replaceState(null, "", "/enroll");</script>
+  <link rel="stylesheet" href="/static/astral.css?v=%%ASTRAL_V:astral.css%%">
+  <link rel="stylesheet" href="/static/mesh-enrollment.css?v=%%ASTRAL_V:mesh-enrollment.css%%">
+  <script defer src="/static/mesh-custody.js?v=%%ASTRAL_V:mesh-custody.js%%"></script>
+  <script defer src="/static/mesh-enrollment.js?v=%%ASTRAL_V:mesh-enrollment.js%%"></script>
+</head>
+<body class="astral-mesh-page">
+  <main class="astral-mesh-enrollment">
+    <h1>Enroll this device</h1>
+    <p>Start a request in Mesh devices on this joining device. Confirm its fingerprint from another device signed in to your account, then complete enrollment here. A copied link cannot enroll a different device.</p>
+    <a href="/auth/login?next=%2Fenroll" target="_blank" rel="noopener noreferrer">Sign in as the owner in another tab</a>
+    <label>Secure enrollment link
+      <textarea id="mesh-link" autocomplete="off" spellcheck="false" maxlength="4096"></textarea>
+    </label>
+    <button id="mesh-redeem" type="button">Complete enrollment</button>
+    <p id="mesh-status" role="status" aria-live="polite"></p>
+    <a href="/">Open Mesh devices</a>
+  </main>
+</body>
+</html>

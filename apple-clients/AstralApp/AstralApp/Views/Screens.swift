@@ -183,7 +183,7 @@ struct SurfaceView: View {
         Group {
             if let surface = model.pendingSurface {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 12) {
                         if let message = model.surfaceFailureMessage {
                             Text(message).foregroundStyle(p.error).font(ConsoleTypography.callout)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -203,7 +203,8 @@ struct SurfaceView: View {
                             key, comp in
                             ComponentView(component: comp)
                                 .environment(
-                                    \.astralWorkReadSurface, ["work", "guidance"].contains(surface.surfaceKey)
+                                    \.astralWorkReadSurface,
+                                    ["work", "guidance", "evidence"].contains(surface.surfaceKey)
                                 )
                                 .environment(\.astralGuidanceSurface, surface.surfaceKey == "guidance")
                                 .id("\(surface.surfaceKey)-\(key)-\(model.guidanceUpdate?.generation ?? "legacy")")
@@ -253,15 +254,23 @@ struct SurfaceView: View {
             timedOut = false
             let workGeneration = model.workReadState.generation
             let guidanceGeneration = model.guidanceState.generation
-            if model.pendingSurface != nil { return }
+            let evidenceGeneration = model.evidenceReadGeneration
+            let safetyGeneration = model.safetyRequestGeneration
+            if model.pendingSurface != nil && safetyGeneration == nil { return }
             do {
                 try await Task.sleep(nanoseconds: 10_000_000_000)
             } catch {
                 return
             }
-            guard !Task.isCancelled, model.pendingSurface == nil else { return }
+            guard !Task.isCancelled else { return }
+            if let safetyGeneration {
+                model.failSafetyRequest(generation: safetyGeneration)
+                return
+            }
+            guard model.pendingSurface == nil else { return }
             if model.pendingSurfaceKey == "work" { model.failWorkRead(generation: workGeneration) }
             if model.pendingSurfaceKey == "guidance" { model.failGuidanceRequest(generation: guidanceGeneration) }
+            if model.pendingSurfaceKey == "evidence" { model.failEvidenceRead(generation: evidenceGeneration) }
             timedOut = true
         }
     }
@@ -298,7 +307,7 @@ struct SurfaceView: View {
     }
 
     private var surfaceTaskKey: String {
-        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")"
+        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")-\(model.evidenceReadGeneration ?? "")-\(model.safetyRequestGeneration ?? "")"
     }
 }
 

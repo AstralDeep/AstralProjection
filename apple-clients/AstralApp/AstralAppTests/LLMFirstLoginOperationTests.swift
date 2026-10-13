@@ -187,6 +187,66 @@ final class LLMFirstLoginOperationTests: XCTestCase {
         XCTAssertFalse(model.llmFirstLoginOperation?.isLoading == true)
     }
 
+    func testEditingPendingDraftKeepsSubmittedCredentialsAndAdvancesOnlyOnTheFirstTerminal() throws {
+        let (model, log) = modelWithConnection()
+        model.screen = .surface
+        model.mandatorySurface = true
+        model.pendingSurfaceKey = "llm"
+        var draft = fields
+        XCTAssertTrue(model.submitParamPicker(action: "chrome_llm_save", fields: draft, payload: [:]))
+        let local = try XCTUnwrap(model.llmFirstLoginOperation)
+        model.handleFrame(
+            status(
+                request: local.requestGeneration,
+                sequence: 0,
+                state: "accepted",
+                phase: "accepted",
+                label: "Accepted"))
+        model.handleFrame(
+            status(
+                request: local.requestGeneration,
+                sequence: 1,
+                state: "validating",
+                phase: "validating_credentials",
+                label: "Checking your provider credentials"))
+
+        draft["api_key"] = .string("edited-test-only-key")
+        XCTAssertTrue(model.llmFirstLoginOperation?.fieldsEditable == true)
+        XCTAssertTrue(model.llmFirstLoginOperation?.isLoading == true)
+        XCTAssertTrue(model.llmFirstLoginOperation?.phaseVisible == true)
+        XCTAssertEqual(model.screen, .surface)
+        XCTAssertFalse(model.llmFirstLoginOperation?.didAdvance == true)
+        XCTAssertFalse(model.submitParamPicker(action: "chrome_llm_save", fields: draft, payload: [:]))
+        XCTAssertEqual(log.frames.count, 1)
+        XCTAssertEqual(log.frames.first?["payload"]?["fields"]?["api_key"], fields["api_key"])
+        XCTAssertEqual(draft["api_key"], .string("edited-test-only-key"))
+        XCTAssertEqual(model.llmFirstLoginOperation?.submissionId, local.submissionId)
+
+        model.handleFrame(
+            status(
+                request: local.requestGeneration,
+                sequence: 2,
+                state: "completed",
+                phase: "completed",
+                label: "Saved"))
+        XCTAssertEqual(model.screen, .chat)
+        XCTAssertTrue(model.llmFirstLoginOperation?.didAdvance == true)
+        XCTAssertTrue(model.llmFirstLoginOperation?.isAuthoritativelyTerminal == true)
+        XCTAssertEqual(log.frames.count, 1)
+
+        model.screen = .surface
+        model.handleFrame(
+            status(
+                request: local.requestGeneration,
+                sequence: 3,
+                state: "completed",
+                phase: "completed",
+                label: "Repeated completion"))
+        XCTAssertEqual(model.screen, .surface)
+        XCTAssertEqual(log.frames.count, 1)
+        XCTAssertEqual(model.llmFirstLoginOperation?.sequence, 2)
+    }
+
     func testTenSecondWatchdogEndsLoadingWithoutInventingOrSuppressingServerTerminal() async {
         let (model, log) = modelWithConnection()
         model.llmFirstLoginPhaseDelay = 5_000_000

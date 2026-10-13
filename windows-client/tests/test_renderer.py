@@ -5,10 +5,14 @@ a drift guard against the backend's published primitive types.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 
 pytest.importorskip("PySide6")
 
+from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QFrame,
     QLabel,
@@ -70,6 +74,43 @@ def test_text_markdown(qapp):
     w = render({"type": "text", "content": "**bold**", "variant": "markdown"}, _ctx())
     assert isinstance(w, QLabel)
     assert "bold" in w.text()
+
+
+@pytest.mark.parametrize(
+    ("item", "expected"),
+    [
+        ({"key": "Source reference"}, "SOURCE REFERENCE"),
+        ({"key": "Observed input tokens"}, "OBSERVED INPUT TOKENS"),
+        ({"label": "Legacy label"}, "LEGACY LABEL"),
+        ({"label": "Visible label", "key": "Hidden key"}, "VISIBLE LABEL"),
+        ({"label": "", "key": "Hidden key"}, ""),
+        ({}, ""),
+    ],
+)
+def test_keyvalue_preserves_label_precedence_and_accepts_the_key_alias(qapp, item, expected):
+    widget = render({"type": "keyvalue", "items": [item | {"value": "Value"}]}, _ctx())
+    labels = widget.findChildren(QLabel)
+    assert [label.text() for label in labels] == [expected, "Value"]
+    assert all(label.textFormat() == Qt.TextFormat.PlainText for label in labels)
+
+
+def test_keyvalue_actual_evidence_fixture_and_full_unicode_page_are_literal(qapp):
+    root = Path(__file__).resolve().parents[2]
+    fixture = json.loads((root / "contracts/fixtures/evidence/inspection_surface.json").read_text(encoding="utf-8"))
+    component = next(row for row in fixture["native_frame"]["components"] if row["type"] == "keyvalue")
+    widget = render(component, _ctx())
+    labels = widget.findChildren(QLabel)
+    assert "PERMITTED TEXT" in [label.text() for label in labels]
+    literal = next(label for label in labels if label.text() == fixture["source_text"])
+    assert literal.textFormat() == Qt.TextFormat.PlainText
+    page = "🙂" * 4096
+    assert len(page.encode("utf-8")) == 16_384
+    full = render(component | {"items": [{"key": "Permitted text", "value": page}]}, _ctx())
+    labels = full.findChildren(QLabel)
+    assert "PERMITTED TEXT" in [label.text() for label in labels]
+    literal = next(label for label in labels if label.text() == page)
+    assert literal.textFormat() == Qt.TextFormat.PlainText
+    assert literal.text() == page
 
 
 def test_button_emits_action(qapp):

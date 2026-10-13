@@ -107,7 +107,7 @@ class ServerSessionCoordinator internal constructor(
             old
         }
 
-    suspend fun logout(retired: ServerSession): Boolean = transport.logout(retired)
+    suspend fun logout(retired: ServerSession): Boolean = transport.logout(transport.refresh(retired))
 
     internal fun <T> withToken(
         token: String,
@@ -121,6 +121,7 @@ class ServerSessionCoordinator internal constructor(
 
     class SocketTicket internal constructor(internal val session: ServerSession, internal val epoch: Long) {
         internal val cookie: String get() = session.cookie
+        internal val origin: String get() = session.scope.origin.toString().removeSuffix("/")
 
         override fun toString(): String = "ServerSessionSocketTicket(private)"
     }

@@ -122,6 +122,8 @@ def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
     web = _job_block(text, "web")
     assert "NODE_V8_COVERAGE=" in web
     assert "node --test tooling/web-ci/tests/offline-worker-088.test.mjs" in web
+    assert "node --test tests/mesh-custody.browser.test.mjs" in web
+    assert "playwright test tests/mesh-enrollment.spec.js" in web
     assert "--output build/088/offline-javascript.json" in web
     assert 'report["coverage"][f"backend/webrender/static/{name}"]["s"]' in web
     assert 'for name in ("service-worker.js", "offline-registration.js")' in web
@@ -956,9 +958,10 @@ def test_android_ci_preserves_exact_hosted_emulator_and_wrapper_contract() -> No
     assert 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' in instrumented
     assert "sudo udevadm control --reload-rules" in instrumented
     assert "sudo udevadm trigger --name-match=kvm" in instrumented
-    assert "api-level: 34" in instrumented
-    assert "arch: x86_64" in instrumented
-    assert "working-directory: android-client" in instrumented
+    assert "python3 ../scripts/run_android_emulator.py" in instrumented
+    assert '--root "$GITHUB_WORKSPACE" --sdk "$ANDROID_HOME"' in instrumented
+    assert '--output "$GITHUB_WORKSPACE/build/088/android-coverage"' in instrumented
+    assert "reactivecircus/android-emulator-runner@" not in instrumented
     assert (
         "./gradlew -PastralCoverage=true :app:prepareCoverageInputs "
         "--no-configuration-cache --no-daemon --stacktrace"
@@ -1287,6 +1290,7 @@ def _assert_retried_test_run(xcode):
     )] == ["YES", "120", "300", "3"]
     assert run.count("-retry-tests-on-failure") == 1
     assert not [call for call in xcode[:-1] if "-retry-tests-on-failure" in call]
+    assert not [call for call in xcode if "-test-repetition-relaunch-enabled" in call]
 
 
 def test_apple_core_ios_builds_once_then_runs_one_retried_suite(tmp_path):
@@ -1395,6 +1399,7 @@ def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp
     assert result.returncode == (65 if platform == "macos" else 1), result.stderr
     suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
     assert len(suites) == 1
+    _assert_retried_test_run([call for call in calls if call[0] == "xcodebuild"])
     assert "-retry-tests-on-failure" in suites[0]
     assert suites[0][suites[0].index("-default-test-execution-time-allowance") + 1] == "120"
     assert not [call for call in calls if call[0] == "xcrun"]
@@ -1459,6 +1464,7 @@ def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_com
         assert build[build.index("-project") + 1] == "Owned Watch.xcodeproj"
         assert build[build.index("-destination") + 1] == "platform=watchOS Simulator,id=owned-watch"
         assert "-enableCodeCoverage" in build and "CODE_SIGNING_ALLOWED=NO" in build
+        assert "-test-repetition-relaunch-enabled" not in build
     assert "-retry-tests-on-failure" not in builds[0]
     assert "-retry-tests-on-failure" in builds[1]
     assert builds[1][builds[1].index("-test-iterations") + 1] == "3"

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from html import escape as html_escape
 from typing import Any, Callable, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -391,9 +391,8 @@ def _r_keyvalue(c, ctx):
         )
         bl = _vbox(2, (12, 8, 12, 8))
         box.setLayout(bl)
-        bl.addWidget(
-            _label(str(item.get("label", "")).upper(), color=T.MUTED, size=11, bold=True)
-        )
+        item_label = item.get("label", item.get("key", ""))
+        bl.addWidget(_label(str(item_label).upper(), color=T.MUTED, size=11, bold=True))
         bl.addWidget(_label(item.get("value", ""), size=14, bold=True))
         if item.get("hint"):
             bl.addWidget(_label(str(item["hint"]), color=T.MUTED, size=11))
@@ -1205,9 +1204,19 @@ def _fetch_image_bytes(url: str):
         return None
 
 
-class _AsyncImageLabel(QLabel):
-    _loaded = Signal(object)
+class _ImageResult(QObject):
+    loaded = Signal(object)
 
+
+def _fetch_image(result: _ImageResult, url: str) -> None:
+    raw = _fetch_image_bytes(url)
+    try:
+        result.loaded.emit(raw)
+    except RuntimeError:
+        pass
+
+
+class _AsyncImageLabel(QLabel):
     def __init__(self, url: str, alt: str, maxw: int, parent=None):
         super().__init__(parent)
         self._maxw = maxw
@@ -1215,18 +1224,13 @@ class _AsyncImageLabel(QLabel):
         self.setWordWrap(True)
         self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.setStyleSheet(f"color:{T.MUTED}; font-size:12px; background:transparent;")
-        self._loaded.connect(self._apply_bytes)
+        self._result = _ImageResult(self)
+        self._result.loaded.connect(self._apply_bytes)
         threading.Thread(
-            target=self._fetch, args=(url,), name="astral-image", daemon=True
+            target=_fetch_image, args=(self._result, url), name="astral-image", daemon=True
         ).start()
 
-    def _fetch(self, url: str) -> None:
-        raw = _fetch_image_bytes(url)
-        try:
-            self._loaded.emit(raw)
-        except RuntimeError:
-            pass
-
+    @Slot(object)
     def _apply_bytes(self, raw: object) -> None:
         if not raw:
             return

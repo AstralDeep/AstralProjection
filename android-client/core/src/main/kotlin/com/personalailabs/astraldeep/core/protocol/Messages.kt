@@ -718,6 +718,7 @@ sealed interface Inbound {
         val mode: String = "replace",
         val requestGeneration: String? = null,
         val selection: TurnSelection? = null,
+        val evidenceEnvelopeValid: Boolean = false,
     ) : Inbound
 
     data class AuthRequired(val reason: String?) : Inbound

@@ -129,6 +129,7 @@ _NOTES_ITEM = MenuItem("guidance", "Private notes", "guidance", {"mode": "list"}
 _CONNECTIONS_ITEM = MenuItem("connections", "Connections", "connections")
 _REMOTE_MACHINES_ITEM = MenuItem("remote-machines", "Remote machines", "remote_machines")
 _MY_COMPUTERS_ITEM = MenuItem("my-computers", "My computers", "my_computers")
+_MESH_ITEM = MenuItem("mesh-devices", "Mesh devices", "mesh")
 _HELP_ITEMS: Tuple[MenuItem, ...] = (
     MenuItem("tour", "Take the tour", "tour"),
     MenuItem("guide", "User guide", "guide"),
@@ -208,6 +209,7 @@ def build_menu_model(
         + ((_BYO_AGENTS_ITEM,) if show_byo else ((_SKILLS_ONLY_ITEM,) if show_skills else ()))
         + ((_REMOTE_MACHINES_ITEM,) if show_remote else ())
         + ((_MY_COMPUTERS_ITEM,) if show_computer else ())
+        + (_MESH_ITEM,)
         + ((_CONNECTIONS_ITEM,) if connections_enabled else ())
     )
     groups: List[MenuGroup] = [

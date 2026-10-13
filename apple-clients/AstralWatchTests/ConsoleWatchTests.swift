@@ -2,12 +2,35 @@
 // Synthetic loopback transport exercises real WebSocket fencing without replacing user authentication.
 
 import AstralCore
-@testable import AstralWatch
 import SwiftUI
 import XCTest
 
+@testable import AstralWatch
+
 @MainActor
 final class ConsoleWatchTests: XCTestCase {
+    func testSafetySurfaceAdmitsOnlyItsOfferedCurrentRevisionControls() throws {
+        let stop = JSONValue.object([
+            "type": .string("button"), "label": .string("Stop everything now"),
+            "action": .string("chrome_safety_stop"), "disabled": .bool(false), "local": .bool(false),
+            "payload": .object(["surface": .string("safety")]),
+        ])
+        var fields = response(generation, components: [stop]).payload.objectValue!
+        fields["surface_key"] = .string("safety")
+        let surface = try XCTUnwrap(
+            WatchConsoleSurface(frame: InboundFrame(name: "chrome_surface", payload: .object(fields))))
+        XCTAssertEqual(surface.key, "safety")
+        XCTAssertTrue(surface.permits(AstralComponent(json: stop)!))
+        XCTAssertFalse(surface.permits(AstralComponent(json: button())!))
+        fields["components"] = .array([button()])
+        XCTAssertNil(WatchConsoleSurface(frame: InboundFrame(name: "chrome_surface", payload: .object(fields))))
+        let model = WatchModel(
+            conversationResumeStore: ConversationResumeStore(), tokenStore: InMemoryTokenStore())
+        model.openSafetySurface()
+        XCTAssertTrue(model.consoleSurfaceFailed)
+        XCTAssertNil(model.consoleSurfaceGeneration)
+    }
+
     private let socketEventTimeout: TimeInterval = 30
     private let connection = "22222222-2222-4222-8222-222222222222"
     private let generation = "33333333-3333-4333-8333-333333333333"

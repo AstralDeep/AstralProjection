@@ -42,7 +42,13 @@ def test_android_store_and_oidc_identity_remain_registered_values() -> None:
     assert 'manifestPlaceholders["appAuthRedirectScheme"] = registeredRedirectScheme' in gradle
 
     redirect_uri = "com.personalailabs.astraldeep:/oauth2redirect"
-    assert f'const val OIDC_REDIRECT_URI: String = "{redirect_uri}"' in app_config
+    deployment = _text(
+        "android-client/core/src/main/kotlin/com/personalailabs/astraldeep/core/deployment/ClientDeploymentProfile.kt"
+    )
+    assert "BuildConfig.ASTRAL_OIDC_REDIRECT_URI" in app_config
+    assert "val OIDC_REDIRECT_URI: String = deployment.redirectUri" in app_config
+    assert f'clientId == "astral-mobile" && redirectUri == "{redirect_uri}"' in deployment
+    assert f'client == "astral-mobile" && redirect == "{redirect_uri}"' in gradle
     assert "Uri.parse(AppConfig.OIDC_REDIRECT_URI)" in oidc_auth
     assert 'android:scheme="${appAuthRedirectScheme}"' in manifest
 

@@ -18,6 +18,9 @@ public struct ClientDispositions: Sendable {
     public let frames: [String: FrameDisposition]
     public let components: [String: ComponentDisposition]
     public let voiceActions: Set<String>
+    public var meshActions: Set<String> { client == "watch" ? [] : MeshSurfaceRequest.actions }
+    public var meshLocalActions: Set<String> { client == "watch" ? [] : MeshSurfaceRequest.localActions }
+    public var meshCustodyDisposition: String { client == "watch" ? "phone_desktop_handoff" : "protected_device_key" }
 
     public var nativeComponentTypes: [String] {
         components.compactMap { key, value in

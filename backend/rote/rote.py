@@ -53,7 +53,7 @@ class ROTE:
             return new_profile, None, True
 
         if new_profile.device_type == DeviceType.BROWSER:
-            return new_profile, raw, True
+            return new_profile, ComponentAdapter._enforce_host_limits(raw, new_profile), True
 
         adapted = ComponentAdapter.adapt(raw, new_profile)
         logger.debug(
@@ -82,7 +82,7 @@ class ROTE:
         profile = self.get_profile(websocket)
 
         if profile.device_type == DeviceType.BROWSER:
-            return components
+            return ComponentAdapter._enforce_host_limits(components, profile)
 
         adapted = ComponentAdapter.adapt(components, profile)
         logger.debug(

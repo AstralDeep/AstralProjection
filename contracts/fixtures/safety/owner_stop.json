@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "buttons": [
+    {
+      "type": "button",
+      "label": "Stop everything now",
+      "action": "chrome_safety_stop",
+      "payload": {
+        "surface": "safety"
+      },
+      "variant": "primary",
+      "disabled": false,
+      "local": false
+    },
+    {
+      "type": "button",
+      "label": "Resume explicitly",
+      "action": "chrome_safety_resume",
+      "payload": {
+        "surface": "safety",
+        "expected_revision": 7
+      },
+      "variant": "primary",
+      "disabled": false,
+      "local": false
+    },
+    {
+      "type": "button",
+      "label": "Recheck responders",
+      "action": "chrome_safety_verify",
+      "payload": {
+        "surface": "safety"
+      },
+      "variant": "primary",
+      "disabled": false,
+      "local": false
+    }
+  ],
+  "running": [
+    {
+      "type": "button",
+      "label": "Stop everything now",
+      "action": "chrome_safety_stop",
+      "payload": {
+        "surface": "safety"
+      },
+      "variant": "primary",
+      "disabled": false,
+      "local": false
+    },
+    {
+      "type": "button",
+      "label": "Recheck responders",
+      "action": "chrome_safety_verify",
+      "payload": {
+        "surface": "safety"
+      },
+      "variant": "primary",
+      "disabled": false,
+      "local": false
+    }
+  ],
+  "engaged": [
+    {
+      "type": "button",
+      "label": "Resume explicitly",
+      "action": "chrome_safety_resume",
+      "payload": {
+        "surface": "safety",
+        "expected_revision": 7
+      },
+      "variant": "primary",
+      "disabled": false,
+      "local": false
+    },
+    {
+      "type": "button",
+      "label": "Recheck responders",
+      "action": "chrome_safety_verify",
+      "payload": {
+        "surface": "safety"
+      },
+      "variant": "primary",
+      "disabled": false,
+      "local": false
+    }
+  ],
+  "states": [
+    "running",
+    "stopped",
+    "partial",
+    "unreachable",
+    "unknown"
+  ],
+  "request_generation": "33333333-3333-4333-8333-333333333333"
+}

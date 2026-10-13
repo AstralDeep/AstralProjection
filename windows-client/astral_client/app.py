@@ -17,7 +17,7 @@ import threading
 import uuid
 from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QSettings, QTimer, QUrl, Signal
+from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QSettings, QTimer, QUrl, Signal
 from PySide6.QtCore import QObject, Slot
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QTextDocument
+from shiboken6 import isValid
 
 from . import theme as T
 from . import icons as _icons
@@ -1337,6 +1338,9 @@ class SurfaceDialog(QDialog):
         self._timer.stop()
         if callable(self._timeout_observer):
             self._timeout_observer()
+        if self._surface in {"evidence", "safety"}:
+            self._surface_payload = None
+            self._retained_controls = None
         self._status.setVisible(False)
         if self._surface_payload is not None:
             self._retained_controls = _capture_controls(self._inner)
@@ -1385,6 +1389,9 @@ class SurfaceDialog(QDialog):
 
     def fail_operation(self, message: str) -> None:
         self._timer.stop()
+        if self._surface == "safety":
+            self._on_timeout(message + " Reload status before trying again.")
+            return
         if self._surface_payload is None:
             self._on_timeout(message)
         self._status.setText(message)
@@ -2063,6 +2070,7 @@ class _TransportBridge(QObject):
 class MainWindow(QMainWindow):
     _integrity_notice = Signal(str, str)
     _audit_loaded = Signal(object)
+    _mesh_done = Signal(object)
     _download_done = Signal(object)
     _attachment_uploaded = Signal(object)
     _signed_out = Signal(str)
@@ -2093,6 +2101,10 @@ class MainWindow(QMainWindow):
             create_settings()
         )
         self._resume_store.bind_token(token)
+        self._mesh_custody = None
+        self._mesh_pending = None
+        self._mesh_epoch = 0
+        self._mesh_done.connect(self._on_mesh_done)
         self.active_chat: Optional[str] = self._resume_store.active_chat()
         self._continuity = ConversationContinuityReducer()
         if self.active_chat is not None:
@@ -2173,6 +2185,7 @@ class MainWindow(QMainWindow):
                 console=True,
             ),
             work_reads=True,
+            session=session,
         )
         configure_host = getattr(self.client, "configure_agent_host", None)
         if callable(configure_host):
@@ -2404,6 +2417,14 @@ class MainWindow(QMainWindow):
         self._start_integrity_check()
         self._schedule_auth_refresh()
 
+    def event(self, event) -> bool:
+        event_type = event.type()
+        handled = super().event(event)
+        if (event_type in (QEvent.Type.ScreenChangeInternal, QEvent.Type.DevicePixelRatioChange)
+                and getattr(self, "_viewport_timer", None) is not None):
+            self._screen_changed(self.screen())
+        return handled
+
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
         timer = getattr(self, "_viewport_timer", None)
@@ -2412,11 +2433,7 @@ class MainWindow(QMainWindow):
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
-        handle = self.windowHandle()
-        if handle is not None and not getattr(self, "_screen_observed", False):
-            self._screen_observed = True
-            handle.screenChanged.connect(self._screen_changed)
-            self._screen_changed(handle.screen())
+        self._screen_changed(self.screen())
 
     def _screen_changed(self, screen) -> None:
         previous = getattr(self, "_observed_screen", None)
@@ -2622,12 +2639,40 @@ class MainWindow(QMainWindow):
             self._surface_dialog.set_navigation(self._console_menu, self._console_presentation, self._console_open_surface)
 
     def _surface_closed(self) -> None:
+        self._mesh_epoch += 1
+        self._mesh_pending = None
         self._retire_work_read()
         self._retire_guidance()
         self._retire_settings()
         self._surface_owner = None
+        if self._surface_dialog is not None and self._surface_dialog._surface in {"evidence", "mesh"}:
+            title = "Mesh enrollment" if self._surface_dialog._surface == "mesh" else "Evidence inspection"
+            self._surface_dialog.set_surface(title, [])
+
+    def _retire_mesh(self) -> None:
+        self._mesh_pending = None
+        self._mesh_epoch += 1
+        dialog = self._surface_dialog
+        if dialog is not None and not isValid(dialog):
+            self._surface_dialog = None
+            self._surface_owner = None
+            return
+        if dialog is not None and dialog._surface == "mesh":
+            self._surface_owner = None
+            dialog.set_surface("Mesh enrollment", [])
+            dialog.close()
+
+    def _retire_evidence(self) -> None:
+        dialog = self._surface_dialog
+        if dialog is not None and dialog._surface == "evidence":
+            self._retire_settings()
+            self._surface_owner = None
+            dialog.set_surface("Evidence inspection", [])
+            dialog.close()
 
     def _console_open_surface(self, surface: str, title: str, params: dict) -> None:
+        self._mesh_epoch += 1
+        self._mesh_pending = None
         if self._console_model is None:
             return
         if surface == "work":
@@ -2656,6 +2701,8 @@ class MainWindow(QMainWindow):
             self._send_settings("chrome_open", {"surface": surface, "params": params})
 
     def _surface_timeout(self) -> None:
+        self._mesh_epoch += 1
+        self._mesh_pending = None
         self._finish_work_read()
         self._retire_guidance()
         self._retire_settings()
@@ -2671,7 +2718,8 @@ class MainWindow(QMainWindow):
         return (self._settings_ticket is ticket and ticket[0] is self.client
                 and ticket[1] == getattr(self.client, "connection_generation", None)
                 and ticket[2] == self._resume_store.storage_key and dialog is not None
-                and dialog.isVisible() and dialog._surface == ticket[4])
+                and dialog.isVisible() and dialog._surface == ticket[4]
+                and (ticket[4] != "evidence" or ticket[5] == self.active_chat))
 
     def _send_settings(self, action: str, payload: dict) -> bool:
         dialog = self._surface_dialog
@@ -2680,10 +2728,14 @@ class MainWindow(QMainWindow):
         sender = getattr(self.client, "send_current_settings", None)
         connection = getattr(self.client, "connection_generation", None)
         owner = self._resume_store.storage_key
+        if (dialog._surface == "safety" and action != "chrome_open"
+                and (dialog._surface_payload is None or self._surface_owner != (self.client, connection, owner))):
+            dialog.fail_operation("Safety status is no longer current.")
+            return False
         if not callable(sender) or not _canonical_uuid4(connection) or not owner:
             dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
             return False
-        ticket = (self.client, connection, owner, str(uuid.uuid4()), dialog._surface)
+        ticket = (self.client, connection, owner, str(uuid.uuid4()), dialog._surface, self.active_chat)
         self._settings_ticket = ticket
         sent = sender(dialog._surface, action, payload, ticket[3], is_current=lambda: self._settings_current(ticket))
         if not sent and self._settings_ticket is ticket:
@@ -2750,6 +2802,9 @@ class MainWindow(QMainWindow):
             self._input.setFocus()
 
     def closeEvent(self, event) -> None:
+        self._mesh_custody = None
+        self._mesh_pending = None
+        self._mesh_epoch += 1
         self._stop_auth()
         self._retire_work_read()
         self._clear_workspace_actions()
@@ -2885,6 +2940,7 @@ class MainWindow(QMainWindow):
 
     def _set_active_chat(self, chat_id: Optional[str], *, persist: bool = True) -> None:
         if self.active_chat != chat_id:
+            self._retire_evidence()
             self._viewport.retire()
             self._viewport.applied = self._viewport.desired = None
             self._viewport.retry_required = False
@@ -3022,6 +3078,7 @@ class MainWindow(QMainWindow):
         )
 
     def _clear_transient_conversation(self) -> None:
+        self._retire_evidence()
         self._continuity.clear_transient()
         self._transient_canvas_components.clear()
         self._transient_chat_lines.clear()
@@ -3251,6 +3308,26 @@ class MainWindow(QMainWindow):
     def _on_chrome_surface(self, msg: dict) -> None:
         dialog = self._surface_dialog
         ticket = self._settings_ticket
+        evidence = (msg.get("surface_key") == "evidence" or ticket is not None and ticket[4] == "evidence"
+                    or dialog is not None and dialog.isVisible() and dialog._surface == "evidence")
+        if evidence and (
+            ticket is None or ticket[4] != "evidence" or not self._settings_current(ticket)
+            or set(msg) != {"type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation"}
+            or msg.get("type") != "chrome_surface" or not isinstance(msg.get("surface_key"), str)
+            or msg["surface_key"] not in {"evidence", ""}
+            or msg.get("region") != "modal" or msg.get("mode") != "replace" or msg.get("admin_only") is not False
+            or not _canonical_uuid4(msg.get("request_generation")) or msg["request_generation"] != ticket[3]
+            or not isinstance(msg.get("title"), str) or not isinstance(msg.get("components"), list)
+            or any(not isinstance(row, dict) or not isinstance(row.get("type"), str)
+                   or row["type"] not in {"alert", "badge", "keyvalue", "button"}
+                   for row in msg["components"])
+        ):
+            return
+        safety = (msg.get("surface_key") == "safety" or ticket is not None and ticket[4] == "safety"
+                  or dialog is not None and dialog.isVisible() and dialog._surface == "safety")
+        if safety and (ticket is None or ticket[4] != "safety" or not self._settings_current(ticket)
+                       or msg.get("mode", "replace") != "replace" or msg.get("request_generation") != ticket[3]):
+            return
         if (ticket is not None and msg.get("mode") == "mandatory"
                 and msg.get("request_generation") is None and msg.get("surface_key") not in {"work", "guidance", "agent_intro"}):
             self._retire_settings()
@@ -3398,8 +3475,7 @@ class MainWindow(QMainWindow):
                 if not token:
                     raise rest.RestError(401, "Sign-in is being renewed. Retry the action when connected.")
                 data = rest.fetch_bytes(full, token)
-                with open(save_path, "wb") as fh:
-                    fh.write(data)
+                rest.write_download(save_path, data)
                 self._download_done.emit({"path": save_path, "error": None})
             except Exception as exc:  # noqa: BLE001
                 self._download_done.emit({"path": None, "error": str(exc)})
@@ -3629,6 +3705,11 @@ class MainWindow(QMainWindow):
             != QMessageBox.StandardButton.Yes
         ):
             return
+        if self._mesh_custody is not None:
+            self._mesh_custody.purge()
+            self._mesh_custody = None
+        self._mesh_pending = None
+        self._mesh_epoch += 1
         self._stop_auth()
         self._retire_work_read()
         self._retire_guidance()
@@ -3653,7 +3734,9 @@ class MainWindow(QMainWindow):
 
         def _revoke() -> None:
             outcome = "local-only"
-            if refresh_token:
+            if isinstance(sess, Session) and sess.server_base is not None:
+                outcome = "revoked (server)" if sess.logout() else "revocation failed — local sign-out only"
+            elif refresh_token:
                 if rest.native_logout(http_base, access, refresh_token, client_id):
                     outcome = "revoked (server)"
                 else:
@@ -3849,6 +3932,7 @@ class MainWindow(QMainWindow):
         atts = self._sendable_attachments()
         if not text and not atts:
             return
+        self._retire_evidence()
         self._input.clear()
         generation = (
             self._begin_conversation_request("commit", self.active_chat)
@@ -3882,7 +3966,81 @@ class MainWindow(QMainWindow):
             self.canvas.show_skeleton()
         self._clear_sent_attachments()
 
+    def _mesh_context(self):
+        return (self.client, getattr(self.client, "connection_generation", None), self._resume_store.storage_key,
+                self._surface_dialog, self._auth_generation, self._mesh_epoch)
+
+    def _mesh_current(self, context):
+        dialog = self._surface_dialog
+        return (context == self._mesh_context() and _canonical_uuid4(context[1]) and context[2]
+                and dialog is not None and dialog.isVisible() and dialog._surface == "mesh"
+                and self._surface_owner == context[:3])
+
+    def _mesh_action(self, action, payload):
+        from .mesh import MeshDeviceCustody
+
+        context = self._mesh_context()
+        if not self._mesh_current(context) or self._mesh_pending is not None:
+            self._show_banner("Reconnect and reopen Mesh devices before enrolling.", "error")
+            return
+        try:
+            account = decode_token_account(self._current_token())
+            if self._mesh_custody is None:
+                self._mesh_custody = MeshDeviceCustody(_http_base(self._url), account, self._settings())
+            custody = self._mesh_custody
+            if action == "chrome_mesh_identity":
+                identity = json.dumps(custody.public_identity(), separators=(",", ":"))
+                if self._mesh_current(context):
+                    QApplication.clipboard().setText(identity)
+                    QMessageBox.information(self, "Public device identity", "Copied this device's public identity. Share it with your owner device:\n" + identity)
+                return
+            if action == "chrome_mesh_create":
+                fields = custody.prepare(payload.get("fields"))
+                if self._mesh_current(context):
+                    self._send_settings(action, {**payload, "fields": fields})
+                return
+            body, public = custody.redemption((payload.get("fields") or {}).get("link"))
+            self._mesh_pending = context
+            def redeem():
+                try:
+                    member = custody.redeem(body, public, current=lambda: self._mesh_pending is context)
+                except Exception:
+                    member = None
+                self._mesh_done.emit((context, member))
+            threading.Thread(target=redeem, daemon=True).start()
+        except Exception:
+            self._show_banner("Enrollment refused. Use the original joining device and current owner account.", "error")
+
+    def _on_mesh_done(self, value):
+        context, member = value
+        if self._mesh_pending != context:
+            return
+        self._mesh_pending = None
+        if not self._mesh_current(context):
+            return
+        if member is None:
+            self._show_banner("Enrollment refused. Confirm its fingerprint from another owner device, then retry.", "error")
+            return
+        try:
+            self._mesh_custody.save_member(member)
+        except Exception:
+            self._show_banner("Device enrollment could not be saved. Reopen Mesh devices to check its status.", "error")
+            return
+        self._show_banner("This device is enrolled.")
+        self._console_open_surface("mesh", "Mesh devices", {})
+
     def _emit(self, action: str, payload: dict) -> None:
+        if action in {"chrome_mesh_create", "chrome_mesh_identity", "chrome_mesh_redeem"}:
+            self._mesh_action(action, payload)
+            return
+        if action == "chat_message":
+            self._retire_evidence()
+        if action == "chrome_close" and (
+            payload.get("surface") == "evidence"
+            or self._surface_dialog is not None and self._surface_dialog._surface == "evidence"
+        ):
+            self._retire_evidence()
+            return
         if action == "compose_prompt":
             self._compose_surface_prompt(payload)
             return
@@ -3994,7 +4152,10 @@ class MainWindow(QMainWindow):
                     self._surface_dialog.fail_operation("Couldn't send this action. Reconnect and retry.")
             return
         if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
-            if self._settings_ticket is not None and self._surface_dialog is not None and self._surface_dialog.isVisible():
+            self._retire_mesh()
+            self._retire_evidence()
+            if (self._surface_dialog is not None and self._surface_dialog.isVisible()
+                    and (self._settings_ticket is not None or self._surface_dialog._surface == "safety")):
                 self._surface_dialog._on_timeout("The connection interrupted this action. Reload settings before trying again.")
             self._viewport.retire(reset=True)
             self._retire_work_read()
@@ -4163,6 +4324,7 @@ class MainWindow(QMainWindow):
             self._on_silent_refresh_done(generation, (session, candidate, None))
 
     def _invalidate_auth(self) -> None:
+        self._retire_mesh()
         self._auth_refresh_timer.stop()
         self._auth_generation += 1
         self._silent_refresh_active = False
@@ -4211,7 +4373,8 @@ class MainWindow(QMainWindow):
                 self.client.configure_resume(self.active_chat if _canonical_uuid4(self.active_chat) else None)
                 self._token = token
                 try:
-                    renewed = renew(token)
+                    renewed = (renew(token, session=candidate)
+                               if isinstance(candidate, Session) and candidate.server_base is not None else renew(token))
                 except Exception:
                     self._auth_refresh_timer.stop()
                     self._show_banner("The connection could not restart. Restart the app to sign in again.", "error")
@@ -4286,6 +4449,7 @@ class MainWindow(QMainWindow):
             device_caps(supported_types=native_types(), window=self, console=True,
                         voice_capability=self._voice_audio.capability()),
             work_reads=True,
+            session=self._auth_session,
         )
         configure_host = getattr(self.client, "configure_agent_host", None)
         if callable(configure_host):
@@ -4336,6 +4500,8 @@ class MainWindow(QMainWindow):
                     client_id=self._login_params.get("client_id", "astral-desktop"),
                     bff_base=bff_base,
                     cancel_event=cancel,
+                    server_base=(_http_base(self._url)
+                                 if bff_base is None and self._url.startswith("wss://") else None),
                 )
                 self._reauth_done.emit(generation, session)
             except Exception:  # noqa: BLE001
@@ -4414,6 +4580,11 @@ class MainWindow(QMainWindow):
             self.close()
 
     def _apply_login(self, token: str, session=None) -> None:
+        self._retire_mesh()
+        if decode_token_account(token) != decode_token_account(self._current_token()) and self._mesh_custody is not None:
+            self._mesh_custody.purge()
+            self._mesh_custody = None
+        self._mesh_pending = None
         self._auth_session = session
         self._reauth_tries = 0
         self.topbar.set_user(_user_from_token(token))
@@ -5401,6 +5572,7 @@ def resolve_auth(args, cancel_event=None):
             session = oidc_login(
                 args.authority, client_id=args.client_id, bff_base=bff_base,
                 cancel_event=cancel_event,
+                server_base=(_http_base(args.url) if not bff_base and args.url.startswith("wss://") else None),
             )
             return session.access_token, session
         except LoginCancelled:

@@ -86,6 +86,34 @@ The app authenticates **only** via Keycloak OIDC (AppAuth PKCE) — there is no
 dev-token or mock-auth shortcut (the unused `DevAuth` path was removed in feature
 044).
 
+An explicit deployment build retains the registered `astral-mobile` public client
+and `com.personalailabs.astraldeep:/oauth2redirect` callback. Supply all three
+endpoint properties together:
+
+```bash
+./gradlew :app:assembleDebug \
+  -PastralApiBase=https://backend.example.invalid \
+  -PastralWebSocketUrl=wss://backend.example.invalid/ws \
+  -PastralKeycloakAuthority=https://iam.example.invalid/realms/Astral
+```
+
+REST and WebSocket must use the same TLS origin, with the REST origin at `/` and
+the WebSocket path at `/ws`. Keycloak must be a canonical HTTPS realm authority.
+Credentials, query strings, fragments, insecure schemes and partial profiles are
+rejected during Gradle configuration and by the Android-free runtime validator.
+Optional `astralOidcClientId` and `astralOidcRedirectUri` properties may only
+restate the registered identities. The backend must allow the mobile client and
+provision its public PKCE/S256 callback; the normal server session and AppAuth
+flows remain required. A secure staging build uses the same stock application
+code and certificate verification as a release build, with its compiled endpoint
+profile bound to the retained APK digest.
+
+Without an explicit profile, the existing debug loopback and release deployment
+values are preserved. This does not make insecure debug endpoints eligible for
+secure sign-in. `:app:verifyDeploymentBuildProfile` exercises accepted and denied
+build profiles and runs before every APK build; `:core:test` and the app JVM tests
+also verify runtime validation and generated configuration consumption.
+
 ## Instrumented / UI tests (emulator)
 
 ```bash
@@ -115,3 +143,9 @@ Principle IX; `next-major-readiness` is advisory.
 - Per the Projection constitution's Development Workflow, final correctness is
   verified on a real device/emulator against the live backend — unit tests + the
   CI build are necessary but not sufficient.
+
+## Mesh devices
+
+The shared **Mesh devices** screen uses the existing fresh `server_v1` owner session and current authenticated socket for management. A blank enrollment public key generates or restores this device's account/server-scoped Ed25519 identity; public identities can be copied to another owner device for approval. Paste the approved current-server enrollment link on the original joining device. The client signs the exact possession challenge and verifies its minted DPoP member identity through `/api/mesh/me` using a separate transport without owner cookies or bearer headers. Changed owners, sockets, surfaces, failures, and rejected proofs never publish successful enrollment or queued replay.
+
+The private seed and safe member ID live in AndroidX encrypted preferences, survive normal restarts, and are purged on explicit sign-out/account/server changes. Member bearer tokens and link payloads are not durably stored. This flow provides owner-authenticated enrollment and inventory management; the SDK owns member tool invocation and session renewal. Tink Android 1.8.0, already present in the locked AndroidX Security dependency graph, is explicitly declared for Ed25519 signing.

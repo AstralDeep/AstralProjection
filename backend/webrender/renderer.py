@@ -793,7 +793,7 @@ def render_keyvalue(c):
         hint_html = f'<p class="text-xs text-astral-muted mt-0.5">{inline_md(str(hint))}</p>' if hint else ""
         rows.append(
             f'<div class="astral-kv-item">'
-            f'<dt class="text-xs text-astral-muted font-medium uppercase tracking-wider">{inline_md(str(item.get("label", "")))}</dt>'
+            f'<dt class="text-xs text-astral-muted font-medium uppercase tracking-wider">{inline_md(str(item.get("label", item.get("key", ""))))}</dt>'
             f'<dd class="text-sm font-semibold text-astral-text mt-0.5">{esc(item.get("value", ""))}</dd>'
             f'{hint_html}</div>'
         )

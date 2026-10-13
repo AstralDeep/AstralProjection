@@ -12,6 +12,8 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton
 
 from test_message_routing import win as window_fixture  # noqa: F401
+from test_work_surface_088 import transport as evidence_transport_fixture  # noqa: F401
+from test_work_surface_088 import flush
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -36,6 +38,11 @@ def win(request):
     yield window
 
 
+@pytest.fixture(name="evidence_transport")
+def evidence_transport_setup(request):
+    return request.getfixturevalue("evidence_transport_fixture")
+
+
 def controls(shell, property_name):
     return [control for control in shell.findChildren(QPushButton) if control.property(property_name) is not None]
 
@@ -52,6 +59,189 @@ def guidance_ready(win):
 def surface(generation, **extra):
     return {"type": "chrome_surface", "surface_key": "guidance", "request_generation": generation,
             "title": "Advanced settings", "mode": "replace", "components": [], **extra}
+
+
+def evidence_fixture():
+    return json.loads((ROOT / "contracts/fixtures/evidence/inspection_surface.json").read_text(encoding="utf-8"))
+
+
+def open_evidence(win):
+    source = evidence_fixture()
+    win._console_open_surface("evidence", "Evidence inspection", source["request"]["payload"]["params"])
+    frame = copy.deepcopy(source["native_frame"])
+    frame["request_generation"] = win._settings_ticket[3]
+    return source, frame
+
+
+def test_evidence_fixture_renders_exact_plain_text_only_in_current_modal(win):
+    source, frame = open_evidence(win)
+    canvas = copy.deepcopy(win.canvas._rendered)
+    win._on_message(frame)
+    dialog = win._surface_dialog
+    label = next(label for label in dialog._inner.findChildren(QLabel) if label.text() == source["source_text"])
+    assert label.textFormat() == Qt.TextFormat.PlainText
+    assert "PERMITTED TEXT" in [label.text() for label in dialog._inner.findChildren(QLabel)]
+    assert win._settings_ticket is None and dialog._title.text() == frame["title"]
+    assert win.canvas._rendered == canvas
+    win._on_message(frame | {"title": "Duplicate"})
+    assert dialog._title.text() == frame["title"]
+
+
+def test_evidence_full_utf8_page_survives_real_keyvalue_renderer(win):
+    _, frame = open_evidence(win)
+    page = "🙂" * 4096
+    assert len(page.encode("utf-8")) == 16384
+    frame["components"] = [{"type": "keyvalue", "items": [{"key": "Permitted text", "value": page}]}]
+    win._on_message(frame)
+    label = next(label for label in win._surface_dialog._inner.findChildren(QLabel) if label.text() == page)
+    assert label.textFormat() == Qt.TextFormat.PlainText
+    assert label.text() == page
+    assert "PERMITTED TEXT" in [label.text() for label in win._surface_dialog._inner.findChildren(QLabel)]
+
+
+def test_evidence_rendered_navigation_keeps_payload_scope_server_owned_and_close_is_local(win):
+    source, frame = open_evidence(win)
+    params = source["request"]["payload"]["params"] | {"offset": 16384}
+    frame["components"].append({"type": "button", "label": "Next page", "action": "chrome_open",
+                                "payload": {"surface": "evidence", "params": params}})
+    win._on_message(frame)
+    button = next(button for button in win._surface_dialog._inner.findChildren(QPushButton) if button.text() == "Next page")
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    action, payload = win.client.sent[-1]
+    assert action == "chrome_open" and payload == {"surface": "evidence", "params": params}
+    assert win._settings_ticket[3] != frame["request_generation"]
+    before = len(win.client.sent)
+    win._surface_dialog._emit_from_surface("chrome_close", {"surface": "evidence"})
+    assert len(win.client.sent) == before
+    assert win._settings_ticket is None and not win._surface_dialog.isVisible()
+    assert win._surface_dialog._surface_payload == []
+
+
+@pytest.mark.parametrize("action", ["chrome_open", "chrome_close"])
+def test_evidence_generic_transport_never_queues_reads_or_close(evidence_transport, action):
+    client, loop = evidence_transport
+    client._connected = False
+    notices = []
+    client.status.connect(notices.append)
+    client.send_event(action, {"surface": "evidence", "params": {"kind": "usage"}})
+    flush(loop)
+    assert not client._pending and not client._ws.frames
+    assert notices == ["send_rejected:" + action]
+    client.send_event("chrome_open", {"surface": "theme", "params": {}})
+    assert len(client._pending) == 1
+
+
+@pytest.mark.parametrize("change", ["current", "owner", "socket", "connection", "disconnected"])
+def test_evidence_physical_sender_rechecks_scope_after_submission(evidence_transport, change):
+    client, loop = evidence_transport
+    socket = client._ws
+    connection = client.connection_generation
+    current = [True]
+    generation = OTHER
+    params = evidence_fixture()["request"]["payload"]["params"]
+    assert client.send_current_settings("evidence", "chrome_open", {"surface": "evidence", "params": params}, generation,
+                                        is_current=lambda: current[0])
+    if change == "owner":
+        current[0] = False
+    elif change == "socket":
+        client._ws = type(socket)()
+    elif change == "connection":
+        client.connection_generation = CHAT
+    elif change == "disconnected":
+        client._connected = False
+    flush(loop)
+    assert not client._pending
+    if change != "current":
+        assert socket.frames == []
+        return
+    frame = socket.frames[0]
+    assert frame["session_id"] is None
+    assert set(frame["payload"]) == {"surface", "params", "submission_id", "request_generation"}
+    assert frame["payload"]["params"] == params
+    assert frame["request_generation"] == generation and frame["connection_generation"] == connection
+
+
+@pytest.mark.parametrize("field,value", [
+    ("request_generation", None), ("request_generation", "not-a-generation"),
+    ("request_generation", OTHER), ("request_generation", "F384F57F-2362-4545-92E8-61B1CE0C112E"),
+    ("region", "canvas"), ("mode", "mandatory"), ("admin_only", True), ("admin_only", 0),
+    ("components", {}), ("components", [None]), ("components", [{"type": "text", "content": "Forged"}]),
+    ("title", 7), ("extra", "untrusted"), ("surface_key", "other"),
+    ("surface_key", []), ("components", [{"type": []}]),
+])
+def test_evidence_requires_exact_current_generation_and_closed_modal_envelope(win, field, value):
+    source, frame = open_evidence(win)
+    ticket = win._settings_ticket
+    win._on_message(frame | {field: value})
+    assert win._settings_ticket is ticket
+    assert source["source_text"] not in [label.text() for label in win._surface_dialog._inner.findChildren(QLabel)]
+    win._on_message(frame)
+    assert win._settings_ticket is None
+
+
+def test_evidence_missing_generation_close_and_unsolicited_modal_never_release_text(win):
+    source, frame = open_evidence(win)
+    ticket = win._settings_ticket
+    for uncorrelated in ({key: value for key, value in frame.items() if key != "request_generation"},
+                         {"type": "chrome_surface", "surface_key": "", "components": []}):
+        win._on_message(uncorrelated)
+        assert win._settings_ticket is ticket and win._surface_dialog.isVisible()
+    win._surface_dialog.close()
+    win._on_message(frame)
+    win._on_message(frame | {"mode": "mandatory"})
+    assert not win._surface_dialog.isVisible() and win._surface_dialog._surface_payload == []
+    assert source["source_text"] not in win._banner.text()
+
+
+@pytest.mark.parametrize("phase", ["pending", "displayed"])
+@pytest.mark.parametrize("retirement", ["new_chat", "load_chat", "send", "primitive_send", "disconnect", "close", "registration", "timeout"])
+def test_evidence_retirement_erases_text_and_rejects_late_results(win, phase, retirement):
+    source, frame = open_evidence(win)
+    if phase == "displayed":
+        win._on_message(frame)
+    if retirement == "new_chat":
+        win._new_chat()
+    elif retirement == "load_chat":
+        win._load_chat(CHAT)
+    elif retirement == "send":
+        win._input.setText("New question")
+        win._send()
+    elif retirement == "primitive_send":
+        win._emit("chat_message", {"message": "New question"})
+    elif retirement == "disconnect":
+        win._on_status("reconnecting")
+    elif retirement == "close":
+        win._surface_dialog.close()
+    elif retirement == "registration":
+        win.client.connection_generation = OTHER
+        win._sync_transport_scope()
+    else:
+        win._surface_dialog._on_timeout()
+    win._on_message(frame)
+    assert win._settings_ticket is None
+    assert source["source_text"] not in [label.text() for label in win._surface_dialog._inner.findChildren(QLabel)]
+    assert source["source_text"] not in json.dumps(win._surface_dialog._surface_payload)
+
+
+def test_evidence_retry_has_new_identity_and_old_conversation_cannot_settle(win):
+    _, old = open_evidence(win)
+    win._surface_dialog._on_timeout()
+    win._retry_surface("evidence", win._surface_dialog._params)
+    current = win._settings_ticket
+    assert current[3] != old["request_generation"]
+    win._on_message(old)
+    assert win._settings_ticket is current
+    win.active_chat = CHAT
+    win._on_message(old | {"request_generation": current[3]})
+    assert win._settings_ticket is current
+
+
+def test_evidence_correlated_close_consumes_current_request_and_wipes_once(win):
+    _, frame = open_evidence(win)
+    win._on_message(frame | {"surface_key": "", "title": "", "components": []})
+    assert win._settings_ticket is None and not win._surface_dialog.isVisible()
+    win._on_message(frame)
+    assert not win._surface_dialog.isVisible() and win._surface_dialog._surface_payload == []
 
 
 def test_console_waits_for_both_validated_models(request):

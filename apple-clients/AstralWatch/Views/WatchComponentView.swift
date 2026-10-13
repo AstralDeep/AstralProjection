@@ -151,7 +151,7 @@ struct WatchComponentView: View {
             if consoleSurface, model.consoleSurface?.permits(component) == true {
                 Button(component.label ?? "") { model.sendConsoleComponent(component) }
                     .buttonStyle(.bordered)
-                    .disabled(!model.connected)
+                    .disabled(!model.connected || model.consoleSurfaceGeneration != nil)
                     .frame(minHeight: model.consolePresentation?.minimumControlHeight ?? 44)
             } else if guidance, let action = component.raw["action"]?.stringValue,
                 let payload = component.raw["payload"],

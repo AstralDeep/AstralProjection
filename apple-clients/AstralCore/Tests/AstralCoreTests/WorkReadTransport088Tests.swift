@@ -4,7 +4,6 @@
 import Foundation
 import Network
 import XCTest
-
 @testable import AstralCore
 
 final class WorkReadTransport088Tests: XCTestCase {
@@ -83,6 +82,54 @@ final class WorkReadTransport088Tests: XCTestCase {
         await client.stop()
     }
 
+    func testMeshOwnerActionsUseCurrentSocketAndLocalActionsNeverReachServer() async throws {
+        let open = Outbound.uiEvent(
+            action: "chrome_open", sessionId: nil,
+            payload: .object(["surface": .string("mesh"), "params": .object(["view": .string("invitations")])]))
+        let id = String(repeating: "a", count: 32)
+        let cases: [String: JSONValue] = [
+            "chrome_mesh_create": .object([
+                "fields": .object([
+                    "label": .string("Phone"),
+                    "device_key": .string(
+                        #"{"kty":"OKP","crv":"Ed25519","x":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}"#),
+                    "scopes": .string("tools:read"), "ttl_seconds": .string("3600"),
+                ])
+            ]),
+            "chrome_mesh_confirm": .object(["invite_id": .string(id)]),
+            "chrome_mesh_reject": .object(["invite_id": .string(id)]),
+            "chrome_mesh_remove_invitation": .object(["invite_id": .string(id)]),
+            "chrome_mesh_revoke": .object(["member_id": .string(id)]),
+            "chrome_mesh_rename": .object(["member_id": .string(id), "fields": .object(["label": .string("Desktop")])]),
+        ]
+        let local = Outbound.uiEvent(
+            action: "chrome_mesh_identity", sessionId: nil, payload: .object(["surface": .string("mesh")]))
+        for (action, payload) in cases {
+            var fields = payload.objectValue!
+            fields["surface"] = .string("mesh")
+            let wire = Outbound.uiEvent(action: action, sessionId: nil, payload: .object(fields))
+            try await connected { client, peer in
+                await client.send(open)
+                await client.send(wire)
+                await client.send(local)
+                let stale = await client.sendCurrentChromeEvent(wire) { false }
+                let localSent = await client.sendCurrentChromeEvent(local) { true }
+                XCTAssertFalse(stale)
+                XCTAssertFalse(localSent)
+                let opened = await client.sendCurrentChromeEvent(open) { true }
+                let sent = await client.sendCurrentChromeEvent(wire) { true }
+                XCTAssertTrue(opened)
+                XCTAssertTrue(sent)
+                await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
+                XCTAssertEqual(peer.reads, [open, wire])
+                XCTAssertEqual(try JSONValue.parse(Data(peer.reads[1].utf8))["payload"], .object(fields), action)
+                await client.stop()
+                let stopped = await client.sendCurrentChromeEvent(wire) { true }
+                XCTAssertFalse(stopped)
+            }
+        }
+    }
+
     func testConsoleReadCloseAndStaleOrDisconnectedRefusal() async throws {
         let open = Outbound.uiEvent(
             action: "chrome_open", sessionId: nil,
@@ -104,6 +151,31 @@ final class WorkReadTransport088Tests: XCTestCase {
             await client.stop()
             let disconnected = await client.sendCurrentChromeEvent(open) { true }
             XCTAssertFalse(disconnected)
+        }
+    }
+
+    func testEvidenceReadCloseUseOnlyRegisteredCurrentTransportAndRefuseGenericReplay() async throws {
+        let open = Outbound.uiEvent(
+            action: "chrome_open", sessionId: nil,
+            payload: .object([
+                "surface": .string("evidence"), "params": .object(["kind": .string("usage")]),
+            ]))
+        let close = Outbound.uiEvent(
+            action: "chrome_close", sessionId: nil, payload: .object(["surface": .string("evidence")]))
+        try await connected { client, peer in
+            await client.send(open)
+            await client.send(close)
+            let stale = await client.sendCurrentChromeEvent(open) { false }
+            XCTAssertFalse(stale)
+            let opened = await client.sendCurrentChromeEvent(open) { true }
+            let closed = await client.sendCurrentChromeEvent(close) { true }
+            XCTAssertTrue(opened)
+            XCTAssertTrue(closed)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
+            XCTAssertEqual(peer.reads, [open, close])
+            await client.stop()
+            let refused = await client.sendCurrentChromeEvent(open) { true }
+            XCTAssertFalse(refused)
         }
     }
 

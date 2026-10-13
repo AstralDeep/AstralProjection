@@ -41,10 +41,11 @@ class _FakeClient:
     message = _FakeSig()
     status = _FakeSig()
 
-    def __init__(self, url, token, caps=None, *, work_reads=False):
+    def __init__(self, url, token, caps=None, *, work_reads=False, session=None):
         self.url = url
         self.token = token
         self.work_reads = work_reads
+        self.session = session
         self.running = False
 
     def start(self):
