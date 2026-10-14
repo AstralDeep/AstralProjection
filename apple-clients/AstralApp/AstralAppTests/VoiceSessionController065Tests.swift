@@ -2294,9 +2294,7 @@ final class FakeVoiceAPI: AppleVoiceControlAPI {
         return updatedSession ?? session
     }
 
-    func capabilityV2(binding: AppleVoiceUIBinding) async ->
-        (status: Int, payload: JSONValue?)
-    {
+    func capabilityV2(binding: AppleVoiceUIBinding) async -> (status: Int, payload: JSONValue?) {
         (capabilityV2Status, capabilityV2Payload)
     }
 

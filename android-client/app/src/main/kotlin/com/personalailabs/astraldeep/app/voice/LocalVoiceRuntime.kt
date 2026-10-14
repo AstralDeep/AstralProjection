@@ -56,7 +56,7 @@ internal fun canonicalizeLocalFinal(
     if (canonical.codePointCount(0, canonical.length) > maxScalars) {
         return CanonicalLocalFinal(null, "local_final_malformed")
     }
-    if (canonical.any { it != '\t' && it != '\n' && it.hasOtherUnicodeCategory() }) {
+    if (canonical.codePoints().anyMatch { it != '\t'.code && it != '\n'.code && Character.getType(it) in OTHER_UNICODE_CATEGORIES }) {
         return CanonicalLocalFinal(null, "local_final_malformed")
     }
     return CanonicalLocalFinal(canonical, null)
@@ -80,8 +80,6 @@ private val OTHER_UNICODE_CATEGORIES =
         Character.SURROGATE.toInt(),
         Character.UNASSIGNED.toInt(),
     )
-
-private fun Char.hasOtherUnicodeCategory(): Boolean = Character.getType(this) in OTHER_UNICODE_CATEGORIES
 
 internal class LocalVoiceRuntime(
     private val scope: CoroutineScope,
@@ -390,14 +388,15 @@ internal class LocalVoiceRuntime(
             return true
         }
         prunePendingFailures()
-        val retained = pendingFailures.firstOrNull { candidate ->
-            candidate.binding == null &&
-                payload.string("client_turn_id") == candidate.clientTurnId &&
-                payload.int("recognition_sequence") == candidate.recognitionSequence &&
-                payload.string("chat_id") == candidate.chatId &&
-                payload.int("chat_context_revision") == candidate.chatContextRevision &&
-                candidate.expiresAt.isAfter(now)
-        }
+        val retained =
+            pendingFailures.firstOrNull { candidate ->
+                candidate.binding == null &&
+                    payload.string("client_turn_id") == candidate.clientTurnId &&
+                    payload.int("recognition_sequence") == candidate.recognitionSequence &&
+                    payload.string("chat_id") == candidate.chatId &&
+                    payload.int("chat_context_revision") == candidate.chatContextRevision &&
+                    candidate.expiresAt.isAfter(now)
+            }
         if (retained == null) return false
         retained.binding = payload
         retained.expiryJob?.cancel()

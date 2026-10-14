@@ -112,6 +112,8 @@ final class AppleLocalVoiceRuntime {
     private var stopInFlight = false
     private var stopResetPending = false
     private var initialCapability: [String: JSONValue]?
+    private var engineStopTask: Task<Void, Never>?
+    private var engineStopSequence = 0
 
     init(engine: AppleLocalSpeechEngine, wiring: Wiring) {
         self.engine = engine
@@ -258,11 +260,11 @@ final class AppleLocalVoiceRuntime {
 
     func close() {
         guard !closed else { return }
+        stopOwners("local_audio_interrupted", reportRecognition: false, reportPlayout: true)
         closed = true
         fence = nil
         readyPending = false
         readyAuthorized = false
-        stopOwners("local_audio_interrupted", reportRecognition: false, reportPlayout: true)
         scrubEphemeralText()
     }
 
@@ -437,14 +439,18 @@ final class AppleLocalVoiceRuntime {
             }
             return
         }
-        cancelRecognition("local_audio_interrupted")
+        cancelRecognition(reason: "local_audio_interrupted")
         active.resumeEpoch = recognitionEpoch
         playout = active
         let text = payload["text"]?.stringValue ?? ""
         Task { @MainActor [weak self] in
-            await self?.engine.stopRecognition()
             guard let self else { return }
-            let started = await self.engine.speak(text) { phase in
+            await self.waitForEngineStops()
+            await self.engine.stopRecognition()
+            guard self.playoutEpoch == epoch, self.playout?.epoch == epoch,
+                self.announcementAuthorityCurrent(payload)
+            else { return }
+            let started = self.engine.speak(text) { phase in
                 self.finishPlayoutPhase(epoch: epoch, phase: phase)
             }
             if !started { self.finishPlayoutPhase(epoch: epoch, phase: "failed") }
@@ -469,7 +475,8 @@ final class AppleLocalVoiceRuntime {
 
     private func finishPlayoutPhase(epoch: Int, phase: String, reason: String? = nil) {
         guard let active = playout, active.epoch == epoch, !active.terminal else { return }
-        let resolved = ["started", "finished", "interrupted", "failed"].contains(phase)
+        let resolved =
+            ["started", "finished", "interrupted", "failed"].contains(phase)
             ? phase : "failed"
         if let expiry = localTimestamp(active.payload["expires_at"]), expiry <= wiring.now() {
             expireAnnouncement(epoch: epoch)
@@ -621,7 +628,17 @@ final class AppleLocalVoiceRuntime {
         }
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let started = await self.engine.startRecognition(
+            await self.waitForEngineStops()
+            guard self.recognitionEpoch == epoch,
+                self.turn?.recognitionEpoch == epoch, self.readyAuthorized,
+                !self.readyPending, !self.stopInFlight, self.isActive,
+                self.foregroundActive, self.microphoneEnabled, !self.speechMuted,
+                self.playout == nil, self.announcementQueue.isEmpty,
+                self.authorityMatches(newTurn.common),
+                self.chatId == newTurn.chatId,
+                self.chatContextRevision == newTurn.chatContextRevision
+            else { return }
+            let started = self.engine.startRecognition(
                 onFinal: { [weak self] text in
                     self?.handleLocalFinal(epoch: epoch, text: text)
                 },
@@ -689,7 +706,10 @@ final class AppleLocalVoiceRuntime {
             let expiry = current.bindingExpiresAt, expiry > wiring.now(),
             let turnId = current.turnId, let submissionId = current.submissionId,
             let requestGeneration = current.requestGeneration
-        else { turn?.pendingFinal = nil; return }
+        else {
+            turn?.pendingFinal = nil
+            return
+        }
         guard var fields = common("voice_local_final") else { return }
         for (key, value) in current.common where key != "type" { fields[key] = value }
         fields["client_turn_id"] = .string(current.clientTurnId)
@@ -713,7 +733,7 @@ final class AppleLocalVoiceRuntime {
         pendingFinal = LocalPendingFinal(frame: fields, expiresAt: ackExpiry)
         turn = nil
         sendFrame(fields)
-        transcript(text)
+        wiring.transcript(text)
         feedback("acknowledging", "ready", "On it!")
         scheduleFinalRetry()
     }
@@ -751,7 +771,7 @@ final class AppleLocalVoiceRuntime {
     private func expirePendingFinal() {
         guard pendingFinal != nil else { return }
         clearPendingFinal()
-        transcript("")
+        wiring.transcript("")
         feedback(
             "unavailable", "local_session_not_ready",
             "Voice stopped because request acceptance could not be confirmed. Typed chat remains available.")
@@ -950,7 +970,7 @@ final class AppleLocalVoiceRuntime {
         let capability: [String: JSONValue]?
         if let initialCapability {
             capability = initialCapability
-            initialCapability = nil
+            self.initialCapability = nil
         } else {
             capability = nil
         }
@@ -962,8 +982,13 @@ final class AppleLocalVoiceRuntime {
             guard let self, self.isActive, !self.readyPending, !self.readyAuthorized else {
                 return
             }
+            let epoch = self.recognitionEpoch
+            let fence = self.fence
             let observation = await self.engine.observation()
-            guard self.isActive, !self.readyPending, !self.readyAuthorized else { return }
+            guard self.recognitionEpoch == epoch, self.fence == fence,
+                self.isActive, self.wiring.bindingFresh(), !self.readyPending, !self.readyAuthorized,
+                !self.stopInFlight, self.foregroundActive, self.microphoneEnabled, !self.speechMuted
+            else { return }
             guard observation.ready, let ready = observation.readyCapability() else {
                 self.feedback(
                     "unavailable", observation.refusalReason() ?? "local_engine_lost")
@@ -975,7 +1000,10 @@ final class AppleLocalVoiceRuntime {
     }
 
     private func dispatchReady(_ capability: [String: JSONValue]) {
-        guard var fields = common("voice_local_ready") else { return }
+        guard isActive, wiring.bindingFresh(), !stopInFlight,
+            foregroundActive, microphoneEnabled, !speechMuted,
+            var fields = common("voice_local_ready")
+        else { return }
         for (key, value) in capability { fields[key] = value }
         clientSequence += 1
         fields["client_sequence"] = .number(Double(clientSequence))
@@ -1032,11 +1060,26 @@ final class AppleLocalVoiceRuntime {
     }
 
     private func engineStopCapture() {
-        Task { await engine.stopRecognition() }
+        enqueueEngineStop(all: false)
     }
 
     private func engineStopAll() {
-        Task { await engine.stopAll() }
+        enqueueEngineStop(all: true)
+    }
+
+    private func enqueueEngineStop(all: Bool) {
+        let previous = engineStopTask
+        engineStopSequence += 1
+        let sequence = engineStopSequence
+        engineStopTask = Task { @MainActor [weak self, engine] in
+            await previous?.value
+            if all { await engine.stopAll() } else { await engine.stopRecognition() }
+            if self?.engineStopSequence == sequence { self?.engineStopTask = nil }
+        }
+    }
+
+    private func waitForEngineStops() async {
+        while let pending = engineStopTask { await pending.value }
     }
 
     private func scrubEphemeralText() {

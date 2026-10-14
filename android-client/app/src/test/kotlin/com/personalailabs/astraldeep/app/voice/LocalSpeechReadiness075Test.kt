@@ -5,11 +5,11 @@
 package com.personalailabs.astraldeep.app.voice
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putNull
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -87,6 +87,13 @@ class LocalSpeechReadiness075Test {
     }
 
     @Test
+    fun unprovedInstallationNeverAdvertisesReadiness() {
+        for (state in listOf("unknown", "", "unexpected")) {
+            assertNull(LocalSpeechReadiness.evaluate(readyFacts(recognitionInstallation = state)).capability)
+        }
+    }
+
+    @Test
     fun missingSynthesisAndAudioHardwareKeepTypedFallback() {
         assertEquals(
             "local_synthesis_unavailable",
@@ -142,7 +149,7 @@ class LocalSpeechReadiness075Test {
                             put("configured_locale", "en-US")
                             put("echo_suppression_milliseconds", 500)
                             put("installation_policy", "explicit_user_action_only")
-                            putNull("local_frame_contract")
+                            put("local_frame_contract", JsonNull)
                             put("max_announcement_utf8_bytes", 600)
                             put("max_final_unicode_scalars", 8000)
                             put("recognition_must_be_local", false)
@@ -185,10 +192,11 @@ class LocalSpeechReadiness075Test {
                 JsonObject(
                     unavailableSelection() +
                         (
-                            "requirements" to JsonObject(
-                                requireNotNull(unavailableSelection()["requirements"] as? JsonObject) +
-                                    ("engine" to JsonPrimitive("forbidden")),
-                            )
+                            "requirements" to
+                                JsonObject(
+                                    requireNotNull(unavailableSelection()["requirements"] as? JsonObject) +
+                                        ("engine" to JsonPrimitive("forbidden")),
+                                )
                         ),
                 ),
             ),

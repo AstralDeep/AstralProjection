@@ -83,8 +83,13 @@ class LocalVoiceRuntime075Test {
         }
     }
 
-    private class Harness(scope: TestScope) {
-        var now = Instant.parse(NOW)
+    private class Harness(private val scope: TestScope) {
+        private var clockOrigin = Instant.parse(NOW)
+        var now: Instant
+            get() = clockOrigin.plusMillis(scope.testScheduler.currentTime)
+            set(value) {
+                clockOrigin = value.minusMillis(scope.testScheduler.currentTime)
+            }
         val sender = RecordingSender()
         val engine = FakeEngine(readyFacts())
         val events = mutableListOf<LocalVoiceUiEvent>()
@@ -171,6 +176,7 @@ class LocalVoiceRuntime075Test {
             val immutableBytes = final.toString()
 
             advanceTimeBy(2_500)
+            runCurrent()
             assertEquals(2, harness.sender.typed("voice_local_final").size)
             assertEquals(immutableBytes, harness.sender.typed("voice_local_final").last().toString())
 
@@ -336,10 +342,10 @@ class LocalVoiceRuntime075Test {
             harness.engine.speakStarted?.invoke()
             assertEquals("started", harness.sender.typed("voice_local_playout_event").single().string("phase"))
 
-            assertFalse(harness.runtime.acceptFrame(announcement(text = "tampered text", sequence = 2)))
-            assertFalse(harness.runtime.acceptFrame(announcement(text = "I\u2019m listening.", sequence = 2, locale = "fr-FR")))
+            assertFalse(harness.runtime.acceptFrame(announcement(text = "original text", sequence = 2).copy(payload = JsonObject(announcement(text = "original text", sequence = 2).payload + ("text" to JsonPrimitive("tampered text"))))))
+            assertFalse(harness.runtime.acceptFrame(announcement(text = "I\u2019m listening.", sequence = 2).copy(payload = JsonObject(announcement(text = "I\u2019m listening.", sequence = 2).payload + ("locale" to JsonPrimitive("fr-FR"))))))
             assertFalse(harness.runtime.acceptFrame(announcement(text = "I\u2019m listening.", sequence = 2, expired = true)))
-            assertFalse(harness.runtime.acceptFrame(announcement(text = "I\u2019m listening.", sequence = 2, muteRevision = 0)))
+            assertFalse(harness.runtime.acceptFrame(announcement(text = "I\u2019m listening.", sequence = 2).copy(payload = JsonObject(announcement(text = "I\u2019m listening.", sequence = 2).payload + ("mute_revision" to JsonPrimitive(0))))))
             assertEquals(1, harness.sender.typed("voice_local_playout_event").size)
 
             harness.engine.speakDone?.invoke(true)
@@ -446,6 +452,17 @@ class LocalVoiceRuntime075Test {
             assertNull(canonicalizeLocalFinal("bad\u0000text", 8000).text)
             assertEquals("cleaned text", canonicalizeLocalFinal("cleaned text\r\n", 8000).text)
         }
+
+    @Test
+    fun unicodeScalarBoundariesPreserveSupplementaryTextAndRejectLoneSurrogates() {
+        val text = "hello \uD83D\uDE00"
+        assertEquals(text, canonicalizeLocalFinal(text, 8000).text)
+        assertEquals("\uD83D\uDE00".repeat(8000), canonicalizeLocalFinal("\uD83D\uDE00".repeat(8000), 8000).text)
+        assertNull(canonicalizeLocalFinal("\uD83D\uDE00".repeat(8001), 8000).text)
+        assertNull(canonicalizeLocalFinal("bad\uD83Dtext", 8000).text)
+        assertNull(canonicalizeLocalFinal("bad\uDE00text", 8000).text)
+        assertNull(canonicalizeLocalFinal("bad\uDB80\uDC00text", 8000).text)
+    }
 
     @Test
     fun messageAckRequiresExactSubmissionTurnChatRequestAndConnection() =
@@ -606,6 +623,7 @@ class LocalVoiceRuntime075Test {
             locale: String = "en-US",
             expired: Boolean = false,
             muteRevision: Int = 1,
+            digest: String = sha256Hex(text),
         ): LocalVoiceFrame =
             parse(
                 common("voice_local_announcement") +
@@ -617,7 +635,7 @@ class LocalVoiceRuntime075Test {
                         "output_policy" to JsonPrimitive("lifecycle"),
                         "locale" to JsonPrimitive(locale),
                         "text" to JsonPrimitive(text),
-                        "text_digest_sha256" to JsonPrimitive(sha256Hex(text)),
+                        "text_digest_sha256" to JsonPrimitive(digest),
                         "expires_at" to JsonPrimitive(if (expired) "2026-08-28T11:59:59Z" else "2026-08-28T12:00:09Z"),
                         "foreground_required" to JsonPrimitive(true),
                         "mute_revision" to JsonPrimitive(muteRevision),

@@ -164,7 +164,10 @@ class VoiceSessionController075LocalTest {
         val socket: RecordingSocket,
     )
 
-    private fun fixture(scope: TestScope, facts: LocalSpeechFacts = readyFacts()): LocalFixture {
+    private fun fixture(
+        scope: TestScope,
+        facts: LocalSpeechFacts = readyFacts(),
+    ): LocalFixture {
         val api = LocalFakeApi()
         val media = LocalFakeMedia()
         val engine = ScriptedEngine(facts)

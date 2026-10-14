@@ -20,23 +20,24 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class LocalSpeechFallback075InstrumentedTest {
     @Test
-    fun probeReportsPlatformFactsAndTheLadderKeepsUnsupportedCombinationsOnTypedFallback() = runBlocking {
-        val context = ApplicationProvider.getApplicationContext<Context>()
-        val engine = AndroidLocalSpeechEngine(context)
-        val facts = engine.probe()
-        assertTrue(facts.recognitionLocaleState in setOf("ready", "unknown"))
-        assertTrue(facts.recognitionInstallation in setOf("ready", "unavailable"))
-        assertTrue(facts.synthesisLocaleState in setOf("ready", "unknown"))
+    fun probeReportsPlatformFactsAndTheLadderKeepsUnsupportedCombinationsOnTypedFallback() =
+        runBlocking {
+            val context = ApplicationProvider.getApplicationContext<Context>()
+            val engine = AndroidLocalSpeechEngine(context)
+            val facts = engine.probe()
+            assertTrue(facts.recognitionLocaleState in setOf("ready", "unknown"))
+            assertTrue(facts.recognitionInstallation in setOf("ready", "unavailable", "downloadable", "installing"))
+            assertTrue(facts.synthesisLocaleState in setOf("ready", "unknown"))
 
-        val verdict = LocalSpeechReadiness.evaluate(facts)
-        if (verdict.eligible) {
-            val capability = requireNotNull(verdict.capability)
-            assertEquals("authorized", capability.microphonePermission)
-            assertTrue(facts.recognitionOnDevice)
-            assertTrue(facts.synthesisEngineReady)
-        } else {
-            assertNull(verdict.capability)
-            assertTrue(requireNotNull(verdict.reason) in LocalVoiceFrame.reasons)
+            val verdict = LocalSpeechReadiness.evaluate(facts)
+            if (verdict.eligible) {
+                val capability = requireNotNull(verdict.capability)
+                assertEquals("authorized", capability.microphonePermission)
+                assertTrue(facts.recognitionOnDevice)
+                assertTrue(facts.synthesisEngineReady)
+            } else {
+                assertNull(verdict.capability)
+                assertTrue(requireNotNull(verdict.reason) in LocalVoiceFrame.reasons)
+            }
         }
-    }
 }

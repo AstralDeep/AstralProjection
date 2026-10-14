@@ -352,8 +352,7 @@ protocol AppleVoiceControlAPI: AnyObject {
         binding: AppleVoiceUIBinding, activationId: String,
         target: AppleVoiceTakeoverTarget, capability: AppleVoiceMediaCapability
     ) async -> AppleVoiceStartOutcome
-    func capabilityV2(binding: AppleVoiceUIBinding) async ->
-        (status: Int, payload: JSONValue?)
+    func capabilityV2(binding: AppleVoiceUIBinding) async -> (status: Int, payload: JSONValue?)
     func startLocal(
         binding: AppleVoiceUIBinding, activationId: String, chatId: String,
         capability: [String: JSONValue]
@@ -1278,11 +1277,10 @@ final class URLSessionAppleVoiceControlAPI: AppleVoiceControlAPI {
             path: "api/voice/sessions/\(target.sessionId)/takeover", body: body)
     }
 
-    func capabilityV2(binding: AppleVoiceUIBinding) async ->
-        (status: Int, payload: JSONValue?)
-    {
-        await request(
+    func capabilityV2(binding: AppleVoiceUIBinding) async -> (status: Int, payload: JSONValue?) {
+        let result = await request(
             binding: binding, path: "api/voice/v2/capability", method: "GET", body: nil)
+        return (result.status, result.body)
     }
 
     func startLocal(
@@ -1333,20 +1331,25 @@ final class URLSessionAppleVoiceControlAPI: AppleVoiceControlAPI {
                     .contains(updated["state"]?.stringValue ?? "")
         else { return nil }
         let visible = appUUID(updated["visible_chat_id"]) ?? session.visibleChatId
-        let context = appPositiveInt(updated["chat_context_revision"])
+        let context =
+            appPositiveInt(updated["chat_context_revision"])
             ?? session.chatContextRevision
         let appliedContext = appNullablePositiveInt(updated["applied_chat_context_revision"]) ?? nil
         let synced = updated["chat_context_synced"]?.boolValue ?? session.chatContextSynced
-        let microphone = updated["microphone_enabled"]?.boolValue
+        let microphone =
+            updated["microphone_enabled"]?.boolValue
             ?? fields["microphone_enabled"]?.boolValue
             ?? session.microphoneEnabled
-        let muted = updated["speech_muted"]?.boolValue
+        let muted =
+            updated["speech_muted"]?.boolValue
             ?? fields["speech_muted"]?.boolValue
             ?? session.speechMuted
-        let foreground = updated["foreground_active"]?.boolValue
+        let foreground =
+            updated["foreground_active"]?.boolValue
             ?? fields["foreground_active"]?.boolValue
             ?? session.foregroundActive
-        let idle = appNullableTimestamp(updated["idle_expires_at"])
+        let idle =
+            appNullableTimestamp(updated["idle_expires_at"])
             ? (updated["idle_expires_at"] == .null
                 ? nil : updated["idle_expires_at"]?.stringValue)
             : nil
@@ -2079,7 +2082,7 @@ final class AppleVoiceSessionController {
         if speechBackend == "client_local", chatChanged, let current = localSession,
             let chatId
         {
-            local.controlChanging(chatChanged: true)
+            local?.controlChanging(chatChanged: true)
             Task { [weak self] in
                 guard let self, let binding = self.currentBinding() else { return }
                 guard
@@ -2536,8 +2539,7 @@ final class AppleVoiceSessionController {
                 foregroundActive: value.foregroundActive,
                 microphoneEnabled: value.microphoneEnabled, speechMuted: value.speechMuted,
                 chatContextSynced: value.chatContextSynced)
-            if !value.foregroundActive { stopLeaseRenewal() }
-            else { startLeaseRenewalIfNeeded() }
+            if !value.foregroundActive { stopLeaseRenewal() } else { startLeaseRenewalIfNeeded() }
             return
         }
         guard value.sessionId == session?.sessionId,
@@ -2858,7 +2860,7 @@ final class AppleVoiceSessionController {
             appTimestamp(object["checked_at"]) != nil,
             appTimestamp(object["expires_at"]) != nil,
             object["supported_transports"]?.arrayValue?.compactMap(\.stringValue) == ["client_local"],
-            object["requirements"]?.objectValue == Self.localRequirements,
+            object["requirements"] == Self.localRequirements,
             Self.validRetryAfter(object["retry_after_seconds"])
         else { return nil }
         return object
@@ -3331,8 +3333,9 @@ final class AppleVoiceSessionController {
     }
 
     private func setMicrophoneEnabled(_ enabled: Bool) async {
-        guard let binding = currentBinding(), speechBackend == "client_local"
-            ? localSession != nil : session != nil
+        guard let binding = currentBinding(),
+            speechBackend == "client_local"
+                ? localSession != nil : session != nil
         else {
             feedback(
                 "reconnecting", "network_interrupted",
@@ -3380,8 +3383,9 @@ final class AppleVoiceSessionController {
     }
 
     private func setSpeechMuted(_ muted: Bool) async {
-        guard let binding = currentBinding(), speechBackend == "client_local"
-            ? localSession != nil : session != nil
+        guard let binding = currentBinding(),
+            speechBackend == "client_local"
+                ? localSession != nil : session != nil
         else {
             feedback(
                 "reconnecting", "network_interrupted",
@@ -3444,8 +3448,9 @@ final class AppleVoiceSessionController {
     }
 
     private func stopSpeech() async {
-        guard let binding = currentBinding(), speechBackend == "client_local"
-            ? localSession != nil : session != nil
+        guard let binding = currentBinding(),
+            speechBackend == "client_local"
+                ? localSession != nil : session != nil
         else {
             feedback(
                 "reconnecting", "network_interrupted",

@@ -44,7 +44,7 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
             engine: engine,
             wiring: AppleLocalVoiceRuntime.Wiring(
                 send: { [weak self] text in
-                    self?.sentTexts.append(text) ?? false
+                    self?.sentTexts.append(text)
                     return self?.sendAllowed ?? false
                 },
                 feedback: { [weak self] phase, reason, message in
@@ -367,9 +367,10 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
         await readyHandshake()
         let started = lastFrame(named: "voice_local_recognition_started")!
         let clientTurnId = started["client_turn_id"]!.stringValue!
-        guard let bound = turnBoundFrame(
-            clientTurnId: clientTurnId, recognitionSequence: 1,
-            bindingInSeconds: 5)
+        guard
+            let bound = turnBoundFrame(
+                clientTurnId: clientTurnId, recognitionSequence: 1,
+                bindingInSeconds: 5)
         else { return XCTFail("fixture frame") }
         XCTAssertTrue(runtime.consume(bound))
         engine.emitFinal("secret spoken text")
@@ -545,6 +546,78 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
             cycles[1]["client_turn_id"]?.stringValue)
     }
 
+    func testFinalLengthCountsUnicodeScalarsInsteadOfGraphemes() {
+        let grapheme = "q\u{0308}"
+        XCTAssertEqual(
+            canonicalizeLocalFinal(String(repeating: grapheme, count: 4000)), String(repeating: grapheme, count: 4000))
+        XCTAssertNil(canonicalizeLocalFinal(String(repeating: grapheme, count: 4001)))
+        XCTAssertEqual(canonicalizeLocalFinal("hello 😀"), "hello 😀")
+    }
+
+    func testSuspendedCaptureStopCannotStartPlayoutAfterAuthorityChanges() async {
+        for change in ["background", "mute", "microphone", "binding", "revision", "close", "expiry", "stop"] {
+            reset()
+            sendAllowed = true
+            bindingFresh = true
+            await readyHandshake()
+            engine.suspendCaptureStop = true
+            XCTAssertTrue(runtime.consume(announcementFrame(sequence: 1, turnId: turnId)!))
+            await drain()
+            XCTAssertFalse(engine.captureStops.isEmpty)
+            switch change {
+            case "background": runtime.controlChanging(foregroundActive: false)
+            case "mute": runtime.controlChanging(speechMuted: true)
+            case "microphone": runtime.controlChanging(microphoneEnabled: false)
+            case "binding": bindingFresh = false
+            case "revision": runtime.updateSpeechRevision(3)
+            case "close": runtime.close()
+            case "expiry": advanceClock(seconds: 15)
+            default: runtime.stopSpeech()
+            }
+            engine.resumeCaptureStops()
+            await drain()
+            XCTAssertEqual(engine.speakCount, 0, change)
+        }
+    }
+
+    func testCaptureRestartWaitsForSuspendedStopAll() async {
+        reset()
+        sendAllowed = true
+        bindingFresh = true
+        await readyHandshake()
+        engine.suspendAllStop = true
+        runtime.applyControlChange(speechMuted: true)
+        await drain()
+        XCTAssertFalse(engine.allStops.isEmpty)
+        runtime.applyControlChange(speechMuted: false)
+        await drain()
+        XCTAssertTrue(runtime.consume(sessionReadyFrame()!))
+        await drain()
+        XCTAssertEqual(engine.startCount, 1)
+        engine.resumeAllStops()
+        await drain()
+        XCTAssertEqual(engine.startCount, 2)
+    }
+
+    func testQueuedRecognitionCannotStartAfterCloseOrLossOfBinding() async {
+        for change in ["close", "binding", "mute"] {
+            reset()
+            sendAllowed = true
+            bindingFresh = true
+            activateRuntime()
+            XCTAssertTrue(runtime.consume(sessionReadyFrame()!))
+            if change == "close" {
+                runtime.close()
+            } else if change == "binding" {
+                bindingFresh = false
+            } else {
+                runtime.controlChanging(speechMuted: true)
+            }
+            await drain()
+            XCTAssertEqual(engine.startCount, 0, change)
+        }
+    }
+
     func testAnnouncementPlaysWithStartedAndFinishedEventsAndEchoSuppression() async {
         reset()
         await readyHandshake()
@@ -570,7 +643,7 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
             $0.milliseconds == AppleLocalVoiceRuntime.echoSuppressionMilliseconds
         }
         XCTAssertEqual(suppression.count, 1)
-        XCTAssertNil(lastFrame(named: "voice_local_recognition_started"))
+        XCTAssertEqual(sentFrames(named: "voice_local_recognition_started").count, 1)
         suppression.first?.work()
         await drain()
         XCTAssertEqual(
@@ -583,7 +656,7 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
         guard let stale = announcementFrame(sequence: 2, turnId: turnId),
             let badDigest = announcementFrame(
                 sequence: 1, turnId: turnId, digest: Self.digest("other text")),
-            let expired = announcementFrame(sequence: 1, turnId: turnId, expiresIn: -1)
+            let expired = announcementFrame(sequence: 1, expiresIn: -1, turnId: turnId)
         else { return XCTFail("fixture frames") }
         XCTAssertFalse(runtime.consume(stale))
         XCTAssertFalse(runtime.consume(badDigest))
@@ -606,7 +679,7 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
     func testAnnouncementExpiringDuringPlayoutFailsWithExpiredReason() async {
         reset()
         await readyHandshake()
-        guard let announcement = announcementFrame(sequence: 1, turnId: turnId, expiresIn: 5)
+        guard let announcement = announcementFrame(sequence: 1, expiresIn: 5, turnId: turnId)
         else { return XCTFail("fixture frame") }
         XCTAssertTrue(runtime.consume(announcement))
         await drain()
@@ -672,6 +745,7 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
         await drain()
         runtime.close()
         runtime.close()
+        await drain()
         XCTAssertGreaterThanOrEqual(engine.stopAllCount, 1)
         let events = sentFrames(named: "voice_local_playout_event")
         XCTAssertEqual(events.last?["phase"]?.stringValue, "interrupted")
@@ -755,6 +829,8 @@ final class AppleLocalVoiceRuntimeTests: XCTestCase {
         reset()
         await readyHandshake()
         runtime.updateSpeechRevision(3)
+        runtime.applyControlChange(speechMuted: false)
+        await drain()
         let staleBound = turnBoundFrame(
             clientTurnId: "00000000-0000-4000-8000-000000000099", recognitionSequence: 1)
         XCTAssertNotNil(staleBound)
@@ -789,6 +865,25 @@ final class FakeLocalSpeechEngine: AppleLocalSpeechEngine {
         synthesisProcessing: "guaranteed_local", synthesisLocale: "ready")
     var startRecognitionResult = true
     var speakResult = true
+    var suspendAllStop = false
+    var allStops: [CheckedContinuation<Void, Never>] = []
+
+    func resumeAllStops() {
+        suspendAllStop = false
+        let pending = allStops
+        allStops.removeAll()
+        for continuation in pending { continuation.resume() }
+    }
+
+    var suspendCaptureStop = false
+    var captureStops: [CheckedContinuation<Void, Never>] = []
+
+    func resumeCaptureStops() {
+        suspendCaptureStop = false
+        let pending = captureStops
+        captureStops.removeAll()
+        for continuation in pending { continuation.resume() }
+    }
     private(set) var startCount = 0
     private(set) var stopRecognitionCount = 0
     private(set) var stopAllCount = 0
@@ -809,7 +904,7 @@ final class FakeLocalSpeechEngine: AppleLocalSpeechEngine {
     func startRecognition(
         onFinal: @escaping @MainActor (String) -> Void,
         onError: @escaping @MainActor (String) -> Void
-    ) async -> Bool {
+    ) -> Bool {
         startCount += 1
         guard startRecognitionResult else { return false }
         onFinalHandler = onFinal
@@ -819,11 +914,14 @@ final class FakeLocalSpeechEngine: AppleLocalSpeechEngine {
 
     func stopRecognition() async {
         stopRecognitionCount += 1
+        if suspendCaptureStop {
+            await withCheckedContinuation { captureStops.append($0) }
+        }
         onFinalHandler = nil
         onErrorHandler = nil
     }
 
-    func speak(_ text: String, onPhase: @escaping @MainActor (String) -> Void) async -> Bool {
+    func speak(_ text: String, onPhase: @escaping @MainActor (String) -> Void) -> Bool {
         speakCount += 1
         lastSpokenText = text
         guard speakResult else { return false }
@@ -833,6 +931,9 @@ final class FakeLocalSpeechEngine: AppleLocalSpeechEngine {
 
     func stopAll() async {
         stopAllCount += 1
+        if suspendAllStop {
+            await withCheckedContinuation { allStops.append($0) }
+        }
         onPhaseHandler = nil
         onFinalHandler = nil
         onErrorHandler = nil

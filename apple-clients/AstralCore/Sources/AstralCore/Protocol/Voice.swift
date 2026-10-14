@@ -1521,7 +1521,10 @@ public struct VoiceCurrentConnectionFrame: Sendable, Equatable {
             let type = object["type"]?.stringValue
         else { return false }
         if type == "voice_playout_event"
-            || Self.clientLocalOutboundTypes.contains(type) { return true }
+            || Self.clientLocalOutboundTypes.contains(type)
+        {
+            return true
+        }
         guard type == "ui_event", let action = object["action"]?.stringValue else {
             return false
         }

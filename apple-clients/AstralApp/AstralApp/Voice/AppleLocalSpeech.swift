@@ -3,8 +3,8 @@
 // report guaranteed-local processing unless the recognizer proves on-device support and both
 // permissions are authorized, and it never sends audio or text off the device.
 
-import AstralCore
 import AVFoundation
+import AstralCore
 import Foundation
 import Speech
 
@@ -81,23 +81,24 @@ protocol AppleLocalSpeechEngine: AnyObject {
     func startRecognition(
         onFinal: @escaping @MainActor (String) -> Void,
         onError: @escaping @MainActor (String) -> Void
-    ) async -> Bool
+    ) -> Bool
     func stopRecognition() async
-    func speak(_ text: String, onPhase: @escaping @MainActor (String) -> Void) async -> Bool
+    func speak(_ text: String, onPhase: @escaping @MainActor (String) -> Void) -> Bool
     func stopAll() async
 }
 
 func canonicalizeLocalFinal(_ value: String) -> String? {
-    let joined = value
+    let joined =
+        value
         .replacingOccurrences(of: "\r\n", with: "\n")
         .replacingOccurrences(of: "\r", with: "\n")
     let canonical = joined.precomposedStringWithCanonicalMapping
         .trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !canonical.isEmpty, canonical.count <= 8_000 else { return nil }
+    guard !canonical.isEmpty, canonical.unicodeScalars.count <= 8_000 else { return nil }
     for character in canonical {
         if character == "\t" || character == "\n" { continue }
         for scalar in String(character).unicodeScalars {
-            switch scalar.generalCategory {
+            switch scalar.properties.generalCategory {
             case .control, .format, .surrogate, .privateUse, .unassigned:
                 return nil
             default:
@@ -150,13 +151,14 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
             let hasAudioOutput = availability.hasAudioOutput
         #endif
         let status = SFSpeechRecognizer.authorizationStatus()
-        let recognitionPermission = switch status {
-        case .authorized: "authorized"
-        case .denied: "denied"
-        case .restricted: "restricted"
-        case .notDetermined: "not_determined"
-        @unknown default: "unavailable"
-        }
+        let recognitionPermission =
+            switch status {
+            case .authorized: "authorized"
+            case .denied: "denied"
+            case .restricted: "restricted"
+            case .notDetermined: "not_determined"
+            @unknown default: "unavailable"
+            }
         let locale = Locale(identifier: AppleLocalSpeechObservation.configuredLocale)
         guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
             return AppleLocalSpeechObservation(
@@ -185,7 +187,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
     func startRecognition(
         onFinal: @escaping @MainActor (String) -> Void,
         onError: @escaping @MainActor (String) -> Void
-    ) async -> Bool {
+    ) -> Bool {
         reportedFinal = false
         guard SFSpeechRecognizer.authorizationStatus() == .authorized else { return false }
         let locale = Locale(identifier: AppleLocalSpeechObservation.configuredLocale)
@@ -244,7 +246,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
     }
 
     private static func recognitionFailureReason(_ error: any Error) -> String {
-        let code = (error as? NSError).code
+        let code = (error as NSError).code
         if code == 1 || code == 4 { return "local_recognition_cancelled" }
         if code == 201 { return "local_recognition_locale_unavailable" }
         if code == 203 || code == 1101 { return "local_engine_lost" }
@@ -264,7 +266,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
         task = nil
     }
 
-    func speak(_ text: String, onPhase: @escaping @MainActor (String) -> Void) async -> Bool {
+    func speak(_ text: String, onPhase: @escaping @MainActor (String) -> Void) -> Bool {
         guard
             let voice = AVSpeechSynthesisVoice(
                 language: AppleLocalSpeechObservation.configuredLocale),

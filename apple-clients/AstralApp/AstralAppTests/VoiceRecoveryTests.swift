@@ -216,9 +216,7 @@ private final class RecoveryVoiceAPI: AppleVoiceControlAPI {
         binding: AppleVoiceUIBinding, sessionId: String, generation: Int, revision: Int
     ) async -> Bool { true }
 
-    func capabilityV2(binding: AppleVoiceUIBinding) async ->
-        (status: Int, payload: JSONValue?)
-    { (404, nil) }
+    func capabilityV2(binding: AppleVoiceUIBinding) async -> (status: Int, payload: JSONValue?) { (404, nil) }
 
     func startLocal(
         binding: AppleVoiceUIBinding, activationId: String, chatId: String,

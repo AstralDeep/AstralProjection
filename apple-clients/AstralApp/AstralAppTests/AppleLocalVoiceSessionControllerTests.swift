@@ -42,9 +42,10 @@ final class AppleLocalVoiceSessionControllerTests: XCTestCase {
                     microphonePermission: "authorized", fullDuplex: true)
             },
             localEngine: engine,
-            uuid: { "00000000-0000-4000-8000-000000000001" })
+            uuid: { "00000000-0000-4000-8000-000000000001" },
+            clock: { ISO8601DateFormatter().date(from: "2099-07-31T12:00:00Z")! })
         controller.setFrameSender { [weak self] text in
-            self?.sentTexts.append(text) ?? false
+            self?.sentTexts.append(text)
             return true
         }
         return controller
