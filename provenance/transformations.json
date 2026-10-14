@@ -1114,9 +1114,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralApp/Voice/VoiceSessionController.swift",
       "sourceBlob": "f361e8ffee74f4cecccd6cd2b7b5b39850f35f8a",
       "sourceMode": "100644",
-      "resultSha256": "26d2dd9a313e56318353ea97bb81ca6cf32742f11fd72dac4582b08c50bc81d7",
-      "task": "T065/T066/T015",
-      "reason": "Fence delayed Apple voice activation across End, close, authentication expiry, and connection replacement, and compensating-end stale successful start or takeover results before media can connect. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures."
+      "resultSha256": "6a1fef352ecec4b7348787c5bed426bb1c6d8a408d9ac80eb52af09f83de60c1",
+      "task": "T065/T066/T015/T067/T068",
+      "reason": "Fence delayed Apple voice activation across End, close, authentication expiry, and connection replacement, and compensating-end stale successful start or takeover results before media can connect. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers."
     },
     {
       "path": "apple-clients/AstralApp/AstralApp/WatchOverrideSync.swift",
@@ -1231,9 +1231,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
       "sourceBlob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
       "sourceMode": "100644",
-      "resultSha256": "0dec09419349105b6fca125689d52b50d6f8c51335d776bc6cd1a65a464df65d",
+      "resultSha256": "e7a80e09e9244ac9434f22efcb65fcbba5cbdc5e2e78f1c72e482d5f0e20c3b1",
       "task": "T065/T066/T060/T015",
-      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures."
+      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers."
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/Accessibility060UITests.swift",
@@ -1279,6 +1279,15 @@
       "resultSha256": "a8fccb8744afdfaf1d90b26f9a0cf92a542389dcaa324d982efbc428f09dd6b3",
       "task": "T063",
       "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27."
+    },
+    {
+      "path": "apple-clients/AstralApp/Info.plist",
+      "sourcePath": "apple-clients/AstralApp/Info.plist",
+      "sourceBlob": "ec2a120865633b1e12fa257d17215c754701ce3d",
+      "sourceMode": "100644",
+      "resultSha256": "eedfb10b916080f48e1c0eec3913ee028952a8068d08787a9114c87975a96992",
+      "task": "T066/T068",
+      "reason": "Add NSSpeechRecognitionUsageDescription to the invoking iOS/macOS app target so the on-device SFSpeechRecognizer authorization prompt can be presented for client-local voice conversations; the watch target keeps its remote-PCM-only disposition and declares no speech usage. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers."
     },
     {
       "path": "apple-clients/AstralCore/Package.swift",
@@ -1438,9 +1447,9 @@
       "sourcePath": "apple-clients/AstralCore/Sources/AstralCore/Protocol/Voice.swift",
       "sourceBlob": "d19d554b034c250545b3c018df3039a8d7e2091c",
       "sourceMode": "100644",
-      "resultSha256": "46a23fb0e0d6fad99061bfd796ee1becbed362fc39cb3642280582ece1fccd5e",
-      "task": "T050/T071",
-      "reason": "Implement strict Apple client-local voice capability, frame, disposition, bound-final, and canonical content-free playout protocol models. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Feature AP-03: count local voice final limits in Unicode scalars exactly on every client and reject malformed scalar sequences without changing valid submitted bytes: the Android decoder replaces the UTF-16 String.length check with code-point counting that fails closed on unpaired surrogates, the Apple voice_local_final guard counts scalars through strict UTF-8 validation and InboundFrame.parse now rejects ill-formed UTF-8 bytes and unpaired JSON surrogate escapes before decoding, the Windows client rejects surrogate code points in voice_local_final text, and the shared voice_075 conformance fixture gains 8000/8001-scalar ASCII, supplementary-plane, combining mark and ZWJ boundary vectors with matching drift guards in every client."
+      "resultSha256": "25b4148f5915e7ca38df3bbf7199b240065db5a63588d104ea628ca557b3e86b",
+      "task": "T050/T071/T065/T066",
+      "reason": "Implement strict Apple client-local voice capability, frame, disposition, bound-final, and canonical content-free playout protocol models. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Feature AP-03: count local voice final limits in Unicode scalars exactly on every client and reject malformed scalar sequences without changing valid submitted bytes: the Android decoder replaces the UTF-16 String.length check with code-point counting that fails closed on unpaired surrogates, the Apple voice_local_final guard counts scalars through strict UTF-8 validation and InboundFrame.parse now rejects ill-formed UTF-8 bytes and unpaired JSON surrogate escapes before decoding, the Windows client rejects surrogate code points in voice_local_final text, and the shared voice_075 conformance fixture gains 8000/8001-scalar ASCII, supplementary-plane, combining mark and ZWJ boundary vectors with matching drift guards in every client. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers."
     },
     {
       "path": "apple-clients/AstralCore/Sources/AstralCore/Transport/NoStoreHTTP.swift",

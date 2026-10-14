@@ -2220,7 +2220,7 @@ private final class DeferredVoicePermission {
 }
 
 @MainActor
-private final class FakeVoiceAPI: AppleVoiceControlAPI {
+final class FakeVoiceAPI: AppleVoiceControlAPI {
     var startOutcome: AppleVoiceStartOutcome = .failed("voice_unavailable", nil)
     var takeoverOutcome: AppleVoiceStartOutcome = .failed("voice_unavailable", nil)
     var refreshOutcomes: [AppleVoiceRefreshOutcome] = []
@@ -2237,6 +2237,16 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
     var updateShouldFail = false
     var holdNextStart = false
     var holdNextTakeover = false
+    var capabilityV2Status = 404
+    var capabilityV2Payload: JSONValue?
+    var startLocalOutcome: AppleLocalStartOutcome = .failed("voice_unavailable", nil)
+    var startLocalCount = 0
+    var takeoverLocalCount = 0
+    var lastLocalCapability: [String: JSONValue]?
+    var lastLocalTakeoverTarget: AppleVoiceTakeoverTarget?
+    var updatedLocalSession: AppleLocalVoiceSession?
+    var lastLocalUpdate: [String: JSONValue]?
+    var localUpdates: [[String: JSONValue]] = []
     private var startContinuation: CheckedContinuation<AppleVoiceStartOutcome, Never>?
     private var takeoverContinuation: CheckedContinuation<AppleVoiceStartOutcome, Never>?
 
@@ -2284,6 +2294,40 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
         return updatedSession ?? session
     }
 
+    func capabilityV2(binding: AppleVoiceUIBinding) async ->
+        (status: Int, payload: JSONValue?)
+    {
+        (capabilityV2Status, capabilityV2Payload)
+    }
+
+    func startLocal(
+        binding: AppleVoiceUIBinding, activationId: String, chatId: String,
+        capability: [String: JSONValue]
+    ) async -> AppleLocalStartOutcome {
+        startLocalCount += 1
+        lastLocalCapability = capability
+        return startLocalOutcome
+    }
+
+    func takeoverLocal(
+        binding: AppleVoiceUIBinding, activationId: String,
+        target: AppleVoiceTakeoverTarget, chatId: String, capability: [String: JSONValue]
+    ) async -> AppleLocalStartOutcome {
+        takeoverLocalCount += 1
+        lastLocalTakeoverTarget = target
+        return startLocalOutcome
+    }
+
+    func updateLocal(
+        binding: AppleVoiceUIBinding, session: AppleLocalVoiceSession,
+        fields: [String: JSONValue]
+    ) async -> AppleLocalVoiceSession? {
+        lastLocalUpdate = fields
+        localUpdates.append(fields)
+        if updateShouldFail { return nil }
+        return updatedLocalSession ?? session
+    }
+
     func refresh(
         binding: AppleVoiceUIBinding, session: AppleVoiceRestSession,
         refreshId: String
@@ -2295,7 +2339,9 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
         return refreshOutcomes.removeFirst()
     }
 
-    func stopSpeech(binding: AppleVoiceUIBinding, session: AppleVoiceRestSession) async -> Bool {
+    func stopSpeech(
+        binding: AppleVoiceUIBinding, sessionId: String, generation: Int, revision: Int
+    ) async -> Bool {
         stopCount += 1
         return true
     }
@@ -2312,7 +2358,7 @@ private final class FakeVoiceAPI: AppleVoiceControlAPI {
 }
 
 @MainActor
-private final class FakeVoiceMedia: AppleVoiceMediaClient {
+final class FakeVoiceMedia: AppleVoiceMediaClient {
     var eventHandler: ((AppleVoiceMediaEvent) -> Void)?
     var connectCount = 0
     var microphoneValues: [Bool] = []
