@@ -13,6 +13,7 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -21,11 +22,32 @@ import androidx.compose.ui.test.performSemanticsAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.personalailabs.astraldeep.app.ui.AgentsScreen
+import com.personalailabs.astraldeep.app.voice.LiveKitVoiceGrant
+import com.personalailabs.astraldeep.app.voice.VOICE_ANNOUNCEMENT_TOPIC
+import com.personalailabs.astraldeep.app.voice.VOICE_TRANSCRIPT_TOPIC
+import com.personalailabs.astraldeep.app.voice.VoiceControlApi
+import com.personalailabs.astraldeep.app.voice.VoiceMediaCapability
+import com.personalailabs.astraldeep.app.voice.VoiceMediaClient
+import com.personalailabs.astraldeep.app.voice.VoiceMediaEvent
+import com.personalailabs.astraldeep.app.voice.VoiceRestSession
+import com.personalailabs.astraldeep.app.voice.VoiceSessionController
+import com.personalailabs.astraldeep.app.voice.VoiceStartOutcome
+import com.personalailabs.astraldeep.app.voice.VoiceTakeoverTarget
+import com.personalailabs.astraldeep.app.voice.VoiceUiBinding
 import com.personalailabs.astraldeep.core.protocol.Agent
 import com.personalailabs.astraldeep.core.protocol.ConversationResume
 import com.personalailabs.astraldeep.core.protocol.DeviceCapabilities
 import com.personalailabs.astraldeep.core.protocol.Inbound
+import com.personalailabs.astraldeep.core.protocol.VoiceComposerModel
+import com.personalailabs.astraldeep.core.protocol.VoiceControl
+import com.personalailabs.astraldeep.core.protocol.VoiceControlBinding
+import com.personalailabs.astraldeep.core.protocol.VoiceOwnerDevice
+import com.personalailabs.astraldeep.core.protocol.VoiceSessionState
 import com.personalailabs.astraldeep.core.protocol.Wire
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -42,6 +64,8 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
@@ -101,8 +125,39 @@ class ReleaseEvidenceInstrumentedTest {
         recordCheck("accessibility_semantics", accessibility.durationMs, accessibility.raw)
         recordCheck("personal_agent", authoring.durationMs, authoring.raw)
         recordCheck("android_next_toolchain_readiness", toolchain.durationMs, toolchain.raw)
+        val voiceInterruption = runVoiceConversationInterruption(stagingUrl)
+        recordCheck("voice_conversation_interruption", voiceInterruption.durationMs, voiceInterruption.raw)
 
         writeReport(stagingUrl, startedAt)
+    }
+
+    private fun runVoiceConversationInterruption(
+        stagingUrl: String,
+    ): StepResult {
+        val started = SystemClock.elapsedRealtime()
+        val stage = stagingEnvironment(stagingUrl)
+        val runtime = stage.getValue("voice_runtime").jsonObject
+        val profile = runtime.getValue("speech_profile").jsonObject
+        val runtimeIdentity =
+            buildJsonObject {
+                put("voice_worker_image_sha256", runtime.getValue("voice_worker_image_sha256").jsonPrimitive.content)
+                put("livekit_image_sha256", runtime.getValue("livekit_image_sha256").jsonPrimitive.content)
+                put("livekit_config_sha256", runtime.getValue("livekit_config_sha256").jsonPrimitive.content)
+                put("speech_profile_sha256", profile.getValue("profile_sha256").jsonPrimitive.content)
+            }
+        val scenario = VoiceInterruptionScenario(rule)
+        val categories = scenario.run()
+        val raw =
+            buildJsonObject {
+                put("scenario_count", 1)
+                put("component_apk_sha256", sha256File(File(context.packageCodePath)))
+                put("runtime_identity", runtimeIdentity)
+                put(
+                    "outcome_categories",
+                    buildJsonArray { categories.forEach { add(JsonPrimitive(it)) } },
+                )
+            }
+        return StepResult(SystemClock.elapsedRealtime() - started, raw)
     }
 
     private fun runSignIn(
@@ -436,6 +491,7 @@ class ReleaseEvidenceInstrumentedTest {
                 "accessibility_semantics",
                 "personal_agent",
                 "android_next_toolchain_readiness",
+                "voice_conversation_interruption",
             )
         assertTrue("checks never produced evidence", checks.keys.containsAll(order))
         val apk = File(context.packageCodePath)
@@ -787,5 +843,353 @@ class ReleaseEvidenceInstrumentedTest {
         const val TTS_VOICE = "af_heart"
         const val TTS_SAMPLE_RATE_HZ = 24000
         val SHA256 = Regex("^[0-9a-f]{64}$")
+    }
+}
+
+// Runs the bounded offline interruption/recovery conversation against the real voice controller and
+// returns outcome-category labels only; transcripts, audio, and credentials never enter the evidence.
+
+private class VoiceInterruptionScenario(
+    private val rule: ComposeTestRule,
+) {
+    fun run(): List<String> {
+        val media = ScenarioMedia()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val controller =
+            VoiceSessionController(
+                api = ScenarioApi(),
+                media = media,
+                scope = scope,
+                uuidFactory = { ACTIVATION_ID },
+                clock = { FIXED_NOW },
+                retryDelayMillis = 3_600_000L,
+            )
+        val submissions = mutableListOf<String>()
+        controller.setTranscriptSubmitter { transcript, _ ->
+            submissions += transcript.submissionId
+            true
+        }
+        val playoutKinds = mutableListOf<String>()
+        controller.setPlayoutReporter { event ->
+            playoutKinds += event.kind
+            true
+        }
+        controller.installUiConnection("user-token", DEVICE_ID, CONNECTION_ID, CHAT_ID)
+        controller.consumeBinding(
+            VoiceControlBinding(DEVICE_ID, CONNECTION_ID, BINDING_ID, BINDING_VALUE, "2099-07-31T12:10:00Z"),
+        )
+
+        rule.runOnIdle {
+            controller.consumeComposer(Inbound.ComposerState(1, CONNECTION_ID, activeComposer()))
+            scope.launch { controller.activate(VoiceMediaCapability(true, true, "authorized", true)) }
+        }
+        rule.waitForIdle()
+        assertEquals("greeting", controller.state.value.phase)
+        val categories = mutableListOf("activation_media_connected")
+
+        rule.runOnIdle { media.emit(greetingData()) }
+        rule.waitForIdle()
+        rule.runOnIdle { media.emit(VoiceMediaEvent.Playout(ANNOUNCEMENT_ID, 1, "started")) }
+        rule.waitForIdle()
+        assertEquals("speaking_progress", controller.state.value.phase)
+        categories += "greeting_playout_started"
+
+        rule.runOnIdle {
+            controller.handleInbound(
+                Inbound.VoiceSessionStateFrame(sessionState("reconnecting", "network_interrupted")),
+            )
+        }
+        rule.waitForIdle()
+        assertEquals("reconnecting", controller.state.value.phase)
+        assertFalse(controller.state.value.mediaConnected)
+        categories += "interruption_reconnecting_surfaced"
+
+        rule.runOnIdle {
+            controller.handleInbound(
+                Inbound.VoiceSessionStateFrame(sessionState("listening", "ready")),
+            )
+        }
+        rule.waitForIdle()
+        assertEquals("greeting", controller.state.value.phase)
+        assertTrue(controller.state.value.mediaConnected)
+        categories += "recovered_media_reconnected"
+
+        rule.runOnIdle { media.emit(transcriptData()) }
+        rule.waitForIdle()
+        assertEquals("acknowledging", controller.state.value.phase)
+        assertEquals(1, controller.state.value.awaitingAcceptance)
+        assertEquals(listOf(SUBMISSION_ID), submissions)
+        categories += "single_transcript_accepted"
+
+        rule.runOnIdle {
+            controller.handleInbound(acked(OTHER_CONNECTION_ID))
+            media.emit(transcriptData())
+        }
+        rule.waitForIdle()
+        assertEquals(1, controller.state.value.awaitingAcceptance)
+        assertEquals(1, submissions.size)
+        categories += "stale_replays_fenced"
+
+        rule.runOnIdle { controller.handleInbound(acked(CONNECTION_ID)) }
+        rule.waitForIdle()
+        assertEquals("processing", controller.state.value.phase)
+        assertEquals(0, controller.state.value.awaitingAcceptance)
+        categories += "correlated_acknowledgement_cleared_pending"
+
+        rule.runOnIdle { media.emit(resultData()) }
+        rule.waitForIdle()
+        rule.runOnIdle { media.emit(VoiceMediaEvent.Playout(RESULT_ANNOUNCEMENT_ID, 2, "started")) }
+        rule.waitForIdle()
+        assertEquals("speaking_result", controller.state.value.phase)
+        rule.runOnIdle {
+            media.emit(greetingData())
+            media.emit(transcriptData())
+        }
+        rule.waitForIdle()
+        assertEquals(1, submissions.size)
+        assertEquals(listOf("greeting", "result"), playoutKinds)
+        categories += "result_playout_resumed_after_recovery"
+        controller.close()
+        return categories
+    }
+
+    private fun activeComposer() =
+        VoiceComposerModel(
+            available = true,
+            state = "listening",
+            speechMuted = false,
+            microphoneEnabled = true,
+            foregroundActive = true,
+            reason = "ready",
+            outputLocale = "en-US",
+            message = null,
+            chatContextRevision = 1,
+            appliedChatContextRevision = 1,
+            chatContextSynced = true,
+            sessionId = SESSION_ID,
+            generation = 1,
+            mediaGrantRevision = 1,
+            visibleChatId = CHAT_ID,
+            foregroundTurnId = null,
+            ownerDevice = VoiceOwnerDevice(DEVICE_ID, "android", null, 1),
+            idleExpiresAt = null,
+            controls =
+                listOf(
+                    VoiceControl(
+                        "voice-end", "voice_session_end", "End voice conversation", "stop",
+                        true, true, false, false,
+                    ),
+                ),
+        )
+
+    private fun sessionState(
+        state: String,
+        reason: String,
+    ) = VoiceSessionState(
+        sessionId = SESSION_ID,
+        connectionGeneration = CONNECTION_ID,
+        generation = 1,
+        mediaGrantRevision = 1,
+        visibleChatId = CHAT_ID,
+        chatContextRevision = 1,
+        appliedChatContextRevision = 1,
+        chatContextSynced = true,
+        state = state,
+        speechMuted = false,
+        microphoneEnabled = true,
+        foregroundActive = true,
+        reason = reason,
+        message = null,
+        occurredAt = "2099-07-31T12:00:00Z",
+    )
+
+    private fun acked(connectionGeneration: String) =
+        Inbound.UserMessageAcked(
+            chatId = CHAT_ID,
+            messageId = "42",
+            submissionId = SUBMISSION_ID,
+            requestGeneration = REQUEST_ID,
+            connectionGeneration = connectionGeneration,
+            voiceTurnId = TURN_ID,
+        )
+
+    private class ScenarioApi : VoiceControlApi {
+        override suspend fun start(
+            binding: VoiceUiBinding,
+            activationId: String,
+            capability: VoiceMediaCapability,
+        ): VoiceStartOutcome = VoiceStartOutcome.Started(session(), grant())
+
+        override suspend fun takeover(
+            binding: VoiceUiBinding,
+            activationId: String,
+            target: VoiceTakeoverTarget,
+            capability: VoiceMediaCapability,
+        ): VoiceStartOutcome = VoiceStartOutcome.Failed("takeover_required", null)
+
+        override suspend fun update(
+            binding: VoiceUiBinding,
+            session: VoiceRestSession,
+            fields: JsonObject,
+        ): Result<VoiceRestSession> = Result.success(session)
+
+        override suspend fun stopSpeech(
+            binding: VoiceUiBinding,
+            session: VoiceRestSession,
+        ): Boolean = true
+
+        override suspend fun end(
+            binding: VoiceUiBinding,
+            session: VoiceRestSession,
+        ): Boolean = true
+
+        private fun session() =
+            VoiceRestSession(
+                sessionId = SESSION_ID,
+                deviceId = DEVICE_ID,
+                ownerConnectionGeneration = CONNECTION_ID,
+                visibleChatId = CHAT_ID,
+                appliedVisibleChatId = CHAT_ID,
+                generation = 1,
+                mediaGrantRevision = 1,
+                chatContextRevision = 1,
+                appliedChatContextRevision = 1,
+                chatContextSynced = true,
+                state = "active",
+                foregroundActive = true,
+                speechMuted = false,
+                microphoneEnabled = true,
+            )
+
+        private fun grant() =
+            LiveKitVoiceGrant(
+                grantId = "grant-a",
+                sessionId = SESSION_ID,
+                generation = 1,
+                mediaGrantRevision = 1,
+                expiresAt = "2099-07-31T12:10:00Z",
+                url = "wss://voice.example.test",
+                joinToken = "synthetic-client-token-000000000000000000000000",
+                roomName = "voice-room-a",
+                participantIdentity = "voice-client-a",
+                workerIdentity = WORKER,
+            )
+    }
+
+    private class ScenarioMedia : VoiceMediaClient {
+        private val flow = MutableSharedFlow<VoiceMediaEvent>(replay = 16, extraBufferCapacity = 16)
+        override val events: Flow<VoiceMediaEvent> = flow
+        val announcements = mutableListOf<com.personalailabs.astraldeep.core.protocol.VoiceAnnouncementMedia>()
+
+        override suspend fun connect(grant: LiveKitVoiceGrant) = Unit
+
+        override suspend fun setMicrophoneEnabled(enabled: Boolean) = Unit
+
+        override suspend fun queueAnnouncement(
+            value: com.personalailabs.astraldeep.core.protocol.VoiceAnnouncementMedia,
+        ): Boolean {
+            announcements += value
+            return true
+        }
+
+        override fun interruptPlayout() = Unit
+
+        override fun disconnect() = Unit
+
+        fun emit(event: VoiceMediaEvent) {
+            check(flow.tryEmit(event))
+        }
+    }
+
+    private fun greetingData(): VoiceMediaEvent.Data =
+        VoiceMediaEvent.Data(
+            VOICE_ANNOUNCEMENT_TOPIC,
+            WORKER,
+            announcement(ANNOUNCEMENT_ID, 1, "greeting", null, "single", 12_000).toByteArray(),
+        )
+
+    private fun resultData(): VoiceMediaEvent.Data =
+        VoiceMediaEvent.Data(
+            VOICE_ANNOUNCEMENT_TOPIC,
+            WORKER,
+            announcement(RESULT_ANNOUNCEMENT_ID, 2, "result", TURN_ID, "result_opening", 12_000).toByteArray(),
+        )
+
+    private fun transcriptData(): VoiceMediaEvent.Data =
+        VoiceMediaEvent.Data(
+            VOICE_TRANSCRIPT_TOPIC,
+            WORKER,
+            """
+            {
+              "type":"voice_transcript",
+              "schema_version":"1",
+              "session_id":"$SESSION_ID",
+              "generation":1,
+              "turn_id":"$TURN_ID",
+              "client_turn_id":"00000000-0000-4000-8000-000000000006",
+              "submission_id":"$SUBMISSION_ID",
+              "request_generation":"$REQUEST_ID",
+              "chat_id":"$CHAT_ID",
+              "chat_context_revision":1,
+              "media_grant_revision":1,
+              "sequence":1,
+              "final":true,
+              "text":"check my schedule",
+              "detected_language":"en",
+              "text_digest_sha256":"${"a".repeat(64)}",
+              "transcript_proof":"${"b".repeat(64)}",
+              "proof_expires_at":"2099-07-31T12:10:00Z",
+              "source_participant_identity":"$WORKER"
+            }
+            """.trimIndent().toByteArray(),
+        )
+
+    private fun announcement(
+        announcementId: String,
+        announcementSequence: Int,
+        kind: String,
+        turnId: String?,
+        quantumRole: String,
+        durationSamples: Int,
+    ): String =
+        """
+        {
+          "type":"voice_announcement_media",
+          "schema_version":"1",
+          "session_id":"$SESSION_ID",
+          "generation":1,
+          "media_grant_revision":1,
+          "announcement_id":"$announcementId",
+          "announcement_sequence":$announcementSequence,
+          "turn_id":${turnId?.let { "\"$it\"" } ?: "null"},
+          "kind":"$kind",
+          "quantum_role":"$quantumRole",
+          "quantum_index":0,
+          "transport":"livekit",
+          "worker_identity":"$WORKER",
+          "sample_rate_hz":24000,
+          "duration_samples":$durationSamples,
+          ${if (kind == "result") "\"result_reserved_samples_after\":36000," else ""}
+          "track_sid":"TR_audio_1",
+          "track_name":"announcement-1"
+        }
+        """.trimIndent()
+
+    private companion object {
+        const val DEVICE_ID = "00000000-0000-4000-8000-000000000001"
+        const val CONNECTION_ID = "00000000-0000-4000-8000-000000000002"
+        const val OTHER_CONNECTION_ID = "00000000-0000-4000-8000-000000000012"
+        const val SESSION_ID = "00000000-0000-4000-8000-000000000003"
+        const val CHAT_ID = "00000000-0000-4000-8000-000000000004"
+        const val TURN_ID = "00000000-0000-4000-8000-000000000005"
+        const val SUBMISSION_ID = "00000000-0000-4000-8000-000000000007"
+        const val REQUEST_ID = "00000000-0000-4000-8000-000000000008"
+        const val ANNOUNCEMENT_ID = "00000000-0000-4000-8000-000000000009"
+        const val RESULT_ANNOUNCEMENT_ID = "00000000-0000-4000-8000-000000000019"
+        const val BINDING_ID = "00000000-0000-4000-8000-00000000000a"
+        const val BINDING_VALUE = "synthetic-binding-value-000000000000"
+        const val ACTIVATION_ID = "00000000-0000-4000-8000-00000000000b"
+        const val WORKER = "voice-worker-a"
+        val FIXED_NOW: Instant = Instant.parse("2026-07-31T12:00:00Z")
     }
 }

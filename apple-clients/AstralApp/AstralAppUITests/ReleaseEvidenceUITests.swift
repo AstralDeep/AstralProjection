@@ -328,6 +328,20 @@ private final class EvidenceRecorder {
         ]
     }
 
+    func voiceRuntimeDigestIdentities() -> [String: String] {
+        guard let runtime = staging["voice_runtime"] as? [String: Any],
+            let profile = runtime["speech_profile"] as? [String: Any]
+        else { return [:] }
+        var identities: [String: String] = [:]
+        for field in [
+            "voice_worker_image_sha256", "livekit_image_sha256", "livekit_config_sha256",
+        ] {
+            identities[field] = runtime[field] as? String ?? ""
+        }
+        identities["speech_profile_sha256"] = profile["profile_sha256"] as? String ?? ""
+        return identities
+    }
+
     func checkRecord(id: String, production: CheckProduction, startedAt checkStart: Date) -> [String: Any] {
         var outcome = "passed"
         var detailCode: Any = NSNull()
@@ -457,6 +471,11 @@ final class ReleaseEvidenceUITests: XCTestCase {
         checks.append(
             runCheck("accessibility_semantics", recorder: recorder, blockedBy: liveBlocked) {
                 try self.runAccessibilityInspection()
+            })
+
+        checks.append(
+            runCheck("voice_conversation_interruption", recorder: recorder) {
+                try self.runVoiceConversationInterruption(recorder: recorder)
             })
 
         if recorder.platform == "macos" {
@@ -979,6 +998,85 @@ final class ReleaseEvidenceUITests: XCTestCase {
             production.failureCode = "accessibility_contract_violation"
         }
         return production
+    }
+
+    private func runVoiceConversationInterruption(recorder: EvidenceRecorder) throws -> CheckProduction {
+        let started = Date()
+        var outcomeCategories: [String] = []
+        try runVoiceInterruptionFixture(
+            "voice-interruption",
+            categories: [
+                "interruption_reconnecting_state_surfaced",
+                "server_controls_and_typed_fallback_available",
+            ],
+            outcomeCategories: &outcomeCategories)
+        try runVoiceInterruptionFixture(
+            "voice-recovery",
+            categories: [
+                "recovered_after_interruption",
+                "single_accepted_turn_fenced_failure_notice",
+                "typed_fallback_available",
+            ],
+            outcomeCategories: &outcomeCategories)
+
+        var production = CheckProduction()
+        production.raw = [
+            "scenario_count": 2,
+            "component_identity": ["build_identity": recorder.artifact["build_identity"] ?? ""],
+            "runtime_identity": recorder.voiceRuntimeDigestIdentities(),
+            "outcome_categories": outcomeCategories,
+            "duration_ms": Int(Date().timeIntervalSince(started) * 1000),
+        ]
+        production.measurements = [
+            measurementRecord(
+                metric: "voice_interruption_scenarios", aggregation: "total", value: 2,
+                unit: "count", sampleCount: 2, comparator: "gte", threshold: 2),
+            measurementRecord(
+                metric: "voice_outcome_categories", aggregation: "total",
+                value: Double(outcomeCategories.count), unit: "count",
+                sampleCount: max(1, outcomeCategories.count), comparator: "gte", threshold: 3),
+        ]
+        return production
+    }
+
+    private func runVoiceInterruptionFixture(
+        _ scenario: String,
+        categories: [String],
+        outcomeCategories: inout [String]
+    ) throws {
+        let fixture = XCUIApplication()
+        fixture.launchArguments = ["--astral-ui-test-first-login", scenario]
+        fixture.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        fixture.launch()
+        defer { fixture.terminate() }
+
+        let composer = fixture.textFields["chat-composer-input"]
+        guard composer.waitForExistence(timeout: 10) else {
+            throw EvidenceFailure(
+                code: "voice_conversation_fixture_unavailable",
+                message: "composer did not appear for the \(scenario) fixture")
+        }
+        let status = fixture.descendants(matching: .any)["voice-conversation-status"]
+        let end = fixture.buttons["voice-control-voice-end"]
+        let staleNotice = fixture.descendants(matching: .any)["voice-request-terminal-notice"]
+        if scenario == "voice-interruption" {
+            guard status.waitForExistence(timeout: 5), status.label.contains("Voice media is reconnecting"),
+                end.waitForExistence(timeout: 5), end.isEnabled, composer.isEnabled
+            else {
+                throw EvidenceFailure(
+                    code: "voice_interruption_unobserved",
+                    message: "the interrupted session did not keep server controls and typed fallback available")
+            }
+        } else {
+            guard status.waitForExistence(timeout: 5), status.label.contains("Listening…"),
+                staleNotice.waitForNonExistence(timeout: 5), composer.isEnabled
+            else {
+                throw EvidenceFailure(
+                    code: "voice_recovery_unobserved",
+                    message: "the recovered session did not clear the interrupted turn's fenced notice")
+            }
+        }
+        outcomeCategories.append(contentsOf: categories)
     }
 
     private func macOSPersonalAgentHostProduction(
