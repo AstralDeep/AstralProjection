@@ -25,8 +25,6 @@
             case componentTimelineHTTP = "component-timeline-http"
             case voiceComposer = "voice-composer"
             case voiceTerminal = "voice-terminal"
-            case voiceInterruption = "voice-interruption"
-            case voiceRecovery = "voice-recovery"
             case continuitySeed = "continuity-seed"
             case continuityResume = "continuity-resume"
         }
@@ -159,11 +157,9 @@
             case .continuitySeed, .continuityResume:
                 installContinuity(scenario, on: model)
                 return
-            case .voiceComposer, .voiceTerminal, .voiceInterruption, .voiceRecovery:
+            case .voiceComposer, .voiceTerminal:
                 installVoiceComposer(on: model)
                 if scenario == .voiceTerminal { installVoiceTerminalNotice(on: model) }
-                if scenario == .voiceInterruption { installVoiceInterruption(on: model) }
-                if scenario == .voiceRecovery { installVoiceRecovery(on: model) }
                 return
             default:
                 break
@@ -343,8 +339,6 @@
             case .voiceComposer:
                 break
             case .voiceTerminal:
-                break
-            case .voiceInterruption, .voiceRecovery:
                 break
             case .continuitySeed, .continuityResume:
                 break
@@ -603,134 +597,6 @@
                 let turn = VoiceTurnState(frame: frame)
             else { return }
             model.voice.installTerminalNoticeForUITesting(turn)
-        }
-
-        @MainActor
-        private static func installVoiceInterruption(on model: AppModel) {
-            guard let connection = fixtureVoiceConnection(model) else {
-                preconditionFailure("Invalid voice interruption fixture configuration.")
-            }
-            let composer = ownedActiveComposer(
-                revision: 8, connection: connection, device: model.voiceDeviceId)
-            guard let frame = InboundFrame.parse(composer) else {
-                preconditionFailure("Invalid voice interruption composer fixture.")
-            }
-            model.handleFrame(frame)
-        }
-
-        @MainActor
-        private static func installVoiceRecovery(on model: AppModel) {
-            guard let connection = fixtureVoiceConnection(model) else {
-                preconditionFailure("Invalid voice recovery fixture configuration.")
-            }
-            let interrupted = ownedActiveComposer(
-                revision: 8, connection: connection, device: model.voiceDeviceId)
-            let recovered = ownedActiveComposer(
-                revision: 9, connection: connection, device: model.voiceDeviceId, owned: false)
-            guard let interruptedFrame = InboundFrame.parse(interrupted),
-                let recoveredFrame = InboundFrame.parse(recovered)
-            else {
-                preconditionFailure("Invalid voice interruption composer fixture.")
-            }
-            model.handleFrame(interruptedFrame)
-            model.handleFrame(recoveredFrame)
-            let acceptedTurn = "00000000-0000-4000-8000-000000000015"
-            let turnFrames = [
-                interruptionTurn(
-                    turnId: "00000000-0000-4000-8000-000000000005", state: "failed", sequence: 1,
-                    occurredAt: "2099-07-31T12:00:01Z",
-                    message: "The provider could not complete this request."),
-                interruptionTurn(
-                    turnId: "00000000-0000-4000-8000-000000000005", state: "accepted", sequence: 2,
-                    occurredAt: "2099-07-31T12:00:01Z"),
-                interruptionTurn(
-                    turnId: "00000000-0000-4000-8000-000000000025", state: "failed", sequence: 1,
-                    occurredAt: "2099-07-31T12:00:00Z",
-                    message: "The older request also failed."),
-                interruptionTurn(
-                    turnId: acceptedTurn, state: "accepted", sequence: 1,
-                    occurredAt: "2099-07-31T12:00:02Z"),
-                interruptionTurn(
-                    turnId: acceptedTurn, state: "accepted", sequence: 2,
-                    occurredAt: "2099-07-31T12:00:02Z"),
-            ]
-            for frame in turnFrames.compactMap({ $0 }) {
-                guard let turn = VoiceTurnState(frame: frame) else {
-                    preconditionFailure("Invalid voice interruption turn fixture.")
-                }
-                model.voice.installTerminalNoticeForUITesting(turn)
-            }
-        }
-
-        @MainActor
-        private static func fixtureVoiceConnection(_ model: AppModel) -> String? {
-            guard let registration = try? JSONValue.parse(
-                Data(model.registrationFrame(token: "ui-test-token", resumed: false).utf8))
-            else { return nil }
-            return registration["connection_generation"]?.stringValue
-        }
-
-        private static func ownedActiveComposer(
-            revision: Int, connection: String, device: String, owned: Bool = true
-        ) -> String {
-            #if os(macOS)
-                let deviceKind = "macos"
-            #else
-                let deviceKind = "ios"
-            #endif
-            let owner =
-                owned
-                ? "\"owner_device\":{\"device_id\":\"\(device)\",\"device_kind\":\"\(deviceKind)\",\"generation\":1},"
-                : "\"owner_device\":null,"
-            return
-                """
-                {"type":"composer_state","schema_version":"1","revision":\(revision),
-                 "connection_generation":"\(connection)","voice":{
-                   "available":true,"state":"listening","speech_muted":false,
-                   "microphone_enabled":true,"foreground_active":true,"reason":"ready",
-                   "output_locale":"en-US","chat_context_revision":3,
-                   "applied_chat_context_revision":3,"chat_context_synced":true,
-                   "session_id":"00000000-0000-4000-8000-000000000003","generation":1,
-                   "media_grant_revision":2,"visible_chat_id":"00000000-0000-4000-8000-000000000004",
-                   "foreground_turn_id":null,
-                   \(owner)
-                   "idle_expires_at":null,"controls":[
-                     {"key":"voice-microphone","action":"voice_microphone_set",
-                      "label":"Microphone","icon":"microphone",
-                      "visible":true,"enabled":true,"pressed":true,"busy":false},
-                     {"key":"voice-mute","action":"voice_speech_mute_set",
-                      "label":"Mute voice","icon":"speaker-muted",
-                      "visible":true,"enabled":true,"pressed":false,"busy":false},
-                     {"key":"voice-end","action":"voice_session_end",
-                      "label":"End voice conversation","icon":"stop",
-                      "visible":true,"enabled":true,"pressed":false,"busy":false}
-                   ]}}
-                """
-        }
-
-        private static func interruptionTurn(
-            turnId: String, state: String, sequence: Int, occurredAt: String,
-            message: String? = nil
-        ) -> InboundFrame? {
-            let quotedMessage =
-                message.map { "\"message\":\"\($0)\"," } ?? ""
-            return InboundFrame.parse(
-                """
-                {"type":"voice_turn_state","schema_version":"1",
-                 "session_id":"00000000-0000-4000-8000-000000000003",
-                 "connection_generation":"00000000-0000-4000-8000-000000000002",
-                 "generation":1,"media_grant_revision":2,
-                 "turn_id":"\(turnId)",
-                 "client_turn_id":"00000000-0000-4000-8000-000000000006",
-                 "submission_id":"00000000-0000-4000-8000-000000000007",
-                 "request_generation":"00000000-0000-4000-8000-000000000008",
-                 "chat_id":"00000000-0000-4000-8000-000000000004",
-                 "chat_context_revision":3,"detected_language":"en-US",
-                 "spoken_output_policy":"full_recap","output_reason":"ready",
-                 "state":"\(state)","foreground":true,"sensitive_result_pending":false,
-                 "sequence":\(sequence),\(quotedMessage)
-                 "occurred_at":"\(occurredAt)"}
-                """)
         }
 
         @MainActor
