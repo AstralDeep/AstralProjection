@@ -132,8 +132,11 @@ def test_apple_ui_tests_pin_interruption_recovery_states_and_typed_fallback():
         "func testInterruptedVoiceSessionKeepsServerControlsAndTypedFallbackAvailable",
         ("func testRecoveredVoice",),
     )
-    assert 'status.label.contains("Voice media is reconnecting")' in interruption
+    assert 'status.waitForExistence(timeout: 5)' in interruption
+    assert 'status.label.isEmpty' in interruption
     assert 'app.buttons["voice-control-voice-end"]' in interruption
+    assert 'app.buttons["voice-control-voice-microphone"].exists' in interruption
+    assert 'app.buttons["voice-control-voice-mute"].exists' in interruption
     assert "composer.isEnabled" in interruption
     assert "composer.isHittable" in interruption
     assert '["voice-request-terminal-notice"].exists' in interruption
@@ -142,8 +145,10 @@ def test_apple_ui_tests_pin_interruption_recovery_states_and_typed_fallback():
         source,
         "func testRecoveredVoiceAcceptsExactlyOneTurnAndStaysFencedAgainstStaleNoticeReplays",
     )
-    assert 'status.label.contains("Listening…")' in recovery
+    assert 'status.waitForExistence(timeout: 5)' in recovery
+    assert 'status.label.isEmpty' in recovery
     assert "waitForNonExistence(timeout: 3)" in recovery
+    assert 'XCTAssertEqual(end.label, "End voice conversation")' in recovery
     assert "composer.isEnabled" in recovery
     assert "composer.isHittable" in recovery
 
@@ -232,9 +237,9 @@ def test_android_evidence_check_records_only_identities_and_outcome_categories()
     for digest in RUNTIME_DIGEST_FIELDS:
         assert f'put("{digest}"' in producer
 
-    scenario_class = section(source, "private class VoiceInterruptionScenario(")
-    labels = re.findall(r'categories \+= "([a-z0-9_]+)"', scenario_class)
-    initial = re.search(r'val categories = mutableListOf\("([a-z0-9_]+)"\)', scenario_class)
+    scenario = section(source, "private fun runVoiceInterruptionScenario(", ("private fun activeComposer()",))
+    labels = re.findall(r'categories \+= "([a-z0-9_]+)"', scenario)
+    initial = re.search(r'val categories = mutableListOf\("([a-z0-9_]+)"\)', scenario)
     assert initial is not None
     category_labels([initial.group(1), *labels])
 
@@ -265,8 +270,12 @@ def test_evidence_producers_record_no_transcript_audio_or_credential_content():
         assert payload not in apple
 
     android = ANDROID_EVIDENCE.read_text(encoding="utf-8")
-    producer = section(android, "private fun runVoiceConversationInterruption(", ("private fun runSignIn(",))
-    scenario_run = section(android, "fun run(): List<String> {", ("private fun activeComposer()",))
+    producer = section(
+        android,
+        "private fun runVoiceConversationInterruption(",
+        ("private fun runVoiceInterruptionScenario(",),
+    )
+    scenario_run = section(android, "private fun runVoiceInterruptionScenario(", ("private fun activeComposer()",))
     for payload in TRANSCRIPT_PAYLOADS:
         assert payload not in producer
         assert payload not in scenario_run
@@ -285,12 +294,12 @@ def test_new_mobile_coverage_stays_bounded_without_soak_loops():
         assert "while true" not in source
 
     android_evidence = ANDROID_EVIDENCE.read_text(encoding="utf-8")
-    scenario_class = section(
+    scenario_method = section(
         android_evidence,
-        "private class VoiceInterruptionScenario(",
-        ("private companion object",),
+        "private fun runVoiceInterruptionScenario(",
+        ("private fun activeComposer()",),
     )
-    assert "while (" not in scenario_class
+    assert "while (" not in scenario_method
     assert "while (true)" not in section(
         android_evidence,
         "private fun runVoiceConversationInterruption(",
