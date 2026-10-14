@@ -971,6 +971,9 @@ class VoiceSessionController(
     private var playoutClientSequence = 0
     private var observedTurnId: String? = null
     private var appForeground = true
+    private var audioInterruptionActive = false
+    private var audioRouteAvailable = true
+    private var microphoneDesired = false
     private var leaseRenewalJob: Job? = null
     private var leaseRenewalInFlight: Any? = null
     private var lifecycleToken: Any = Any()
@@ -1093,6 +1096,7 @@ class VoiceSessionController(
                 session = updated
                 if (
                     sessionMatches(fence) && connection?.visibleChatId == chatId &&
+                    audioEnvironmentEligible() &&
                     updated.chatContextSynced && updated.microphoneEnabled
                 ) {
                     runCatching { media.setMicrophoneEnabled(true) }
@@ -1243,12 +1247,16 @@ class VoiceSessionController(
                 }
                 session = outcome.session
                 grant = outcome.grant
+                microphoneDesired = outcome.session.microphoneEnabled
                 startLeaseRenewal()
                 transcriptSequence.clear()
                 announcementSequence.clear()
                 observedTurnId = null
                 _state.update { it.copy(takeover = null) }
-                if (outcome.session.chatContextSynced) {
+                val suspension = audioSuspensionReason()
+                if (suspension != null) {
+                    suspendMediaForAudio(suspension)
+                } else if (outcome.session.chatContextSynced) {
                     connectMedia(outcome.grant, outcome.session, sessionFence(outcome.session))
                 } else {
                     feedback("connecting", "chat_context_unavailable", "Waiting for the voice chat context…")
@@ -1271,7 +1279,8 @@ class VoiceSessionController(
                     return
                 }
                 media.setMicrophoneEnabled(
-                    currentSession.chatContextSynced &&
+                    audioEnvironmentEligible() &&
+                        currentSession.chatContextSynced &&
                         currentSession.foregroundActive &&
                         currentSession.microphoneEnabled,
                 )
@@ -1302,6 +1311,7 @@ class VoiceSessionController(
     suspend fun setMicrophoneEnabled(enabled: Boolean) {
         val currentBinding = currentBindingOrFeedback() ?: return
         val activeSession = session ?: return feedback("error", "stale_generation")
+        microphoneDesired = enabled
         val fence = sessionFence(activeSession)
         runCatching { media.setMicrophoneEnabled(enabled) }
         if (!sessionMatches(fence)) return
@@ -1377,6 +1387,9 @@ class VoiceSessionController(
         binding = null
         pendingControl = null
         connection = null
+        audioInterruptionActive = false
+        audioRouteAvailable = true
+        microphoneDesired = false
         _state.value = VoiceUiState()
         if (activeSession != null && currentBinding != null) {
             scope.launch { sessionUpdateMutex.withLock { api.end(currentBinding, activeSession) } }
@@ -1420,35 +1433,155 @@ class VoiceSessionController(
         val fence = sessionFence(activeSession)
         scope.launch {
             if (!sessionMatches(fence) || appForeground != active) return@launch
-            if (!active) {
+            if (!active || !audioEnvironmentEligible()) {
                 media.interruptPlayout()
                 runCatching { media.setMicrophoneEnabled(false) }
             }
-            val fields =
-                buildJsonObject {
-                    put("foreground_active", active)
-                    put("foreground_reason", if (active) "foreground" else reason)
-                    if (!active) put("microphone_enabled", false)
-                }
             val result =
                 sessionUpdateMutex.withLock {
                     if (!sessionMatches(fence) || appForeground != active) return@withLock null
-                    api.update(currentBinding, activeSession, fields)
+                    val suspension = audioSuspensionReason()
+                    val resumeNow = active && suspension == null
+                    val nextReason =
+                        if (resumeNow) {
+                            "foreground"
+                        } else if (active) {
+                            requireNotNull(suspension)
+                        } else {
+                            reason
+                        }
+                    api.update(
+                        currentBinding,
+                        activeSession,
+                        buildJsonObject {
+                            put("foreground_active", resumeNow)
+                            put("foreground_reason", nextReason)
+                            if (!resumeNow) put("microphone_enabled", false)
+                        },
+                    )
                 } ?: return@launch
             if (!sessionMatches(fence) || appForeground != active) return@launch
             result
                 .onSuccess { updated ->
                     if (sessionMatches(fence) && sameLease(activeSession, updated)) {
                         session = updated
-                        if (active) {
+                        val suspension = audioSuspensionReason()
+                        if (active && suspension == null) {
                             startLeaseRenewal()
                         } else {
-                            feedback("suspended", reason, mediaConnected = false)
+                            feedback(
+                                "suspended",
+                                if (active) requireNotNull(suspension) else reason,
+                                mediaConnected = false,
+                            )
                         }
                     }
                 }.onFailure {
                     if (sessionMatches(fence) && appForeground == active) {
                         stopLeaseRenewal()
+                        feedback("error", "stale_generation")
+                    }
+                }
+        }
+    }
+
+    fun audioFocusChanged(interrupted: Boolean) {
+        if (audioInterruptionActive == interrupted) return
+        audioInterruptionActive = interrupted
+        if (interrupted) {
+            suspendMediaForAudio("audio_interrupted")
+        } else {
+            scheduleAudioRecovery()
+        }
+    }
+
+    fun audioRouteChanged(available: Boolean) {
+        if (audioRouteAvailable == available) return
+        audioRouteAvailable = available
+        if (!available) {
+            suspendMediaForAudio("route_unavailable")
+        } else {
+            scheduleAudioRecovery()
+        }
+    }
+
+    private fun audioEnvironmentEligible(): Boolean = !audioInterruptionActive && audioRouteAvailable
+
+    private fun audioSuspensionReason(): String? =
+        when {
+            audioInterruptionActive -> "audio_interrupted"
+            !audioRouteAvailable -> "route_unavailable"
+            else -> null
+        }
+
+    private fun suspensionReasonActive(reason: String): Boolean =
+        (reason == "audio_interrupted" && audioInterruptionActive) ||
+            (reason == "route_unavailable" && !audioRouteAvailable)
+
+    private fun suspendMediaForAudio(reason: String) {
+        stopLeaseRenewal()
+        media.interruptPlayout()
+        val activeSession = session ?: return
+        feedback("suspended", reason, mediaConnected = false)
+        val currentBinding = binding ?: return
+        val fence = sessionFence(activeSession)
+        scope.launch {
+            runCatching { media.setMicrophoneEnabled(false) }
+            if (!sessionMatches(fence) || !suspensionReasonActive(reason) || !appForeground) return@launch
+            val result =
+                sessionUpdateMutex.withLock {
+                    if (!sessionMatches(fence) || !suspensionReasonActive(reason) || !appForeground) {
+                        return@withLock null
+                    }
+                    api.update(
+                        currentBinding,
+                        activeSession,
+                        buildJsonObject {
+                            put("foreground_active", false)
+                            put("foreground_reason", reason)
+                            put("microphone_enabled", false)
+                        },
+                    )
+                } ?: return@launch
+            if (!sessionMatches(fence) || !suspensionReasonActive(reason) || !appForeground) return@launch
+            result.onSuccess { updated ->
+                if (sessionMatches(fence) && sameLease(activeSession, updated)) session = updated
+            }
+        }
+    }
+
+    private fun scheduleAudioRecovery() {
+        if (!appForeground) return
+        val activeSession = session ?: return
+        val currentBinding = binding ?: return
+        val fence = sessionFence(activeSession)
+        scope.launch {
+            if (!sessionMatches(fence) || !audioEnvironmentEligible() || !appForeground) return@launch
+            val result =
+                sessionUpdateMutex.withLock {
+                    if (!sessionMatches(fence) || !audioEnvironmentEligible() || !appForeground) {
+                        return@withLock null
+                    }
+                    api.update(
+                        currentBinding,
+                        activeSession,
+                        buildJsonObject {
+                            put("foreground_active", true)
+                            put("foreground_reason", "foreground")
+                            put("microphone_enabled", microphoneDesired)
+                        },
+                    )
+                } ?: return@launch
+            if (!sessionMatches(fence) || !audioEnvironmentEligible() || !appForeground) return@launch
+            result
+                .onSuccess { updated ->
+                    if (sessionMatches(fence) && sameLease(activeSession, updated)) {
+                        session = updated
+                        runCatching { media.setMicrophoneEnabled(updated.microphoneEnabled) }
+                        startLeaseRenewal()
+                    }
+                }.onFailure {
+                    if (sessionMatches(fence) && audioEnvironmentEligible() && appForeground) {
                         feedback("error", "stale_generation")
                     }
                 }
@@ -1489,7 +1622,9 @@ class VoiceSessionController(
         try {
             val result =
                 sessionUpdateMutex.withLock {
-                    if (!appForeground || !sessionMatches(fence)) return@withLock null
+                    if (!appForeground || !audioEnvironmentEligible() || !sessionMatches(fence)) {
+                        return@withLock null
+                    }
                     api.update(
                         currentBinding,
                         activeSession,
@@ -1499,7 +1634,7 @@ class VoiceSessionController(
                         },
                     )
                 } ?: return
-            if (!appForeground || !sessionMatches(fence)) return
+            if (!appForeground || !audioEnvironmentEligible() || !sessionMatches(fence)) return
             result.onSuccess { updated ->
                 if (sessionMatches(fence) && sameLease(activeSession, updated)) session = updated
             }.onFailure {
@@ -1579,6 +1714,7 @@ class VoiceSessionController(
                 _state.update { it.copy(mediaConnected = false) }
             }
             else -> {
+                microphoneDesired = value.microphoneEnabled
                 if (value.foregroundActive && appForeground) startLeaseRenewal() else stopLeaseRenewal()
                 if (value.chatContextSynced && grant != null && !_state.value.mediaConnected) {
                     val currentGrant = grant ?: return
@@ -1589,7 +1725,7 @@ class VoiceSessionController(
                     val currentSession = session ?: return
                     val fence = sessionFence(currentSession)
                     scope.launch {
-                        if (sessionMatches(fence)) {
+                        if (sessionMatches(fence) && audioEnvironmentEligible()) {
                             runCatching { media.setMicrophoneEnabled(value.microphoneEnabled) }
                         }
                     }
@@ -1775,6 +1911,7 @@ class VoiceSessionController(
         }
         val previous = announcementSequence[active.sessionId] ?: 0
         if (value.announcementSequence <= previous) return
+        if (!audioEnvironmentEligible()) return
         val nextResultBudget = if (value.kind == "result") resultBudgetAfter(value) ?: return else null
         if (pendingAnnouncements.size >= MAX_PENDING_ANNOUNCEMENTS || !media.queueAnnouncement(value)) {
             if (value.kind == "result") {
@@ -2074,6 +2211,9 @@ class VoiceSessionController(
         stopLeaseRenewal()
         media.disconnect()
         clearPendingFinals()
+        audioInterruptionActive = false
+        audioRouteAvailable = true
+        microphoneDesired = false
         scope.cancel()
     }
 
@@ -2105,6 +2245,8 @@ class VoiceSessionController(
                 "permission_restricted" -> "Microphone access is restricted. You can keep typing."
                 "no_microphone" -> "No microphone is available. Connect one or keep typing."
                 "no_audio_output" -> "No audio output is available. Connect one or keep typing."
+                "audio_interrupted" -> "Voice is paused while another app uses the audio."
+                "route_unavailable" -> "Audio hardware changed. Reconnecting voice…"
                 "media_error" ->
                     "Voice media could not connect. Check your network and try again; typed chat is still available."
                 "takeover_required" -> "Voice is active on another device. Choose Take over to continue here."
