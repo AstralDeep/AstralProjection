@@ -8,10 +8,9 @@ import android.media.AudioManager
 internal fun voiceAudioFocusInterrupted(focusChange: Int): Boolean? =
     when (focusChange) {
         AudioManager.AUDIOFOCUS_GAIN -> false
-        AudioManager.AUDIOFOCUS_LOSS,
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
-        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
-        -> true
+        AudioManager.AUDIOFOCUS_LOSS -> true
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> true
+        AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> true
         else -> null
     }
 

@@ -1515,8 +1515,11 @@ class VoiceSessionController(
         }
 
     private fun suspensionReasonActive(reason: String): Boolean =
-        (reason == "audio_interrupted" && audioInterruptionActive) ||
-            (reason == "route_unavailable" && !audioRouteAvailable)
+        when (reason) {
+            "audio_interrupted" -> audioInterruptionActive
+            "route_unavailable" -> !audioRouteAvailable
+            else -> false
+        }
 
     private fun suspendMediaForAudio(reason: String) {
         stopLeaseRenewal()

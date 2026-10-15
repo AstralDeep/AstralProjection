@@ -14,7 +14,7 @@ import android.os.Looper
 
 class VoiceAudioEnvironmentObserver(
     context: Context,
-    private val onAudioFocusChanged: (interrupted: Boolean) -> Unit,
+    private val onAudioFocusChanged: (Boolean) -> Unit,
     private val onOutputRouteLost: () -> Unit,
 ) : AutoCloseable {
     private val audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
