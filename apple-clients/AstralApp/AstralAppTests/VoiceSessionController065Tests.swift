@@ -521,7 +521,7 @@ final class VoiceSessionController065Tests: XCTestCase {
         let api = FakeVoiceAPI()
         api.startOutcome = .started(restSession(synced: true), grant())
         api.refreshOutcomes = [
-            .refreshed(restSession(synced: true, revision: 3), grant(revision: 3)),
+            .refreshed(restSession(synced: true, revision: 3), grant(revision: 3))
         ]
         api.updatedSession = restSession(synced: true, revision: 3)
         let media = FakeVoiceMedia()
