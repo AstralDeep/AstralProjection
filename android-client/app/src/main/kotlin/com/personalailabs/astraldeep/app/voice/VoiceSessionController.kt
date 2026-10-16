@@ -341,6 +341,8 @@ class LiveKitVoiceGrant(
 sealed interface VoiceStartOutcome {
     data class Started(val session: VoiceRestSession, val grant: LiveKitVoiceGrant) : VoiceStartOutcome
 
+    data class LocalStarted(val session: LocalVoiceSession) : VoiceStartOutcome
+
     data class TakeoverRequired(val target: VoiceTakeoverTarget, val message: String?) : VoiceStartOutcome
 
     data class Failed(val reason: String, val message: String? = null) : VoiceStartOutcome
@@ -358,6 +360,16 @@ interface VoiceControlApi {
         activationId: String,
         target: VoiceTakeoverTarget,
         capability: VoiceMediaCapability,
+    ): VoiceStartOutcome
+
+    suspend fun selectBackend(binding: VoiceUiBinding): VoiceBackendSelection
+
+    suspend fun startLocalSession(
+        binding: VoiceUiBinding,
+        activationId: String,
+        chatId: String,
+        capability: LocalSpeechCapability,
+        takeover: VoiceTakeoverTarget?,
     ): VoiceStartOutcome
 
     suspend fun update(
@@ -919,6 +931,7 @@ class VoiceSessionController(
     private val uuidFactory: () -> String = { UUID.randomUUID().toString() },
     private val clock: () -> Instant = Instant::now,
     private val retryDelayMillis: Long = 2_500L,
+    private val localEngine: LocalSpeechEngine? = null,
 ) {
     private data class UiConnection(
         val token: String,
@@ -960,6 +973,8 @@ class VoiceSessionController(
     private var session: VoiceRestSession? = null
     private var grant: LiveKitVoiceGrant? = null
     private var composerRevision = -1
+    private var speechBackend = "livekit"
+    private var local: LocalVoiceRuntime? = null
     private val transcriptSequence = mutableMapOf<String, Int>()
     private val announcementSequence = mutableMapOf<String, Int>()
     private val pendingAnnouncements = linkedMapOf<String, PendingAnnouncement>()
@@ -968,6 +983,7 @@ class VoiceSessionController(
     private val pendingJobs = mutableMapOf<String, Job>()
     private var submitter: ((VoiceTranscript, String) -> Boolean)? = null
     private var playoutReporter: ((VoicePlayoutEvent) -> Boolean)? = null
+    private var localFrameSender: ((String) -> Boolean)? = null
     private var playoutClientSequence = 0
     private var observedTurnId: String? = null
     private var appForeground = true
@@ -994,6 +1010,10 @@ class VoiceSessionController(
         playoutReporter = value
     }
 
+    fun setLocalFrameSender(value: (String) -> Boolean) {
+        localFrameSender = value
+    }
+
     fun installUiConnection(
         token: String,
         deviceId: String,
@@ -1009,6 +1029,7 @@ class VoiceSessionController(
             pendingControl = null
             binding = null
             composerRevision = -1
+            teardownLocal()
             media.disconnect()
             _state.update { current ->
                 if (session == null) {
@@ -1055,14 +1076,20 @@ class VoiceSessionController(
                 restoreServerProjectionWithoutSession()
             } else {
                 val fence = sessionFence(activeSession)
-                media.interruptPlayout()
+                if (speechBackend == "client_local") {
+                    local?.chatTransition()
+                } else {
+                    media.interruptPlayout()
+                }
                 feedback(
                     "connecting",
                     "chat_context_unavailable",
                     "Waiting for the voice chat context…",
                 )
-                scope.launch {
-                    if (sessionMatches(fence)) runCatching { media.setMicrophoneEnabled(false) }
+                if (speechBackend != "client_local") {
+                    scope.launch {
+                        if (sessionMatches(fence)) runCatching { media.setMicrophoneEnabled(false) }
+                    }
                 }
             }
             return
@@ -1077,7 +1104,7 @@ class VoiceSessionController(
         val fence = sessionFence(activeSession)
         scope.launch {
             if (!sessionMatches(fence) || connection?.visibleChatId != chatId) return@launch
-            runCatching { media.setMicrophoneEnabled(false) }
+            if (speechBackend != "client_local") runCatching { media.setMicrophoneEnabled(false) }
             val result =
                 sessionUpdateMutex.withLock {
                     if (!sessionMatches(fence) || connection?.visibleChatId != chatId) return@withLock null
@@ -1091,6 +1118,11 @@ class VoiceSessionController(
             result.onSuccess { updated ->
                 if (!sameLease(activeSession, updated)) return@onSuccess
                 session = updated
+                if (speechBackend == "client_local") {
+                    local?.updateAuthority(localSessionOf(updated))
+                    local?.reconcileAfterControlChange()
+                    return@onSuccess
+                }
                 if (
                     sessionMatches(fence) && connection?.visibleChatId == chatId &&
                     updated.chatContextSynced && updated.microphoneEnabled
@@ -1199,6 +1231,13 @@ class VoiceSessionController(
             feedback("error", capabilityFailure)
             return
         }
+        if (localEngine != null) {
+            val selection = api.selectBackend(currentBinding)
+            if (selection is VoiceBackendSelection.Local) {
+                activateLocal(selection, currentBinding, activationToken, preparation, takeover)
+                return
+            }
+        }
         _state.update { it.copy(terminalNotice = null) }
         feedback("connecting", "ready")
         val activationId = uuidFactory().takeIf(::isUuid4)
@@ -1235,6 +1274,7 @@ class VoiceSessionController(
                 media.disconnect()
                 feedback("error", outcome.reason, outcome.message)
             }
+            is VoiceStartOutcome.LocalStarted -> Unit
             is VoiceStartOutcome.Started -> {
                 if (!validStart(outcome, currentBinding)) {
                     media.disconnect()
@@ -1254,6 +1294,156 @@ class VoiceSessionController(
                     feedback("connecting", "chat_context_unavailable", "Waiting for the voice chat context…")
                 }
             }
+        }
+    }
+
+    private suspend fun activateLocal(
+        selection: VoiceBackendSelection.Local,
+        currentBinding: VoiceUiBinding,
+        activationToken: Any,
+        preparation: Any,
+        takeover: VoiceTakeoverTarget?,
+    ) {
+        val engine = localEngine ?: return
+        if (selection.status == "unavailable") {
+            feedback("unavailable", selection.reason)
+            return
+        }
+        val probe = LocalSpeechReadiness.evaluate(engine.probe())
+        val speechCapability = probe.capability
+        if (!probe.eligible || speechCapability == null) {
+            feedback("unavailable", probe.reason ?: "local_engine_lost")
+            return
+        }
+        _state.update { it.copy(terminalNotice = null) }
+        val activationId = uuidFactory().takeIf(::isUuid4)
+        if (activationId == null) {
+            feedback("error", "internal_error")
+            return
+        }
+        feedback("connecting", "client_readiness_required", "Local speech is starting…")
+        val outcome = api.startLocalSession(currentBinding, activationId, currentBinding.visibleChatId, speechCapability, takeover)
+        if (lifecycleToken !== activationToken || binding !== currentBinding || !preparationIsCurrent(preparation)) {
+            if (outcome is VoiceStartOutcome.LocalStarted) {
+                runCatching { api.end(currentBinding, localRestSession(outcome.session)) }
+            }
+            return
+        }
+        when (outcome) {
+            is VoiceStartOutcome.TakeoverRequired -> {
+                _state.update {
+                    it.copy(
+                        phase = "off",
+                        reason = "takeover_required",
+                        message = outcome.message ?: messageFor("off", "takeover_required"),
+                        mediaConnected = false,
+                        takeover = outcome.target,
+                    )
+                }
+            }
+            is VoiceStartOutcome.Failed -> feedback("error", outcome.reason, outcome.message)
+            is VoiceStartOutcome.LocalStarted -> {
+                if (!validLocalStart(outcome.session, currentBinding)) {
+                    feedback("error", "stale_generation")
+                    return
+                }
+                speechBackend = "client_local"
+                session = localRestSession(outcome.session)
+                grant = null
+                startLeaseRenewal()
+                transcriptSequence.clear()
+                announcementSequence.clear()
+                observedTurnId = null
+                _state.update { it.copy(takeover = null, mediaConnected = false) }
+                val runtime =
+                    LocalVoiceRuntime(
+                        scope = scope,
+                        engine = engine,
+                        send = ::sendLocalFrame,
+                        clock = clock,
+                        uuidFactory = uuidFactory,
+                        onEvent = ::consumeLocalEvent,
+                    )
+                local = runtime
+                runtime.start(outcome.session, selection.requirements, speechCapability)
+            }
+            is VoiceStartOutcome.Started -> Unit
+        }
+    }
+
+    private fun sendLocalFrame(frame: String): Boolean = localFrameSender?.invoke(frame) == true
+
+    private fun validLocalStart(
+        value: LocalVoiceSession,
+        expected: VoiceUiBinding,
+    ): Boolean =
+        value.deviceId == expected.deviceId &&
+            value.connectionGeneration == expected.connectionGeneration &&
+            value.chatId == expected.visibleChatId &&
+            value.generation > 0 &&
+            value.speechRevision > 0 &&
+            value.foregroundActive
+
+    private fun localRestSession(value: LocalVoiceSession): VoiceRestSession =
+        VoiceRestSession(
+            sessionId = value.sessionId,
+            deviceId = value.deviceId,
+            ownerConnectionGeneration = value.connectionGeneration,
+            visibleChatId = value.chatId,
+            appliedVisibleChatId = value.chatId,
+            generation = value.generation,
+            mediaGrantRevision = value.speechRevision,
+            chatContextRevision = value.chatContextRevision,
+            appliedChatContextRevision = value.chatContextRevision,
+            chatContextSynced = true,
+            state = "active",
+            foregroundActive = value.foregroundActive,
+            speechMuted = value.speechMuted,
+            microphoneEnabled = value.microphoneEnabled,
+        )
+
+    private fun consumeLocalEvent(event: LocalVoiceUiEvent) {
+        if (event.transcriptPreview != null) {
+            _state.update {
+                it.copy(
+                    transcriptPreview = event.transcriptPreview,
+                    transcriptFinal = event.transcriptFinal ?: false,
+                )
+            }
+        }
+        if (event.accepted) {
+            _state.update { it.copy(phase = "processing", reason = "ready", message = "On it!") }
+        }
+        if (event.unrecoverable) {
+            val activeSession = session
+            val currentBinding = binding
+            local?.teardown(true)
+            local = null
+            speechBackend = "livekit"
+            session = null
+            grant = null
+            stopLeaseRenewal()
+            _state.update {
+                it.copy(
+                    phase = "unavailable",
+                    reason = event.reason ?: "stale_local_turn",
+                    message = event.message,
+                    mediaConnected = false,
+                )
+            }
+            if (activeSession != null && currentBinding != null) {
+                scope.launch {
+                    sessionUpdateMutex.withLock { runCatching { api.end(currentBinding, activeSession) } }
+                }
+            }
+            return
+        }
+        if (event.unavailable) {
+            feedback("unavailable", event.reason ?: "internal_error", event.message)
+            return
+        }
+        if (event.phase != null || event.reason != null) {
+            feedback(event.phase ?: _state.value.phase, event.reason ?: "ready", event.message)
         }
     }
 
@@ -1303,7 +1493,11 @@ class VoiceSessionController(
         val currentBinding = currentBindingOrFeedback() ?: return
         val activeSession = session ?: return feedback("error", "stale_generation")
         val fence = sessionFence(activeSession)
-        runCatching { media.setMicrophoneEnabled(enabled) }
+        if (speechBackend == "client_local") {
+            if (!enabled) local?.stopOwners("stopped_by_user")
+        } else {
+            runCatching { media.setMicrophoneEnabled(enabled) }
+        }
         if (!sessionMatches(fence)) return
         val result =
             sessionUpdateMutex.withLock {
@@ -1316,7 +1510,13 @@ class VoiceSessionController(
             } ?: return
         if (!sessionMatches(fence)) return
         result.onSuccess { updated ->
-            if (sameLease(activeSession, updated)) session = updated
+            if (sameLease(activeSession, updated)) {
+                session = updated
+                if (speechBackend == "client_local") {
+                    local?.updateAuthority(localSessionOf(updated))
+                    local?.reconcileAfterControlChange()
+                }
+            }
         }.onFailure {
             if (sessionMatches(fence)) feedback("error", "stale_generation")
         }
@@ -1326,7 +1526,11 @@ class VoiceSessionController(
         val currentBinding = currentBindingOrFeedback() ?: return
         val activeSession = session ?: return feedback("error", "stale_generation")
         val fence = sessionFence(activeSession)
-        if (muted) media.interruptPlayout()
+        if (speechBackend == "client_local") {
+            if (muted) local?.stopOwners("stopped_by_user")
+        } else {
+            if (muted) media.interruptPlayout()
+        }
         val result =
             sessionUpdateMutex.withLock {
                 if (!sessionMatches(fence)) return@withLock null
@@ -1338,7 +1542,13 @@ class VoiceSessionController(
             } ?: return
         if (!sessionMatches(fence)) return
         result.onSuccess { updated ->
-            if (sameLease(activeSession, updated)) session = updated
+            if (sameLease(activeSession, updated)) {
+                session = updated
+                if (speechBackend == "client_local") {
+                    local?.updateAuthority(localSessionOf(updated))
+                    local?.reconcileAfterControlChange()
+                }
+            }
         }.onFailure {
             if (sessionMatches(fence)) feedback("error", "stale_generation")
         }
@@ -1348,9 +1558,23 @@ class VoiceSessionController(
         val currentBinding = currentBindingOrFeedback() ?: return
         val activeSession = session ?: return feedback("error", "stale_generation")
         val fence = sessionFence(activeSession)
-        media.interruptPlayout()
+        if (speechBackend == "client_local") {
+            local?.stopSpeech()
+        } else {
+            media.interruptPlayout()
+        }
         val stopped = api.stopSpeech(currentBinding, activeSession)
-        if (sessionMatches(fence) && !stopped) feedback("error", "speech_error")
+        if (!sessionMatches(fence)) return
+        if (speechBackend == "client_local") {
+            local?.speechStopped()
+            if (stopped) {
+                local?.reconcileAfterControlChange()
+            } else {
+                feedback("error", "speech_error")
+            }
+        } else {
+            if (!stopped) feedback("error", "speech_error")
+        }
     }
 
     suspend fun end() {
@@ -1370,6 +1594,7 @@ class VoiceSessionController(
         stopLeaseRenewal()
         val activeSession = session
         val currentBinding = binding
+        teardownLocal()
         media.disconnect()
         clearPendingFinals()
         session = null
@@ -1388,6 +1613,7 @@ class VoiceSessionController(
         stopLeaseRenewal()
         binding = null
         pendingControl = null
+        teardownLocal()
         media.disconnect()
         if (session != null) feedback("reconnecting", "network_interrupted", mediaConnected = false)
     }
@@ -1398,7 +1624,13 @@ class VoiceSessionController(
             is Inbound.VoiceControlBindingFrame -> consumeBinding(message.value)
             is Inbound.VoiceSessionStateFrame -> consumeSessionState(message.value)
             is Inbound.VoiceTurnStateFrame -> consumeTurnState(message.value)
-            is Inbound.UserMessageAcked -> consumeAcknowledgement(message)
+            is Inbound.UserMessageAcked -> {
+                if (speechBackend == "client_local" && local?.acceptMessageAck(message) == true) return
+                consumeAcknowledgement(message)
+            }
+            is Inbound.LocalVoiceFrame -> {
+                if (speechBackend == "client_local") local?.acceptFrame(message.value)
+            }
             is Inbound.VoiceSubmissionRejectedFrame -> consumeRejection(message.value)
             else -> Unit
         }
@@ -1418,9 +1650,10 @@ class VoiceSessionController(
         }
         val currentBinding = binding ?: return
         val fence = sessionFence(activeSession)
+        if (!active && speechBackend == "client_local") local?.suspendForBackground()
         scope.launch {
             if (!sessionMatches(fence) || appForeground != active) return@launch
-            if (!active) {
+            if (!active && speechBackend != "client_local") {
                 media.interruptPlayout()
                 runCatching { media.setMicrophoneEnabled(false) }
             }
@@ -1440,10 +1673,20 @@ class VoiceSessionController(
                 .onSuccess { updated ->
                     if (sessionMatches(fence) && sameLease(activeSession, updated)) {
                         session = updated
-                        if (active) {
-                            startLeaseRenewal()
+                        if (speechBackend == "client_local") {
+                            local?.updateAuthority(localSessionOf(updated))
+                            if (active) {
+                                startLeaseRenewal()
+                                scope.launch { local?.resumeForeground() }
+                            } else {
+                                feedback("suspended", reason, mediaConnected = false)
+                            }
                         } else {
-                            feedback("suspended", reason, mediaConnected = false)
+                            if (active) {
+                                startLeaseRenewal()
+                            } else {
+                                feedback("suspended", reason, mediaConnected = false)
+                            }
                         }
                     }
                 }.onFailure {
@@ -1567,6 +1810,9 @@ class VoiceSessionController(
                 speechMuted = value.speechMuted,
                 microphoneEnabled = value.microphoneEnabled,
             )
+        if (speechBackend == "client_local") {
+            local?.updateAuthority(localSessionOf(requireNotNull(session)))
+        }
         feedback(value.state, value.reason, value.message)
         when (value.state) {
             "ended" -> {
@@ -1575,11 +1821,12 @@ class VoiceSessionController(
             }
             "suspended", "reconnecting" -> {
                 stopLeaseRenewal()
-                media.disconnect()
+                if (speechBackend != "client_local") media.disconnect()
                 _state.update { it.copy(mediaConnected = false) }
             }
             else -> {
                 if (value.foregroundActive && appForeground) startLeaseRenewal() else stopLeaseRenewal()
+                if (speechBackend == "client_local") return
                 if (value.chatContextSynced && grant != null && !_state.value.mediaConnected) {
                     val currentGrant = grant ?: return
                     val currentSession = session ?: return
@@ -1617,7 +1864,7 @@ class VoiceSessionController(
             return
         }
         observedTurnId = value.turnId
-        if (value.state == "recognizing") media.interruptPlayout()
+        if (value.state == "recognizing" && speechBackend != "client_local") media.interruptPlayout()
         val notice = reduceTerminalNotice(_state.value.terminalNotice, value)
         val speechUnavailable =
             value.state == "succeeded" && notice?.turnId == value.turnId && notice.speechUnavailable
@@ -1982,6 +2229,7 @@ class VoiceSessionController(
     private fun clearMediaSession(retainPending: Boolean) {
         invalidateLifecycle()
         stopLeaseRenewal()
+        teardownLocal()
         media.disconnect()
         session = null
         grant = null
@@ -1993,6 +2241,28 @@ class VoiceSessionController(
         if (!retainPending) clearPendingFinals()
         _state.update { it.copy(mediaConnected = false) }
     }
+
+    private fun teardownLocal() {
+        local?.teardown(true)
+        local = null
+        if (speechBackend == "client_local") {
+            speechBackend = "livekit"
+        }
+    }
+
+    private fun localSessionOf(value: VoiceRestSession): LocalVoiceSession =
+        LocalVoiceSession(
+            deviceId = value.deviceId,
+            connectionGeneration = value.ownerConnectionGeneration,
+            sessionId = value.sessionId,
+            generation = value.generation,
+            speechRevision = value.mediaGrantRevision,
+            chatId = value.visibleChatId,
+            chatContextRevision = value.chatContextRevision,
+            foregroundActive = value.foregroundActive,
+            microphoneEnabled = value.microphoneEnabled,
+            speechMuted = value.speechMuted,
+        )
 
     private fun restoreServerProjectionWithoutSession() {
         _state.update { current ->
@@ -2072,6 +2342,8 @@ class VoiceSessionController(
     fun close() {
         invalidateLifecycle()
         stopLeaseRenewal()
+        local?.close()
+        local = null
         media.disconnect()
         clearPendingFinals()
         scope.cancel()
@@ -2113,6 +2385,30 @@ class VoiceSessionController(
                 "network_interrupted" -> "Voice connection was interrupted. Typed chat is still available."
                 "ended_by_user" -> "Voice conversation ended. Accepted requests keep running."
                 "proof_expired" -> "That spoken request expired before acceptance. Please say it again."
+                "client_readiness_required" -> "Preparing on-device speech… Typed chat remains available."
+                "microphone_permission_not_determined" -> "Local voice needs microphone permission. Allow it or keep typing."
+                "speech_recognition_permission_not_determined" -> "Local voice needs microphone permission. Allow it or keep typing."
+                "speech_recognition_permission_denied" -> "Speech recognition permission was denied. You can keep typing."
+                "local_processing_not_guaranteed" -> "This device cannot guarantee private local speech. You can keep typing."
+                "local_recognition_unavailable" -> "Local speech recognition is unavailable. You can keep typing."
+                "local_synthesis_unavailable" -> "Local speech synthesis is unavailable. You can keep typing."
+                "local_recognition_locale_unavailable" -> "Local recognition for English (United States) is unavailable."
+                "local_synthesis_locale_unavailable" -> "A local English (United States) voice is unavailable."
+                "local_language_download_required" ->
+                    "Local English speech must be installed before voice can start. You can keep typing."
+                "local_language_installing" -> "Installing local English speech… Typed chat remains available."
+                "local_language_install_failed" -> "Local speech could not be installed. You can keep typing."
+                "local_session_not_ready" -> "Local voice did not become ready. You can keep typing."
+                "local_recognition_failed" -> "Local speech recognition failed. Please try again or keep typing."
+                "local_audio_interrupted" -> "Voice paused because audio was interrupted."
+                "local_engine_lost" -> "The on-device speech engine was lost. You can keep typing."
+                "local_final_empty" -> "No speech was recognized. Please try again or keep typing."
+                "local_final_malformed" -> "That spoken request could not be used. Please try again or keep typing."
+                "local_synthesis_failed" ->
+                    "Local speech playback failed. The text result remains available, and you can keep typing."
+                "local_announcement_expired" -> "A spoken update expired before playback. The text result remains available."
+                "stale_local_turn" ->
+                    "Voice stopped because request acceptance could not be confirmed. Typed chat remains available."
                 else ->
                     when (phase) {
                         "connecting" -> "Connecting voice…"
@@ -2172,6 +2468,100 @@ class OkHttpVoiceControlApi(
                 put("expected_media_grant_revision", target.mediaGrantRevision)
             },
         )
+
+    override suspend fun selectBackend(binding: VoiceUiBinding): VoiceBackendSelection =
+        withContext(Dispatchers.IO) {
+            val builder =
+                Request.Builder()
+                    .url(baseUrl.trimEnd('/') + "/api/voice/v2/capability")
+                    .header("Authorization", "Bearer ${binding.token}")
+                    .header("X-Astral-Device-Id", binding.deviceId)
+                    .header("X-Astral-Connection-Generation", binding.connectionGeneration)
+                    .header("X-Astral-Voice-Control-Binding", binding.control.binding)
+                    .header("Cache-Control", "no-store")
+                    .get()
+            runCatching {
+                client.newCall(builder.build()).execute().use { response ->
+                    if (response.code == 404) return@use VoiceBackendSelection.Legacy
+                    val parsed =
+                        response.body?.string()
+                            ?.let { raw -> runCatching { json.parseToJsonElement(raw) as? JsonObject }.getOrNull() }
+                    if (response.code !in 200..299 || parsed == null) {
+                        VoiceBackendSelection.Legacy
+                    } else {
+                        VoiceBackendSelection.fromJson(parsed) ?: VoiceBackendSelection.Legacy
+                    }
+                }
+            }.getOrElse { VoiceBackendSelection.Legacy }
+        }
+
+    override suspend fun startLocalSession(
+        binding: VoiceUiBinding,
+        activationId: String,
+        chatId: String,
+        capability: LocalSpeechCapability,
+        takeover: VoiceTakeoverTarget?,
+    ): VoiceStartOutcome =
+        withContext(Dispatchers.IO) {
+            val path =
+                if (takeover == null) {
+                    "/api/voice/v2/sessions"
+                } else {
+                    "/api/voice/v2/sessions/${takeover.sessionId}/takeover"
+                }
+            val body =
+                buildJsonObject {
+                    put("schema_version", "2")
+                    put("activation_id", activationId)
+                    put("device_id", binding.deviceId)
+                    put("device_kind", "android")
+                    put("visible_chat_id", chatId)
+                    put("foreground_active", true)
+                    put("client_capability", capability.toJson())
+                    if (takeover != null) {
+                        put("expected_generation", takeover.generation)
+                        put("expected_speech_revision", takeover.mediaGrantRevision)
+                    }
+                }
+            val builder =
+                Request.Builder()
+                    .url(baseUrl.trimEnd('/') + path)
+                    .header("Authorization", "Bearer ${binding.token}")
+                    .header("X-Astral-Device-Id", binding.deviceId)
+                    .header("X-Astral-Connection-Generation", binding.connectionGeneration)
+                    .header("X-Astral-Voice-Control-Binding", binding.control.binding)
+                    .header("Cache-Control", "no-store")
+                    .post(body.toString().toRequestBody(JSON_MEDIA_TYPE))
+            runCatching {
+                client.newCall(builder.build()).execute().use { response ->
+                    val raw = if (response.code == 204) "" else response.body?.string().orEmpty()
+                    val parsed =
+                        raw.takeIf { it.isNotBlank() }
+                            ?.let { runCatching { json.parseToJsonElement(it) as? JsonObject }.getOrNull() }
+                    if (response.code == 409 && parsed != null && parsed.opaque("current_session_id") != null) {
+                        return@use VoiceStartOutcome.TakeoverRequired(
+                            VoiceTakeoverTarget(
+                                sessionId = requireNotNull(parsed.opaque("current_session_id")),
+                                deviceKind = parsed.str("device_kind") ?: "unknown",
+                                deviceLabel = parsed.str("device_label"),
+                                generation = parsed.positiveInt("generation") ?: 1,
+                                mediaGrantRevision = parsed.positiveInt("media_grant_revision") ?: 1,
+                            ),
+                            parsed.str("message"),
+                        )
+                    }
+                    if (response.code !in 200..299 || parsed == null) {
+                        return@use VoiceStartOutcome.Failed(problemCode(parsed), parsed?.str("message"))
+                    }
+                    val session = parseLocalSession(parsed, binding, chatId)
+                    if (session == null) {
+                        VoiceStartOutcome.Failed("local_session_not_ready")
+                    } else {
+                        VoiceStartOutcome.LocalStarted(session)
+                    }
+                }
+            }.getOrElse { VoiceStartOutcome.Failed("network_interrupted") }
+        }
 
     override suspend fun update(
         binding: VoiceUiBinding,
@@ -2320,6 +2710,62 @@ class OkHttpVoiceControlApi(
             foregroundActive = root.bool("foreground_active") ?: return null,
             speechMuted = root.bool("speech_muted") ?: return null,
             microphoneEnabled = root.bool("microphone_enabled") ?: return null,
+        )
+    }
+
+    private fun parseLocalSession(
+        root: JsonObject,
+        binding: VoiceUiBinding,
+        chatId: String,
+    ): LocalVoiceSession? {
+        val fields =
+            setOf(
+                "schema_version",
+                "session_id",
+                "speech_backend",
+                "transport",
+                "generation",
+                "speech_revision",
+                "state",
+                "visible_chat_id",
+                "chat_context_revision",
+                "applied_chat_context_revision",
+                "chat_context_synced",
+                "foreground_active",
+                "microphone_enabled",
+                "speech_muted",
+                "configured_locale",
+                "idle_expires_at",
+            )
+        if (root.keys != fields || root.str("schema_version") != "2") return null
+        if (root.str("speech_backend") != "client_local" || root.str("transport") != "client_local") return null
+        if (root.str("state")?.takeIf { it in setOf("starting", "active") } == null) return null
+        if (root.str("idle_expires_at")?.let { runCatching { Instant.parse(it) }.getOrNull() }?.isAfter(Instant.now()) != true) return null
+        val chatContextRevision = root.positiveInt("chat_context_revision") ?: return null
+        if (
+            root.uuid("session_id") == null ||
+            root.uuid("visible_chat_id") != chatId ||
+            root.positiveInt("generation") == null ||
+            root.positiveInt("speech_revision") == null ||
+            root.bool("chat_context_synced") != true ||
+            root.bool("foreground_active") != true ||
+            root.bool("microphone_enabled") == null ||
+            root.bool("speech_muted") == null ||
+            root.str("configured_locale") != "en-US"
+        ) {
+            return null
+        }
+        return LocalVoiceSession(
+            deviceId = binding.deviceId,
+            connectionGeneration = binding.connectionGeneration,
+            sessionId = requireNotNull(root.uuid("session_id")),
+            generation = requireNotNull(root.positiveInt("generation")),
+            speechRevision = requireNotNull(root.positiveInt("speech_revision")),
+            chatId = chatId,
+            chatContextRevision = chatContextRevision,
+            foregroundActive = true,
+            microphoneEnabled = requireNotNull(root.bool("microphone_enabled")),
+            speechMuted = requireNotNull(root.bool("speech_muted")),
         )
     }
 

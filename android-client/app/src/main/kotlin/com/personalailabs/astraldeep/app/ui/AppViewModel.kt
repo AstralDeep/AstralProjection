@@ -332,6 +332,7 @@ class AppViewModel(
             }
         }
         voiceController?.setPlayoutReporter(client::sendVoicePlayoutEvent)
+        voiceController?.setLocalFrameSender(client::sendVoiceLocalFrame)
     }
 
     fun start(
