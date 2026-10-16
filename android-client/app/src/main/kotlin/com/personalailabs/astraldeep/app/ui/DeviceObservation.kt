@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.personalailabs.astraldeep.app.transport.RuntimeDeviceMonitor
 import com.personalailabs.astraldeep.app.transport.deviceCapabilities
 import com.personalailabs.astraldeep.app.transport.voiceDeviceId
+import com.personalailabs.astraldeep.app.voice.VoiceAudioEnvironmentObserver
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 
@@ -42,6 +43,19 @@ internal fun DeviceObservation(
     val monitor = remember(context) { RuntimeDeviceMonitor(context) }
     val deviceId = remember(context) { voiceDeviceId(context) }
     val facts by monitor.facts.collectAsStateWithLifecycle()
+    val voiceState by vm.voiceState.collectAsStateWithLifecycle()
+    var routeLossPending by remember { mutableStateOf(false) }
+    val audioObserver =
+        remember(context) {
+            VoiceAudioEnvironmentObserver(
+                context,
+                onAudioFocusChanged = vm::audioFocusChanged,
+                onOutputRouteLost = {
+                    routeLossPending = true
+                    vm.audioRouteChanged(false)
+                },
+            )
+        }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     val observed =
         if (viewport.width > 0 && viewport.height > 0) {
@@ -67,6 +81,18 @@ internal fun DeviceObservation(
             vm.appForegroundChanged(false)
             owner.lifecycle.removeObserver(observer)
             monitor.close()
+        }
+    }
+    DisposableEffect(audioObserver) {
+        onDispose { audioObserver.close() }
+    }
+    LaunchedEffect(voiceState.active) {
+        if (voiceState.active) audioObserver.start() else audioObserver.stop()
+    }
+    LaunchedEffect(routeLossPending, facts) {
+        if (routeLossPending && facts.voice.hasMicrophone && facts.voice.hasAudioOutput) {
+            routeLossPending = false
+            vm.audioRouteChanged(true)
         }
     }
     LaunchedEffect(token) {
