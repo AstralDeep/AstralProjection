@@ -1099,7 +1099,7 @@ class VoiceSessionController(
                     audioEnvironmentEligible() &&
                     updated.chatContextSynced && updated.microphoneEnabled
                 ) {
-                    runCatching { media.setMicrophoneEnabled(true) }
+                    runCatching { setEffectiveMicrophoneEnabled(true, fence) }
                 }
             }.onFailure {
                 if (sessionMatches(fence) && connection?.visibleChatId == chatId) {
@@ -1278,16 +1278,12 @@ class VoiceSessionController(
                     media.disconnect()
                     return
                 }
-                media.setMicrophoneEnabled(
-                    audioEnvironmentEligible() &&
-                        currentSession.chatContextSynced &&
-                        currentSession.foregroundActive &&
-                        currentSession.microphoneEnabled,
-                )
+                setEffectiveMicrophoneEnabled(currentSession.microphoneEnabled, fence)
                 if (!sessionMatches(fence) || grant !== currentGrant) {
                     media.disconnect()
                     return
                 }
+                if (!appForeground || !audioEnvironmentEligible()) return
                 feedback("greeting", "ready", "Connected. Waiting for the greeting…", mediaConnected = true)
             } catch (error: CancellationException) {
                 throw error
@@ -1313,7 +1309,7 @@ class VoiceSessionController(
         val activeSession = session ?: return feedback("error", "stale_generation")
         microphoneDesired = enabled
         val fence = sessionFence(activeSession)
-        runCatching { media.setMicrophoneEnabled(enabled) }
+        if (!enabled) runCatching { setEffectiveMicrophoneEnabled(false, fence) }
         if (!sessionMatches(fence)) return
         val result =
             sessionUpdateMutex.withLock {
@@ -1326,7 +1322,10 @@ class VoiceSessionController(
             } ?: return
         if (!sessionMatches(fence)) return
         result.onSuccess { updated ->
-            if (sameLease(activeSession, updated)) session = updated
+            if (sameLease(activeSession, updated)) {
+                session = updated
+                if (enabled) runCatching { setEffectiveMicrophoneEnabled(true, fence) }
+            }
         }.onFailure {
             if (sessionMatches(fence)) feedback("error", "stale_generation")
         }
@@ -1507,6 +1506,19 @@ class VoiceSessionController(
 
     private fun audioEnvironmentEligible(): Boolean = !audioInterruptionActive && audioRouteAvailable
 
+    private fun microphoneCaptureEligible(fence: SessionFence): Boolean =
+        sessionMatches(fence) && appForeground && audioEnvironmentEligible() && microphoneDesired &&
+            session?.let { it.foregroundActive && it.chatContextSynced && it.microphoneEnabled } == true
+
+    private suspend fun setEffectiveMicrophoneEnabled(
+        enabled: Boolean,
+        fence: SessionFence,
+    ) {
+        val effective = enabled && microphoneCaptureEligible(fence)
+        media.setMicrophoneEnabled(effective)
+        if (effective && !microphoneCaptureEligible(fence)) media.setMicrophoneEnabled(false)
+    }
+
     private fun audioSuspensionReason(): String? =
         when {
             audioInterruptionActive -> "audio_interrupted"
@@ -1580,7 +1592,7 @@ class VoiceSessionController(
                 .onSuccess { updated ->
                     if (sessionMatches(fence) && sameLease(activeSession, updated)) {
                         session = updated
-                        runCatching { media.setMicrophoneEnabled(updated.microphoneEnabled) }
+                        runCatching { setEffectiveMicrophoneEnabled(updated.microphoneEnabled, fence) }
                         startLeaseRenewal()
                     }
                 }.onFailure {
@@ -1594,7 +1606,7 @@ class VoiceSessionController(
     private fun startLeaseRenewal() {
         val active = session
         if (
-            !appForeground || active == null || !active.foregroundActive ||
+            !appForeground || !audioEnvironmentEligible() || active == null || !active.foregroundActive ||
             leaseRenewalJob?.isActive == true
         ) {
             return
@@ -1729,7 +1741,7 @@ class VoiceSessionController(
                     val fence = sessionFence(currentSession)
                     scope.launch {
                         if (sessionMatches(fence) && audioEnvironmentEligible()) {
-                            runCatching { media.setMicrophoneEnabled(value.microphoneEnabled) }
+                            runCatching { setEffectiveMicrophoneEnabled(value.microphoneEnabled, fence) }
                         }
                     }
                 }

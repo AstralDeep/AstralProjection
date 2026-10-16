@@ -47,7 +47,12 @@ on ineligible audio transitions and recover in a bounded, server-authorized way.
 - **User microphone intent.** `microphoneDesired` records the user's last explicit microphone
   choice, separate from the session's server-mirrored `microphone_enabled`, which suspension
   forces to `false`. Recovery restores capture only when the confirmed server state authorizes it
-  and the recorded intent is on; if the user muted, capture stays off.
+  and the recorded intent is on; if the user muted, capture stays off. Manual unmute also waits
+  for the server update, then checks current focus, route, foreground, chat and session authority.
+  If those change while the media adapter is enabling capture, capture is disabled on completion.
+- **Observer teardown.** Stopping or closing the observer abandons its audio focus and unregisters
+  its device callback once. Each registration fences callbacks so queued events from a stopped,
+  closed or earlier registration cannot affect the current session.
 - **Foreground interplay.** Returning to the foreground while an interruption is active re-asserts
   the audio suspension instead of resuming; focus gained while backgrounded defers recovery to the
   foreground return. Quick background/foreground flaps converge because every update re-reads the

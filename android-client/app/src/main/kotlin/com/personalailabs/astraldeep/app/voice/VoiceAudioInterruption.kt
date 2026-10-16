@@ -14,5 +14,4 @@ internal fun voiceAudioFocusInterrupted(focusChange: Int): Boolean? =
         else -> null
     }
 
-internal fun voiceAudioFocusRequestInterrupted(focusResult: Int): Boolean =
-    focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+internal fun voiceAudioFocusRequestInterrupted(focusResult: Int): Boolean = focusResult != AudioManager.AUDIOFOCUS_REQUEST_GRANTED

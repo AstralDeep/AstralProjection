@@ -5,9 +5,11 @@ package com.personalailabs.astraldeep.app.voice
 
 import android.media.AudioManager
 import com.personalailabs.astraldeep.core.protocol.VoiceAnnouncementMedia
+import com.personalailabs.astraldeep.core.protocol.VoiceControlBinding
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -330,6 +332,89 @@ class VoiceAudioInterruption065Test {
         }
 
     @Test
+    fun unmuteDuringAudioFocusLossRetainsIntentWithoutStartingCapture() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.controller.activate(capability())
+            runCurrent()
+            fixture.controller.audioFocusChanged(interrupted = true)
+            runCurrent()
+            val captureStarts = fixture.media.microphoneChanges.count { it }
+
+            fixture.controller.setMicrophoneEnabled(true)
+            runCurrent()
+
+            assertEquals(captureStarts, fixture.media.microphoneChanges.count { it })
+            assertEquals(false, fixture.media.microphoneChanges.last())
+            fixture.controller.audioFocusChanged(interrupted = false)
+            runCurrent()
+            assertEquals(true, fixture.media.microphoneChanges.last())
+        }
+
+    @Test
+    fun unmuteDuringRouteLossOrBackgroundKeepsCaptureDisabled() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.controller.activate(capability())
+            runCurrent()
+            fixture.controller.audioRouteChanged(available = false)
+            runCurrent()
+            val captureStarts = fixture.media.microphoneChanges.count { it }
+            fixture.controller.setMicrophoneEnabled(true)
+            runCurrent()
+            assertEquals(captureStarts, fixture.media.microphoneChanges.count { it })
+
+            fixture.controller.appForegroundChanged(active = false)
+            fixture.controller.audioRouteChanged(available = true)
+            runCurrent()
+            fixture.controller.setMicrophoneEnabled(true)
+            runCurrent()
+            assertEquals(captureStarts, fixture.media.microphoneChanges.count { it })
+            assertEquals(false, fixture.media.microphoneChanges.last())
+        }
+
+    @Test
+    fun unmuteAwaitsAuthorizationAndRejectsFocusLostDuringTheControlUpdate() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.controller.activate(capability())
+            runCurrent()
+            fixture.controller.setMicrophoneEnabled(false)
+            fixture.api.releaseUpdate = CompletableDeferred()
+            val captureStarts = fixture.media.microphoneChanges.count { it }
+
+            val unmute = launch { fixture.controller.setMicrophoneEnabled(true) }
+            runCurrent()
+            assertEquals(captureStarts, fixture.media.microphoneChanges.count { it })
+            fixture.controller.audioFocusChanged(interrupted = true)
+            runCurrent()
+            fixture.api.releaseUpdate!!.complete(Unit)
+            runCurrent()
+            unmute.join()
+            assertEquals(captureStarts, fixture.media.microphoneChanges.count { it })
+            assertEquals(false, fixture.media.microphoneChanges.last())
+        }
+
+    @Test
+    fun focusLostDuringAnAwaitedMediaEnableDisablesCaptureOnCompletion() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.controller.activate(capability())
+            runCurrent()
+            fixture.controller.setMicrophoneEnabled(false)
+            fixture.media.releaseEnable = CompletableDeferred()
+
+            val unmute = launch { fixture.controller.setMicrophoneEnabled(true) }
+            runCurrent()
+            fixture.controller.audioFocusChanged(interrupted = true)
+            runCurrent()
+            fixture.media.releaseEnable!!.complete(Unit)
+            runCurrent()
+            unmute.join()
+            assertEquals(false, fixture.media.microphoneChanges.last())
+        }
+
+    @Test
     fun audioFocusObservationsMapToVoiceInterruptionState() {
         assertEquals(false, voiceAudioFocusInterrupted(AudioManager.AUDIOFOCUS_GAIN))
         assertEquals(true, voiceAudioFocusInterrupted(AudioManager.AUDIOFOCUS_LOSS))
@@ -441,12 +526,14 @@ class VoiceAudioInterruption065Test {
         val microphoneChanges = mutableListOf<Boolean>()
         val announcements = mutableListOf<VoiceAnnouncementMedia>()
         var interruptCalls = 0
+        var releaseEnable: CompletableDeferred<Unit>? = null
 
         override suspend fun connect(grant: LiveKitVoiceGrant) {
             connectCalls += 1
         }
 
         override suspend fun setMicrophoneEnabled(enabled: Boolean) {
+            if (enabled) releaseEnable?.await()
             microphoneChanges += enabled
         }
 
@@ -524,7 +611,7 @@ class VoiceAudioInterruption065Test {
               "media_grant_revision":1,
               "announcement_id":"$ANNOUNCEMENT_ID",
               "announcement_sequence":1,
-              "turn_id":null,
+              "turn_id":"00000000-0000-4000-8000-000000000005",
               "kind":"$kind",
               "quantum_role":"single",
               "quantum_index":0,
