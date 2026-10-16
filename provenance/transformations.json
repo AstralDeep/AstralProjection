@@ -1231,9 +1231,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppTests/VoiceSessionController065Tests.swift",
       "sourceBlob": "15e7fd2c45ca86e47444913e7a836f4fb29fc2d1",
       "sourceMode": "100644",
-      "resultSha256": "0dec09419349105b6fca125689d52b50d6f8c51335d776bc6cd1a65a464df65d",
+      "resultSha256": "0ba50505157773bac9cb138e80c39cfb3f3242a67c3c45acfa48aaf8e68a2982",
       "task": "T065/T066/T060/T015",
-      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures."
+      "reason": "Cover delayed permission, start, and takeover completions across Apple End, close, authentication expiry, and connection replacement, including exact compensating session-fence cleanup and no media reconnection. Feature 088 native history qualification: explicitly inject in-memory token storage so unit tests cannot access the production Keychain; retain existing behavior assertions and qualify history/backdrop regressions where applicable. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Qualify native v2 Apple/watch rendering, conversation hydration and current contract fixtures. Add the deterministic interruption-during-speech recovery scenario proving bounded media recovery into exactly one accepted transcript turn with exact serialized retry, correlated acknowledgement, resumed post-recovery result playout, and fenced stale pre-interruption announcement, transcript, and duplicate replays. Repair the pinned formatter trailing-comma violation in the retained recovery regression without changing test behavior."
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/Accessibility060UITests.swift",
@@ -1267,9 +1267,9 @@
       "sourcePath": "apple-clients/AstralApp/AstralAppUITests/ReleaseEvidenceUITests.swift",
       "sourceBlob": "18e207353f54c5bfb33d55df444e20ef111cc9aa",
       "sourceMode": "100644",
-      "resultSha256": "805ec85c2c3535a283797873c017d283ad249aec9ecfd0c2dfbf40b6aad4ce2c",
+      "resultSha256": "445f889cc89e98239ac80d80b29082674a01ce9d2a787ae1feb68654bc97f030",
       "task": "T063",
-      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one terminate-and-relaunch restore of the prompt and dice answer within five seconds and reports trial_count 1 instead of twenty relaunches."
+      "reason": "Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Single-resume proof 2026-09-28: reconnect_resume proves one terminate-and-relaunch restore of the prompt and dice answer within five seconds and reports trial_count 1 instead of twenty relaunches. Rebase the voice evidence check onto the proven voice-composer and voice-terminal UI fixtures as voice_terminal_failure_and_typed_fallback, recording the surfaced terminal turn-failure notice, typed-fallback availability, server-owned composer controls, component build identity, and the exact staged voice runtime digest identities with no transcripts, audio, credentials, or PHI. Rebase the voice evidence check onto the proven voice-composer and voice-terminal UI fixtures as voice_terminal_failure_and_typed_fallback, recording the surfaced terminal turn-failure notice, typed-fallback availability, server-owned composer controls, component build identity, and the exact staged voice runtime digest identities with no transcripts, audio, credentials, or PHI."
     },
     {
       "path": "apple-clients/AstralApp/AstralAppUITests/VoiceConversationUITests.swift",

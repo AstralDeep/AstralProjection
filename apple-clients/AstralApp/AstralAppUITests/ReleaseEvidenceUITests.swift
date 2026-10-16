@@ -328,6 +328,20 @@ private final class EvidenceRecorder {
         ]
     }
 
+    func voiceRuntimeDigestIdentities() -> [String: String] {
+        guard let runtime = staging["voice_runtime"] as? [String: Any],
+            let profile = runtime["speech_profile"] as? [String: Any]
+        else { return [:] }
+        var identities: [String: String] = [:]
+        for field in [
+            "voice_worker_image_sha256", "livekit_image_sha256", "livekit_config_sha256",
+        ] {
+            identities[field] = runtime[field] as? String ?? ""
+        }
+        identities["speech_profile_sha256"] = profile["profile_sha256"] as? String ?? ""
+        return identities
+    }
+
     func checkRecord(id: String, production: CheckProduction, startedAt checkStart: Date) -> [String: Any] {
         var outcome = "passed"
         var detailCode: Any = NSNull()
@@ -457,6 +471,11 @@ final class ReleaseEvidenceUITests: XCTestCase {
         checks.append(
             runCheck("accessibility_semantics", recorder: recorder, blockedBy: liveBlocked) {
                 try self.runAccessibilityInspection()
+            })
+
+        checks.append(
+            runCheck("voice_terminal_failure_and_typed_fallback", recorder: recorder) {
+                try self.runVoiceTerminalFailureEvidence(recorder: recorder)
             })
 
         if recorder.platform == "macos" {
@@ -978,6 +997,86 @@ final class ReleaseEvidenceUITests: XCTestCase {
         if !violations.isEmpty {
             production.failureCode = "accessibility_contract_violation"
         }
+        return production
+    }
+
+    private func runVoiceTerminalFailureEvidence(recorder: EvidenceRecorder) throws -> CheckProduction {
+        let started = Date()
+        var outcomeCategories: [String] = []
+
+        let composerApp = XCUIApplication()
+        composerApp.launchArguments = ["--astral-ui-test-first-login", "voice-composer"]
+        composerApp.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        composerApp.launch()
+        do {
+            let voice = composerApp.buttons["voice-control-voice-start"]
+            guard voice.waitForExistence(timeout: 10), voice.isEnabled, voice.isHittable else {
+                throw EvidenceFailure(
+                    code: "voice_composer_fixture_unavailable",
+                    message: "the server-owned composer voice control did not appear")
+            }
+            let composer = composerApp.textFields["chat-composer-input"]
+            guard composer.waitForExistence(timeout: 2), composer.isEnabled, composer.isHittable else {
+                throw EvidenceFailure(
+                    code: "voice_composer_fixture_unavailable",
+                    message: "the typed composer was unavailable beside the voice control")
+            }
+            outcomeCategories.append(contentsOf: [
+                "server_owned_composer_controls_present",
+                "typed_fallback_available",
+            ])
+        }
+        composerApp.terminate()
+
+        let terminalApp = XCUIApplication()
+        terminalApp.launchArguments = ["--astral-ui-test-first-login", "voice-terminal"]
+        terminalApp.launchEnvironment["ASTRAL_UI_TESTING"] = "1"
+        terminalApp.launch()
+        do {
+            let notice = terminalApp.descendants(matching: .any)["voice-request-terminal-notice"]
+            guard notice.waitForExistence(timeout: 10) else {
+                throw EvidenceFailure(
+                    code: "voice_terminal_notice_unobserved",
+                    message: "the terminal turn-failure notice did not surface")
+            }
+            let value = notice.value as? String ?? ""
+            guard value.contains("Warning. Request did not complete."),
+                value.contains("The provider could not complete this request.")
+            else {
+                throw EvidenceFailure(
+                    code: "voice_terminal_notice_mismatch",
+                    message: "the terminal notice did not carry the server-owned failure explanation")
+            }
+            let composer = terminalApp.textFields["chat-composer-input"]
+            guard composer.waitForExistence(timeout: 2), composer.isEnabled, composer.isHittable else {
+                throw EvidenceFailure(
+                    code: "voice_terminal_fallback_unavailable",
+                    message: "typed chat was unavailable while the terminal notice was surfaced")
+            }
+            outcomeCategories.append(contentsOf: [
+                "voice_terminal_failure_notice_surfaced",
+                "typed_fallback_available",
+            ])
+        }
+        terminalApp.terminate()
+
+        var production = CheckProduction()
+        production.raw = [
+            "fixture_count": 2,
+            "component_identity": ["build_identity": recorder.artifact["build_identity"] ?? ""],
+            "runtime_identity": recorder.voiceRuntimeDigestIdentities(),
+            "outcome_categories": outcomeCategories,
+            "duration_ms": Int(Date().timeIntervalSince(started) * 1000),
+        ]
+        production.measurements = [
+            measurementRecord(
+                metric: "voice_fixtures", aggregation: "total", value: 2,
+                unit: "count", sampleCount: 2, comparator: "gte", threshold: 2),
+            measurementRecord(
+                metric: "voice_outcome_categories", aggregation: "total",
+                value: Double(outcomeCategories.count), unit: "count",
+                sampleCount: max(1, outcomeCategories.count), comparator: "gte", threshold: 3),
+        ]
         return production
     }
 

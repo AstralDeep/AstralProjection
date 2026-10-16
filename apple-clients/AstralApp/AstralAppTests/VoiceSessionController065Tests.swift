@@ -517,6 +517,119 @@ final class VoiceSessionController065Tests: XCTestCase {
         XCTAssertEqual(controller.message, "On it!")
     }
 
+    func testInterruptionDuringSpeechRecoversIntoExactlyOneAcceptedTurnWithFencedStaleOutput() async throws {
+        let api = FakeVoiceAPI()
+        api.startOutcome = .started(restSession(synced: true), grant())
+        api.refreshOutcomes = [
+            .refreshed(restSession(synced: true, revision: 3), grant(revision: 3))
+        ]
+        api.updatedSession = restSession(synced: true, revision: 3)
+        let media = FakeVoiceMedia()
+        var sent: [String] = []
+        var playoutEvents: [InboundFrame] = []
+        let controller = makeController(api: api, media: media, retryNanoseconds: 20_000_000)
+        controller.setFrameSender { wire in
+            if let frame = InboundFrame.parse(wire) {
+                if frame.name == "voice_playout_event" { playoutEvents.append(frame) }
+                sent.append(wire)
+            }
+            return true
+        }
+        install(controller, replaceSender: false)
+        await controller.activate()
+        XCTAssertEqual(controller.phase, "greeting")
+        XCTAssertTrue(controller.mediaConnected)
+
+        let greeting = greetingAnnouncement(sequence: 1)
+        media.emit(
+            .data(
+                topic: voiceAnnouncementTopic, participantIdentity: "voice-worker-01",
+                payload: Data(greeting.utf8)))
+        for _ in 0..<10 { await Task.yield() }
+        media.emit(.playout(try announcementValue(greeting), phase: "started"))
+        XCTAssertEqual(controller.phase, "speaking_progress")
+        XCTAssertEqual(playoutEvents.count, 1)
+
+        media.emit(.failed)
+        XCTAssertEqual(controller.phase, "reconnecting")
+        XCTAssertEqual(controller.reason, "network_interrupted")
+        XCTAssertFalse(controller.mediaConnected)
+        try await waitForVoicePhase(controller, "listening")
+        XCTAssertTrue(controller.mediaConnected)
+        XCTAssertEqual(api.refreshIds.count, 1)
+        XCTAssertNil(controller.terminalNotice)
+
+        media.emit(
+            .data(
+                topic: voiceTranscriptTopic, participantIdentity: "voice-worker-01",
+                payload: Data(finalTranscript(revision: 3).utf8)))
+        try await Task.sleep(nanoseconds: 70_000_000)
+        let submissions =
+            sent.filter { InboundFrame.parse($0)?.payload["action"]?.stringValue == "chat_message" }
+        XCTAssertGreaterThanOrEqual(submissions.count, 2)
+        XCTAssertEqual(Set(submissions).count, 1, "retries must reuse the exact serialized frame")
+        XCTAssertEqual(controller.awaitingAcceptance, 1)
+        XCTAssertEqual(controller.phase, "acknowledging")
+
+        controller.consume(frame(ack(connection: connection)))
+        XCTAssertEqual(controller.awaitingAcceptance, 0)
+        XCTAssertEqual(controller.phase, "processing")
+        XCTAssertEqual(controller.message, "On it!")
+        let acceptedSubmissionCount =
+            sent.filter { InboundFrame.parse($0)?.payload["action"]?.stringValue == "chat_message" }
+            .count
+
+        let recoveredResult = announcement(sequence: 5, sid: "TR_result_recovered", revision: 3)
+        media.emit(
+            .data(
+                topic: voiceAnnouncementTopic, participantIdentity: "voice-worker-01",
+                payload: Data(recoveredResult.utf8)))
+        for _ in 0..<10 { await Task.yield() }
+        media.emit(.playout(try announcementValue(recoveredResult), phase: "started"))
+        XCTAssertEqual(controller.phase, "speaking_result")
+        let resumedPlayout = try XCTUnwrap(playoutEvents.last)
+        XCTAssertEqual(resumedPlayout.payload["phase"]?.stringValue, "started")
+        XCTAssertEqual(resumedPlayout.payload["kind"]?.stringValue, "result")
+        XCTAssertEqual(resumedPlayout.payload["media_grant_revision"]?.numberValue, 3)
+        XCTAssertNil(controller.terminalNotice)
+
+        let authorizedBeforeReplays = media.authorized.count
+        let staleGreeting = greetingAnnouncement(sequence: 2, revision: 2)
+        media.emit(
+            .data(
+                topic: voiceAnnouncementTopic, participantIdentity: "voice-worker-01",
+                payload: Data(staleGreeting.utf8)))
+        for _ in 0..<10 { await Task.yield() }
+        XCTAssertEqual(
+            media.authorized.count, authorizedBeforeReplays,
+            "a pre-interruption announcement must stay fenced after recovery")
+
+        media.emit(
+            .data(
+                topic: voiceTranscriptTopic, participantIdentity: "voice-worker-01",
+                payload: Data(finalTranscript(revision: 2).utf8)))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(
+            sent.filter { InboundFrame.parse($0)?.payload["action"]?.stringValue == "chat_message" }
+                .count, acceptedSubmissionCount,
+            "a pre-interruption final transcript must never resubmit after recovery")
+        XCTAssertEqual(controller.awaitingAcceptance, 0)
+        XCTAssertEqual(controller.phase, "speaking_result")
+
+        media.emit(
+            .data(
+                topic: voiceTranscriptTopic, participantIdentity: "voice-worker-01",
+                payload: Data(finalTranscript(revision: 3).utf8)))
+        try await Task.sleep(nanoseconds: 30_000_000)
+        XCTAssertEqual(
+            sent.filter { InboundFrame.parse($0)?.payload["action"]?.stringValue == "chat_message" }
+                .count, acceptedSubmissionCount,
+            "the accepted turn must submit exactly once")
+        XCTAssertEqual(controller.awaitingAcceptance, 0)
+        XCTAssertNil(controller.terminalNotice)
+        controller.close()
+    }
+
     func testTerminalRequestNoticeSurvivesChurnAndClearsForANewerActiveTurn() async throws {
         let api = FakeVoiceAPI()
         api.startOutcome = .started(restSession(synced: true), grant())
@@ -1956,9 +2069,9 @@ final class VoiceSessionController065Tests: XCTestCase {
         """
     }
 
-    private func finalTranscript() -> String {
+    private func finalTranscript(revision: Int = 2) -> String {
         """
-        {"type":"voice_transcript","schema_version":"1","session_id":"\(voiceSession)","generation":1,"turn_id":"\(turn)","client_turn_id":"\(clientTurn)","submission_id":"\(submission)","request_generation":"\(request)","chat_id":"\(chat)","chat_context_revision":3,"media_grant_revision":2,"sequence":1,"final":true,"text":"Review the result","detected_language":"en-US","text_digest_sha256":"5b6c9147d242ef629cc5731bd8844b86f5ef8bcf4e6d4d741bb80d2bc446ab04","transcript_proof":"af81ff8058e12f5622e53f8c1dc3ed460b753c13a3df46f9e09e40ca8f96a7f9","proof_expires_at":"2099-07-31T12:02:00Z","source_participant_identity":"voice-worker-01"}
+        {"type":"voice_transcript","schema_version":"1","session_id":"\(voiceSession)","generation":1,"turn_id":"\(turn)","client_turn_id":"\(clientTurn)","submission_id":"\(submission)","request_generation":"\(request)","chat_id":"\(chat)","chat_context_revision":3,"media_grant_revision":\(revision),"sequence":1,"final":true,"text":"Review the result","detected_language":"en-US","text_digest_sha256":"5b6c9147d242ef629cc5731bd8844b86f5ef8bcf4e6d4d741bb80d2bc446ab04","transcript_proof":"af81ff8058e12f5622e53f8c1dc3ed460b753c13a3df46f9e09e40ca8f96a7f9","proof_expires_at":"2099-07-31T12:02:00Z","source_participant_identity":"voice-worker-01"}
         """
     }
 
@@ -2045,23 +2158,37 @@ final class VoiceSessionController065Tests: XCTestCase {
 
     private func announcement(
         sequence: Int = 3, sid: String = "TR_audio_001",
-        trackName: String = "voice-result-opening"
+        trackName: String = "voice-result-opening", revision: Int = 2
     ) -> String {
         let announcementId = String(
             format: "00000000-0000-4000-8000-%012llx", Int64(sequence))
         return """
-            {"type":"voice_announcement_media","schema_version":"1","session_id":"\(voiceSession)","generation":1,"media_grant_revision":2,"announcement_id":"\(announcementId)","announcement_sequence":\(sequence),"turn_id":"\(turn)","kind":"result","quantum_role":"result_opening","quantum_index":0,"transport":"livekit","worker_identity":"voice-worker-01","sample_rate_hz":24000,"duration_samples":36000,"result_reserved_samples_after":36000,"track_sid":"\(sid)","track_name":"\(trackName)"}
+            {"type":"voice_announcement_media","schema_version":"1","session_id":"\(voiceSession)","generation":1,"media_grant_revision":\(revision),"announcement_id":"\(announcementId)","announcement_sequence":\(sequence),"turn_id":"\(turn)","kind":"result","quantum_role":"result_opening","quantum_index":0,"transport":"livekit","worker_identity":"voice-worker-01","sample_rate_hz":24000,"duration_samples":36000,"result_reserved_samples_after":36000,"track_sid":"\(sid)","track_name":"\(trackName)"}
             """
     }
 
     private func greetingAnnouncement(
-        sequence: Int = 4, sid: String = "TR_audio_greeting"
+        sequence: Int = 4, sid: String = "TR_audio_greeting", revision: Int = 2
     ) -> String {
         let announcementId = String(
             format: "00000000-0000-4000-8000-%012llx", Int64(sequence))
         return """
-            {"type":"voice_announcement_media","schema_version":"1","session_id":"\(voiceSession)","generation":1,"media_grant_revision":2,"announcement_id":"\(announcementId)","announcement_sequence":\(sequence),"turn_id":null,"kind":"greeting","quantum_role":"single","quantum_index":0,"transport":"livekit","worker_identity":"voice-worker-01","sample_rate_hz":24000,"duration_samples":24000,"track_sid":"\(sid)","track_name":"voice-greeting"}
+            {"type":"voice_announcement_media","schema_version":"1","session_id":"\(voiceSession)","generation":1,"media_grant_revision":\(revision),"announcement_id":"\(announcementId)","announcement_sequence":\(sequence),"turn_id":null,"kind":"greeting","quantum_role":"single","quantum_index":0,"transport":"livekit","worker_identity":"voice-worker-01","sample_rate_hz":24000,"duration_samples":24000,"track_sid":"\(sid)","track_name":"voice-greeting"}
             """
+    }
+
+    private func announcementValue(_ raw: String) throws -> VoiceAnnouncementMedia {
+        try XCTUnwrap(VoiceAnnouncementMedia(frame: frame(raw)))
+    }
+
+    private func waitForVoicePhase(
+        _ controller: AppleVoiceSessionController, _ expected: String
+    ) async throws {
+        for _ in 0..<200 {
+            if controller.phase == expected { return }
+            try await Task.sleep(nanoseconds: 5_000_000)
+        }
+        XCTFail("voice did not reach phase \(expected) within its bounded test interval")
     }
 
     private func restStartResponse(extraGrantField: Bool = false) -> String {
