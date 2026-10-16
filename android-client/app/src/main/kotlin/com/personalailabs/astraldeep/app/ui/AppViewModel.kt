@@ -573,6 +573,14 @@ class AppViewModel(
         voiceController?.appForegroundChanged(active)
     }
 
+    fun audioFocusChanged(interrupted: Boolean) {
+        voiceController?.audioFocusChanged(interrupted)
+    }
+
+    fun audioRouteChanged(available: Boolean) {
+        voiceController?.audioRouteChanged(available)
+    }
+
     fun updateDeviceCapabilities(observed: DeviceCapabilities) {
         val current = device ?: return
         if (observed.deviceId != current.deviceId || observed == current) return

@@ -7,16 +7,20 @@ package com.personalailabs.astraldeep.app.voice
 import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.LocalVoiceFrame
 import com.personalailabs.astraldeep.core.protocol.VoiceControlBinding
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -42,8 +46,14 @@ class VoiceSessionController075LocalTest {
         var stopAllCalls = 0
         var onFinal: ((String) -> Unit)? = null
         var onError: ((String) -> Unit)? = null
+        var probeCalls = 0
+        var releaseProbe: CompletableDeferred<Unit>? = null
 
-        override suspend fun probe(): LocalSpeechFacts = facts
+        override suspend fun probe(): LocalSpeechFacts {
+            probeCalls += 1
+            releaseProbe?.await()
+            return facts
+        }
 
         override fun startRecognition(
             onPartial: (String) -> Unit,
@@ -77,6 +87,7 @@ class VoiceSessionController075LocalTest {
         var startCalls = 0
         var stopCalls = 0
         var endCalls = 0
+        var beforeUpdate: (suspend () -> Unit)? = null
         val updateFields = mutableListOf<JsonObject>()
 
         override suspend fun start(
@@ -114,7 +125,13 @@ class VoiceSessionController075LocalTest {
             fields: JsonObject,
         ): Result<VoiceRestSession> {
             updateFields += fields
-            return Result.success(session)
+            beforeUpdate?.invoke()
+            return Result.success(
+                session.copy(
+                    foregroundActive = fields["foreground_active"]?.jsonPrimitive?.booleanOrNull ?: session.foregroundActive,
+                    microphoneEnabled = fields["microphone_enabled"]?.jsonPrimitive?.booleanOrNull ?: session.microphoneEnabled,
+                ),
+            )
         }
 
         override suspend fun stopSpeech(
@@ -140,12 +157,15 @@ class VoiceSessionController075LocalTest {
         override val events: Flow<VoiceMediaEvent> = flow
         var connectCalls = 0
         var disconnectCalls = 0
+        val microphoneCalls = mutableListOf<Boolean>()
 
         override suspend fun connect(grant: LiveKitVoiceGrant) {
             connectCalls += 1
         }
 
-        override suspend fun setMicrophoneEnabled(enabled: Boolean) = Unit
+        override suspend fun setMicrophoneEnabled(enabled: Boolean) {
+            microphoneCalls += enabled
+        }
 
         override suspend fun queueAnnouncement(value: com.personalailabs.astraldeep.core.protocol.VoiceAnnouncementMedia): Boolean = true
 
@@ -178,7 +198,7 @@ class VoiceSessionController075LocalTest {
                 media = media,
                 scope = scope.backgroundScope,
                 uuidFactory = { ACTIVATION_ID },
-                clock = { Instant.parse(NOW) },
+                clock = { Instant.parse(NOW).plusMillis(scope.testScheduler.currentTime) },
                 localEngine = engine,
             )
         controller.setLocalFrameSender(socket)
@@ -210,6 +230,129 @@ class VoiceSessionController075LocalTest {
             runCurrent()
             assertEquals("voice_local_recognition_started", fixture.socket.frames.last().string("type"))
             assertEquals("listening", fixture.controller.state.value.phase)
+        }
+
+    @Test
+    fun audioFocusLossStopsLocalOwnersBeforeTheServerReply() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            fixture.controller.activate(voiceCapability())
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            val reply = CompletableDeferred<Unit>()
+            fixture.api.beforeUpdate = { reply.await() }
+
+            fixture.controller.audioFocusChanged(true)
+
+            assertEquals(1, fixture.engine.stopAllCalls)
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            assertEquals(1, fixture.engine.started)
+            assertTrue(fixture.media.microphoneCalls.isEmpty())
+            reply.complete(Unit)
+        }
+
+    @Test
+    fun outputRouteLossStopsLocalOwnersBeforeTheServerReply() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            fixture.controller.activate(voiceCapability())
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            val reply = CompletableDeferred<Unit>()
+            fixture.api.beforeUpdate = { reply.await() }
+
+            fixture.controller.audioRouteChanged(false)
+
+            assertEquals(1, fixture.engine.stopAllCalls)
+            runCurrent()
+            assertTrue(fixture.media.microphoneCalls.isEmpty())
+            reply.complete(Unit)
+        }
+
+    @Test
+    fun localAudioRecoveryRequiresBothSignalsAndANewReadyAcknowledgement() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            fixture.controller.activate(voiceCapability())
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            fixture.controller.audioFocusChanged(true)
+            fixture.controller.audioRouteChanged(false)
+            runCurrent()
+
+            fixture.controller.audioFocusChanged(false)
+            runCurrent()
+            assertEquals(1, fixture.socket.typed("voice_local_ready").size)
+            fixture.controller.audioRouteChanged(true)
+            runCurrent()
+            assertEquals(2, fixture.socket.typed("voice_local_ready").size)
+            assertEquals(1, fixture.engine.started)
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            assertEquals(1, fixture.engine.started)
+            advanceTimeBy(500)
+            runCurrent()
+            assertEquals(2, fixture.engine.started)
+            assertTrue(fixture.media.microphoneCalls.isEmpty())
+        }
+
+    @Test
+    fun renewedAudioLossFencesAProbeAlreadyAwaitingRecovery() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            fixture.controller.activate(voiceCapability())
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            fixture.controller.audioFocusChanged(true)
+            runCurrent()
+            val probe = CompletableDeferred<Unit>()
+            fixture.engine.releaseProbe = probe
+            fixture.controller.audioFocusChanged(false)
+            runCurrent()
+            assertEquals(2, fixture.engine.probeCalls)
+
+            fixture.controller.audioFocusChanged(true)
+            probe.complete(Unit)
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+
+            assertEquals(1, fixture.socket.typed("voice_local_ready").size)
+            assertEquals(1, fixture.engine.started)
+            assertTrue(fixture.media.microphoneCalls.isEmpty())
+        }
+
+    @Test
+    fun localAudioRecoveryPreservesAnExplicitMicrophoneOffIntent() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            fixture.controller.activate(voiceCapability())
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            fixture.controller.audioFocusChanged(true)
+            runCurrent()
+            fixture.controller.setMicrophoneEnabled(false)
+            fixture.controller.audioFocusChanged(false)
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+
+            assertEquals(1, fixture.socket.typed("voice_local_ready").size)
+            assertEquals(1, fixture.engine.started)
+            assertEquals(false, fixture.api.updateFields.last()["microphone_enabled"]?.jsonPrimitive?.booleanOrNull)
+            assertTrue(fixture.media.microphoneCalls.isEmpty())
         }
 
     @Test
