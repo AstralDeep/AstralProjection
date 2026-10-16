@@ -1832,6 +1832,27 @@ class VoiceSessionController065Test {
             return true
         }
 
+        override suspend fun selectBackend(binding: VoiceUiBinding): VoiceBackendSelection = backendSelection
+
+        override suspend fun startLocalSession(
+            binding: VoiceUiBinding,
+            activationId: String,
+            chatId: String,
+            capability: LocalSpeechCapability,
+            takeover: VoiceTakeoverTarget?,
+        ): VoiceStartOutcome {
+            localStartCalls += 1
+            localStartChatId = chatId
+            localStartCapability = capability
+            return localStartOutcome
+        }
+
+        var backendSelection: VoiceBackendSelection = VoiceBackendSelection.Legacy
+        var localStartOutcome: VoiceStartOutcome = VoiceStartOutcome.LocalStarted(localSession())
+        var localStartCalls = 0
+        var localStartChatId: String? = null
+        var localStartCapability: LocalSpeechCapability? = null
+
         override suspend fun end(
             binding: VoiceUiBinding,
             session: VoiceRestSession,
@@ -1964,6 +1985,20 @@ class VoiceSessionController065Test {
                 foregroundActive = true,
                 speechMuted = false,
                 microphoneEnabled = true,
+            )
+
+        private fun localSession() =
+            LocalVoiceSession(
+                deviceId = DEVICE_ID,
+                connectionGeneration = CONNECTION_ID,
+                sessionId = SESSION_ID,
+                generation = 1,
+                speechRevision = 1,
+                chatId = CHAT_ID,
+                chatContextRevision = 1,
+                foregroundActive = true,
+                microphoneEnabled = true,
+                speechMuted = false,
             )
 
         private fun sessionState(

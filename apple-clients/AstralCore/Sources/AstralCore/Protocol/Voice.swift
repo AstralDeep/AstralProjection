@@ -1461,7 +1461,13 @@ public struct VoiceCurrentConnectionFrame: Sendable, Equatable {
         case playoutEvent = "voice_playout_event"
         case finalTranscript = "voice_final_transcript"
         case correlatedNewChat = "voice_correlated_new_chat"
+        case localFrame = "voice_local_frame"
     }
+
+    public static let clientLocalOutboundTypes: Set<String> = [
+        "voice_local_ready", "voice_local_recognition_started", "voice_local_final",
+        "voice_local_recognition_failed", "voice_local_playout_event",
+    ]
 
     public let kind: Kind
     let frameText: String
@@ -1474,6 +1480,13 @@ public struct VoiceCurrentConnectionFrame: Sendable, Equatable {
         else { return nil }
 
         switch type {
+        case "voice_local_ready", "voice_local_recognition_started", "voice_local_final",
+            "voice_local_recognition_failed", "voice_local_playout_event":
+            guard data.count <= Self.localPacketLimit(type: type),
+                let frame = InboundFrame.parse(frameText),
+                VoiceLocalFrame(frame: frame) != nil
+            else { return nil }
+            kind = .localFrame
         case "voice_playout_event":
             guard data.count <= VoiceContractLimits.playoutPacketBytes,
                 let frame = InboundFrame.parse(frameText),
@@ -1507,7 +1520,11 @@ public struct VoiceCurrentConnectionFrame: Sendable, Equatable {
             let object = root.objectValue,
             let type = object["type"]?.stringValue
         else { return false }
-        if type == "voice_playout_event" { return true }
+        if type == "voice_playout_event"
+            || Self.clientLocalOutboundTypes.contains(type)
+        {
+            return true
+        }
         guard type == "ui_event", let action = object["action"]?.stringValue else {
             return false
         }
@@ -1518,6 +1535,14 @@ public struct VoiceCurrentConnectionFrame: Sendable, Equatable {
             || object["connection_generation"] != nil
             || payload?["schema_version"] != nil
             || payload?["connection_generation"] != nil
+    }
+
+    static func localPacketLimit(type: String) -> Int {
+        switch type {
+        case "voice_local_final": return VoiceContractLimits.transcriptPacketBytes
+        case "voice_local_playout_event": return VoiceContractLimits.playoutPacketBytes
+        default: return VoiceContractLimits.announcementPacketBytes
+        }
     }
 
     private static func isProofBoundFinalTranscript(
