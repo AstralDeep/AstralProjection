@@ -1235,6 +1235,7 @@ class VoiceSessionController(
             feedback("error", capabilityFailure)
             return
         }
+        microphoneDesired = true
         if (localEngine != null) {
             val selection = api.selectBackend(currentBinding)
             if (selection is VoiceBackendSelection.Local) {
@@ -1287,7 +1288,6 @@ class VoiceSessionController(
                 }
                 session = outcome.session
                 grant = outcome.grant
-                microphoneDesired = outcome.session.microphoneEnabled
                 startLeaseRenewal()
                 transcriptSequence.clear()
                 announcementSequence.clear()
@@ -1357,7 +1357,6 @@ class VoiceSessionController(
                 }
                 speechBackend = "client_local"
                 session = localRestSession(outcome.session)
-                microphoneDesired = outcome.session.microphoneEnabled
                 grant = null
                 startLeaseRenewal()
                 transcriptSequence.clear()
@@ -1498,8 +1497,8 @@ class VoiceSessionController(
 
     suspend fun setMicrophoneEnabled(enabled: Boolean) {
         val currentBinding = currentBindingOrFeedback() ?: return
-        val activeSession = session ?: return feedback("error", "stale_generation")
         microphoneDesired = enabled
+        val activeSession = session ?: return feedback("error", "stale_generation")
         val fence = sessionFence(activeSession)
         if (speechBackend == "client_local") {
             local?.updateAuthority(localSessionOf(activeSession))
@@ -1986,9 +1985,11 @@ class VoiceSessionController(
                 _state.update { it.copy(mediaConnected = false) }
             }
             else -> {
-                microphoneDesired = value.microphoneEnabled
                 if (value.foregroundActive && appForeground) startLeaseRenewal() else stopLeaseRenewal()
-                if (speechBackend == "client_local") return
+                if (speechBackend == "client_local") {
+                    local?.reconcileAfterControlChange()
+                    return
+                }
                 if (value.chatContextSynced && grant != null && !_state.value.mediaConnected) {
                     val currentGrant = grant ?: return
                     val currentSession = session ?: return

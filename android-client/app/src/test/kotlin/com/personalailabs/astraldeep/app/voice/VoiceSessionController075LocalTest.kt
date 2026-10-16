@@ -7,10 +7,12 @@ package com.personalailabs.astraldeep.app.voice
 import com.personalailabs.astraldeep.core.protocol.Inbound
 import com.personalailabs.astraldeep.core.protocol.LocalVoiceFrame
 import com.personalailabs.astraldeep.core.protocol.VoiceControlBinding
+import com.personalailabs.astraldeep.core.protocol.Wire
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -88,6 +90,7 @@ class VoiceSessionController075LocalTest {
         var stopCalls = 0
         var endCalls = 0
         var beforeUpdate: (suspend () -> Unit)? = null
+        var beforeLocalStart: (suspend () -> Unit)? = null
         val updateFields = mutableListOf<JsonObject>()
 
         override suspend fun start(
@@ -116,6 +119,7 @@ class VoiceSessionController075LocalTest {
             takeover: VoiceTakeoverTarget?,
         ): VoiceStartOutcome {
             localStartCalls += 1
+            beforeLocalStart?.invoke()
             return localStartOutcome
         }
 
@@ -356,6 +360,114 @@ class VoiceSessionController075LocalTest {
         }
 
     @Test
+    fun olderActiveProjectionCannotOverwriteAnExplicitLocalMicrophoneOffIntent() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            fixture.controller.activate(voiceCapability())
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            fixture.controller.setMicrophoneEnabled(false)
+            fixture.controller.handleInbound(sessionProjection("listening", microphone = true, foreground = true))
+            fixture.controller.audioFocusChanged(true)
+            runCurrent()
+            fixture.controller.audioFocusChanged(false)
+            runCurrent()
+            fixture.controller.handleInbound(sessionReady())
+            advanceTimeBy(500)
+            runCurrent()
+
+            assertEquals(
+                listOf(false, 1, 1),
+                listOf(
+                    fixture.api.updateFields.last()["microphone_enabled"]?.jsonPrimitive?.booleanOrNull,
+                    fixture.socket.typed("voice_local_ready").size,
+                    fixture.engine.started,
+                ),
+            )
+        }
+
+    @Test
+    fun effectiveErrorProjectionDoesNotEraseTheLocalMicrophoneOnIntent() =
+        runTest { assertLocalMicrophoneIntentSurvivesProjection("error") }
+
+    @Test
+    fun effectiveSuspendedProjectionPreservesTheLocalMicrophoneOnIntent() =
+        runTest { assertLocalMicrophoneIntentSurvivesProjection("suspended") }
+
+    @Test
+    fun localActivationWithAnEffectiveMicrophoneHoldWaitsForAuthorizedProjectionAndReady() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            fixture.api.localStartOutcome = VoiceStartOutcome.LocalStarted(localSession().copy(microphoneEnabled = false))
+            fixture.controller.activate(voiceCapability())
+            runCurrent()
+            assertEquals(1, fixture.api.localStartCalls)
+            assertTrue(fixture.socket.typed("voice_local_ready").isEmpty())
+            assertEquals(0, fixture.engine.started)
+
+            fixture.controller.handleInbound(sessionProjection("listening", microphone = true, foreground = true))
+            runCurrent()
+            assertEquals(1, fixture.socket.typed("voice_local_ready").size)
+            assertEquals(0, fixture.engine.started)
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+            assertEquals(1, fixture.engine.started)
+            assertTrue(fixture.media.microphoneCalls.isEmpty())
+        }
+
+    @Test
+    fun microphoneOffDuringAnAwaitedLocalActivationIsNotOverwrittenByTheAcceptedSession() =
+        runTest {
+            val fixture = fixture(this)
+            fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+            val startReply = CompletableDeferred<Unit>()
+            fixture.api.beforeLocalStart = { startReply.await() }
+            val activation = launch { fixture.controller.activate(voiceCapability()) }
+            runCurrent()
+            assertEquals(1, fixture.api.localStartCalls)
+
+            fixture.controller.setMicrophoneEnabled(false)
+            startReply.complete(Unit)
+            activation.join()
+            runCurrent()
+            fixture.controller.handleInbound(sessionProjection("listening", microphone = true, foreground = true))
+            fixture.controller.handleInbound(sessionReady())
+            runCurrent()
+
+            assertTrue(fixture.socket.typed("voice_local_ready").isEmpty())
+            assertEquals(0, fixture.engine.started)
+            assertTrue(fixture.media.microphoneCalls.isEmpty())
+        }
+
+    private suspend fun TestScope.assertLocalMicrophoneIntentSurvivesProjection(state: String) {
+        val fixture = fixture(this)
+        fixture.api.backendSelection = VoiceBackendSelection.Local("ready", "ready", EXPIRES_AT, requirements())
+        fixture.controller.activate(voiceCapability())
+        runCurrent()
+        fixture.controller.handleInbound(sessionReady())
+        runCurrent()
+        fixture.controller.audioFocusChanged(true)
+        runCurrent()
+        fixture.controller.handleInbound(sessionProjection(state, microphone = false, foreground = false))
+        fixture.controller.audioFocusChanged(false)
+        runCurrent()
+
+        assertEquals(true, fixture.api.updateFields.last()["microphone_enabled"]?.jsonPrimitive?.booleanOrNull)
+        assertEquals(2, fixture.socket.typed("voice_local_ready").size)
+        assertEquals(1, fixture.engine.started)
+        fixture.controller.handleInbound(sessionReady())
+        runCurrent()
+        assertEquals(1, fixture.engine.started)
+        advanceTimeBy(500)
+        runCurrent()
+        assertEquals(2, fixture.engine.started)
+        assertTrue(fixture.media.microphoneCalls.isEmpty())
+    }
+
+    @Test
     fun localFinalFlowsThroughTheSharedSocketAndExactAckProjectsProcessing() =
         runTest {
             val fixture = fixture(this)
@@ -590,6 +702,36 @@ class VoiceSessionController075LocalTest {
                         ),
                     ),
                 ),
+            )
+
+        private fun sessionProjection(
+            state: String,
+            microphone: Boolean,
+            foreground: Boolean,
+        ): Inbound.VoiceSessionStateFrame =
+            requireNotNull(
+                Wire.decode(
+                    JsonObject(
+                        mapOf(
+                            "type" to JsonPrimitive("voice_session_state"),
+                            "schema_version" to JsonPrimitive("1"),
+                            "session_id" to JsonPrimitive(SESSION_ID),
+                            "connection_generation" to JsonPrimitive(CONNECTION_ID),
+                            "generation" to JsonPrimitive(1),
+                            "media_grant_revision" to JsonPrimitive(1),
+                            "visible_chat_id" to JsonPrimitive(CHAT_ID),
+                            "chat_context_revision" to JsonPrimitive(1),
+                            "applied_chat_context_revision" to JsonPrimitive(1),
+                            "chat_context_synced" to JsonPrimitive(true),
+                            "state" to JsonPrimitive(state),
+                            "speech_muted" to JsonPrimitive(false),
+                            "microphone_enabled" to JsonPrimitive(microphone),
+                            "foreground_active" to JsonPrimitive(foreground),
+                            "reason" to JsonPrimitive(if (foreground) "ready" else "audio_interrupted"),
+                            "occurred_at" to JsonPrimitive("2026-07-31T11:59:59Z"),
+                        ),
+                    ),
+                ) as? Inbound.VoiceSessionStateFrame,
             )
 
         private fun turnBound(clientTurnId: String): Inbound.LocalVoiceFrame =
