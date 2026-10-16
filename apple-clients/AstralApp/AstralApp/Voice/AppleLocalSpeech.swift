@@ -118,7 +118,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
     private var reportedFinal = false
-    private var speakPhase: ((String) -> Void)?
+    private let speechProgress = AppleLocalSpeechProgress()
 
     override init() {
         super.init()
@@ -274,9 +274,9 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
         else { return false }
         activateAudioSession()
         stopSynthesis()
-        speakPhase = onPhase
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
+        speechProgress.begin(utterance, onPhase: onPhase)
         synthesizer.speak(utterance)
         return true
     }
@@ -287,21 +287,19 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
         utterance: AVSpeechUtterance
     ) {
         guard characterRange.location == 0 else { return }
-        speakPhase?("started")
+        speechProgress.start(utterance)
     }
 
     func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
     ) {
-        speakPhase?("finished")
-        speakPhase = nil
+        speechProgress.finish(utterance, phase: "finished")
     }
 
     func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance
     ) {
-        speakPhase?("interrupted")
-        speakPhase = nil
+        speechProgress.finish(utterance, phase: "interrupted")
     }
 
     func speechSynthesizer(
@@ -309,8 +307,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
         didEncounterError utterance: AVSpeechUtterance,
         error: any Error
     ) {
-        speakPhase?("failed")
-        speakPhase = nil
+        speechProgress.finish(utterance, phase: "failed")
     }
 
     func stopAll() async {
@@ -319,7 +316,7 @@ final class SystemAppleLocalSpeechEngine: NSObject, AppleLocalSpeechEngine,
     }
 
     private func stopSynthesis() {
-        speakPhase = nil
+        speechProgress.clear()
         if synthesizer.isSpeaking {
             synthesizer.stopSpeaking(at: .immediate)
         }

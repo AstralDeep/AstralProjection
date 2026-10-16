@@ -8,13 +8,14 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognitionSupport
 import android.speech.RecognitionSupportCallback
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
 import com.personalailabs.astraldeep.app.transport.runtimeVoiceCapability
 import kotlinx.coroutines.CancellationException
@@ -149,6 +150,8 @@ class AndroidLocalSpeechEngine(
     private val synthesisReady = AtomicBoolean(false)
     private val initLatch = CountDownLatch(1)
     private var currentRecognizer: SpeechRecognizer? = null
+    private var currentUtterance: LocalSpeechUtterance? = null
+    private val callbackHandler = Handler(Looper.getMainLooper())
     private val synthesisProof = LocalSynthesisProof()
     private var recognitionProven = false
 
@@ -311,7 +314,11 @@ class AndroidLocalSpeechEngine(
 
     override fun stopAll() {
         stopRecognition()
-        engineRef.get()?.let { engine -> runCatching { engine.stop() } }
+        currentUtterance = null
+        engineRef.get()?.let { engine ->
+            runCatching { engine.setOnUtteranceProgressListener(null) }
+            runCatching { engine.stop() }
+        }
     }
 
     override fun speak(
@@ -333,35 +340,31 @@ class AndroidLocalSpeechEngine(
                 selected = { runCatching { engine.voice?.proof() }.getOrNull() },
             )
         if (!proven) return false
-        val listener =
-            object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    onStarted()
-                }
-
-                override fun onDone(utteranceId: String?) {
+        val utteranceId = "astral-local-announcement-${System.nanoTime()}"
+        lateinit var listener: LocalSpeechUtterance
+        listener =
+            LocalSpeechUtterance(
+                utteranceId,
+                { callback -> callbackHandler.post { callback() } },
+                { currentUtterance === listener },
+                onStarted,
+                onDone,
+                {
+                    currentUtterance = null
                     runCatching { engine.setOnUtteranceProgressListener(null) }
-                    onDone(true)
-                }
-
-                @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) {
-                    runCatching { engine.setOnUtteranceProgressListener(null) }
-                    onDone(false)
-                }
-
-                override fun onError(
-                    utteranceId: String?,
-                    errorCode: Int,
-                ) {
-                    runCatching { engine.setOnUtteranceProgressListener(null) }
-                    onDone(false)
-                }
-            }
-        return runCatching {
-            engine.setOnUtteranceProgressListener(listener)
-            engine.speak(text, TextToSpeech.QUEUE_ADD, null, "astral-local-announcement-${System.nanoTime()}") != TextToSpeech.ERROR
-        }.getOrDefault(false)
+                },
+            )
+        currentUtterance = listener
+        val queued =
+            runCatching {
+                if (engine.setOnUtteranceProgressListener(listener) != TextToSpeech.SUCCESS) return@runCatching false
+                engine.speak(text, TextToSpeech.QUEUE_ADD, null, utteranceId) == TextToSpeech.SUCCESS
+            }.getOrDefault(false)
+        if (!queued && currentUtterance === listener) {
+            currentUtterance = null
+            runCatching { engine.setOnUtteranceProgressListener(null) }
+        }
+        return queued
     }
 
     private fun currentSynthesisVoices(): List<LocalSynthesisVoice> =
