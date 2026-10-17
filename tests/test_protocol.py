@@ -602,7 +602,7 @@ def test_voice_075_scalar_limit_vectors_are_boundary_exact_and_digest_bound() ->
 def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
     immutable_manifests = {
         "tooling/python-ci/requirements.lock.txt": (
-            "68f810dd6185778c1c3eeb468055583e8b44d57285c7a60e5c3b8625f3cadb97"
+            "92ab6f3e6334b3fe8c196dc486a4aed8d5b08de6e80d95efd4456df1cadab71a"
         ),
         "tooling/web-ci/package.json": (
             "38222bff0b15c00aab0f799cd4b10457d92cb22ce8a8cb2f8815e7279678b134"
@@ -751,7 +751,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 386
+    assert len(paths) == 387
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 20
 
     moved_workflows = {
@@ -773,7 +773,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 133
+    assert len(extracted) - len(changed_paths) == 132
 
     for entry in record["entries"]:
         path = entry["path"]
