@@ -5,6 +5,7 @@ issue form, and one-time secret disclosure.
 from __future__ import annotations
 
 import json
+import base64
 from copy import deepcopy
 from pathlib import Path
 
@@ -21,7 +22,10 @@ from astralprojection.models import LayoutView, ThemeView
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "contracts/fixtures/connections_088/connections_surface.json"
-SECRET = "afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c"
+SECRET = (
+    "afk_Zml4dHVyZS1vd25lci1h.9d3f5f80-7d4f-4f9e-8a6c-4e5f60718293."
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopA"
+)
 
 
 def row(**values):
@@ -45,7 +49,7 @@ def fresh(**values):
     return row(
         **{
             "credential_id": "9d3f5f80-7d4f-4f9e-8a6c-4e5f60718293",
-            "prefix": "afk_5e6f",
+            "prefix": "afk_ABCDEFGHIJ",
             "revision": 1,
             "consumed_admissions": 0,
             "name": "New key",
@@ -244,6 +248,38 @@ def test_issued_secret_is_rendered_exactly_once_in_its_own_view():
     assert "shown once" in html and "cannot be shown again" in html
     assert actions(view) == {"chrome_open"}
     assert ISSUE_ACTION not in serialized and REVOKE_ACTION not in serialized
+
+
+def test_issued_token_preserves_the_bounded_canonical_owner_segment():
+    for owner in ("a", "\u7528\u6237", "a" * 525):
+        encoded_owner = base64.urlsafe_b64encode(owner.encode()).decode().rstrip("=")
+        token = "afk_" + encoded_owner + "." + SECRET.split(".", 1)[1]
+        view = build_issued_secret_view(token, fresh())
+        assert encoded(view).count(token) == 1
+        assert render_html(view).count(token) == 1
+
+
+@pytest.mark.parametrize("token", [
+    "afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",
+    SECRET.replace("Zml4dHVyZS1vd25lci1h", ""),
+    SECRET.replace("Zml4dHVyZS1vd25lci1h", "YQ="),
+    SECRET.replace("Zml4dHVyZS1vd25lci1h", "YR"),
+    SECRET.replace("Zml4dHVyZS1vd25lci1h", "Y"),
+    SECRET.replace("Zml4dHVyZS1vd25lci1h", "a" * 701),
+    SECRET.replace("9d3f5f80", "9D3F5F80"),
+    SECRET.replace("-4f9e-", "-1f9e-"),
+    SECRET.replace("-8a6c-", "-0a6c-"),
+    SECRET.replace("9d3f5f80", "0d3f5f80"),
+    SECRET[:-1], SECRET + "A", SECRET + ".extra", SECRET + "A" * 2048,
+    SECRET.replace("ABCDEFGHIJ", "BBCDEFGHIJ"),
+    SECRET + "\n", SECRET.replace("K", "\x00"), SECRET.replace("K", "<"),
+])
+def test_malformed_or_mismatched_issued_tokens_never_reach_any_output(token):
+    view = build_issued_secret_view(token, fresh())
+    html = unavailable(view)
+    assert token not in html and token not in encoded(view)
+    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in html
+    assert "ABCDEFGHIJKLMNOPQRSTUVWXYZ" not in encoded(view)
 
 
 def test_the_secret_never_reaches_any_action_payload():

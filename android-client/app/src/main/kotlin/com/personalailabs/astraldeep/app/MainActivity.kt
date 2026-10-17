@@ -74,6 +74,7 @@ import com.personalailabs.astraldeep.app.ui.DeviceObservation
 import com.personalailabs.astraldeep.app.ui.RootScaffold
 import com.personalailabs.astraldeep.app.ui.theme.AstralColors
 import com.personalailabs.astraldeep.app.ui.theme.AstralTheme
+import com.personalailabs.astraldeep.app.voice.AndroidLocalSpeechEngine
 import com.personalailabs.astraldeep.app.voice.LiveKitVoiceMediaClient
 import com.personalailabs.astraldeep.app.voice.OkHttpVoiceControlApi
 import com.personalailabs.astraldeep.app.voice.VoiceSessionController
@@ -118,6 +119,7 @@ class MainActivity : ComponentActivity() {
             api = OkHttpVoiceControlApi(AppConfig.API_BASE),
             media = LiveKitVoiceMediaClient(applicationContext, voiceScope),
             scope = voiceScope,
+            localEngine = AndroidLocalSpeechEngine(applicationContext),
         )
     }
     private val oidc by lazy { OidcAuth(this) }

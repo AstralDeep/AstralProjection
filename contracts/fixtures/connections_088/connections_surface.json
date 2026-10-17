@@ -88,12 +88,12 @@
       }
     },
     "issued": {
-      "secret": "afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c",
+      "secret": "afk_Zml4dHVyZS1vd25lci1h.9d3f5f80-7d4f-4f9e-8a6c-4e5f60718293.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopA",
       "view": {
         "credential_id": "9d3f5f80-7d4f-4f9e-8a6c-4e5f60718293",
         "revision": 1,
         "name": "New key",
-        "prefix": "afk_5e6f",
+        "prefix": "afk_ABCDEFGHIJ",
         "scopes": [
           "operations.read",
           "operations.submit"
@@ -382,7 +382,7 @@
           "items": [
             {
               "label": "Key",
-              "value": "afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c"
+              "value": "afk_Zml4dHVyZS1vd25lci1h.9d3f5f80-7d4f-4f9e-8a6c-4e5f60718293.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopA"
             }
           ],
           "title": "Your new key"
@@ -396,7 +396,7 @@
             },
             {
               "label": "Key prefix",
-              "value": "afk_5e6f"
+              "value": "afk_ABCDEFGHIJ"
             },
             {
               "label": "Scopes",
@@ -453,7 +453,7 @@
       "surface_key": "connections",
       "mode": "replace",
       "request_generation": "0f5a0a4e-3b3b-4a2f-9d8e-2a6a2c9a7b41",
-      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"connections\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Connections\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Connections</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"connections\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-connections-title\"><h2 id=\"chrome-connections-title\">Connections</h2><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">This key is shown once, right now. Copy it before you leave this view -- it cannot be shown again, and a lost key must be revoked and reissued.</div><section><h3>Your new key</h3><dl><div><dt>Key</dt><dd>afk_5e6fQ2p7X1mK8sT4vB0nL6rJ9wZ3yH5c</dd></div></dl></section><section><h3>What this key can do</h3><dl><div><dt>Name</dt><dd>New key</dd></div><div><dt>Key prefix</dt><dd>afk_5e6f</dd></div><div><dt>Scopes</dt><dd>operations.read, operations.submit</dd></div><div><dt>Expires</dt><dd>2026-12-12T12:00:00+00:00</dd></div><div><dt>Maximum admissions</dt><dd>100</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{},&quot;surface&quot;:&quot;connections&quot;}\">Back to Connections</button></section></div></div></div>"
+      "html": "<div class=\"astral-modal-backdrop fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-start justify-center overflow-y-auto py-10\" data-surface=\"connections\"><div class=\"astral-modal-card relative bg-astral-surface border border-white/10 rounded-xl shadow-2xl w-full max-w-3xl mx-4 my-auto\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Connections\" tabindex=\"-1\"><div class=\"flex items-center justify-between px-5 py-4 border-b border-white/5\"><h2 class=\"text-base font-semibold text-astral-text\">Connections</h2><button type=\"button\" class=\"astral-modal-close text-astral-muted hover:text-astral-text rounded-lg p-1.5 hover:bg-white/5\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"px-5 py-4 max-h-[70vh] overflow-y-auto space-y-4\"><section data-chrome-surface=\"connections\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-connections-title\"><h2 id=\"chrome-connections-title\">Connections</h2><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">This key is shown once, right now. Copy it before you leave this view -- it cannot be shown again, and a lost key must be revoked and reissued.</div><section><h3>Your new key</h3><dl><div><dt>Key</dt><dd>afk_Zml4dHVyZS1vd25lci1h.9d3f5f80-7d4f-4f9e-8a6c-4e5f60718293.ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopA</dd></div></dl></section><section><h3>What this key can do</h3><dl><div><dt>Name</dt><dd>New key</dd></div><div><dt>Key prefix</dt><dd>afk_ABCDEFGHIJ</dd></div><div><dt>Scopes</dt><dd>operations.read, operations.submit</dd></div><div><dt>Expires</dt><dd>2026-12-12T12:00:00+00:00</dd></div><div><dt>Maximum admissions</dt><dd>100</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{},&quot;surface&quot;:&quot;connections&quot;}\">Back to Connections</button></section></div></div></div>"
     }
   }
 }

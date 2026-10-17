@@ -5,6 +5,7 @@ plaintext as an input.
 
 from __future__ import annotations
 
+import base64
 import re
 from collections.abc import Iterable, Mapping
 
@@ -47,7 +48,9 @@ _DEFAULT_KEYS = {"name", "scopes", "expires_in_seconds", "max_admissions"}
 _IDENTITY_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}")
 _SCOPE_RE = re.compile(r"[a-z][a-z0-9_.:-]{0,63}")
 _PREFIX_RE = re.compile(r"[A-Za-z0-9_-]{4,32}")
-_SECRET_RE = re.compile(r"[A-Za-z0-9_-]{16,256}")
+_TOKEN_RE = re.compile(
+    rf"afk_([A-Za-z0-9_-]{{1,700}})\.({_IDENTITY_RE.pattern})\.([A-Za-z0-9_-]{{43}})"
+)
 _NAME_MAX = 128
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -246,8 +249,13 @@ def build_issued_secret_view(
 ) -> ChromeViewModel:
     try:
         row = _row(view)
-        _require(_SECRET_RE.fullmatch(_string(secret, 256)) is not None)
-        _require(str(secret).startswith(str(row["prefix"])))
+        token = _TOKEN_RE.fullmatch(_string(secret, 2048))
+        _require(token is not None)
+        owner = token.group(1)
+        decoded = base64.b64decode(owner + "=" * (-len(owner) % 4), altchars=b"-_", validate=True)
+        _require(base64.urlsafe_b64encode(decoded).decode("ascii").rstrip("=") == owner)
+        _require(token.group(2) == row["credential_id"])
+        _require(row["prefix"] == "afk_" + token.group(3)[:10])
         _require(_usable(row) and row["consumed_admissions"] == 0)
         components: list[ComponentView] = [
             alert(

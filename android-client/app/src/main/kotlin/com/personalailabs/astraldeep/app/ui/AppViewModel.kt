@@ -332,6 +332,7 @@ class AppViewModel(
             }
         }
         voiceController?.setPlayoutReporter(client::sendVoicePlayoutEvent)
+        voiceController?.setLocalFrameSender(client::sendVoiceLocalFrame)
     }
 
     fun start(
@@ -570,6 +571,14 @@ class AppViewModel(
     fun appForegroundChanged(active: Boolean) {
         if (!active) cancelVoicePreparation()
         voiceController?.appForegroundChanged(active)
+    }
+
+    fun audioFocusChanged(interrupted: Boolean) {
+        voiceController?.audioFocusChanged(interrupted)
+    }
+
+    fun audioRouteChanged(available: Boolean) {
+        voiceController?.audioRouteChanged(available)
     }
 
     fun updateDeviceCapabilities(observed: DeviceCapabilities) {
