@@ -5,6 +5,8 @@ their own.
 
 from __future__ import annotations
 
+import pytest
+
 from webrender.chrome.menu_model import build_menu_model
 from webrender.chrome.settings_nav import render_settings_nav
 from webrender.chrome.topbar import render_topbar
@@ -50,3 +52,26 @@ def test_chrome_renders_supplied_state_without_host_imports() -> None:
         assert "astral-pulse-btn" not in html
         assert "My agents" not in html
         assert "Remote machines" not in html
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_topbar_preserves_host_connections_availability_and_settings(monkeypatch, enabled):
+    import webrender.chrome.topbar as topbar
+
+    observed = []
+
+    def build(roles, **options):
+        model = build_menu_model(roles, **options)
+        observed.append(model)
+        return model
+
+    monkeypatch.setattr(topbar, "build_menu_model", build)
+    html = topbar.render_topbar(["user"], pulse_enabled=False, byo_enabled=False,
+        remote_enabled=False, computer_enabled=False, skills_enabled=False,
+        export_enabled=False, share_enabled=False, work_enabled=False,
+        notes_enabled=False, connections_enabled=enabled)
+    model, = observed
+    assert ("connections" in _menu_keys(model)) is enabled
+    assert 'id="astral-settings-btn"' in html and 'aria-label="Settings"' in html
+    assert 'data-ui-action="chrome_open"' in html
+    assert render_topbar(["user"]) == topbar.render_topbar(["user"], connections_enabled=False)

@@ -95,6 +95,7 @@ def render_topbar(
     share_enabled: bool = False,
     work_enabled: bool = False,
     notes_enabled: bool = False,
+    connections_enabled: bool = False,
 ) -> str:
     model = build_menu_model(
         roles,
@@ -107,6 +108,7 @@ def render_topbar(
         share_enabled=share_enabled,
         work_enabled=work_enabled,
         notes_enabled=notes_enabled,
+        connections_enabled=connections_enabled,
     )
 
     new_chat_btn = (
