@@ -3,6 +3,12 @@ astralprojection.chrome package entry point used by
 orchestrator/projection_surfaces/*.py and the chrome test suite.
 """
 
-from ._components import render_html
+from ._components import code_block, render_html
+from .terminal import build_terminal_monitor_view, build_terminal_view
 
-__all__ = ["render_html"]
+__all__ = [
+    "build_terminal_monitor_view",
+    "build_terminal_view",
+    "code_block",
+    "render_html",
+]

@@ -1,0 +1,1417 @@
+{
+  "version": 1,
+  "surface": "terminal",
+  "request": {
+    "type": "ui_event",
+    "action": "chrome_open",
+    "payload": {
+      "surface": "terminal",
+      "params": {
+        "mode": "monitor",
+        "session_id": "term_01JABCDEF",
+        "offset": 0
+      }
+    },
+    "submission_id": "66666666-6666-4666-8666-666666666666",
+    "request_generation": "55555555-5555-4555-8555-555555555555"
+  },
+  "source_text": "before\u001b[31mRED\u001b[0m after\n\u001b]0;owned title\u0007\u001b]8;;https://evil.example/click\u001b\\hyperlink\u001b]8;;\u001b\\\n\u001b]52;c;Y2xpcGJvYXJkIHRoZWZ0\u0007\u001bPq#0;2;0;0;0\u001b\\31mC1 colour0m\nzero\u0000width‮evil\nline\rreturn\n",
+  "expected_sanitized_text": "beforeRED after\nhyperlink\nC1 colour\nzerowidthevil\nline\nreturn\n",
+  "states": {
+    "list": {
+      "mode": "list",
+      "status": "ready",
+      "sessions": [
+        {
+          "session_id": "term_01JABCDEF",
+          "target": "ops@staging.example",
+          "directory": "/srv/astral/work",
+          "state": "running",
+          "cols": 120,
+          "rows": 32,
+          "idle_seconds": 2.5,
+          "ring_start": 0,
+          "ring_end": 57
+        },
+        {
+          "session_id": "term_02JABCDEF",
+          "target": "runner@staging.example",
+          "directory": "/srv/astral/build",
+          "state": "closed",
+          "cols": 80,
+          "rows": 24,
+          "idle_seconds": 19.25,
+          "ring_start": 120,
+          "ring_end": 131
+        }
+      ]
+    },
+    "empty": {
+      "mode": "list",
+      "status": "ready",
+      "sessions": []
+    },
+    "monitor": {
+      "mode": "monitor",
+      "status": "ready",
+      "session": {
+        "session_id": "term_01JABCDEF",
+        "target": "ops@staging.example",
+        "directory": "/srv/astral/work",
+        "state": "running",
+        "cols": 120,
+        "rows": 32,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 2.5,
+        "ring_start": 0,
+        "ring_end": 57
+      },
+      "output": {
+        "text": "\u001b[32m$ printf 'hello\\n'\u001b[0m\nhello\n$ printf 'done\\n'\ndone\n",
+        "offset": 0,
+        "next_offset": 57,
+        "truncated": false,
+        "eof": false
+      }
+    },
+    "closed": {
+      "mode": "monitor",
+      "status": "ready",
+      "session": {
+        "session_id": "term_02JABCDEF",
+        "target": "runner@staging.example",
+        "directory": "/srv/astral/build",
+        "state": "closed",
+        "cols": 80,
+        "rows": 24,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 19.25,
+        "ring_start": 120,
+        "ring_end": 131
+      },
+      "output": {
+        "text": "tail bytes\n",
+        "offset": 120,
+        "next_offset": 131,
+        "truncated": true,
+        "eof": true
+      }
+    },
+    "malicious": {
+      "mode": "monitor",
+      "status": "ready",
+      "session": {
+        "session_id": "term_03JABCDEF",
+        "target": "ops@staging.example",
+        "directory": "/srv/astral/work",
+        "state": "running",
+        "cols": 120,
+        "rows": 32,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 2.5,
+        "ring_start": 0,
+        "ring_end": 183
+      },
+      "output": {
+        "text": "before\u001b[31mRED\u001b[0m after\n\u001b]0;owned title\u0007\u001b]8;;https://evil.example/click\u001b\\hyperlink\u001b]8;;\u001b\\\n\u001b]52;c;Y2xpcGJvYXJkIHRoZWZ0\u0007\u001bPq#0;2;0;0;0\u001b\\31mC1 colour0m\nzero\u0000width‮evil\nline\rreturn\n",
+        "offset": 0,
+        "next_offset": 183,
+        "truncated": false,
+        "eof": false
+      }
+    },
+    "truncated": {
+      "mode": "monitor",
+      "status": "ready",
+      "session": {
+        "session_id": "term_02JABCDEF",
+        "target": "runner@staging.example",
+        "directory": "/srv/astral/build",
+        "state": "exited",
+        "cols": 80,
+        "rows": 24,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 19.25,
+        "ring_start": 120,
+        "ring_end": 131
+      },
+      "output": {
+        "text": "tail bytes\n",
+        "offset": 120,
+        "next_offset": 131,
+        "truncated": true,
+        "eof": true
+      }
+    },
+    "loading": {
+      "mode": "monitor",
+      "status": "loading"
+    },
+    "unavailable": {
+      "mode": "monitor",
+      "status": "unavailable",
+      "session": {
+        "session_id": "term_01JABCDEF",
+        "target": "ops@staging.example",
+        "directory": "/srv/astral/work",
+        "state": "running",
+        "cols": 120,
+        "rows": 32,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 2.5,
+        "ring_start": 0,
+        "ring_end": 57
+      },
+      "output": {
+        "text": "private\n"
+      }
+    },
+    "stale": {
+      "mode": "monitor",
+      "status": "stale",
+      "session": {
+        "session_id": "term_01JABCDEF",
+        "target": "ops@staging.example",
+        "directory": "/srv/astral/work",
+        "state": "running",
+        "cols": 120,
+        "rows": 32,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 2.5,
+        "ring_start": 0,
+        "ring_end": 57
+      },
+      "output": {
+        "text": "private stale\n"
+      }
+    },
+    "wrong_owner": {
+      "mode": "monitor",
+      "status": "wrong_owner",
+      "session": {
+        "session_id": "term_01JABCDEF",
+        "target": "ops@staging.example",
+        "directory": "/srv/astral/work",
+        "state": "running",
+        "cols": 120,
+        "rows": 32,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 2.5,
+        "ring_start": 0,
+        "ring_end": 57
+      },
+      "output": {
+        "text": "private owner\n"
+      }
+    },
+    "disconnected": {
+      "mode": "monitor",
+      "status": "disconnected",
+      "session": {
+        "session_id": "term_01JABCDEF",
+        "target": "ops@staging.example",
+        "directory": "/srv/astral/work",
+        "state": "running",
+        "cols": 120,
+        "rows": 32,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 2.5,
+        "ring_start": 0,
+        "ring_end": 57
+      },
+      "output": {
+        "text": "private disconnected\n"
+      }
+    },
+    "account_changed": {
+      "mode": "monitor",
+      "status": "account_changed",
+      "session": {
+        "session_id": "term_01JABCDEF",
+        "target": "ops@staging.example",
+        "directory": "/srv/astral/work",
+        "state": "running",
+        "cols": 120,
+        "rows": 32,
+        "created_at": "2026-10-18T09:30:00Z",
+        "idle_seconds": 2.5,
+        "ring_start": 0,
+        "ring_end": 57
+      },
+      "output": {
+        "text": "private account\n"
+      }
+    }
+  },
+  "frames": {
+    "list": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal sessions",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "card",
+          "title": "ops@staging.example",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Running",
+              "variant": "info"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Directory",
+                  "value": "/srv/astral/work"
+                },
+                {
+                  "label": "State",
+                  "value": "Running"
+                },
+                {
+                  "label": "Size",
+                  "value": "120 × 32"
+                },
+                {
+                  "label": "Output bytes",
+                  "value": "0..57"
+                }
+              ]
+            },
+            {
+              "type": "button",
+              "label": "Open monitor",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "terminal",
+                "params": {
+                  "mode": "monitor",
+                  "session_id": "term_01JABCDEF"
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "card",
+          "title": "runner@staging.example",
+          "content": [
+            {
+              "type": "badge",
+              "label": "Closed",
+              "variant": "default"
+            },
+            {
+              "type": "keyvalue",
+              "items": [
+                {
+                  "label": "Directory",
+                  "value": "/srv/astral/build"
+                },
+                {
+                  "label": "State",
+                  "value": "Closed"
+                },
+                {
+                  "label": "Size",
+                  "value": "80 × 24"
+                },
+                {
+                  "label": "Output bytes",
+                  "value": "120..131"
+                }
+              ]
+            },
+            {
+              "type": "button",
+              "label": "Open monitor",
+              "action": "chrome_open",
+              "payload": {
+                "surface": "terminal",
+                "params": {
+                  "mode": "monitor",
+                  "session_id": "term_02JABCDEF"
+                }
+              },
+              "variant": "secondary",
+              "disabled": false,
+              "local": false
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "button",
+          "label": "Refresh terminal list",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "empty": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal sessions",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "text",
+          "content": "No terminal sessions are open for this account.",
+          "variant": "body"
+        },
+        {
+          "type": "button",
+          "label": "Refresh terminal list",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "monitor": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor · ops@staging.example",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "badge",
+          "label": "Running",
+          "variant": "info"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Session",
+              "value": "term_01JABCDEF"
+            },
+            {
+              "label": "Target",
+              "value": "ops@staging.example"
+            },
+            {
+              "label": "Directory",
+              "value": "/srv/astral/work"
+            },
+            {
+              "label": "State",
+              "value": "Running"
+            },
+            {
+              "label": "Size",
+              "value": "120 × 32"
+            },
+            {
+              "label": "Output bytes",
+              "value": "0..57"
+            },
+            {
+              "label": "Created",
+              "value": "2026-10-18T09:30:00Z"
+            }
+          ],
+          "title": "Session"
+        },
+        {
+          "type": "card",
+          "title": "Output",
+          "content": [
+            {
+              "type": "code",
+              "code": "$ printf 'hello\\n'\nhello\n$ printf 'done\\n'\ndone\n",
+              "language": "terminal"
+            },
+            {
+              "type": "text",
+              "content": "Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Read from byte",
+              "value": "0"
+            },
+            {
+              "label": "Next byte",
+              "value": "57"
+            }
+          ],
+          "title": "Output window"
+        },
+        {
+          "type": "button",
+          "label": "Refresh output",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "monitor",
+              "session_id": "term_01JABCDEF",
+              "offset": 57
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to terminals",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "closed": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor · runner@staging.example",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "badge",
+          "label": "Closed",
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Session",
+              "value": "term_02JABCDEF"
+            },
+            {
+              "label": "Target",
+              "value": "runner@staging.example"
+            },
+            {
+              "label": "Directory",
+              "value": "/srv/astral/build"
+            },
+            {
+              "label": "State",
+              "value": "Closed"
+            },
+            {
+              "label": "Size",
+              "value": "80 × 24"
+            },
+            {
+              "label": "Output bytes",
+              "value": "120..131"
+            },
+            {
+              "label": "Created",
+              "value": "2026-10-18T09:30:00Z"
+            }
+          ],
+          "title": "Session"
+        },
+        {
+          "type": "alert",
+          "message": "The retained output window is truncated. Earlier bytes are no longer available in this monitor.",
+          "variant": "warning"
+        },
+        {
+          "type": "alert",
+          "message": "The terminal has exited. Retained output remains read-only.",
+          "variant": "info"
+        },
+        {
+          "type": "card",
+          "title": "Output",
+          "content": [
+            {
+              "type": "code",
+              "code": "tail bytes\n",
+              "language": "terminal"
+            },
+            {
+              "type": "text",
+              "content": "Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Read from byte",
+              "value": "120"
+            },
+            {
+              "label": "Next byte",
+              "value": "131"
+            }
+          ],
+          "title": "Output window"
+        },
+        {
+          "type": "button",
+          "label": "Refresh output",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "monitor",
+              "session_id": "term_02JABCDEF",
+              "offset": 131
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Reload retained output",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "monitor",
+              "session_id": "term_02JABCDEF"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to terminals",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "malicious": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor · ops@staging.example",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "badge",
+          "label": "Running",
+          "variant": "info"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Session",
+              "value": "term_03JABCDEF"
+            },
+            {
+              "label": "Target",
+              "value": "ops@staging.example"
+            },
+            {
+              "label": "Directory",
+              "value": "/srv/astral/work"
+            },
+            {
+              "label": "State",
+              "value": "Running"
+            },
+            {
+              "label": "Size",
+              "value": "120 × 32"
+            },
+            {
+              "label": "Output bytes",
+              "value": "0..183"
+            },
+            {
+              "label": "Created",
+              "value": "2026-10-18T09:30:00Z"
+            }
+          ],
+          "title": "Session"
+        },
+        {
+          "type": "card",
+          "title": "Output",
+          "content": [
+            {
+              "type": "code",
+              "code": "beforeRED after\nhyperlink\nC1 colour\nzerowidthevil\nline\nreturn\n",
+              "language": "terminal"
+            },
+            {
+              "type": "text",
+              "content": "Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Read from byte",
+              "value": "0"
+            },
+            {
+              "label": "Next byte",
+              "value": "183"
+            }
+          ],
+          "title": "Output window"
+        },
+        {
+          "type": "button",
+          "label": "Refresh output",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "monitor",
+              "session_id": "term_03JABCDEF",
+              "offset": 183
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to terminals",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "truncated": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor · runner@staging.example",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "badge",
+          "label": "Exited",
+          "variant": "warning"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Session",
+              "value": "term_02JABCDEF"
+            },
+            {
+              "label": "Target",
+              "value": "runner@staging.example"
+            },
+            {
+              "label": "Directory",
+              "value": "/srv/astral/build"
+            },
+            {
+              "label": "State",
+              "value": "Exited"
+            },
+            {
+              "label": "Size",
+              "value": "80 × 24"
+            },
+            {
+              "label": "Output bytes",
+              "value": "120..131"
+            },
+            {
+              "label": "Created",
+              "value": "2026-10-18T09:30:00Z"
+            }
+          ],
+          "title": "Session"
+        },
+        {
+          "type": "alert",
+          "message": "The retained output window is truncated. Earlier bytes are no longer available in this monitor.",
+          "variant": "warning"
+        },
+        {
+          "type": "alert",
+          "message": "The terminal has exited. Retained output remains read-only.",
+          "variant": "info"
+        },
+        {
+          "type": "card",
+          "title": "Output",
+          "content": [
+            {
+              "type": "code",
+              "code": "tail bytes\n",
+              "language": "terminal"
+            },
+            {
+              "type": "text",
+              "content": "Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.",
+              "variant": "caption"
+            }
+          ],
+          "variant": "default"
+        },
+        {
+          "type": "keyvalue",
+          "items": [
+            {
+              "label": "Read from byte",
+              "value": "120"
+            },
+            {
+              "label": "Next byte",
+              "value": "131"
+            }
+          ],
+          "title": "Output window"
+        },
+        {
+          "type": "button",
+          "label": "Refresh output",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "monitor",
+              "session_id": "term_02JABCDEF",
+              "offset": 131
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Reload retained output",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "monitor",
+              "session_id": "term_02JABCDEF"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Back to terminals",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "loading": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "Loading the terminal monitor…",
+          "variant": "info"
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "unavailable": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "The terminal monitor is unavailable. Refresh to check its current state.",
+          "variant": "info"
+        },
+        {
+          "type": "button",
+          "label": "Refresh terminal list",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "stale": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "This terminal view is stale. Refresh to read the current owner session.",
+          "variant": "warning"
+        },
+        {
+          "type": "button",
+          "label": "Refresh terminal list",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "wrong_owner": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "This terminal session is not available to the current account.",
+          "variant": "warning"
+        },
+        {
+          "type": "button",
+          "label": "Refresh terminal list",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "disconnected": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "The connection ended. Reconnect before refreshing this terminal monitor.",
+          "variant": "warning"
+        },
+        {
+          "type": "button",
+          "label": "Refresh terminal list",
+          "action": "chrome_open",
+          "payload": {
+            "surface": "terminal",
+            "params": {
+              "mode": "list"
+            }
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "account_changed": {
+      "type": "chrome_surface",
+      "surface_key": "terminal",
+      "region": "modal",
+      "title": "Terminal monitor",
+      "admin_only": false,
+      "components": [
+        {
+          "type": "alert",
+          "message": "The signed-in account changed. This monitor was closed; reopen the terminal from the current account.",
+          "variant": "warning"
+        },
+        {
+          "type": "button",
+          "label": "Close monitor",
+          "action": "chrome_close",
+          "payload": {
+            "surface": "terminal"
+          },
+          "variant": "secondary",
+          "disabled": false,
+          "local": false
+        }
+      ],
+      "mode": "replace",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    }
+  },
+  "web_frames": {
+    "list": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal sessions\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal sessions</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal sessions</h2><section aria-label=\"ops@staging.example\"><h3>ops@staging.example</h3><span role=\"status\" data-badge-variant=\"info\">Running</span><section><dl><div><dt>Directory</dt><dd>/srv/astral/work</dd></div><div><dt>State</dt><dd>Running</dd></div><div><dt>Size</dt><dd>120 × 32</dd></div><div><dt>Output bytes</dt><dd>0..57</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;session_id&quot;:&quot;term_01JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Open monitor</button></section><section aria-label=\"runner@staging.example\"><h3>runner@staging.example</h3><span role=\"status\" data-badge-variant=\"default\">Closed</span><section><dl><div><dt>Directory</dt><dd>/srv/astral/build</dd></div><div><dt>State</dt><dd>Closed</dd></div><div><dt>Size</dt><dd>80 × 24</dd></div><div><dt>Output bytes</dt><dd>120..131</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;session_id&quot;:&quot;term_02JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Open monitor</button></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh terminal list</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "empty": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal sessions\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal sessions</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal sessions</h2><p data-text-variant=\"body\">No terminal sessions are open for this account.</p><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh terminal list</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "monitor": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor · ops@staging.example\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor · ops@staging.example</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor · ops@staging.example</h2><span role=\"status\" data-badge-variant=\"info\">Running</span><section><h3>Session</h3><dl><div><dt>Session</dt><dd>term_01JABCDEF</dd></div><div><dt>Target</dt><dd>ops@staging.example</dd></div><div><dt>Directory</dt><dd>/srv/astral/work</dd></div><div><dt>State</dt><dd>Running</dd></div><div><dt>Size</dt><dd>120 × 32</dd></div><div><dt>Output bytes</dt><dd>0..57</dd></div><div><dt>Created</dt><dd>2026-10-18T09:30:00Z</dd></div></dl></section><section aria-label=\"Output\"><h3>Output</h3><section data-component=\"code\"><div>terminal</div><pre><code>$ printf &#x27;hello\\n&#x27;\nhello\n$ printf &#x27;done\\n&#x27;\ndone\n</code></pre></section><small data-text-variant=\"caption\">Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.</small></section><section><h3>Output window</h3><dl><div><dt>Read from byte</dt><dd>0</dd></div><div><dt>Next byte</dt><dd>57</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;offset&quot;:57,&quot;session_id&quot;:&quot;term_01JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh output</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Back to terminals</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "closed": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor · runner@staging.example\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor · runner@staging.example</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor · runner@staging.example</h2><span role=\"status\" data-badge-variant=\"default\">Closed</span><section><h3>Session</h3><dl><div><dt>Session</dt><dd>term_02JABCDEF</dd></div><div><dt>Target</dt><dd>runner@staging.example</dd></div><div><dt>Directory</dt><dd>/srv/astral/build</dd></div><div><dt>State</dt><dd>Closed</dd></div><div><dt>Size</dt><dd>80 × 24</dd></div><div><dt>Output bytes</dt><dd>120..131</dd></div><div><dt>Created</dt><dd>2026-10-18T09:30:00Z</dd></div></dl></section><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">The retained output window is truncated. Earlier bytes are no longer available in this monitor.</div><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">The terminal has exited. Retained output remains read-only.</div><section aria-label=\"Output\"><h3>Output</h3><section data-component=\"code\"><div>terminal</div><pre><code>tail bytes\n</code></pre></section><small data-text-variant=\"caption\">Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.</small></section><section><h3>Output window</h3><dl><div><dt>Read from byte</dt><dd>120</dd></div><div><dt>Next byte</dt><dd>131</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;offset&quot;:131,&quot;session_id&quot;:&quot;term_02JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh output</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;session_id&quot;:&quot;term_02JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Reload retained output</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Back to terminals</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "malicious": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor · ops@staging.example\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor · ops@staging.example</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor · ops@staging.example</h2><span role=\"status\" data-badge-variant=\"info\">Running</span><section><h3>Session</h3><dl><div><dt>Session</dt><dd>term_03JABCDEF</dd></div><div><dt>Target</dt><dd>ops@staging.example</dd></div><div><dt>Directory</dt><dd>/srv/astral/work</dd></div><div><dt>State</dt><dd>Running</dd></div><div><dt>Size</dt><dd>120 × 32</dd></div><div><dt>Output bytes</dt><dd>0..183</dd></div><div><dt>Created</dt><dd>2026-10-18T09:30:00Z</dd></div></dl></section><section aria-label=\"Output\"><h3>Output</h3><section data-component=\"code\"><div>terminal</div><pre><code>beforeRED after\nhyperlink\nC1 colour\nzerowidthevil\nline\nreturn\n</code></pre></section><small data-text-variant=\"caption\">Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.</small></section><section><h3>Output window</h3><dl><div><dt>Read from byte</dt><dd>0</dd></div><div><dt>Next byte</dt><dd>183</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;offset&quot;:183,&quot;session_id&quot;:&quot;term_03JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh output</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Back to terminals</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "truncated": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor · runner@staging.example\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor · runner@staging.example</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor · runner@staging.example</h2><span role=\"status\" data-badge-variant=\"warning\">Exited</span><section><h3>Session</h3><dl><div><dt>Session</dt><dd>term_02JABCDEF</dd></div><div><dt>Target</dt><dd>runner@staging.example</dd></div><div><dt>Directory</dt><dd>/srv/astral/build</dd></div><div><dt>State</dt><dd>Exited</dd></div><div><dt>Size</dt><dd>80 × 24</dd></div><div><dt>Output bytes</dt><dd>120..131</dd></div><div><dt>Created</dt><dd>2026-10-18T09:30:00Z</dd></div></dl></section><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">The retained output window is truncated. Earlier bytes are no longer available in this monitor.</div><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">The terminal has exited. Retained output remains read-only.</div><section aria-label=\"Output\"><h3>Output</h3><section data-component=\"code\"><div>terminal</div><pre><code>tail bytes\n</code></pre></section><small data-text-variant=\"caption\">Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.</small></section><section><h3>Output window</h3><dl><div><dt>Read from byte</dt><dd>120</dd></div><div><dt>Next byte</dt><dd>131</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;offset&quot;:131,&quot;session_id&quot;:&quot;term_02JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh output</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;session_id&quot;:&quot;term_02JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Reload retained output</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Back to terminals</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "loading": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor</h2><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">Loading the terminal monitor…</div><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "unavailable": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor</h2><div role=\"status\" aria-live=\"polite\" data-alert-variant=\"info\">The terminal monitor is unavailable. Refresh to check its current state.</div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh terminal list</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "stale": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor</h2><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">This terminal view is stale. Refresh to read the current owner session.</div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh terminal list</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "wrong_owner": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor</h2><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">This terminal session is not available to the current account.</div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh terminal list</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "disconnected": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor</h2><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">The connection ended. Reconnect before refreshing this terminal monitor.</div><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh terminal list</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    },
+    "account_changed": {
+      "type": "chrome_render",
+      "region": "modal",
+      "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor</h2><div role=\"alert\" aria-live=\"polite\" data-alert-variant=\"warning\">The signed-in account changed. This monitor was closed; reopen the terminal from the current account.</div><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+      "mode": "replace",
+      "surface_key": "terminal",
+      "request_generation": "55555555-5555-4555-8555-555555555555"
+    }
+  },
+  "native_frame": {
+    "type": "chrome_surface",
+    "surface_key": "terminal",
+    "region": "modal",
+    "title": "Terminal monitor · ops@staging.example",
+    "admin_only": false,
+    "components": [
+      {
+        "type": "badge",
+        "label": "Running",
+        "variant": "info"
+      },
+      {
+        "type": "keyvalue",
+        "items": [
+          {
+            "label": "Session",
+            "value": "term_01JABCDEF"
+          },
+          {
+            "label": "Target",
+            "value": "ops@staging.example"
+          },
+          {
+            "label": "Directory",
+            "value": "/srv/astral/work"
+          },
+          {
+            "label": "State",
+            "value": "Running"
+          },
+          {
+            "label": "Size",
+            "value": "120 × 32"
+          },
+          {
+            "label": "Output bytes",
+            "value": "0..57"
+          },
+          {
+            "label": "Created",
+            "value": "2026-10-18T09:30:00Z"
+          }
+        ],
+        "title": "Session"
+      },
+      {
+        "type": "card",
+        "title": "Output",
+        "content": [
+          {
+            "type": "code",
+            "code": "$ printf 'hello\\n'\nhello\n$ printf 'done\\n'\ndone\n",
+            "language": "terminal"
+          },
+          {
+            "type": "text",
+            "content": "Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.",
+            "variant": "caption"
+          }
+        ],
+        "variant": "default"
+      },
+      {
+        "type": "keyvalue",
+        "items": [
+          {
+            "label": "Read from byte",
+            "value": "0"
+          },
+          {
+            "label": "Next byte",
+            "value": "57"
+          }
+        ],
+        "title": "Output window"
+      },
+      {
+        "type": "button",
+        "label": "Refresh output",
+        "action": "chrome_open",
+        "payload": {
+          "surface": "terminal",
+          "params": {
+            "mode": "monitor",
+            "session_id": "term_01JABCDEF",
+            "offset": 57
+          }
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      },
+      {
+        "type": "button",
+        "label": "Back to terminals",
+        "action": "chrome_open",
+        "payload": {
+          "surface": "terminal",
+          "params": {
+            "mode": "list"
+          }
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      },
+      {
+        "type": "button",
+        "label": "Close monitor",
+        "action": "chrome_close",
+        "payload": {
+          "surface": "terminal"
+        },
+        "variant": "secondary",
+        "disabled": false,
+        "local": false
+      }
+    ],
+    "mode": "replace",
+    "request_generation": "55555555-5555-4555-8555-555555555555"
+  },
+  "web_frame": {
+    "type": "chrome_render",
+    "region": "modal",
+    "html": "<div class=\"astral-modal-backdrop astral-modal-overlay\" data-surface=\"terminal\"><div class=\"astral-modal-card\" role=\"dialog\" aria-modal=\"true\" aria-label=\"Terminal monitor · ops@staging.example\" tabindex=\"-1\"><div class=\"astral-modal-header\"><span class=\"astral-modal-icon\" aria-hidden=\"true\">✦</span><div class=\"astral-modal-heading\"><h2 class=\"astral-modal-title\">Terminal monitor · ops@staging.example</h2><div class=\"astral-modal-subtitle\"></div></div><button type=\"button\" class=\"astral-modal-close\" aria-label=\"Close\"><svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"M18 6L6 18M6 6l12 12\"/></svg></button></div><div class=\"astral-modal-body\"><section data-chrome-surface=\"terminal\" data-theme=\"midnight\" data-layout=\"standard\" aria-labelledby=\"chrome-terminal-title\"><h2 id=\"chrome-terminal-title\">Terminal monitor · ops@staging.example</h2><span role=\"status\" data-badge-variant=\"info\">Running</span><section><h3>Session</h3><dl><div><dt>Session</dt><dd>term_01JABCDEF</dd></div><div><dt>Target</dt><dd>ops@staging.example</dd></div><div><dt>Directory</dt><dd>/srv/astral/work</dd></div><div><dt>State</dt><dd>Running</dd></div><div><dt>Size</dt><dd>120 × 32</dd></div><div><dt>Output bytes</dt><dd>0..57</dd></div><div><dt>Created</dt><dd>2026-10-18T09:30:00Z</dd></div></dl></section><section aria-label=\"Output\"><h3>Output</h3><section data-component=\"code\"><div>terminal</div><pre><code>$ printf &#x27;hello\\n&#x27;\nhello\n$ printf &#x27;done\\n&#x27;\ndone\n</code></pre></section><small data-text-variant=\"caption\">Terminal output is read-only. Select the text to copy it; terminal links and clipboard escape sequences are ignored.</small></section><section><h3>Output window</h3><dl><div><dt>Read from byte</dt><dd>0</dd></div><div><dt>Next byte</dt><dd>57</dd></div></dl></section><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;monitor&quot;,&quot;offset&quot;:57,&quot;session_id&quot;:&quot;term_01JABCDEF&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Refresh output</button><button type=\"button\" data-ui-action=\"chrome_open\" data-ui-payload=\"{&quot;params&quot;:{&quot;mode&quot;:&quot;list&quot;},&quot;surface&quot;:&quot;terminal&quot;}\">Back to terminals</button><button type=\"button\" data-ui-action=\"chrome_close\" data-ui-payload=\"{&quot;surface&quot;:&quot;terminal&quot;}\">Close monitor</button></section></div></div></div>",
+    "mode": "replace",
+    "surface_key": "terminal",
+    "request_generation": "55555555-5555-4555-8555-555555555555"
+  },
+  "watch_components": [
+    {
+      "type": "badge",
+      "label": "Running",
+      "variant": "info"
+    },
+    {
+      "type": "alert",
+      "message": "This terminal monitor continues on your phone or desktop. Session output and identifiers are not sent to the watch.",
+      "variant": "info"
+    }
+  ]
+}

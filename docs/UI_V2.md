@@ -31,6 +31,15 @@ shared native/watch chrome model and its renderable surface, but has no direct
 entry in this web rail. It is distinct from sidebar chat History and composer
 Workspace timeline; do not document those three as interchangeable.
 
+## Terminal monitor
+
+Existing owner-authorized terminal sessions open in the shared read-only terminal
+monitor. The server-owned contract, sanitizer, list/monitor views, native
+dispositions and watch handoff are documented in
+[terminal-monitor.md](terminal-monitor.md). The monitor advertises only list,
+refresh and close reads; terminal input and session control remain outside this
+surface.
+
 ## Responsive and native scope
 
 At 1280 CSS pixels and above the sidebar is 350 px. From 1024 through 1279 it

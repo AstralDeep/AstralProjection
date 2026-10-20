@@ -908,7 +908,7 @@ final class AppModel: NSObject {
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
-        if pendingSurfaceKey == "evidence" { closeSurface() }
+        if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         if pendingSurfaceKey == "safety" {
             retireOrdinarySurfaceRequests()
             surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
@@ -1314,6 +1314,7 @@ final class AppModel: NSObject {
         wsTask?.cancel()
         wsTask = nil
         ws = nil
+        if pendingSurfaceKey == "terminal" { closeSurface() }
         store.wipe()
         tokens = nil
         conversationAccount = nil
@@ -2675,6 +2676,26 @@ final class AppModel: NSObject {
                 })
             else { return }
         }
+        if surfaceKey == "terminal" {
+            let allowed: Set<String> = [
+                "alert", "badge", "button", "card", "code", "keyvalue", "text",
+            ]
+            guard signedIn, connected, screen == .surface, pendingSurfaceKey == "terminal",
+                let fields = frame.payload.objectValue,
+                Set(fields.keys) == [
+                    "type", "surface_key", "region", "title", "admin_only", "components", "mode",
+                    "request_generation",
+                ],
+                fields["type"] == .string("chrome_surface"), fields["surface_key"] == .string("terminal"),
+                fields["region"] == .string("modal"), fields["mode"] == .string("replace"),
+                fields["admin_only"] == .bool(false), fields["title"]?.stringValue != nil,
+                let generation = fields["request_generation"]?.stringValue,
+                UUID(uuidString: generation)?.uuidString.lowercased() == generation,
+                generation == ordinarySurfaceGeneration,
+                let components = fields["components"]?.arrayValue,
+                components.allSatisfy { allowed.contains($0["type"]?.stringValue ?? "") }
+            else { return }
+        }
         if surfaceKey == "guidance" {
             guard signedIn, connected, screen == .surface, pendingSurfaceKey == "guidance",
                 let update = GuidanceSurfaceUpdate(frame: frame), guidanceState.accepts(update)
@@ -4033,7 +4054,7 @@ final class AppModel: NSObject {
     func goTo(_ target: Screen) {
         if mandatorySurface { return }
         retireOrdinarySurfaceRequests()
-        if ["work", "guidance"].contains(pendingSurfaceKey) { closeSurface() }
+        if ["work", "guidance", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         screen = target
         agentsLoading = target == .agents || agentsLoading
         historyLoading = target == .history || historyLoading

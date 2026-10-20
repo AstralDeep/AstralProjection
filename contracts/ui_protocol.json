@@ -146,6 +146,136 @@
       },
       "watch": "Host omits generic modal inspection actions and renders content-free metadata with an explicit phone or desktop handoff. Source text is not sent to the watch."
     },
+    "terminal_monitor": {
+      "version": 1,
+      "fixture": "contracts/fixtures/terminal/monitor_surface.json",
+      "surface_key": "terminal",
+      "authority": "The host authenticates the original registered human and current session, resolves the owner's existing terminal, and rechecks owner, connection and output delivery before each read. Presentation supplies no terminal input, execution or ownership authority.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "list",
+          "monitor"
+        ],
+        "list_params": [
+          "mode"
+        ],
+        "monitor_params": [
+          "mode",
+          "session_id",
+          "offset?"
+        ],
+        "identity": "Opaque bounded session id; no host, path or credential identity is supplied by presentation."
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per read, including refresh",
+        "connection": "current registered connection only",
+        "delivery": "never queue, reconnect-replay or substitute a new owner or session"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "exact_fields": [
+          "type",
+          "region",
+          "html",
+          "mode",
+          "surface_key",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "html": "shared escaped and sanitized Projection rendering"
+      },
+      "retirement": [
+        "new terminal read",
+        "surface navigation or monitor close",
+        "conversation navigation or send",
+        "timeout",
+        "owner, account or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept exactly one complete reply with the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated replies. The host rechecks the exact owned session after every awaited read.",
+      "session": {
+        "fields": [
+          "session_id",
+          "target",
+          "directory",
+          "state",
+          "cols",
+          "rows",
+          "created_at?",
+          "idle_seconds?",
+          "ring_start?",
+          "ring_end?"
+        ],
+        "states": [
+          "running",
+          "exited",
+          "closed",
+          "disconnected",
+          "unavailable"
+        ],
+        "target": "Host-owned literal display label for the authorized existing session.",
+        "directory": "Host-owned literal working directory; never a client-supplied path."
+      },
+      "statuses": [
+        "ready",
+        "loading",
+        "unavailable",
+        "stale",
+        "wrong_owner",
+        "disconnected",
+        "account_changed"
+      ],
+      "output": {
+        "input": "Host-authorized UTF-8 text or data_b64 from one retained read; the builder accepts either bounded form.",
+        "encoding": "UTF-8; invalid bytes become U+FFFD",
+        "sanitization": "ANSI CSI, OSC including clipboard and hyperlink controls, DCS/SOS/PM/APC, C0/C1 controls, bidi and other format controls are removed before escaped literal rendering. Terminal text never becomes a link.",
+        "display_utf8_bytes": 32768,
+        "display_lines": 2000,
+        "truncation": "Bounded output retains the newest complete Unicode scalars and a visible warning; host-reported truncation also shows the warning.",
+        "copy": "Output is literal selectable text. Copy uses the platform selection or clipboard UI; no OSC 52, server clipboard command or hidden clipboard write is honored."
+      },
+      "controls": {
+        "actions": [
+          "chrome_open",
+          "chrome_close"
+        ],
+        "read_only": "List, refresh and close controls only. No create, input, resize, interrupt, session close, link, clipboard or other interactive terminal action is advertised.",
+        "close": "The existing chrome_close action and the client dialog close or Escape remove the monitor without closing the terminal session."
+      },
+      "dispositions": {
+        "browser": "read_only_monitor",
+        "windows": "read_only_monitor",
+        "android": "read_only_monitor",
+        "macos": "read_only_monitor",
+        "ios": "read_only_monitor",
+        "watchos": "phone_desktop_handoff",
+        "voice": "omitted_by_server"
+      },
+      "watch": "Host renders only content-free state metadata and a phone or desktop handoff. Session id, target, directory, offsets and output are not sent to the watch."
+    },
     "guidance_notes_088": {
       "version": 1,
       "fixture": "contracts/fixtures/guidance_088/notes_surface.json",
