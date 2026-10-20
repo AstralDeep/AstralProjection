@@ -37,7 +37,9 @@ final class TerminalMonitorTests: XCTestCase {
         let actions = nodes.filter { $0.type == "button" }.compactMap { $0.raw["action"]?.stringValue }
         XCTAssertEqual(actions, ["chrome_open", "chrome_open", "chrome_close"])
         XCTAssertTrue(nodes.allSatisfy { !["input", "param_picker"].contains($0.type) })
-        let code = try XCTUnwrap(nodes.first { $0.type == "code" })
+        let malicious = try XCTUnwrap(source["frames"]?["malicious"]?["components"])
+        let maliciousNodes = AstralComponent.list(from: malicious)
+        let code = try XCTUnwrap(maliciousNodes.first { $0.type == "code" })
         XCTAssertEqual(code.raw["code"]?.stringValue, source["expected_sanitized_text"]?.stringValue)
         XCTAssertFalse(code.raw["code"]?.stringValue?.contains("\u{1b}") ?? true)
         XCTAssertFalse(code.raw["code"]?.stringValue?.contains("evil.example") ?? true)
@@ -55,7 +57,7 @@ final class TerminalMonitorTests: XCTestCase {
         let source = try fixture()
         let watch = try XCTUnwrap(source["watch_components"]?.arrayValue)
         XCTAssertEqual(Set(watch.compactMap { $0["type"]?.stringValue }), Set(["badge", "alert"]))
-        let serialized = watch.map(\.displayText).joined(separator: "\n")
+        let serialized = watch.compactMap { AstralComponent(json: $0)?.fallbackText }.joined(separator: "\n")
         for value in ["term_01JABCDEF", "ops@staging.example", "/srv/astral/work", "hello"] {
             XCTAssertFalse(serialized.contains(value))
         }

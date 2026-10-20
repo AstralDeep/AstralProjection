@@ -4,11 +4,19 @@ orchestrator/projection_surfaces/*.py and the chrome test suite.
 """
 
 from ._components import code_block, render_html
-from .terminal import build_terminal_monitor_view, build_terminal_view
 
 __all__ = [
     "build_terminal_monitor_view",
     "build_terminal_view",
     "code_block",
     "render_html",
+    "sanitize_terminal_output",
 ]
+
+
+def __getattr__(name):
+    if name in {"build_terminal_monitor_view", "build_terminal_view", "sanitize_terminal_output"}:
+        from . import terminal
+
+        return getattr(terminal, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

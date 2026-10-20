@@ -55,16 +55,28 @@ class TerminalMonitorTest {
         assertEquals("terminal", decoded.surfaceKey)
         assertTrue(isPrivateChromeSurface("terminal"))
         assertFalse(isPrivateChromeSurface("Terminal"))
-        assertEquals(source.getValue("request").jsonObject.getValue("request_generation").jsonPrimitive.content, decoded.requestGeneration)
+        assertEquals(
+            source.getValue("request").jsonObject.getValue("request_generation").jsonPrimitive.content,
+            decoded.requestGeneration,
+        )
         val nodes = walk(decoded.components)
-        val actions = nodes.filter { it.type == "button" }.map { it.attributes.getValue("action").jsonPrimitive.content }
+        val actions =
+            nodes
+                .filter { it.type == "button" }
+                .map { it.attributes.getValue("action").jsonPrimitive.content }
         assertEquals(listOf("chrome_open", "chrome_open", "chrome_close"), actions)
         assertEquals(setOf("chrome_open", "chrome_close"), actions.toSet())
         assertFalse(nodes.any { it.type in setOf("input", "param_picker") })
         val accepted = manifest().getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }.toSet()
         assertTrue(accepted.containsAll(actions))
-        val contract = manifest().getValue("presentation_contracts").jsonObject.getValue("terminal_monitor").jsonObject
-        assertEquals(frame.keys, contract.getValue("native_response").jsonObject.getValue("exact_fields").jsonArray.map { it.jsonPrimitive.content }.toSet())
+        val contract =
+            manifest().getValue("presentation_contracts").jsonObject.getValue("terminal_monitor").jsonObject
+        assertEquals(
+            frame.keys,
+            contract.getValue("native_response").jsonObject.getValue("exact_fields").jsonArray
+                .map { it.jsonPrimitive.content }
+                .toSet(),
+        )
     }
 
     @Test

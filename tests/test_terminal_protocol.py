@@ -409,3 +409,13 @@ def test_real_host_read_shape_with_top_level_session_and_eof_is_supported():
     assert labels["State"] == "Exited"
     assert any(item.get("message", "").startswith("The terminal has exited")
                for item in _walk(components) if item.get("type") == "alert")
+
+
+def test_chrome_package_lazily_exposes_terminal_helpers_without_eager_webrender_import():
+    import astralprojection.chrome as chrome
+
+    assert chrome.build_terminal_view({"mode": "list", "status": "ready", "sessions": []}).surface == "terminal"
+    assert chrome.build_terminal_monitor_view is chrome.build_terminal_view
+    assert chrome.sanitize_terminal_output("\x1b[31mred\x1b[0m") == "red"
+    with pytest.raises(AttributeError, match="has no attribute"):
+        _ = chrome.not_a_terminal_export
