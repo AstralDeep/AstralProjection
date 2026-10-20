@@ -81,4 +81,75 @@ final class TerminalMonitorTests: XCTestCase {
         XCTAssertEqual(contract["dispositions"]?["watchos"]?.stringValue, "phone_desktop_handoff")
         XCTAssertEqual(contract["dispositions"]?["voice"]?.stringValue, "omitted_by_server")
     }
+
+    func testTerminalRequestsUseAClosedCurrentConnectionContract() {
+        let allowed: [JSONValue] = [
+            .object(["mode": .string("list")]),
+            .object(["mode": .string("monitor"), "session_id": .string("term_fixture")]),
+            .object([
+                "mode": .string("monitor"), "session_id": .string("term_fixture"),
+                "offset": .number(9_007_199_254_740_991),
+            ]),
+        ]
+        for params in allowed {
+            let wire = Outbound.uiEvent(
+                action: "chrome_open", sessionId: nil,
+                payload: .object(["surface": .string("terminal"), "params": params]))
+            XCTAssertNotNil(ConsoleSurfaceRequest(frameText: wire))
+            XCTAssertTrue(ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: wire))
+        }
+        let invalid: [JSONValue] = [
+            .object([:]), .object(["mode": .string("create")]),
+            .object(["mode": .string("list"), "owner_id": .string("foreign")]),
+            .object(["mode": .string("monitor")]),
+            .object(["mode": .string("monitor"), "session_id": .string("bad\n")]),
+            .object(["mode": .string("monitor"), "session_id": .string(String(repeating: "x", count: 65))]),
+            .object(["mode": .string("monitor"), "session_id": .string("term"), "offset": .number(-1)]),
+            .object(["mode": .string("monitor"), "session_id": .string("term"), "offset": .number(0.5)]),
+            .object(["mode": .string("monitor"), "session_id": .string("term"), "offset": .bool(true)]),
+            .object(["mode": .string("monitor"), "session_id": .string("term"), "input": .string("whoami")]),
+        ]
+        for params in invalid {
+            let wire = Outbound.uiEvent(
+                action: "chrome_open", sessionId: nil,
+                payload: .object(["surface": .string("terminal"), "params": params]))
+            XCTAssertNil(ConsoleSurfaceRequest(frameText: wire))
+            XCTAssertTrue(ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: wire))
+        }
+        let close = Outbound.uiEvent(
+            action: "chrome_close", sessionId: nil, payload: .object(["surface": .string("terminal")]))
+        XCTAssertNotNil(ConsoleSurfaceRequest(frameText: close))
+        XCTAssertTrue(ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: close))
+        let foreign = Outbound.uiEvent(
+            action: "chrome_open", sessionId: "44444444-4444-4444-8444-444444444444",
+            payload: .object(["surface": .string("terminal"), "params": allowed[0]]))
+        XCTAssertNil(ConsoleSurfaceRequest(frameText: foreign))
+    }
+
+    func testDisconnectedTransportRejectsEveryTerminalReadAndCloseInsteadOfQueueing() async {
+        let socket = WSClient(url: URL(string: "ws://127.0.0.1:9/no-socket-started")!)
+        let events = await socket.events()
+        for _ in 0..<65 {
+            let wire = Outbound.uiEvent(
+                action: "chrome_open", sessionId: nil,
+                payload: .object(["surface": .string("terminal"), "params": .object(["mode": .string("list")])]))
+            await socket.send(wire)
+            let sent = await socket.sendCurrentChromeEvent(wire) { true }
+            XCTAssertFalse(sent)
+        }
+        await socket.send(
+            Outbound.uiEvent(
+                action: "chrome_close", sessionId: nil, payload: .object(["surface": .string("terminal")])))
+        await socket.stop()
+        var rejected: [String] = []
+        for await event in events {
+            guard case .sendRejected(let action) = event else {
+                XCTFail("Terminal events entered the disconnected queue")
+                continue
+            }
+            rejected.append(action)
+        }
+        XCTAssertEqual(rejected, Array(repeating: "chrome_open", count: 65) + ["chrome_close"])
+    }
+
 }

@@ -77,7 +77,7 @@ def _pending_terminal(win):
     dialog.begin_load("terminal", {}, "Terminal monitor")
     dialog.show()
     win._surface_dialog = dialog
-    ticket = (win.client, connection, "synthetic-owner", str(uuid.uuid4()), "terminal", None)
+    ticket = (win.client, connection, "synthetic-owner", str(uuid.uuid4()), "terminal", win.active_chat)
     win._settings_ticket = ticket
     frame = dict(FIXTURE["native_frame"])
     frame["request_generation"] = ticket[3]
@@ -115,3 +115,37 @@ def test_terminal_close_and_disconnect_retire_the_monitor_locally(win):
     assert dialog._surface == "terminal"
     win._on_status("closed")
     assert not dialog.isVisible()
+
+
+@pytest.mark.parametrize("transition", ["new", "load", "send"])
+@pytest.mark.parametrize("delivered", [False, True])
+def test_terminal_navigation_and_send_retire_pending_and_displayed_output(win, transition, delivered):
+    win._set_active_chat("44444444-4444-4444-8444-444444444444", persist=False)
+    dialog, ticket, frame = _pending_terminal(win)
+    if delivered:
+        win._on_chrome_surface(frame)
+        assert dialog._surface_payload
+    if transition == "new":
+        win._new_chat()
+    elif transition == "load":
+        win._load_chat("55555555-5555-4555-8555-555555555555")
+    else:
+        win._input.setText("Synthetic terminal retirement")
+        win._send()
+    assert not win._settings_current(ticket)
+    assert win._settings_ticket is None
+    assert not dialog.isVisible()
+    frame["title"] = "Retired terminal output"
+    win._on_chrome_surface(frame)
+    assert dialog._title.text() != frame["title"]
+    assert not dialog._surface_payload
+
+
+def test_terminal_acceptance_is_bound_to_current_conversation(win):
+    win._set_active_chat("44444444-4444-4444-8444-444444444444", persist=False)
+    dialog, ticket, frame = _pending_terminal(win)
+    win._set_active_chat("55555555-5555-4555-8555-555555555555", persist=False)
+    assert not win._settings_current(ticket)
+    frame["title"] = "Foreign conversation terminal output"
+    win._on_chrome_surface(frame)
+    assert dialog._title.text() != frame["title"]

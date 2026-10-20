@@ -2727,7 +2727,7 @@ class MainWindow(QMainWindow):
                 and ticket[1] == getattr(self.client, "connection_generation", None)
                 and ticket[2] == self._resume_store.storage_key and dialog is not None
                 and dialog.isVisible() and dialog._surface == ticket[4]
-                and (ticket[4] != "evidence" or ticket[5] == self.active_chat))
+                and (ticket[4] not in {"evidence", "terminal"} or ticket[5] == self.active_chat))
 
     def _send_settings(self, action: str, payload: dict) -> bool:
         dialog = self._surface_dialog
@@ -3170,6 +3170,7 @@ class MainWindow(QMainWindow):
         sender(message, chat_id, **kwargs)
 
     def _new_chat(self) -> None:
+        self._retire_terminal()
         self._clear_workspace_actions()
         self._retire_guidance()
         self._clear_turn_selection()
@@ -3691,6 +3692,7 @@ class MainWindow(QMainWindow):
             self._audit_dialog.add_page(result.get("rows") or [], result.get("next_cursor"))
 
     def _load_chat(self, chat_id: str) -> None:
+        self._retire_terminal()
         self._rendered_snapshot = None
         self._clear_workspace_actions()
         self._retire_guidance()
@@ -3957,6 +3959,7 @@ class MainWindow(QMainWindow):
         if not text and not atts:
             return
         self._retire_evidence()
+        self._retire_terminal()
         self._input.clear()
         generation = (
             self._begin_conversation_request("commit", self.active_chat)
