@@ -39,7 +39,10 @@ class TerminalMonitorTest {
         error("Missing UI protocol manifest")
     }
 
-    private fun walk(components: List<Component>, found: MutableList<Component> = mutableListOf()): List<Component> {
+    private fun walk(
+        components: List<Component>,
+        found: MutableList<Component> = mutableListOf(),
+    ): List<Component> {
         components.forEach { component ->
             found.add(component)
             walk(component.children, found)
@@ -56,24 +59,45 @@ class TerminalMonitorTest {
         assertTrue(isPrivateChromeSurface("terminal"))
         assertFalse(isPrivateChromeSurface("Terminal"))
         assertEquals(
-            source.getValue("request").jsonObject.getValue("request_generation").jsonPrimitive.content,
+            source
+                .getValue("request")
+                .jsonObject
+                .getValue("request_generation")
+                .jsonPrimitive.content,
             decoded.requestGeneration,
         )
         val nodes = walk(decoded.components)
         val actions =
             nodes
                 .filter { it.type == "button" }
-                .map { it.attributes.getValue("action").jsonPrimitive.content }
+                .map {
+                    it.attributes
+                        .getValue("action")
+                        .jsonPrimitive.content
+                }
         assertEquals(listOf("chrome_open", "chrome_open", "chrome_close"), actions)
         assertEquals(setOf("chrome_open", "chrome_close"), actions.toSet())
         assertFalse(nodes.any { it.type in setOf("input", "param_picker") })
-        val accepted = manifest().getValue("accept_actions").jsonArray.map { it.jsonPrimitive.content }.toSet()
+        val accepted =
+            manifest()
+                .getValue("accept_actions")
+                .jsonArray
+                .map { it.jsonPrimitive.content }
+                .toSet()
         assertTrue(accepted.containsAll(actions))
         val contract =
-            manifest().getValue("presentation_contracts").jsonObject.getValue("terminal_monitor").jsonObject
+            manifest()
+                .getValue("presentation_contracts")
+                .jsonObject
+                .getValue("terminal_monitor")
+                .jsonObject
         assertEquals(
             frame.keys,
-            contract.getValue("native_response").jsonObject.getValue("exact_fields").jsonArray
+            contract
+                .getValue("native_response")
+                .jsonObject
+                .getValue("exact_fields")
+                .jsonArray
                 .map { it.jsonPrimitive.content }
                 .toSet(),
         )
@@ -84,7 +108,10 @@ class TerminalMonitorTest {
         val source = fixture()
         val frame = assertIs<Inbound.ChromeSurface>(Wire.decode(source.getValue("native_frame").jsonObject))
         val code = walk(frame.components).single { it.type == "code" }
-        val text = code.attributes.getValue("code").jsonPrimitive.content
+        val text =
+            code.attributes
+                .getValue("code")
+                .jsonPrimitive.content
         assertEquals(source.getValue("expected_sanitized_text").jsonPrimitive.content, text)
         assertFalse(text.contains("\u001b"))
         assertFalse(text.contains("evil.example"))
@@ -92,8 +119,8 @@ class TerminalMonitorTest {
         val watch = source.getValue("watch_components").jsonArray.map { it.jsonObject }
         assertEquals(setOf("badge", "alert"), watch.map { it.getValue("type").jsonPrimitive.content }.toSet())
         assertFalse(watch.any { it.getValue("type").jsonPrimitive.content == "button" })
-        val private = listOf("term_01JABCDEF", "ops@staging.example", "/srv/astral/work", "hello")
-        private.forEach { assertFalse(watch.toString().contains(it)) }
+        val privateValues = listOf("term_01JABCDEF", "ops@staging.example", "/srv/astral/work", "hello")
+        privateValues.forEach { assertFalse(watch.toString().contains(it)) }
         assertTrue(watch.any { (it["message"]?.jsonPrimitive?.content ?: "").contains("phone or desktop") })
     }
 

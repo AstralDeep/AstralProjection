@@ -2693,7 +2693,9 @@ final class AppModel: NSObject {
                 UUID(uuidString: generation)?.uuidString.lowercased() == generation,
                 generation == ordinarySurfaceGeneration,
                 let components = fields["components"]?.arrayValue,
-                components.allSatisfy { allowed.contains($0["type"]?.stringValue ?? "") }
+                components.allSatisfy({
+                    allowed.contains($0["type"]?.stringValue ?? "")
+                })
             else { return }
         }
         if surfaceKey == "guidance" {
