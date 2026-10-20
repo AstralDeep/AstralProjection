@@ -189,4 +189,69 @@ final class TerminalMonitorAppTests: XCTestCase {
         XCTAssertNil(model.surfaceFailureMessage)
     }
 
+    func testHostedTerminalRefreshTimesOutAndRejectsItsLateFrame() async throws {
+        let model = signedInModel()
+        let original = try frame(model, fixture())
+        model.handleFrame(original)
+        let root = SurfaceView(embedded: true).environment(model).environment(model.themeStore)
+        #if os(macOS)
+            let window = NSWindow(
+                contentRect: CGRect(x: 0, y: 0, width: 700, height: 600),
+                styleMask: .borderless, backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let hosted = NSHostingView(rootView: root)
+            window.contentView = hosted
+            window.setFrameOrigin(CGPoint(x: -10_000, y: -10_000))
+            window.orderBack(nil)
+            hosted.layoutSubtreeIfNeeded()
+            defer {
+                window.orderOut(nil)
+                window.contentView = nil
+                window.close()
+            }
+        #else
+            let controller = UIHostingController(rootView: root)
+            let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 402, height: 874))
+            window.rootViewController = controller
+            window.isHidden = false
+            controller.view.layoutIfNeeded()
+            defer {
+                window.isHidden = true
+                window.rootViewController = nil
+            }
+        #endif
+        await Task.yield()
+        var sent: JSONValue?
+        model.outboundTap = { sent = try! JSONValue.parse(Data($0.utf8)) }
+        model.retryPendingSurface()
+        let generation = try XCTUnwrap(sent?["request_generation"]?.stringValue)
+        XCTAssertNil(model.pendingSurface)
+        let retired = expectation(description: "terminal read retired by the actual SurfaceView timer")
+        let wait = Task {
+            while !Task.isCancelled {
+                if model.surfaceFailureMessage != nil,
+                    !model.pendingSurfaceRequestGenerations.contains(generation)
+                {
+                    retired.fulfill()
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 20_000_000)
+            }
+        }
+        defer { wait.cancel() }
+        await fulfillment(of: [retired], timeout: 30)
+        XCTAssertNil(model.pendingSurface)
+        XCTAssertFalse(model.pendingSurfaceRequestGenerations.contains(generation))
+        var fields = original.payload.objectValue!
+        fields["request_generation"] = .string(generation)
+        model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(fields)))
+        XCTAssertNil(model.pendingSurface)
+        model.retryPendingSurface()
+        let current = try XCTUnwrap(sent?["request_generation"]?.stringValue)
+        XCTAssertNotEqual(current, generation)
+        fields["request_generation"] = .string(current)
+        model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(fields)))
+        XCTAssertNotNil(model.pendingSurface)
+    }
+
 }
