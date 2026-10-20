@@ -37,8 +37,13 @@ final class TerminalMonitorTests: XCTestCase {
         let actions = nodes.filter { $0.type == "button" }.compactMap { $0.raw["action"]?.stringValue }
         XCTAssertEqual(actions, ["chrome_open", "chrome_open", "chrome_close"])
         XCTAssertTrue(nodes.allSatisfy { !["input", "param_picker"].contains($0.type) })
+        let ordinaryCode = try XCTUnwrap(nodes.first { $0.type == "code" })
+        XCTAssertEqual(
+            ordinaryCode.raw["code"]?.stringValue,
+            "$ printf 'hello\\n'\nhello\n$ printf 'done\\n'\ndone\n")
         let malicious = try XCTUnwrap(source["frames"]?["malicious"]?["components"])
-        let maliciousNodes = AstralComponent.list(from: malicious)
+        var maliciousNodes: [AstralComponent] = []
+        walk(AstralComponent.list(from: malicious), &maliciousNodes)
         let code = try XCTUnwrap(maliciousNodes.first { $0.type == "code" })
         XCTAssertEqual(code.raw["code"]?.stringValue, source["expected_sanitized_text"]?.stringValue)
         XCTAssertFalse(code.raw["code"]?.stringValue?.contains("\u{1b}") ?? true)

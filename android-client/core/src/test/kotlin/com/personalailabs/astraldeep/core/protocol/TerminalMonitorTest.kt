@@ -107,7 +107,16 @@ class TerminalMonitorTest {
     fun literal_output_is_sanitized_and_watch_handoff_is_content_free() {
         val source = fixture()
         val frame = assertIs<Inbound.ChromeSurface>(Wire.decode(source.getValue("native_frame").jsonObject))
-        val code = walk(frame.components).single { it.type == "code" }
+        val ordinaryCode = walk(frame.components).single { it.type == "code" }
+        assertEquals(
+            "$ printf 'hello\\n'\nhello\n$ printf 'done\\n'\ndone\n",
+            ordinaryCode.attributes.getValue("code").jsonPrimitive.content,
+        )
+        val maliciousFrame =
+            assertIs<Inbound.ChromeSurface>(
+                Wire.decode(source.getValue("frames").jsonObject.getValue("malicious").jsonObject),
+            )
+        val code = walk(maliciousFrame.components).single { it.type == "code" }
         val text =
             code.attributes
                 .getValue("code")
