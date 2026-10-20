@@ -564,7 +564,7 @@ def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
 def test_frozen_windows_smoke_retry_keeps_other_tests_single_run_and_fails_closed() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
     windows = _job_block(text, "windows-package")
-    smoke = windows[windows.index("- name: Run actual frozen Windows package smokes") :]
+    smoke = _step_block(windows, "Run actual frozen Windows package smokes")
     target = "test_actual_frozen_gui_retains_selected_profile_during_offline_retry"
     before, retry = smoke.split("for ($attempt = 1; $attempt -le 2; $attempt++)")
     assert before.count("python -m pytest") == 1
@@ -591,7 +591,7 @@ def test_frozen_windows_smoke_retry_keeps_other_tests_single_run_and_fails_close
 )
 def test_frozen_smoke_retry_contract_rejects_expansion_and_failure_masking(old, new) -> None:
     windows = _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "windows-package")
-    smoke = windows[windows.index("- name: Run actual frozen Windows package smokes") :]
+    smoke = _step_block(windows, "Run actual frozen Windows package smokes")
     changed = windows.replace(smoke, smoke.replace(old, new))
     with pytest.raises(AssertionError):
         _assert_windows_steps_stop_on_native_failure(changed)
@@ -1464,3 +1464,71 @@ def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_com
     assert len(exports) == (1 if failing_command == "none" else 0)
     if exports:
         assert exports[0][exports[0].index("--xcresult") + 1] == "coverage with spaces/AstralWatch.xcresult"
+
+
+@pytest.mark.parametrize(
+    ("job_id", "step_name", "artifact_name", "directory"),
+    [
+        ("python", "Retain Projection Python coverage inputs", "projection-python-coverage", "build/074/coverage/"),
+        ("windows-tests", "Retain Windows Python coverage inputs", "windows-python-coverage", "build/075/coverage/"),
+        ("windows-package", "Retain Windows native coverage inputs", "windows-csharp-coverage", "build/075/coverage/"),
+    ],
+)
+def test_existing_coverage_inputs_are_retained_even_after_a_gate_failure(
+    job_id, step_name, artifact_name, directory,
+):
+    job = _job_block((ACTIVE / "ci.yml").read_text(), job_id)
+    upload = _step_block(job, step_name)
+    assert "if: ${{ always() }}" in upload
+    assert "uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in upload
+    assert f"name: {artifact_name}" in upload
+    assert f"path: {directory}" in upload
+    assert "if-no-files-found: error" in upload
+    assert "retention-days: 14" in upload
+
+
+@pytest.mark.parametrize("report_count", [0, 2])
+def test_browser_coverage_conversion_receives_every_raw_report_and_rejects_missing_inputs(
+    tmp_path, report_count,
+):
+    text = (ACTIVE / "ci.yml").read_text()
+    web = _job_block(text, "web")
+    browser = _step_block(web, "Run browser checks in the pinned Playwright image")
+    assert "--env ASTRAL_ALL_CLIENT_COVERAGE_DIR=/workspace/build/088/client-v8" in browser
+    conversion = _step_block(web, "Convert retained browser coverage observations")
+    assert "if: ${{ always() }}" in conversion
+    script = textwrap.dedent(conversion.split("run: |\n", 1)[1])
+    directory = tmp_path / "workspace with spaces"
+    raw = directory / "build/088/client-v8"
+    raw.mkdir(parents=True)
+    reports = [raw / f"suite {index}.json" for index in range(report_count)]
+    for report in reports:
+        report.write_text("[]\n")
+    record = tmp_path / "commands.jsonl"
+    recorder = tmp_path / "record.py"
+    recorder.write_text(
+        "import json, pathlib, sys\n"
+        f"pathlib.Path({str(record)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+    )
+    command = f"{shlex.quote(sys.executable)} {shlex.quote(str(recorder))}"
+    result = subprocess.run(
+        ["/bin/bash", "-c", f'node() {{ {command} "$@"; }}\n' + script],
+        cwd=directory, env={**os.environ, "GITHUB_WORKSPACE": str(directory)},
+        capture_output=True, text=True, timeout=15,
+    )
+    if not reports:
+        assert result.returncode != 0
+        assert not record.exists()
+    else:
+        assert result.returncode == 0, result.stderr
+        assert json.loads(record.read_text()) == [
+            "tooling/web-ci/browser-v8-cli.mjs", "--repo-root", str(directory),
+            "--output", "build/088/client-javascript.json",
+            *[part for report in reports for part in ("--input", str(report))],
+        ]
+    upload = _step_block(web, "Retain browser coverage inputs")
+    assert "if: ${{ always() }}" in upload
+    assert "uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in upload
+    for path in ("client-v8/", "client-javascript.json", "export-javascript.json", "offline-javascript.json"):
+        assert f"build/088/{path}" in upload
+    assert "if-no-files-found: error" in upload

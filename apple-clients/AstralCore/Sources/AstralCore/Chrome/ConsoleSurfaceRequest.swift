@@ -1,4 +1,4 @@
-// Validates console agent-introduction and evidence reads and closes before their current-connection transport.
+// Validates console agent-introduction, evidence and terminal reads and closes before their current-connection transport.
 // Guidance and Work retain their independently closed request contracts and replay protection.
 
 import Foundation
@@ -13,7 +13,7 @@ public struct ConsoleSurfaceRequest: Equatable, Sendable {
             ["chrome_open", "chrome_close"].contains(replay.action),
             let frame = InboundFrame.parse(frameText), frame.payload["session_id"] == .null,
             let payload = frame.payload["payload"]?.objectValue,
-            let surface = payload["surface"]?.stringValue, ["agent_intro", "evidence"].contains(surface),
+            let surface = payload["surface"]?.stringValue, ["agent_intro", "evidence", "terminal"].contains(surface),
             Set(payload.keys)
                 == Set(
                     ["surface", "submission_id", "request_generation"]
@@ -24,6 +24,9 @@ public struct ConsoleSurfaceRequest: Equatable, Sendable {
                 let identity = ConsoleDecoding.text(params["agent_id"], maximum: 200)
             else { return nil }
             agentID = identity
+        } else if replay.action == "chrome_open" && surface == "terminal" {
+            guard let params = payload["params"]?.objectValue, Self.validTerminalParams(params) else { return nil }
+            agentID = nil
         } else if replay.action == "chrome_open" {
             guard let params = payload["params"]?.objectValue, Self.validEvidenceParams(params) else { return nil }
             agentID = nil
@@ -35,7 +38,22 @@ public struct ConsoleSurfaceRequest: Equatable, Sendable {
 
     public static func claimsCurrentConnectionSemantics(frameText: String) -> Bool {
         guard let frame = InboundFrame.parse(frameText), frame.name == "ui_event" else { return false }
-        return frame.payload["payload"]?["surface"]?.stringValue == "evidence"
+        return ["evidence", "terminal"].contains(frame.payload["payload"]?["surface"]?.stringValue ?? "")
+    }
+
+    private static func validTerminalParams(_ params: [String: JSONValue]) -> Bool {
+        if params == ["mode": .string("list")] { return true }
+        guard Set(params.keys).isSubset(of: ["mode", "session_id", "offset"]),
+            params["mode"] == .string("monitor"),
+            params["session_id"]?.stringValue?.range(
+                of: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}\\z", options: .regularExpression) != nil
+        else { return false }
+        if let supplied = params["offset"] {
+            guard case .number(let value) = supplied, value.isFinite,
+                value >= 0, value <= 9_007_199_254_740_991, value.rounded(.down) == value
+            else { return false }
+        }
+        return true
     }
 
     private static func validEvidenceParams(_ params: [String: JSONValue]) -> Bool {

@@ -92,6 +92,13 @@ def card(
     )
 
 
+def code_block(code: object, language: object = "") -> ComponentView:
+    return ComponentView(
+        "code",
+        {"code": clean_text(code), "language": clean_text(language)},
+    )
+
+
 def container(
     children: Iterable[ComponentView],
     *,
@@ -364,6 +371,14 @@ def _render_component(component: Mapping[str, object]) -> str:
         title = clean_text(component.get("title"))
         heading = f"<h3>{escape(title)}</h3>" if title else ""
         return f"<section>{heading}<dl>{''.join(rows)}</dl></section>"
+    if component_type == "code":
+        language = clean_text(component.get("language"))
+        code = clean_text(component.get("code") or component.get("content"))
+        heading = f"<div>{escape(language)}</div>" if language else ""
+        return (
+            f'<section data-component="code">{heading}'
+            f'<pre><code>{escape(code)}</code></pre></section>'
+        )
     if component_type == "list":
         tag = "ol" if component.get("ordered") else "ul"
         raw_items = component.get("items") or []

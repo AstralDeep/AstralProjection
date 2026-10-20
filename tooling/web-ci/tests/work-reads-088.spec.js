@@ -32,7 +32,7 @@ test.afterAll(async () => {
   await writeFile(resolve(coverageOutput), JSON.stringify(rawCoverage) + "\n", { mode: 0o600 });
 });
 
-for (const surface of ["work", "evidence", "safety"]) {
+for (const surface of ["work", "evidence", "safety", "terminal"]) {
   test.describe(`${surface} request freshness`, () => {
     async function setup(page) {
       await page.addInitScript(() => {
@@ -64,7 +64,7 @@ for (const surface of ["work", "evidence", "safety"]) {
       await page.route("https://work-read.example/**", route => route.fulfill({
         contentType: "text/html", body: `<!doctype html><html><body>
           <button id="astral-newchat-btn">New chat fixture</button><a id="logout" href="/auth/logout">Sign out fixture</a><header id="astral-topbar">
-          <button data-ui-action="chrome_open" data-ui-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : surface === "evidence" ? {kind: "usage"} : {})}}'>Open ${surface} fixture</button>
+          <button data-ui-action="chrome_open" data-ui-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : surface === "evidence" ? {kind: "usage"} : surface === "terminal" ? {mode: "monitor", session_id: "term_01JABCDEF"} : {})}}'>Open ${surface} fixture</button>
           <button data-ui-action="chrome_open" data-ui-payload='{"surface":"agents"}'>Open other fixture</button>
           </header><div id="astral-history"></div><div id="astral-status"></div>
           <section id="astral-canvas"></section><div id="astral-chat"></div>

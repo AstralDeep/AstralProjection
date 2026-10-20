@@ -133,6 +133,60 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    func testTerminalReadsRetireOnCredentialRotationAndUseOnlyTheCurrentSocket() async throws {
+        for params: JSONValue in [
+            .object(["mode": .string("list")]),
+            .object(["mode": .string("monitor"), "session_id": .string("term_fixture")]),
+        ] {
+            try await withModel { model, peer, _, clock in
+                model.openSurface("terminal", params: params)
+                try await waitUntil { peer.events.count == 1 }
+                let original = try XCTUnwrap(peer.events[0].frame.payload["request_generation"]?.stringValue)
+                var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                var fixture: JSONValue?
+                for _ in 0..<8 {
+                    let path = root.appendingPathComponent("contracts/fixtures/terminal/monitor_surface.json")
+                    if FileManager.default.fileExists(atPath: path.path) {
+                        fixture = try JSONValue.parse(Data(contentsOf: path))
+                        break
+                    }
+                    root.deleteLastPathComponent()
+                }
+                var fields = try XCTUnwrap(fixture?["native_frame"]?.objectValue)
+                fields["request_generation"] = .string(original)
+                model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(fields)))
+                XCTAssertNotNil(model.pendingSurface)
+                clock.advance(7200)
+                peer.holdRefresh()
+                let requested = peer.expectRefresh()
+                let registered = peer.expectRegistration()
+                model.retryPendingSurface()
+                XCTAssertNil(model.pendingSurface)
+                await fulfillment(of: [requested], timeout: 10)
+                peer.releaseRefresh()
+                await fulfillment(of: [registered], timeout: 10)
+                try await waitUntil { model.connected }
+                XCTAssertNil(model.pendingSurface)
+                XCTAssertNil(model.terminalReadGeneration)
+                XCTAssertEqual(peer.events.count, 1)
+                model.openSurface("terminal", params: params)
+                try await waitUntil { peer.events.count == 2 }
+                let read = peer.events[1]
+                XCTAssertEqual(read.socket, peer.registrations.last?.socket)
+                let generation = try XCTUnwrap(read.frame.payload["request_generation"]?.stringValue)
+                XCTAssertNotEqual(generation, original)
+                model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(fields)))
+                XCTAssertNil(model.pendingSurface)
+                fields["request_generation"] = .string(generation)
+                peer.send(
+                    String(decoding: try JSONEncoder().encode(JSONValue.object(fields)), as: UTF8.self),
+                    socket: read.socket)
+                try await waitUntil { model.pendingSurface != nil }
+                XCTAssertEqual(peer.events.count, 2)
+            }
+        }
+    }
+
     func testExpiredPrivateReadsRenewBeforeSendingFreshLists() async throws {
         for surface in ["guidance", "work"] {
             try await withModel { model, peer, _, clock in
