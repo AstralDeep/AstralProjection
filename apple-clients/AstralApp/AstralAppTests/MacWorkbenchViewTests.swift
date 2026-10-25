@@ -112,6 +112,66 @@
             XCTAssertEqual(scroll.contentView.bounds.origin.y, position, accuracy: 1)
         }
 
+        func testTranscriptShowsDistinctRoleAlignedBubblesAtCompactAndWideWidths() async throws {
+            let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            let model = AppModel(
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                tokenStore: InMemoryTokenStore(), defaults: defaults)
+            model.activeChatId = "bubble-chat"
+            model.turns = [
+                .init(id: "question", role: "user", text: "Short question"),
+                .init(
+                    id: "answer", role: "assistant", text: "Short answer",
+                    components: [
+                        try XCTUnwrap(
+                            AstralComponent(
+                                json: .object([
+                                    "type": .string("text"), "content": .string("Attached detail"),
+                                ])))
+                    ]),
+            ]
+            let theme = model.themeStore
+            theme.apply(
+                spec: .object([
+                    "colors": .object([
+                        "bg": .string("#FFFFFF"), "primary": .string("#FF0000"),
+                        "surface": .string("#00FF00"), "text": .string("#000000"),
+                        "muted": .string("#000000"),
+                    ])
+                ]))
+            for width in [390, 900] {
+                let view = NSHostingView(
+                    rootView: MacWorkbenchTranscript(
+                        maximumWidth: 720, contentPadding: EdgeInsets(top: 28, leading: 28, bottom: 28, trailing: 28)
+                    ).background(theme.palette.bg).environment(model).environment(theme))
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: width, height: 400),
+                    styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.contentView = view
+                window.orderBack(nil)
+                defer { window.close() }
+                try await settle()
+                let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+                view.cacheDisplay(in: view.bounds, to: bitmap)
+                let question = try XCTUnwrap(bubbleBounds(bitmap, user: true), "Missing user bubble fill")
+                let answer = try XCTUnwrap(bubbleBounds(bitmap, user: false), "Missing assistant bubble fill")
+                let midpoint = CGFloat(bitmap.pixelsWide) / 2
+                XCTAssertGreaterThan(question.midX, midpoint)
+                XCTAssertLessThan(answer.midX, midpoint)
+                XCTAssertFalse(question.intersects(answer))
+                XCTAssertGreaterThan(question.width, 80)
+                XCTAssertGreaterThan(answer.width, 80)
+                XCTAssertGreaterThan(question.minX, 0)
+                XCTAssertLessThan(question.maxX, CGFloat(bitmap.pixelsWide))
+                XCTAssertGreaterThan(answer.minX, 0)
+                XCTAssertLessThan(answer.maxX, CGFloat(bitmap.pixelsWide))
+                try attach(view, name: "transcript-bubbles-\(width)")
+            }
+        }
+
         func testLocalComputerControlsWorkWithoutServerChromeAndRemainDistributionGated() async throws {
             for available in [true, false] {
                 let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
@@ -143,6 +203,26 @@
                 XCTAssertEqual(host.controlsPresented, available)
                 XCTAssertFalse(host.enabled)
             }
+        }
+
+        private func bubbleBounds(_ bitmap: NSBitmapImageRep, user: Bool) -> CGRect? {
+            var result: CGRect?
+            for y in stride(from: 0, to: bitmap.pixelsHigh, by: 2) {
+                for x in stride(from: 0, to: bitmap.pixelsWide, by: 2) {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+                    let matches =
+                        user
+                        ? color.redComponent > color.greenComponent + 0.08
+                            && color.redComponent > color.blueComponent + 0.08
+                        : color.greenComponent > color.redComponent + 0.08
+                            && color.greenComponent > color.blueComponent + 0.08
+                    if matches {
+                        let pixel = CGRect(x: x, y: y, width: 2, height: 2)
+                        result = result.map { $0.union(pixel) } ?? pixel
+                    }
+                }
+            }
+            return result
         }
 
         private func fixture(_ name: String) throws -> JSONValue {

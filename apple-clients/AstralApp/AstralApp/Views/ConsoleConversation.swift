@@ -26,22 +26,38 @@ import SwiftUI
                             if turn.role == "reasoning" {
                                 ReasoningSnippet(text: turn.text)
                             } else {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text(turn.role == "user" ? "You" : "AstralDeep")
-                                        .font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
-                                    if !turn.text.isEmpty {
-                                        if turn.role == "user" {
-                                            Text(turn.text).textSelection(.enabled)
-                                        } else {
-                                            MarkdownBlockView(source: turn.text).textSelection(.enabled)
+                                let isUser = turn.role == "user"
+                                HStack {
+                                    if isUser { Spacer(minLength: 24) }
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text(isUser ? "You" : "AstralDeep")
+                                            .font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
+                                        if !turn.text.isEmpty {
+                                            if isUser {
+                                                Text(turn.text).textSelection(.enabled)
+                                            } else {
+                                                MarkdownBlockView(source: turn.text).textSelection(.enabled)
+                                            }
+                                        }
+                                        ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
+                                            ComponentView(component: component)
                                         }
                                     }
-                                    ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
-                                        ComponentView(component: component)
-                                    }
+                                    .font(ConsoleTypography.body).foregroundStyle(p.text)
+                                    .padding(.horizontal, 16).padding(.vertical, 14)
+                                    .background(
+                                        isUser ? p.primary.opacity(0.17) : p.surface.opacity(0.55),
+                                        in: RoundedRectangle(cornerRadius: 12)
+                                    )
+                                    .astralChartBackdrop(
+                                        p, color: isUser ? p.primary : p.surface, opacity: isUser ? 0.17 : 0.55
+                                    )
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12).stroke(
+                                            isUser ? p.primary.opacity(0.35) : p.border))
+                                    if !isUser { Spacer(minLength: 24) }
                                 }
-                                .font(ConsoleTypography.body).foregroundStyle(p.text)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
                                 .id(turn.id)
                             }
                         }
