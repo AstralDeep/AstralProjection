@@ -496,7 +496,7 @@
         }
     }
 
-    private struct MacWorkbenchCommandPalette: View {
+    struct MacWorkbenchCommandPalette: View {
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         @Environment(\.dismiss) private var dismiss
@@ -600,7 +600,7 @@
         }
     }
 
-    private struct MacWorkbenchAgents: View {
+    struct MacWorkbenchAgents: View {
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         @Environment(\.dismiss) private var dismiss
