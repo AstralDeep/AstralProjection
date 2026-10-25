@@ -24,7 +24,9 @@
             defer { window.close() }
             try await settle()
             let lines = try recognizedText(view).lowercased().components(separatedBy: "\n")
-            XCTAssertEqual(lines.filter { $0 == "account" }.count, 1)
+            XCTAssertEqual(
+                lines.filter { $0 == "account" }.count, 1,
+                "Rendered command rows: \(lines.joined(separator: " | "))")
             let snapshot = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title))
             XCTAssertEqual(
                 snapshot.elements.filter { $0.role == kAXButtonRole }.compactMap(\.identifier)
@@ -99,6 +101,7 @@
                     styleMask: [.titled, .resizable], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
                 window.title = "Workbench choices \(UUID().uuidString)"
+                window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
                 window.contentView = view
                 window.orderBack(nil)
                 defer { window.close() }
@@ -161,6 +164,7 @@
                 contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
             window.contentView = view
             window.orderFront(nil)
             defer { window.close() }
@@ -215,6 +219,7 @@
                 contentRect: NSRect(x: 0, y: 0, width: 500, height: 600),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
             window.contentView = view
             window.orderFront(nil)
             defer { window.close() }
@@ -277,6 +282,7 @@
                     styleMask: [.titled, .resizable], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
                 window.title = "Workbench bubbles \(UUID().uuidString)"
+                window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
                 window.contentView = view
                 window.orderBack(nil)
                 defer { window.close() }
@@ -391,12 +397,17 @@
         private func panel<Content: View>(_ content: Content, model: AppModel, width: CGFloat) -> (
             NSHostingView<AnyView>, NSWindow
         ) {
-            let view = NSHostingView(rootView: AnyView(content.environment(model).environment(model.themeStore)))
+            let view = NSHostingView(
+                rootView: AnyView(
+                    content.environment(model).environment(model.themeStore)
+                        .font(ConsoleTypography.body).tint(model.themeStore.palette.primary)
+                        .preferredColorScheme(model.themeStore.colorScheme)))
             let window = NSWindow(
                 contentRect: NSRect(x: 0, y: 0, width: width, height: 480),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
             window.title = "Workbench panel \(UUID().uuidString)"
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
             window.contentView = view
             window.orderBack(nil)
             return (view, window)
@@ -548,6 +559,8 @@
         var body: some View {
             RootView()
                 .environment(state.model).environment(state.model.themeStore)
+                .font(ConsoleTypography.body).tint(state.model.themeStore.palette.primary)
+                .preferredColorScheme(state.model.themeStore.colorScheme)
         }
     }
 #endif
