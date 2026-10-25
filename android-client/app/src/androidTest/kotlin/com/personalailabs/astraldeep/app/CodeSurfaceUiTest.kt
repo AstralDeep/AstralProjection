@@ -13,6 +13,7 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.click
+import androidx.test.espresso.matcher.RootMatchers.isPlatformPopup
 import androidx.test.espresso.matcher.ViewMatchers.withText
 import androidx.test.platform.app.InstrumentationRegistry
 import com.personalailabs.astraldeep.app.render.Emit
@@ -97,8 +98,8 @@ class CodeSurfaceUiTest {
         assertLiteral(content)
         rule.runOnIdle { clipboard.setPrimaryClip(ClipData.newPlainText("sentinel", "unchanged")) }
         rule.onNodeWithText(content, useUnmergedTree = true).performTouchInput { longClick() }
-        onView(withText(android.R.string.selectAll)).perform(click())
-        onView(withText(android.R.string.copy)).perform(click())
+        onView(withText(android.R.string.selectAll)).inRoot(isPlatformPopup()).perform(click())
+        onView(withText(android.R.string.copy)).inRoot(isPlatformPopup()).perform(click())
         rule.runOnIdle {
             assertEquals(content, clipboard.primaryClip?.getItemAt(0)?.text?.toString())
             assertTrue(emitted.isEmpty())
