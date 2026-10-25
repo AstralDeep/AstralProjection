@@ -137,7 +137,7 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     assert versioned == original | navigation | direct_download
     assert len(original) == 10 and len(navigation) == 4 and len(direct_download) == 7
     for key in versioned:
-        assert "CURRENT_PROJECT_VERSION = 67;" in configurations[key]
+        assert "CURRENT_PROJECT_VERSION = 68;" in configurations[key]
         assert "MARKETING_VERSION = 1.8;" in configurations[key]
     for key in direct_download:
         assert "name = DirectDownload;" in configurations[key]
