@@ -2992,7 +2992,27 @@
           "push"
         ],
         "geometry": "ROTE owns logical viewport-derived dimensions, insets, scenario columns and minimum control height. Native renderers consume validated finite bounded values.",
-        "aggregation": "Send actual viewport, pixel ratio, input, accessibility, audio hardware/permission, network and supported types together. Re-evaluate on any aggregate change, including unchanged dimensions."
+        "aggregation": "Send actual viewport, pixel ratio, input, accessibility, audio hardware/permission, network and supported types together. Re-evaluate on any aggregate change, including unchanged dimensions.",
+        "mac_workbench": {
+          "negotiation": "register_ui.capabilities includes mac_workbench_v1 and register_ui.device.mac_workbench_v1 is true; updates retain the explicit device flag. Only macos with console/v2 receives this optional field.",
+          "field": "rote_config.device_profile.console.mac_workbench",
+          "version": 1,
+          "required_fields": [
+            "version",
+            "with_sidebar",
+            "without_sidebar",
+            "composer_max_width",
+            "transcript_max_width"
+          ],
+          "pane_fields": [
+            "split",
+            "conversation_width",
+            "compact_toolbar"
+          ],
+          "geometry": "ROTE resolves each navigation visibility variant from the reported viewport. Native code selects the supplied variant for local sidebar visibility, clamps dimensions to actual available bounds, and may locally select a tab or expand the canvas. It does not derive breakpoints, ratios, or minimum pane widths.",
+          "fallback": "Absent, malformed, unknown-version, unnegotiated and non-macOS profiles retain the existing console/v2 shell. Other clients ignore this optional field; their existing geometry is unchanged.",
+          "authority": "Layout capability only; confers no host permission, tool authority, owner identity or computer availability."
+        }
       },
       "local_prompt": {
         "action": "compose_prompt",

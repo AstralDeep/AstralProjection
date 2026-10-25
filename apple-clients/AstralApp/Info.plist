@@ -32,6 +32,10 @@
 	<!-- Feature 053 — the backend URL and Keycloak realm come from the xcconfig
 	     (Config/{Base,Debug,Release}.xcconfig) and are read at launch by
 	     AstralCore.AstralConfig. Repointing a build needs no source edit. -->
+	<key>ASTRALDistribution</key>
+	<string>$(ASTRAL_DISTRIBUTION)</string>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>Astral observes your desktop only during a computer-control session that you explicitly enable. You can pause or stop access at any time.</string>
 	<key>ASTRALServerBaseURL</key>
 	<string>$(ASTRAL_SERVER_BASE_URL)</string>
 	<key>ASTRALKeycloakAuthority</key>

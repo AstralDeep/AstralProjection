@@ -203,6 +203,26 @@ public actor WSClient {
         return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
     }
 
+    @discardableResult
+    public func sendCurrentComputerEvent(
+        _ text: String, isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard ComputerHostOutbound.isValid(text), established, let current = task,
+            current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
+    }
+
+    @discardableResult
+    public func sendCurrentComputerDecision(
+        _ text: String, isCurrent: @Sendable () async -> Bool
+    ) async -> Bool {
+        guard ComputerHostOutbound.isReviewDecision(text), established, let current = task,
+            current.state == .running
+        else { return false }
+        return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
+    }
+
     private func sendCurrentOwnerSurfaceEvent(
         _ text: String, using current: URLSessionWebSocketTask,
         isCurrent: @Sendable () async -> Bool
