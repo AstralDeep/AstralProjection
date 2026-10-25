@@ -68,6 +68,7 @@
         }
         let available: Bool
         private(set) var enabled = false
+        private(set) var consentEnabled = false
         private(set) var desktopAvailable = false
         private(set) var session: ComputerHostSession?
         var controlsPresented = false
@@ -214,6 +215,7 @@
             if !available { return "This build is a computer controller" }
             if let session { return session.state == "paused" ? "Computer task paused" : "Computer task active" }
             if owner == nil { return "Sign in to enable this Mac" }
+            if consentEnabled && !enabled { return "Computer access is saved but paused" }
             if enabled && sender == nil { return "Computer access is paused while disconnected" }
             if enabled && desktopAvailable { return "Local computer access is enabled on this Mac" }
             return "Computer access is off"
@@ -276,10 +278,24 @@
             guard channelEpoch == epoch else { return }
             self.owner = owner
             self.sender = sender
-            enabled = available && desktopAvailable && consentKey.map { defaults.bool(forKey: $0) } == true
+            enabled = false
+            desktopAvailable = false
+            authority.setDesktopAvailable(false, requiresLocalRearm: false)
+            consentEnabled = available && consentKey.map { defaults.bool(forKey: $0) } == true
             refreshPermissions()
+            guard channelEpoch == epoch, consentEnabled, permissionsReady else { return }
+            let desktopUsable = desktopProbe()
+            guard channelEpoch == epoch, desktopUsable, authority.restoreDesktopAvailability() else { return }
+            desktopAvailable = true
+            let monitoring = monitor.start { [weak self] in self?.pause(reason: "local_input") }
             guard channelEpoch == epoch else { return }
-            if enabled && permissionsReady { _ = monitor.start { [weak self] in self?.pause(reason: "local_input") } }
+            guard monitoring else {
+                suspendAccess()
+                lastError = "Human input monitoring could not start. Resume computer access locally to try again."
+                return
+            }
+            enabled = true
+            lastError = nil
         }
         func disconnect() {
             disconnect(epoch: UUID())
@@ -299,9 +315,10 @@
             disconnect(epoch: epoch)
             guard channelEpoch == epoch else { return }
             desktopAvailable = false
-            authority.setDesktopAvailable(false)
+            authority.setDesktopAvailable(false, requiresLocalRearm: false)
             owner = nil
             enabled = false
+            consentEnabled = false
             files.bind(nil)
         }
         func showControls() {
@@ -325,8 +342,8 @@
                 return
             }
             if enabled && !permissionsReady {
-                setEnabled(false)
-                lastError = "Computer permission is missing or was revoked. Grant access and enable this Mac again."
+                suspendAccess()
+                lastError = "Computer permission is missing or was revoked. Grant access and resume this Mac locally."
             }
         }
         func requestAccessibility() {
@@ -393,30 +410,39 @@
                 desktopAvailable = true
                 authority.setDesktopAvailable(true)
                 guard monitor.start({ [weak self] in self?.pause(reason: "local_input") }) else {
+                    suspendAccess()
                     lastError = "Human input monitoring could not start. Computer access remains off."
                     return
                 }
                 enabled = true
+                consentEnabled = true
                 lastError = nil
                 if let key = consentKey { defaults.set(true, forKey: key) }
                 if let descriptor { sendEvent("announce", additional: ["host": descriptor.json]) }
             } else {
-                localInput?.invalidate()
-                retire()
-                enabled = false
-                monitor.stop()
+                consentEnabled = false
                 if let key = consentKey { defaults.set(false, forKey: key) }
-                sendEvent("withdraw")
+                suspendAccess()
             }
+        }
+        private func suspendAccess() {
+            let epoch = channelEpoch
+            localInput?.invalidate()
+            enabled = false
+            desktopAvailable = false
+            authority.setDesktopAvailable(false)
+            retire()
+            guard channelEpoch == epoch else { return }
+            monitor.stop()
+            guard channelEpoch == epoch else { return }
+            sendEvent("withdraw")
         }
         func workspacesChanged() {
             stop()
             if enabled, let descriptor { sendEvent("announce", additional: ["host": descriptor.json]) }
         }
         func sessionLocked() {
-            authority.setDesktopAvailable(false)
-            desktopAvailable = false
-            setEnabled(false)
+            suspendAccess()
             lastError = "Computer control stopped because this desktop became unavailable."
         }
         func applicationWillTerminate() {

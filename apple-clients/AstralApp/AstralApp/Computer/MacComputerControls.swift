@@ -37,7 +37,7 @@
         }
         func action(on host: MacComputerHost) -> () -> Void { { perform(on: host) } }
         static func enabledBinding(on host: MacComputerHost) -> Binding<Bool> {
-            Binding(get: { host.enabled }, set: { setEnabled($0).perform(on: host) })
+            Binding(get: { host.consentEnabled }, set: { setEnabled($0).perform(on: host) })
         }
     }
 
@@ -70,6 +70,15 @@
                         "Allow computer tasks on this Mac", isOn: MacComputerControlCommand.enabledBinding(on: host)
                     )
                     .disabled(!host.available).accessibilityIdentifier("mac-computer-consent")
+                    Text("Saved for this account and server. Locking pauses access and ends active tasks.")
+                        .font(.caption)
+                    if host.consentEnabled && !host.enabled {
+                        Button(
+                            "Resume computer access",
+                            action: MacComputerControlCommand.setEnabled(true).action(on: host)
+                        )
+                        .accessibilityIdentifier("mac-computer-resume-access")
+                    }
                     Divider()
                     Text("Selected workspaces").font(.headline)
                     Text(
