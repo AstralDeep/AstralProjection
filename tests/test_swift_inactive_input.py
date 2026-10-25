@@ -698,6 +698,8 @@ def test_worker_alive_after_early_pipe_closure_is_stopped_at_deadline(tmp_path, 
 
 
 def test_regular_to_fifo_swap_is_bounded_and_never_reads_data(tmp_path):
+    import os
+
     probe = tmp_path / "fifo_probe.py"
     probe.write_text("""import json,os,sys
 from pathlib import Path
@@ -725,12 +727,11 @@ except proof.ProofError:
 sys.exit(3)
 """)
     result = subprocess.run(
-        [sys.executable, str(probe), str(tmp_path)], capture_output=True, text=True, timeout=2
+        [sys.executable, str(probe), str(tmp_path)], capture_output=True, text=True, timeout=2,
+        env={**os.environ, "PYTHONPATH": str(Path(proof.__file__).resolve().parents[1])},
     )
     assert result.returncode == 0
     state = json.loads(result.stdout)
-    import os
-
     assert state["reads"] == 0 and state["flags"] & os.O_NONBLOCK
 
 
