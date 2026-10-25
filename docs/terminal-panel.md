@@ -7,6 +7,10 @@ server-owned UI contract. `contracts/ui_protocol.json` declares the
 `contracts/fixtures/terminal/panel_surface.json` is the shared fixture that native
 drift guards and web checks consume.
 
+The shared builder also retains the explicit `build_terminal_monitor_view` API
+and read-only `monitor` navigation contract; neither can advertise interactive
+controls on a desktop. See [terminal-monitor.md](terminal-monitor.md).
+
 ## Ownership
 
 - `src/astralprojection/chrome/terminal.py` builds the list and panel views from

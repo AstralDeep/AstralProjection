@@ -12,6 +12,7 @@ collectClientCoverage(test, "work-reads-088");
 const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT = resolve(ROOT, "backend/webrender/static/client.js");
 const SOURCE = await readFile(CLIENT, "utf8");
+const TERMINAL_FIXTURE = JSON.parse(await readFile(resolve(ROOT, "contracts/fixtures/terminal/panel_surface.json"), "utf8"));
 const coverageOutput = process.env.ASTRAL_WORK_COVERAGE_OUTPUT;
 const rawCoverage = [];
 
@@ -95,24 +96,32 @@ for (const scope of ["work", "evidence", "safety", "terminal_panel", "terminal_m
     }
 
     if (scope === "terminal_panel") {
+      const terminalLabels = {
+        chrome_terminal_input: "Send to terminal", chrome_terminal_resize: "Apply resize",
+        chrome_terminal_interrupt: "Send interrupt", chrome_terminal_close: "Close terminal session",
+      };
       async function offerTerminal(page, name) {
         const request = await open(page);
-        const frame = reply(request);
-        const payload = {surface: "terminal", session_id: "term_01JABCDEF"};
-        if (name === "chrome_terminal_input") payload.fields = {data: "echo safe"};
-        if (name === "chrome_terminal_resize") payload.fields = {cols: 100, rows: 30};
-        frame.html = `<div class="astral-modal-card" role="dialog"><button class="astral-action" data-action="${name}" data-payload='${JSON.stringify(payload)}'>Terminal control</button><button class="astral-modal-close">Close</button></div>`;
-        await receive(page, frame);
+        await receive(page, {...TERMINAL_FIXTURE.web_frames.panel, request_generation: request.request_generation});
+        if (name === "chrome_terminal_input") await page.getByRole("textbox", {name: "Keyboard input", exact: true}).fill("echo safe");
+        if (name === "chrome_terminal_resize") {
+          await page.getByRole("spinbutton", {name: "Columns", exact: true}).fill("100");
+          await page.getByRole("spinbutton", {name: "Rows", exact: true}).fill("30");
+        }
       }
       for (const name of ["chrome_terminal_input", "chrome_terminal_resize", "chrome_terminal_interrupt", "chrome_terminal_close"]) {
         test(`${name} sends a correlated current request and accepts only its reply`, async ({page}) => {
           await setup(page);
           await offerTerminal(page, name);
-          await page.getByRole("button", {name: "Terminal control", exact: true}).click();
+          await page.getByRole("button", {name: terminalLabels[name], exact: true}).click();
           const sent = await page.evaluate(action => window.__frames.filter(frame => frame.action === action).at(-1), name);
           expect(sent.session_id).toBeUndefined();
           expect(sent.payload.surface).toBe("terminal");
           expect(sent.payload.session_id).toBe("term_01JABCDEF");
+          expect(Object.keys(sent.payload).sort()).toEqual(name === "chrome_terminal_input" || name === "chrome_terminal_resize"
+            ? ["fields", "session_id", "surface"] : ["session_id", "surface"]);
+          if (name === "chrome_terminal_input") expect(sent.payload.fields).toEqual({data: "echo safe"});
+          if (name === "chrome_terminal_resize") expect(sent.payload.fields).toEqual({cols: 100, rows: 30});
           expect(sent.request_generation).toMatch(/^[0-9a-f-]{36}$/u);
           await receive(page, reply(sent, "Terminal control acknowledged"));
           await expect(page.getByText("Terminal control acknowledged")).toBeVisible();
@@ -123,7 +132,7 @@ for (const scope of ["work", "evidence", "safety", "terminal_panel", "terminal_m
           await setup(page);
           await offerTerminal(page, name);
           await page.evaluate(() => { window.__sockets.at(-1).readyState = 3; });
-          await page.getByRole("button", {name: "Terminal control", exact: true}).click();
+          await page.getByRole("button", {name: terminalLabels[name], exact: true}).click();
           await page.evaluate(() => { window.__sockets.at(-1).readyState = 1; window.__sockets.at(-1).onopen?.(); });
           expect(await page.evaluate(action => window.__frames.filter(frame => frame.action === action).length, name)).toBe(0);
         });

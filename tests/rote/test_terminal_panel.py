@@ -39,9 +39,7 @@ def _types(components):
 def test_interactive_dispositions_receive_the_terminal_controls():
     for device in ("browser", "windows"):
         adapted = ComponentAdapter.adapt_terminal_surface(PANEL_STATE, _profile(device))
-        actions = {node.get("action", node.get("submit_action"))
-                   for node in ComponentAdapter._terminal_text_fallback([{"type": "code", "code": ""}])
-                   } if False else {
+        actions = {
             node.get("action") or node.get("submit_action")
             for component in adapted
             for node in _walk(component)
@@ -314,3 +312,14 @@ def test_validator_refuses_form_action_lists_bad_fields_and_oversized_trees():
             [{"type": "card", "title": "t", "content": ["not a node"]}], interactive=True)
     with pytest.raises(ValueError, match="terminal_surface_unavailable"):
         validate_terminal_components([{"type": "code", "code": "x" * 1048576}], interactive=True)
+
+
+def test_legacy_monitor_state_and_contract_keep_desktop_read_only():
+    for state in ({**PANEL_STATE, "mode": "monitor"},
+                  {**PANEL_STATE, "mode": "list", "contract": "terminal_monitor/v1", "sessions": [PANEL_STATE["session"]]}):
+        adapted = ComponentAdapter.adapt_terminal_surface(state, _profile("windows"))
+        nodes = [node for component in adapted for node in _walk(component)]
+        assert not any(node.get("type") == "param_picker" for node in nodes)
+        assert {node.get("action") for node in nodes if node.get("type") == "button"} == {"chrome_open", "chrome_close"}
+        opens = [node["payload"]["params"] for node in nodes if node.get("action") == "chrome_open"]
+        assert any(params.get("mode") == "monitor" for params in opens)
