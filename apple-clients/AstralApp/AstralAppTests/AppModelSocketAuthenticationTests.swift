@@ -68,6 +68,52 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    #if os(macOS)
+        func testComputerDenialWireTracksTheActualRegistrationAcrossCredentialRenewal() async throws {
+            try await withModel { model, peer, _, clock in
+                XCTAssertFalse(model.macComputerHost.available)
+                var replies: [JSONValue] = []
+                for index in 0..<2 {
+                    if index == 1 {
+                        clock.advance(7200)
+                        let registered = peer.expectRegistration()
+                        _ = try await model.rest.chats()
+                        await fulfillment(of: [registered], timeout: 10)
+                        try await waitUntil { model.connected }
+                    }
+                    let current = try XCTUnwrap(peer.registrations.last)
+                    let generation = try XCTUnwrap(current.generation)
+                    let request = "creq_" + String(repeating: index == 0 ? "c" : "d", count: 32)
+                    let frame = JSONValue.object([
+                        "type": .string("computer_request"), "request_id": .string(request),
+                        "session_id": .string("22222222-2222-4222-8222-222222222222"),
+                        "verb": .string("screenshot"), "args": .object([:]), "deadline_ms": .number(1000),
+                    ])
+                    peer.send(String(decoding: try frame.encoded(), as: UTF8.self), socket: current.socket)
+                    try await waitUntil {
+                        peer.events.contains { $0.frame.payload["payload"]?["request_id"] == .string(request) }
+                    }
+                    let event = try XCTUnwrap(
+                        peer.events.first {
+                            $0.frame.payload["payload"]?["request_id"] == .string(request)
+                        })
+                    let reply = event.frame.payload
+                    XCTAssertEqual(event.socket, current.socket)
+                    XCTAssertTrue(
+                        ComputerHostOutbound.isBound(
+                            String(decoding: try reply.encoded(), as: UTF8.self), connectionGeneration: generation))
+                    XCTAssertEqual(reply["action"], .string("computer_response"))
+                    XCTAssertEqual(reply["payload"]?["ok"], .bool(false))
+                    XCTAssertEqual(reply["payload"]?["error"]?["code"], .string("permission_denied"))
+                    replies.append(reply)
+                }
+                XCTAssertNotEqual(replies[0]["connection_generation"], replies[1]["connection_generation"])
+                XCTAssertNotEqual(replies[0]["submission_id"], replies[1]["submission_id"])
+                XCTAssertNotEqual(replies[0]["request_generation"], replies[1]["request_generation"])
+            }
+        }
+    #endif
+
     func testEvidenceRenewalRetiresOriginalReadAndOnlyManualRetryUsesFreshRegisteredSocket() async throws {
         for params: JSONValue in [
             .object([:]), .object(["kind": .string("usage")]),
