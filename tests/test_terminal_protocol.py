@@ -274,3 +274,18 @@ def test_remaining_sanitizer_and_validator_branches():
     wide = [{"type": "text", "content": "y" * 3000, "variant": "body"} for _ in range(400)]
     with pytest.raises(ValueError, match="terminal_surface_unavailable"):
         validate_terminal_components(wide, interactive=True)
+
+
+def test_fixture_watch_handoff_is_the_exact_content_free_panel_build():
+    from astralprojection.chrome.terminal import build_terminal_view
+
+    expected = [
+        component.to_dict()
+        for component in build_terminal_view(FIXTURE["states"]["panel"], watch=True).components
+    ]
+    assert FIXTURE["watch_components"] == expected
+    assert [node["type"] for node in expected] == ["badge", "alert"]
+    serialized = json.dumps(expected, ensure_ascii=False)
+    for private in ("term_01JABCDEF", "ops@staging.example", "/srv/astral/work", "hello"):
+        assert private not in serialized
+    assert "phone or desktop" in serialized

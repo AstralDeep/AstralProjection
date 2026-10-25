@@ -105,7 +105,7 @@ final class TerminalPanelTests: XCTestCase {
         let contract = try XCTUnwrap(document["presentation_contracts"]?["terminal_panel"])
         XCTAssertEqual(contract["surface_key"]?.stringValue, "terminal")
         XCTAssertEqual(
-            Set(contract["actions"]?.objectValue?.keys ?? []),
+            Set((contract["actions"]?.objectValue ?? [:]).keys),
             Set([
                 "chrome_terminal_input", "chrome_terminal_resize",
                 "chrome_terminal_interrupt", "chrome_terminal_close",

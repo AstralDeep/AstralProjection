@@ -2680,6 +2680,11 @@
   },
   "watch_components": [
     {
+      "type": "badge",
+      "label": "Running",
+      "variant": "info"
+    },
+    {
       "type": "alert",
       "message": "This terminal panel continues on your phone or desktop. Session output and identifiers are not sent to the watch.",
       "variant": "info"
