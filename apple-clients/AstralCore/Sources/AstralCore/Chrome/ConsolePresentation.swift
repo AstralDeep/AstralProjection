@@ -51,6 +51,7 @@ public struct ConsolePresentation: Equatable, Sendable {
     public let resultBodyMaxHeight: Double
     public let fullscreenInset: Double
     public let minimumControlHeight: Double
+    public let workbench: ConsoleWorkbenchPresentation?
 
     public init?(frame: InboundFrame) {
         guard frame.name == "rote_config" else { return nil }
@@ -96,5 +97,6 @@ public struct ConsolePresentation: Equatable, Sendable {
         self.resultBodyMaxHeight = resultBodyMaxHeight
         self.fullscreenInset = fullscreenInset
         self.minimumControlHeight = minimumControlHeight
+        workbench = ConsoleWorkbenchPresentation(json: json?["mac_workbench"])
     }
 }

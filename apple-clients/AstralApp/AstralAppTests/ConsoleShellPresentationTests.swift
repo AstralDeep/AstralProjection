@@ -473,11 +473,20 @@ private struct ConsoleTestRoot: View {
     let console: ConsoleModel
 
     var body: some View {
-        RootView()
+        shell
             .environment(model).environment(theme)
             .environment(\.astralViewportWidth, state.size.width)
             .environment(\.dynamicTypeSize, state.textSize)
             .frame(width: state.size.width, height: state.size.height)
+    }
+
+    @ViewBuilder
+    private var shell: some View {
+        #if os(macOS)
+            ConsoleShell(console: console, presentation: state.presentation)
+        #else
+            RootView()
+        #endif
     }
 }
 
@@ -498,6 +507,7 @@ private final class ConsoleTestMount {
         state = ConsoleTestState(presentation: presentation, size: size)
         self.model = model
         model.consolePresentation = presentation
+        model.canvasCapture.setWindow(size)
         let root = ConsoleTestRoot(
             state: state, model: model, theme: ThemeStore(), console: try XCTUnwrap(model.console))
         #if os(macOS)
@@ -523,6 +533,7 @@ private final class ConsoleTestMount {
         state.presentation = presentation
         model.consolePresentation = presentation
         state.size = size
+        model.canvasCapture.setWindow(size)
         #if os(macOS)
             window.setContentSize(size)
         #else

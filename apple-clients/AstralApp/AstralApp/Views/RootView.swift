@@ -1,6 +1,5 @@
-// The app shell: a minimal top bar (brand mark, New, Recent, server-owned chrome actions, Settings), a
-// connection strip and dismissible banner, and navigation to Chat/Agents/History/Audit/Surface. Loaded by
-// AstralAppMain.
+// Selects the authenticated native shell and reports its viewport to the server-owned presentation contract.
+// Shared identity and machine-local controls remain separate from generated workspace content.
 
 import AstralCore
 import SwiftUI
@@ -29,6 +28,24 @@ struct RootView: View {
             }
         }
         .background(rootBackground.ignoresSafeArea())
+        #if os(macOS)
+            .focusedSceneValue(
+                \.astralComputerControls,
+                model.macComputerHost.available ? { model.macComputerHost.showControls() } : nil
+            )
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if !model.signedIn || model.consolePresentation?.workbench == nil {
+                    MacComputerAccessButton(host: model.macComputerHost)
+                }
+            }
+            .sheet(
+                isPresented: Binding(
+                    get: { model.macComputerHost.controlsPresented },
+                    set: { model.macComputerHost.controlsPresented = $0 })
+            ) {
+                MacComputerControls(host: model.macComputerHost)
+            }
+        #endif
         .sheet(
             isPresented: Binding(
                 get: { model.meshPublicIdentity != nil }, set: { if !$0 { model.meshPublicIdentity = nil } })
@@ -49,7 +66,15 @@ struct RootView: View {
     private var signedIn: some View {
         Group {
             if let console = model.console, let presentation = model.consolePresentation {
-                ConsoleShell(console: console, presentation: presentation)
+                #if os(macOS)
+                    if let workbench = presentation.workbench {
+                        MacWorkbenchView(console: console, presentation: presentation, workbench: workbench)
+                    } else {
+                        ConsoleShell(console: console, presentation: presentation)
+                    }
+                #else
+                    ConsoleShell(console: console, presentation: presentation)
+                #endif
             } else {
                 legacyShell
             }
@@ -111,6 +136,32 @@ struct RootView: View {
         }
     }
 }
+
+#if os(macOS)
+    struct MacComputerAccessButton: View {
+        @Environment(ThemeStore.self) private var theme
+        let host: MacComputerHost
+
+        var body: some View {
+            if host.available {
+                HStack(spacing: 12) {
+                    Text("This Mac").foregroundStyle(theme.palette.muted)
+                    Spacer(minLength: 0)
+                    Button {
+                        host.showControls()
+                    } label: {
+                        Label("Computer controls…", systemImage: "desktopcomputer")
+                            .frame(minHeight: 36).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).accessibilityIdentifier("mac-computer-local-controls")
+                }
+                .font(ConsoleTypography.caption).foregroundStyle(theme.palette.text)
+                .padding(.horizontal, 12).background(theme.palette.surface)
+                .overlay(alignment: .top) { theme.palette.border.frame(height: 1) }
+            }
+        }
+    }
+#endif
 
 struct AstralNewChatButton: View {
     let viewportWidth: CGFloat

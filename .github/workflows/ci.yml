@@ -51,7 +51,7 @@ jobs:
           path: build/ci/review-diagnostics.json
           if-no-files-found: error
       - run: mkdir -p build/074/coverage
-      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
+      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
       - name: Prove focused regression effectiveness
         run: python scripts/check_regression_effectiveness.py
       - name: Record changed Python coverage for the event range
@@ -61,16 +61,21 @@ jobs:
           python scripts/check_changed_coverage.py build/074/coverage/projection-python.xml
           --base-sha "$BASE_SHA" --fail-under=90
           --output build/074/coverage/projection-python-changed-coverage.json
-      - name: Retain Projection Python coverage inputs
-        if: ${{ always() }}
+      - run: PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation
+      - run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import astralprojection, rote, webrender"
+
+      - name: Retain Python coverage evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: projection-python-coverage
-          path: build/074/coverage/
+          path: |
+            build/074/coverage/projection-python.xml
+            build/074/coverage/projection-python-changed-coverage.json
+            .coverage
+          include-hidden-files: true
           if-no-files-found: error
-          retention-days: 14
-      - run: PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation
-      - run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import astralprojection, rote, webrender"
+          retention-days: 7
 
   web:
     runs-on: ubuntu-24.04
@@ -95,7 +100,10 @@ jobs:
           cache-dependency-path: tooling/web-ci/package-lock.json
       - working-directory: tooling/web-ci
         run: test "$(corepack npm --version)" = "11.16.0" && corepack npm ci --ignore-scripts
-      - working-directory: tooling/web-ci
+      - name: Run host checks with native coverage
+        working-directory: tooling/web-ci
+        env:
+          NODE_V8_COVERAGE: ${{ github.workspace }}/build/coverage/javascript/node-v8
         run: corepack npm run check:package-manager && corepack npm run check:product-isolation && corepack npm run lint && corepack npm run test:coverage-conversion && corepack npm run test:coverage-conversion:node && corepack npm run test:coverage-union
       - name: Verify public offline worker and changed JavaScript coverage
         shell: bash
@@ -126,23 +134,12 @@ jobs:
             --env HOME=/tmp \
             --env ASTRAL_ASSIGNMENT_FIXTURE_DIR=/workspace/build/079/browser-fixtures \
             --env ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json \
-            --env ASTRAL_ALL_CLIENT_COVERAGE_DIR=/workspace/build/088/client-v8 \
+            --env ASTRAL_ALL_CLIENT_COVERAGE_DIR=/workspace/build/coverage/javascript/browser-v8/client \
+            --env ASTRAL_MESH_COVERAGE_OUTPUT=/workspace/build/coverage/javascript/browser-v8/mesh.json \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace/tooling/web-ci \
             "$image" \
             /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && node --test tests/mesh-custody.browser.test.mjs && corepack npm exec -- playwright test tests/mesh-enrollment.spec.js tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js tests/native-export-088.spec.js tests/work-reads-088.spec.js tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js tests/native-chart-088.spec.js tests/first-task-088.spec.js tests/selection-088.spec.js --browser=chromium --workers=1'
-      - name: Convert retained browser coverage observations
-        if: ${{ always() }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          inputs=()
-          for report in "$GITHUB_WORKSPACE"/build/088/client-v8/*.json; do
-            test -f "$report"
-            inputs+=(--input "$report")
-          done
-          node tooling/web-ci/browser-v8-cli.mjs --repo-root "$GITHUB_WORKSPACE" \
-            --output build/088/client-javascript.json "${inputs[@]}"
       - name: Enforce portable export executable-line coverage
         shell: bash
         run: |
@@ -155,18 +152,42 @@ jobs:
               counts = list(report["coverage"][f"backend/webrender/static/{name}"]["s"].values())
               assert counts and sum(count > 0 for count in counts) / len(counts) >= .90, name
           PY
-      - name: Retain browser coverage inputs
-        if: ${{ always() }}
+
+      - name: Collect exact-source JavaScript coverage
+        shell: bash
+        env:
+          NODE_V8_COVERAGE: ${{ github.workspace }}/build/coverage/javascript/node-v8
+        run: |
+          set -euo pipefail
+          mkdir -p build/coverage/javascript
+          python - <<'PYTHON'
+          from pathlib import Path
+          import subprocess
+          paths = sorted(Path("build/coverage/javascript/browser-v8").rglob("*.json"))
+          if not paths:
+              raise SystemExit("browser coverage observations are missing")
+          subprocess.run(["node", "tooling/web-ci/browser-v8-cli.mjs", "--repo-root", str(Path.cwd()),
+                          "--output", "build/coverage/javascript/browser.json",
+                          *[value for path in paths for value in ("--input", str(path))]], check=True)
+          PYTHON
+          node tooling/web-ci/coverage-conversion-cli.mjs \
+            --node-v8-directory build/coverage/javascript/node-v8 --repo-root "$GITHUB_WORKSPACE" \
+            --output build/coverage/javascript/node.json
+          node tooling/web-ci/coverage-union-cli.mjs \
+            --node build/coverage/javascript/node.json --browser build/coverage/javascript/browser.json \
+            --offline-node build/088/offline-javascript.json --export-browser build/088/export-javascript.json \
+            --repo-root "$GITHUB_WORKSPACE" --output build/coverage/javascript/javascript.json
+      - name: Retain JavaScript coverage evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: projection-browser-coverage
+          name: projection-javascript-coverage
           path: |
-            build/088/client-v8/
-            build/088/client-javascript.json
-            build/088/export-javascript.json
+            build/coverage/javascript/
             build/088/offline-javascript.json
+            build/088/export-javascript.json
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   windows-tests:
     runs-on: windows-latest
@@ -196,21 +217,26 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `
-            --cov=windows-client\astral_client --cov=windows-client\win_agent --cov-branch `
+            --cov=astral_client --cov=win_agent --cov-branch `
             --cov-report=xml:build\075\coverage\windows-python.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts\check_changed_coverage.py build\075\coverage\windows-python.xml `
             --base-sha "$env:BASE_SHA" --fail-under=90 `
             --output build\075\coverage\windows-python-changed-coverage.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Retain Windows Python coverage inputs
-        if: ${{ always() }}
+
+      - name: Retain Windows Python coverage evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: windows-python-coverage
-          path: build/075/coverage/
+          name: projection-windows-python-coverage
+          path: |
+            build/075/coverage/windows-python.xml
+            build/075/coverage/windows-python-changed-coverage.json
+            .coverage
+          include-hidden-files: true
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   windows-package:
     runs-on: windows-latest
@@ -397,14 +423,18 @@ jobs:
             }
           }
           exit $LASTEXITCODE
-      - name: Retain Windows native coverage inputs
-        if: ${{ always() }}
+
+      - name: Retain Windows native coverage evidence
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: windows-csharp-coverage
-          path: build/075/coverage/
+          name: projection-windows-native-coverage
+          path: |
+            build/075/coverage/windows-csharp.xml
+            build/075/coverage/windows-csharp-changed-coverage.json
+            build/075/coverage/windows-csharp-raw/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 7
 
   required:
     if: always()

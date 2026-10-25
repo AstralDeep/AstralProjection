@@ -561,16 +561,26 @@ final class CanvasCapture088Tests: XCTestCase {
                 window.close()
             }
         #else
-            let window = UIWindow(frame: webView.frame)
+            let scene = try XCTUnwrap(
+                UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+                    .first { $0.activationState == .foregroundActive })
+            let prior = scene.windows.first { $0.isKeyWindow }
+            let window = UIWindow(windowScene: scene)
+            window.frame = scene.coordinateSpace.bounds
             let controller = UIViewController()
-            controller.view = webView
+            controller.view.addSubview(webView)
             window.rootViewController = controller
-            window.isHidden = false
+            window.makeKeyAndVisible()
             window.layoutIfNeeded()
+            controller.view.layoutIfNeeded()
             webView.layoutIfNeeded()
+            XCTAssertNotNil(window.windowScene)
+            XCTAssertEqual(window.windowScene?.activationState, .foregroundActive)
+            XCTAssertTrue(window.isKeyWindow)
             defer {
                 window.isHidden = true
                 window.rootViewController = nil
+                prior?.makeKeyAndVisible()
             }
         #endif
         func dismantle() async throws {

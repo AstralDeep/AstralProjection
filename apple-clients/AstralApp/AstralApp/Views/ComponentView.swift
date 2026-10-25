@@ -522,16 +522,22 @@ struct ComponentView: View {
 
     @ViewBuilder
     private var imageView: some View {
-        if let url = (component.url ?? component.raw["src"]?.stringValue).flatMap(URL.init(string:)) {
+        if let source = component.url ?? component.raw["src"]?.stringValue {
             VStack(alignment: .leading, spacing: 4) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image {
-                        CanvasLoadedImage(image: image, node: captureNode, registry: model.canvasCapture)
-                    } else {
-                        ProgressView().tint(p.primary)
-                            .onAppear {
-                                if let node = captureNode { model.canvasCapture.retain(nil, for: node) }
+                Group {
+                    if source.prefix(5).lowercased() == "data:" {
+                        InlineComponentImageView(source: source, node: captureNode, registry: model.canvasCapture)
+                    } else if let url = URL(string: source) {
+                        AsyncImage(url: url) { phase in
+                            if let image = phase.image {
+                                CanvasLoadedImage(image: image, node: captureNode, registry: model.canvasCapture)
+                            } else {
+                                ProgressView().tint(p.primary)
+                                    .onAppear {
+                                        if let node = captureNode { model.canvasCapture.retain(nil, for: node) }
+                                    }
                             }
+                        }
                     }
                 }
                 .frame(maxHeight: 360)

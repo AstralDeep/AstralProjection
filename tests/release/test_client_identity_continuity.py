@@ -127,12 +127,20 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
         "AD0881000000000000000014", "AD0881000000000000000015",
         "AD0881000000000000000016", "AD0881000000000000000017",
     }
+    direct_download = {
+        "AF0990000000000000000001", "AF0990000000000000000002",
+        "AF0990000000000000000003", "AF0990000000000000000004",
+        "AF0990000000000000000005", "AF0990000000000000000006",
+        "AF0990000000000000000007",
+    }
     versioned = {key for key, body in configurations.items() if "CURRENT_PROJECT_VERSION" in body}
-    assert versioned == original | navigation
-    assert len(original) == 10 and len(navigation) == 4
-    for key in original | navigation:
+    assert versioned == original | navigation | direct_download
+    assert len(original) == 10 and len(navigation) == 4 and len(direct_download) == 7
+    for key in versioned:
         assert "CURRENT_PROJECT_VERSION = 67;" in configurations[key]
         assert "MARKETING_VERSION = 1.8;" in configurations[key]
+    for key in direct_download:
+        assert "name = DirectDownload;" in configurations[key]
     for key in navigation:
         body = configurations[key]
         assert "SUPPORTED_PLATFORMS = watchsimulator;" in body
@@ -144,6 +152,25 @@ def test_apple_bundles_take_the_protected_monotonic_build_number() -> None:
     assert "MARKETING_VERSION = 1.4;" not in project
     assert app["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
     assert watch["CFBundleVersion"] == "$(CURRENT_PROJECT_VERSION)"
+
+
+def test_direct_download_host_keeps_store_identity_and_hardened_runtime() -> None:
+    project = _text("apple-clients/AstralApp/AstralApp.xcodeproj/project.pbxproj")
+    body = _project_objects(project, "XCBuildConfiguration")["AF0990000000000000000001"]
+    assert "SUPPORTED_PLATFORMS = macosx;" in body
+    assert "PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep;" in body
+    assert '"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";' in body
+    assert "CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;" in body
+    assert '"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;' in body
+    assert "ENABLE_TESTABILITY = NO;" in body
+    assert '"ENABLE_APP_SANDBOX[sdk=macosx*]" = NO;' in body
+    assert 'ASTRAL_DISTRIBUTION = "direct-download";' in body
+    assert "PROVISIONING_PROFILE_SPECIFIER" not in body
+    entitlements = _plist("apple-clients/AstralApp/AstralApp-DirectDownload.entitlements")
+    assert entitlements == {"com.apple.security.device.audio-input": True}
+    scheme = ET.parse(ROOT / "apple-clients/AstralApp/AstralApp.xcodeproj/xcshareddata/xcschemes/AstralAppDirectDownload.xcscheme")
+    for action in ("LaunchAction", "ProfileAction", "AnalyzeAction", "ArchiveAction"):
+        assert scheme.find(action).get("buildConfiguration") == "DirectDownload"
 
 
 def _project_objects(project: str, section: str) -> dict[str, str]:

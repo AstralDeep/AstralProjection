@@ -124,9 +124,16 @@ final class AppModel: NSObject {
 
     @ObservationIgnored private let defaults: UserDefaults
 
+    #if os(macOS)
+        let macComputerHost = MacComputerHost()
+    #endif
+
     var serverBaseText: String {
         didSet {
             if oldValue != serverBaseText {
+                #if os(macOS)
+                    macComputerHost.signedOut()
+                #endif
                 retireMeshCustody()
                 retireServerSession()
             }
@@ -139,6 +146,9 @@ final class AppModel: NSObject {
     var authorityText: String {
         didSet {
             if oldValue != authorityText {
+                #if os(macOS)
+                    macComputerHost.signedOut()
+                #endif
                 retireMeshCustody()
                 retireServerSession()
             }
@@ -462,6 +472,9 @@ final class AppModel: NSObject {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            #if os(macOS)
+                macComputerHost.signedOut()
+            #endif
             if conversationAccount != nil {
                 retireMeshCustody()
             } else if serverSession?.owner == account.subject, serverSession?.scope.issuer == account.issuer {
@@ -483,7 +496,7 @@ final class AppModel: NSObject {
         activeChatId = conversationResumeStore.load(for: account)?.chatId
     }
 
-    struct DownloadOwner: Equatable {
+    struct DownloadOwner: Equatable, Sendable {
         let account: ConversationAccount?
         let generation: Int
         let signedIn: Bool
@@ -898,13 +911,37 @@ final class AppModel: NSObject {
             token: token, serverBase: serverBase, deviceId: voiceDeviceId,
             deviceKind: voiceDeviceKind, connectionGeneration: connection,
             visibleChatId: activeChatId)
+        #if os(macOS)
+            let socket = ws
+            let hostOwner = downloadOwner
+            let hostScope =
+                signedIn ? hostOwner.account.map { serverBase.absoluteString + "|" + $0.locatorStorageKey } : nil
+            macComputerHost.bind(owner: hostScope) { [weak self] text in
+                guard let self, let socket, self.ws === socket, self.downloadOwner == hostOwner,
+                    self.continuity.connectionGeneration == connection,
+                    let bound = ComputerHostOutbound.bindToConnection(text, connectionGeneration: connection)
+                else { return false }
+                return await socket.sendCurrentComputerEvent(bound, connectionGeneration: connection) { [weak self] in
+                    guard let self else { return false }
+                    return await self.computerChannelIsCurrent(socket: socket, owner: hostOwner, connection: connection)
+                }
+            }
+            let hostDescriptor = macComputerHost.descriptor
+            let hostCapable = macComputerHost.available
+            let macWorkbench = true
+        #else
+            let hostDescriptor: ComputerHostDescriptor? = nil
+            let hostCapable = false
+            let macWorkbench = false
+        #endif
         return Outbound.registerUI(
             token: token,
             sessionId: activeChatId,
             device: device,
             resumed: resumed,
             connectionGeneration: connection,
-            resume: resume, workReadSupported: true, guidanceNotesSupported: true)
+            resume: resume, workReadSupported: true, guidanceNotesSupported: true,
+            computerHost: hostDescriptor, computerHostCapable: hostCapable, macWorkbenchSupported: macWorkbench)
     }
 
     @discardableResult
@@ -1292,6 +1329,9 @@ final class AppModel: NSObject {
     }
 
     func signOut(revokeRemote: Bool = true) async {
+        #if os(macOS)
+            macComputerHost.signedOut()
+        #endif
         retireMeshCustody()
         // Local wipe must precede the async revoke call, before any suspension
         let access = tokens?.accessToken
@@ -1360,6 +1400,9 @@ final class AppModel: NSObject {
     }
 
     func clearConversationForAccountRemoval() {
+        #if os(macOS)
+            macComputerHost.signedOut()
+        #endif
         retireMeshCustody()
         retireServerSession()
         retireOrdinarySurfaceRequests()
@@ -1395,6 +1438,7 @@ final class AppModel: NSObject {
         #if os(macOS)
             let (w, h) = lastReportedViewport ?? (1280, 800)
             var descriptor = DeviceDescriptor.macos(viewportWidth: w, viewportHeight: h)
+            descriptor.macWorkbenchSupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -1743,6 +1787,9 @@ final class AppModel: NSObject {
                 Task { await self.reconcileLLMFirstLoginOperation() }
             }
         case .disconnected:
+            #if os(macOS)
+                macComputerHost.disconnect()
+            #endif
             resetViewportRefresh()
             invalidateWorkRead()
             connected = false
@@ -1784,6 +1831,16 @@ final class AppModel: NSObject {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        #if os(macOS)
+            if macComputerHost.consume(frame) {
+                if ["computer_host", "computer_session"].contains(frame.name),
+                    screen == .surface, pendingSurfaceKey == "my_computers"
+                {
+                    openSurface("my_computers")
+                }
+                return
+            }
+        #endif
         if consumeViewportStatus(frame) { return }
         if frame.name == "error",
             ["viewport_snapshot_rejected", "viewport_snapshot_retryable"].contains(
@@ -3465,6 +3522,36 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action == "computer_host_consent" {
+            #if os(macOS)
+                guard signedIn, connected, macComputerHost.available, screen == .surface,
+                    pendingSurfaceKey == "my_computers", pendingSurface?.surfaceKey == "my_computers",
+                    ordinarySurfaceGeneration == nil, !mandatorySurface,
+                    let fields = payload.objectValue, Set(fields.keys) == ["enabled"],
+                    let enabled = fields["enabled"]?.boolValue
+                else {
+                    bannerIsError = true
+                    errorBanner = "Open My computers on an eligible Mac before changing local computer access."
+                    return
+                }
+                macComputerHost.refreshPermissions()
+                macComputerHost.setEnabled(enabled)
+                if enabled && !macComputerHost.enabled { macComputerHost.showControls() }
+                let owner = downloadOwner
+                let connection = continuity.connectionGeneration
+                Task { [weak self] in
+                    guard let self, await self.macComputerHost.flushCurrentSends(), self.downloadOwner == owner,
+                        self.continuity.connectionGeneration == connection, self.screen == .surface,
+                        self.pendingSurfaceKey == "my_computers"
+                    else { return }
+                    self.openSurface("my_computers")
+                }
+            #else
+                bannerIsError = true
+                errorBanner = "This client controls other computers and cannot host local computer tasks."
+            #endif
+            return
+        }
         if action.hasPrefix("chrome_mesh_") {
             guard signedIn, connected, screen == .surface, pendingSurfaceKey == "mesh", !mandatorySurface,
                 ordinarySurfaceGeneration == nil, !paramPickerPending(action: action),
@@ -3819,6 +3906,12 @@ final class AppModel: NSObject {
     }
 
     private func rawSend(_ text: String) {
+        let computerReview = ComputerHostOutbound.isReviewDecision(text)
+        #if os(macOS)
+            let localComputerSession = computerReview ? macComputerHost.recordApprovalInteraction() : nil
+        #else
+            let localComputerSession: String? = nil
+        #endif
         outboundTap?(text)
         guard let socket = ws else { return }
         let owner = downloadOwner
@@ -3854,6 +3947,24 @@ final class AppModel: NSObject {
                 }
                 return
             }
+            if computerReview {
+                #if os(macOS)
+                    guard await macComputerHost.flushApprovalPause(localComputerSession) else {
+                        retireUnsentOperation(text)
+                        errorBanner = "The computer session changed. Review the current task before approving again."
+                        bannerIsError = true
+                        return
+                    }
+                #endif
+                let sent = await socket.sendCurrentComputerDecision(text) { [weak self] in
+                    guard let self else { return false }
+                    return await self.computerDecisionIsCurrent(
+                        socket: socket, owner: owner, connection: connection,
+                        chatId: chatId, navigation: navigation, localSession: localComputerSession)
+                }
+                if !sent { retireUnsentOperation(text) }
+                return
+            }
             if currentChrome {
                 let sent = await socket.sendCurrentChromeEvent(text) { [weak self] in
                     await MainActor.run {
@@ -3870,6 +3981,24 @@ final class AppModel: NSObject {
                 await socket.send(text)
             }
         }
+    }
+
+    private func computerChannelIsCurrent(socket: WSClient, owner: DownloadOwner, connection: String?) -> Bool {
+        ws === socket && downloadOwner == owner && continuity.connectionGeneration == connection
+    }
+
+    private func computerDecisionIsCurrent(
+        socket: WSClient, owner: DownloadOwner, connection: String?,
+        chatId: String?, navigation: Int, localSession: String?
+    ) -> Bool {
+        let current =
+            computerChannelIsCurrent(socket: socket, owner: owner, connection: connection)
+            && activeChatId == chatId && conversationNavigationGeneration == navigation && connected
+        #if os(macOS)
+            return current && macComputerHost.approvalStillCurrent(localSession)
+        #else
+            return current
+        #endif
     }
 
     private func retireUnsentOperation(_ text: String) {
