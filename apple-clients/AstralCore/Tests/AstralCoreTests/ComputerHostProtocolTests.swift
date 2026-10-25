@@ -138,23 +138,38 @@ final class ComputerHostProtocolTests: XCTestCase {
     func testDistributionMarkerCannotEnableSandboxedOrUnsealedHost() {
         XCTAssertFalse(
             ComputerHostDistribution.permits(
-                marker: "direct-download", sandboxed: true, hardened: true, signatureValid: true, identityMatches: true)
+                marker: "direct-download", sandboxed: true, hardened: true, signatureValid: true, identityMatches: true,
+                debuggerAllowed: false)
         )
         XCTAssertFalse(
             ComputerHostDistribution.permits(
                 marker: "direct-download", sandboxed: false, hardened: false, signatureValid: true,
-                identityMatches: true))
+                identityMatches: true, debuggerAllowed: false))
         XCTAssertFalse(
             ComputerHostDistribution.permits(
                 marker: "direct-download", sandboxed: false, hardened: true, signatureValid: false,
-                identityMatches: true))
+                identityMatches: true, debuggerAllowed: false))
         XCTAssertFalse(
             ComputerHostDistribution.permits(
-                marker: "controller", sandboxed: false, hardened: true, signatureValid: true, identityMatches: true))
+                marker: "controller", sandboxed: false, hardened: true, signatureValid: true, identityMatches: true,
+                debuggerAllowed: false))
         XCTAssertTrue(
             ComputerHostDistribution.permits(
-                marker: "direct-download", sandboxed: false, hardened: true, signatureValid: true, identityMatches: true
+                marker: "direct-download", sandboxed: false, hardened: true, signatureValid: true,
+                identityMatches: true,
+                debuggerAllowed: false
             ))
+    }
+
+    func testHardenedHostWithDebuggerEntitlementIsRejected() {
+        XCTAssertFalse(
+            ComputerHostDistribution.permits(
+                marker: "direct-download", sandboxed: false, hardened: true, signatureValid: true,
+                identityMatches: true, debuggerAllowed: true))
+        XCTAssertTrue(
+            ComputerHostDistribution.permits(
+                marker: "direct-download", sandboxed: false, hardened: true, signatureValid: true,
+                identityMatches: true, debuggerAllowed: false))
     }
 
     func testReviewedPointerTargetBoundsCoverStartEndAndExclusiveEdges() {

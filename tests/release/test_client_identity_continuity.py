@@ -160,7 +160,9 @@ def test_direct_download_host_keeps_store_identity_and_hardened_runtime() -> Non
     assert "SUPPORTED_PLATFORMS = macosx;" in body
     assert "PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep;" in body
     assert '"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";' in body
+    assert "CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;" in body
     assert '"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;' in body
+    assert "ENABLE_TESTABILITY = NO;" in body
     assert '"ENABLE_APP_SANDBOX[sdk=macosx*]" = NO;' in body
     assert 'ASTRAL_DISTRIBUTION = "direct-download";' in body
     assert "PROVISIONING_PROFILE_SPECIFIER" not in body

@@ -358,9 +358,10 @@ public enum ComputerHostText {
 
 public enum ComputerHostDistribution {
     public static func permits(
-        marker: String?, sandboxed: Bool, hardened: Bool, signatureValid: Bool, identityMatches: Bool
+        marker: String?, sandboxed: Bool, hardened: Bool, signatureValid: Bool, identityMatches: Bool,
+        debuggerAllowed: Bool
     ) -> Bool {
-        marker == "direct-download" && !sandboxed && hardened && signatureValid && identityMatches
+        marker == "direct-download" && !sandboxed && hardened && signatureValid && identityMatches && !debuggerAllowed
     }
 }
 

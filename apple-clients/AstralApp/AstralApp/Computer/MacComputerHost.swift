@@ -143,7 +143,8 @@
                 sandboxed: entitlements["com.apple.security.app-sandbox"] as? Bool == true,
                 hardened: flags & SecCodeSignatureFlags.runtime.rawValue != 0,
                 signatureValid: SecCodeCheckValidity(code, SecCSFlags(), nil) == errSecSuccess,
-                identityMatches: info[kSecCodeInfoIdentifier as String] as? String == Bundle.main.bundleIdentifier)
+                identityMatches: info[kSecCodeInfoIdentifier as String] as? String == Bundle.main.bundleIdentifier,
+                debuggerAllowed: entitlements["com.apple.security.get-task-allow"] as? Bool == true)
         }
         private var consentKey: String? {
             owner.map {
