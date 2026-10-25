@@ -861,6 +861,65 @@ _QOS_WARNING = "[Internal] Thread running at User-interactive quality-of-service
 _FOCUS_WARNING = "Accessing FocusState's value outside of the body of a View. This will result in a constant Binding of the initial value and will not update."
 
 
+@pytest.mark.parametrize("filename,line,text", [
+    ("GuidanceRenderer088Tests.swift", 19, _FOCUS_WARNING),
+    ("ConsoleShellPresentationTests.swift", 563, _QOS_WARNING),
+])
+@pytest.mark.parametrize("with_location", [False, True])
+def test_mac_unit_known_warning_accepts_its_bounded_source_prefix(filename, line, text, with_location):
+    summary, tests = _mac_metadata("unit")
+    warning = {"nodeType": "Runtime Warning", "name": f"{filename}:{line}: {text}"}
+    if with_location:
+        warning["sourceLocation"] = {"filePath": "/checkout/" + filename, "lineNumber": line}
+    _case(tests)["children"] = [warning]
+    domain.test_identity(summary, tests, "unit", platform="macos", architecture="arm64")
+
+
+@pytest.mark.parametrize("mutation", [
+    "unknown_source", "wrong_source", "absolute_source", "traversal_source", "non_swift",
+    "zero", "negative", "leading_zero", "oversized", "unknown_message", "suffix", "nested",
+    "location_source", "location_line", "location_field", "location_control", "ui",
+])
+def test_mac_unit_prefixed_warning_keeps_source_and_message_allowlists_closed(mutation):
+    summary, tests = _mac_metadata("unit")
+    source, line, text = "GuidanceRenderer088Tests.swift", "19", _FOCUS_WARNING
+    if mutation == "unknown_source":
+        source = "UnknownTests.swift"
+    elif mutation == "wrong_source":
+        source = "ConsoleShellPresentationTests.swift"
+    elif mutation == "absolute_source":
+        source = "/checkout/" + source
+    elif mutation == "traversal_source":
+        source = "../" + source
+    elif mutation == "non_swift":
+        source = "GuidanceRenderer088Tests.txt"
+    elif mutation in {"zero", "negative", "leading_zero", "oversized"}:
+        line = {"zero": "0", "negative": "-1", "leading_zero": "019", "oversized": "1000001"}[mutation]
+    elif mutation == "unknown_message":
+        text = "Unknown runtime warning"
+    elif mutation == "suffix":
+        text += " Additional failure"
+    elif mutation == "nested":
+        text = f"{source}:{line}: {text}"
+    warning = {"nodeType": "Runtime Warning", "name": f"{source}:{line}: {text}"}
+    if mutation.startswith("location_"):
+        warning["sourceLocation"] = {"filePath": "/checkout/" + source, "lineNumber": 19}
+        if mutation == "location_source":
+            warning["sourceLocation"]["filePath"] = "/checkout/UnknownTests.swift"
+        elif mutation == "location_line":
+            warning["sourceLocation"]["lineNumber"] = 20
+        elif mutation == "location_field":
+            warning["sourceLocation"]["other"] = 1
+        else:
+            warning["sourceLocation"]["filePath"] = "/checkout/\n" + source
+    lane = "ui" if mutation == "ui" else "unit"
+    if lane == "ui":
+        summary, tests = _mac_metadata(lane)
+    _case(tests)["children"] = [warning]
+    with pytest.raises(domain.DomainError):
+        domain.test_identity(summary, tests, lane, platform="macos", architecture="arm64")
+
+
 @pytest.mark.parametrize("text", [_QOS_WARNING, _FOCUS_WARNING])
 @pytest.mark.parametrize(
     "location",
