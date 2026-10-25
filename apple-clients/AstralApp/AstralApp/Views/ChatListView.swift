@@ -75,6 +75,7 @@ struct HistoryHeader: View {
 
 struct HistoryRow: View {
     let chat: ChatSummary
+    var showsDetails = true
     @Environment(ThemeStore.self) var theme
     @State private var hovered = false
     private var p: AstralPalette { theme.palette }
@@ -85,15 +86,15 @@ struct HistoryRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(verbatim: chat.displayTitle)
                         .font(ConsoleTypography.sans(13, relativeTo: .body).weight(.semibold))
-                        .foregroundStyle(p.text).lineLimit(1)
+                        .foregroundStyle(p.text).lineLimit(showsDetails ? 1 : 2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     let time = chat.relativeTime()
-                    if !time.isEmpty {
+                    if showsDetails && !time.isEmpty {
                         Text(verbatim: time).font(ConsoleTypography.sans(11, relativeTo: .caption))
                             .monospacedDigit().foregroundStyle(p.muted)
                     }
                 }
-                if !chat.displayPreview.isEmpty {
+                if showsDetails && !chat.displayPreview.isEmpty {
                     Text(verbatim: chat.displayPreview).font(ConsoleTypography.sans(12, relativeTo: .caption))
                         .foregroundStyle(p.muted).lineLimit(1)
                 }

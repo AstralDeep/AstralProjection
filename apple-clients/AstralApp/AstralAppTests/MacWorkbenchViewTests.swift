@@ -5,6 +5,7 @@
     import AstralCore
     import Observation
     import SwiftUI
+    import Vision
     import WebKit
     import XCTest
 
@@ -12,6 +13,65 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
+        func testWelcomeUsesDirectChoicesAndRetainsAccessiblePromptLoading() async throws {
+            for width in [390, 1440] {
+                let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+                let model = AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+                model.signedIn = true
+                model.connected = true
+                model.bindConversationAccount(
+                    try XCTUnwrap(ConversationAccount(issuer: "https://iam.example.test", subject: "workbench-owner")))
+                model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(fixture("chrome-console")))
+                model.history = [
+                    try XCTUnwrap(
+                        ChatSummary(
+                            json: .object([
+                                "id": .string("earlier-chat"), "title": .string("Earlier work"),
+                                "preview": .string("Preview details"), "time": .string("Yesterday"),
+                            ])))
+                ]
+                var sent: [JSONValue] = []
+                model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+                let state = try MountState(model: model, fixture: fixture("mac-workbench"))
+                state.width = width
+                let view = NSHostingView(rootView: MountView(state: state))
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: width, height: 900),
+                    styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.contentView = view
+                window.orderBack(nil)
+                defer { window.close() }
+                try await settle()
+                let text = try recognizedText(view)
+                XCTAssertTrue(text.contains("Roll dice"))
+                for redundant in [
+                    "AstralDeep Console", "Multi-agent", "Six rolls", "Preview details", "Yesterday", "Member",
+                ] {
+                    XCTAssertFalse(text.contains(redundant), "Unexpected secondary copy: \(redundant)")
+                }
+                if width == 1440 {
+                    let chat = try XCTUnwrap(
+                        accessibilityElements(view).first {
+                            $0.accessibilityIdentifier() == "workbench-chat-earlier-chat"
+                        })
+                    XCTAssertEqual(chat.accessibilityValue() as? String, "Preview details, Yesterday")
+                }
+                let choice = try XCTUnwrap(
+                    accessibilityElements(view).first { $0.accessibilityIdentifier() == "workbench-scenario-dice" })
+                XCTAssertEqual(choice.accessibilityLabel(), "Load prompt: Roll dice")
+                XCTAssertTrue(choice.accessibilityPerformPress())
+                try await settle()
+                XCTAssertEqual(model.composerDraft, "Roll six dice")
+                XCTAssertFalse(sent.contains { $0["action"]?.stringValue == "chat_message" })
+                try attach(view, name: "workbench-direct-choices-\(width)")
+            }
+        }
+
         func testCanvasKeepsItsDocumentAndDraftAcrossExpansionAndCompactResize() async throws {
             let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -129,7 +189,14 @@
                             AstralComponent(
                                 json: .object([
                                     "type": .string("text"), "content": .string("Attached detail"),
-                                ])))
+                                ]))),
+                        try XCTUnwrap(
+                            AstralComponent(
+                                json: .object([
+                                    "type": .string("button"), "label": .string("View result"),
+                                    "action": .string("chrome_open"),
+                                    "payload": .object(["surface": .string("guide"), "params": .object([:])]),
+                                ]))),
                     ]),
             ]
             let theme = model.themeStore
@@ -154,6 +221,27 @@
                 window.orderBack(nil)
                 defer { window.close() }
                 try await settle()
+                let elements = accessibilityElements(view)
+                for (id, speaker, content) in [
+                    ("question", "You", "Short question"), ("answer", "AstralDeep", "Short answer"),
+                ] {
+                    let bubble = try XCTUnwrap(
+                        elements.first { $0.accessibilityIdentifier() == "conversation-turn-\(id)" })
+                    XCTAssertEqual(bubble.accessibilityLabel(), speaker)
+                    XCTAssertTrue(
+                        accessibilityElements(bubble).contains {
+                            $0.accessibilityValue() as? String == content || $0.accessibilityLabel() == content
+                        })
+                    if id == "answer" {
+                        XCTAssertTrue(
+                            accessibilityElements(bubble).contains {
+                                $0.accessibilityRole() == .button && $0.accessibilityLabel() == "View result"
+                            })
+                    }
+                }
+                let text = try recognizedText(view)
+                XCTAssertFalse(text.contains("You"))
+                XCTAssertFalse(text.contains("AstralDeep"))
                 let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
                 view.cacheDisplay(in: view.bounds, to: bitmap)
                 let question = try XCTUnwrap(bubbleBounds(bitmap, user: true), "Missing user bubble fill")
@@ -223,6 +311,22 @@
                 }
             }
             return result
+        }
+
+        private func accessibilityElements(_ object: Any) -> [any NSAccessibilityProtocol] {
+            guard let element = object as? any NSAccessibilityProtocol else { return [] }
+            return [element] + (element.accessibilityChildren() ?? []).flatMap(accessibilityElements)
+        }
+
+        private func recognizedText(_ view: NSView) throws -> String {
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let image = try XCTUnwrap(bitmap.cgImage)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
         }
 
         private func fixture(_ name: String) throws -> JSONValue {

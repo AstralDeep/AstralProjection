@@ -30,8 +30,6 @@ import SwiftUI
                                 HStack {
                                     if isUser { Spacer(minLength: 24) }
                                     VStack(alignment: .leading, spacing: 10) {
-                                        Text(isUser ? "You" : "AstralDeep")
-                                            .font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
                                         if !turn.text.isEmpty {
                                             if isUser {
                                                 Text(turn.text).textSelection(.enabled)
@@ -58,6 +56,9 @@ import SwiftUI
                                     if !isUser { Spacer(minLength: 24) }
                                 }
                                 .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityLabel(isUser ? "You" : "AstralDeep")
+                                .accessibilityIdentifier("conversation-turn-\(turn.id)")
                                 .id(turn.id)
                             }
                         }

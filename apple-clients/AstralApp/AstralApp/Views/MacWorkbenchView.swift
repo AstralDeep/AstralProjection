@@ -100,7 +100,7 @@
                     expandedCanvas: model.consoleFullscreen)
                 ZStack(alignment: .leading) {
                     HStack(spacing: 0) {
-                        MacWorkbenchSidebar(console: console) { commandsPresented = true }
+                        MacWorkbenchSidebar(console: console)
                             .frame(width: sidebarWidth)
                             .clipped().opacity(showsSidebar ? 1 : 0)
                             .allowsHitTesting(showsSidebar).accessibilityHidden(!showsSidebar)
@@ -142,12 +142,9 @@
                     .accessibilityHidden(model.screen == .surface)
                     if presentation.navigationMode != .sidebar && model.consoleDrawerOpen && !model.mandatorySurface {
                         p.bg.opacity(0.7).ignoresSafeArea().onTapGesture { model.consoleDrawerOpen = false }
-                        MacWorkbenchSidebar(console: console) {
-                            model.consoleDrawerOpen = false
-                            commandsPresented = true
-                        }
-                        .frame(width: min(presentation.sidebarWidth, max(0, geometry.size.width - 32)))
-                        .shadow(color: p.bg.opacity(0.5), radius: 24, x: 12)
+                        MacWorkbenchSidebar(console: console)
+                            .frame(width: min(presentation.sidebarWidth, max(0, geometry.size.width - 32)))
+                            .shadow(color: p.bg.opacity(0.5), radius: 24, x: 12)
                     }
                     if model.screen == .surface {
                         ConsoleSurfaceOverlay(console: console, presentation: presentation, size: geometry.size)
@@ -196,7 +193,7 @@
                 .allowsHitTesting(model.workspaceStarted && !model.consoleDashboardVisible)
                 .accessibilityHidden(!model.workspaceStarted || model.consoleDashboardVisible)
                 if !model.workspaceStarted || model.consoleDashboardVisible {
-                    MacWorkbenchWelcome(console: console)
+                    MacWorkbenchWelcome(console: console, columns: presentation.scenarioColumns)
                 }
             }
         }
@@ -295,7 +292,6 @@
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         let console: ConsoleModel
-        let showCommands: () -> Void
         @State private var query = ""
         private var p: AstralPalette { theme.palette }
         private var chats: [ChatSummary] {
@@ -341,41 +337,37 @@
                 .font(ConsoleTypography.caption).foregroundStyle(p.muted).padding(10)
                 .background(p.bg.opacity(0.6), in: RoundedRectangle(cornerRadius: 8))
                 .accessibilityLabel("Search chats")
-                Text(model.historyTitle).font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
-                    .padding(.horizontal, 6)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 3) {
                         if model.historyLoading { ProgressView().controlSize(.small).padding(8) }
                         if chats.isEmpty && !model.historyLoading {
-                            Text(query.isEmpty ? "Your conversations will appear here." : "No matching chats.")
+                            Text(query.isEmpty ? "No chats" : "No matching chats")
                                 .font(ConsoleTypography.caption).foregroundStyle(p.muted).padding(8)
                         }
                         ForEach(chats) { chat in
                             Button {
                                 model.openChat(chat.id)
                             } label: {
-                                HistoryRow(chat: chat)
+                                HistoryRow(chat: chat, showsDetails: false)
                                     .background(
                                         model.activeChatId == chat.id ? p.primary.opacity(0.13) : .clear,
                                         in: RoundedRectangle(cornerRadius: 8))
                             }
                             .buttonStyle(.plain).disabled(model.mandatorySurface)
+                            .accessibilityIdentifier("workbench-chat-\(chat.id)")
+                            .accessibilityValue(
+                                [chat.displayPreview, chat.relativeTime()].filter { !$0.isEmpty }.joined(
+                                    separator: ", ")
+                            )
                             .contextMenu {
                                 Button("Delete conversation", role: .destructive) { model.deleteChat(chat.id) }
                             }
                         }
                     }
                 }
+                .accessibilityLabel(model.historyTitle)
+                .accessibilityIdentifier("workbench-chat-history")
                 Spacer(minLength: 0)
-                Button(action: showCommands) {
-                    HStack {
-                        Label("Search commands", systemImage: "command")
-                        Spacer()
-                        Text("⌘K").foregroundStyle(p.muted)
-                    }
-                    .font(ConsoleTypography.caption).padding(.horizontal, 8).frame(minHeight: 36)
-                }
-                .buttonStyle(.plain).disabled(model.mandatorySurface)
                 Divider().overlay(p.border)
                 Menu {
                     ForEach(model.chromeMenu?.menu ?? []) { group in
@@ -391,10 +383,7 @@
                     HStack(spacing: 10) {
                         Text(console.identity.initials).font(ConsoleTypography.caption.weight(.semibold))
                             .frame(width: 32, height: 32).background(p.primary.opacity(0.18), in: Circle())
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(console.identity.name).font(ConsoleTypography.caption.weight(.semibold))
-                            Text(console.identity.role).font(ConsoleTypography.caption2).foregroundStyle(p.muted)
-                        }
+                        Text(console.identity.name).font(ConsoleTypography.caption.weight(.semibold))
                         Spacer(minLength: 0)
                         Image(systemName: "chevron.up.chevron.down").font(ConsoleTypography.caption2).foregroundStyle(
                             p.muted)
@@ -403,6 +392,7 @@
                 }
                 .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden)
                 .accessibilityLabel(model.chromeMenu?.settingsControl?.label ?? "Settings")
+                .accessibilityValue("\(console.identity.name), \(console.identity.role)")
                 .accessibilityIdentifier("console-settings-menu")
             }
             .padding(16).frame(maxHeight: .infinity)
@@ -415,51 +405,36 @@
         @Environment(AppModel.self) private var model
         @Environment(ThemeStore.self) private var theme
         let console: ConsoleModel
+        let columns: Int
         private var p: AstralPalette { theme.palette }
 
         var body: some View {
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Image("AstralIcon").resizable().frame(width: 42, height: 42)
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                        Text(model.consoleLabel("title")).font(ConsoleTypography.title2.weight(.semibold))
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(model.consoleLabel("subtitle")).font(ConsoleTypography.subheadline).foregroundStyle(
-                            p.muted
-                        )
-                        .fixedSize(horizontal: false, vertical: true)
-                    }
-                    ForEach(console.catalog.categories, id: \.self) { category in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(category).font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
-                                .padding(.bottom, 6)
-                            ForEach(console.catalog.scenarios.filter { $0.category == category }) { scenario in
-                                Button {
-                                    model.useConsoleScenario(scenario, run: false)
-                                } label: {
-                                    HStack(alignment: .top, spacing: 12) {
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            Text(scenario.title).font(ConsoleTypography.subheadline.weight(.medium))
-                                            Text(scenario.description).font(ConsoleTypography.caption).foregroundStyle(
-                                                p.muted
-                                            )
-                                            .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        Image(systemName: "arrow.up.left").font(ConsoleTypography.caption)
-                                            .foregroundStyle(p.muted)
-                                    }
-                                    .padding(.vertical, 12).contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain).disabled(!model.connected || model.mutationsLocked)
-                                .help("Load the prompt for: \(scenario.title)")
-                                Divider().overlay(p.border)
+                LazyVGrid(
+                    columns: Array(repeating: GridItem(.flexible(minimum: 0), spacing: 12), count: columns), spacing: 12
+                ) {
+                    ForEach(console.catalog.scenarios) { scenario in
+                        Button {
+                            model.useConsoleScenario(scenario, run: false)
+                        } label: {
+                            HStack(alignment: .top, spacing: 12) {
+                                Text(scenario.title).font(ConsoleTypography.subheadline.weight(.medium))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Image(systemName: "arrow.up.left").font(ConsoleTypography.caption)
+                                    .foregroundStyle(p.muted).accessibilityHidden(true)
                             }
+                            .padding(14).frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                            .background(p.surface, in: RoundedRectangle(cornerRadius: 9))
+                            .overlay(RoundedRectangle(cornerRadius: 9).stroke(p.border))
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain).disabled(!model.connected || model.mutationsLocked)
+                        .accessibilityLabel("Load prompt: \(scenario.title)")
+                        .accessibilityIdentifier("workbench-scenario-\(scenario.id)")
                     }
                 }
-                .frame(maxWidth: 600, alignment: .leading).padding(.horizontal, 28).padding(.vertical, 48)
+                .frame(maxWidth: 600, alignment: .leading).padding(28)
                 .frame(maxWidth: .infinity)
             }
             .background(p.bg)
@@ -476,12 +451,10 @@
         var body: some View {
             VStack(spacing: 0) {
                 HStack(spacing: 4) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.consoleResultTitle).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
-                        Text(model.consoleResultAgent).font(ConsoleTypography.caption2).foregroundStyle(p.muted)
-                            .lineLimit(1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(model.consoleResultTitle).font(ConsoleTypography.caption.weight(.semibold)).lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityLabel("\(model.consoleResultTitle), \(model.consoleResultAgent)")
+                        .accessibilityIdentifier("workbench-canvas-title")
                     WorkspaceActionButtons()
                     Button {
                         showTimeline = true
@@ -502,7 +475,7 @@
                     .accessibilityLabel(model.consoleFullscreen ? "Restore conversation and canvas" : "Expand canvas")
                     .accessibilityIdentifier("workbench-expand-canvas")
                 }
-                .buttonStyle(.plain).foregroundStyle(p.muted).padding(.horizontal, 14).frame(height: 62)
+                .buttonStyle(.plain).foregroundStyle(p.muted).padding(.horizontal, 14).frame(height: 56)
                 .overlay(alignment: .bottom) { p.border.frame(height: 1) }
                 CanvasArea(
                     showTimeline: $showTimeline, componentActionTarget: $actionTarget, showsTimelineControl: false)
@@ -545,22 +518,29 @@
                     if commands.isEmpty {
                         Text("No matching commands.").foregroundStyle(theme.palette.muted)
                     }
-                    ForEach(commands) { command in
-                        Button {
-                            open(command)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(command.item.label).foregroundStyle(theme.palette.text)
-                                Text(command.groupLabel).font(ConsoleTypography.caption).foregroundStyle(
-                                    theme.palette.muted)
-                                if let message = command.item.availability?.message {
-                                    Text(message).font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
+                    ForEach(model.chromeMenu?.menu ?? []) { group in
+                        let matches = commands.filter { $0.groupKey == group.key }
+                        if !matches.isEmpty {
+                            Section(group.label) {
+                                ForEach(matches) { command in
+                                    Button {
+                                        open(command)
+                                    } label: {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(command.item.label).foregroundStyle(theme.palette.text)
+                                            if let message = command.item.availability?.message {
+                                                Text(message).font(ConsoleTypography.caption).foregroundStyle(
+                                                    theme.palette.muted)
+                                            }
+                                        }
+                                        .padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .accessibilityIdentifier("workbench-command-\(command.id)")
                                 }
                             }
-                            .padding(.vertical, 6).frame(maxWidth: .infinity, alignment: .leading).contentShape(
-                                Rectangle())
                         }
-                        .buttonStyle(.plain)
                     }
                 }
                 .listStyle(.plain)
@@ -604,7 +584,7 @@
                             }
                         }
                         if model.statusText == nil && model.stepTrail.isEmpty {
-                            Text("No activity in this conversation yet.").foregroundStyle(theme.palette.muted)
+                            Text("No activity").foregroundStyle(theme.palette.muted)
                         }
                         if model.macComputerHost.available {
                             Divider()
@@ -647,19 +627,17 @@
                                 HStack(alignment: .top, spacing: 12) {
                                     Circle().fill(agent.state == .ready ? theme.palette.success : theme.palette.muted)
                                         .frame(width: 7, height: 7).padding(.top, 6)
-                                        .accessibilityLabel(agent.state == .ready ? "Available" : "Offline")
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
-                                        Text(agent.description).font(ConsoleTypography.caption).foregroundStyle(
-                                            theme.palette.muted
-                                        )
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                        .accessibilityHidden(true)
+                                    Text(agent.name).font(ConsoleTypography.subheadline.weight(.semibold))
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .padding(.vertical, 12).contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel(agent.name)
+                            .accessibilityValue(agent.state == .ready ? "Available" : "Offline")
+                            .accessibilityHint(agent.description)
+                            .accessibilityIdentifier("workbench-agent-\(agent.id)")
                             Divider()
                         }
                     }
