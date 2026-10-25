@@ -2669,14 +2669,6 @@ class MainWindow(QMainWindow):
             self._surface_owner = None
             dialog.set_surface("Evidence inspection", [])
             dialog.close()
-    def _retire_terminal(self) -> None:
-        dialog = self._surface_dialog
-        if dialog is not None and dialog._surface == "terminal":
-            self._retire_settings()
-            self._surface_owner = None
-            dialog.set_surface("Terminal monitor", [])
-            dialog.close()
-
 
     def _retire_terminal(self) -> None:
         dialog = self._surface_dialog
@@ -3360,21 +3352,6 @@ class MainWindow(QMainWindow):
         if safety and (ticket is None or ticket[4] != "safety" or not self._settings_current(ticket)
                        or msg.get("mode", "replace") != "replace" or msg.get("request_generation") != ticket[3]):
             return
-        if msg.get("surface_key") == "terminal":
-            allowed = {"alert", "badge", "button", "card", "code", "keyvalue", "text"}
-            components = msg.get("components")
-            if (
-                ticket is None or ticket[4] != "terminal" or not self._settings_current(ticket)
-                or set(msg) != {"type", "surface_key", "region", "title", "admin_only", "components",
-                                "mode", "request_generation"}
-                or msg.get("type") != "chrome_surface" or msg.get("region") != "modal"
-                or msg.get("mode") != "replace" or msg.get("admin_only") is not False
-                or not _canonical_uuid4(msg.get("request_generation"))
-                or msg["request_generation"] != ticket[3]
-                or not isinstance(msg.get("title"), str) or not isinstance(components, list)
-                or any(not isinstance(row, dict) or row.get("type") not in allowed for row in components)
-            ):
-                return
         if (ticket is not None and msg.get("mode") == "mandatory"
                 and msg.get("request_generation") is None and msg.get("surface_key") not in {"work", "guidance", "agent_intro"}):
             self._retire_settings()
