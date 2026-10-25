@@ -9,6 +9,73 @@
 
     @MainActor
     final class MacComputerHostTests: XCTestCase {
+        func testPermissionDenialShowsRequestResultAndFixedSettingsFallback() {
+            for granted in [true, false] {
+                var requested: [MacComputerPermission] = []
+                var opened: [URL] = []
+                let host = MacComputerHost(
+                    available: true, defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                    driver: ComputerTestDriver(), monitor: ComputerTestMonitor(),
+                    permissionProvider: {
+                        MacComputerPermissions(accessibility: true, screen: true, monitoring: false, posting: false)
+                    },
+                    permissionRequester: {
+                        requested.append($0)
+                        return granted
+                    },
+                    settingsOpener: {
+                        opened.append($0)
+                        return true
+                    },
+                    desktopProbe: { true },
+                    desktopRearm: {
+                        XCTFail("A permission request cannot rearm control")
+                        return true
+                    })
+                host.requestMonitoring()
+                XCTAssertEqual(requested, [.monitoring])
+                XCTAssertEqual(
+                    opened.map(\.absoluteString),
+                    ["x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"])
+                XCTAssertTrue(host.lastError?.contains(granted ? "returned granted" : "returned not granted") == true)
+                XCTAssertTrue(host.lastError?.contains("System Settings") == true)
+                XCTAssertTrue(host.lastError?.contains("Refresh permissions") == true)
+                XCTAssertTrue(host.accessibilityTrusted)
+                XCTAssertFalse(host.eventPostingAllowed)
+                XCTAssertFalse(host.accessibilityAllowed)
+                XCTAssertFalse(host.monitoringAllowed)
+                XCTAssertFalse(host.enabled)
+                XCTAssertNil(host.descriptor)
+            }
+        }
+
+        func testActivationRefreshesRawPermissionFactsWithoutRearming() async {
+            let refreshed = expectation(description: "activation refreshed OS permissions")
+            var returned = false
+            let host = MacComputerHost(
+                available: true, defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                driver: ComputerTestDriver(), monitor: ComputerTestMonitor(),
+                permissionProvider: {
+                    if returned { refreshed.fulfill() }
+                    return MacComputerPermissions(
+                        accessibility: returned, screen: returned, monitoring: returned, posting: returned)
+                }, desktopProbe: { true },
+                desktopRearm: {
+                    XCTFail("Activation cannot rearm control")
+                    return true
+                })
+            returned = true
+            NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
+            await fulfillment(of: [refreshed], timeout: 5)
+            XCTAssertTrue(host.accessibilityTrusted)
+            XCTAssertTrue(host.eventPostingAllowed)
+            XCTAssertTrue(host.accessibilityAllowed)
+            XCTAssertTrue(host.monitoringAllowed)
+            XCTAssertFalse(host.enabled)
+            XCTAssertFalse(host.desktopAvailable)
+            XCTAssertNil(host.descriptor)
+        }
+
         func testConsentAdapterRequiresHardwareEvidenceForAsyncOrCurrentActivation() throws {
             let input = MacComputerLocalInput(marker: 30)
             defer { input.stop() }

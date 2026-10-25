@@ -15,10 +15,48 @@
         let accessibility: Bool
         let screen: Bool
         let monitoring: Bool
+        let posting: Bool
+        init(accessibility: Bool, screen: Bool, monitoring: Bool, posting: Bool? = nil) {
+            self.accessibility = accessibility
+            self.screen = screen
+            self.monitoring = monitoring
+            self.posting = posting ?? accessibility
+        }
         @MainActor static func current() -> MacComputerPermissions {
             MacComputerPermissions(
-                accessibility: AXIsProcessTrusted() && CGPreflightPostEventAccess(),
-                screen: CGPreflightScreenCaptureAccess(), monitoring: CGPreflightListenEventAccess())
+                accessibility: AXIsProcessTrusted(), screen: CGPreflightScreenCaptureAccess(),
+                monitoring: CGPreflightListenEventAccess(), posting: CGPreflightPostEventAccess())
+        }
+    }
+
+    enum MacComputerPermission: Equatable {
+        case accessibility, screen, monitoring
+        var title: String {
+            switch self {
+            case .accessibility: return "Accessibility"
+            case .screen: return "Screen Recording"
+            case .monitoring: return "Input Monitoring"
+            }
+        }
+        var settingsURL: URL {
+            let anchor: String
+            switch self {
+            case .accessibility: anchor = "Privacy_Accessibility"
+            case .screen: anchor = "Privacy_ScreenCapture"
+            case .monitoring: anchor = "Privacy_ListenEvent"
+            }
+            return URL(string: "x-apple.systempreferences:com.apple.preference.security?" + anchor)!
+        }
+        @MainActor func request() -> Bool {
+            switch self {
+            case .accessibility:
+                let trusted = AXIsProcessTrustedWithOptions(
+                    [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
+                let posting = CGRequestPostEventAccess()
+                return trusted && posting
+            case .screen: return CGRequestScreenCaptureAccess()
+            case .monitoring: return CGRequestListenEventAccess()
+            }
         }
     }
 
@@ -34,6 +72,8 @@
         private(set) var session: ComputerHostSession?
         var controlsPresented = false
         private(set) var accessibilityAllowed = false
+        private(set) var accessibilityTrusted = false
+        private(set) var eventPostingAllowed = false
         private(set) var screenAllowed = false
         private(set) var monitoringAllowed = false
         private(set) var lastError: String?
@@ -43,6 +83,8 @@
         @ObservationIgnored private let driver: any MacComputerDriving
         @ObservationIgnored private let monitor: any MacComputerMonitoring
         @ObservationIgnored private let permissionProvider: @MainActor () -> MacComputerPermissions
+        @ObservationIgnored private let permissionRequester: @MainActor (MacComputerPermission) -> Bool
+        @ObservationIgnored private let settingsOpener: @MainActor (URL) -> Bool
         @ObservationIgnored private let desktopProbe: @Sendable () -> Bool
         @ObservationIgnored private let desktopRearm: @MainActor () -> Bool
         @ObservationIgnored private let localResume: @MainActor () -> Bool
@@ -67,6 +109,8 @@
             available: Bool? = nil, defaults: UserDefaults = .standard, driver: (any MacComputerDriving)? = nil,
             monitor: (any MacComputerMonitoring)? = nil,
             permissionProvider: (@MainActor () -> MacComputerPermissions)? = nil,
+            permissionRequester: (@MainActor (MacComputerPermission) -> Bool)? = nil,
+            settingsOpener: (@MainActor (URL) -> Bool)? = nil,
             desktopProbe: @escaping @Sendable () -> Bool = MacComputerDesktopProbe.usable,
             desktopRearm: (@MainActor () -> Bool)? = nil
         ) {
@@ -76,6 +120,8 @@
             let marker = Int64.random(in: 1...Int64.max)
             self.monitor = monitor ?? MacComputerInputMonitor(marker: marker)
             self.permissionProvider = permissionProvider ?? MacComputerPermissions.current
+            self.permissionRequester = permissionRequester ?? { $0.request() }
+            self.settingsOpener = settingsOpener ?? { NSWorkspace.shared.open($0) }
             self.desktopProbe = desktopProbe
             let localInput = self.available && desktopRearm == nil ? MacComputerLocalInput(marker: marker) : nil
             self.localInput = localInput
@@ -99,6 +145,12 @@
                 hostId = fresh
             }
             if self.available {
+                observers.append(
+                    NotificationCenter.default.addObserver(
+                        forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+                    ) { [weak self] _ in
+                        Task { @MainActor in self?.refreshPermissions() }
+                    })
                 let center = NSWorkspace.shared.notificationCenter
                 let authority = authority
                 for name in [
@@ -166,6 +218,9 @@
                 && sender != nil
         }
         private var permissionsReady: Bool { accessibilityAllowed && screenAllowed && monitoringAllowed }
+        var permissionDiagnostic: String {
+            "macOS checks: Accessibility trust = \(accessibilityTrusted); event posting = \(eventPostingAllowed); event listening = \(monitoringAllowed)."
+        }
         var descriptor: ComputerHostDescriptor? {
             guard available, enabled, desktopAvailable, authority.desktopIsAvailable, owner != nil, permissionsReady,
                 monitor.running
@@ -229,7 +284,9 @@
         }
         func refreshPermissions() {
             let permissions = permissionProvider()
-            accessibilityAllowed = permissions.accessibility
+            accessibilityTrusted = permissions.accessibility
+            eventPostingAllowed = permissions.posting
+            accessibilityAllowed = permissions.accessibility && permissions.posting
             screenAllowed = permissions.screen
             monitoringAllowed = permissions.monitoring
             if enabled && (!authority.desktopIsAvailable || !desktopProbe()) {
@@ -242,18 +299,36 @@
             }
         }
         func requestAccessibility() {
-            _ = AXIsProcessTrustedWithOptions(
-                [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary)
-            _ = CGRequestPostEventAccess()
-            refreshPermissions()
+            request(.accessibility)
         }
-        func requestScreen() {
-            _ = CGRequestScreenCaptureAccess()
+        func requestScreen() { request(.screen) }
+        func requestMonitoring() { request(.monitoring) }
+        private func request(_ permission: MacComputerPermission) {
+            guard available else { return }
+            let granted = permissionRequester(permission)
             refreshPermissions()
-        }
-        func requestMonitoring() {
-            _ = CGRequestListenEventAccess()
-            refreshPermissions()
+            let ready: Bool
+            switch permission {
+            case .accessibility: ready = accessibilityAllowed
+            case .screen: ready = screenAllowed
+            case .monitoring: ready = monitoringAllowed
+            }
+            if granted && ready {
+                lastError = nil
+                return
+            }
+            let result = "\(permission.title) request returned \(granted ? "granted" : "not granted")."
+            if ready {
+                lastError = result + " The current macOS check is now granted. Enable computer access yourself."
+                return
+            }
+            let opened = settingsOpener(permission.settingsURL)
+            let instruction = opened ? "System Settings is open." : "Open System Settings > Privacy & Security."
+            let pane =
+                permission == .accessibility ? "Accessibility or Device Control and Data Access" : permission.title
+            lastError =
+                result + " The permission check immediately after this request reported no access. " + instruction
+                + " Enable AstralDeep under \(pane). If macOS asks, quit and reopen AstralDeep. Return here and choose Refresh permissions."
         }
         func setEnabled(_ value: Bool) {
             guard available else {

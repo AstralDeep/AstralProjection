@@ -12,6 +12,11 @@
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Computer access on this Mac").font(.title2.bold())
                     Text(host.statusLabel).accessibilityIdentifier("mac-computer-status")
+                    if let error = host.lastError {
+                        Text(error).foregroundStyle(.red).accessibilityIdentifier("mac-computer-error")
+                    }
+                    Text(host.permissionDiagnostic).font(.caption).textSelection(.enabled)
+                        .accessibilityIdentifier("mac-computer-permission-facts")
                     Text(
                         "Astral can observe this desktop, operate applications and browsers, and use the clipboard during an approved session. Commands use the visible Terminal and require server approval. You complete sign-in and system permission dialogs yourself."
                     )
@@ -50,9 +55,6 @@
                         host.workspacesChanged()
                     }.disabled(!host.available || !host.ownerBound)
                     if let error = host.files.errorMessage { Text(error).foregroundStyle(.red) }
-                    if let error = host.lastError {
-                        Text(error).foregroundStyle(.red).accessibilityIdentifier("mac-computer-error")
-                    }
                     if host.session != nil { MacComputerSessionControls(host: host) }
                     HStack {
                         Spacer()
