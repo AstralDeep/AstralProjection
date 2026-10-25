@@ -1,10 +1,13 @@
 // Exercises the native workbench with the shared server fixtures and persistent generated charts.
+// Accessibility checks read only the test process's named windows through the public AX interface.
 
 #if os(macOS)
     import AppKit
+    import ApplicationServices
     import AstralCore
     import Observation
     import SwiftUI
+    import Vision
     import WebKit
     import XCTest
 
@@ -12,6 +15,124 @@
 
     @MainActor
     final class MacWorkbenchViewTests: XCTestCase {
+        func testCommandPaletteGroupsDirectActionsAndUsesTheAuthorizedSurface() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            let (view, window) = panel(MacWorkbenchCommandPalette(), model: model, width: 560)
+            defer { window.close() }
+            try await settle()
+            let lines = try recognizedText(view).lowercased().components(separatedBy: "\n")
+            XCTAssertEqual(
+                lines.filter { $0 == "account" }.count, 1,
+                "Rendered command rows: \(lines.joined(separator: " | "))")
+            let snapshot = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title))
+            XCTAssertEqual(
+                snapshot.elements.filter { $0.role == kAXButtonRole }.compactMap(\.identifier)
+                    .filter { $0.hasPrefix("workbench-command-") },
+                [
+                    "workbench-command-account/agents", "workbench-command-account/llm",
+                    "workbench-command-account/personalization", "workbench-command-account/audit",
+                    "workbench-command-account/theme", "workbench-command-account/guidance",
+                    "workbench-command-help/guide",
+                ])
+            try attach(view, name: "workbench-grouped-commands")
+            XCTAssertTrue(
+                WorkbenchAccessibility.press(identifier: "workbench-command-account/llm", windowTitle: window.title))
+            try await settle()
+            XCTAssertEqual(sent.last?["action"], .string("chrome_open"))
+            XCTAssertEqual(sent.last?["payload"]?["surface"], .string("llm"))
+        }
+
+        func testAgentRowsKeepStatusAndDescriptionAccessibleAndOpenTheirDetail() async throws {
+            let (model, suite) = try panelModel()
+            defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            let console = try XCTUnwrap(model.console)
+            let (view, window) = panel(MacWorkbenchAgents(console: console), model: model, width: 360)
+            defer { window.close() }
+            try await settle()
+            let text = try recognizedText(view)
+            XCTAssertTrue(text.contains("Dice Roller"))
+            XCTAssertFalse(text.contains("Rolls dice"))
+            let snapshot = try XCTUnwrap(WorkbenchAccessibility.snapshot(windowTitle: window.title))
+            let agent = try XCTUnwrap(snapshot.elements.first { $0.identifier == "workbench-agent-dice" })
+            XCTAssertEqual(agent.label, "Dice Roller")
+            XCTAssertEqual(agent.value, "Available")
+            XCTAssertEqual(agent.help, "Rolls dice")
+            try attach(view, name: "workbench-agent-choices")
+            XCTAssertTrue(WorkbenchAccessibility.press(identifier: "workbench-agent-dice", windowTitle: window.title))
+            try await settle()
+            XCTAssertEqual(sent.last?["action"], .string("chrome_open"))
+            XCTAssertEqual(sent.last?["payload"]?["surface"], .string("agent_intro"))
+            XCTAssertEqual(sent.last?["payload"]?["params"]?["agent_id"], .string("dice"))
+        }
+
+        func testWelcomeUsesDirectChoicesAndRetainsAccessiblePromptLoading() async throws {
+            for width in [390, 1440] {
+                let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+                let model = AppModel(
+                    conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                    tokenStore: InMemoryTokenStore(), defaults: defaults)
+                model.signedIn = true
+                model.connected = true
+                model.bindConversationAccount(
+                    try XCTUnwrap(ConversationAccount(issuer: "https://iam.example.test", subject: "workbench-owner")))
+                model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(fixture("chrome-console")))
+                model.history = [
+                    try XCTUnwrap(
+                        ChatSummary(
+                            json: .object([
+                                "id": .string("earlier-chat"), "title": .string("Earlier work"),
+                                "preview": .string("Preview details"), "time": .string("Yesterday"),
+                            ])))
+                ]
+                var sent: [JSONValue] = []
+                model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+                let state = try MountState(model: model, fixture: fixture("mac-workbench"))
+                state.width = width
+                let view = NSHostingView(rootView: MountView(state: state))
+                let window = NSWindow(
+                    contentRect: NSRect(x: 0, y: 0, width: width, height: 900),
+                    styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.title = "Workbench choices \(UUID().uuidString)"
+                window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
+                window.contentView = view
+                window.orderBack(nil)
+                defer { window.close() }
+                try await settle()
+                let text = try recognizedText(view)
+                XCTAssertTrue(text.contains("Roll dice"))
+                for redundant in [
+                    "AstralDeep Console", "Multi-agent", "Six rolls", "Preview details", "Yesterday", "Member",
+                ] {
+                    XCTAssertFalse(text.contains(redundant), "Unexpected secondary copy: \(redundant)")
+                }
+                let snapshot = WorkbenchAccessibility.snapshot(windowTitle: window.title)
+                let elements = try XCTUnwrap(snapshot, "Missing test window in the accessibility tree").elements
+                if width == 1440 {
+                    let chat = try XCTUnwrap(
+                        elements.first { $0.identifier == "workbench-chat-earlier-chat" })
+                    XCTAssertEqual(chat.value, "Preview details, Yesterday")
+                }
+                let choice = try XCTUnwrap(
+                    elements.first { $0.identifier == "workbench-scenario-dice" })
+                XCTAssertEqual(choice.label, "Load prompt: Roll dice")
+                try attach(view, name: "workbench-direct-choices-\(width)")
+                let pressed = WorkbenchAccessibility.press(
+                    identifier: "workbench-scenario-dice", windowTitle: window.title)
+                XCTAssertTrue(pressed)
+                try await settle()
+                XCTAssertEqual(model.composerDraft, "Roll six dice")
+                XCTAssertFalse(sent.contains { $0["action"]?.stringValue == "chat_message" })
+            }
+        }
+
         func testCanvasKeepsItsDocumentAndDraftAcrossExpansionAndCompactResize() async throws {
             let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
             let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
@@ -43,6 +164,7 @@
                 contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
             window.contentView = view
             window.orderFront(nil)
             defer { window.close() }
@@ -97,6 +219,7 @@
                 contentRect: NSRect(x: 0, y: 0, width: 500, height: 600),
                 styleMask: [.titled, .resizable], backing: .buffered, defer: false)
             window.isReleasedWhenClosed = false
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
             window.contentView = view
             window.orderFront(nil)
             defer { window.close() }
@@ -129,7 +252,15 @@
                             AstralComponent(
                                 json: .object([
                                     "type": .string("text"), "content": .string("Attached detail"),
-                                ])))
+                                ]))),
+                        try XCTUnwrap(
+                            AstralComponent(
+                                json: .object([
+                                    "type": .string("button"), "label": .string("View result"),
+                                    "variant": .string("secondary"),
+                                    "action": .string("chrome_open"),
+                                    "payload": .object(["surface": .string("guide"), "params": .object([:])]),
+                                ]))),
                     ]),
             ]
             let theme = model.themeStore
@@ -150,10 +281,34 @@
                     contentRect: NSRect(x: 0, y: 0, width: width, height: 400),
                     styleMask: [.titled, .resizable], backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
+                window.title = "Workbench bubbles \(UUID().uuidString)"
+                window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
                 window.contentView = view
                 window.orderBack(nil)
                 defer { window.close() }
                 try await settle()
+                let snapshot = WorkbenchAccessibility.snapshot(windowTitle: window.title)
+                let elements = try XCTUnwrap(snapshot, "Missing test window in the accessibility tree").elements
+                for (id, speaker, content) in [
+                    ("question", "You", "Short question"), ("answer", "AstralDeep", "Short answer"),
+                ] {
+                    let bubble = try XCTUnwrap(
+                        elements.first { $0.identifier == "conversation-turn-\(id)" })
+                    XCTAssertEqual(bubble.label, speaker)
+                    XCTAssertTrue(
+                        bubble.elements.contains {
+                            $0.value == content || $0.label == content
+                        })
+                    if id == "answer" {
+                        XCTAssertTrue(
+                            bubble.elements.contains {
+                                $0.role == kAXButtonRole && $0.label == "View result"
+                            })
+                    }
+                }
+                let text = try recognizedText(view)
+                XCTAssertFalse(text.contains("You"))
+                XCTAssertFalse(text.contains("AstralDeep"))
                 let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
                 view.cacheDisplay(in: view.bounds, to: bitmap)
                 let question = try XCTUnwrap(bubbleBounds(bitmap, user: true), "Missing user bubble fill")
@@ -225,6 +380,50 @@
             return result
         }
 
+        private func panelModel() throws -> (AppModel, String) {
+            let suite = "MacWorkbenchViewTests.\(UUID().uuidString)"
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            let model = AppModel(
+                conversationResumeStore: ConversationResumeStore(defaults: defaults),
+                tokenStore: InMemoryTokenStore(), defaults: defaults)
+            model.signedIn = true
+            model.connected = true
+            model.bindConversationAccount(
+                try XCTUnwrap(ConversationAccount(issuer: "https://iam.example.test", subject: "workbench-owner")))
+            model.chromeMenu = try XCTUnwrap(ChromeMenuModel.fromJSON(fixture("chrome-console")))
+            return (model, suite)
+        }
+
+        private func panel<Content: View>(_ content: Content, model: AppModel, width: CGFloat) -> (
+            NSHostingView<AnyView>, NSWindow
+        ) {
+            let view = NSHostingView(
+                rootView: AnyView(
+                    content.environment(model).environment(model.themeStore)
+                        .font(ConsoleTypography.body).tint(model.themeStore.palette.primary)
+                        .preferredColorScheme(model.themeStore.colorScheme)))
+            let window = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: width, height: 480),
+                styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            window.title = "Workbench panel \(UUID().uuidString)"
+            window.appearance = NSAppearance(named: model.themeStore.colorScheme == .dark ? .darkAqua : .aqua)
+            window.contentView = view
+            window.orderBack(nil)
+            return (view, window)
+        }
+
+        private func recognizedText(_ view: NSView) throws -> String {
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            let image = try XCTUnwrap(bitmap.cgImage)
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }.joined(separator: "\n")
+        }
+
         private func fixture(_ name: String) throws -> JSONValue {
             let url = try XCTUnwrap(Bundle(for: Self.self).url(forResource: name, withExtension: "json"))
             return try JSONValue.parse(Data(contentsOf: url))
@@ -269,6 +468,63 @@
         }
     }
 
+    @MainActor
+    private enum WorkbenchAccessibility {
+        struct Element: Sendable {
+            let identifier: String?
+            let label: String?
+            let value: String?
+            let help: String?
+            let role: String?
+            let children: [Element]
+            nonisolated var elements: [Element] { [self] + children.flatMap(\.elements) }
+        }
+
+        static func snapshot(windowTitle: String) -> Element? {
+            guard let window = window(title: windowTitle) else { return nil }
+            return snapshot(window, depth: 0)
+        }
+
+        static func press(identifier: String, windowTitle: String) -> Bool {
+            guard let window = window(title: windowTitle),
+                let element = find(identifier, in: window, depth: 0)
+            else { return false }
+            return AXUIElementPerformAction(element, kAXPressAction as CFString) == .success
+        }
+
+        private static func window(title: String) -> AXUIElement? {
+            let application = AXUIElementCreateApplication(getpid())
+            let windows = attribute(kAXWindowsAttribute, of: application) as? [AXUIElement] ?? []
+            return windows.first { attribute(kAXTitleAttribute, of: $0) as? String == title }
+        }
+
+        private static func snapshot(_ element: AXUIElement, depth: Int) -> Element {
+            Element(
+                identifier: attribute(kAXIdentifierAttribute, of: element) as? String,
+                label: attribute(kAXDescriptionAttribute, of: element) as? String
+                    ?? attribute(kAXTitleAttribute, of: element) as? String,
+                value: attribute(kAXValueAttribute, of: element) as? String,
+                help: attribute(kAXHelpAttribute, of: element) as? String,
+                role: attribute(kAXRoleAttribute, of: element) as? String,
+                children: depth < 64 ? children(of: element).map { snapshot($0, depth: depth + 1) } : [])
+        }
+
+        private static func find(_ identifier: String, in element: AXUIElement, depth: Int) -> AXUIElement? {
+            if attribute(kAXIdentifierAttribute, of: element) as? String == identifier { return element }
+            guard depth < 64 else { return nil }
+            return children(of: element).lazy.compactMap { find(identifier, in: $0, depth: depth + 1) }.first
+        }
+
+        private static func children(of element: AXUIElement) -> [AXUIElement] {
+            attribute(kAXChildrenAttribute, of: element) as? [AXUIElement] ?? []
+        }
+
+        private static func attribute(_ name: String, of element: AXUIElement) -> CFTypeRef? {
+            var value: CFTypeRef?
+            return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+        }
+    }
+
     @MainActor @Observable
     private final class MountState {
         let model: AppModel
@@ -303,6 +559,8 @@
         var body: some View {
             RootView()
                 .environment(state.model).environment(state.model.themeStore)
+                .font(ConsoleTypography.body).tint(state.model.themeStore.palette.primary)
+                .preferredColorScheme(state.model.themeStore.colorScheme)
         }
     }
 #endif
