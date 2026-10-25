@@ -9,6 +9,54 @@
 
     @MainActor
     final class MacComputerHostTests: XCTestCase {
+        func testGrantedReviewOpensFixedSettingsWithoutRequestOrAuthorityChange() {
+            for succeeds in [true, false] {
+                var requested = 0
+                var opened: [URL] = []
+                var rearms = 0
+                let host = MacComputerHost(
+                    available: true, defaults: UserDefaults(suiteName: UUID().uuidString)!,
+                    driver: ComputerTestDriver(), monitor: ComputerTestMonitor(),
+                    permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
+                    permissionRequester: { _ in
+                        requested += 1
+                        return true
+                    },
+                    settingsOpener: {
+                        opened.append($0)
+                        return succeeds
+                    }, desktopProbe: { true },
+                    desktopRearm: {
+                        rearms += 1
+                        return true
+                    })
+                host.bind(owner: "synthetic-review-owner") { _ in true }
+                host.setEnabled(true)
+                defer { host.stop() }
+                let identity = host.descriptor?.hostId
+                for review in [host.requestAccessibility, host.requestScreen, host.requestMonitoring] {
+                    review()
+                    XCTAssertTrue(host.enabled)
+                    XCTAssertTrue(host.desktopAvailable)
+                    XCTAssertEqual(host.descriptor?.hostId, identity)
+                    XCTAssertEqual(rearms, 1)
+                    if succeeds {
+                        XCTAssertNil(host.lastError)
+                    } else {
+                        XCTAssertTrue(host.lastError?.contains("Open System Settings") == true)
+                    }
+                }
+                XCTAssertEqual(requested, 0)
+                XCTAssertEqual(
+                    opened.map(\.absoluteString),
+                    [
+                        "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                        "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
+                        "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
+                    ])
+            }
+        }
+
         func testPermissionDenialShowsRequestResultAndFixedSettingsFallback() {
             for granted in [true, false] {
                 var requested: [MacComputerPermission] = []

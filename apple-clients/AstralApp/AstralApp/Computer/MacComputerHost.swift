@@ -303,16 +303,31 @@
         }
         func requestScreen() { request(.screen) }
         func requestMonitoring() { request(.monitoring) }
+        private func permissionReady(_ permission: MacComputerPermission) -> Bool {
+            switch permission {
+            case .accessibility: return accessibilityAllowed
+            case .screen: return screenAllowed
+            case .monitoring: return monitoringAllowed
+            }
+        }
         private func request(_ permission: MacComputerPermission) {
             guard available else { return }
+            refreshPermissions()
+            if permissionReady(permission) {
+                if settingsOpener(permission.settingsURL) {
+                    lastError = nil
+                } else {
+                    let pane =
+                        permission == .accessibility
+                        ? "Accessibility or Device Control and Data Access" : permission.title
+                    lastError =
+                        "Open System Settings > Privacy & Security > \(pane) to review AstralDeep's access. AstralDeep could not open that pane."
+                }
+                return
+            }
             let granted = permissionRequester(permission)
             refreshPermissions()
-            let ready: Bool
-            switch permission {
-            case .accessibility: ready = accessibilityAllowed
-            case .screen: ready = screenAllowed
-            case .monitoring: ready = monitoringAllowed
-            }
+            let ready = permissionReady(permission)
             if granted && ready {
                 lastError = nil
                 return
