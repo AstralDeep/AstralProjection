@@ -626,8 +626,8 @@ def export_xccov(
     if native_domain is not None:
         policy = _native_domain_policy()
         try:
-            policy.require(platform == "ios")
             domain = policy.validate_domain(copy.deepcopy(native_domain))
+            policy.require(platform == domain["platform"])
             policy.require(set(report) <= set(domain["sources"]))
             for path, facts in domain["sources"].items():
                 actual = policy.source_facts(_read_source_bytes(repo, path, export_deadline=deadline))

@@ -1,28 +1,29 @@
 // Captures immutable display and accessibility identities for per-event input fencing.
-// Desktop probes independently deny unavailable sessions while the host requires explicit local rearming.
+// Raw OS readings remain injectable while desktop admission and local rearming retain independent checks.
 
 #if os(macOS)
     import AppKit
     import ApplicationServices
     import AstralCore
-    import Carbon
     import Foundation
 
     nonisolated enum MacComputerDesktopProbe: Sendable {
-        nonisolated static func usable() -> Bool {
-            guard let session = CGSessionCopyCurrentDictionary() as? [String: Any],
+        static func usable() -> Bool { usable(system: MacComputerLiveSystem.shared) }
+        static func usable(system: any MacComputerSystemIO) -> Bool {
+            guard let session = system.sessionDictionary(),
                 session[kCGSessionOnConsoleKey as String] as? Bool == true,
                 session[kCGSessionLoginDoneKey as String] as? Bool == true,
                 session["CGSSessionScreenIsLocked"] as? Bool != true,
-                !IsSecureEventInputEnabled(), let pid = MacComputerObservation.context().pid,
-                let app = NSRunningApplication(processIdentifier: pid), let bundle = app.bundleIdentifier,
-                bundle != "com.apple.loginwindow"
+                !system.secureInputEnabled(), let pid = MacComputerObservation.context(system: system).pid,
+                let bundle = system.bundleIdentifier(for: pid), bundle != "com.apple.loginwindow"
             else { return false }
             return true
         }
         @MainActor static func localRearm() -> Bool {
-            NSApp.isActive && MacComputerObservation.context().pid == ProcessInfo.processInfo.processIdentifier
-                && usable()
+            localRearm(system: MacComputerLiveSystem.shared, appActive: NSApp.isActive)
+        }
+        @MainActor static func localRearm(system: any MacComputerSystemIO, appActive: Bool) -> Bool {
+            appActive && MacComputerObservation.context(system: system).pid == system.hostPID && usable(system: system)
         }
     }
 
@@ -30,36 +31,35 @@
         let identity: ComputerHostObservationIdentity
         private let window: AXUIElement?
         private let bounds: CGRect?
-        init(identity: ComputerHostObservationIdentity, window: AXUIElement?, bounds: CGRect?) {
+        private let system: any MacComputerSystemIO
+        init(
+            identity: ComputerHostObservationIdentity, window: AXUIElement?, bounds: CGRect?,
+            system: any MacComputerSystemIO = MacComputerLiveSystem.shared
+        ) {
             self.identity = identity
             self.window = window
             self.bounds = bounds
+            self.system = system
         }
-        nonisolated static func context() -> (pid: pid_t?, window: AXUIElement?, bounds: CGRect?) {
-            let system = AXUIElementCreateSystemWide()
-            AXUIElementSetMessagingTimeout(system, 0.2)
-            var appValue: CFTypeRef?
-            guard
-                AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute as CFString, &appValue)
-                    == .success,
-                let appValue, CFGetTypeID(appValue) == AXUIElementGetTypeID()
+        static func context(system: any MacComputerSystemReading = MacComputerLiveSystem.shared)
+            -> (pid: pid_t?, window: AXUIElement?, bounds: CGRect?)
+        {
+            let root = system.systemElement()
+            system.messagingTimeout(0.2, for: root)
+            guard let appValue = system.attribute(kAXFocusedApplicationAttribute, of: root),
+                CFGetTypeID(appValue) == AXUIElementGetTypeID()
             else { return (nil, nil, nil) }
             let app = unsafeBitCast(appValue, to: AXUIElement.self)
-            AXUIElementSetMessagingTimeout(app, 0.2)
-            var pid: pid_t = 0
-            var windowValue: CFTypeRef?
-            guard AXUIElementGetPid(app, &pid) == .success else { return (nil, nil, nil) }
-            guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &windowValue) == .success,
-                let windowValue, CFGetTypeID(windowValue) == AXUIElementGetTypeID()
+            system.messagingTimeout(0.2, for: app)
+            guard let pid = system.pid(of: app) else { return (nil, nil, nil) }
+            guard let windowValue = system.attribute(kAXFocusedWindowAttribute, of: app),
+                CFGetTypeID(windowValue) == AXUIElementGetTypeID()
             else { return (pid, nil, nil) }
             let window = unsafeBitCast(windowValue, to: AXUIElement.self)
-            AXUIElementSetMessagingTimeout(window, 0.2)
-            var position: CFTypeRef?
-            var size: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &position) == .success,
-                AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &size) == .success,
-                let position, let size, CFGetTypeID(position) == AXValueGetTypeID(),
-                CFGetTypeID(size) == AXValueGetTypeID()
+            system.messagingTimeout(0.2, for: window)
+            guard let position = system.attribute(kAXPositionAttribute, of: window),
+                let size = system.attribute(kAXSizeAttribute, of: window),
+                CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID()
             else { return (pid, window, nil) }
             var point = CGPoint.zero
             var dimensions = CGSize.zero
@@ -68,32 +68,39 @@
             else { return (pid, window, nil) }
             return (pid, window, CGRect(origin: point, size: dimensions))
         }
-        nonisolated static func topology() throws -> String {
-            var count: UInt32 = 0
-            guard CGGetActiveDisplayList(0, nil, &count) == .success, (1...8).contains(count) else {
+        static func displayIDs(system: any MacComputerSystemIO) throws -> [CGDirectDisplayID] {
+            let (countResult, count) = system.displayCount()
+            guard countResult == .success, (1...8).contains(count) else {
                 throw ComputerHostError("screen_locked", "The displays are unavailable.")
             }
-            var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-            guard CGGetActiveDisplayList(count, &ids, &count) == .success else {
+            let (result, ids) = system.displayIDs(capacity: count)
+            guard result == .success, ids.count == Int(count), Set(ids).count == ids.count, !ids.contains(0) else {
                 throw ComputerHostError("screen_locked", "Display enumeration failed.")
             }
-            ids.sort { a, b in a == CGMainDisplayID() || (b != CGMainDisplayID() && a < b) }
-            return ids.map { "\($0):\(CGDisplayBounds($0)):\(CGDisplayPixelsWide($0)):\(CGDisplayPixelsHigh($0))" }
-                .joined(separator: ";")
+            let primary = system.mainDisplay()
+            return ids.sorted { a, b in a == primary || (b != primary && a < b) }
         }
-        nonisolated static func capture(screenshot: Bool) throws -> MacComputerObservation {
-            let current = context()
+        static func topology(system: any MacComputerSystemIO = MacComputerLiveSystem.shared) throws -> String {
+            try displayIDs(system: system).map {
+                let pixels = system.displayPixels($0)
+                return "\($0):\(system.displayBounds($0)):\(Int(pixels.width)):\(Int(pixels.height))"
+            }.joined(separator: ";")
+        }
+        static func capture(screenshot: Bool, system: any MacComputerSystemIO = MacComputerLiveSystem.shared) throws
+            -> MacComputerObservation
+        {
+            let current = context(system: system)
             return MacComputerObservation(
                 identity: ComputerHostObservationIdentity(
-                    foreground: current.pid, topology: try topology(), screenshot: screenshot), window: current.window,
-                bounds: current.bounds)
+                    foreground: current.pid, topology: try topology(system: system), screenshot: screenshot),
+                window: current.window, bounds: current.bounds, system: system)
         }
-        nonisolated func verify(requireScreenshot: Bool, requireWindow: Bool) throws {
-            let current = Self.context()
+        func verify(requireScreenshot: Bool, requireWindow: Bool) throws {
+            let current = Self.context(system: system)
             try ComputerHostObservationGate.validate(
                 expected: identity,
                 current: ComputerHostObservationIdentity(
-                    foreground: current.pid, topology: try Self.topology(), screenshot: false),
+                    foreground: current.pid, topology: try Self.topology(system: system), screenshot: false),
                 requireScreenshot: requireScreenshot)
             if requireWindow || window != nil {
                 guard let window, let actual = current.window, CFEqual(window, actual), let bounds,

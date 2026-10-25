@@ -5,47 +5,48 @@
     import AppKit
     import ApplicationServices
     import AstralCore
-    import Carbon
     import Foundation
 
     actor MacComputerInput {
         let marker: Int64
-        init(marker: Int64) { self.marker = marker }
+        private let system: any MacComputerSystemReading
+        private let events: any MacComputerEventIO
+        init(
+            marker: Int64, system: any MacComputerSystemReading = MacComputerLiveSystem.shared,
+            events: any MacComputerEventIO = MacComputerLiveEvents()
+        ) {
+            self.marker = marker
+            self.system = system
+            self.events = events
+        }
         private nonisolated func post(_ event: CGEvent?) throws {
             guard let event else { throw ComputerHostError("failed", "The input event could not be created.") }
             event.setIntegerValueField(.eventSourceUserData, value: marker)
-            event.post(tap: .cghidEventTap)
+            events.post(event)
         }
         private nonisolated func keyboardAuthority(_ args: [String: JSONValue]) throws {
-            guard AXIsProcessTrusted(), CGPreflightPostEventAccess(), !IsSecureEventInputEnabled() else {
+            guard system.accessibilityTrusted(), system.postEventAccess(), !system.secureInputEnabled() else {
                 throw ComputerHostError("permission_denied", "Accessibility access or keyboard input is unavailable.")
             }
-            let system = AXUIElementCreateSystemWide()
-            var appValue: CFTypeRef?
-            guard
-                AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute as CFString, &appValue)
-                    == .success, let appValue, CFGetTypeID(appValue) == AXUIElementGetTypeID()
+            let root = system.systemElement()
+            guard let appValue = system.attribute(kAXFocusedApplicationAttribute, of: root),
+                CFGetTypeID(appValue) == AXUIElementGetTypeID()
             else { throw ComputerHostError("permission_denied", "The focused application cannot be verified.") }
             let app = unsafeBitCast(appValue, to: AXUIElement.self)
-            AXUIElementSetMessagingTimeout(app, 0.3)
-            var pid: pid_t = 0
-            guard AXUIElementGetPid(app, &pid) == .success, let process = NSRunningApplication(processIdentifier: pid),
-                let bundle = process.bundleIdentifier
+            system.messagingTimeout(0.3, for: app)
+            guard let pid = system.pid(of: app), let bundle = system.bundleIdentifier(for: pid)
             else { throw ComputerHostError("permission_denied", "The focused application identity is unknown.") }
-            try ComputerHostTargetPolicy.externalProcess(pid, hostPID: ProcessInfo.processInfo.processIdentifier)
+            try ComputerHostTargetPolicy.externalProcess(pid, hostPID: system.hostPID)
             if let terminal = args["terminal_app"]?.stringValue {
                 try ComputerTerminalPolicy.authorize(
                     terminal, bundle: bundle, granted: args["terminal_ok"] == .bool(true))
             }
-            var focused: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(app, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-                let focused, CFGetTypeID(focused) == AXUIElementGetTypeID()
+            guard let focused = system.attribute(kAXFocusedUIElementAttribute, of: app),
+                CFGetTypeID(focused) == AXUIElementGetTypeID()
             else { throw ComputerHostError("permission_denied", "The focused control cannot be verified.") }
-            var subrole: CFTypeRef?
             let element = unsafeBitCast(focused, to: AXUIElement.self)
-            AXUIElementSetMessagingTimeout(element, 0.3)
-            _ = AXUIElementCopyAttributeValue(element, kAXSubroleAttribute as CFString, &subrole)
-            if (subrole as? String) == kAXSecureTextFieldSubrole as String {
+            system.messagingTimeout(0.3, for: element)
+            if (system.attribute(kAXSubroleAttribute, of: element) as? String) == kAXSecureTextFieldSubrole as String {
                 throw ComputerHostError(
                     "permission_denied", "Astral cannot type into a secure field. Complete authentication yourself.")
             }
@@ -64,7 +65,7 @@
                     try authorize()
                 },
                 post: { chunk, down in
-                    let event = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down)
+                    let event = self.events.keyboard(key: 0, down: down)
                     if down { event?.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk) }
                     try self.post(event)
                 })
@@ -89,20 +90,20 @@
             if chord.modifiers.contains("ctrl") { flags.insert(.maskControl) }
             if chord.modifiers.contains("alt") { flags.insert(.maskAlternate) }
             if chord.modifiers.contains("shift") { flags.insert(.maskShift) }
-            let down = CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: true)
+            let down = events.keyboard(key: key, down: true)
             down?.flags = flags
             try post(down)
-            try post(CGEvent(keyboardEventSource: nil, virtualKey: key, keyDown: false))
+            try post(events.keyboard(key: key, down: false))
         }
         nonisolated func mouse(_ kind: CGEventType, at point: CGPoint, button: CGMouseButton = .left, count: Int64 = 1)
             throws
         {
-            let event = CGEvent(mouseEventSource: nil, mouseType: kind, mouseCursorPosition: point, mouseButton: button)
+            let event = events.mouse(kind: kind, point: point, button: button)
             event?.setIntegerValueField(.mouseEventClickState, value: count)
             try post(event)
         }
         private nonisolated func release(button: CGMouseButton, count: Int64 = 1) throws {
-            guard let current = CGEvent(source: nil)?.location else {
+            guard let current = events.cursor() else {
                 throw ComputerHostError("interrupted", "The current cursor could not be read for safe button release.")
             }
             let kind: CGEventType =
@@ -110,9 +111,7 @@
             try mouse(kind, at: current, button: button, count: count)
         }
         private nonisolated func pointerAuthority(at point: CGPoint) throws {
-            guard
-                let rows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-                    as? [[String: Any]]
+            guard let rows = system.visibleWindows()
             else {
                 throw ComputerHostError("permission_denied", "Visible computer controls cannot be verified.")
             }
@@ -125,7 +124,7 @@
                     pid: (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, bounds: bounds)
             }
             try ComputerHostTargetPolicy.externalPoint(
-                point, hostPID: ProcessInfo.processInfo.processIdentifier, windows: windows)
+                point, hostPID: system.hostPID, windows: windows)
         }
         func pointer(
             _ request: ComputerHostRequest, start: CGPoint, end: CGPoint?, authorize: @Sendable () throws -> Void
@@ -144,10 +143,9 @@
                 try authorize()
                 try pointerAuthority(at: start)
                 try authorize()
-                let event = CGEvent(
-                    scrollWheelEvent2Source: nil, units: .line, wheelCount: 2,
-                    wheel1: Int32(request.args["dy"]?.numberValue ?? -3),
-                    wheel2: Int32(request.args["dx"]?.numberValue ?? 0), wheel3: 0)
+                let event = events.scroll(
+                    dy: Int32(request.args["dy"]?.numberValue ?? -3),
+                    dx: Int32(request.args["dx"]?.numberValue ?? 0))
                 event?.location = start
                 try post(event)
                 return
@@ -199,7 +197,11 @@
         private var local: Any?
         let marker: Int64
         var controlsWindow: Int?
-        init(marker: Int64) { self.marker = marker }
+        private let monitors: any MacComputerEventMonitoring
+        init(marker: Int64, monitors: any MacComputerEventMonitoring = MacComputerLiveEventMonitoring()) {
+            self.marker = marker
+            self.monitors = monitors
+        }
         var running: Bool { global != nil && local != nil }
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool {
             if running { return true }
@@ -208,11 +210,12 @@
                 .leftMouseDragged, .rightMouseDragged, .scrollWheel,
             ]
             let marker = marker
-            global = NSEvent.addGlobalMonitorForEvents(matching: mask) { event in
+            let monitors = monitors
+            global = monitors.addGlobal(matching: mask) { event in
                 if event.cgEvent?.getIntegerValueField(.eventSourceUserData) != marker { humanInput() }
             }
-            local = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-                if event.window?.windowNumber != self?.controlsWindow,
+            local = monitors.addLocal(matching: mask) { [weak self] event in
+                if monitors.associatedWindowNumber(for: event) != self?.controlsWindow,
                     event.cgEvent?.getIntegerValueField(.eventSourceUserData) != marker
                 {
                     humanInput()
@@ -222,8 +225,8 @@
             return running
         }
         func stop() {
-            if let global { NSEvent.removeMonitor(global) }
-            if let local { NSEvent.removeMonitor(local) }
+            if let global { monitors.remove(global) }
+            if let local { monitors.remove(local) }
             global = nil
             local = nil
         }

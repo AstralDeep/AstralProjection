@@ -283,13 +283,11 @@ jobs:
           rm -f "$report"
           derived="$PWD/build/060/app-${{ matrix.slug }}-unit-dd"
           test_action='test'
-          if [[ '${{ matrix.slug }}' == ios ]]; then
-            xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
-              -destination '${{ matrix.destination }}' -configuration Debug \
-              CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES -derivedDataPath "$derived" \
-              build-for-testing
-            test_action=test-without-building
-          fi
+          xcodebuild -project "${APP_PROJECT}" -scheme AstralApp \
+            -destination '${{ matrix.destination }}' -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES -derivedDataPath "$derived" \
+            build-for-testing
+          test_action=test-without-building
           set +e
           xcodebuild \
             -project "${APP_PROJECT}" \
@@ -310,15 +308,13 @@ jobs:
           status=$?
           set -e
           if [[ -d "$result" ]]; then
-            native_args=()
-            if [[ '${{ matrix.slug }}' == ios ]]; then
-              test "$status" -eq 0
-              domain="${COVERAGE_ROOT}/apple-ios-unit-domain.json"
-              python3 scripts/collect_xccov_native_domain.py --repo "$PWD" \
-                --products "$derived/Build/Products" --xcresult "$PWD/$result" --lane unit \
-                --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-ios-unit.zip"
-              native_args=(--native-domain "$domain")
-            fi
+            test "$status" -eq 0
+            domain="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-unit-domain.json"
+            python3 scripts/collect_xccov_native_domain.py --repo "$PWD" \
+              --platform '${{ matrix.slug }}' \
+              --products "$derived/Build/Products" --xcresult "$PWD/$result" --lane unit \
+              --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-${{ matrix.slug }}-unit.zip"
+            native_args=(--native-domain "$domain")
             python3 scripts/export_xccov_line_coverage.py \
               ${native_args[@]+"${native_args[@]}"} \
               --repo "$PWD" \
@@ -461,12 +457,10 @@ jobs:
           fi
           derived="$PWD/build/060/app-${{ matrix.slug }}-ui-dd"
           test_action='test'
-          if [[ '${{ matrix.slug }}' == ios ]]; then
-            xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
-              -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
-              -derivedDataPath "$derived" build-for-testing
-            test_action=test-without-building
-          fi
+          xcodebuild -project "${APP_PROJECT}" -scheme AstralApp -destination "$dest" \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO -enableCodeCoverage YES \
+            -derivedDataPath "$derived" build-for-testing
+          test_action=test-without-building
           set +e
           xcodebuild \
             -project "${APP_PROJECT}" \
@@ -492,15 +486,13 @@ jobs:
           status=$?
           set -e
           if [[ -d "$result" ]]; then
-            native_args=()
-            if [[ '${{ matrix.slug }}' == ios ]]; then
-              test "$status" -eq 0
-              domain="${COVERAGE_ROOT}/apple-ios-ui-domain.json"
-              python3 scripts/collect_xccov_native_domain.py --repo "$PWD" \
-                --products "$derived/Build/Products" --xcresult "$PWD/$result" --lane ui \
-                --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-ios-ui.zip"
-              native_args=(--native-domain "$domain")
-            fi
+            test "$status" -eq 0
+            domain="${COVERAGE_ROOT}/apple-${{ matrix.slug }}-ui-domain.json"
+            python3 scripts/collect_xccov_native_domain.py --repo "$PWD" \
+              --platform '${{ matrix.slug }}' \
+              --products "$derived/Build/Products" --xcresult "$PWD/$result" --lane ui \
+              --output "$PWD/$domain" --binary-archive "$PWD/${COVERAGE_ROOT}/native-binaries/apple-${{ matrix.slug }}-ui.zip"
+            native_args=(--native-domain "$domain")
             python3 scripts/export_xccov_line_coverage.py \
               ${native_args[@]+"${native_args[@]}"} \
               --repo "$PWD" \

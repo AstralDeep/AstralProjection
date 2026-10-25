@@ -121,7 +121,7 @@ def test_every_changed_line_gate_records_an_event_range_decision() -> None:
         job = _job_block(text, job_id)
         assert "fetch-depth: 0" in job, job_id
         assert job.count("--fail-under=90") == 1, job_id
-        assert job.count("changed-coverage.json") == 1, job_id
+        assert len(re.findall(r"--output\s+[^\n]+changed-coverage\.json", job)) == 1, job_id
 
 
 def test_public_offline_worker_has_measured_ci_and_real_browser_gates() -> None:
@@ -564,7 +564,7 @@ def test_python_ci_invokes_pytest_as_a_module_for_top_level_scripts() -> None:
 def test_frozen_windows_smoke_retry_keeps_other_tests_single_run_and_fails_closed() -> None:
     text = (ACTIVE / "ci.yml").read_text(encoding="utf-8")
     windows = _job_block(text, "windows-package")
-    smoke = windows[windows.index("- name: Run actual frozen Windows package smokes") :]
+    smoke = _step_block(windows, "Run actual frozen Windows package smokes")
     target = "test_actual_frozen_gui_retains_selected_profile_during_offline_retry"
     before, retry = smoke.split("for ($attempt = 1; $attempt -le 2; $attempt++)")
     assert before.count("python -m pytest") == 1
@@ -591,7 +591,7 @@ def test_frozen_windows_smoke_retry_keeps_other_tests_single_run_and_fails_close
 )
 def test_frozen_smoke_retry_contract_rejects_expansion_and_failure_masking(old, new) -> None:
     windows = _job_block((ACTIVE / "ci.yml").read_text(encoding="utf-8"), "windows-package")
-    smoke = windows[windows.index("- name: Run actual frozen Windows package smokes") :]
+    smoke = _step_block(windows, "Run actual frozen Windows package smokes")
     changed = windows.replace(smoke, smoke.replace(old, new))
     with pytest.raises(AssertionError):
         _assert_windows_steps_stop_on_native_failure(changed)
@@ -1139,7 +1139,8 @@ def _assert_ios_domain_collection(text):
         assert block.index("build-for-testing") < block.index("test-without-building") < block.index("python3 scripts/collect_xccov_native_domain.py")
         assert f"--lane {lane}" in block
         assert f"-derivedDataPath {derived}" in block
-        assert f"native-binaries/apple-ios-{lane}.zip" in block
+        archive_platform = "ios" if lane == "core" else "${{ matrix.slug }}"
+        assert f"native-binaries/apple-{archive_platform}-{lane}.zip" in block
         assert "--native-domain" in block
         assert "-enableCodeCoverage YES" in block
     unit = _job_block(text, "app-unit-tests")
@@ -1233,8 +1234,10 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     calls = [json.loads(line) for line in record.read_text().splitlines()]
     assert all("" not in call for call in calls)
     xcode = [call for call in calls if call[0] == "xcodebuild"]
-    assert len(xcode) == (2 if platform == "ios" else 1)
-    assert xcode[-1][-1] == ("test-without-building" if platform == "ios" else "test")
+    assert len(xcode) == 2
+    assert xcode[0][-1] == "build-for-testing"
+    assert not any(value.startswith("-only-testing:") for value in xcode[0])
+    assert xcode[-1][-1] == "test-without-building"
     assert xcode[-1][xcode[-1].index("-project") + 1] == "Owned Fixture.xcodeproj"
     assert "CODE_SIGNING_ALLOWED=NO" in xcode[-1]
     _assert_retried_test_run(xcode)
@@ -1249,13 +1252,14 @@ def test_apple_workflow_shell_preserves_optional_arguments(tmp_path, platform, l
     exports = [call for call in calls if "scripts/export_xccov_line_coverage.py" in call]
     assert len(exports) == 1
     assert exports[0][exports[0].index("--platform") + 1] == platform
-    assert ("--native-domain" in exports[0]) == (platform == "ios")
+    assert "--native-domain" in exports[0]
     collectors = [call for call in calls if "scripts/collect_xccov_native_domain.py" in call]
-    assert len(collectors) == (1 if platform == "ios" else 0)
+    assert len(collectors) == 1
     if collectors:
         assert collectors[0][collectors[0].index("--lane") + 1] == lane
+        assert collectors[0][collectors[0].index("--platform") + 1] == platform
         assert exports[0][exports[0].index("--native-domain") + 1] == (
-            f"coverage with spaces/apple-ios-{lane}-domain.json"
+            f"coverage with spaces/apple-{platform}-{lane}-domain.json"
         )
 
 
@@ -1377,7 +1381,7 @@ def _run_first_login_step(tmp_path, platform, *, suite_exit):
 def test_apple_first_login_failure_fails_the_job_without_rerunning_the_suite(tmp_path, platform):
     result, calls = _run_first_login_step(tmp_path, platform, suite_exit=65)
 
-    assert result.returncode == (65 if platform == "macos" else 1), result.stderr
+    assert result.returncode == 1, result.stderr
     suites = [call for call in calls if call[0] == "xcodebuild" and "-resultBundlePath" in call]
     assert len(suites) == 1
     _assert_retried_test_run([call for call in calls if call[0] == "xcodebuild"])
@@ -1464,3 +1468,29 @@ def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_com
     assert len(exports) == (1 if failing_command == "none" else 0)
     if exports:
         assert exports[0][exports[0].index("--xcresult") + 1] == "coverage with spaces/AstralWatch.xcresult"
+
+
+def test_raw_coverage_is_retained_for_every_nonnative_producer():
+    text = (ACTIVE / "ci.yml").read_text()
+    reports = {
+        "python": ("Retain Python coverage evidence", "projection-python-coverage", "build/074/coverage/projection-python.xml"),
+        "web": ("Retain JavaScript coverage evidence", "projection-javascript-coverage", "build/coverage/javascript/"),
+        "windows-tests": ("Retain Windows Python coverage evidence", "projection-windows-python-coverage", "build/075/coverage/windows-python.xml"),
+        "windows-package": ("Retain Windows native coverage evidence", "projection-windows-native-coverage", "build/075/coverage/windows-csharp.xml"),
+    }
+    for job_id, (step_name, artifact_name, report_path) in reports.items():
+        step = _step_block(_job_block(text, job_id), step_name)
+        assert "if: always()" in step
+        assert "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02" in step
+        assert f"name: {artifact_name}" in step
+        assert report_path in step
+        assert "if-no-files-found: error" in step
+    web = _job_block(text, "web")
+    assert "NODE_V8_COVERAGE:" in web
+    assert "ASTRAL_ALL_CLIENT_COVERAGE_DIR=" in web
+    assert "ASTRAL_MESH_COVERAGE_OUTPUT=" in web
+    convert = _step_block(web, "Collect exact-source JavaScript coverage")
+    for producer in ("coverage-conversion-cli.mjs", "browser-v8-cli.mjs", "coverage-union-cli.mjs"):
+        assert producer in convert
+    for lane in ("--node", "--browser", "--offline-node", "--export-browser"):
+        assert lane in convert

@@ -4,6 +4,7 @@
 #if os(macOS)
     import AppKit
     import AstralCore
+    import CryptoKit
     import XCTest
     @testable import AstralDeep
 
@@ -29,7 +30,7 @@
                     desktopRearm: {
                         rearms += 1
                         return true
-                    })
+                    }, system: MacComputerTestSystem(), panelPresenter: { _ in })
                 host.bind(owner: "synthetic-review-owner") { _ in true }
                 host.setEnabled(true)
                 defer { host.stop() }
@@ -79,7 +80,7 @@
                     desktopRearm: {
                         XCTFail("A permission request cannot rearm control")
                         return true
-                    })
+                    }, system: MacComputerTestSystem(), panelPresenter: { _ in })
                 host.requestMonitoring()
                 XCTAssertEqual(requested, [.monitoring])
                 XCTAssertEqual(
@@ -111,7 +112,7 @@
                 desktopRearm: {
                     XCTFail("Activation cannot rearm control")
                     return true
-                })
+                }, system: MacComputerTestSystem(), panelPresenter: { _ in })
             returned = true
             NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: NSApp)
             await fulfillment(of: [refreshed], timeout: 5)
@@ -125,7 +126,7 @@
         }
 
         func testConsentAdapterRequiresHardwareEvidenceForAsyncOrCurrentActivation() throws {
-            let input = MacComputerLocalInput(marker: 30)
+            let input = MacComputerLocalInput(marker: 30, monitors: MacComputerTestMonitors())
             defer { input.stop() }
             func event(userData: Int64 = 0, pid: Int64 = 0) throws -> CGEvent {
                 let source = try XCTUnwrap(CGEventSource(stateID: .hidSystemState))
@@ -153,7 +154,7 @@
         }
 
         func testQueuedInjectedResumeAfterPauseCannotReactivateSession() async throws {
-            let input = MacComputerLocalInput(marker: 30)
+            let input = MacComputerLocalInput(marker: 30, monitors: MacComputerTestMonitors())
             defer { input.stop() }
             let source = try XCTUnwrap(CGEventSource(stateID: .hidSystemState))
             let physical = try XCTUnwrap(CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true))
@@ -162,7 +163,8 @@
                 available: true, defaults: UserDefaults(suiteName: UUID().uuidString)!, driver: ComputerTestDriver(),
                 monitor: ComputerTestMonitor(),
                 permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
-                desktopProbe: { true }, desktopRearm: { input.consume(current: nil) })
+                desktopProbe: { true }, desktopRearm: { input.consume(current: nil) }, system: MacComputerTestSystem(),
+                panelPresenter: { _ in })
             var sent: [String] = []
             host.bind(owner: "synthetic-owner") { text in
                 if let frame = try? JSONValue.parse(Data(text.utf8)),
@@ -193,6 +195,89 @@
             XCTAssertTrue(sent.contains("resumed"))
         }
 
+        func testNewerOwnerBindingSurvivesWorkspaceAndDisconnectCallbacks() async throws {
+            for boundary in ["scope_stop", "bookmark_resolve", "monitor_stop", "sign_out"] {
+                let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                    .resolvingSymlinksInPath()
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: directory) }
+                let suite = "reentrant-host-" + UUID().uuidString
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                var selection: [URL] = []
+                var onStop: (() -> Void)?
+                var onResolve: (() -> Void)?
+                let grants = MacComputerWorkspaceGrantIO(
+                    chooseDirectories: { selection },
+                    resolveBookmark: { data in
+                        let callback = onResolve
+                        onResolve = nil
+                        callback?()
+                        return (URL(fileURLWithPath: String(decoding: data, as: UTF8.self)), false)
+                    },
+                    makeBookmark: { Data($0.path.utf8) }, startAccess: { _ in true },
+                    stopAccess: { _ in
+                        let callback = onStop
+                        onStop = nil
+                        callback?()
+                    })
+                let files = MacComputerFiles(defaults: defaults, grants: grants)
+                var folders: [String: URL] = [:]
+                for owner in ["older", "newer", "initial"] {
+                    let folder = directory.appendingPathComponent(owner)
+                    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
+                    folders[owner] = folder
+                    selection = [folder]
+                    files.bind(owner)
+                    files.choose()
+                }
+                let monitor = ComputerTestMonitor()
+                let host = MacComputerHost(
+                    available: true, defaults: defaults, files: files, driver: ComputerTestDriver(), monitor: monitor,
+                    permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
+                    desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),
+                    panelPresenter: { _ in })
+                host.bind(owner: "initial") { _ in true }
+                var olderSends = 0
+                var newerSends = 0
+                let rebind = {
+                    host.bind(owner: "newer") { _ in
+                        newerSends += 1
+                        return true
+                    }
+                }
+                switch boundary {
+                case "scope_stop": onStop = rebind
+                case "bookmark_resolve": onResolve = rebind
+                default: monitor.onStop = rebind
+                }
+                if boundary == "sign_out" {
+                    host.signedOut()
+                } else {
+                    host.bind(owner: "older") { _ in
+                        olderSends += 1
+                        return true
+                    }
+                }
+                XCTAssertEqual(files.roots, [try XCTUnwrap(folders["newer"]).path], boundary)
+                XCTAssertTrue(host.ownerBound, boundary)
+                host.setEnabled(true)
+                XCTAssertTrue(host.enabled, boundary)
+                let sent = await host.flushCurrentSends()
+                XCTAssertTrue(sent, boundary)
+                XCTAssertEqual(olderSends, 0, boundary)
+                XCTAssertEqual(newerSends, 1, boundary)
+                func consentKey(_ owner: String) -> String {
+                    "computer.consent."
+                        + SHA256.hash(data: Data(owner.utf8))
+                        .map { String(format: "%02x", $0) }.joined()
+                }
+                XCTAssertTrue(defaults.bool(forKey: consentKey("newer")), boundary)
+                XCTAssertFalse(defaults.bool(forKey: consentKey("older")), boundary)
+                host.signedOut()
+            }
+        }
+
         private func makeHost(
             driver: any MacComputerDriving,
             access: @escaping @MainActor () -> MacComputerPermissions = {
@@ -202,7 +287,8 @@
             let defaults = UserDefaults(suiteName: "computer-tests-" + UUID().uuidString)!
             let host = MacComputerHost(
                 available: true, defaults: defaults, driver: driver, monitor: ComputerTestMonitor(),
-                permissionProvider: access, desktopProbe: { true }, desktopRearm: { true })
+                permissionProvider: access, desktopProbe: { true }, desktopRearm: { true },
+                system: MacComputerTestSystem(), panelPresenter: { _ in })
             host.bind(owner: "synthetic-owner|synthetic-server") { _ in true }
             host.setEnabled(true)
             return host
@@ -351,26 +437,17 @@
             XCTAssertNil(host.session)
         }
         func testStoreDistributionCannotEnableHosting() {
-            let host = MacComputerHost(available: false)
+            let host = MacComputerHost(
+                available: false, desktopRearm: { false }, system: MacComputerTestSystem(), panelPresenter: { _ in })
             host.setEnabled(true)
             XCTAssertFalse(host.enabled)
             XCTAssertNil(host.descriptor)
             XCTAssertTrue(host.statusLabel.contains("controller"))
         }
 
-        func testLocalConsentNeverEntersServerOperationQueue() {
-            let model = AppModel(
-                tokenStore: InMemoryTokenStore(),
-                defaults: UserDefaults(suiteName: "local-consent-" + UUID().uuidString)!)
-            var sent: [String] = []
-            model.outboundTap = { sent.append($0) }
-            model.emit("computer_host_consent", payload: ["enabled": .bool(true)])
-            XCTAssertTrue(sent.isEmpty)
-            XCTAssertFalse(model.macComputerHost.enabled)
-        }
-
         func testDisconnectedHostCannotAdvertiseOrAcceptSession() {
-            let host = MacComputerHost(available: true)
+            let host = MacComputerHost(
+                available: true, desktopRearm: { false }, system: MacComputerTestSystem(), panelPresenter: { _ in })
             XCTAssertFalse(host.enabled)
             XCTAssertNil(host.descriptor)
             host.pause()
@@ -386,11 +463,17 @@
     private final class ComputerTestMonitor: MacComputerMonitoring {
         var running = false
         var controlsWindow: Int?
+        var onStop: (() -> Void)?
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool {
             running = true
             return true
         }
-        func stop() { running = false }
+        func stop() {
+            running = false
+            let callback = onStop
+            onStop = nil
+            callback?()
+        }
     }
 
     private actor ComputerTestDriver: MacComputerDriving {

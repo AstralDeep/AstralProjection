@@ -64,6 +64,19 @@ jobs:
       - run: PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation
       - run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import astralprojection, rote, webrender"
 
+      - name: Retain Python coverage evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-python-coverage
+          path: |
+            build/074/coverage/projection-python.xml
+            build/074/coverage/projection-python-changed-coverage.json
+            .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
   web:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -87,7 +100,10 @@ jobs:
           cache-dependency-path: tooling/web-ci/package-lock.json
       - working-directory: tooling/web-ci
         run: test "$(corepack npm --version)" = "11.16.0" && corepack npm ci --ignore-scripts
-      - working-directory: tooling/web-ci
+      - name: Run host checks with native coverage
+        working-directory: tooling/web-ci
+        env:
+          NODE_V8_COVERAGE: ${{ github.workspace }}/build/coverage/javascript/node-v8
         run: corepack npm run check:package-manager && corepack npm run check:product-isolation && corepack npm run lint && corepack npm run test:coverage-conversion && corepack npm run test:coverage-conversion:node && corepack npm run test:coverage-union
       - name: Verify public offline worker and changed JavaScript coverage
         shell: bash
@@ -118,6 +134,8 @@ jobs:
             --env HOME=/tmp \
             --env ASTRAL_ASSIGNMENT_FIXTURE_DIR=/workspace/build/079/browser-fixtures \
             --env ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json \
+            --env ASTRAL_ALL_CLIENT_COVERAGE_DIR=/workspace/build/coverage/javascript/browser-v8/client \
+            --env ASTRAL_MESH_COVERAGE_OUTPUT=/workspace/build/coverage/javascript/browser-v8/mesh.json \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace/tooling/web-ci \
             "$image" \
@@ -134,6 +152,42 @@ jobs:
               counts = list(report["coverage"][f"backend/webrender/static/{name}"]["s"].values())
               assert counts and sum(count > 0 for count in counts) / len(counts) >= .90, name
           PY
+
+      - name: Collect exact-source JavaScript coverage
+        shell: bash
+        env:
+          NODE_V8_COVERAGE: ${{ github.workspace }}/build/coverage/javascript/node-v8
+        run: |
+          set -euo pipefail
+          mkdir -p build/coverage/javascript
+          python - <<'PYTHON'
+          from pathlib import Path
+          import subprocess
+          paths = sorted(Path("build/coverage/javascript/browser-v8").rglob("*.json"))
+          if not paths:
+              raise SystemExit("browser coverage observations are missing")
+          subprocess.run(["node", "tooling/web-ci/browser-v8-cli.mjs", "--repo-root", str(Path.cwd()),
+                          "--output", "build/coverage/javascript/browser.json",
+                          *[value for path in paths for value in ("--input", str(path))]], check=True)
+          PYTHON
+          node tooling/web-ci/coverage-conversion-cli.mjs \
+            --node-v8-directory build/coverage/javascript/node-v8 --repo-root "$GITHUB_WORKSPACE" \
+            --output build/coverage/javascript/node.json
+          node tooling/web-ci/coverage-union-cli.mjs \
+            --node build/coverage/javascript/node.json --browser build/coverage/javascript/browser.json \
+            --offline-node build/088/offline-javascript.json --export-browser build/088/export-javascript.json \
+            --repo-root "$GITHUB_WORKSPACE" --output build/coverage/javascript/javascript.json
+      - name: Retain JavaScript coverage evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-javascript-coverage
+          path: |
+            build/coverage/javascript/
+            build/088/offline-javascript.json
+            build/088/export-javascript.json
+          if-no-files-found: error
+          retention-days: 7
 
   windows-tests:
     runs-on: windows-latest
@@ -170,6 +224,19 @@ jobs:
             --base-sha "$env:BASE_SHA" --fail-under=90 `
             --output build\075\coverage\windows-python-changed-coverage.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Retain Windows Python coverage evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-windows-python-coverage
+          path: |
+            build/075/coverage/windows-python.xml
+            build/075/coverage/windows-python-changed-coverage.json
+            .coverage
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
 
   windows-package:
     runs-on: windows-latest
@@ -356,6 +423,18 @@ jobs:
             }
           }
           exit $LASTEXITCODE
+
+      - name: Retain Windows native coverage evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-windows-native-coverage
+          path: |
+            build/075/coverage/windows-csharp.xml
+            build/075/coverage/windows-csharp-changed-coverage.json
+            build/075/coverage/windows-csharp-raw/
+          if-no-files-found: error
+          retention-days: 7
 
   required:
     if: always()

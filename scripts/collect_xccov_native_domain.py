@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collects a diagnostic iOS coverage domain from validated Xcode test Products without
+"""Collects a diagnostic Apple coverage domain from validated Xcode test Products without
 building or launching tests; export_xccov_line_coverage.py turns it into a usable
 report.
 """
@@ -27,9 +27,20 @@ MAX_TREE = 1024 * 1024 * 1024
 MAX_ENTRIES = 10_000
 STAGES = frozenset(
     {
-        "inputs", "source_before", "products_before", "result_before", "result_copy", "test_metadata",
-        "binary_archive", "mapping", "source_after", "products_after", "result_after",
-        "archive_after", "domain_validation", "output",
+        "inputs",
+        "source_before",
+        "products_before",
+        "result_before",
+        "result_copy",
+        "test_metadata",
+        "binary_archive",
+        "mapping",
+        "source_after",
+        "products_after",
+        "result_after",
+        "archive_after",
+        "domain_validation",
+        "output",
     }
 )
 SOURCE_ROOTS = ("apple-clients/AstralCore", "apple-clients/AstralApp")
@@ -165,7 +176,9 @@ def _test_documents(
         return documents
 
 
-def _source_closure(repo: Path, exporter: Any, run: Any, deadline: float) -> tuple:
+def _source_closure(
+    repo: Path, exporter: Any, run: Any, deadline: float, platform: str = "ios"
+) -> tuple:
     require(run(["git", "rev-parse", "--show-object-format"], 128).strip() == b"sha1")
     head = run(["git", "rev-parse", "HEAD"], 128).strip()
     require(re.fullmatch(rb"[0-9a-f]{40}", head))
@@ -209,13 +222,19 @@ def _source_closure(repo: Path, exporter: Any, run: Any, deadline: float) -> tup
         facts[name] = {"sha256": hashlib.sha256(content).hexdigest(), "mode": mode.decode()}
         total += len(content)
         require(total <= 64 * 1024 * 1024)
-    tracked = exporter._tracked_swift_sources(repo, "ios", export_deadline=deadline)
+    tracked = exporter._tracked_swift_sources(repo, platform, export_deadline=deadline)
     require(tracked and tracked <= set(sources))
     return head.decode(), sources, facts, tracked
 
 
 # xctestrun Architectures lists x86_64 even on arm64 — not proof
-def _products(products: Path, lane: str) -> tuple[dict[str, Any], bytes]:
+def _products(products: Path, lane: str, platform: str = "ios") -> tuple[dict[str, Any], bytes]:
+    require(platform in {"ios", "macos"} and (lane != "core" or platform == "ios"))
+    folder = FOLDER if platform == "ios" else "Debug/"
+    app = APP if platform == "ios" else folder + "AstralDeep.app"
+    runner = RUNNER if platform == "ios" else folder + "AstralAppUITests-Runner.app"
+    plugins = "/PlugIns/" if platform == "ios" else "/Contents/PlugIns/"
+    executable = "/" if platform == "ios" else "/Contents/MacOS/"
     require(_path(products).is_dir() and products.name == "Products")
     records = {}
 
@@ -286,46 +305,59 @@ def _products(products: Path, lane: str) -> tuple[dict[str, Any], bytes]:
             unit.get("IsAppHostedTestBundle") is True
             and unit.get("IsUITestBundle", False) is False
             and unit.get("TestHostBundleIdentifier") == "com.personalailabs.astraldeep"
-            and unit.get("TestHostPath") == "__TESTROOT__/" + APP
-            and unit.get("TestBundlePath") == "__TESTHOST__/PlugIns/AstralAppTests.xctest"
+            and unit.get("TestHostPath") == "__TESTROOT__/" + app
+            and unit.get("TestBundlePath") == "__TESTHOST__" + plugins + "AstralAppTests.xctest"
         )
         require(
             ui.get("IsUITestBundle") is True
             and ui.get("TestHostBundleIdentifier")
             == "com.personalailabs.astraldeep.uitests.xctrunner"
-            and ui.get("TestHostPath") == "__TESTROOT__/" + RUNNER
-            and ui.get("UITargetAppPath") == "__TESTROOT__/" + APP
-            and ui.get("TestBundlePath") == "__TESTHOST__/PlugIns/AstralAppUITests.xctest"
+            and ui.get("TestHostPath") == "__TESTROOT__/" + runner
+            and ui.get("UITargetAppPath") == "__TESTROOT__/" + app
+            and ui.get("TestBundlePath") == "__TESTHOST__" + plugins + "AstralAppUITests.xctest"
         )
-        info = plistlib.loads(read(APP + "/Info.plist"))
+        info = plistlib.loads(
+            read(app + ("/Info.plist" if platform == "ios" else "/Contents/Info.plist"))
+        )
         require(
             isinstance(info, dict)
             and info.get("CFBundleIdentifier") == "com.personalailabs.astraldeep"
             and info.get("CFBundleExecutable") == "AstralDeep"
             and info.get("CFBundlePackageType") == "APPL"
-            and info.get("CFBundleSupportedPlatforms") == ["iPhoneSimulator"]
+            and info.get("CFBundleSupportedPlatforms")
+            == ["iPhoneSimulator" if platform == "ios" else "MacOSX"]
         )
         for name in (
-            APP + "/AstralDeep",
-            APP + "/PlugIns/AstralAppTests.xctest/AstralAppTests",
-            RUNNER + "/AstralAppUITests-Runner",
-            RUNNER + "/PlugIns/AstralAppUITests.xctest/AstralAppUITests",
+            app + executable + "AstralDeep",
+            app + plugins + "AstralAppTests.xctest" + executable + "AstralAppTests",
+            runner + executable + "AstralAppUITests-Runner",
+            runner + plugins + "AstralAppUITests.xctest" + executable + "AstralAppUITests",
         ):
             read(name)
             require(records[name]["mode"] & stat.S_IXUSR)
-        instrumented("AstralDeep.app", APP + "/AstralDeep")
-        binary = read(APP + "/AstralDeep.debug.dylib")
+        instrumented("AstralDeep.app", app + executable + "AstralDeep")
+        binary = read(app + executable + "AstralDeep.debug.dylib")
     return records, binary
 
 
 def collect(
-    *, repo: Path, products: Path, xcresult: Path, lane: str, output: Path, binary_archive: Path
+    *,
+    repo: Path,
+    products: Path,
+    xcresult: Path,
+    lane: str,
+    output: Path,
+    binary_archive: Path,
+    platform: str = "ios",
 ) -> dict[str, Any]:
-    require(lane in {"core", "unit", "ui"})
+    require(
+        platform in {"ios", "macos"}
+        and lane in ({"core", "unit", "ui"} if platform == "ios" else {"unit", "ui"})
+    )
     repo, products, xcresult = _path(repo), _path(products), _path(xcresult)
     output, binary_archive = _path(output), _path(binary_archive)
     require(output != binary_archive and xcresult.suffix == ".xcresult")
-    artifact_member = f"coverage/native-binaries/apple-ios-{lane}.zip"
+    artifact_member = f"coverage/native-binaries/apple-{platform}-{lane}.zip"
     require(binary_archive.as_posix().endswith("/" + artifact_member))
     require(not output.exists() and not binary_archive.exists())
     require(
@@ -343,16 +375,24 @@ def collect(
         )
 
     with _stage("source_before"):
-        source_before = _source_closure(repo, exporter, run, deadline)
+        source_before = _source_closure(repo, exporter, run, deadline, platform)
     with _stage("products_before"):
-        product_before, binary = _products(products, lane)
+        product_before, binary = _products(products, lane, platform)
     with _stage("result_before"):
         result_before = _tree(xcresult, deadline)
     documents = _test_documents(xcresult, result_before, policy, run, deadline)
     with _stage("test_metadata"):
-        policy.test_identity(documents["summary"], documents["tests"], lane)
-        policy.ios_macho(binary, lane)
-    member = policy.BINARY_MEMBERS["core" if lane == "core" else "app"]
+        architecture = policy.macos_macho(binary, lane) if platform == "macos" else "arm64"
+        if platform == "ios":
+            policy.ios_macho(binary, lane)
+        policy.test_identity(
+            documents["summary"],
+            documents["tests"],
+            lane,
+            platform=platform,
+            architecture=architecture,
+        )
+    member = policy.binary_member(platform, lane)
     with _stage("binary_archive"):
         binary_archive.parent.mkdir(parents=True, exist_ok=True)
         _path(binary_archive.parent)
@@ -372,7 +412,10 @@ def collect(
         "artifact_member": artifact_member,
         "artifact_sha256": policy.sha256(archive_bytes),
     }
-    with _stage("mapping"), tempfile.TemporaryDirectory(prefix="astral-native-domain-") as directory:
+    with (
+        _stage("mapping"),
+        tempfile.TemporaryDirectory(prefix="astral-native-domain-") as directory,
+    ):
         selected = Path(directory).resolve() / "selected-binary"
         with selected.open("xb") as stream:
             stream.write(binary)
@@ -389,11 +432,12 @@ def collect(
             run=run,
             summary=documents["summary"],
             tests=documents["tests"],
+            platform=platform,
         )
     with _stage("source_after"):
-        require(source_before == _source_closure(repo, exporter, run, deadline))
+        require(source_before == _source_closure(repo, exporter, run, deadline, platform))
     with _stage("products_after"):
-        require((product_before, binary) == _products(products, lane))
+        require((product_before, binary) == _products(products, lane, platform))
     with _stage("result_after"):
         require(result_before == _tree(xcresult, deadline))
     with _stage("archive_after"):
@@ -413,6 +457,7 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("repo", "products", "xcresult", "output", "binary-archive"):
         parser.add_argument("--" + name, required=True, type=Path)
     parser.add_argument("--lane", required=True, choices=("core", "unit", "ui"))
+    parser.add_argument("--platform", choices=("ios", "macos"), default="ios")
     args = parser.parse_args(argv)
     try:
         collect(**vars(args))

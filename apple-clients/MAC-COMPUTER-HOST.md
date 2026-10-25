@@ -28,7 +28,7 @@ codesign --display --verbose=4 --entitlements :- build/mac-direct/Build/Products
 
 Hardened runtime must be enabled, App Sandbox must be absent, and `com.apple.security.get-task-allow` must not be true. DirectDownload disables Xcode's base-entitlement injection and testability so the signed app receives only its declared audio-input entitlement. The runtime checks the distribution marker, valid sealed signature, bundle identity, runtime flags, sandbox state and debugger entitlement before offering execution. A marker or an ordinary unsigned CI build does not enable hosting. These checks are local distribution checks, not server-side remote attestation.
 
-For unsigned compile verification, add `CODE_SIGNING_ALLOWED=NO`. Keep Store signing/export settings unchanged. Local build/signing is distinct from notarization, public distribution, store upload and release qualification; follow the owning AstralDeep release process for those actions.
+For unsigned compile verification, add `CODE_SIGNING_ALLOWED=NO`. Use `build` for DirectDownload; its deliberate lack of testability makes `build-for-testing` inappropriate. Build unit tests with the Debug configuration shown below. Keep Store signing/export settings unchanged. Local build/signing is distinct from notarization, public distribution, store upload and release qualification; follow the owning AstralDeep release process for those actions.
 
 ## Enable this Mac
 
@@ -38,6 +38,8 @@ For unsigned compile verification, add `CODE_SIGNING_ALLOWED=NO`. Keep Store sig
 4. Grant Accessibility, Screen Recording and Input Monitoring in macOS, then refresh permissions. Complete system dialogs yourself.
 5. Physically click **Allow computer tasks on this Mac** from the active unlocked app. Injected input cannot enable access or press local Resume. After locking or changing the active desktop, explicitly enable access again.
 6. Select dedicated workspace folders if file tools are needed. File verbs are advertised only while selected roots are available. Roots are bound to the signed-in account and server.
+
+Each saved folder grant binds the original opened directory identity as well as its bookmark and account/server scope. Replacing or moving a selected root cannot silently grant its replacement. An unverifiable or older grant reports an error and requires selecting the intended folder again; removing another folder preserves the original open grants.
 
 The server must run the matching qualified implementation with `FF_COMPUTER_USE=true`. Recreate the service after changing its environment. With the flag off, hosting does not become available merely because the local permissions are granted.
 
@@ -62,4 +64,4 @@ xcodebuild \
   -only-testing:AstralAppTests test
 ```
 
-Unit tests use injected native boundaries and temporary files. They do not replace signed-app TCC, authenticated browser/native/Terminal/file workflows, physical takeover, lock/unlock or production verification. Record the exact client, server image and component identities with that evidence.
+Unit tests supply raw native readings and record unposted events while exercising the actual authorization, input, observation, host and selected-root filesystem decisions. The shipped constructors retain immutable public-API defaults. These tests do not replace signed-app TCC, authenticated browser/native/Terminal/file workflows, physical takeover, lock/unlock or production verification. Record the exact client, server image and component identities with that evidence.

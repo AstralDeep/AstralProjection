@@ -5,8 +5,21 @@
     import Darwin
     import Foundation
 
+    public struct ComputerWorkspaceIdentity: Codable, Equatable, Sendable {
+        private let device: dev_t
+        private let inode: ino_t
+        private let generation: UInt32
+
+        fileprivate init(_ info: stat) {
+            device = info.st_dev
+            inode = info.st_ino
+            generation = info.st_gen
+        }
+    }
+
     public final class ComputerWorkspace: @unchecked Sendable {
         public let root: String
+        public let rootIdentity: ComputerWorkspaceIdentity
         private let descriptor: Int32
         public init(root: String) throws {
             let canonical = URL(fileURLWithPath: root).resolvingSymlinksInPath().standardizedFileURL.path
@@ -27,10 +40,28 @@
             guard fd >= 0 else {
                 throw ComputerHostError("permission_denied", "The selected workspace cannot be opened.")
             }
+            var info = stat()
+            guard fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFDIR else {
+                Darwin.close(fd)
+                throw ComputerHostError("permission_denied", "The selected workspace identity cannot be established.")
+            }
             self.root = canonical
+            rootIdentity = ComputerWorkspaceIdentity(info)
             descriptor = fd
         }
         deinit { Darwin.close(descriptor) }
+
+        public func matchesRoot(_ path: String) -> Bool {
+            guard path.hasPrefix("/"), path.utf8.count <= 4096, !path.contains("\0") else { return false }
+            let candidate = Darwin.open(path, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            guard candidate >= 0 else { return false }
+            defer { Darwin.close(candidate) }
+            var held = stat()
+            var current = stat()
+            return fstat(descriptor, &held) == 0 && fstat(candidate, &current) == 0
+                && held.st_mode & S_IFMT == S_IFDIR && current.st_mode & S_IFMT == S_IFDIR
+                && ComputerWorkspaceIdentity(held) == ComputerWorkspaceIdentity(current)
+        }
 
         private func components(_ path: String) throws -> [String] {
             guard path.hasPrefix("/"), path.utf8.count <= 4096, !path.contains("\0"),

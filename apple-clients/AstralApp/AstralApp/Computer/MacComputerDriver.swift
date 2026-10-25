@@ -20,40 +20,20 @@
         let window: AXUIElement
         let bounds: CGRect
         let pid: pid_t
-        init(window: AXUIElement, bounds: CGRect, pid: pid_t) {
+        let system: any MacComputerSystemIO
+        init(window: AXUIElement, bounds: CGRect, pid: pid_t, system: any MacComputerSystemIO) {
             self.window = window
             self.bounds = bounds
             self.pid = pid
+            self.system = system
         }
         func verify() throws {
-            try ComputerHostTargetPolicy.externalProcess(pid, hostPID: ProcessInfo.processInfo.processIdentifier)
-            let app = AXUIElementCreateApplication(pid)
-            AXUIElementSetMessagingTimeout(app, 0.2)
-            var focused: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(app, kAXFocusedWindowAttribute as CFString, &focused) == .success,
-                let focused, CFEqual(focused, window)
-            else { throw ComputerHostError("stale_target", "The reviewed target window is no longer focused.") }
-            let system = AXUIElementCreateSystemWide()
-            var front: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute as CFString, &front) == .success,
-                let front, CFGetTypeID(front) == AXUIElementGetTypeID()
-            else { throw ComputerHostError("stale_target", "The foreground identity is unavailable.") }
-            var actual: pid_t = 0
-            guard AXUIElementGetPid(unsafeBitCast(front, to: AXUIElement.self), &actual) == .success, actual == pid
-            else { throw ComputerHostError("stale_target", "The reviewed application is no longer in front.") }
-            var positionValue: CFTypeRef?
-            var sizeValue: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(window, kAXPositionAttribute as CFString, &positionValue) == .success,
-                AXUIElementCopyAttributeValue(window, kAXSizeAttribute as CFString, &sizeValue) == .success,
-                let positionValue, let sizeValue, CFGetTypeID(positionValue) == AXValueGetTypeID(),
-                CFGetTypeID(sizeValue) == AXValueGetTypeID()
-            else { throw ComputerHostError("stale_target", "The reviewed window geometry is unavailable.") }
-            var point = CGPoint.zero
-            var size = CGSize.zero
-            guard AXValueGetValue(unsafeBitCast(positionValue, to: AXValue.self), .cgPoint, &point),
-                AXValueGetValue(unsafeBitCast(sizeValue, to: AXValue.self), .cgSize, &size),
-                CGRect(origin: point, size: size) == bounds
-            else { throw ComputerHostError("stale_target", "The reviewed window moved or resized. Observe it again.") }
+            try ComputerHostTargetPolicy.externalProcess(pid, hostPID: system.hostPID)
+            let current = MacComputerObservation.context(system: system)
+            guard current.pid == pid, let actual = current.window, CFEqual(actual, window), current.bounds == bounds
+            else {
+                throw ComputerHostError("stale_target", "The reviewed window identity or geometry changed.")
+            }
         }
     }
 
@@ -67,13 +47,20 @@
             var foreground: pid_t?
         }
         private let input: MacComputerInput
+        private let system: any MacComputerSystemIO
         private var geometry: Geometry?
         private var windows: [Int: AXUIElement] = [:]
         private var observedBounds: [Int: CGRect] = [:]
         private var lastObservation: MacComputerObservation?
         private var observationStale = false
         private var nextWindow = 1
-        init(marker: Int64) { input = MacComputerInput(marker: marker) }
+        init(
+            marker: Int64, system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
+            input: MacComputerInput? = nil
+        ) {
+            self.system = system
+            self.input = input ?? MacComputerInput(marker: marker, system: system)
+        }
         func reset() {
             geometry = nil
             windows = [:]
@@ -81,29 +68,11 @@
             lastObservation = nil
             observationStale = false
         }
-        private func foreground() -> pid_t? {
-            let system = AXUIElementCreateSystemWide()
-            var value: CFTypeRef?
-            AXUIElementSetMessagingTimeout(system, 0.3)
-            guard AXUIElementCopyAttributeValue(system, kAXFocusedApplicationAttribute as CFString, &value) == .success,
-                let value, CFGetTypeID(value) == AXUIElementGetTypeID()
-            else { return nil }
-            var pid: pid_t = 0
-            guard AXUIElementGetPid(unsafeBitCast(value, to: AXUIElement.self), &pid) == .success else { return nil }
-            return pid
-        }
+        private func foreground() -> pid_t? { MacComputerObservation.context(system: system).pid }
         private func displays() throws -> [CGDirectDisplayID] {
-            var count: UInt32 = 0
-            guard CGGetActiveDisplayList(0, nil, &count) == .success, (1...8).contains(count) else {
-                throw ComputerHostError("screen_locked", "The display is unavailable.")
-            }
-            var values = [CGDirectDisplayID](repeating: 0, count: Int(count))
-            guard CGGetActiveDisplayList(count, &values, &count) == .success else {
-                throw ComputerHostError("failed", "Cannot enumerate displays.")
-            }
-            return values.sorted { a, b in a == CGMainDisplayID() || (b != CGMainDisplayID() && a < b) }
+            try MacComputerObservation.displayIDs(system: system)
         }
-        private func topology() throws -> String { try MacComputerObservation.topology() }
+        private func topology() throws -> String { try MacComputerObservation.topology(system: system) }
         private func point(
             _ args: [String: JSONValue], _ x: String = "x", _ y: String = "y", checkForeground: Bool = true
         ) throws -> CGPoint {
@@ -118,7 +87,8 @@
                 guard geometry.foreground != nil else {
                     throw ComputerHostError("stale_target", "The screenshot has no known foreground identity.")
                 }
-                guard try topology() == geometry.topology, CGDisplayBounds(geometry.display) == geometry.bounds else {
+                guard try topology() == geometry.topology, system.displayBounds(geometry.display) == geometry.bounds
+                else {
                     throw ComputerHostError("stale_target", "Display geometry changed. Take a fresh screenshot.")
                 }
                 guard !checkForeground || foreground() == geometry.foreground else {
@@ -138,7 +108,7 @@
             -> [String: JSONValue]
         {
             try authorize()
-            guard CGPreflightScreenCaptureAccess() else {
+            guard system.screenCaptureAccess() else {
                 throw ComputerHostError("permission_denied", "Allow Screen Recording in System Settings.")
             }
             let ids = try displays()
@@ -147,33 +117,28 @@
                 throw ComputerHostError("out_of_range", "The display is unavailable.")
             }
             let before = try topology()
-            let observation = try MacComputerObservation.capture(screenshot: true)
-            let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            guard let display = content.displays.first(where: { $0.displayID == ids[index] }) else {
+            let observation = try MacComputerObservation.capture(screenshot: true, system: system)
+            let content = try await system.shareableContent()
+            guard let display = content.displays.first(where: { $0.id == ids[index] }) else {
                 throw ComputerHostError("screen_locked", "The display cannot be captured.")
             }
-            let excluded = await MainActor.run {
-                Set(
-                    NSApplication.shared.windows.filter { $0.title == "Astral computer session" }.map {
-                        CGWindowID($0.windowNumber)
-                    })
+            guard display.width > 0, display.height > 0 else {
+                throw ComputerHostError("out_of_range", "The display dimensions are invalid.")
             }
-            let filter = SCContentFilter(
-                display: display, excludingWindows: content.windows.filter { excluded.contains($0.windowID) })
-            let config = SCStreamConfiguration()
+            let excluded = await system.controlsWindows()
             let maximum = Int(request.args["max_width"]?.numberValue ?? 1280)
-            config.width = min(maximum, display.width)
-            config.height = max(1, Int(Double(display.height) * Double(config.width) / Double(display.width)))
-            config.showsCursor = true
-            config.capturesAudio = false
-            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            let width = min(maximum, display.width)
+            let height = max(1, Int(Double(display.height) * Double(width) / Double(display.width)))
             try authorize()
-            guard before == (try topology()), CGPreflightScreenCaptureAccess() else {
+            let image = try await content.capture(
+                MacComputerCapturePlan(
+                    display: display.id, excludedWindows: Set(content.windows.filter { excluded.contains($0) }),
+                    width: width, height: height))
+            try authorize()
+            guard before == (try topology()), system.screenCaptureAccess() else {
                 throw ComputerHostError("stale_target", "Capture authority or geometry changed.")
             }
-            let bitmap = NSBitmapImageRep(cgImage: image)
-            guard let jpeg = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.7]),
-                jpeg.count <= 2_900_000
+            guard let jpeg = system.jpeg(image), !jpeg.isEmpty, jpeg.count <= 2_900_000
             else { throw ComputerHostError("out_of_range", "The screenshot exceeds the transport bound.") }
             var knownForeground: pid_t?
             do {
@@ -185,20 +150,19 @@
                 knownForeground = nil
             }
             geometry = Geometry(
-                display: display.displayID, bounds: CGDisplayBounds(display.displayID), width: image.width,
+                display: display.id, bounds: system.displayBounds(display.id), width: image.width,
                 height: image.height, topology: before, foreground: knownForeground)
             observationStale = false
             observedBounds = windows.compactMapValues { rect($0) }
             return [
                 "base64": .string(jpeg.base64EncodedString()), "media_type": .string("image/jpeg"),
                 "width": .number(Double(image.width)), "height": .number(Double(image.height)),
-                "scale": .number(Double(CGDisplayPixelsWide(display.displayID)) / Double(image.width)),
+                "scale": .number(Double(system.displayPixels(display.id).width) / Double(image.width)),
                 "screen_index": .number(Double(index)),
             ]
         }
         private func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
-            var value: CFTypeRef?
-            return AXUIElementCopyAttributeValue(element, name as CFString, &value) == .success ? value : nil
+            system.attribute(name, of: element)
         }
         private func rect(_ window: AXUIElement) -> CGRect? {
             guard let position = attribute(window, kAXPositionAttribute),
@@ -213,21 +177,18 @@
             return CGRect(origin: p, size: s)
         }
         private func listWindows(authorize: @Sendable () throws -> Void) async throws -> [String: JSONValue] {
-            let pids = await MainActor.run {
-                NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }.map(
-                    \.processIdentifier)
-            }
+            let pids = await system.runningApplications().filter(\.regular).map(\.pid)
             windows = [:]
             observedBounds = [:]
             var rows: [JSONValue] = []
             for pid in pids where rows.count < 100 {
                 try authorize()
-                let app = AXUIElementCreateApplication(pid)
-                AXUIElementSetMessagingTimeout(app, 0.2)
+                let app = system.applicationElement(pid)
+                system.messagingTimeout(0.2, for: app)
                 guard let values = attribute(app, kAXWindowsAttribute) as? [AXUIElement] else { continue }
                 for window in values where rows.count < 100 {
                     try authorize()
-                    AXUIElementSetMessagingTimeout(window, 0.2)
+                    system.messagingTimeout(0.2, for: window)
                     guard let bounds = rect(window), let title = attribute(window, kAXTitleAttribute) as? String,
                         title != "Astral computer session"
                     else { continue }
@@ -238,7 +199,7 @@
                     nextWindow += 1
                     windows[id] = window
                     observedBounds[id] = bounds
-                    let name = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier ?? "unknown"
+                    let name = system.bundleIdentifier(for: pid) ?? "unknown"
                     rows.append(
                         .object([
                             "hwnd": .number(Double(id)), "title": .string(String(title.prefix(200))),
@@ -252,10 +213,10 @@
             }
             if let previous = lastObservation {
                 do { try previous.verify(requireScreenshot: false, requireWindow: false) } catch {
-                    lastObservation = try? MacComputerObservation.capture(screenshot: false)
+                    lastObservation = try? MacComputerObservation.capture(screenshot: false, system: system)
                 }
             } else {
-                lastObservation = try? MacComputerObservation.capture(screenshot: false)
+                lastObservation = try? MacComputerObservation.capture(screenshot: false, system: system)
             }
             return ["windows": .array(rows)]
         }
@@ -282,36 +243,35 @@
             guard let window = windows[id], let title = attribute(window, kAXTitleAttribute) as? String else {
                 throw ComputerHostError("window_not_found", "The window is stale. List windows again.")
             }
-            var pid: pid_t = 0
-            guard AXUIElementGetPid(window, &pid) == .success else {
+            guard let pid = system.pid(of: window) else {
                 throw ComputerHostError("window_not_found", "The window is unavailable.")
             }
-            try ComputerHostTargetPolicy.externalProcess(pid, hostPID: ProcessInfo.processInfo.processIdentifier)
+            try ComputerHostTargetPolicy.externalProcess(pid, hostPID: system.hostPID)
             try authorize()
-            _ = AXUIElementSetAttributeValue(window, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
-            let processID = pid
+            _ = system.setAttribute(kAXMinimizedAttribute, of: window, to: kCFBooleanFalse)
+            let os = system
             let activated = try await MainActor.run {
                 try authorize()
-                return NSRunningApplication(processIdentifier: processID)?.activate(options: [.activateAllWindows])
-                    ?? false
+                return os.activate(pid)
             }
             try authorize()
-            guard activated, AXUIElementPerformAction(window, kAXRaiseAction as CFString) == .success else {
+            guard activated, system.perform(kAXRaiseAction, on: window) == .success else {
                 throw ComputerHostError("failed", "The window could not be focused.")
             }
             if !reviewedInput || geometry?.foreground != pid { observationStale = true }
-            lastObservation = try? MacComputerObservation.capture(screenshot: false)
+            lastObservation = try? MacComputerObservation.capture(screenshot: false, system: system)
             return ["hwnd": .number(Double(id)), "title": .string(String(title.prefix(200)))]
         }
         func execute(
             _ request: ComputerHostRequest, workspaces: [ComputerWorkspace],
             authorize: @escaping @Sendable () throws -> Void
         ) async throws -> [String: JSONValue] {
+            let system = system
             let baseCheck: @Sendable () throws -> Void = {
                 try authorize()
                 try Task.checkCancellation()
-                guard AXIsProcessTrusted(), CGPreflightPostEventAccess(), CGPreflightScreenCaptureAccess(),
-                    CGPreflightListenEventAccess(), MacComputerDesktopProbe.usable()
+                guard system.accessibilityTrusted(), system.postEventAccess(), system.screenCaptureAccess(),
+                    system.listenEventAccess(), MacComputerDesktopProbe.usable(system: system)
                 else {
                     throw ComputerHostError("permission_denied", "Computer permissions changed. Review local access.")
                 }
@@ -325,12 +285,11 @@
                     throw ComputerHostError(
                         "stale_target", "The reviewed window identity or geometry changed. List windows again.")
                 }
-                var pid: pid_t = 0
-                guard AXUIElementGetPid(window, &pid) == .success else {
+                guard let pid = system.pid(of: window) else {
                     throw ComputerHostError("window_not_found", "The reviewed window is unavailable.")
                 }
                 if ["type_text", "press_keys"].contains(request.verb) {
-                    guard let bundle = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else {
+                    guard let bundle = system.bundleIdentifier(for: pid) else {
                         throw ComputerHostError(
                             "permission_denied", "The reviewed application's identity is unavailable.")
                     }
@@ -351,7 +310,7 @@
                     try ComputerHostGeometry.validate(start, end: end, within: bounds)
                 }
                 _ = try await focus(request, reviewedInput: true, authorize: baseCheck)
-                let verified = MacComputerTarget(window: window, bounds: bounds, pid: pid)
+                let verified = MacComputerTarget(window: window, bounds: bounds, pid: pid, system: system)
                 for attempt in 0..<10 {
                     try baseCheck()
                     do {
@@ -359,7 +318,7 @@
                         break
                     } catch {
                         if attempt == 9 { throw error }
-                        try await Task.sleep(nanoseconds: 20_000_000)
+                        try await system.delay(nanoseconds: 20_000_000)
                     }
                 }
                 target = verified
@@ -372,7 +331,7 @@
                 observation = MacComputerObservation(
                     identity: ComputerHostObservationIdentity(
                         foreground: target.pid, topology: geometry.topology, screenshot: true), window: target.window,
-                    bounds: target.bounds)
+                    bounds: target.bounds, system: system)
             } else {
                 observation = lastObservation
             }
@@ -380,7 +339,7 @@
                 try baseCheck()
                 if pointer || keyboard {
                     try ComputerHostTargetPolicy.externalProcess(
-                        MacComputerObservation.context().pid, hostPID: ProcessInfo.processInfo.processIdentifier)
+                        MacComputerObservation.context(system: system).pid, hostPID: system.hostPID)
                 }
                 try boundTarget?.verify()
                 if pointer || (keyboard && boundTarget == nil) {
@@ -397,13 +356,13 @@
             case "focus_window": return try await focus(request, authorize: check)
             case "wait":
                 let seconds = request.args["seconds"]?.numberValue ?? 1
-                try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                try await system.delay(nanoseconds: UInt64(seconds * 1_000_000_000))
                 try check()
                 return ["waited": .number(seconds)]
             case "get_clipboard":
                 return try await MainActor.run {
                     try check()
-                    let text = NSPasteboard.general.string(forType: .string) ?? ""
+                    let text = system.clipboardText() ?? ""
                     return [
                         "text": .string(String(text.unicodeScalars.prefix(16384))),
                         "truncated": .bool(text.unicodeScalars.count > 16384),
@@ -412,8 +371,9 @@
             case "set_clipboard":
                 return try await MainActor.run {
                     try check()
-                    NSPasteboard.general.clearContents()
-                    guard NSPasteboard.general.setString(request.args["text"]!.stringValue!, forType: .string) else {
+                    system.clearClipboard()
+                    try check()
+                    guard system.setClipboard(request.args["text"]!.stringValue!) else {
                         throw ComputerHostError("failed", "The clipboard write failed.")
                     }
                     return [:]
@@ -454,7 +414,7 @@
                     resolved = URL(fileURLWithPath: name)
                 } else {
                     resolved = await MainActor.run {
-                        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId)
+                        system.applicationURL(bundleIdentifier: bundleId)
                     }
                 }
                 let candidates =
@@ -473,36 +433,25 @@
                     })
                 else { throw ComputerHostError("not_found", "The application bundle could not be found.") }
                 try ComputerTerminalPolicy.validateLaunch(name, bundle: Bundle(url: url)?.bundleIdentifier)
-                guard Bundle(url: url)?.bundleIdentifier != Bundle.main.bundleIdentifier else {
+                guard Bundle(url: url)?.bundleIdentifier != system.hostBundleIdentifier else {
                     throw ComputerHostError("permission_denied", "Computer tools cannot launch Astral's own controls.")
                 }
                 try check()
-                let launched: (pid_t, String?) = try await withCheckedThrowingContinuation { continuation in
+                let launched: MacComputerApplication = try await withCheckedThrowingContinuation { continuation in
                     Task { @MainActor in
                         do {
                             try check()
-                            let configuration = NSWorkspace.OpenConfiguration()
-                            configuration.activates = true
-                            NSWorkspace.shared.openApplication(at: url, configuration: configuration) { app, error in
-                                if let error {
-                                    continuation.resume(throwing: error)
-                                } else if let app {
-                                    continuation.resume(returning: (app.processIdentifier, app.bundleIdentifier))
-                                } else {
-                                    continuation.resume(
-                                        throwing: ComputerHostError("failed", "The application did not launch."))
-                                }
-                            }
+                            continuation.resume(returning: try await system.openApplication(at: url))
                         } catch { continuation.resume(throwing: error) }
                     }
                 }
                 try check()
-                try ComputerTerminalPolicy.validateLaunch(name, bundle: launched.1)
+                try ComputerTerminalPolicy.validateLaunch(name, bundle: launched.bundleIdentifier)
                 observationStale = true
                 lastObservation = nil
                 return [
-                    "launched": .bool(true), "pid": .number(Double(launched.0)),
-                    "bundle_id": launched.1.map(JSONValue.string) ?? .null, "app": .string(name),
+                    "launched": .bool(true), "pid": .number(Double(launched.pid)),
+                    "bundle_id": launched.bundleIdentifier.map(JSONValue.string) ?? .null, "app": .string(name),
                 ]
             case "type_text":
                 try await input.type(request.args["text"]!.stringValue!, args: request.args, authorize: check)

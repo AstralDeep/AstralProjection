@@ -10,29 +10,61 @@
 
     @MainActor @Observable
     final class MacComputerFiles {
+        private struct GrantRecord: Codable {
+            let version: Int
+            let scopeKey: String
+            let bookmark: Data
+            let identity: ComputerWorkspaceIdentity
+
+            private enum CodingKeys: String, CodingKey {
+                case version, bookmark, identity
+                case scopeKey = "scope_key"
+            }
+        }
+        private struct Resource {
+            let url: URL
+            let accessed: Bool
+            let workspace: ComputerWorkspace
+            let record: Data
+        }
         private(set) var roots: [String] = []
         private(set) var errorMessage: String?
-        @ObservationIgnored private var workspaces: [ComputerWorkspace] = []
-        @ObservationIgnored private var resources: [URL] = []
+        @ObservationIgnored private var resources: [Resource] = []
         @ObservationIgnored private var scope: String?
+        @ObservationIgnored private var scopeEpoch = UUID()
         @ObservationIgnored private let defaults: UserDefaults
-        init(defaults: UserDefaults = .standard) { self.defaults = defaults }
+        @ObservationIgnored private let grants: MacComputerWorkspaceGrantIO
+        init(defaults: UserDefaults = .standard, grants: MacComputerWorkspaceGrantIO? = nil) {
+            self.defaults = defaults
+            self.grants = grants ?? .live
+        }
         func bind(_ owner: String?) {
             guard scope != owner else { return }
-            clearResources()
             scope = owner
-            guard let key = storageKey, let bookmarks = defaults.array(forKey: key) as? [Data] else { return }
-            for bookmark in bookmarks {
-                var stale = false
-                guard
-                    let url = try? URL(
-                        resolvingBookmarkData: bookmark, options: [.withSecurityScope, .withoutUI], relativeTo: nil,
-                        bookmarkDataIsStale: &stale), !stale
+            scopeEpoch = UUID()
+            let epoch = scopeEpoch
+            errorMessage = nil
+            clearResources()
+            guard scopeEpoch == epoch else { return }
+            guard let key = storageKey, let stored = defaults.object(forKey: key) else { return }
+            guard let entries = stored as? [Data] else {
+                errorMessage = "A workspace grant cannot be verified. Choose that folder again."
+                return
+            }
+            for data in entries {
+                guard scopeEpoch == epoch else { return }
+                guard let document = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                    Set(document.keys) == Set(["version", "scope_key", "bookmark", "identity"]),
+                    let record = try? JSONDecoder().decode(GrantRecord.self, from: data),
+                    record.version == 1, record.scopeKey == key,
+                    let (url, stale) = try? grants.resolveBookmark(record.bookmark), !stale
                 else {
-                    errorMessage = "A workspace grant expired. Choose that folder again."
+                    guard scopeEpoch == epoch else { return }
+                    errorMessage = "A workspace grant cannot be verified. Choose that folder again."
                     continue
                 }
-                retain(url)
+                guard scopeEpoch == epoch else { return }
+                retain(url, record: record)
             }
         }
         private var storageKey: String? {
@@ -41,53 +73,80 @@
             }
         }
         func choose() {
-            guard scope != nil else { return }
+            guard let key = storageKey else { return }
+            let epoch = scopeEpoch
             errorMessage = nil
-            let panel = NSOpenPanel()
-            panel.canChooseDirectories = true
-            panel.canChooseFiles = false
-            panel.allowsMultipleSelection = true
-            panel.message = "Choose dedicated folders that Astral may read and change after server authorization."
-            guard panel.runModal() == .OK else { return }
-            for url in panel.urls { retain(url) }
-            save()
+            guard let urls = grants.chooseDirectories() else { return }
+            for url in urls {
+                guard scopeEpoch == epoch else { return }
+                retain(url)
+            }
+            save(epoch: epoch, key: key)
         }
         func remove(_ path: String) {
-            let kept = resources.filter { $0.resolvingSymlinksInPath().path != path }
-            clearResources()
-            for url in kept { retain(url) }
-            save()
+            let epoch = scopeEpoch
+            let key = storageKey
+            let removed = resources.filter { $0.workspace.root == path }
+            resources.removeAll { $0.workspace.root == path }
+            roots = resources.map { $0.workspace.root }
+            for resource in removed where resource.accessed { grants.stopAccess(resource.url) }
+            save(epoch: epoch, key: key)
         }
-        func snapshot() -> [ComputerWorkspace] { workspaces }
-        private func retain(_ url: URL) {
-            let accessed = url.startAccessingSecurityScopedResource()
+        func snapshot() -> [ComputerWorkspace] { resources.map(\.workspace) }
+        private func retain(_ url: URL, record: GrantRecord? = nil) {
+            guard let key = storageKey else { return }
+            guard record == nil || record?.scopeKey == key else { return }
+            let epoch = scopeEpoch
+            let accessed = grants.startAccess(url)
             do {
+                try verifyScope(epoch: epoch, key: key)
                 let workspace = try ComputerWorkspace(root: url.path)
+                if let record, workspace.rootIdentity != record.identity {
+                    throw ComputerHostError(
+                        "permission_denied", "The saved workspace identity changed. Choose it again.")
+                }
                 guard !roots.contains(workspace.root) else {
-                    if accessed { url.stopAccessingSecurityScopedResource() }
+                    if accessed { grants.stopAccess(url) }
                     return
                 }
-                resources.append(url)
-                workspaces.append(workspace)
+                let captured = try record?.bookmark ?? grants.makeBookmark(url)
+                try verifyScope(epoch: epoch, key: key)
+                let (resolved, stale) = try grants.resolveBookmark(captured)
+                try verifyScope(epoch: epoch, key: key)
+                guard !stale, workspace.matchesRoot(resolved.path) else {
+                    throw ComputerHostError(
+                        "permission_denied", "The selected workspace changed. Choose that folder again.")
+                }
+                let saved =
+                    record
+                    ?? GrantRecord(version: 1, scopeKey: key, bookmark: captured, identity: workspace.rootIdentity)
+                let encoded = try JSONEncoder().encode(saved)
+                try verifyScope(epoch: epoch, key: key)
+                resources.append(
+                    Resource(
+                        url: url, accessed: accessed, workspace: workspace, record: encoded))
                 roots.append(workspace.root)
             } catch {
-                if accessed { url.stopAccessingSecurityScopedResource() }
+                if accessed { grants.stopAccess(url) }
+                guard scopeEpoch == epoch, storageKey == key else { return }
                 errorMessage = error.localizedDescription
             }
         }
-        private func save() {
-            guard let key = storageKey else { return }
+        private func verifyScope(epoch: UUID, key: String) throws {
+            guard scopeEpoch == epoch, storageKey == key else {
+                throw ComputerHostError("permission_denied", "The workspace selection was superseded.")
+            }
+        }
+        private func save(epoch: UUID, key: String?) {
+            guard scopeEpoch == epoch, let key, storageKey == key else { return }
             defaults.set(
-                resources.compactMap {
-                    try? $0.bookmarkData(
-                        options: [.withSecurityScope], includingResourceValuesForKeys: nil, relativeTo: nil)
-                }, forKey: key)
+                resources.map(\.record), forKey: key)
         }
         private func clearResources() {
-            for resource in resources { resource.stopAccessingSecurityScopedResource() }
+            let released = resources
             resources = []
             roots = []
-            workspaces = []
+            for resource in released where resource.accessed { grants.stopAccess(resource.url) }
         }
     }
 #endif

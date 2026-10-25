@@ -88,6 +88,8 @@
         @ObservationIgnored private let desktopProbe: @Sendable () -> Bool
         @ObservationIgnored private let desktopRearm: @MainActor () -> Bool
         @ObservationIgnored private let localResume: @MainActor () -> Bool
+        @ObservationIgnored private let system: any MacComputerSystemIO
+        @ObservationIgnored private let panelPresenter: @MainActor (NSPanel) -> Void
         @ObservationIgnored private let localInput: MacComputerLocalInput?
         @ObservationIgnored private let hostId: String
         @ObservationIgnored private var owner: String?
@@ -106,17 +108,22 @@
         @ObservationIgnored private var pauseWaiters: [UUID: PauseWaiter] = [:]
 
         init(
-            available: Bool? = nil, defaults: UserDefaults = .standard, driver: (any MacComputerDriving)? = nil,
+            available: Bool? = nil, defaults: UserDefaults = .standard, files: MacComputerFiles? = nil,
+            driver: (any MacComputerDriving)? = nil,
             monitor: (any MacComputerMonitoring)? = nil,
             permissionProvider: (@MainActor () -> MacComputerPermissions)? = nil,
             permissionRequester: (@MainActor (MacComputerPermission) -> Bool)? = nil,
             settingsOpener: (@MainActor (URL) -> Bool)? = nil,
             desktopProbe: @escaping @Sendable () -> Bool = MacComputerDesktopProbe.usable,
-            desktopRearm: (@MainActor () -> Bool)? = nil
+            desktopRearm: (@MainActor () -> Bool)? = nil,
+            system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
+            panelPresenter: (@MainActor (NSPanel) -> Void)? = nil
         ) {
             self.available = available ?? Self.executionDistribution()
             self.defaults = defaults
-            files = MacComputerFiles(defaults: defaults)
+            self.files = files ?? MacComputerFiles(defaults: defaults)
+            self.system = system
+            self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
             let marker = Int64.random(in: 1...Int64.max)
             self.monitor = monitor ?? MacComputerInputMonitor(marker: marker)
             self.permissionProvider = permissionProvider ?? MacComputerPermissions.current
@@ -134,7 +141,7 @@
                 desktopRearm ?? {
                     localInput?.consume(current: NSApp.currentEvent?.cgEvent) == true
                 }
-            self.driver = driver ?? MacComputerDriver(marker: marker)
+            self.driver = driver ?? MacComputerDriver(marker: marker, system: system)
             if let stored = defaults.string(forKey: "computer.host.id"),
                 UUID(uuidString: stored)?.uuidString.lowercased() == stored
             {
@@ -225,16 +232,30 @@
             guard available, enabled, desktopAvailable, authority.desktopIsAvailable, owner != nil, permissionsReady,
                 monitor.running
             else { return nil }
-            var count: UInt32 = 0
-            guard CGGetActiveDisplayList(0, nil, &count) == .success, (1...8).contains(count) else { return nil }
-            var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-            guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return nil }
-            ids.sort { a, b in a == CGMainDisplayID() || (b != CGMainDisplayID() && a < b) }
-            let screens = ids.enumerated().map { index, id in
-                ComputerHostScreen(
-                    index: index, width: CGDisplayPixelsWide(id), height: CGDisplayPixelsHigh(id),
-                    scale: Double(CGDisplayPixelsWide(id)) / max(1, CGDisplayBounds(id).width),
-                    primary: id == CGMainDisplayID())
+            let (countResult, count) = system.displayCount()
+            guard countResult == .success, (1...8).contains(count) else { return nil }
+            let (enumerationResult, displays) = system.displayIDs(capacity: count)
+            guard enumerationResult == .success, displays.count == Int(count), Set(displays).count == Int(count),
+                !displays.contains(0)
+            else { return nil }
+            var ids = displays
+            let primary = system.mainDisplay()
+            ids.sort { a, b in a == primary || (b != primary && a < b) }
+            var screens: [ComputerHostScreen] = []
+            for (index, id) in ids.enumerated() {
+                let pixels = system.displayPixels(id)
+                let bounds = system.displayBounds(id)
+                guard pixels.width.isFinite, pixels.height.isFinite,
+                    pixels.width >= 1, pixels.width <= 16384, pixels.height >= 1, pixels.height <= 16384,
+                    pixels.width.rounded(.towardZero) == pixels.width,
+                    pixels.height.rounded(.towardZero) == pixels.height,
+                    bounds.origin.x.isFinite, bounds.origin.y.isFinite,
+                    bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0
+                else { return nil }
+                screens.append(
+                    ComputerHostScreen(
+                        index: index, width: Int(pixels.width), height: Int(pixels.height),
+                        scale: Double(pixels.width) / max(1, bounds.width), primary: id == primary))
             }
             var verbs = ComputerHostRequest.verbs
             if files.roots.isEmpty { verbs.subtract(["read_file", "list_dir", "write_file", "delete_path"]) }
@@ -248,25 +269,35 @@
                 verbs: verbs.sorted())
         }
         func bind(owner: String?, sender: @escaping @MainActor (String) async -> Bool) {
-            disconnect()
+            let epoch = UUID()
+            disconnect(epoch: epoch)
+            guard channelEpoch == epoch else { return }
             if self.owner != owner { files.bind(owner) }
+            guard channelEpoch == epoch else { return }
             self.owner = owner
             self.sender = sender
             enabled = available && desktopAvailable && consentKey.map { defaults.bool(forKey: $0) } == true
             refreshPermissions()
+            guard channelEpoch == epoch else { return }
             if enabled && permissionsReady { _ = monitor.start { [weak self] in self?.pause(reason: "local_input") } }
         }
         func disconnect() {
+            disconnect(epoch: UUID())
+        }
+        private func disconnect(epoch: UUID) {
             localInput?.invalidate()
-            channelEpoch = UUID()
+            channelEpoch = epoch
             outboundTail?.cancel()
             outboundTail = nil
             retire()
+            guard channelEpoch == epoch else { return }
             sender = nil
             monitor.stop()
         }
         func signedOut() {
-            disconnect()
+            let epoch = UUID()
+            disconnect(epoch: epoch)
+            guard channelEpoch == epoch else { return }
             desktopAvailable = false
             authority.setDesktopAvailable(false)
             owner = nil
@@ -448,8 +479,9 @@
                         continuation.resume(returning: true)
                         return
                     }
+                    let system = system
                     let timeout = Task { [weak self] in
-                        do { try await Task.sleep(nanoseconds: 5_000_000_000) } catch { return }
+                        do { try await system.delay(nanoseconds: 5_000_000_000) } catch { return }
                         self?.resolvePauseWaiter(id, accepted: false)
                     }
                     pauseWaiters[id] = PauseWaiter(continuation: continuation, timeout: timeout)
@@ -660,7 +692,7 @@
                 panel = value
                 monitor.controlsWindow = value.windowNumber
             }
-            panel?.orderFrontRegardless()
+            if let panel { panelPresenter(panel) }
         }
     }
 #endif

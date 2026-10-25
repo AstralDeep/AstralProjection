@@ -141,7 +141,7 @@ def _xctestrun(lane):
     }
 
 
-def _setup(tmp_path, monkeypatch, lane="ui"):
+def _setup(tmp_path, monkeypatch, lane="ui", platform="ios", architecture="arm64"):
     repo = tmp_path.resolve() / "repo"
     repo.mkdir()
     for name in (APP_SOURCE, CORE_SOURCE, TEST_SOURCE):
@@ -162,9 +162,42 @@ def _setup(tmp_path, monkeypatch, lane="ui"):
     products = tmp_path.resolve() / "derived/Build/Products"
     runfile = products / "Fixture_iphonesimulator26.5.xctestrun"
     _write(runfile, plistlib.dumps(_xctestrun(lane)))
-    member = domain.BINARY_MEMBERS["core" if lane == "core" else "app"]
+    if platform == "macos":
+        raw = plistlib.loads(runfile.read_bytes())
+        for target in raw["TestConfigurations"][0]["TestTargets"]:
+            for key in ("TestHostPath", "UITargetAppPath"):
+                if key in target:
+                    target[key] = target[key].replace("Debug-iphonesimulator/", "Debug/")
+            target["TestBundlePath"] = target["TestBundlePath"].replace(
+                "/PlugIns/", "/Contents/PlugIns/"
+            )
+        raw["CodeCoverageBuildableInfos"][0]["ProductPaths"] = [
+            "__TESTROOT__/Debug/AstralDeep.app/Contents/MacOS/AstralDeep"
+        ]
+        _write(runfile, plistlib.dumps(raw))
+    member = (
+        domain.BINARY_MEMBERS["core" if lane == "core" else "app"]
+        if platform == "ios"
+        else domain.MACOS_BINARY_MEMBER
+    )
     binary_path = products / member.removeprefix("Products/")
-    _write(binary_path, _macho(lane))
+    binary_bytes = (
+        _macho(lane)
+        if platform == "ios"
+        else struct.pack(
+            "<8I",
+            0xFEEDFACF,
+            0x0100000C if architecture == "arm64" else 0x01000007,
+            0 if architecture == "arm64" else 3,
+            6,
+            1,
+            24,
+            0,
+            0,
+        )
+        + struct.pack("<6I", 0x32, 24, 1, 0x0E0000, 0x1A0600, 0)
+    )
+    _write(binary_path, binary_bytes)
     if lane == "core":
         _write(products / (collector.FOLDER + "AstralCore.o"), b"fixture static object")
     else:
@@ -186,14 +219,42 @@ def _setup(tmp_path, monkeypatch, lane="ui"):
             collector.RUNNER + "/PlugIns/AstralAppUITests.xctest/AstralAppUITests",
         ):
             _write(products / name, b"fixture executable", 0o700)
+    if platform == "macos":
+        for old in tuple(products.rglob("*")):
+            if old.is_file() and "Debug-iphonesimulator/" in old.relative_to(products).as_posix():
+                relative = (
+                    old.relative_to(products).as_posix().replace("Debug-iphonesimulator/", "Debug/")
+                )
+                relative = relative.replace("/Info.plist", "/Contents/Info.plist").replace(
+                    "/PlugIns/", "/Contents/PlugIns/"
+                )
+                if relative.endswith(("/AstralDeep", "/AstralAppUITests-Runner")):
+                    parent, name = relative.rsplit("/", 1)
+                    relative = parent + "/Contents/MacOS/" + name
+                elif relative.endswith(("/AstralAppTests", "/AstralAppUITests")):
+                    parent, name = relative.rsplit("/", 1)
+                    relative = parent + "/Contents/MacOS/" + name
+                content = old.read_bytes()
+                if relative.endswith("/Info.plist"):
+                    info = plistlib.loads(content)
+                    info["CFBundleSupportedPlatforms"] = ["MacOSX"]
+                    content = plistlib.dumps(info)
+                _write(products / relative, content, old.stat().st_mode & 0o777)
+                old.unlink()
     result = tmp_path.resolve() / "actual.xcresult"
     _write(result / "Data/native-observation", b"fixture raw result")
     summary, tests = _metadata(lane)
+    if platform == "macos":
+        for device in (summary["devicesAndConfigurations"][0]["device"], tests["devices"][0]):
+            device.update(platform="macOS", architecture=architecture)
     calls = []
     original_run = exporter._bounded_command
     state = {
-        "hook": lambda: None, "query_hook": lambda path: None,
-        "summary": summary, "tests": tests, "query_paths": [],
+        "hook": lambda: None,
+        "query_hook": lambda path: None,
+        "summary": summary,
+        "tests": tests,
+        "query_paths": [],
     }
 
     def run(command, **kwargs):
@@ -219,10 +280,10 @@ def _setup(tmp_path, monkeypatch, lane="ui"):
             "llvm-cov",
             "export",
             "--empty-profile",
-            "--arch=arm64",
+            "--arch=" + architecture,
             command[5],
         ]
-        assert Path(command[5]).read_bytes() == _macho(lane)
+        assert Path(command[5]).read_bytes() == binary_bytes
         assert Path(command[5]) != binary_path
         state["hook"]()
         paths = [CORE_SOURCE] if lane == "core" else [APP_SOURCE, CORE_SOURCE]
@@ -262,8 +323,11 @@ def _setup(tmp_path, monkeypatch, lane="ui"):
         "xcresult": result,
         "lane": lane,
         "output": tmp_path.resolve() / "out/domain.json",
-        "binary_archive": tmp_path.resolve() / f"out/coverage/native-binaries/apple-ios-{lane}.zip",
+        "binary_archive": tmp_path.resolve()
+        / f"out/coverage/native-binaries/apple-{platform}-{lane}.zip",
     }
+    if platform != "ios":
+        kwargs["platform"] = platform
     return kwargs, state, runfile, binary_path, calls
 
 
@@ -647,8 +711,76 @@ def test_query_copy_refuses_changed_inventory_before_native_tool(tmp_path, monke
     calls = []
     with pytest.raises(collector.CollectionError) as refused:
         collector._test_documents(
-            result, inventory, domain, lambda *args: calls.append(args),
+            result,
+            inventory,
+            domain,
+            lambda *args: calls.append(args),
             time.monotonic() + (-1 if change == "deadline" else 10),
         )
     assert refused.value.collection_stage == "result_copy"
     assert calls == []
+
+
+@pytest.mark.parametrize("lane", ["unit", "ui"])
+@pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
+def test_macos_collection_derives_mapping_architecture_from_exact_native_member(
+    tmp_path, monkeypatch, lane, architecture
+):
+    kwargs, _, _, binary, calls = _setup(tmp_path, monkeypatch, lane, "macos", architecture)
+    result = collector.collect(**kwargs)
+    assert result["format"] == domain.MACOS_DOMAIN_FORMAT
+    assert result["platform"] == "macos" and result["architecture"] == architecture
+    assert result["binary"]["member"] == domain.MACOS_BINARY_MEMBER
+    assert result["binary"]["sha256"] == domain.sha256(binary.read_bytes())
+    assert any("--arch=" + architecture in call for call in calls)
+    with zipfile.ZipFile(kwargs["binary_archive"]) as bundle:
+        assert bundle.namelist() == [domain.MACOS_BINARY_MEMBER]
+        assert bundle.read(domain.MACOS_BINARY_MEMBER) == binary.read_bytes()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "metadata_arch",
+        "metadata_platform",
+        "core",
+        "plist",
+        "host",
+        "coverage",
+        "binary",
+        "artifact",
+    ],
+)
+def test_macos_collection_rejects_foreign_platform_or_architecture_and_layout(
+    tmp_path, monkeypatch, mutation
+):
+    kwargs, state, runfile, binary, _ = _setup(tmp_path, monkeypatch, "unit", "macos")
+    if mutation == "metadata_arch":
+        state["tests"]["devices"][0]["architecture"] = "x86_64"
+    elif mutation == "metadata_platform":
+        state["summary"]["devicesAndConfigurations"][0]["device"]["platform"] = "iOS Simulator"
+    elif mutation == "core":
+        kwargs["lane"] = "core"
+    elif mutation == "artifact":
+        kwargs["binary_archive"] = kwargs["binary_archive"].with_name("apple-ios-unit.zip")
+    elif mutation == "binary":
+        binary.write_bytes(_macho("unit"))
+    elif mutation == "plist":
+        path = kwargs["products"] / "Debug/AstralDeep.app/Contents/Info.plist"
+        info = plistlib.loads(path.read_bytes())
+        info["CFBundleSupportedPlatforms"] = ["iPhoneSimulator"]
+        path.write_bytes(plistlib.dumps(info))
+    else:
+        doc = plistlib.loads(runfile.read_bytes())
+        if mutation == "host":
+            doc["TestConfigurations"][0]["TestTargets"][0]["TestBundlePath"] = (
+                "__TESTHOST__/PlugIns/AstralAppTests.xctest"
+            )
+        else:
+            doc["CodeCoverageBuildableInfos"][0]["ProductPaths"] = [
+                "__TESTROOT__/Debug/AstralDeep.app/AstralDeep"
+            ]
+        runfile.write_bytes(plistlib.dumps(doc))
+    with pytest.raises((collector.CollectionError, domain.DomainError)):
+        collector.collect(**kwargs)
+    assert not kwargs["output"].exists()

@@ -11,14 +11,16 @@
         private var proof: ComputerHostLocalInputProof
         private var monitor: Any?
         private let marker: Int64
-        init(marker: Int64) {
+        private let monitors: any MacComputerEventMonitoring
+        init(marker: Int64, monitors: any MacComputerEventMonitoring = MacComputerLiveEventMonitoring()) {
             self.marker = marker
+            self.monitors = monitors
             proof = ComputerHostLocalInputProof(hostPID: ProcessInfo.processInfo.processIdentifier, marker: marker)
             let mask: NSEvent.EventTypeMask = [
                 .keyDown, .keyUp, .leftMouseDown, .leftMouseUp, .rightMouseDown,
                 .rightMouseUp, .otherMouseDown, .otherMouseUp,
             ]
-            monitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            monitor = monitors.addLocal(matching: mask) { [weak self] event in
                 self?.record(event.cgEvent)
                 return event
             }
@@ -32,7 +34,7 @@
                 sourcePID: Int32(truncatingIfNeeded: event.getIntegerValueField(.eventSourceUnixProcessID)),
                 sourceState: event.getIntegerValueField(.eventSourceStateID),
                 userData: event.getIntegerValueField(.eventSourceUserData),
-                at: ProcessInfo.processInfo.systemUptime)
+                at: monitors.uptime)
         }
         func consume(current: CGEvent?) -> Bool {
             if let current {
@@ -44,12 +46,12 @@
                     return false
                 }
             }
-            return proof.consume(at: ProcessInfo.processInfo.systemUptime)
+            return proof.consume(at: monitors.uptime)
         }
         func invalidate() { proof.invalidate() }
         func stop() {
             invalidate()
-            if let monitor { NSEvent.removeMonitor(monitor) }
+            if let monitor { monitors.remove(monitor) }
             monitor = nil
         }
     }
