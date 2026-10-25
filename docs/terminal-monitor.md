@@ -5,6 +5,12 @@ owner-authorized terminal session without leaving the shared Astral UI. AstralDe
 still owns session discovery, authorization, read dispatch and audit; Projection
 supplies the contract, sanitizer, view builder and client dispositions.
 
+The public `build_terminal_monitor_view` API selects this read-only contract for
+both list and monitor states. The shared `build_terminal_view` API defaults to
+the panel contract; `mode: "monitor"` or the explicit state marker
+`contract: "terminal_monitor/v1"` selects the read-only contract. ROTE applies
+the same marker before deciding whether desktop controls are permitted.
+
 ## Contract
 
 `contracts/ui_protocol.json` → `presentation_contracts.terminal_monitor` owns
