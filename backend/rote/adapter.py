@@ -69,6 +69,53 @@ class ComponentAdapter:
         return components
 
     @classmethod
+    def adapt_terminal_surface(cls, state: object, profile: DeviceProfile) -> List[Dict]:
+        from astralprojection.chrome.terminal import build_terminal_view
+        from rote.terminal import INTERACTIVE_PANEL, READ_ONLY_MONITOR, WATCH_HANDOFF
+        from rote.terminal import terminal_disposition, validate_terminal_components
+
+        disposition = terminal_disposition(profile)
+        if disposition not in {INTERACTIVE_PANEL, READ_ONLY_MONITOR, WATCH_HANDOFF}:
+            raise ValueError("terminal_surface_unavailable")
+        interactive = disposition == INTERACTIVE_PANEL
+        watch = disposition == WATCH_HANDOFF
+        if isinstance(state, dict) and isinstance(state.get("components"), list):
+            components = state["components"]
+        elif isinstance(state, list):
+            components = state
+        else:
+            components = [
+                item.to_dict()
+                for item in build_terminal_view(state, watch=watch, interactive=interactive).components
+            ]
+        validated = validate_terminal_components(
+            components, profile.supported_types, interactive=interactive, watch=watch
+        )
+        if watch:
+            return cls._enforce_host_limits(validated, profile)
+        if not profile.supports_code:
+            validated = cls._terminal_text_fallback(validated)
+        return cls._enforce_host_limits(cls.adapt(validated, profile), profile)
+
+    @classmethod
+    def _terminal_text_fallback(cls, components: List[Dict]) -> List[Dict]:
+        result = []
+        for component in components:
+            if component.get("type") == "code":
+                result.append({
+                    "type": "text",
+                    "content": component.get("code", ""),
+                    "variant": "body",
+                })
+                continue
+            output = dict(component)
+            for key in ("content", "children"):
+                if isinstance(component.get(key), list):
+                    output[key] = cls._terminal_text_fallback(component[key])
+            result.append(output)
+        return result
+
+    @classmethod
     def adapt_work_surface(cls, components: List[Dict], profile: DeviceProfile) -> List[Dict]:
         from rote.work import validate_work_components
 

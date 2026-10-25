@@ -2670,6 +2670,14 @@ class MainWindow(QMainWindow):
             dialog.set_surface("Evidence inspection", [])
             dialog.close()
 
+    def _retire_terminal(self) -> None:
+        dialog = self._surface_dialog
+        if dialog is not None and dialog._surface == "terminal":
+            self._retire_settings()
+            self._surface_owner = None
+            dialog.set_surface("Terminal panel", [])
+            dialog.close()
+
     def _console_open_surface(self, surface: str, title: str, params: dict) -> None:
         self._mesh_epoch += 1
         self._mesh_pending = None
@@ -2719,7 +2727,7 @@ class MainWindow(QMainWindow):
                 and ticket[1] == getattr(self.client, "connection_generation", None)
                 and ticket[2] == self._resume_store.storage_key and dialog is not None
                 and dialog.isVisible() and dialog._surface == ticket[4]
-                and (ticket[4] != "evidence" or ticket[5] == self.active_chat))
+                and (ticket[4] not in {"evidence", "terminal"} or ticket[5] == self.active_chat))
 
     def _send_settings(self, action: str, payload: dict) -> bool:
         dialog = self._surface_dialog
@@ -3162,6 +3170,7 @@ class MainWindow(QMainWindow):
         sender(message, chat_id, **kwargs)
 
     def _new_chat(self) -> None:
+        self._retire_terminal()
         self._clear_workspace_actions()
         self._retire_guidance()
         self._clear_turn_selection()
@@ -3328,6 +3337,21 @@ class MainWindow(QMainWindow):
         if safety and (ticket is None or ticket[4] != "safety" or not self._settings_current(ticket)
                        or msg.get("mode", "replace") != "replace" or msg.get("request_generation") != ticket[3]):
             return
+        if msg.get("surface_key") == "terminal":
+            allowed = {"alert", "badge", "button", "card", "code", "keyvalue", "text"}
+            components = msg.get("components")
+            if (
+                ticket is None or ticket[4] != "terminal" or not self._settings_current(ticket)
+                or set(msg) != {"type", "surface_key", "region", "title", "admin_only", "components",
+                                "mode", "request_generation"}
+                or msg.get("type") != "chrome_surface" or msg.get("region") != "modal"
+                or msg.get("mode") != "replace" or msg.get("admin_only") is not False
+                or not _canonical_uuid4(msg.get("request_generation"))
+                or msg["request_generation"] != ticket[3]
+                or not isinstance(msg.get("title"), str) or not isinstance(components, list)
+                or any(not isinstance(row, dict) or row.get("type") not in allowed for row in components)
+            ):
+                return
         if (ticket is not None and msg.get("mode") == "mandatory"
                 and msg.get("request_generation") is None and msg.get("surface_key") not in {"work", "guidance", "agent_intro"}):
             self._retire_settings()
@@ -3668,6 +3692,7 @@ class MainWindow(QMainWindow):
             self._audit_dialog.add_page(result.get("rows") or [], result.get("next_cursor"))
 
     def _load_chat(self, chat_id: str) -> None:
+        self._retire_terminal()
         self._rendered_snapshot = None
         self._clear_workspace_actions()
         self._retire_guidance()
@@ -3713,6 +3738,7 @@ class MainWindow(QMainWindow):
         self._stop_auth()
         self._retire_work_read()
         self._retire_guidance()
+        self._retire_terminal()
         self._clear_turn_selection()
         self._surface_owner = None
         self._clear_workspace_actions()
@@ -3933,6 +3959,7 @@ class MainWindow(QMainWindow):
         if not text and not atts:
             return
         self._retire_evidence()
+        self._retire_terminal()
         self._input.clear()
         generation = (
             self._begin_conversation_request("commit", self.active_chat)
@@ -4040,6 +4067,12 @@ class MainWindow(QMainWindow):
             or self._surface_dialog is not None and self._surface_dialog._surface == "evidence"
         ):
             self._retire_evidence()
+            return
+        if action == "chrome_close" and (
+            payload.get("surface") == "terminal"
+            or self._surface_dialog is not None and self._surface_dialog._surface == "terminal"
+        ):
+            self._retire_terminal()
             return
         if action == "compose_prompt":
             self._compose_surface_prompt(payload)
@@ -4154,6 +4187,7 @@ class MainWindow(QMainWindow):
         if s.startswith(("closed", "connecting", "reconnecting", "auth_required")):
             self._retire_mesh()
             self._retire_evidence()
+            self._retire_terminal()
             if (self._surface_dialog is not None and self._surface_dialog.isVisible()
                     and (self._settings_ticket is not None or self._surface_dialog._surface == "safety")):
                 self._surface_dialog._on_timeout("The connection interrupted this action. Reload settings before trying again.")

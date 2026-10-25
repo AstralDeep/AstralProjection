@@ -127,7 +127,22 @@ object Wire {
                         root.strictString("title") != null && root.arr("components")?.all { component ->
                             component is JsonObject && component.strictString("type") in setOf("alert", "badge", "keyvalue", "button")
                         } == true
+                val terminalEnvelopeValid =
+                    key == "terminal" &&
+                        root.keys ==
+                        setOf(
+                            "type", "surface_key", "region", "title", "admin_only", "components", "mode", "request_generation",
+                        ) &&
+                        root.strictString("surface_key") == "terminal" && canonicalUuid4(request) != null &&
+                        root.strictString("region") == "modal" &&
+                        root.strictString("mode") == "replace" && root["admin_only"] == JsonPrimitive(false) &&
+                        root.strictString("title") != null && root.arr("components")?.all { component ->
+                            component is JsonObject &&
+                                component.strictString("type") in
+                                setOf("alert", "badge", "button", "card", "code", "keyvalue", "text")
+                        } == true
                 if ((key == "evidence" && !evidenceEnvelopeValid) ||
+                    (key == "terminal" && !terminalEnvelopeValid) ||
                     (key == "guidance" && !GuidanceNotes.validSurface(root)) ||
                     (isPrivateChromeSurface(key) && (canonicalUuid4(request) == null || (root.str("mode") ?: "replace") != "replace")) ||
                     (
