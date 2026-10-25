@@ -7,6 +7,7 @@ public final class ComputerHostAuthority: @unchecked Sendable {
     private let lock = NSLock()
     private var fence = ComputerHostFence()
     private var desktopAvailable = false
+    private var desktopRearmRequired = false
     public init() {}
     public func begin(_ session: String) throws {
         lock.lock()
@@ -16,11 +17,23 @@ public final class ComputerHostAuthority: @unchecked Sendable {
         }
         try fence.begin(sessionId: session)
     }
-    public func setDesktopAvailable(_ value: Bool) {
+    public func setDesktopAvailable(_ value: Bool, requiresLocalRearm: Bool = true) {
         lock.lock()
         defer { lock.unlock() }
         desktopAvailable = value
-        if !value { fence.invalidate() }
+        if value {
+            desktopRearmRequired = false
+        } else {
+            desktopRearmRequired = desktopRearmRequired || requiresLocalRearm
+            fence.invalidate()
+        }
+    }
+    public func restoreDesktopAvailability() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !desktopRearmRequired else { return false }
+        desktopAvailable = true
+        return true
     }
     public var desktopIsAvailable: Bool {
         lock.lock()

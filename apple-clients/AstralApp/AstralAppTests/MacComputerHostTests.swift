@@ -278,6 +278,193 @@
             }
         }
 
+        func testRelaunchRestoresRememberedChoiceButNotPreviousSession() async throws {
+            let suite = "remembered-consent-" + UUID().uuidString
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let first = rememberingHost(defaults: defaults)
+            first.bind(owner: "owner-a|server-a") { _ in true }
+            first.setEnabled(true)
+            let identity = try XCTUnwrap(first.descriptor).hostId
+            let previous = UUID().uuidString.lowercased()
+            first.consume(try session(first, id: previous))
+            first.applicationWillTerminate()
+            let driver = ComputerTestDriver()
+            let restored = rememberingHost(defaults: defaults, driver: driver)
+            restored.signedOut()
+            restored.bind(owner: "owner-a|server-a") { _ in true }
+            defer { restored.applicationWillTerminate() }
+            XCTAssertTrue(MacComputerControlCommand.enabledBinding(on: restored).wrappedValue)
+            XCTAssertTrue(restored.enabled)
+            XCTAssertEqual(restored.descriptor?.hostId, identity)
+            XCTAssertNil(restored.session)
+            restored.consume(try request(id: "creq_" + String(repeating: "d", count: 32), session: previous))
+            let effects = await driver.effects
+            XCTAssertEqual(effects, 0)
+        }
+
+        func testRememberedChoiceDoesNotCrossAccountServerOrExplicitOff() throws {
+            let suite = "scoped-consent-" + UUID().uuidString
+            let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let first = rememberingHost(defaults: defaults)
+            first.bind(owner: "owner-a|server-a") { _ in true }
+            first.setEnabled(true)
+            first.applicationWillTerminate()
+            let restored = rememberingHost(defaults: defaults)
+            defer { restored.applicationWillTerminate() }
+            for scope in ["owner-b|server-a", "owner-a|server-b"] {
+                restored.bind(owner: scope) { _ in true }
+                XCTAssertFalse(MacComputerControlCommand.enabledBinding(on: restored).wrappedValue)
+                XCTAssertNil(restored.descriptor)
+            }
+            restored.bind(owner: "owner-a|server-a") { _ in true }
+            XCTAssertTrue(restored.enabled)
+            restored.setEnabled(false)
+            let reopened = rememberingHost(defaults: defaults)
+            reopened.bind(owner: "owner-a|server-a") { _ in true }
+            defer { reopened.applicationWillTerminate() }
+            XCTAssertFalse(MacComputerControlCommand.enabledBinding(on: reopened).wrappedValue)
+            XCTAssertFalse(reopened.enabled)
+            XCTAssertNil(reopened.descriptor)
+        }
+
+        func testLockKeepsRememberedChoiceAndBlocksReconnectUntilLocalRearm() throws {
+            let defaults = UserDefaults(suiteName: UUID().uuidString)!
+            let host = rememberingHost(defaults: defaults)
+            host.bind(owner: "owner-a|server-a") { _ in true }
+            host.setEnabled(true)
+            host.sessionLocked()
+            XCTAssertTrue(MacComputerControlCommand.enabledBinding(on: host).wrappedValue)
+            XCTAssertFalse(host.enabled)
+            host.bind(owner: "owner-a|server-a") { _ in true }
+            XCTAssertNil(host.descriptor)
+            XCTAssertFalse(host.enabled)
+            host.setEnabled(true)
+            XCTAssertNotNil(host.descriptor)
+            host.sessionLocked()
+            host.applicationWillTerminate()
+            let reopened = rememberingHost(defaults: defaults)
+            reopened.bind(owner: "owner-a|server-a") { _ in true }
+            defer { reopened.applicationWillTerminate() }
+            XCTAssertTrue(reopened.enabled)
+        }
+
+        func testSynchronousLockRevocationCannotBeUndoneBeforeMainActorCleanup() throws {
+            let host = makeHost(driver: ComputerTestDriver())
+            NSWorkspace.shared.notificationCenter.post(
+                name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
+            host.bind(owner: "synthetic-owner|synthetic-server") { _ in true }
+            XCTAssertTrue(MacComputerControlCommand.enabledBinding(on: host).wrappedValue)
+            XCTAssertFalse(host.enabled)
+            XCTAssertNil(host.descriptor)
+            host.applicationWillTerminate()
+        }
+
+        func testUnavailableDesktopOrPermissionKeepsChoiceWithoutAdvertisingAccess() throws {
+            for unavailable in ["desktop", "permission", "distribution", "monitor"] {
+                let defaults = UserDefaults(suiteName: UUID().uuidString)!
+                let first = rememberingHost(defaults: defaults)
+                first.bind(owner: "owner-a|server-a") { _ in true }
+                first.setEnabled(true)
+                first.applicationWillTerminate()
+                let monitor = ComputerTestMonitor()
+                monitor.startAllowed = unavailable != "monitor"
+                let host = MacComputerHost(
+                    available: unavailable != "distribution", defaults: defaults,
+                    driver: ComputerTestDriver(), monitor: monitor,
+                    permissionProvider: {
+                        MacComputerPermissions(
+                            accessibility: true, screen: unavailable != "permission", monitoring: true)
+                    }, desktopProbe: { unavailable != "desktop" }, desktopRearm: { false },
+                    system: MacComputerTestSystem(), panelPresenter: { _ in })
+                host.bind(owner: "owner-a|server-a") { _ in true }
+                defer { host.applicationWillTerminate() }
+                XCTAssertFalse(host.enabled, unavailable)
+                XCTAssertNil(host.descriptor, unavailable)
+                if unavailable != "distribution" {
+                    XCTAssertTrue(MacComputerControlCommand.enabledBinding(on: host).wrappedValue, unavailable)
+                }
+            }
+        }
+
+        func testPermissionRevocationKeepsChoiceButRequiresFreshLocalRearm() {
+            let access = ComputerTestAccess()
+            let host = makeHost(
+                driver: ComputerTestDriver(),
+                access: {
+                    MacComputerPermissions(
+                        accessibility: access.allowed, screen: access.allowed, monitoring: access.allowed)
+                })
+            access.allowed = false
+            host.refreshPermissions()
+            XCTAssertTrue(MacComputerControlCommand.enabledBinding(on: host).wrappedValue)
+            XCTAssertFalse(host.enabled)
+            access.allowed = true
+            host.refreshPermissions()
+            host.bind(owner: "synthetic-owner|synthetic-server") { _ in true }
+            XCTAssertFalse(host.enabled)
+            XCTAssertNil(host.descriptor)
+            host.setEnabled(true)
+            XCTAssertNotNil(host.descriptor)
+            host.applicationWillTerminate()
+        }
+
+        func testDesktopProbeCannotRestoreOverNewerOwnerOrSignOut() throws {
+            for boundary in ["newer_owner", "sign_out"] {
+                let suite = "probe-reentry-" + UUID().uuidString
+                let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let first = rememberingHost(defaults: defaults)
+                for scope in ["owner-a|server-a", "owner-b|server-a"] {
+                    first.bind(owner: scope) { _ in true }
+                    first.setEnabled(true)
+                }
+                first.applicationWillTerminate()
+                let access = ComputerTestAccess()
+                let monitor = ComputerTestMonitor()
+                let host = MacComputerHost(
+                    available: true, defaults: defaults, driver: ComputerTestDriver(), monitor: monitor,
+                    permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
+                    desktopProbe: {
+                        MainActor.assumeIsolated {
+                            let callback = access.onProbe
+                            access.onProbe = nil
+                            callback?()
+                            return true
+                        }
+                    }, desktopRearm: { true }, system: MacComputerTestSystem(), panelPresenter: { _ in })
+                access.onProbe = {
+                    if boundary == "newer_owner" {
+                        host.bind(owner: "owner-b|server-a") { _ in true }
+                    } else {
+                        host.signedOut()
+                    }
+                    monitor.startAllowed = false
+                }
+                host.bind(owner: "owner-a|server-a") { _ in true }
+                if boundary == "newer_owner" {
+                    XCTAssertTrue(host.enabled)
+                    XCTAssertNotNil(host.descriptor)
+                } else {
+                    XCTAssertFalse(host.ownerBound)
+                    XCTAssertFalse(host.desktopAvailable)
+                    XCTAssertNil(host.descriptor)
+                }
+                host.applicationWillTerminate()
+            }
+        }
+
+        private func rememberingHost(
+            defaults: UserDefaults, driver: any MacComputerDriving = ComputerTestDriver()
+        ) -> MacComputerHost {
+            MacComputerHost(
+                available: true, defaults: defaults, driver: driver, monitor: ComputerTestMonitor(),
+                permissionProvider: { MacComputerPermissions(accessibility: true, screen: true, monitoring: true) },
+                desktopProbe: { true }, desktopRearm: { true }, system: MacComputerTestSystem(),
+                panelPresenter: { _ in })
+        }
+
         private func makeHost(
             driver: any MacComputerDriving,
             access: @escaping @MainActor () -> MacComputerPermissions = {
@@ -457,16 +644,20 @@
     }
 
     @MainActor
-    private final class ComputerTestAccess { var allowed = true }
+    private final class ComputerTestAccess {
+        var allowed = true
+        var onProbe: (() -> Void)?
+    }
 
     @MainActor
     private final class ComputerTestMonitor: MacComputerMonitoring {
         var running = false
+        var startAllowed = true
         var controlsWindow: Int?
         var onStop: (() -> Void)?
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool {
-            running = true
-            return true
+            running = startAllowed
+            return running
         }
         func stop() {
             running = false
