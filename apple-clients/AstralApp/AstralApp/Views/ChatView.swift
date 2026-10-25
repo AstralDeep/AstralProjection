@@ -689,7 +689,9 @@ struct InputBar: View {
     @Environment(ThemeStore.self) var theme
     @Binding var input: String
     var framed = true
+    var workbenchStyle = false
     @State private var showImporter = false
+    @State private var expanded = false
     #if os(iOS)
         @State private var showPhotoPicker = false
         @State private var photoItem: PhotosPickerItem?
@@ -711,7 +713,7 @@ struct InputBar: View {
             if let selection = model.turnSelection, let summary = model.console?.selectionSummary(selection) {
                 selectionSummary(summary)
             }
-            if input.hasPrefix("/") && !input.contains(" ") {
+            if !workbenchStyle && input.hasPrefix("/") && !input.contains(" ") {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
                         ForEach(slashCommands.filter { $0.hasPrefix(input) }, id: \.self) { cmd in
@@ -722,7 +724,31 @@ struct InputBar: View {
                 }
             }
             VoiceComposerNotices()
-            if model.console != nil {
+            if workbenchStyle {
+                VStack(alignment: .leading, spacing: 2) {
+                    messageField.lineLimit(expanded ? 8...18 : 2...6)
+                        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 4)
+                    HStack(alignment: .bottom, spacing: 0) {
+                        Button {
+                            expanded.toggle()
+                        } label: {
+                            Image(
+                                systemName: expanded
+                                    ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right"
+                            )
+                            .foregroundStyle(p.muted).frame(width: 40, height: 44)
+                        }
+                        .buttonStyle(.plain)
+                        .help(expanded ? "Reduce composer" : "Expand composer")
+                        .accessibilityLabel(expanded ? "Reduce composer" : "Expand composer")
+                        Spacer(minLength: 0)
+                        controls
+                    }
+                    .padding(.horizontal, 4).padding(.bottom, 4)
+                }
+                .background(p.surface, in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(focused ? p.primary.opacity(0.7) : p.border))
+            } else if model.console != nil {
                 ComposerInputLayout {
                     messageField.lineLimit(1...3)
                         .padding(.horizontal, 12).padding(.vertical, 10)
@@ -741,7 +767,7 @@ struct InputBar: View {
                 ?? EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
         )
         .background(model.console != nil ? p.bg : framed ? p.surface : .clear)
-        .overlay(alignment: .top) { if model.console != nil { p.border.frame(height: 1) } }
+        .overlay(alignment: .top) { if model.console != nil && !workbenchStyle { p.border.frame(height: 1) } }
         .onChange(of: showImporter) { _, shown in model.composerAccessoryPresented = shown }
         .fileImporter(
             isPresented: $showImporter, allowedContentTypes: [.item],

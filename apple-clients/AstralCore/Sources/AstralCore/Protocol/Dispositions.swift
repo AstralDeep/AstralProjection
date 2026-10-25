@@ -105,7 +105,9 @@ public struct ClientDispositions: Sendable {
 
     public static let macos = ClientDispositions(
         client: "macos",
-        frames: ios.frames,
+        frames: ios.frames.merging([
+            "computer_request": .handled, "computer_session": .handled, "computer_host": .handled,
+        ]) { _, new in new },
         components: fullComponentSet(fallbacks: [
             "audio": "web-only media, server degrade ladder (044 channel decision)",
             "generative": "web-only media (044 channel decision)",

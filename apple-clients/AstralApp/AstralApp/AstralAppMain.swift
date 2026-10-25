@@ -53,7 +53,6 @@ struct AstralApp: App {
                             return
                         }
                     #endif
-                    // Skips real bootstrap in unit tests — avoids blocking on a Keychain prompt
                     if !unitTestHost { await model.bootstrap() }
                 }
                 .onChange(of: scenePhase) { _, phase in
@@ -109,6 +108,13 @@ struct AstralApp: App {
                             for: NSWorkspace.sessionDidResignActiveNotification)
                     ) { _ in
                         model.voiceSessionLocked()
+                        model.macComputerHost.sessionLocked()
+                    }
+                    .onReceive(
+                        NSWorkspace.shared.notificationCenter.publisher(
+                            for: NSWorkspace.screensDidSleepNotification)
+                    ) { _ in
+                        model.macComputerHost.sessionLocked()
                     }
                     .onReceive(
                         NSWorkspace.shared.notificationCenter.publisher(
@@ -127,6 +133,7 @@ struct AstralApp: App {
                             for: NSApplication.willTerminateNotification)
                     ) { _ in
                         model.voiceApplicationWillTerminate()
+                        model.macComputerHost.applicationWillTerminate()
                     }
                 #endif
                 #if os(macOS)
@@ -136,6 +143,7 @@ struct AstralApp: App {
         #if os(macOS)
             .windowStyle(.titleBar)
             .defaultSize(width: 1280, height: 820)
+            .commands { MacWorkbenchCommands() }
         #endif
     }
 }

@@ -795,6 +795,16 @@ select.astral-field { color-scheme: dark; }
 .astral-code { box-shadow: var(--shadow-1); }
 .astral-code pre { line-height: 1.6; }
 .astral-code code, .astral-code pre { font-family: var(--font-mono); }
+[data-chrome-surface] [data-component="code"] pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 12px;
+  background: var(--surface-1);
+  border-radius: var(--radius-sm);
+}
 
 .astral-list-item {
   background: var(--surface-1);

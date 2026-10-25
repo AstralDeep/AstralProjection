@@ -136,6 +136,7 @@ class DeviceCapabilities:
     user_agent: str = ""
     reduced_motion: bool = False
     pointer_type: str = "fine"
+    mac_workbench_v1: bool = False
 
 
 @dataclass

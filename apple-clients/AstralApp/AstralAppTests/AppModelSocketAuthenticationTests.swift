@@ -68,6 +68,52 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
         }
     }
 
+    #if os(macOS)
+        func testComputerDenialWireTracksTheActualRegistrationAcrossCredentialRenewal() async throws {
+            try await withModel { model, peer, _, clock in
+                XCTAssertFalse(model.macComputerHost.available)
+                var replies: [JSONValue] = []
+                for index in 0..<2 {
+                    if index == 1 {
+                        clock.advance(7200)
+                        let registered = peer.expectRegistration()
+                        _ = try await model.rest.chats()
+                        await fulfillment(of: [registered], timeout: 10)
+                        try await waitUntil { model.connected }
+                    }
+                    let current = try XCTUnwrap(peer.registrations.last)
+                    let generation = try XCTUnwrap(current.generation)
+                    let request = "creq_" + String(repeating: index == 0 ? "c" : "d", count: 32)
+                    let frame = JSONValue.object([
+                        "type": .string("computer_request"), "request_id": .string(request),
+                        "session_id": .string("22222222-2222-4222-8222-222222222222"),
+                        "verb": .string("screenshot"), "args": .object([:]), "deadline_ms": .number(1000),
+                    ])
+                    peer.send(String(decoding: try frame.encoded(), as: UTF8.self), socket: current.socket)
+                    try await waitUntil {
+                        peer.events.contains { $0.frame.payload["payload"]?["request_id"] == .string(request) }
+                    }
+                    let event = try XCTUnwrap(
+                        peer.events.first {
+                            $0.frame.payload["payload"]?["request_id"] == .string(request)
+                        })
+                    let reply = event.frame.payload
+                    XCTAssertEqual(event.socket, current.socket)
+                    XCTAssertTrue(
+                        ComputerHostOutbound.isBound(
+                            String(decoding: try reply.encoded(), as: UTF8.self), connectionGeneration: generation))
+                    XCTAssertEqual(reply["action"], .string("computer_response"))
+                    XCTAssertEqual(reply["payload"]?["ok"], .bool(false))
+                    XCTAssertEqual(reply["payload"]?["error"]?["code"], .string("permission_denied"))
+                    replies.append(reply)
+                }
+                XCTAssertNotEqual(replies[0]["connection_generation"], replies[1]["connection_generation"])
+                XCTAssertNotEqual(replies[0]["submission_id"], replies[1]["submission_id"])
+                XCTAssertNotEqual(replies[0]["request_generation"], replies[1]["request_generation"])
+            }
+        }
+    #endif
+
     func testEvidenceRenewalRetiresOriginalReadAndOnlyManualRetryUsesFreshRegisteredSocket() async throws {
         for params: JSONValue in [
             .object([:]), .object(["kind": .string("usage")]),
@@ -129,6 +175,60 @@ final class AppModelSocketAuthenticationTests: XCTestCase {
                     model.pendingSurface?.components.first { $0.type == "keyvalue" }?.keyValuePairs.first?.1,
                     fixture?["source_text"]?.stringValue)
                 XCTAssertEqual(peer.events.count, 1)
+            }
+        }
+    }
+
+    func testTerminalReadsRetireOnCredentialRotationAndUseOnlyTheCurrentSocket() async throws {
+        for params: JSONValue in [
+            .object(["mode": .string("list")]),
+            .object(["mode": .string("monitor"), "session_id": .string("term_fixture")]),
+        ] {
+            try await withModel { model, peer, _, clock in
+                model.openSurface("terminal", params: params)
+                try await waitUntil { peer.events.count == 1 }
+                let original = try XCTUnwrap(peer.events[0].frame.payload["request_generation"]?.stringValue)
+                var root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                var fixture: JSONValue?
+                for _ in 0..<8 {
+                    let path = root.appendingPathComponent("contracts/fixtures/terminal/monitor_surface.json")
+                    if FileManager.default.fileExists(atPath: path.path) {
+                        fixture = try JSONValue.parse(Data(contentsOf: path))
+                        break
+                    }
+                    root.deleteLastPathComponent()
+                }
+                var fields = try XCTUnwrap(fixture?["native_frame"]?.objectValue)
+                fields["request_generation"] = .string(original)
+                model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(fields)))
+                XCTAssertNotNil(model.pendingSurface)
+                clock.advance(7200)
+                peer.holdRefresh()
+                let requested = peer.expectRefresh()
+                let registered = peer.expectRegistration()
+                model.retryPendingSurface()
+                XCTAssertNil(model.pendingSurface)
+                await fulfillment(of: [requested], timeout: 10)
+                peer.releaseRefresh()
+                await fulfillment(of: [registered], timeout: 10)
+                try await waitUntil { model.connected }
+                XCTAssertNil(model.pendingSurface)
+                XCTAssertNil(model.terminalReadGeneration)
+                XCTAssertEqual(peer.events.count, 1)
+                model.openSurface("terminal", params: params)
+                try await waitUntil { peer.events.count == 2 }
+                let read = peer.events[1]
+                XCTAssertEqual(read.socket, peer.registrations.last?.socket)
+                let generation = try XCTUnwrap(read.frame.payload["request_generation"]?.stringValue)
+                XCTAssertNotEqual(generation, original)
+                model.handleFrame(InboundFrame(name: "chrome_surface", payload: .object(fields)))
+                XCTAssertNil(model.pendingSurface)
+                fields["request_generation"] = .string(generation)
+                peer.send(
+                    String(decoding: try JSONEncoder().encode(JSONValue.object(fields)), as: UTF8.self),
+                    socket: read.socket)
+                try await waitUntil { model.pendingSurface != nil }
+                XCTAssertEqual(peer.events.count, 2)
             }
         }
     }

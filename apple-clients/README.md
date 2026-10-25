@@ -19,6 +19,11 @@ The standalone contracts now live in this tree. Feature 065 pins
 committed `Package.resolved`; watchOS uses the owned bounded PCM-over-WSS bridge
 rather than the LiveKit package.
 
+The optional macOS **DirectDownload** variant adds an explicitly enabled local
+computer host while Store builds remain controllers. Build, permissions,
+workspace selection, reviewed Terminal behavior and verification are documented
+in [Computer tasks on macOS](MAC-COMPUTER-HOST.md).
+
 ## Shipped identities
 
 | Thing | Value |

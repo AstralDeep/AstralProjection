@@ -585,7 +585,7 @@ def test_ios_closed_profiles_keep_actual_counts_and_require_every_lane(tmp_path,
         )
 
 
-def test_ios_cannot_fall_back_to_old_two_lane_inputs_and_macos_cannot_claim_release(tmp_path):
+def test_ios_requires_core_and_macos_release_requires_staging(tmp_path):
     repo = _repo(tmp_path)
     inputs = {
         lane: _report(repo, lane + ".json", {SOURCE: _observations()}) for lane in ("unit", "ui")
@@ -594,7 +594,7 @@ def test_ios_cannot_fall_back_to_old_two_lane_inputs_and_macos_cannot_claim_rele
         merge_xccov_reports(
             repo=repo, platform="ios", inputs=inputs, output=repo / "build/ios.json"
         )
-    with pytest.raises(MergeError, match="unsupported platform coverage profile"):
+    with pytest.raises(MergeError, match="mandatory"):
         merge_xccov_reports(
             repo=repo,
             platform="macos",
@@ -683,9 +683,12 @@ def test_isolated_import_uses_only_the_policy_sibling_exporter(tmp_path, monkeyp
     assert Path(policy["exporter"].__file__).resolve() == expected
     repo = _repo(tmp_path)
     report = policy["merge_xccov_reports"](
-        repo=repo, platform="macos",
-        inputs={"unit": _report(repo, "unit.json", {SOURCE: _observations(1, 0)}),
-                "ui": _report(repo, "ui.json", {SOURCE: _observations(0, 1)})},
+        repo=repo,
+        platform="macos",
+        inputs={
+            "unit": _report(repo, "unit.json", {SOURCE: _observations(1, 0)}),
+            "ui": _report(repo, "ui.json", {SOURCE: _observations(0, 1)}),
+        },
         output=repo / "build/isolated.json",
     )
     assert report[SOURCE] == _observations(1, 1)
@@ -693,7 +696,22 @@ def test_isolated_import_uses_only_the_policy_sibling_exporter(tmp_path, monkeyp
 
 def _commit(repo):
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
+        ],
+        check=True,
+    )
+
 
 def _domain_report(repo, lane, coverage, all_sources):
     from scripts import native_xccov_domain as policy
@@ -712,7 +730,8 @@ def _domain_report(repo, lane, coverage, all_sources):
             "artifact_sha256": "b" * 64,
         },
         observed_sources=sorted(coverage),
-        prefix="", lane=lane,
+        prefix="",
+        lane=lane,
     )
     return policy.native_report(coverage, {lane: domain})
 
@@ -728,7 +747,10 @@ def test_native_domains_preserve_distinct_lane_inventory_and_real_counts(tmp_pat
         coverage = {core if lane == "core" else SOURCE: _observations(1, 2)}
         inputs[lane] = _report(repo, lane + ".json", _domain_report(repo, lane, coverage, paths))
     result = merge_xccov_reports(
-        repo=repo, platform="ios", profile="release", inputs=inputs,
+        repo=repo,
+        platform="ios",
+        profile="release",
+        inputs=inputs,
         output=repo / "build/native.json",
     )
     assert set(result["domains"]) == {"core", "unit", "ui", "staging"}
@@ -739,13 +761,19 @@ def test_native_domains_preserve_distinct_lane_inventory_and_real_counts(tmp_pat
     assert result["domains"]["unit"]["sources"][SOURCE]["physical_lines"] == 3
 
 
-@pytest.mark.parametrize("mutation", ["mixed", "lane", "source", "geometry", "truncated", "counter", "platform"])
+@pytest.mark.parametrize(
+    "mutation", ["mixed", "lane", "source", "geometry", "truncated", "counter", "platform"]
+)
 def test_native_merge_refuses_conflicting_or_relabelled_lane_evidence(tmp_path, mutation):
     repo = _repo(tmp_path)
     core = _core_source(repo)
     documents = {
-        lane: _domain_report(repo, lane, {core if lane == "core" else SOURCE: _observations()},
-                             [core] if lane == "core" else [core, SOURCE])
+        lane: _domain_report(
+            repo,
+            lane,
+            {core if lane == "core" else SOURCE: _observations()},
+            [core] if lane == "core" else [core, SOURCE],
+        )
         for lane in ("core", "unit", "ui")
     }
     if mutation == "mixed":
@@ -764,30 +792,86 @@ def test_native_merge_refuses_conflicting_or_relabelled_lane_evidence(tmp_path, 
         documents["ui"]["platform"] = "macos"
     inputs = {lane: _report(repo, lane + ".json", value) for lane, value in documents.items()}
     with pytest.raises((MergeError, ExportError)):
-        merge_xccov_reports(repo=repo, platform="ios", inputs=inputs, output=repo / "build/refused.json")
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/refused.json"
+        )
     assert not (repo / "build/refused.json").exists()
 
 
 def test_native_domain_cannot_enter_legacy_macos_profile(tmp_path):
     repo = _repo(tmp_path)
-    inputs = {lane: _report(repo, lane + ".json", _domain_report(repo, lane, {SOURCE: _observations()}, [SOURCE]))
-              for lane in ("unit", "ui")}
+    inputs = {
+        lane: _report(
+            repo, lane + ".json", _domain_report(repo, lane, {SOURCE: _observations()}, [SOURCE])
+        )
+        for lane in ("unit", "ui")
+    }
     with pytest.raises(MergeError):
-        merge_xccov_reports(repo=repo, platform="macos", inputs=inputs, output=repo / "build/refused.json")
+        merge_xccov_reports(
+            repo=repo, platform="macos", inputs=inputs, output=repo / "build/refused.json"
+        )
+
 
 @pytest.mark.parametrize("failure", ["policy_missing", "mapped_source_missing"])
-def test_native_merge_refuses_missing_policy_or_unreadable_mapped_source(tmp_path, monkeypatch, failure):
+def test_native_merge_refuses_missing_policy_or_unreadable_mapped_source(
+    tmp_path, monkeypatch, failure
+):
     repo = _repo(tmp_path)
     core = _core_source(repo)
     documents = {
-        lane: _domain_report(repo, lane, {core if lane == "core" else SOURCE: _observations()}, [core] if lane == "core" else [core, SOURCE])
+        lane: _domain_report(
+            repo,
+            lane,
+            {core if lane == "core" else SOURCE: _observations()},
+            [core] if lane == "core" else [core, SOURCE],
+        )
         for lane in ("core", "unit", "ui")
     }
     if failure == "policy_missing":
-        monkeypatch.setitem(merger._native_domain_policy.__globals__, "__file__", str(tmp_path / "missing-policy/exporter.py"))
+        monkeypatch.setitem(
+            merger._native_domain_policy.__globals__,
+            "__file__",
+            str(tmp_path / "missing-policy/exporter.py"),
+        )
     else:
-        documents["unit"]["domains"]["unit"]["sources"][core.replace("Core.swift", "Absent.swift")] = dict(documents["unit"]["domains"]["unit"]["sources"][core])
+        documents["unit"]["domains"]["unit"]["sources"][
+            core.replace("Core.swift", "Absent.swift")
+        ] = dict(documents["unit"]["domains"]["unit"]["sources"][core])
     inputs = {lane: _report(repo, lane + ".json", value) for lane, value in documents.items()}
     with pytest.raises(MergeError):
-        merge_xccov_reports(repo=repo, platform="ios", inputs=inputs, output=repo / "build/refused.json")
+        merge_xccov_reports(
+            repo=repo, platform="ios", inputs=inputs, output=repo / "build/refused.json"
+        )
     assert not (repo / "build/refused.json").exists()
+
+
+@pytest.mark.parametrize(
+    "profile,lanes", [("ci", ("unit", "ui")), ("release", ("unit", "ui", "staging"))]
+)
+def test_macos_native_union_retains_distinct_observation_lanes(tmp_path, profile, lanes):
+    from scripts import native_xccov_domain as policy
+
+    repo = _repo(tmp_path)
+    documents = {}
+    for lane in lanes:
+        value = _domain_report(repo, lane, {SOURCE: _observations(1, 2)}, [SOURCE])
+        declaration = value["domains"][lane]
+        declaration.update(
+            format=policy.MACOS_DOMAIN_FORMAT, platform="macos", architecture="x86_64"
+        )
+        declaration["binary"].update(
+            member=policy.MACOS_BINARY_MEMBER,
+            artifact_member=f"coverage/native-binaries/apple-macos-{lane}.zip",
+        )
+        value.update(format=policy.MACOS_REPORT_FORMAT, platform="macos")
+        documents[lane] = _report(repo, lane + ".json", value)
+    result = merge_xccov_reports(
+        repo=repo,
+        platform="macos",
+        profile=profile,
+        inputs=documents,
+        output=repo / "build/mac-union.json",
+    )
+    assert result["format"] == policy.MACOS_REPORT_FORMAT
+    assert set(result["domains"]) == set(lanes)
+    assert result["coverage"] == {SOURCE: _observations(len(lanes), 2 * len(lanes))}

@@ -5750,15 +5750,19 @@
     var noteAction = ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"].indexOf(name) !== -1;
     var selectionAction = name === "chrome_turn_selection_set";
     var safetyAction = ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"].indexOf(name) !== -1;
-    var ownerSurface = meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
-      : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety", "mesh"].indexOf(payload.surface) !== -1
+    var terminalAction = ["chrome_terminal_input", "chrome_terminal_resize", "chrome_terminal_interrupt", "chrome_terminal_close"].indexOf(name) !== -1;
+    var ownerSurface = terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
+      : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety", "mesh", "terminal"].indexOf(payload.surface) !== -1
         ? payload.surface : null;
-    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction) retireOwnerSurface();
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction) retireOwnerSurface();
     if (noteAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
     }
     if (selectionAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { view: "selection" } });
+    }
+    if (terminalAction) {
+      showModalSkeleton("chrome_open", { surface: "terminal", params: { mode: "panel", session_id: payload.session_id } });
     }
     if (safetyAction) {
       showModalSkeleton("chrome_open", { surface: "safety", params: {} });
@@ -5771,7 +5775,7 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
-    if (safetyAction || ownerSurface === "mesh") {
+    if (safetyAction || terminalAction || ownerSurface === "mesh") {
       delete submission.payload.submission_id;
       delete submission.payload.request_generation;
     }
@@ -5828,7 +5832,7 @@
         || data.region !== "modal" || data.mode !== "replace"
         || !isCanonicalUuid4(data.request_generation)
         || data.request_generation !== pending.generation || typeof data.html !== "string") return false;
-    if (pending.surface === "evidence") {
+    if (pending.surface === "evidence" || pending.surface === "terminal") {
       var fields = Object.keys(data);
       if (fields.length !== 6 || fields.some(function (key) {
         return ["type", "region", "html", "mode", "surface_key", "request_generation"].indexOf(key) === -1;
@@ -7177,7 +7181,7 @@
         break;
       }
       case "chrome_render":
-        if (data.surface_key === "work" || data.surface_key === "guidance" || data.surface_key === "evidence" || data.surface_key === "safety" || data.surface_key === "mesh") { receiveOwnerSurface(data); break; }
+        if (data.surface_key === "work" || data.surface_key === "guidance" || data.surface_key === "evidence" || data.surface_key === "safety" || data.surface_key === "mesh" || data.surface_key === "terminal") { receiveOwnerSurface(data); break; }
         if (data.region === "modal" && ownerSurfaceRequest) break;
         if (data.region === "modal") setModal(data.html || "");
         else if (data.region === "topbar") {
@@ -7702,8 +7706,8 @@
       var act = btn.getAttribute("data-action"); var payload = {};
       try { payload = JSON.parse(btn.getAttribute("data-payload") || "{}"); } catch (_) {}
       var compHost = btn.closest && btn.closest("[data-component-id]");
-      if (compHost && payload.surface !== "safety" && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
-      if (payload.surface !== "safety" && !payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence"))) {
+      if (compHost && payload.surface !== "safety" && payload.surface !== "terminal" && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
+      if (payload.surface !== "safety" && payload.surface !== "terminal" && !payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence" || payload.surface === "terminal"))) {
         payload.chat_id = activeChatId;
       }
       if (timelineMode && compHost && act && act.indexOf("chrome_") !== 0) {
@@ -8347,7 +8351,7 @@
   function showModalRetry() {
     modalSkeletonTimer = null;
     if (!modalRoot || !modalSkeletonRequest) return;
-    if (modalSkeletonRequest.action === "chrome_open" && ["work", "guidance", "evidence", "safety"].indexOf(modalSkeletonRequest.payload.surface) !== -1) {
+    if (modalSkeletonRequest.action === "chrome_open" && ["work", "guidance", "evidence", "safety", "terminal"].indexOf(modalSkeletonRequest.payload.surface) !== -1) {
       retireOwnerSurface();
     }
     if (!setDialogPane(RETRY_BODY_HTML)) modalRoot.innerHTML = modalShellHtml(RETRY_BODY_HTML);
@@ -8440,8 +8444,8 @@
   function closeModal() {
     if (!modalRoot || !modalRoot.innerHTML) return;
     if (modalIsMandatory()) return;
-    var currentOwnerSurface = ownerSurfaceRequest && ["evidence", "safety", "mesh"].indexOf(ownerSurfaceRequest.surface) !== -1
-      || modalSkeletonRequest && ["evidence", "safety", "mesh"].indexOf(modalSkeletonRequest.payload.surface) !== -1
+    var currentOwnerSurface = ownerSurfaceRequest && ["evidence", "safety", "mesh", "terminal"].indexOf(ownerSurfaceRequest.surface) !== -1
+      || modalSkeletonRequest && ["evidence", "safety", "mesh", "terminal"].indexOf(modalSkeletonRequest.payload.surface) !== -1
         && modalRoot.querySelector(".astral-modal-retry");
     setModal("");
     if (currentOwnerSurface) {

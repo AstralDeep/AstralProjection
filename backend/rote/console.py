@@ -38,7 +38,7 @@ def presentation(capabilities: "DeviceCapabilities", *, watch: bool = False) -> 
         composer_padding = (18, 48, 18, 48)
         columns = max(1, int((width - sidebar - 96 + 14) // 364))
     edges = ("top", "right", "bottom", "left")
-    return {
+    result = {
         "version": 2,
         "navigation_mode": "stack" if watch else "drawer" if drawer else "sidebar",
         "sidebar_width": sidebar,
@@ -56,6 +56,23 @@ def presentation(capabilities: "DeviceCapabilities", *, watch: bool = False) -> 
         "fullscreen_inset": 0,
         "minimum_control_height": 44 if watch or drawer or capabilities.has_touch else 0,
     }
+    if capabilities.device_type == "macos" and capabilities.mac_workbench_v1 and not watch:
+        def pane(available):
+            split = available >= 780
+            return {
+                "split": split,
+                "conversation_width": round(min(520, max(360, available * 0.43)), 2) if split else available,
+                "compact_toolbar": available < 600,
+            }
+
+        result["mac_workbench"] = {
+            "version": 1,
+            "with_sidebar": pane(width if drawer else max(0, width - sidebar)),
+            "without_sidebar": pane(width),
+            "composer_max_width": 860,
+            "transcript_max_width": 720,
+        }
+    return result
 
 
 def watch_availability(surface, params, profile, client_capabilities=()) -> dict:

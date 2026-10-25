@@ -124,9 +124,16 @@ final class AppModel: NSObject {
 
     @ObservationIgnored private let defaults: UserDefaults
 
+    #if os(macOS)
+        let macComputerHost = MacComputerHost()
+    #endif
+
     var serverBaseText: String {
         didSet {
             if oldValue != serverBaseText {
+                #if os(macOS)
+                    macComputerHost.signedOut()
+                #endif
                 retireMeshCustody()
                 retireServerSession()
             }
@@ -139,6 +146,9 @@ final class AppModel: NSObject {
     var authorityText: String {
         didSet {
             if oldValue != authorityText {
+                #if os(macOS)
+                    macComputerHost.signedOut()
+                #endif
                 retireMeshCustody()
                 retireServerSession()
             }
@@ -170,6 +180,7 @@ final class AppModel: NSObject {
     private var ordinarySurfaceRequests: [String: OrdinarySurfaceRequest] = [:]
     private var ordinarySurfaceGeneration: String?
     var evidenceReadGeneration: String? { pendingSurfaceKey == "evidence" ? ordinarySurfaceGeneration : nil }
+    var terminalReadGeneration: String? { pendingSurfaceKey == "terminal" ? ordinarySurfaceGeneration : nil }
     var safetyRequestGeneration: String? { pendingSurfaceKey == "safety" ? ordinarySurfaceGeneration : nil }
     private var ordinaryReadIntent: (generation: String, owner: DownloadOwner)?
     private var parameterRequests: [String: String] = [:]
@@ -461,6 +472,9 @@ final class AppModel: NSObject {
 
     func bindConversationAccount(_ account: ConversationAccount) {
         if conversationAccount != account {
+            #if os(macOS)
+                macComputerHost.signedOut()
+            #endif
             if conversationAccount != nil {
                 retireMeshCustody()
             } else if serverSession?.owner == account.subject, serverSession?.scope.issuer == account.issuer {
@@ -482,7 +496,7 @@ final class AppModel: NSObject {
         activeChatId = conversationResumeStore.load(for: account)?.chatId
     }
 
-    struct DownloadOwner: Equatable {
+    struct DownloadOwner: Equatable, Sendable {
         let account: ConversationAccount?
         let generation: Int
         let signedIn: Bool
@@ -897,18 +911,42 @@ final class AppModel: NSObject {
             token: token, serverBase: serverBase, deviceId: voiceDeviceId,
             deviceKind: voiceDeviceKind, connectionGeneration: connection,
             visibleChatId: activeChatId)
+        #if os(macOS)
+            let socket = ws
+            let hostOwner = downloadOwner
+            let hostScope =
+                signedIn ? hostOwner.account.map { serverBase.absoluteString + "|" + $0.locatorStorageKey } : nil
+            macComputerHost.bind(owner: hostScope) { [weak self] text in
+                guard let self, let socket, self.ws === socket, self.downloadOwner == hostOwner,
+                    self.continuity.connectionGeneration == connection,
+                    let bound = ComputerHostOutbound.bindToConnection(text, connectionGeneration: connection)
+                else { return false }
+                return await socket.sendCurrentComputerEvent(bound, connectionGeneration: connection) { [weak self] in
+                    guard let self else { return false }
+                    return await self.computerChannelIsCurrent(socket: socket, owner: hostOwner, connection: connection)
+                }
+            }
+            let hostDescriptor = macComputerHost.descriptor
+            let hostCapable = macComputerHost.available
+            let macWorkbench = true
+        #else
+            let hostDescriptor: ComputerHostDescriptor? = nil
+            let hostCapable = false
+            let macWorkbench = false
+        #endif
         return Outbound.registerUI(
             token: token,
             sessionId: activeChatId,
             device: device,
             resumed: resumed,
             connectionGeneration: connection,
-            resume: resume, workReadSupported: true, guidanceNotesSupported: true)
+            resume: resume, workReadSupported: true, guidanceNotesSupported: true,
+            computerHost: hostDescriptor, computerHostCapable: hostCapable, macWorkbenchSupported: macWorkbench)
     }
 
     @discardableResult
     func beginConversationConnection(_ generation: String) -> Bool {
-        if pendingSurfaceKey == "evidence" { closeSurface() }
+        if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         if pendingSurfaceKey == "safety" {
             retireOrdinarySurfaceRequests()
             surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
@@ -1239,7 +1277,7 @@ final class AppModel: NSObject {
         let surface = screen == .surface ? pendingSurfaceKey : ""
         let params = pendingSurfaceParams
         let canReload =
-            !["evidence", "safety"].contains(surface) && pendingSurface == nil
+            !["evidence", "safety", "terminal"].contains(surface) && pendingSurface == nil
             && (params == .object([:]) || params == .object(["mode": .string("list")])
                 || (surface == "guidance" && params == GuidanceRequest.selection.payload["params"]))
         let interrupted = !localOperationSubmissions.isEmpty || llmFirstLoginOperation?.isLoading == true
@@ -1261,7 +1299,7 @@ final class AppModel: NSObject {
             intent.surface == "guidance"
             ? guidanceEpoch : intent.surface == "work" ? workReadEpoch : ordinarySurfaceGeneration
         guard intent.owner == downloadOwner, intent.socket === ws, screen == .surface,
-            pendingSurfaceKey == intent.surface, !["evidence", "safety"].contains(intent.surface),
+            pendingSurfaceKey == intent.surface, !["evidence", "safety", "terminal"].contains(intent.surface),
             generation == intent.generation,
             !mandatorySurface
         else { return }
@@ -1291,6 +1329,9 @@ final class AppModel: NSObject {
     }
 
     func signOut(revokeRemote: Bool = true) async {
+        #if os(macOS)
+            macComputerHost.signedOut()
+        #endif
         retireMeshCustody()
         // Local wipe must precede the async revoke call, before any suspension
         let access = tokens?.accessToken
@@ -1314,6 +1355,7 @@ final class AppModel: NSObject {
         wsTask?.cancel()
         wsTask = nil
         ws = nil
+        if pendingSurfaceKey == "terminal" { closeSurface() }
         store.wipe()
         tokens = nil
         conversationAccount = nil
@@ -1358,6 +1400,9 @@ final class AppModel: NSObject {
     }
 
     func clearConversationForAccountRemoval() {
+        #if os(macOS)
+            macComputerHost.signedOut()
+        #endif
         retireMeshCustody()
         retireServerSession()
         retireOrdinarySurfaceRequests()
@@ -1393,6 +1438,7 @@ final class AppModel: NSObject {
         #if os(macOS)
             let (w, h) = lastReportedViewport ?? (1280, 800)
             var descriptor = DeviceDescriptor.macos(viewportWidth: w, viewportHeight: h)
+            descriptor.macWorkbenchSupported = true
         #else
             let size = UIScreen.main.bounds.size
             let (w, h) = lastReportedViewport ?? (Int(size.width), Int(size.height))
@@ -1741,6 +1787,9 @@ final class AppModel: NSObject {
                 Task { await self.reconcileLLMFirstLoginOperation() }
             }
         case .disconnected:
+            #if os(macOS)
+                macComputerHost.disconnect()
+            #endif
             resetViewportRefresh()
             invalidateWorkRead()
             connected = false
@@ -1782,6 +1831,16 @@ final class AppModel: NSObject {
     }
 
     func handleFrame(_ frame: InboundFrame) {
+        #if os(macOS)
+            if macComputerHost.consume(frame) {
+                if ["computer_host", "computer_session"].contains(frame.name),
+                    screen == .surface, pendingSurfaceKey == "my_computers"
+                {
+                    openSurface("my_computers")
+                }
+                return
+            }
+        #endif
         if consumeViewportStatus(frame) { return }
         if frame.name == "error",
             ["viewport_snapshot_rejected", "viewport_snapshot_retryable"].contains(
@@ -2022,6 +2081,9 @@ final class AppModel: NSObject {
             retireOrdinarySurfaceRequests()
             if pendingSurfaceKey == "safety" {
                 surfaceFailureMessage = "Reload Safety to check current stop status before trying again."
+            }
+            if pendingSurfaceKey == "terminal" {
+                surfaceFailureMessage = "The session could not update. Reconnect and retry this screen."
             }
             if let context = socketAuthenticationContext {
                 Task { await self.handleAuthRequired(context) }
@@ -2675,6 +2737,28 @@ final class AppModel: NSObject {
                 })
             else { return }
         }
+        if surfaceKey == "terminal" {
+            let allowed: Set<String> = [
+                "alert", "badge", "button", "card", "code", "keyvalue", "text",
+            ]
+            guard signedIn, connected, screen == .surface, pendingSurfaceKey == "terminal",
+                let fields = frame.payload.objectValue,
+                Set(fields.keys) == [
+                    "type", "surface_key", "region", "title", "admin_only", "components", "mode",
+                    "request_generation",
+                ],
+                fields["type"] == .string("chrome_surface"), fields["surface_key"] == .string("terminal"),
+                fields["region"] == .string("modal"), fields["mode"] == .string("replace"),
+                fields["admin_only"] == .bool(false), fields["title"]?.stringValue != nil,
+                let generation = fields["request_generation"]?.stringValue,
+                UUID(uuidString: generation)?.uuidString.lowercased() == generation,
+                generation == ordinarySurfaceGeneration,
+                let components = fields["components"]?.arrayValue,
+                components.allSatisfy({
+                    allowed.contains($0["type"]?.stringValue ?? "")
+                })
+            else { return }
+        }
         if surfaceKey == "guidance" {
             guard signedIn, connected, screen == .surface, pendingSurfaceKey == "guidance",
                 let update = GuidanceSurfaceUpdate(frame: frame), guidanceState.accepts(update)
@@ -2787,7 +2871,7 @@ final class AppModel: NSObject {
         guard signedIn, connected, let current = ordinarySurfaceGeneration,
             let request = ordinarySurfaceRequests[current], request.surface == surface,
             request.owner == downloadOwner, request.connection == continuity.connectionGeneration,
-            request.socket === ws, surface != "evidence" || request.conversation == activeChatId
+            request.socket === ws, !["evidence", "terminal"].contains(surface) || request.conversation == activeChatId
         else { return false }
         if let generation = frame.payload["request_generation"] {
             guard generation.stringValue == current else { return false }
@@ -2814,8 +2898,10 @@ final class AppModel: NSObject {
     private func retireOrdinarySurfaceRequests(preservingReadIntent: Bool = false) {
         ordinarySurfaceRequests = [:]
         ordinarySurfaceGeneration = nil
-        if ["evidence", "safety"].contains(pendingSurfaceKey) { pendingSurface = nil }
-        if !preservingReadIntent || ["evidence", "safety"].contains(pendingSurfaceKey) { ordinaryReadIntent = nil }
+        if ["evidence", "safety", "terminal"].contains(pendingSurfaceKey) { pendingSurface = nil }
+        if !preservingReadIntent || ["evidence", "safety", "terminal"].contains(pendingSurfaceKey) {
+            ordinaryReadIntent = nil
+        }
     }
 
     private func failOrdinarySurface(generation: String, message: String) {
@@ -2825,7 +2911,8 @@ final class AppModel: NSObject {
         else { return }
         ordinarySurfaceRequests.removeValue(forKey: generation)
         ordinarySurfaceGeneration = nil
-        if pendingSurfaceKey == "safety" { pendingSurface = nil }
+        if ["safety", "terminal"].contains(pendingSurfaceKey) { pendingSurface = nil }
+        if pendingSurfaceKey == "terminal" { ordinaryReadIntent = nil }
         surfaceFailureMessage = message
     }
 
@@ -3044,7 +3131,7 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
-        if pendingSurfaceKey == "evidence" { closeSurface() }
+        if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         conversationNavigationGeneration += 1
         consoleFullscreen = false
         consoleResultCollapsed = false
@@ -3107,7 +3194,9 @@ final class AppModel: NSObject {
 
     @discardableResult
     func replayQueuedOperation(_ replay: QueuedOperationReplay) -> Bool {
-        guard replay.surface != "evidence", let connectionGeneration = continuity.connectionGeneration else {
+        guard !["evidence", "terminal"].contains(replay.surface),
+            let connectionGeneration = continuity.connectionGeneration
+        else {
             return false
         }
         if let purpose = replay.conversationPurpose {
@@ -3252,7 +3341,7 @@ final class AppModel: NSObject {
         let ready = staged.filter { $0.state == "ready" && $0.attachmentId != nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty && ready.isEmpty { return }
-        if pendingSurfaceKey == "evidence" { closeSurface() }
+        if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         let identity = ClientOperationIdentity.fresh()
         let request = identity.requestGeneration
         if continuity.connectionGeneration != nil {
@@ -3433,6 +3522,36 @@ final class AppModel: NSObject {
     }
 
     func sendEvent(_ action: String, _ payload: JSONValue = .object([:])) {
+        if action == "computer_host_consent" {
+            #if os(macOS)
+                guard signedIn, connected, macComputerHost.available, screen == .surface,
+                    pendingSurfaceKey == "my_computers", pendingSurface?.surfaceKey == "my_computers",
+                    ordinarySurfaceGeneration == nil, !mandatorySurface,
+                    let fields = payload.objectValue, Set(fields.keys) == ["enabled"],
+                    let enabled = fields["enabled"]?.boolValue
+                else {
+                    bannerIsError = true
+                    errorBanner = "Open My computers on an eligible Mac before changing local computer access."
+                    return
+                }
+                macComputerHost.refreshPermissions()
+                macComputerHost.setEnabled(enabled)
+                if enabled && !macComputerHost.enabled { macComputerHost.showControls() }
+                let owner = downloadOwner
+                let connection = continuity.connectionGeneration
+                Task { [weak self] in
+                    guard let self, await self.macComputerHost.flushCurrentSends(), self.downloadOwner == owner,
+                        self.continuity.connectionGeneration == connection, self.screen == .surface,
+                        self.pendingSurfaceKey == "my_computers"
+                    else { return }
+                    self.openSurface("my_computers")
+                }
+            #else
+                bannerIsError = true
+                errorBanner = "This client controls other computers and cannot host local computer tasks."
+            #endif
+            return
+        }
         if action.hasPrefix("chrome_mesh_") {
             guard signedIn, connected, screen == .surface, pendingSurfaceKey == "mesh", !mandatorySurface,
                 ordinarySurfaceGeneration == nil, !paramPickerPending(action: action),
@@ -3473,11 +3592,14 @@ final class AppModel: NSObject {
                 }
             }
         }
-        if action == "chrome_close", pendingSurfaceKey == "evidence" || payload["surface"]?.stringValue == "evidence" {
-            if pendingSurfaceKey == "evidence" { closeSurface() }
+        if action == "chrome_close",
+            ["evidence", "terminal"].contains(pendingSurfaceKey)
+                || ["evidence", "terminal"].contains(payload["surface"]?.stringValue ?? "")
+        {
+            if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
             return
         }
-        if action == "chat_message", pendingSurfaceKey == "evidence" { closeSurface() }
+        if action == "chat_message", ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         if action == "chrome_open", mandatorySurface, payload["surface"]?.stringValue != "safety" { return }
         if action == "compose_prompt" || (action == "chat_message" && pendingSurfaceKey == "agent_intro") {
             guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
@@ -3519,7 +3641,7 @@ final class AppModel: NSObject {
             pendingSurfaceKey = surface
             pendingSurfaceParams = payload["params"] ?? .object([:])
             pendingSurface = current
-            if surface == "evidence" { pendingSurface = nil }
+            if ["evidence", "terminal"].contains(surface) { pendingSurface = nil }
             surfaceFailureMessage = nil
             if !signedIn || !connected {
                 surfaceFailureMessage = "Connect before opening settings, then retry this screen."
@@ -3784,6 +3906,12 @@ final class AppModel: NSObject {
     }
 
     private func rawSend(_ text: String) {
+        let computerReview = ComputerHostOutbound.isReviewDecision(text)
+        #if os(macOS)
+            let localComputerSession = computerReview ? macComputerHost.recordApprovalInteraction() : nil
+        #else
+            let localComputerSession: String? = nil
+        #endif
         outboundTap?(text)
         guard let socket = ws else { return }
         let owner = downloadOwner
@@ -3794,11 +3922,12 @@ final class AppModel: NSObject {
         let mesh =
             InboundFrame.parse(text)?.payload["action"]?.stringValue?.hasPrefix("chrome_mesh_") == true
             || InboundFrame.parse(text)?.payload["payload"]?["surface"]?.stringValue == "mesh"
-        let evidence = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text) || safety || mesh
-        let evidenceGeneration = InboundFrame.parse(text)?.payload["request_generation"]?.stringValue
+        let currentChrome = ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text) || safety || mesh
+        let surface = InboundFrame.parse(text)?.payload["payload"]?["surface"]?.stringValue ?? ""
+        let requestGeneration = InboundFrame.parse(text)?.payload["request_generation"]?.stringValue
         Task {
             let allowed: Bool
-            if evidence && !connected {
+            if currentChrome && !connected {
                 retireUnsentOperation(text)
                 return
             } else if connected {
@@ -3818,15 +3947,33 @@ final class AppModel: NSObject {
                 }
                 return
             }
-            if evidence {
+            if computerReview {
+                #if os(macOS)
+                    guard await macComputerHost.flushApprovalPause(localComputerSession) else {
+                        retireUnsentOperation(text)
+                        errorBanner = "The computer session changed. Review the current task before approving again."
+                        bannerIsError = true
+                        return
+                    }
+                #endif
+                let sent = await socket.sendCurrentComputerDecision(text) { [weak self] in
+                    guard let self else { return false }
+                    return await self.computerDecisionIsCurrent(
+                        socket: socket, owner: owner, connection: connection,
+                        chatId: chatId, navigation: navigation, localSession: localComputerSession)
+                }
+                if !sent { retireUnsentOperation(text) }
+                return
+            }
+            if currentChrome {
                 let sent = await socket.sendCurrentChromeEvent(text) { [weak self] in
                     await MainActor.run {
                         guard let self else { return false }
                         return self.signedIn && self.connected && self.downloadOwner == owner && self.ws === socket
                             && self.continuity.connectionGeneration == connection && self.activeChatId == chatId
                             && self.conversationNavigationGeneration == navigation
-                            && self.pendingSurfaceKey == (mesh ? "mesh" : safety ? "safety" : "evidence")
-                            && self.screen == .surface && self.ordinarySurfaceGeneration == evidenceGeneration
+                            && self.pendingSurfaceKey == (mesh ? "mesh" : safety ? "safety" : surface)
+                            && self.screen == .surface && self.ordinarySurfaceGeneration == requestGeneration
                     }
                 }
                 if !sent && owner == downloadOwner { retireUnsentOperation(text) }
@@ -3834,6 +3981,24 @@ final class AppModel: NSObject {
                 await socket.send(text)
             }
         }
+    }
+
+    private func computerChannelIsCurrent(socket: WSClient, owner: DownloadOwner, connection: String?) -> Bool {
+        ws === socket && downloadOwner == owner && continuity.connectionGeneration == connection
+    }
+
+    private func computerDecisionIsCurrent(
+        socket: WSClient, owner: DownloadOwner, connection: String?,
+        chatId: String?, navigation: Int, localSession: String?
+    ) -> Bool {
+        let current =
+            computerChannelIsCurrent(socket: socket, owner: owner, connection: connection)
+            && activeChatId == chatId && conversationNavigationGeneration == navigation && connected
+        #if os(macOS)
+            return current && macComputerHost.approvalStillCurrent(localSession)
+        #else
+            return current
+        #endif
     }
 
     private func retireUnsentOperation(_ text: String) {
@@ -3982,7 +4147,7 @@ final class AppModel: NSObject {
     }
 
     func openChat(_ chatId: String) {
-        if pendingSurfaceKey == "evidence" { closeSurface() }
+        if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         consoleFullscreen = false
         consoleResultCollapsed = false
         invalidateGuidance()
@@ -4033,7 +4198,7 @@ final class AppModel: NSObject {
     func goTo(_ target: Screen) {
         if mandatorySurface { return }
         retireOrdinarySurfaceRequests()
-        if ["work", "guidance"].contains(pendingSurfaceKey) { closeSurface() }
+        if ["work", "guidance", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         screen = target
         agentsLoading = target == .agents || agentsLoading
         historyLoading = target == .history || historyLoading
@@ -4075,6 +4240,13 @@ final class AppModel: NSObject {
 
     func failEvidenceRead(generation: String?) {
         guard let generation, pendingSurfaceKey == "evidence", ordinarySurfaceGeneration == generation else { return }
+        retireOrdinarySurfaceRequests()
+        clearLocalOperationSubmission(requestGeneration: generation)
+        surfaceFailureMessage = "The server didn't send it in time. Check your connection and try again."
+    }
+
+    func failTerminalRead(generation: String?) {
+        guard let generation, pendingSurfaceKey == "terminal", ordinarySurfaceGeneration == generation else { return }
         retireOrdinarySurfaceRequests()
         clearLocalOperationSubmission(requestGeneration: generation)
         surfaceFailureMessage = "The server didn't send it in time. Check your connection and try again."

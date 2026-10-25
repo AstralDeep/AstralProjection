@@ -146,6 +146,136 @@
       },
       "watch": "Host omits generic modal inspection actions and renders content-free metadata with an explicit phone or desktop handoff. Source text is not sent to the watch."
     },
+    "terminal_monitor": {
+      "version": 1,
+      "fixture": "contracts/fixtures/terminal/monitor_surface.json",
+      "surface_key": "terminal",
+      "authority": "The host authenticates the original registered human and current session, resolves the owner's existing terminal, and rechecks owner, connection and output delivery before each read. Presentation supplies no terminal input, execution or ownership authority.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "list",
+          "monitor"
+        ],
+        "list_params": [
+          "mode"
+        ],
+        "monitor_params": [
+          "mode",
+          "session_id",
+          "offset?"
+        ],
+        "identity": "Opaque bounded session id; no host, path or credential identity is supplied by presentation."
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per read, including refresh",
+        "connection": "current registered connection only",
+        "delivery": "never queue, reconnect-replay or substitute a new owner or session"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "exact_fields": [
+          "type",
+          "region",
+          "html",
+          "mode",
+          "surface_key",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "html": "shared escaped and sanitized Projection rendering"
+      },
+      "retirement": [
+        "new terminal read",
+        "surface navigation or monitor close",
+        "conversation navigation or send",
+        "timeout",
+        "owner, account or registration replacement",
+        "connection replacement or disconnect"
+      ],
+      "response_policy": "Accept exactly one complete reply with the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated replies. The host rechecks the exact owned session after every awaited read.",
+      "session": {
+        "fields": [
+          "session_id",
+          "target",
+          "directory",
+          "state",
+          "cols",
+          "rows",
+          "created_at?",
+          "idle_seconds?",
+          "ring_start?",
+          "ring_end?"
+        ],
+        "states": [
+          "running",
+          "exited",
+          "closed",
+          "disconnected",
+          "unavailable"
+        ],
+        "target": "Host-owned literal display label for the authorized existing session.",
+        "directory": "Host-owned literal working directory; never a client-supplied path."
+      },
+      "statuses": [
+        "ready",
+        "loading",
+        "unavailable",
+        "stale",
+        "wrong_owner",
+        "disconnected",
+        "account_changed"
+      ],
+      "output": {
+        "input": "Host-authorized UTF-8 text or data_b64 from one retained read; the builder accepts either bounded form.",
+        "encoding": "UTF-8; invalid bytes become U+FFFD",
+        "sanitization": "ANSI CSI, OSC including clipboard and hyperlink controls, DCS/SOS/PM/APC, C0/C1 controls, bidi and other format controls are removed before escaped literal rendering. Terminal text never becomes a link.",
+        "display_utf8_bytes": 32768,
+        "display_lines": 2000,
+        "truncation": "Bounded output retains the newest complete Unicode scalars and a visible warning; host-reported truncation also shows the warning.",
+        "copy": "Output is literal selectable text. Copy uses the platform selection or clipboard UI; no OSC 52, server clipboard command or hidden clipboard write is honored."
+      },
+      "controls": {
+        "actions": [
+          "chrome_open",
+          "chrome_close"
+        ],
+        "read_only": "List, refresh and close controls only. No create, input, resize, interrupt, session close, link, clipboard or other interactive terminal action is advertised.",
+        "close": "The existing chrome_close action and the client dialog close or Escape remove the monitor without closing the terminal session."
+      },
+      "dispositions": {
+        "browser": "read_only_monitor",
+        "windows": "read_only_monitor",
+        "android": "read_only_monitor",
+        "macos": "read_only_monitor",
+        "ios": "read_only_monitor",
+        "watchos": "phone_desktop_handoff",
+        "voice": "omitted_by_server"
+      },
+      "watch": "Host renders only content-free state metadata and a phone or desktop handoff. Session id, target, directory, offsets and output are not sent to the watch."
+    },
     "guidance_notes_088": {
       "version": 1,
       "fixture": "contracts/fixtures/guidance_088/notes_surface.json",
@@ -2992,7 +3122,27 @@
           "push"
         ],
         "geometry": "ROTE owns logical viewport-derived dimensions, insets, scenario columns and minimum control height. Native renderers consume validated finite bounded values.",
-        "aggregation": "Send actual viewport, pixel ratio, input, accessibility, audio hardware/permission, network and supported types together. Re-evaluate on any aggregate change, including unchanged dimensions."
+        "aggregation": "Send actual viewport, pixel ratio, input, accessibility, audio hardware/permission, network and supported types together. Re-evaluate on any aggregate change, including unchanged dimensions.",
+        "mac_workbench": {
+          "negotiation": "register_ui.capabilities includes mac_workbench_v1 and register_ui.device.mac_workbench_v1 is true; updates retain the explicit device flag. Only macos with console/v2 receives this optional field.",
+          "field": "rote_config.device_profile.console.mac_workbench",
+          "version": 1,
+          "required_fields": [
+            "version",
+            "with_sidebar",
+            "without_sidebar",
+            "composer_max_width",
+            "transcript_max_width"
+          ],
+          "pane_fields": [
+            "split",
+            "conversation_width",
+            "compact_toolbar"
+          ],
+          "geometry": "ROTE resolves each navigation visibility variant from the reported viewport. Native code selects the supplied variant for local sidebar visibility, clamps dimensions to actual available bounds, and may locally select a tab or expand the canvas. It does not derive breakpoints, ratios, or minimum pane widths.",
+          "fallback": "Absent, malformed, unknown-version, unnegotiated and non-macOS profiles retain the existing console/v2 shell. Other clients ignore this optional field; their existing geometry is unchanged.",
+          "authority": "Layout capability only; confers no host permission, tool authority, owner identity or computer availability."
+        }
       },
       "local_prompt": {
         "action": "compose_prompt",
@@ -3076,6 +3226,193 @@
         "macos": "ThisDeviceOnly Keychain Ed25519 key",
         "watch": "Existing generic form handoff to signed-in phone or desktop; no private key or grant forwarded."
       }
+    },
+    "terminal_panel": {
+      "version": 1,
+      "fixture": "contracts/fixtures/terminal/panel_surface.json",
+      "surface_key": "terminal",
+      "authority": "The host authenticates the original registered human and current session, resolves the owner's existing terminal, and rechecks owner, connection, session and delivery authority before every read and every submitted operation. Presentation supplies no terminal creation, execution or ownership authority.",
+      "navigation": {
+        "action": "chrome_open",
+        "payload_fields": [
+          "surface",
+          "params"
+        ],
+        "modes": [
+          "list",
+          "panel"
+        ],
+        "list_params": [
+          "mode"
+        ],
+        "panel_params": [
+          "mode",
+          "session_id",
+          "offset?"
+        ],
+        "identity": "Opaque bounded session id; no host, path or credential identity is supplied by presentation."
+      },
+      "request": {
+        "submission_id": "fresh canonical UUID4",
+        "request_generation": "fresh canonical UUID4 per read or submitted operation, including refresh",
+        "connection": "current registered connection only",
+        "delivery": "never queue, reconnect-replay or substitute a new owner, session or target"
+      },
+      "native_response": {
+        "type": "chrome_surface",
+        "exact_fields": [
+          "type",
+          "surface_key",
+          "region",
+          "title",
+          "admin_only",
+          "components",
+          "mode",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "admin_only": false
+      },
+      "web_response": {
+        "type": "chrome_render",
+        "exact_fields": [
+          "type",
+          "region",
+          "html",
+          "mode",
+          "surface_key",
+          "request_generation"
+        ],
+        "region": "modal",
+        "mode": "replace",
+        "html": "shared escaped and sanitized Projection rendering"
+      },
+      "retirement": [
+        "new terminal read or submitted operation",
+        "surface navigation or panel close",
+        "conversation navigation or send",
+        "timeout",
+        "owner, account or registration replacement",
+        "connection replacement or disconnect",
+        "revoked or changed terminal authority"
+      ],
+      "response_policy": "Accept exactly one complete reply with the current surface, request generation, connection and owner. Reject stale, malformed, duplicate, cross-surface and uncorrelated replies. The host rechecks the exact owned session after every awaited read and refused operation.",
+      "session": {
+        "fields": [
+          "session_id",
+          "target?",
+          "directory?",
+          "state?",
+          "cols?",
+          "rows?",
+          "created_at?",
+          "idle_seconds?",
+          "ring_start?",
+          "ring_end?"
+        ],
+        "states": [
+          "running",
+          "exited",
+          "closed",
+          "disconnected",
+          "unavailable"
+        ],
+        "target": "Host-owned literal display label for the authorized existing session; absent values render the declared not-reported placeholder.",
+        "directory": "Host-owned literal working directory; never a client-supplied path; absent values render the declared not-reported placeholder."
+      },
+      "statuses": [
+        "ready",
+        "loading",
+        "unavailable",
+        "stale",
+        "wrong_owner",
+        "disconnected",
+        "account_changed",
+        "denied",
+        "expired",
+        "error",
+        "timeout"
+      ],
+      "output": {
+        "input": "Host-authorized UTF-8 text or data_b64 from one retained read; the builder accepts either bounded form.",
+        "encoding": "UTF-8; invalid bytes become U+FFFD",
+        "sanitization": "ANSI CSI, OSC including clipboard and hyperlink controls, DCS/SOS/PM/APC, C0/C1 controls, bidi and other format controls are removed before escaped literal rendering. Terminal text never becomes a link.",
+        "display_utf8_bytes": 32768,
+        "display_lines": 2000,
+        "truncation": "Bounded output retains the newest complete Unicode scalars and a visible warning; host-reported truncation also shows the warning.",
+        "copy": "Output is literal selectable text. Copy uses the platform selection or clipboard UI; no OSC 52, server clipboard command or hidden clipboard write is honored."
+      },
+      "content": {
+        "types": [
+          "text",
+          "alert",
+          "badge",
+          "card",
+          "code",
+          "keyvalue",
+          "button",
+          "param_picker"
+        ],
+        "bounds": "At most 16 sessions per list and the declared output bounds; the closed component vocabulary above is enforced by the shared ROTE validator before delivery."
+      },
+      "actions": {
+        "chrome_terminal_input": [
+          "surface",
+          "session_id",
+          "fields.data"
+        ],
+        "chrome_terminal_resize": [
+          "surface",
+          "session_id",
+          "fields.cols",
+          "fields.rows"
+        ],
+        "chrome_terminal_interrupt": [
+          "surface",
+          "session_id"
+        ],
+        "chrome_terminal_close": [
+          "surface",
+          "session_id"
+        ]
+      },
+      "input": {
+        "maximum_characters": 512,
+        "content": "One bounded keyboard line of UTF-8 without control characters; the host encodes, authorizes and dispatches it to the exact current session.",
+        "delivery": "Current owner, connection and session only. Never queued, never replayed, never delivered to a replaced session, account or connection."
+      },
+      "resize": {
+        "columns": "Integer 2 through 1000",
+        "rows": "Integer 2 through 300",
+        "delivery": "Applied to the exact current session after owner and connection rechecks; stale resize requests are refused."
+      },
+      "interrupt": "Requests the governed interrupt for the exact current session; the host owns signal delivery and audit.",
+      "session_close": "Closes the exact current session through the governed terminal contract; retained output and cleanup are host-owned, and closing the panel never closes the session.",
+      "dispositions": {
+        "browser": "interactive_panel",
+        "windows": "interactive_panel",
+        "android": "read_only_monitor",
+        "macos": "read_only_monitor",
+        "ios": "read_only_monitor",
+        "watchos": "phone_desktop_handoff",
+        "voice": "omitted_by_server"
+      },
+      "rote_devices": {
+        "browser": "interactive_panel",
+        "windows": "interactive_panel",
+        "android": "read_only_monitor",
+        "ios": "read_only_monitor",
+        "macos": "read_only_monitor",
+        "tablet": "read_only_monitor",
+        "mobile": "read_only_monitor",
+        "tv": "read_only_monitor",
+        "watch": "phone_desktop_handoff",
+        "voice": "omitted_by_server"
+      },
+      "interactive_scope": "Keyboard input, resize, interrupt and session close are advertised only on interactive_panel dispositions. Read-only monitors receive the complete list and output reads with platform-selection copy and never a partial command form; phone, tablet and tv render the read-only monitor through their declared ROTE fallbacks.",
+      "unavailable_host": "When the host reports the terminal capability unavailable or refused, the panel renders the declared unavailable or denied state with recovery guidance and advertises no terminal controls; the omission stays server-declared and is never hidden independently in a client.",
+      "watch": "Host renders only content-free state metadata and a phone or desktop handoff. Session id, target, directory, offsets and output are not sent to the watch."
     }
   },
   "frame_contracts": {
@@ -4064,6 +4401,10 @@
     "chrome_safety_stop",
     "chrome_safety_verify",
     "chrome_skill_toggle",
+    "chrome_terminal_close",
+    "chrome_terminal_input",
+    "chrome_terminal_interrupt",
+    "chrome_terminal_resize",
     "chrome_theme_preset",
     "chrome_tour_event",
     "chrome_turn_selection_set",

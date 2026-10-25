@@ -12,6 +12,7 @@ collectClientCoverage(test, "work-reads-088");
 const ROOT = resolve(import.meta.dirname, "../../..");
 const CLIENT = resolve(ROOT, "backend/webrender/static/client.js");
 const SOURCE = await readFile(CLIENT, "utf8");
+const TERMINAL_FIXTURE = JSON.parse(await readFile(resolve(ROOT, "contracts/fixtures/terminal/panel_surface.json"), "utf8"));
 const coverageOutput = process.env.ASTRAL_WORK_COVERAGE_OUTPUT;
 const rawCoverage = [];
 
@@ -32,8 +33,10 @@ test.afterAll(async () => {
   await writeFile(resolve(coverageOutput), JSON.stringify(rawCoverage) + "\n", { mode: 0o600 });
 });
 
-for (const surface of ["work", "evidence", "safety"]) {
-  test.describe(`${surface} request freshness`, () => {
+for (const scope of ["work", "evidence", "safety", "terminal_panel", "terminal_monitor"]) {
+  const surface = scope.startsWith("terminal_") ? "terminal" : scope;
+  const terminalMode = scope === "terminal_monitor" ? "monitor" : "panel";
+  test.describe(`${scope} request freshness`, () => {
     async function setup(page) {
       await page.addInitScript(() => {
         window.__ASTRAL_TOKEN__ = "fixture-owner-token";
@@ -64,7 +67,7 @@ for (const surface of ["work", "evidence", "safety"]) {
       await page.route("https://work-read.example/**", route => route.fulfill({
         contentType: "text/html", body: `<!doctype html><html><body>
           <button id="astral-newchat-btn">New chat fixture</button><a id="logout" href="/auth/logout">Sign out fixture</a><header id="astral-topbar">
-          <button data-ui-action="chrome_open" data-ui-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : surface === "evidence" ? {kind: "usage"} : {})}}'>Open ${surface} fixture</button>
+          <button data-ui-action="chrome_open" data-ui-payload='{"surface":"${surface}","params":${JSON.stringify(surface === "work" ? {mode: "list"} : surface === "evidence" ? {kind: "usage"} : surface === "terminal" ? {mode: terminalMode, session_id: "term_01JABCDEF"} : {})}}'>Open ${surface} fixture</button>
           <button data-ui-action="chrome_open" data-ui-payload='{"surface":"agents"}'>Open other fixture</button>
           </header><div id="astral-history"></div><div id="astral-status"></div>
           <section id="astral-canvas"></section><div id="astral-chat"></div>
@@ -90,6 +93,50 @@ for (const surface of ["work", "evidence", "safety"]) {
 
     async function receive(page, frame) {
       await page.evaluate(value => window.__sockets.at(-1).receive(value), frame);
+    }
+
+    if (scope === "terminal_panel") {
+      const terminalLabels = {
+        chrome_terminal_input: "Send to terminal", chrome_terminal_resize: "Apply resize",
+        chrome_terminal_interrupt: "Send interrupt", chrome_terminal_close: "Close terminal session",
+      };
+      async function offerTerminal(page, name) {
+        const request = await open(page);
+        await receive(page, {...TERMINAL_FIXTURE.web_frames.panel, request_generation: request.request_generation});
+        if (name === "chrome_terminal_input") await page.getByRole("textbox", {name: "Keyboard input", exact: true}).fill("echo safe");
+        if (name === "chrome_terminal_resize") {
+          await page.getByRole("spinbutton", {name: "Columns", exact: true}).fill("100");
+          await page.getByRole("spinbutton", {name: "Rows", exact: true}).fill("30");
+        }
+      }
+      for (const name of ["chrome_terminal_input", "chrome_terminal_resize", "chrome_terminal_interrupt", "chrome_terminal_close"]) {
+        test(`${name} sends a correlated current request and accepts only its reply`, async ({page}) => {
+          await setup(page);
+          await offerTerminal(page, name);
+          await page.getByRole("button", {name: terminalLabels[name], exact: true}).click();
+          const sent = await page.evaluate(action => window.__frames.filter(frame => frame.action === action).at(-1), name);
+          expect(sent.session_id).toBeUndefined();
+          expect(sent.payload.surface).toBe("terminal");
+          expect(sent.payload.session_id).toBe("term_01JABCDEF");
+          expect(Object.keys(sent.payload).sort()).toEqual(name === "chrome_terminal_input" || name === "chrome_terminal_resize"
+            ? ["fields", "session_id", "surface"] : ["session_id", "surface"]);
+          if (name === "chrome_terminal_input") expect(sent.payload.fields).toEqual({data: "echo safe"});
+          if (name === "chrome_terminal_resize") expect(sent.payload.fields).toEqual({cols: 100, rows: 30});
+          expect(sent.request_generation).toMatch(/^[0-9a-f-]{36}$/u);
+          await receive(page, reply(sent, "Terminal control acknowledged"));
+          await expect(page.getByText("Terminal control acknowledged")).toBeVisible();
+          await receive(page, reply(sent, "Duplicate terminal control"));
+          await expect(page.getByText("Duplicate terminal control")).toHaveCount(0);
+        });
+        test(`${name} never queues while disconnected`, async ({page}) => {
+          await setup(page);
+          await offerTerminal(page, name);
+          await page.evaluate(() => { window.__sockets.at(-1).readyState = 3; });
+          await page.getByRole("button", {name: terminalLabels[name], exact: true}).click();
+          await page.evaluate(() => { window.__sockets.at(-1).readyState = 1; window.__sockets.at(-1).onopen?.(); });
+          expect(await page.evaluate(action => window.__frames.filter(frame => frame.action === action).length, name)).toBe(0);
+        });
+      }
     }
 
     if (surface === "safety") {

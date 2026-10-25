@@ -661,6 +661,7 @@ public struct DeviceDescriptor: Equatable, Sendable {
     public var hasCamera: Bool
     public var connectionType: String
     public var consoleContract: String?
+    public var macWorkbenchSupported: Bool
 
     public init(
         deviceType: String, viewportWidth: Int, viewportHeight: Int,
@@ -675,7 +676,8 @@ public struct DeviceDescriptor: Equatable, Sendable {
         pointerType: String = "coarse",
         hasCamera: Bool = false,
         connectionType: String = "unknown",
-        consoleContract: String? = nil
+        consoleContract: String? = nil,
+        macWorkbenchSupported: Bool = false
     ) {
         self.deviceId = deviceId
         self.deviceType = deviceType
@@ -695,6 +697,7 @@ public struct DeviceDescriptor: Equatable, Sendable {
         self.hasCamera = hasCamera
         self.connectionType = connectionType
         self.consoleContract = consoleContract
+        self.macWorkbenchSupported = macWorkbenchSupported
     }
 
     public static func ios(viewportWidth: Int, viewportHeight: Int) -> DeviceDescriptor {
@@ -749,6 +752,7 @@ public struct DeviceDescriptor: Equatable, Sendable {
         ]
         if consoleContract == ConsoleModel.contract {
             fields["console_contract"] = .string(ConsoleModel.contract)
+            if deviceType == "macos", macWorkbenchSupported { fields["mac_workbench_v1"] = .bool(true) }
         }
         return .object(fields)
     }
@@ -788,7 +792,10 @@ public enum Outbound {
         connectionGeneration: String = UUID().uuidString.lowercased(),
         resume: ConversationResumeRegistration? = nil,
         workReadSupported: Bool = false,
-        guidanceNotesSupported: Bool = false
+        guidanceNotesSupported: Bool = false,
+        computerHost: ComputerHostDescriptor? = nil,
+        computerHostCapable: Bool = false,
+        macWorkbenchSupported: Bool = false
     ) -> String {
         guard continuityUUID4(connectionGeneration) != nil else { return "{}" }
         let voiceCapable =
@@ -799,12 +806,19 @@ public enum Outbound {
         if guidanceNotesSupported { capabilities.append("guidance_notes_v1") }
         if device.consoleContract == ConsoleModel.contract { capabilities.append("guidance_selection_v1") }
         if voiceCapable { capabilities.append("voice") }
+        if computerHostCapable { capabilities.append("computer_host_capable") }
+        let workbench =
+            (macWorkbenchSupported || device.macWorkbenchSupported) && device.deviceType == "macos"
+            && device.consoleContract == ConsoleModel.contract
+        if workbench { capabilities.append("mac_workbench_v1") }
+        var devicePayload = device.json.objectValue ?? [:]
+        if workbench { devicePayload["mac_workbench_v1"] = .bool(true) }
         var frame: [String: JSONValue] = [
             "type": .string("register_ui"),
             "token": .string(token),
             "session_id": sessionId.map(JSONValue.string) ?? .null,
             "capabilities": .array(capabilities.map(JSONValue.string)),
-            "device": device.json,
+            "device": .object(devicePayload),
             "resumed": .bool(resumed),
             "connection_generation": .string(connectionGeneration),
         ]
@@ -812,6 +826,7 @@ public enum Outbound {
             frame["device_id"] = .string(deviceId)
         }
         if let resume { frame["resume"] = resume.json }
+        if let computerHost { frame["computer_host"] = computerHost.json }
         return encode(.object(frame))
     }
 

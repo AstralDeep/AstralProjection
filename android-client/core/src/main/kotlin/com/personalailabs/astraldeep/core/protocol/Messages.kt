@@ -817,7 +817,7 @@ sealed interface Inbound {
     data class Unknown(val type: String) : Inbound
 }
 
-fun isPrivateChromeSurface(surface: String): Boolean = surface in setOf("work", "guidance", "agent_intro")
+fun isPrivateChromeSurface(surface: String): Boolean = surface in setOf("work", "guidance", "agent_intro", "terminal")
 
 fun isGuidanceNoteAction(action: String): Boolean =
     action in setOf("chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget")

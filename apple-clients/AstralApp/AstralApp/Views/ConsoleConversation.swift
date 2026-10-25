@@ -4,6 +4,127 @@
 import AstralCore
 import SwiftUI
 
+#if os(macOS)
+    import AppKit
+
+    struct MacWorkbenchTranscript: View {
+        @Environment(AppModel.self) private var model
+        @Environment(ThemeStore.self) private var theme
+        let maximumWidth: Double
+        let contentPadding: EdgeInsets
+        @State private var followsLatest = true
+        private var p: AstralPalette { theme.palette }
+        private var turns: [AppModel.ChatTurn] {
+            model.visibleTurns.filter { !$0.text.isEmpty || !$0.components.isEmpty }
+        }
+
+        var body: some View {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 28) {
+                        ForEach(turns) { turn in
+                            if turn.role == "reasoning" {
+                                ReasoningSnippet(text: turn.text)
+                            } else {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text(turn.role == "user" ? "You" : "AstralDeep")
+                                        .font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.muted)
+                                    if !turn.text.isEmpty {
+                                        if turn.role == "user" {
+                                            Text(turn.text).textSelection(.enabled)
+                                        } else {
+                                            MarkdownBlockView(source: turn.text).textSelection(.enabled)
+                                        }
+                                    }
+                                    ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
+                                        ComponentView(component: component)
+                                    }
+                                }
+                                .font(ConsoleTypography.body).foregroundStyle(p.text)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id(turn.id)
+                            }
+                        }
+                        if let status = model.statusText {
+                            StatusLine(text: status, showsActivity: model.statusShowsActivity)
+                        }
+                        Color.clear.frame(height: 1).id("workbench-latest")
+                    }
+                    .frame(maxWidth: maximumWidth, alignment: .leading)
+                    .padding(contentPadding)
+                    .frame(maxWidth: .infinity)
+                    .background(MacTranscriptScrollObserver { followsLatest = $0 })
+                }
+                .accessibilityIdentifier("conversation-message-scroll")
+                .overlay(alignment: .bottom) {
+                    if !followsLatest {
+                        Button {
+                            followsLatest = true
+                            scrollToLatest(proxy)
+                        } label: {
+                            Label("Jump to latest", systemImage: "arrow.down")
+                                .font(ConsoleTypography.caption).padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(p.surface, in: Capsule()).overlay(Capsule().stroke(p.border))
+                        }
+                        .buttonStyle(.plain).padding(.bottom, 12)
+                    }
+                }
+                .onAppear { scrollToLatest(proxy) }
+                .onChange(of: model.activeChatId) { _, _ in
+                    followsLatest = true
+                    scrollToLatest(proxy)
+                }
+                .onChange(of: turns) { _, _ in if followsLatest { scrollToLatest(proxy) } }
+                .onChange(of: model.statusText) { _, _ in if followsLatest { scrollToLatest(proxy) } }
+            }
+        }
+
+        private func scrollToLatest(_ proxy: ScrollViewProxy) {
+            Task { @MainActor in
+                await Task.yield()
+                proxy.scrollTo("workbench-latest", anchor: .bottom)
+            }
+        }
+    }
+
+    private struct MacTranscriptScrollObserver: NSViewRepresentable {
+        let followsLatest: (Bool) -> Void
+
+        func makeNSView(context: Context) -> ScrollObserverView {
+            let view = ScrollObserverView()
+            view.followsLatest = followsLatest
+            return view
+        }
+
+        func updateNSView(_ view: ScrollObserverView, context: Context) { view.followsLatest = followsLatest }
+
+        final class ScrollObserverView: NSView {
+            var followsLatest: ((Bool) -> Void)?
+            private var observers: [NSObjectProtocol] = []
+
+            override func viewDidMoveToWindow() {
+                super.viewDidMoveToWindow()
+                observers.forEach(NotificationCenter.default.removeObserver)
+                observers.removeAll()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self, let scroll = self.enclosingScrollView, self.window != nil else { return }
+                    for name in [NSScrollView.didLiveScrollNotification, NSScrollView.didEndLiveScrollNotification] {
+                        observers.append(
+                            NotificationCenter.default.addObserver(forName: name, object: scroll, queue: .main) {
+                                [weak self, weak scroll] _ in
+                                guard let scroll, let document = scroll.documentView else { return }
+                                let remaining = document.bounds.maxY - scroll.contentView.bounds.maxY
+                                self?.followsLatest?(remaining <= 24)
+                            })
+                    }
+                }
+            }
+
+            deinit { observers.forEach(NotificationCenter.default.removeObserver) }
+        }
+    }
+#endif
+
 struct ConsoleCanvasBounds {
     var result: Anchor<CGRect>?
     var viewport: Anchor<CGRect>?

@@ -255,6 +255,7 @@ struct SurfaceView: View {
             let workGeneration = model.workReadState.generation
             let guidanceGeneration = model.guidanceState.generation
             let evidenceGeneration = model.evidenceReadGeneration
+            let terminalGeneration = model.terminalReadGeneration
             let safetyGeneration = model.safetyRequestGeneration
             if model.pendingSurface != nil && safetyGeneration == nil { return }
             do {
@@ -271,6 +272,7 @@ struct SurfaceView: View {
             if model.pendingSurfaceKey == "work" { model.failWorkRead(generation: workGeneration) }
             if model.pendingSurfaceKey == "guidance" { model.failGuidanceRequest(generation: guidanceGeneration) }
             if model.pendingSurfaceKey == "evidence" { model.failEvidenceRead(generation: evidenceGeneration) }
+            if model.pendingSurfaceKey == "terminal" { model.failTerminalRead(generation: terminalGeneration) }
             timedOut = true
         }
     }
@@ -307,7 +309,7 @@ struct SurfaceView: View {
     }
 
     private var surfaceTaskKey: String {
-        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")-\(model.evidenceReadGeneration ?? "")-\(model.safetyRequestGeneration ?? "")"
+        "\(model.pendingSurfaceKey)-\(model.pendingSurface == nil ? 0 : 1)-\(retryGeneration)-\(model.workReadState.generation ?? "")-\(model.guidanceState.generation ?? "")-\(model.evidenceReadGeneration ?? "")-\(model.terminalReadGeneration ?? "")-\(model.safetyRequestGeneration ?? "")"
     }
 }
 

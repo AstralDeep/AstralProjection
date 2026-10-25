@@ -25,23 +25,51 @@ def native_export(tmp_path, monkeypatch):
         source.write_bytes(b"enum Example {\n let value = 1\n}\n")
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
-    subprocess.run(["git", "-C", str(repo), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "source"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repo),
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "source",
+        ],
+        check=True,
+    )
     bundle = repo / "build/result.xcresult"
     bundle.mkdir(parents=True)
     domain = policy.make_domain(
-        geometry={path: {"native_last_line": 2, "geometry_sha256": policy.sha256(path.encode())} for path in paths},
+        geometry={
+            path: {"native_last_line": 2, "geometry_sha256": policy.sha256(path.encode())}
+            for path in paths
+        },
         source_bytes=lambda path: (repo / path).read_bytes(),
-        binary={"member": policy.BINARY_MEMBERS["app"], "sha256": "a" * 64, "artifact_sha256": "b" * 64,
-                "artifact_member": "coverage/native-binaries/apple-ios-unit.zip"},
-        observed_sources=paths, prefix="", lane="unit",
+        binary={
+            "member": policy.BINARY_MEMBERS["app"],
+            "sha256": "a" * 64,
+            "artifact_sha256": "b" * 64,
+            "artifact_member": "coverage/native-binaries/apple-ios-unit.zip",
+        },
+        observed_sources=paths,
+        prefix="",
+        lane="unit",
     )
     original = exporter._bounded_command
-    rows = [{"line": 1, "isExecutable": False}, {"line": 2, "isExecutable": True, "executionCount": 7}]
+    rows = [
+        {"line": 1, "isExecutable": False},
+        {"line": 2, "isExecutable": True, "executionCount": 7},
+    ]
+
     def run(command, **kwargs):
         if command[0] == "git":
             return original(command, **kwargs)
         assert command == ["xcrun", "xccov", "view", "--archive", "--json", str(bundle)]
         return json.dumps({str(repo / paths[0]): rows}).encode()
+
     monkeypatch.setattr(exporter, "_bounded_command", run)
     return repo, bundle, paths, domain, rows
 
@@ -51,16 +79,36 @@ def test_cli_keeps_raw_counter_rows_and_all_mapped_source_identities(native_expo
     declaration = repo / "build/domain.json"
     declaration.write_text(json.dumps(domain))
     output = repo / "build/output.json"
-    assert exporter.main(["--repo", str(repo), "--xcresult", str(bundle), "--platform", "ios", "--native-domain", str(declaration), "--output", str(output)]) == 0
+    assert (
+        exporter.main(
+            [
+                "--repo",
+                str(repo),
+                "--xcresult",
+                str(bundle),
+                "--platform",
+                "ios",
+                "--native-domain",
+                str(declaration),
+                "--output",
+                str(output),
+            ]
+        )
+        == 0
+    )
     value = json.loads(output.read_text())
     assert value["coverage"] == {paths[0]: rows}
     assert value["domains"]["unit"]["observed_sources"] == [paths[0]]
     assert set(value["domains"]["unit"]["sources"]) == set(paths)
-    assert all(facts["physical_lines"] == 3 for facts in value["domains"]["unit"]["sources"].values())
+    assert all(
+        facts["physical_lines"] == 3 for facts in value["domains"]["unit"]["sources"].values()
+    )
     assert len(value["coverage"][paths[0]]) == 2
 
 
-@pytest.mark.parametrize("mutation", ["prefix", "short", "hole", "source", "platform", "missing_app", "counter", "size"])
+@pytest.mark.parametrize(
+    "mutation", ["prefix", "short", "hole", "source", "platform", "missing_app", "counter", "size"]
+)
 def test_native_export_denials_leave_no_output(native_export, monkeypatch, mutation):
     repo, bundle, paths, domain, rows = native_export
     platform = "ios"
@@ -85,7 +133,9 @@ def test_native_export_denials_leave_no_output(native_export, monkeypatch, mutat
         monkeypatch.setattr(exporter, "MAX_OUTPUT_BYTES", 500)
     output = repo / "build/output.json"
     with pytest.raises(exporter.ExportError):
-        exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform=platform, native_domain=domain)
+        exporter.export_xccov(
+            repo=repo, xcresult=bundle, output=output, platform=platform, native_domain=domain
+        )
     assert not output.exists()
 
 
@@ -110,7 +160,10 @@ def test_unsigned_64_bit_subranges_leave_exported_lines_unchanged(native_export,
     exporter.export_xccov(repo=repo, xcresult=bundle, output=wrapped, platform="ios")
     assert wrapped.read_bytes() == plain.read_bytes()
     assert json.loads(wrapped.read_text()) == {
-        paths[0]: [{"line": 1, "isExecutable": False}, {"line": 2, "isExecutable": True, "executionCount": 7}]
+        paths[0]: [
+            {"line": 1, "isExecutable": False},
+            {"line": 2, "isExecutable": True, "executionCount": 7},
+        ]
     }
 
 
@@ -174,10 +227,14 @@ def test_malformed_subranges_are_refused_where_they_occur(subranges):
 
 
 def test_non_executable_line_with_a_count_is_refused_where_it_occurs():
-    document = json.dumps({_ARCHIVE_SOURCE: [
-        {"line": 1, "isExecutable": False},
-        {"line": 2, "isExecutable": False, "executionCount": 3},
-    ]}).encode()
+    document = json.dumps(
+        {
+            _ARCHIVE_SOURCE: [
+                {"line": 1, "isExecutable": False},
+                {"line": 2, "isExecutable": False, "executionCount": 3},
+            ]
+        }
+    ).encode()
     with pytest.raises(exporter.ExportError) as refused:
         exporter._normalize_observations(document, queried_path=_ARCHIVE_SOURCE, maximum_lines=3)
     assert refused.value.code == "invalid_observation"
@@ -201,13 +258,17 @@ def _bulk_bytes(native_export, monkeypatch, content):
     return calls
 
 
-def test_one_bulk_query_keeps_exact_sorted_rows_and_excludes_vendor_sources(native_export, monkeypatch):
+def test_one_bulk_query_keeps_exact_sorted_rows_and_excludes_vendor_sources(
+    native_export, monkeypatch
+):
     repo, bundle, paths, _domain, rows = native_export
-    content = json.dumps({
-        str(repo / paths[1]): rows,
-        "/vendor/ThirdParty.swift": [{"line": 1, "isExecutable": True, "executionCount": 1000}],
-        str(repo / paths[0]): rows,
-    }).encode()
+    content = json.dumps(
+        {
+            str(repo / paths[1]): rows,
+            "/vendor/ThirdParty.swift": [{"line": 1, "isExecutable": True, "executionCount": 1000}],
+            str(repo / paths[0]): rows,
+        }
+    ).encode()
     calls = _bulk_bytes(native_export, monkeypatch, content)
     output = repo / "build/bulk.json"
     value = exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform="ios")
@@ -218,13 +279,26 @@ def test_one_bulk_query_keeps_exact_sorted_rows_and_excludes_vendor_sources(nati
     assert calls[0][1]["export_deadline"] is not None
 
 
-@pytest.mark.parametrize("content", [
-    b"[]", b"{}", b"null", b"{", b'{"/vendor/NaN.swift":NaN}',
-    b'{"/vendor/Duplicate.swift":[],"/vendor/Duplicate.swift":[]}',
-    b'{"relative.swift":[]}', b'{"/wrong.txt":[]}', b'{"/wrong\\\\path.swift":[]}',
-    b'{"/wrong\\npath.swift":[]}', b'{"/wrong\\rpath.swift":[]}', b'{"/wrong\\u0000path.swift":[]}',
-    b'{"/vendor/Only.swift":[]}', b'{"/wrong\\ud800.swift":[]}', b'\xff',
-])
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"[]",
+        b"{}",
+        b"null",
+        b"{",
+        b'{"/vendor/NaN.swift":NaN}',
+        b'{"/vendor/Duplicate.swift":[],"/vendor/Duplicate.swift":[]}',
+        b'{"relative.swift":[]}',
+        b'{"/wrong.txt":[]}',
+        b'{"/wrong\\\\path.swift":[]}',
+        b'{"/wrong\\npath.swift":[]}',
+        b'{"/wrong\\rpath.swift":[]}',
+        b'{"/wrong\\u0000path.swift":[]}',
+        b'{"/vendor/Only.swift":[]}',
+        b'{"/wrong\\ud800.swift":[]}',
+        b"\xff",
+    ],
+)
 def test_bulk_json_and_path_denials_leave_no_output(native_export, monkeypatch, content):
     repo, bundle, _paths, _domain, _rows = native_export
     _bulk_bytes(native_export, monkeypatch, content)
@@ -234,10 +308,18 @@ def test_bulk_json_and_path_denials_leave_no_output(native_export, monkeypatch, 
     assert not output.exists()
 
 
-@pytest.mark.parametrize("bound", [
-    "MAX_TOTAL_XCCOV_BYTES", "MAX_ARCHIVE_FILES", "MAX_FILE_LIST_BYTES", "MAX_PATH_BYTES",
-    "MAX_FILE_JSON_BYTES", "MAX_TOTAL_OBSERVATIONS", "MAX_OUTPUT_BYTES",
-])
+@pytest.mark.parametrize(
+    "bound",
+    [
+        "MAX_TOTAL_XCCOV_BYTES",
+        "MAX_ARCHIVE_FILES",
+        "MAX_FILE_LIST_BYTES",
+        "MAX_PATH_BYTES",
+        "MAX_FILE_JSON_BYTES",
+        "MAX_TOTAL_OBSERVATIONS",
+        "MAX_OUTPUT_BYTES",
+    ],
+)
 def test_bulk_export_preserves_every_capacity_bound(native_export, monkeypatch, bound):
     repo, bundle, paths, _domain, rows = native_export
     content = json.dumps({str(repo / path): rows for path in paths}).encode()
@@ -295,8 +377,36 @@ def test_bulk_export_refuses_another_checkout_and_expired_deadline(native_export
 @pytest.mark.parametrize("platform", ["ios", "macos", "watchos"])
 def test_bulk_query_keeps_existing_platform_source_roots(native_export, monkeypatch, platform):
     repo, bundle, paths, _domain, rows = native_export
-    _bulk_bytes(native_export, monkeypatch, json.dumps({str(repo / path): rows for path in paths}).encode())
+    _bulk_bytes(
+        native_export, monkeypatch, json.dumps({str(repo / path): rows for path in paths}).encode()
+    )
     output = repo / "build/bulk.json"
     report = exporter.export_xccov(repo=repo, xcresult=bundle, output=output, platform=platform)
     expected = paths[1:] if platform == "watchos" else paths
     assert report == {path: rows for path in expected}
+
+
+@pytest.mark.parametrize("architecture", ["arm64", "x86_64"])
+def test_native_macos_export_keeps_exact_rows_and_whole_source_binding(native_export, architecture):
+    repo, bundle, paths, domain, rows = native_export
+    domain.update(format=policy.MACOS_DOMAIN_FORMAT, platform="macos", architecture=architecture)
+    domain["binary"].update(
+        member=policy.MACOS_BINARY_MEMBER,
+        artifact_member="coverage/native-binaries/apple-macos-unit.zip",
+    )
+    output = repo / "build/macos.json"
+    value = exporter.export_xccov(
+        repo=repo, xcresult=bundle, output=output, platform="macos", native_domain=domain
+    )
+    assert value["format"] == policy.MACOS_REPORT_FORMAT
+    assert value["platform"] == "macos"
+    assert value["coverage"] == {paths[0]: rows}
+    assert set(value["domains"]["unit"]["sources"]) == set(paths)
+    with pytest.raises(exporter.ExportError):
+        exporter.export_xccov(
+            repo=repo,
+            xcresult=bundle,
+            output=repo / "build/wrong.json",
+            platform="ios",
+            native_domain=domain,
+        )
