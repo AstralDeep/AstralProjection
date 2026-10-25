@@ -51,7 +51,7 @@ jobs:
           path: build/ci/review-diagnostics.json
           if-no-files-found: error
       - run: mkdir -p build/074/coverage
-      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
+      - run: python -m pytest -q -p no:cacheprovider --cov=astralprojection --cov=rote --cov=webrender --cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets --cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch --cov-report=xml:build/074/coverage/projection-python.xml
       - name: Prove focused regression effectiveness
         run: python scripts/check_regression_effectiveness.py
       - name: Record changed Python coverage for the event range
@@ -217,7 +217,7 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
           python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `
-            --cov=windows-client\astral_client --cov=windows-client\win_agent --cov-branch `
+            --cov=astral_client --cov=win_agent --cov-branch `
             --cov-report=xml:build\075\coverage\windows-python.xml
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python scripts\check_changed_coverage.py build\075\coverage\windows-python.xml `

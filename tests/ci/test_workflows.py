@@ -86,7 +86,7 @@ def _assert_core_trigger_and_python_coverage(text: str) -> None:
         "pytest -q -p no:cacheprovider "
         "--cov=astralprojection --cov=rote --cov=webrender "
         "--cov=scripts.merge_xccov_line_coverage --cov=scripts.build_offline_assets "
-        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov-branch "
+        "--cov=scripts.build_native_export --cov=scripts.android_coverage --cov=scripts.native_xccov_domain --cov=scripts.collect_xccov_native_domain --cov=scripts.export_xccov_line_coverage --cov=scripts.check_changed_coverage --cov=scripts.ci_review_diagnostics --cov=scripts.ci_lanes --cov=scripts.ci_retry_diagnostics --cov=scripts.check_regression_effectiveness --cov=scripts.swift_inactive_input --cov-branch "
         "--cov-report=xml:build/074/coverage/projection-python.xml"
     ) in python
     assert "run: python scripts/check_regression_effectiveness.py" in _step_block(
@@ -237,7 +237,7 @@ def _assert_windows_native_contract(text: str) -> None:
         "PYTHONPATH: windows-client",
         "PYTEST_ADDOPTS: -o faulthandler_timeout=60",
         r"python -m pytest windows-client\tests -q -p no:cacheprovider --durations=25 `",
-        r"--cov=windows-client\astral_client --cov=windows-client\win_agent --cov-branch `",
+        r"--cov=astral_client --cov=win_agent --cov-branch `",
         r"--cov-report=xml:build\075\coverage\windows-python.xml",
         r"python scripts\check_changed_coverage.py build\075\coverage\windows-python.xml `",
         r"--output build\075\coverage\windows-python-changed-coverage.json",
@@ -324,6 +324,71 @@ APPLE_RETRY_POLICY = (
     "-retry-tests-on-failure",
     "-test-iterations 3",
 )
+WHOLE_OS_STEP = "Qualify standalone whole-source compiler helper"
+WHOLE_OS_UPLOAD = "Retain standalone compiler helper raw evidence"
+WHOLE_OS_VERSION = r'''[[ "$(xcodebuild -version)" == $'Xcode 26.6\nBuild version 17F113' ]]'''
+
+
+def _assert_whole_os_helper_contract(apple: str) -> None:
+    lint = _step_block(_job_block(apple, "swift-lint"), "Lint every maintained Swift source")
+    assert "xcrun swift-format lint --strict --recursive" in lint
+    assert "--configuration apple-clients/.swift-format" in lint
+    assert "scripts/WholeOSInputProof.swift" in lint
+    core = _job_block(apple, "core-tests")
+    assert "timeout-minutes: 20" in core and "runs-on: macos-26" in core
+    assert "continue-on-error" not in core
+    setup = _step_block(core, "Set up helper test Python")
+    assert "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1" in setup
+    assert 'python-version: "3.11"' in setup
+    install = _step_block(core, "Install locked helper test requirements")
+    assert "python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt" in install
+    run = _step_block(core, WHOLE_OS_STEP)
+    for required in (
+        "shell: bash",
+        "set -euo pipefail",
+        WHOLE_OS_VERSION,
+        'evidence="$PWD/build/099/swift-inactive-input"',
+        'if [[ -e "$evidence" || -L "$evidence" ]]; then',
+        'echo "::error::helper evidence directory already exists" >&2',
+        "exit 1",
+        'mkdir -p "$evidence"',
+        'chmod 700 "$evidence"',
+        "python -m pytest tests/test_swift_inactive_input.py tests/test_swift_inactive_input_native.py",
+        '-q -p no:cacheprovider --basetemp="$evidence/pytest"',
+        '--junitxml="$evidence/junit.xml"',
+        "--cov=scripts.swift_inactive_input --cov-branch",
+        '--cov-report=xml:"$evidence/helper-python.xml"',
+        '--cov-report=json:"$evidence/helper-python.json"',
+        '2>&1 | tee "$evidence/pytest.log"',
+        "PYTHONPATH: ${{ github.workspace }}",
+        "COVERAGE_FILE: ${{ github.workspace }}/build/099/swift-inactive-input/python.coverage",
+    ):
+        assert required in run, required
+    assert " -k " not in run and "|| true" not in run and "--reruns" not in run
+    assert core.index("name: Select exact Xcode") < core.index("name: Set up helper test Python")
+    assert core.index("name: Set up helper test Python") < core.index("name: Install locked helper test requirements")
+    assert core.index("name: Install locked helper test requirements") < core.index("name: " + WHOLE_OS_STEP)
+    upload = _step_block(core, WHOLE_OS_UPLOAD)
+    for required in (
+        "if: always()",
+        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "name: astral-swift-inactive-input-tool-evidence",
+        "build/099/swift-inactive-input/pytest/",
+        "build/099/swift-inactive-input/pytest.log",
+        "build/099/swift-inactive-input/junit.xml",
+        "build/099/swift-inactive-input/helper-python.xml",
+        "build/099/swift-inactive-input/helper-python.json",
+        "build/099/swift-inactive-input/python.coverage",
+        "if-no-files-found: error",
+        "retention-days: 14",
+    ):
+        assert required in upload, required
+    assert "macOS arm64" in PYTHON_CI_LOCK.read_text()
+    native = (ROOT / "tests/test_swift_inactive_input_native.py").read_text()
+    assert "sum(int(row[1]) > 0 for row in lines) / len(lines) >= 0.9" in native
+    assert 'pinned = actual_version.strip() == b"Xcode 26.6\\nBuild version 17F113"' in native
+    assert "except proof.ProofError:\n        assert not pinned" in native
+    assert "assert pinned" in native
 
 
 def _assert_retry_policy_in_one_run(job: str, run: str) -> None:
@@ -655,6 +720,7 @@ def test_python_owner_jobs_use_hash_locked_ci_dependencies_and_build_constraint(
             "--cov=tests.test_merge_xccov_line_coverage",
         ),
         ("--cov-branch", ""),
+        ("--cov=scripts.swift_inactive_input", "--cov=tests.test_swift_inactive_input"),
         (
             "--cov=scripts.check_changed_coverage",
             "--cov=tests.test_check_changed_coverage",
@@ -950,6 +1016,90 @@ def test_apple_ci_preserves_exact_platform_coverage_and_marker_contract() -> Non
     _assert_apple_platform_contract(apple)
 
 
+def test_apple_required_lane_qualifies_and_retains_real_compiler_helper() -> None:
+    _assert_whole_os_helper_contract((ACTIVE / "apple-ci.yml").read_text())
+
+
+@pytest.mark.parametrize(
+    ("needle", "replacement"),
+    (
+        ("scripts/WholeOSInputProof.swift", ""),
+        ("name: Set up helper test Python", "name: Removed helper Python setup"),
+        ("actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1", "actions/setup-python@v6"),
+        ('python-version: "3.11"', 'python-version: "3.12"'),
+        ("--require-hashes -r tooling/python-ci/requirements.lock.txt", "-r tooling/python-ci/requirements.lock.txt"),
+        (WHOLE_OS_VERSION, "true"),
+        ('if [[ -e "$evidence" || -L "$evidence" ]]; then', "if false; then"),
+        ("tests/test_swift_inactive_input_native.py", ""),
+        ('--basetemp="$evidence/pytest"', "--basetemp=/tmp/helper"),
+        ('2>&1 | tee "$evidence/pytest.log"', '2>&1 | tee "$evidence/pytest.log" || true'),
+        ("name: " + WHOLE_OS_UPLOAD + "\n        if: always()", "name: " + WHOLE_OS_UPLOAD + "\n        if: success()"),
+        ("            build/099/swift-inactive-input/pytest/\n", ""),
+        ("name: astral-swift-inactive-input-tool-evidence", "name: unretained-helper"),
+    ),
+)
+def test_apple_helper_guard_rejects_missing_or_weakened_required_steps(needle, replacement):
+    apple = (ACTIVE / "apple-ci.yml").read_text()
+    mutated = apple.replace(needle, replacement, 1)
+    assert mutated != apple
+    with pytest.raises(AssertionError):
+        _assert_whole_os_helper_contract(mutated)
+
+
+@pytest.mark.parametrize("test_exit", [0, 1, 5])
+def test_helper_workflow_preserves_test_failure_through_tee(tmp_path, test_exit):
+    core = _job_block((ACTIVE / "apple-ci.yml").read_text(), "core-tests")
+    step = _step_block(core, WHOLE_OS_STEP)
+    shims = tmp_path / "bin"
+    shims.mkdir()
+    (shims / "xcodebuild").write_text("#!/bin/sh\nprintf 'Xcode 26.6\\nBuild version 17F113\\n'\n")
+    (shims / "python").write_text(f"#!/bin/sh\nprintf 'owning helper test invocation\\n'\nexit {test_exit}\n")
+    for shim in shims.iterdir():
+        shim.chmod(0o700)
+    script = textwrap.dedent(step.split("run: |\n", 1)[1])
+    result = subprocess.run(
+        ["bash", "-c", script + '\nprintf reached > "$PWD/finished"\n'],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{shims}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == test_exit
+    assert (tmp_path / "finished").exists() == (test_exit == 0)
+    assert (tmp_path / "build/099/swift-inactive-input/pytest.log").read_text() == "owning helper test invocation\n"
+
+
+@pytest.mark.parametrize("existing", ["directory", "symlink"])
+def test_helper_workflow_refuses_preexisting_evidence_without_running_tests(tmp_path, existing):
+    core = _job_block((ACTIVE / "apple-ci.yml").read_text(), "core-tests")
+    step = _step_block(core, WHOLE_OS_STEP)
+    evidence = tmp_path / "build/099/swift-inactive-input"
+    evidence.parent.mkdir(parents=True)
+    operator = tmp_path / "operator"
+    operator.mkdir()
+    (operator / "preimage").write_bytes(b"original")
+    if existing == "directory":
+        evidence.mkdir()
+    else:
+        evidence.symlink_to(operator, target_is_directory=True)
+    shims = tmp_path / "bin"
+    shims.mkdir()
+    (shims / "xcodebuild").write_text("#!/bin/sh\nprintf 'Xcode 26.6\\nBuild version 17F113\\n'\n")
+    (shims / "python").write_text('#!/bin/sh\ntouch "$PWD/tests-ran"\n')
+    for shim in shims.iterdir():
+        shim.chmod(0o700)
+    result = subprocess.run(
+        ["bash", "-c", textwrap.dedent(step.split("run: |\n", 1)[1])],
+        cwd=tmp_path,
+        env={**os.environ, "PATH": f"{shims}{os.pathsep}{os.environ['PATH']}"},
+        capture_output=True,
+        timeout=10,
+    )
+    assert result.returncode != 0 and not (tmp_path / "tests-ran").exists()
+    assert (operator / "preimage").read_bytes() == b"original"
+
+
 @pytest.mark.parametrize(
     ("needle", "replacement"),
     (
@@ -1094,6 +1244,51 @@ def test_android_ci_wrapper_is_committed_executable() -> None:
         cwd=ROOT, capture_output=True, text=True, check=True,
     ).stdout
     assert indexed.startswith("100755 "), indexed
+
+
+def test_windows_coverage_preserves_both_package_initializers_and_unexecuted_files(tmp_path):
+    job = _job_block((ACTIVE / "ci.yml").read_text(), "windows-tests")
+    selectors = [value.replace("\\", "/") for value in re.findall(r"--cov=([^\s`]+)", job)]
+    assert len(selectors) == 2
+    client = tmp_path / "windows-client"
+    for name in ("astral_client", "win_agent"):
+        package = client / name
+        package.mkdir(parents=True)
+        (package / "__init__.py").write_text("VALUE = 1\n")
+    (client / "win_agent/unused.py").write_text("VALUE = 2\n")
+    parent_coverage = tmp_path / "parent.coverage"
+    protected = b"outer job coverage must remain untouched"
+    parent_coverage.write_bytes(protected)
+    script = """import coverage, importlib, json, pathlib, sys
+import xml.etree.ElementTree as ET
+report = coverage.Coverage(data_file='producer.coverage', source=sys.argv[1:], config_file=False)
+report.start()
+importlib.import_module('astral_client')
+importlib.import_module('win_agent')
+report.stop()
+report.save()
+report.xml_report(outfile='coverage.xml')
+classes = ET.parse('coverage.xml').getroot().findall('./packages/package/classes/class')
+print(json.dumps({node.get('filename'): {line.get('number'): int(line.get('hits'))
+    for line in node.findall('./lines/line')} for node in classes}))
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script, *selectors], cwd=tmp_path,
+        env={
+            **{key: value for key, value in os.environ.items()
+               if not key.startswith(("COVERAGE_", "COV_CORE_"))},
+            "PYTHONPATH": str(client), "COVERAGE_FILE": str(parent_coverage),
+        },
+        capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert parent_coverage.read_bytes() == protected
+    files = json.loads(result.stdout)
+    assert files == {
+        "windows-client/astral_client/__init__.py": {"1": 1},
+        "windows-client/win_agent/__init__.py": {"1": 1},
+        "windows-client/win_agent/unused.py": {"1": 0},
+    }
 
 
 def test_native_ci_aggregates_run_fail_closed_after_required_jobs() -> None:

@@ -6,13 +6,17 @@ drifted or symlinked inputs, and keeps CLI failures private.
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
 import hashlib
 import json
+import os
 from pathlib import Path
 import plistlib
 import struct
 import subprocess
+import sys
 import time
+from types import SimpleNamespace
 import zipfile
 
 import pytest
@@ -255,6 +259,8 @@ def _setup(tmp_path, monkeypatch, lane="ui", platform="ios", architecture="arm64
         "summary": summary,
         "tests": tests,
         "query_paths": [],
+        "stderr": b"",
+        "returncode": 0,
     }
 
     def run(command, **kwargs):
@@ -272,7 +278,7 @@ def _setup(tmp_path, monkeypatch, lane="ui", platform="ios", architecture="arm64
             assert copied.parent.stat().st_mode & 0o777 == 0o700
             state["query_paths"].append(copied)
             state["query_hook"](copied)
-            return json.dumps(state[command[4]]).encode()
+            return state.get("raw_" + command[4], json.dumps(state[command[4]]).encode())
         if command[2:] == ["--version"]:
             return b"Apple LLVM version 21.0.0\n"
         assert command[:6] == [
@@ -312,6 +318,19 @@ def _setup(tmp_path, monkeypatch, lane="ui", platform="ios", architecture="arm64
         return json.dumps(mapping).encode()
 
     monkeypatch.setattr(exporter, "_bounded_command", run)
+    monkeypatch.setattr(
+        collector,
+        "_metadata_command",
+        lambda command, **kwargs: {
+            "stdout": run(command, **kwargs),
+            "stderr": state["stderr"],
+            "returncode": state.get("returncodes", {}).get(command[4], state["returncode"]),
+            "failure": None,
+            "stdout_truncated": False,
+            "stderr_truncated": False,
+        },
+        raising=False,
+    )
     monkeypatch.setattr(
         collector,
         "_module",
@@ -483,7 +502,7 @@ def test_real_native_metadata_and_binary_policy_are_not_replaced_by_xctestrun(
         binary.write_bytes(b"launcher without coverage")
     with pytest.raises(domain.DomainError):
         collector.collect(**kwargs)
-    assert not kwargs["output"].exists() and not kwargs["binary_archive"].exists()
+    assert not kwargs["output"].exists() and kwargs["binary_archive"].exists()
 
 
 @pytest.mark.parametrize(
@@ -784,3 +803,743 @@ def test_macos_collection_rejects_foreign_platform_or_architecture_and_layout(
     with pytest.raises((collector.CollectionError, domain.DomainError)):
         collector.collect(**kwargs)
     assert not kwargs["output"].exists()
+
+
+@pytest.mark.parametrize(
+    "failure,stage",
+    [
+        ("exit", "summary_query"),
+        ("json", "summary_json"),
+        ("tests_exit", "tests_query"),
+        ("tests_json", "tests_json"),
+        ("identity", "test_identity"),
+        ("binary", "native_binary"),
+    ],
+)
+def test_failed_metadata_retains_bounded_raw_diagnostics_and_selected_binary(
+    tmp_path, monkeypatch, capsys, failure, stage
+):
+    kwargs, state, _, binary, _ = _setup(tmp_path, monkeypatch, "unit", "macos")
+    if failure == "exit":
+        state["returncode"] = 7
+        state["stderr"] = b"PRIVATE raw tool stderr\n"
+    elif failure == "json":
+        state["raw_summary"] = b'{"result":"Passed","result":"Failed"}'
+    elif failure == "tests_exit":
+        state["returncodes"] = {"tests": 9}
+    elif failure == "tests_json":
+        state["raw_tests"] = b"not JSON\x00"
+    elif failure == "identity":
+        state["summary"]["result"] = "Failed"
+    else:
+        binary.write_bytes(b"PRIVATE invalid native binary")
+    args = [
+        item for key, value in kwargs.items() for item in ("--" + key.replace("_", "-"), str(value))
+    ]
+    assert collector.main(args) == 1
+    assert capsys.readouterr().err == (
+        "native_xccov_collection_invalid\nnative_xccov_collection_stage=" + stage + "\n"
+    )
+    assert not kwargs["output"].exists()
+    with zipfile.ZipFile(kwargs["binary_archive"]) as archive:
+        assert archive.read(domain.MACOS_BINARY_MEMBER) == binary.read_bytes()
+    diagnostic = Path(str(kwargs["output"]) + ".diagnostics")
+    assert diagnostic.stat().st_mode & 0o777 == 0o700
+    assert (diagnostic / "summary.stdout").read_bytes() == state.get(
+        "raw_summary", json.dumps(state["summary"]).encode()
+    )
+    assert (diagnostic / "summary.stderr").read_bytes() == state["stderr"]
+    status = json.loads((diagnostic / "summary.status.json").read_bytes())
+    assert status["returncode"] == state["returncode"]
+    assert json.loads((diagnostic / "stage.json").read_bytes()) == {
+        "stage": stage,
+        "accepted": False,
+    }
+    assert all(path.stat().st_mode & 0o777 == 0o600 for path in diagnostic.iterdir())
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "existing",
+        "symlink",
+        "directory-replacement",
+        "parent-replacement",
+        "file-symlink",
+        "hardlink",
+    ],
+)
+def test_diagnostic_namespace_is_exclusive_and_cannot_redirect_writes(tmp_path, monkeypatch, kind):
+    kwargs, state, _, _, _ = _setup(tmp_path, monkeypatch, "core")
+    diagnostic = Path(str(kwargs["output"]) + ".diagnostics")
+    outside = tmp_path / "outside"
+    _write(outside / "unchanged", b"outside marker")
+    if kind == "existing":
+        _write(diagnostic / "prior", b"prior diagnostic")
+    elif kind == "symlink":
+        diagnostic.parent.mkdir(parents=True, exist_ok=True)
+        diagnostic.symlink_to(outside, target_is_directory=True)
+    else:
+
+        def replace(_):
+            if kind == "file-symlink":
+                (diagnostic / "summary.stdout").symlink_to(outside / "unchanged")
+                return
+            if kind == "hardlink":
+                os.link(outside / "unchanged", diagnostic / "summary.stdout")
+                return
+            target = diagnostic if kind == "directory-replacement" else diagnostic.parent
+            target.rename(target.with_name(target.name + "-captured"))
+            target.symlink_to(outside, target_is_directory=True)
+
+        state["query_hook"] = replace
+    with pytest.raises(collector.CollectionError):
+        collector.collect(**kwargs)
+    assert sorted(path.name for path in outside.iterdir()) == ["unchanged"]
+    assert (outside / "unchanged").read_bytes() == b"outside marker"
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_metadata_capture_has_independent_byte_bounds_and_does_not_print_payload(
+    tmp_path, capsys, stream
+):
+    command = [sys.executable, "-c", "import sys;sys." + stream + ".write('PRIVATE' * 20)"]
+    captured = collector._metadata_command(
+        command,
+        cwd=tmp_path,
+        max_stdout_bytes=32,
+        max_stderr_bytes=16,
+        export_deadline=time.monotonic() + 10,
+    )
+    assert captured["failure"] == "producer_output_too_large"
+    assert len(captured["stdout"]) <= 32 and len(captured["stderr"]) <= 16
+    assert captured[stream + "_truncated"] is True
+    assert capsys.readouterr() == ("", "")
+
+
+def test_metadata_group_leader_is_reserved_until_owned_group_cleanup(tmp_path, monkeypatch):
+    processes = []
+    ordering = []
+    popen, killpg = subprocess.Popen, os.killpg
+
+    def start(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        processes.append(process)
+        wait = process.wait
+
+        def reap(*args, **kwargs):
+            ordering.append("reap")
+            return wait(*args, **kwargs)
+
+        process.wait = reap
+        return process
+
+    def stop(group, sig):
+        assert ordering == [] and processes[0].returncode is None
+        assert os.getpgid(group) == group
+        ordering.append("kill")
+        killpg(group, sig)
+
+    monkeypatch.setattr(collector.subprocess, "Popen", start)
+    monkeypatch.setattr(collector.os, "killpg", stop)
+    captured = collector._metadata_command(
+        [sys.executable, "-c", "print('actual worker')"],
+        cwd=tmp_path,
+        max_stdout_bytes=32,
+        max_stderr_bytes=32,
+        export_deadline=time.monotonic() + 10,
+    )
+    assert captured["returncode"] == 0 and captured["failure"] is None
+    assert captured["stdout"] == b"actual worker\n"
+    assert ordering == ["kill", "reap"] and processes[0].returncode == -9
+
+
+def test_metadata_supervisor_uses_an_exact_private_source_snapshot(tmp_path, monkeypatch):
+    popen = subprocess.Popen
+    observed = []
+    source = Path(collector.__file__).read_bytes()
+    output = collector._exclusive_output
+
+    @contextmanager
+    def snapshot_output(path):
+        observed.append(path)
+        with output(path) as stream:
+            yield stream
+
+    def start(arguments, **kwargs):
+        assert arguments[:3] == [sys.executable, "-I", "-S"]
+        snapshot = observed[0]
+        source_fd = int(arguments[3].removeprefix("/dev/fd/"))
+        assert arguments[3] == "/dev/fd/" + str(source_fd)
+        assert source_fd in kwargs["pass_fds"]
+        assert os.pread(source_fd, len(source) + 1, 0) == source
+        assert snapshot != Path(collector.__file__)
+        assert snapshot.read_bytes() == source
+        assert snapshot.stat().st_mode & 0o777 == 0o400
+        assert snapshot.parent.stat().st_mode & 0o777 == 0o700
+        assert len(kwargs["pass_fds"]) == 3 and kwargs["stdin"] == subprocess.DEVNULL
+        return popen(arguments, **kwargs)
+
+    monkeypatch.setattr(collector, "_exclusive_output", snapshot_output)
+    monkeypatch.setattr(collector.subprocess, "Popen", start)
+    captured = collector._metadata_command(
+        [sys.executable, "-c", "import pathlib;print(pathlib.Path.cwd().name)"],
+        cwd=tmp_path,
+        max_stdout_bytes=1024,
+        max_stderr_bytes=32,
+        export_deadline=time.monotonic() + 10,
+    )
+    assert captured["stdout"] == (tmp_path.name + "\n").encode()
+    assert captured["returncode"] == 0 and captured["failure"] is None
+    assert len(observed) == 1 and not observed[0].exists()
+
+
+def test_metadata_timeout_cleans_owned_descendants_after_parent_exit(tmp_path, monkeypatch):
+    marker = tmp_path / "owned-child-pid"
+    child = """import os,time,pathlib,sys
+parent=int(sys.argv[2])
+while os.getppid()==parent:
+    time.sleep(0.001)
+pathlib.Path(sys.argv[1]).write_text(str(os.getpid())+','+str(os.getpgrp()))
+print('ready',flush=True)
+time.sleep(60)
+"""
+    parent = "import os,subprocess,sys;subprocess.Popen([sys.executable,'-c',sys.argv[1],sys.argv[2],str(os.getpid())])"
+    clock = time.monotonic
+    deadline = clock() + 20
+    signals = []
+    killpg = os.killpg
+
+    def signal_owned_group(group, sig):
+        pid, expected = map(int, marker.read_text().split(","))
+        assert group == expected == os.getpgid(pid)
+        signals.append((group, sig))
+        killpg(group, sig)
+
+    monkeypatch.setattr(
+        collector,
+        "time",
+        SimpleNamespace(monotonic=lambda: deadline + 1 if marker.exists() else clock()),
+    )
+    monkeypatch.setattr(collector.os, "killpg", signal_owned_group)
+    try:
+        captured = collector._metadata_command(
+            [sys.executable, "-c", parent, child, str(marker)],
+            cwd=tmp_path,
+            max_stdout_bytes=32,
+            max_stderr_bytes=1024,
+            export_deadline=deadline,
+        )
+    finally:
+        if not signals and marker.exists():
+            pid, group = map(int, marker.read_text().split(","))
+            if os.getpgid(pid) == group:
+                killpg(group, 9)
+    assert captured["failure"] == "export_timeout" and captured["returncode"] == 0
+    assert len(signals) == 1 and signals[0][1] == 9
+
+
+def test_metadata_cancellation_cleans_process_and_preserves_fixed_capture(tmp_path, monkeypatch):
+    process = []
+    popen = subprocess.Popen
+    selector = collector.selectors.DefaultSelector()
+
+    def start(*args, **kwargs):
+        value = popen(*args, **kwargs)
+        process.append(value)
+        return value
+
+    def cancel(_):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(collector.subprocess, "Popen", start)
+    monkeypatch.setattr(selector, "select", cancel)
+    monkeypatch.setattr(collector.selectors, "DefaultSelector", lambda: selector)
+    with pytest.raises(KeyboardInterrupt) as interrupted:
+        collector._metadata_command(
+            [sys.executable, "-c", "import time;time.sleep(60)"],
+            cwd=tmp_path,
+            max_stdout_bytes=32,
+            max_stderr_bytes=32,
+            export_deadline=time.monotonic() + 10,
+        )
+    assert process[0].poll() is not None
+    assert interrupted.value.metadata_capture["failure"] == "producer_cancelled"
+    assert interrupted.value.metadata_capture["returncode"] is None
+
+
+def test_metadata_capture_preserves_nonzero_exit_stderr_and_unavailable_tool(tmp_path):
+    captured = collector._metadata_command(
+        [sys.executable, "-c", "import sys;print('raw');sys.stderr.write('PRIVATE');sys.exit(7)"],
+        cwd=tmp_path,
+        max_stdout_bytes=32,
+        max_stderr_bytes=32,
+        export_deadline=time.monotonic() + 10,
+    )
+    assert captured["returncode"] == 7 and captured["failure"] is None
+    assert captured["stdout"] == b"raw\n" and captured["stderr"] == b"PRIVATE"
+    unavailable = collector._metadata_command(
+        [str(tmp_path / "PRIVATE-missing")],
+        cwd=tmp_path,
+        max_stdout_bytes=32,
+        max_stderr_bytes=32,
+        export_deadline=time.monotonic() + 10,
+    )
+    assert unavailable["failure"] == "producer_unavailable"
+    assert unavailable["stderr"] == b"" and unavailable["returncode"] is None
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_metadata_supervisor_reports_only_actual_worker_status_and_closes_private_fds(
+    tmp_path, monkeypatch, missing
+):
+    monkeypatch.chdir(tmp_path)
+    read_fd, write_fd = os.pipe()
+    directory_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    command = (
+        [str(tmp_path / "unavailable")]
+        if missing
+        else [
+            sys.executable,
+            "-c",
+            "import os,pathlib,sys; "
+            "closed=[]\n"
+            "for fd in map(int,sys.argv[1:]):\n"
+            " try: os.fstat(fd)\n"
+            " except OSError: closed.append(fd)\n"
+            "pathlib.Path('worker').write_text(str(len(closed)));sys.exit(23)",
+            str(write_fd),
+            str(directory_fd),
+        ]
+    )
+    collector._metadata_supervise(write_fd, directory_fd, command)
+    with os.fdopen(read_fd, "rb") as stream:
+        assert stream.read(17) == (b"unavailable\n" if missing else b"23\n")
+    with pytest.raises(OSError):
+        os.fstat(directory_fd)
+    if not missing:
+        assert (tmp_path / "worker").read_text() == "2"
+
+
+def test_metadata_success_cleans_a_descendant_with_detached_output(tmp_path, monkeypatch):
+    marker = tmp_path / "child.json"
+    script = (
+        "import json,os,pathlib,subprocess,sys; "
+        "child=subprocess.Popen([sys.executable,'-c','import signal;signal.pause()'],"
+        "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); "
+        "pathlib.Path(sys.argv[1]).write_text(json.dumps({'pid':child.pid,"
+        "'pgid':os.getpgid(child.pid),'sid':os.getsid(child.pid)}));print('done')"
+    )
+    groups = []
+    killpg = os.killpg
+
+    def stop(group, sig):
+        owned = json.loads(marker.read_bytes())
+        assert os.getpgid(owned["pid"]) == owned["pgid"] == group
+        assert os.getsid(owned["pid"]) == owned["sid"] == group
+        groups.append(group)
+        killpg(group, sig)
+
+    monkeypatch.setattr(collector.os, "killpg", stop)
+    try:
+        captured = collector._metadata_command(
+            [sys.executable, "-c", script, str(marker)],
+            cwd=tmp_path,
+            max_stdout_bytes=32,
+            max_stderr_bytes=32,
+            export_deadline=time.monotonic() + 10,
+        )
+        assert captured["returncode"] == 0 and captured["failure"] is None
+        assert captured["stdout"] == b"done\n" and len(groups) == 1
+        owned = json.loads(marker.read_bytes())
+        state = subprocess.run(
+            ["ps", "-o", "state=", "-p", str(owned["pid"])],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        assert not state or state.startswith("Z")
+    finally:
+        if not groups and marker.exists():
+            owned = json.loads(marker.read_bytes())
+            if os.getpgid(owned["pid"]) == owned["pgid"]:
+                killpg(owned["pgid"], 9)
+
+
+def test_metadata_worker_early_pipe_closure_keeps_its_nonzero_exit(tmp_path):
+    captured = collector._metadata_command(
+        [
+            sys.executable,
+            "-c",
+            "import os,pathlib,sys;os.close(1);os.close(2);"
+            "pathlib.Path('finished').write_bytes(b'actual');sys.exit(23)",
+        ],
+        cwd=tmp_path,
+        max_stdout_bytes=32,
+        max_stderr_bytes=32,
+        export_deadline=time.monotonic() + 10,
+    )
+    assert captured["returncode"] == 23 and captured["failure"] is None
+    assert captured["stdout"] == captured["stderr"] == b""
+    assert (tmp_path / "finished").read_bytes() == b"actual"
+
+
+@pytest.mark.parametrize("mode", ["export", "producer", "interrupt"])
+def test_metadata_early_pipe_closure_does_not_leave_a_live_worker(tmp_path, monkeypatch, mode):
+    marker = tmp_path / "worker.json"
+    script = (
+        "import json,os,pathlib,signal,sys; "
+        "pathlib.Path(sys.argv[1]).write_text(json.dumps({'pid':os.getpid(),"
+        "'pgid':os.getpgrp(),'sid':os.getsid(0)})); "
+        "os.kill(os.getppid(),signal.SIGTERM) if sys.argv[2]=='interrupt' else None; "
+        "os.close(1);os.close(2);signal.pause()"
+    )
+    clock, killpg = time.monotonic, os.killpg
+    deadline = clock() + (1000 if mode == "producer" else 20)
+    groups = []
+
+    def stop(group, sig):
+        groups.append(group)
+        killpg(group, sig)
+
+    if mode != "interrupt":
+        beyond = deadline - 1 if mode == "producer" else deadline + 1
+        monkeypatch.setattr(
+            collector,
+            "time",
+            SimpleNamespace(monotonic=lambda: beyond if marker.exists() else clock()),
+        )
+    monkeypatch.setattr(collector.os, "killpg", stop)
+    try:
+        captured = collector._metadata_command(
+            [sys.executable, "-c", script, str(marker), mode],
+            cwd=tmp_path,
+            max_stdout_bytes=32,
+            max_stderr_bytes=32,
+            export_deadline=deadline,
+        )
+        assert (
+            captured["failure"]
+            == {
+                "interrupt": "producer_unavailable",
+                "export": "export_timeout",
+                "producer": "producer_timeout",
+            }[mode]
+        )
+        assert captured["returncode"] is None
+        owned = json.loads(marker.read_bytes())
+        assert groups == [owned["pgid"]]
+        state = subprocess.run(
+            ["ps", "-o", "state=", "-p", str(owned["pid"])],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        assert not state or state.startswith("Z")
+    finally:
+        if not groups and marker.exists():
+            owned = json.loads(marker.read_bytes())
+            if os.getpgid(owned["pid"]) == owned["pgid"]:
+                killpg(owned["pgid"], 9)
+
+
+@pytest.mark.parametrize("failure", ["spawn", "selector", "cleanup", "already_gone"])
+def test_metadata_failure_paths_keep_cleanup_owned_and_do_not_invent_worker_status(
+    tmp_path, monkeypatch, failure
+):
+    processes = []
+    popen, killpg = subprocess.Popen, os.killpg
+
+    def start(*args, **kwargs):
+        if failure == "spawn":
+            raise OSError("PRIVATE spawn details")
+        process = popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    def stop(group, sig):
+        killpg(group, sig)
+        if failure == "cleanup":
+            raise PermissionError("PRIVATE cleanup details")
+        if failure == "already_gone":
+            raise ProcessLookupError()
+
+    def unavailable():
+        raise OSError("PRIVATE selector details")
+
+    monkeypatch.setattr(collector.subprocess, "Popen", start)
+    monkeypatch.setattr(collector.os, "killpg", stop)
+    if failure == "selector":
+        monkeypatch.setattr(collector.selectors, "DefaultSelector", unavailable)
+    arguments = dict(
+        command=[sys.executable, "-c", "print('done')"],
+        cwd=tmp_path,
+        max_stdout_bytes=32,
+        max_stderr_bytes=32,
+        export_deadline=time.monotonic() + 10,
+    )
+    if failure in {"selector", "cleanup"}:
+        with pytest.raises(OSError) as refused:
+            collector._metadata_command(**arguments)
+        assert refused.value.metadata_capture["failure"] == "producer_unavailable"
+    else:
+        captured = collector._metadata_command(**arguments)
+        assert captured["failure"] == ("producer_unavailable" if failure == "spawn" else None)
+        assert captured["returncode"] == (None if failure == "spawn" else 0)
+    assert all(process.returncode == -9 for process in processes)
+
+
+@pytest.mark.parametrize(
+    "worker_status", [b"", b"00\n", b"+0\n", b"256\n", b"-256\n", b"2\njunk", b"9" * 17]
+)
+def test_metadata_private_status_is_bounded_and_canonical(tmp_path, worker_status):
+    read_fd, write_fd = os.pipe()
+    command = [
+        sys.executable,
+        "-c",
+        "import os,signal,sys;os.write(int(sys.argv[1]),bytes.fromhex(sys.argv[2]));"
+        "os.close(int(sys.argv[1]));os.close(1);os.close(2);signal.pause()",
+        str(write_fd),
+        worker_status.hex(),
+    ]
+    process = subprocess.Popen(
+        command,
+        cwd=tmp_path,
+        pass_fds=(write_fd,),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        start_new_session=True,
+    )
+    os.close(write_fd)
+    result = dict(
+        stdout=b"",
+        stderr=b"",
+        returncode=None,
+        failure=None,
+        stdout_truncated=False,
+        stderr_truncated=False,
+    )
+    with os.fdopen(read_fd, "rb") as status:
+        collector._metadata_capture(process, status, result, 32, 32, time.monotonic() + 10)
+    assert result["failure"] == "producer_unavailable" and result["returncode"] is None
+    assert result["stdout"] == result["stderr"] == b""
+    assert result["stdout_truncated"] is result["stderr_truncated"] is False
+    assert process.returncode == -9
+
+
+def test_metadata_expired_export_never_starts_a_supervisor(tmp_path, monkeypatch):
+    def unexpected(*args, **kwargs):
+        pytest.fail("expired metadata producer started")
+
+    monkeypatch.setattr(collector.subprocess, "Popen", unexpected)
+    captured = collector._metadata_command(
+        [sys.executable, "-c", "print('unreachable')"],
+        cwd=tmp_path,
+        max_stdout_bytes=32,
+        max_stderr_bytes=32,
+        export_deadline=0,
+    )
+    assert captured["failure"] == "export_timeout" and captured["returncode"] is None
+    assert captured["stdout"] == captured["stderr"] == b""
+
+
+@pytest.mark.parametrize("replacement", ["source", "snapshot"])
+def test_metadata_source_replacement_cannot_substitute_the_executed_supervisor(
+    tmp_path, monkeypatch, replacement
+):
+    source = tmp_path / "collector.py"
+    source.write_bytes(Path(collector.__file__).read_bytes())
+    marker = tmp_path / "actual-worker"
+    observed = []
+    output, popen = collector._exclusive_output, subprocess.Popen
+
+    @contextmanager
+    def snapshot_output(path):
+        observed.append(path)
+        with output(path) as stream:
+            yield stream
+
+    def start(*args, **kwargs):
+        changed = source if replacement == "source" else observed[0]
+        changed.unlink()
+        changed.write_bytes(b"raise SystemExit(99)\n")
+        return popen(*args, **kwargs)
+
+    monkeypatch.setattr(collector, "__file__", str(source))
+    monkeypatch.setattr(collector, "_exclusive_output", snapshot_output)
+    monkeypatch.setattr(collector.subprocess, "Popen", start)
+    with pytest.raises(collector.CollectionError):
+        collector._metadata_command(
+            [
+                sys.executable,
+                "-c",
+                "import pathlib;pathlib.Path('actual-worker').touch();print('done')",
+            ],
+            cwd=tmp_path,
+            max_stdout_bytes=32,
+            max_stderr_bytes=32,
+            export_deadline=time.monotonic() + 10,
+        )
+    assert marker.exists() and len(observed) == 1 and not observed[0].exists()
+
+
+def test_retained_archive_digest_is_captured_from_the_written_descriptor(tmp_path, monkeypatch):
+    kwargs, _, _, _, _ = _setup(tmp_path, monkeypatch, "core")
+    read = collector._read
+    replaced = []
+
+    def replace_before_first_path_read(path, *args, **options):
+        if path == kwargs["binary_archive"] and not replaced:
+            replaced.append(True)
+            with zipfile.ZipFile(path, "w") as archive:
+                archive.writestr(domain.BINARY_MEMBERS["core"], b"different binary")
+        return read(path, *args, **options)
+
+    monkeypatch.setattr(collector, "_read", replace_before_first_path_read)
+    with pytest.raises(collector.CollectionError) as refused:
+        collector.collect(**kwargs)
+    assert refused.value.collection_stage == "binary_archive"
+    assert not kwargs["output"].exists()
+
+
+def test_diagnostic_fifo_swap_is_rejected_without_reading_or_emitting_domain(tmp_path):
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+    controller = """import importlib.util,json,os,pathlib,stat,sys,pytest
+spec=importlib.util.spec_from_file_location('collector_tests',sys.argv[1])
+tests=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tests)
+with pytest.MonkeyPatch.context() as patch:
+    kwargs,_,_,_,_=tests._setup(pathlib.Path(sys.argv[2]),patch,'core')
+    diagnostic=pathlib.Path(str(kwargs['output'])+'.diagnostics')
+    opened=tests.collector.os.open
+    fdopen=tests.collector.os.fdopen
+    swapped=[]
+    reads=[]
+    def swap(name,flags,mode=0o777,*,dir_fd=None):
+        if name=='summary.stdout' and not flags & os.O_CREAT and not swapped:
+            leaf=diagnostic/name
+            leaf.unlink()
+            os.mkfifo(leaf,0o600)
+            swapped.append(flags)
+        return opened(name,flags,mode,dir_fd=dir_fd)
+    def guard(descriptor,*args,**options):
+        stream=fdopen(descriptor,*args,**options)
+        if stat.S_ISFIFO(os.fstat(descriptor).st_mode):
+            def refuse(*args,**options):
+                reads.append(True)
+                raise AssertionError('FIFO data must never be read')
+            stream.read=refuse
+        return stream
+    patch.setattr(tests.collector.os,'open',swap)
+    patch.setattr(tests.collector.os,'fdopen',guard)
+    try:
+        tests.collector.collect(**kwargs)
+    except tests.collector.CollectionError:
+        assert swapped and swapped[0] & os.O_NONBLOCK
+        assert not reads and not kwargs['output'].exists()
+        assert kwargs['binary_archive'].is_file()
+        print(json.dumps({'refused':True,'fifo_reads':len(reads),'domain_exists':False}))
+    else:
+        raise AssertionError('FIFO replacement was accepted')
+"""
+    command = [sys.executable, "-c", controller, str(Path(__file__).resolve()), str(fixture)]
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        pytest.fail("Diagnostic verification blocked after a real FIFO replacement")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"refused": True, "fifo_reads": 0, "domain_exists": False}
+
+
+@pytest.mark.parametrize("replacement_kind", ["fifo", "regular"])
+def test_source_replacement_is_rejected_before_any_read(tmp_path, replacement_kind):
+    controller = """import json,os,pathlib,stat,sys
+from scripts import collect_xccov_native_domain as collector
+path=pathlib.Path(sys.argv[1]).resolve()
+path.write_bytes(b'original')
+replacement=path.with_suffix('.replacement')
+replacement.write_bytes(b'replaced')
+opened,fdopen=collector.os.open,collector.os.fdopen
+swapped=[]
+def swap(name,flags,*args,**options):
+    if name==path and not swapped:
+        if sys.argv[2]=='fifo':
+            path.unlink()
+            os.mkfifo(path,0o600)
+        else:
+            os.replace(replacement,path)
+        swapped.append(flags)
+    return opened(name,flags,*args,**options)
+def guard(descriptor,*args,**options):
+    stream=fdopen(descriptor,*args,**options)
+    if swapped:
+        def refuse(*args,**options):
+            raise AssertionError('Replaced data must never be read')
+        stream.read=refuse
+    return stream
+collector.os.open,collector.os.fdopen=swap,guard
+try:
+    collector._read(path)
+except collector.CollectionError:
+    assert swapped and swapped[0] & os.O_NONBLOCK
+    print(json.dumps({'refused':True}))
+else:
+    raise AssertionError('FIFO replacement was accepted')
+"""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", controller, str(tmp_path / "source.swift"), replacement_kind],
+            cwd=Path(__file__).resolve().parents[1],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail("Source verification blocked after a real FIFO replacement")
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"refused": True}
+
+
+def test_diagnostic_enumeration_stops_at_seven_leaves_without_eager_listing(tmp_path, monkeypatch):
+    sink = collector._Diagnostics(tmp_path.resolve() / "domain.json")
+    names = [
+        "summary.stdout",
+        "summary.stderr",
+        "summary.status.json",
+        "tests.stdout",
+        "tests.stderr",
+        "tests.status.json",
+        "stage.json",
+    ]
+    try:
+        for name in names:
+            sink.write(name, b"raw")
+        visited = []
+
+        class Entries:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def __iter__(self):
+                return self
+
+            def __next__(self):
+                index = len(visited)
+                assert index < 8, "directory enumeration exceeded its fixed leaf bound"
+                visited.append(index)
+                return SimpleNamespace(name=names[index % 7])
+
+        def eager(_):
+            raise AssertionError("eager directory materialization is forbidden")
+
+        monkeypatch.setattr(collector.os, "listdir", eager)
+        monkeypatch.setattr(collector.os, "scandir", lambda _: Entries())
+        with pytest.raises(collector.CollectionError):
+            sink.verify()
+        assert len(visited) == 8
+    finally:
+        sink.close()

@@ -77,6 +77,7 @@ jobs:
           xcrun swift-format lint --strict --recursive
           --configuration apple-clients/.swift-format
           apple-clients/AstralCore apple-clients/AstralApp apple-clients/AstralWatch
+          scripts/WholeOSInputProof.swift
 
   core-tests:
     needs: [changes]
@@ -104,6 +105,48 @@ jobs:
           sudo xcode-select --switch "$selected/Contents/Developer"
           [[ "$(xcodebuild -version | sed -n '1p')" == "Xcode ${XCODE_VERSION}" ]]
           [[ "$(xcodebuild -version | sed -n '2p')" == "Build version ${XCODE_BUILD}" ]]
+      - name: Set up helper test Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.11"
+      - name: Install locked helper test requirements
+        run: python -m pip install --require-hashes -r tooling/python-ci/requirements.lock.txt
+      - name: Qualify standalone whole-source compiler helper
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          COVERAGE_FILE: ${{ github.workspace }}/build/099/swift-inactive-input/python.coverage
+        run: |
+          set -euo pipefail
+          [[ "$(xcodebuild -version)" == $'Xcode 26.6\nBuild version 17F113' ]]
+          evidence="$PWD/build/099/swift-inactive-input"
+          if [[ -e "$evidence" || -L "$evidence" ]]; then
+            echo "::error::helper evidence directory already exists" >&2
+            exit 1
+          fi
+          mkdir -p "$evidence"
+          chmod 700 "$evidence"
+          python -m pytest tests/test_swift_inactive_input.py tests/test_swift_inactive_input_native.py \
+            -q -p no:cacheprovider --basetemp="$evidence/pytest" \
+            --junitxml="$evidence/junit.xml" \
+            --cov=scripts.swift_inactive_input --cov-branch \
+            --cov-report=xml:"$evidence/helper-python.xml" \
+            --cov-report=json:"$evidence/helper-python.json" \
+            2>&1 | tee "$evidence/pytest.log"
+      - name: Retain standalone compiler helper raw evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: astral-swift-inactive-input-tool-evidence
+          path: |
+            build/099/swift-inactive-input/pytest/
+            build/099/swift-inactive-input/pytest.log
+            build/099/swift-inactive-input/junit.xml
+            build/099/swift-inactive-input/helper-python.xml
+            build/099/swift-inactive-input/helper-python.json
+            build/099/swift-inactive-input/python.coverage
+          if-no-files-found: error
+          retention-days: 14
       - name: Validate App Store icon assets
         run: python3 apple-clients/Scripts/generate_app_icons.py --check
       - name: Run AstralCore with coverage
@@ -205,6 +248,13 @@ jobs:
             build/060/coverage/AstralCore-ios.xcresult
             build/060/coverage/apple-ios-core-xccov.json
             build/060/coverage/apple-ios-core-domain.json
+            build/060/coverage/apple-ios-core-domain.json.diagnostics/summary.stdout
+            build/060/coverage/apple-ios-core-domain.json.diagnostics/summary.stderr
+            build/060/coverage/apple-ios-core-domain.json.diagnostics/summary.status.json
+            build/060/coverage/apple-ios-core-domain.json.diagnostics/tests.stdout
+            build/060/coverage/apple-ios-core-domain.json.diagnostics/tests.stderr
+            build/060/coverage/apple-ios-core-domain.json.diagnostics/tests.status.json
+            build/060/coverage/apple-ios-core-domain.json.diagnostics/stage.json
             build/060/coverage/native-binaries/apple-ios-core.zip
           if-no-files-found: error
           retention-days: 14
@@ -332,6 +382,13 @@ jobs:
             build/060/coverage/AstralApp-${{ matrix.slug }}-unit.xcresult
             build/060/coverage/apple-${{ matrix.slug }}-unit-xccov.json
             build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json.diagnostics/summary.stdout
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json.diagnostics/summary.stderr
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json.diagnostics/summary.status.json
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json.diagnostics/tests.stdout
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json.diagnostics/tests.stderr
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json.diagnostics/tests.status.json
+            build/060/coverage/apple-${{ matrix.slug }}-unit-domain.json.diagnostics/stage.json
             build/060/coverage/native-binaries/apple-${{ matrix.slug }}-unit.zip
           if-no-files-found: error
           retention-days: 14
@@ -510,6 +567,13 @@ jobs:
             build/060/coverage/AstralApp-${{ matrix.slug }}-first-login.xcresult
             build/060/coverage/apple-${{ matrix.slug }}-first-login-xccov.json
             build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/summary.stdout
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/summary.stderr
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/summary.status.json
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/tests.stdout
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/tests.stderr
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/tests.status.json
+            build/060/coverage/apple-${{ matrix.slug }}-ui-domain.json.diagnostics/stage.json
             build/060/coverage/native-binaries/apple-${{ matrix.slug }}-ui.zip
           if-no-files-found: error
           retention-days: 14
