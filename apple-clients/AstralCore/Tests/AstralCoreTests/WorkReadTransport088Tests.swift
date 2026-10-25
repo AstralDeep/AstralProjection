@@ -4,6 +4,7 @@
 import Foundation
 import Network
 import XCTest
+
 @testable import AstralCore
 
 final class WorkReadTransport088Tests: XCTestCase {
@@ -11,6 +12,7 @@ final class WorkReadTransport088Tests: XCTestCase {
     private let generation = "33333333-3333-4333-8333-333333333333"
 
     private func connected(
+        connectionGeneration: String? = nil,
         _ body: (WSClient, WorkReadLoopback) async throws -> Void
     ) async throws {
         let peer = try WorkReadLoopback()
@@ -26,7 +28,12 @@ final class WorkReadTransport088Tests: XCTestCase {
                 if case .connected = event { ready.fulfill() }
             }
         }
-        await client.start(onConnect: { #"{"type":"register_ui","token":"synthetic-local-only"}"# })
+        let registration = JSONValue.object([
+            "type": .string("register_ui"), "token": .string("synthetic-local-only"),
+            "connection_generation": connectionGeneration.map(JSONValue.string) ?? .null,
+        ])
+        let registrationText = String(decoding: try registration.encoded(), as: UTF8.self)
+        await client.start(onConnect: { registrationText })
         await fulfillment(of: [ready], timeout: socketEventTimeout)
         do { try await body(client, peer) } catch {
             await client.stop()
@@ -35,6 +42,43 @@ final class WorkReadTransport088Tests: XCTestCase {
         }
         await client.stop()
         consume.cancel()
+    }
+
+    func testComputerControlUsesRegisteredGenerationAndRefusesGenericReplay() async throws {
+        try await connected(connectionGeneration: generation) { client, peer in
+            let logical = ComputerHostOutbound.frame(
+                action: "computer_event",
+                payload: [
+                    "event": .string("withdraw"), "host_id": .string(generation),
+                ])
+            let current = try XCTUnwrap(
+                ComputerHostOutbound.bindToConnection(logical, connectionGeneration: generation))
+            let other = "44444444-4444-4444-8444-444444444444"
+            let stale = try XCTUnwrap(ComputerHostOutbound.bindToConnection(logical, connectionGeneration: other))
+            let missing = await client.sendCurrentComputerEvent(logical, connectionGeneration: generation) { true }
+            let foreign = await client.sendCurrentComputerEvent(stale, connectionGeneration: other) { true }
+            let revoked = await client.sendCurrentComputerEvent(current, connectionGeneration: generation) { false }
+            XCTAssertFalse(missing)
+            XCTAssertFalse(foreign)
+            XCTAssertFalse(revoked)
+            await client.send(current)
+            var replay = try XCTUnwrap(JSONValue.parse(Data(current.utf8)).objectValue)
+            var payload = try XCTUnwrap(replay["payload"]?.objectValue)
+            payload["submission_id"] = replay["submission_id"]
+            payload["request_generation"] = replay["request_generation"]
+            replay["payload"] = .object(payload)
+            let generic = String(decoding: try JSONValue.object(replay).encoded(), as: UTF8.self)
+            XCTAssertNotNil(QueuedOperationReplay(frameText: generic))
+            await client.send(generic)
+            peer.expectSingleRead()
+            let sent = await client.sendCurrentComputerEvent(current, connectionGeneration: generation) { true }
+            XCTAssertTrue(sent)
+            await fulfillment(of: [peer.twoReads], timeout: socketEventTimeout)
+            XCTAssertEqual(peer.reads, [current])
+            await client.stop()
+            let stopped = await client.sendCurrentComputerEvent(current, connectionGeneration: generation) { true }
+            XCTAssertFalse(stopped)
+        }
     }
 
     private func viewportFrame() -> String {

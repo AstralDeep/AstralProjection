@@ -80,6 +80,7 @@ public actor WSClient {
     private var running = false
     // Socket running does not mean registered; queue until true
     private var established = false
+    private var registeredConnectionGeneration: String?
     private var continuation: AsyncStream<WSEvent>.Continuation?
     private var onConnect: (@Sendable () async -> String?)?
     private var onReplay: (@Sendable (QueuedOperationReplay) async -> Bool)?
@@ -111,6 +112,7 @@ public actor WSClient {
     public func stop() {
         running = false
         established = false
+        registeredConnectionGeneration = nil
         task?.cancel(with: .normalClosure, reason: nil)
         task = nil
         continuation?.finish()
@@ -122,7 +124,8 @@ public actor WSClient {
             !ConsoleSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !SafetySurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
             !MeshSurfaceRequest.claimsCurrentConnectionSemantics(frameText: text),
-            !ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text)
+            !ViewportSnapshotRequest.claimsCurrentConnectionSemantics(frameText: text),
+            !ComputerHostOutbound.claimsCurrentConnectionSemantics(frameText: text)
         else {
             continuation?.yield(.sendRejected(action: Self.actionHint(text)))
             return
@@ -205,12 +208,15 @@ public actor WSClient {
 
     @discardableResult
     public func sendCurrentComputerEvent(
-        _ text: String, isCurrent: @Sendable () async -> Bool
+        _ text: String, connectionGeneration: String, isCurrent: @Sendable () async -> Bool
     ) async -> Bool {
-        guard ComputerHostOutbound.isValid(text), established, let current = task,
+        guard ComputerHostOutbound.isBound(text, connectionGeneration: connectionGeneration),
+            registeredConnectionGeneration == connectionGeneration, established,
+            let current = task,
             current.state == .running
         else { return false }
-        return await sendCurrentOwnerSurfaceEvent(text, using: current, isCurrent: isCurrent)
+        return await sendCurrentOwnerSurfaceEvent(
+            text, using: current, connectionGeneration: connectionGeneration, isCurrent: isCurrent)
     }
 
     @discardableResult
@@ -225,10 +231,12 @@ public actor WSClient {
 
     private func sendCurrentOwnerSurfaceEvent(
         _ text: String, using current: URLSessionWebSocketTask,
+        connectionGeneration: String? = nil,
         isCurrent: @Sendable () async -> Bool
     ) async -> Bool {
         guard await isCurrent(), !Task.isCancelled,
-            established, task === current, current.state == .running
+            established, task === current, current.state == .running,
+            connectionGeneration == nil || registeredConnectionGeneration == connectionGeneration
         else { return false }
         do {
             try await current.send(.string(text))
@@ -267,6 +275,7 @@ public actor WSClient {
             let task = NoStoreHTTP.session.webSocketTask(with: request)
             self.task = task
             established = false
+            registeredConnectionGeneration = nil
             task.resume()
 
             guard let register = await onConnect?(), running else {
@@ -276,6 +285,12 @@ public actor WSClient {
                 continuation?.yield(.disconnected(reason: "waiting for credentials"))
                 try? await Task.sleep(nanoseconds: UInt64(backoffNext() * 1_000_000_000))
                 continue
+            }
+            if let registration = try? JSONValue.parse(Data(register.utf8)),
+                registration["type"] == .string("register_ui"),
+                let generation = registration["connection_generation"]?.stringValue, computerUUID(generation)
+            {
+                registeredConnectionGeneration = generation
             }
             task.send(.string(register)) { _ in }
 
@@ -313,11 +328,13 @@ public actor WSClient {
                     }
                 } catch {
                     established = false
+                    registeredConnectionGeneration = nil
                     continuation?.yield(.disconnected(reason: error.localizedDescription))
                     break receive
                 }
             }
             established = false
+            registeredConnectionGeneration = nil
             self.task = nil
             guard running else { break }
             let delay = backoffNext()

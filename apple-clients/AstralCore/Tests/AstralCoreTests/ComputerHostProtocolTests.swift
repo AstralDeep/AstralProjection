@@ -126,6 +126,94 @@ final class ComputerHostProtocolTests: XCTestCase {
                 Outbound.uiEvent(action: "chat_message", sessionId: nil, payload: .object([:]))))
     }
 
+    func testEveryHostVariantBindsFreshIdentityToCurrentRegistration() throws {
+        let host = try ComputerHostDescriptor(
+            hostId: session, name: "Synthetic Mac", clientVersion: "1.8.0",
+            screens: [ComputerHostScreen(index: 0, width: 1000, height: 800, scale: 2, primary: true)],
+            verbs: ["screenshot"])
+        var frames = [
+            ComputerHostOutbound.frame(
+                action: "computer_event",
+                payload: ["event": .string("announce"), "host_id": .string(session), "host": host.json]),
+            ComputerHostOutbound.frame(
+                action: "computer_event", payload: ["event": .string("withdraw"), "host_id": .string(session)]),
+            ComputerHostOutbound.frame(
+                action: "computer_response",
+                payload: [
+                    "request_id": .string("creq_" + String(repeating: "a", count: 32)), "ok": .bool(true),
+                    "result": .object([:]),
+                ]),
+            ComputerHostOutbound.frame(
+                action: "computer_response",
+                payload: [
+                    "request_id": .string("creq_" + String(repeating: "b", count: 32)), "ok": .bool(false),
+                    "error": .object(["code": .string("interrupted"), "message": .string("Synthetic denial")]),
+                ]),
+        ]
+        frames += ["paused", "resumed", "stopped", "heartbeat"].map {
+            ComputerHostOutbound.frame(
+                action: "computer_event",
+                payload: ["event": .string($0), "host_id": .string(session), "session_id": .string(session)])
+        }
+        var identities = Set<String>()
+        for frame in frames {
+            XCTAssertFalse(ComputerHostOutbound.isBound(frame, connectionGeneration: session))
+            let bound = try XCTUnwrap(ComputerHostOutbound.bindToConnection(frame, connectionGeneration: session))
+            let value = try JSONValue.parse(Data(bound.utf8))
+            XCTAssertTrue(ComputerHostOutbound.isBound(bound, connectionGeneration: session))
+            XCTAssertFalse(ComputerHostOutbound.isBound(bound, connectionGeneration: UUID().uuidString.lowercased()))
+            XCTAssertEqual(value["payload"], try JSONValue.parse(Data(frame.utf8))["payload"])
+            XCTAssertEqual(
+                Set(try XCTUnwrap(value.objectValue).keys),
+                ["type", "action", "payload", "submission_id", "request_generation", "connection_generation"])
+            for key in ["submission_id", "request_generation"] {
+                let identity = try XCTUnwrap(value[key]?.stringValue)
+                XCTAssertTrue(computerUUID(identity))
+                XCTAssertTrue(identities.insert(identity).inserted)
+            }
+            XCTAssertNil(ComputerHostOutbound.bindToConnection(bound, connectionGeneration: session))
+        }
+        XCTAssertEqual(identities.count, frames.count * 2)
+    }
+
+    func testHostEnvelopeRejectsPartialMalformedConflictingAndForeignMetadata() throws {
+        let frame = ComputerHostOutbound.frame(
+            action: "computer_event", payload: ["event": .string("withdraw"), "host_id": .string(session)])
+        XCTAssertNil(ComputerHostOutbound.bindToConnection(frame, connectionGeneration: "invalid"))
+        XCTAssertNil(
+            ComputerHostOutbound.bindToConnection(frame, connectionGeneration: session, submissionId: "invalid"))
+        XCTAssertNil(
+            ComputerHostOutbound.bindToConnection(frame, connectionGeneration: session, requestGeneration: "invalid"))
+        let bound = try XCTUnwrap(ComputerHostOutbound.bindToConnection(frame, connectionGeneration: session))
+        XCTAssertFalse(ComputerHostOutbound.isBound(bound, connectionGeneration: "invalid"))
+        let original = try XCTUnwrap(JSONValue.parse(Data(bound.utf8)).objectValue)
+        for key in ["submission_id", "request_generation", "connection_generation"] {
+            for replacement: JSONValue? in [
+                nil, .string("invalid"), .bool(true), .string("AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"),
+            ] {
+                var value = original
+                value[key] = replacement
+                let text = String(decoding: try JSONValue.object(value).encoded(), as: UTF8.self)
+                XCTAssertFalse(ComputerHostOutbound.isValid(text))
+                XCTAssertFalse(ComputerHostOutbound.isBound(text, connectionGeneration: session))
+                XCTAssertNil(ComputerHostOutbound.bindToConnection(text, connectionGeneration: session))
+            }
+        }
+        for key in ["session_id", "owner_id", "config"] {
+            var value = original
+            value[key] = .string(session)
+            XCTAssertFalse(
+                ComputerHostOutbound.isValid(String(decoding: try JSONValue.object(value).encoded(), as: UTF8.self)))
+        }
+        var conflicting = original
+        conflicting["payload"] = .object([
+            "event": .string("withdraw"), "host_id": .string(session),
+            "connection_generation": .string(UUID().uuidString.lowercased()),
+        ])
+        XCTAssertFalse(
+            ComputerHostOutbound.isValid(String(decoding: try JSONValue.object(conflicting).encoded(), as: UTF8.self)))
+    }
+
     func testKeyboardChunksPreserveNonBMPScalars() throws {
         let text = String(repeating: "a", count: 19) + "🪐" + "b"
         let chunks = ComputerHostText.keyboardChunks(text)

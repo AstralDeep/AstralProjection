@@ -917,9 +917,10 @@ final class AppModel: NSObject {
                 signedIn ? hostOwner.account.map { serverBase.absoluteString + "|" + $0.locatorStorageKey } : nil
             macComputerHost.bind(owner: hostScope) { [weak self] text in
                 guard let self, let socket, self.ws === socket, self.downloadOwner == hostOwner,
-                    self.continuity.connectionGeneration == connection
+                    self.continuity.connectionGeneration == connection,
+                    let bound = ComputerHostOutbound.bindToConnection(text, connectionGeneration: connection)
                 else { return false }
-                return await socket.sendCurrentComputerEvent(text) { [weak self] in
+                return await socket.sendCurrentComputerEvent(bound, connectionGeneration: connection) { [weak self] in
                     guard let self else { return false }
                     return await self.computerChannelIsCurrent(socket: socket, owner: hostOwner, connection: connection)
                 }

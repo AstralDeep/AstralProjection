@@ -246,6 +246,37 @@ public struct ComputerHostChord: Sendable, Equatable {
 }
 
 public enum ComputerHostOutbound {
+    private static let logicalKeys: Set<String> = ["type", "action", "payload"]
+    private static let boundKeys: Set<String> = [
+        "type", "action", "payload", "submission_id", "request_generation", "connection_generation",
+    ]
+    public static func claimsCurrentConnectionSemantics(frameText: String) -> Bool {
+        guard let frame = try? JSONValue.parse(Data(frameText.utf8)), frame["type"] == .string("ui_event") else {
+            return false
+        }
+        return ["computer_event", "computer_response"].contains(frame["action"]?.stringValue ?? "")
+    }
+    public static func bindToConnection(
+        _ text: String, connectionGeneration: String,
+        submissionId: String = UUID().uuidString.lowercased(),
+        requestGeneration: String = UUID().uuidString.lowercased()
+    ) -> String? {
+        guard computerUUID(connectionGeneration), computerUUID(submissionId), computerUUID(requestGeneration),
+            isValid(text), var frame = try? JSONValue.parse(Data(text.utf8)).objectValue,
+            Set(frame.keys) == logicalKeys
+        else { return nil }
+        frame["submission_id"] = .string(submissionId)
+        frame["request_generation"] = .string(requestGeneration)
+        frame["connection_generation"] = .string(connectionGeneration)
+        guard let data = try? JSONValue.object(frame).encoded(), data.count <= 4 * 1024 * 1024 else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+    public static func isBound(_ text: String, connectionGeneration: String) -> Bool {
+        guard computerUUID(connectionGeneration), isValid(text),
+            let frame = try? JSONValue.parse(Data(text.utf8)).objectValue
+        else { return false }
+        return Set(frame.keys) == boundKeys && frame["connection_generation"] == .string(connectionGeneration)
+    }
     public static func isReviewDecision(_ text: String) -> Bool {
         guard text.utf8.count <= 16384, let json = try? JSONValue.parse(Data(text.utf8)),
             json["type"] == .string("ui_event"),
@@ -267,8 +298,18 @@ public enum ComputerHostOutbound {
     }
     public static func isValid(_ text: String) -> Bool {
         guard text.utf8.count <= 4 * 1024 * 1024, let json = try? JSONValue.parse(Data(text.utf8)),
-            json["type"] == .string("ui_event"), let payload = json["payload"]?.objectValue
+            json["type"] == .string("ui_event"), let frame = json.objectValue,
+            let payload = json["payload"]?.objectValue
         else { return false }
+        let keys = Set(frame.keys)
+        guard keys == logicalKeys || keys == boundKeys else { return false }
+        if keys == boundKeys {
+            guard
+                ["submission_id", "request_generation", "connection_generation"].allSatisfy({
+                    frame[$0]?.stringValue.map(computerUUID) == true
+                })
+            else { return false }
+        }
         if json["action"] == .string("computer_response") {
             guard let id = payload["request_id"]?.stringValue,
                 id.range(of: "^creq_[0-9a-f]{32}$", options: .regularExpression) != nil,
