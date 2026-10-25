@@ -5750,15 +5750,19 @@
     var noteAction = ["chrome_note_search", "chrome_note_save", "chrome_note_toggle", "chrome_note_forget"].indexOf(name) !== -1;
     var selectionAction = name === "chrome_turn_selection_set";
     var safetyAction = ["chrome_safety_stop", "chrome_safety_resume", "chrome_safety_verify"].indexOf(name) !== -1;
-    var ownerSurface = meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
+    var terminalAction = ["chrome_terminal_input", "chrome_terminal_resize", "chrome_terminal_interrupt", "chrome_terminal_close"].indexOf(name) !== -1;
+    var ownerSurface = terminalAction ? "terminal" : meshAction ? "mesh" : safetyAction ? "safety" : noteAction || selectionAction ? "guidance"
       : name === "chrome_open" && payload && ["work", "guidance", "evidence", "safety", "mesh", "terminal"].indexOf(payload.surface) !== -1
         ? payload.surface : null;
-    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction) retireOwnerSurface();
+    if (name === "chrome_open" || name === "chrome_close" || noteAction || selectionAction || safetyAction || meshAction || terminalAction) retireOwnerSurface();
     if (noteAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { mode: "list" } });
     }
     if (selectionAction) {
       showModalSkeleton("chrome_open", { surface: "guidance", params: { view: "selection" } });
+    }
+    if (terminalAction) {
+      showModalSkeleton("chrome_open", { surface: "terminal", params: { mode: "panel", session_id: payload.session_id } });
     }
     if (safetyAction) {
       showModalSkeleton("chrome_open", { surface: "safety", params: {} });
@@ -5771,7 +5775,7 @@
       : requestState && (name === "chat_message" || name === "load_chat")
         ? requestState.generation : null;
     var submission = beginOperationSubmission(name, payload, suppliedGeneration, exposeStatus);
-    if (safetyAction || ownerSurface === "mesh") {
+    if (safetyAction || terminalAction || ownerSurface === "mesh") {
       delete submission.payload.submission_id;
       delete submission.payload.request_generation;
     }
@@ -7702,8 +7706,8 @@
       var act = btn.getAttribute("data-action"); var payload = {};
       try { payload = JSON.parse(btn.getAttribute("data-payload") || "{}"); } catch (_) {}
       var compHost = btn.closest && btn.closest("[data-component-id]");
-      if (compHost && payload.surface !== "safety" && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
-      if (payload.surface !== "safety" && !payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence" || payload.surface === "terminal"))) {
+      if (compHost && payload.surface !== "safety" && payload.surface !== "terminal" && !payload.component_id) payload.component_id = compHost.getAttribute("data-component-id");
+      if (payload.surface !== "safety" && payload.surface !== "terminal" && !payload.chat_id && activeChatId && !(act === "chrome_open" && (payload.surface === "work" || payload.surface === "evidence" || payload.surface === "terminal"))) {
         payload.chat_id = activeChatId;
       }
       if (timelineMode && compHost && act && act.indexOf("chrome_") !== 0) {

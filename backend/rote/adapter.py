@@ -74,7 +74,10 @@ class ComponentAdapter:
         from rote.terminal import INTERACTIVE_PANEL, READ_ONLY_MONITOR, WATCH_HANDOFF
         from rote.terminal import terminal_disposition, validate_terminal_components
 
-        disposition = terminal_disposition(profile)
+        monitor = isinstance(state, dict) and (
+            state.get("mode") == "monitor" or state.get("contract") == "terminal_monitor/v1"
+        )
+        disposition = terminal_disposition(profile, monitor=monitor)
         if disposition not in {INTERACTIVE_PANEL, READ_ONLY_MONITOR, WATCH_HANDOFF}:
             raise ValueError("terminal_surface_unavailable")
         interactive = disposition == INTERACTIVE_PANEL
@@ -86,7 +89,7 @@ class ComponentAdapter:
         else:
             components = [
                 item.to_dict()
-                for item in build_terminal_view(state, watch=watch, interactive=interactive).components
+                for item in build_terminal_view(state, watch=watch, interactive=interactive, monitor=monitor).components
             ]
         validated = validate_terminal_components(
             components, profile.supported_types, interactive=interactive, watch=watch

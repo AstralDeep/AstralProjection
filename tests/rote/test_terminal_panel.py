@@ -138,7 +138,7 @@ def test_validator_refuses_malformed_interactive_payloads():
         {"type": "button", "label": "x", "action": "chrome_open",
          "payload": {"surface": "terminal", "params": {"mode": "panel"}}},
         {"type": "button", "label": "x", "action": "chrome_open",
-         "payload": {"surface": "terminal", "params": {"mode": "monitor", "session_id": "t"}}},
+         "payload": {"surface": "terminal", "params": {"mode": "unknown", "session_id": "t"}}},
         {"type": "button", "label": "x", "action": "chrome_open",
          "payload": {"surface": "terminal", "params": {"mode": "list", "offset": -1}}},
         {"type": "button", "label": "x", "action": "chrome_open",

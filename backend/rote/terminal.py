@@ -43,11 +43,11 @@ _DISPOSITIONS = {
 }
 
 
-def terminal_disposition(profile_or_device: object) -> str:
+def terminal_disposition(profile_or_device: object, *, monitor: bool = False) -> str:
     device = getattr(getattr(profile_or_device, "device_type", None), "value", profile_or_device)
     if isinstance(device, str):
         if device in {"browser", "windows"}:
-            return INTERACTIVE_PANEL
+            return READ_ONLY_MONITOR if monitor else INTERACTIVE_PANEL
         if device in _MONITOR_DEVICES:
             return READ_ONLY_MONITOR
     if device == "watch":
@@ -55,8 +55,11 @@ def terminal_disposition(profile_or_device: object) -> str:
     return OMITTED
 
 
-def contract_dispositions() -> dict[str, str]:
-    return dict(_DISPOSITIONS)
+def contract_dispositions(*, monitor: bool = False) -> dict[str, str]:
+    result = dict(_DISPOSITIONS)
+    if monitor:
+        result.update(browser=READ_ONLY_MONITOR, windows=READ_ONLY_MONITOR)
+    return result
 
 
 def _session_id(value: object) -> str:
@@ -103,13 +106,13 @@ def _navigation(node: Mapping[str, object]) -> None:
     params = payload["params"]
     if set(params) - {"mode", "session_id", "offset"}:
         raise ValueError("terminal_surface_unavailable")
-    if params.get("mode") not in {"list", "panel"}:
+    if params.get("mode") not in {"list", "panel", "monitor"}:
         raise ValueError("terminal_surface_unavailable")
     if "session_id" in params:
         _session_id(params["session_id"])
     if "offset" in params:
         _offset(params["offset"])
-    if params["mode"] == "panel" and "session_id" not in params:
+    if params["mode"] in {"panel", "monitor"} and "session_id" not in params:
         raise ValueError("terminal_surface_unavailable")
 
 

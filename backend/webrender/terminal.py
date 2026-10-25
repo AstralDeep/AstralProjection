@@ -148,9 +148,11 @@ def _bound(text: str, max_bytes: int, max_lines: int) -> tuple[str, bool]:
 def _terminal_text(value: object) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", "replace")
-    if isinstance(value, str) and len(value) <= MAX_INPUT_TEXT:
+    if isinstance(value, str):
+        if len(value) > MAX_INPUT_TEXT:
+            raise ValueError("terminal output is too large")
         return value
-    raise ValueError("terminal output must be bounded text")
+    raise ValueError("terminal output must be text")
 
 
 def decode_terminal_chunk(value: object) -> str:

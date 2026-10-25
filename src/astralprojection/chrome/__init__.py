@@ -6,6 +6,7 @@ orchestrator/projection_surfaces/*.py and the chrome test suite.
 from ._components import code_block, render_html
 
 __all__ = [
+    "build_terminal_monitor_view",
     "build_terminal_panel_view",
     "build_terminal_view",
     "code_block",
@@ -15,7 +16,7 @@ __all__ = [
 
 
 def __getattr__(name):
-    if name in {"build_terminal_panel_view", "build_terminal_view"}:
+    if name in {"build_terminal_monitor_view", "build_terminal_panel_view", "build_terminal_view"}:
         from . import terminal
 
         return getattr(terminal, name)

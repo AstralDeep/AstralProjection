@@ -61,6 +61,14 @@ jobs:
           python scripts/check_changed_coverage.py build/074/coverage/projection-python.xml
           --base-sha "$BASE_SHA" --fail-under=90
           --output build/074/coverage/projection-python-changed-coverage.json
+      - name: Retain Projection Python coverage inputs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-python-coverage
+          path: build/074/coverage/
+          if-no-files-found: error
+          retention-days: 14
       - run: PIP_CONSTRAINT=tooling/python-ci/requirements.lock.txt python -m build --no-isolation
       - run: python -m pip install --force-reinstall --no-deps dist/*.whl && python -c "import astralprojection, rote, webrender"
 
@@ -118,10 +126,23 @@ jobs:
             --env HOME=/tmp \
             --env ASTRAL_ASSIGNMENT_FIXTURE_DIR=/workspace/build/079/browser-fixtures \
             --env ASTRAL_EXPORT_COVERAGE_OUTPUT=/workspace/build/088/export-javascript.json \
+            --env ASTRAL_ALL_CLIENT_COVERAGE_DIR=/workspace/build/088/client-v8 \
             --volume "$GITHUB_WORKSPACE:/workspace" \
             --workdir /workspace/tooling/web-ci \
             "$image" \
             /bin/bash -lc 'corepack npm run test:coverage-conversion:browser && node --test tests/mesh-custody.browser.test.mjs && corepack npm exec -- playwright test tests/mesh-enrollment.spec.js tests/continuity-contract-060.spec.js tests/voice-conversation-065.spec.js tests/persistent-agents-079.spec.js tests/offline-worker-088.spec.js tests/canvas-review-088.spec.js tests/native-export-088.spec.js tests/work-reads-088.spec.js tests/guidance-notes-088.spec.js tests/workspace-topbar-088.spec.js tests/native-chart-088.spec.js tests/first-task-088.spec.js tests/selection-088.spec.js --browser=chromium --workers=1'
+      - name: Convert retained browser coverage observations
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          inputs=()
+          for report in "$GITHUB_WORKSPACE"/build/088/client-v8/*.json; do
+            test -f "$report"
+            inputs+=(--input "$report")
+          done
+          node tooling/web-ci/browser-v8-cli.mjs --repo-root "$GITHUB_WORKSPACE" \
+            --output build/088/client-javascript.json "${inputs[@]}"
       - name: Enforce portable export executable-line coverage
         shell: bash
         run: |
@@ -134,6 +155,18 @@ jobs:
               counts = list(report["coverage"][f"backend/webrender/static/{name}"]["s"].values())
               assert counts and sum(count > 0 for count in counts) / len(counts) >= .90, name
           PY
+      - name: Retain browser coverage inputs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: projection-browser-coverage
+          path: |
+            build/088/client-v8/
+            build/088/client-javascript.json
+            build/088/export-javascript.json
+            build/088/offline-javascript.json
+          if-no-files-found: error
+          retention-days: 14
 
   windows-tests:
     runs-on: windows-latest
@@ -170,6 +203,14 @@ jobs:
             --base-sha "$env:BASE_SHA" --fail-under=90 `
             --output build\075\coverage\windows-python-changed-coverage.json
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Retain Windows Python coverage inputs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-python-coverage
+          path: build/075/coverage/
+          if-no-files-found: error
+          retention-days: 14
 
   windows-package:
     runs-on: windows-latest
@@ -356,6 +397,14 @@ jobs:
             }
           }
           exit $LASTEXITCODE
+      - name: Retain Windows native coverage inputs
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: windows-csharp-coverage
+          path: build/075/coverage/
+          if-no-files-found: error
+          retention-days: 14
 
   required:
     if: always()

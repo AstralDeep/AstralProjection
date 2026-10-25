@@ -1,7 +1,6 @@
 """Builds the shared terminal panel from host-authorized session and output snapshots.
-The panel exposes list/panel reads, streamed literal output, platform text selection and,
-for interactive dispositions, the governed keyboard, resize, interrupt and session-close
-controls; every button submits to the server-owned terminal action contract.
+Read-only monitors share its bounded output and navigation; interactive dispositions add
+governed controls through the server-owned terminal action contract.
 """
 
 from __future__ import annotations
@@ -15,6 +14,7 @@ from webrender.terminal import (
     MAX_KEYBOARD_TEXT,
     bounded_terminal_output,
     decode_terminal_chunk,
+    sanitize_terminal_output as sanitize_terminal_output,
     terminal_number,
     terminal_seconds,
 )
@@ -214,8 +214,8 @@ def _open(label: str, mode: str, **params: object):
     )
 
 
-def _close_monitor():
-    return button("Close panel", "chrome_close", {"surface": SURFACE})
+def _close_monitor(*, monitor: bool):
+    return button("Close monitor" if monitor else "Close panel", "chrome_close", {"surface": SURFACE})
 
 
 def _session_badge(state: str):
@@ -237,7 +237,7 @@ def _session_rows(session: Mapping[str, Any]) -> list[tuple[str, str]]:
     return rows
 
 
-def _list(state: Mapping[str, Any]) -> tuple[str, list]:
+def _list(state: Mapping[str, Any], *, monitor: bool) -> tuple[str, list]:
     sessions = state.get("sessions", [])
     _require(
         isinstance(sessions, Sequence)
@@ -253,14 +253,15 @@ def _list(state: Mapping[str, Any]) -> tuple[str, list]:
             [
                 _session_badge(row["state"]),
                 key_value(_session_rows(row)[2:]),
-                _open("Open terminal panel", "panel", session_id=row["session_id"]),
+                _open("Open monitor" if monitor else "Open terminal panel",
+                      "monitor" if monitor else "panel", session_id=row["session_id"]),
             ],
         )
         for row in rows
     ]
     if not rows:
         components.append(text("No terminal sessions are open for this account."))
-    components.extend([_open("Refresh terminal list", "list"), _close_monitor()])
+    components.extend([_open("Refresh terminal list", "list"), _close_monitor(monitor=monitor)])
     return LIST_TITLE, components
 
 
@@ -310,7 +311,7 @@ def _controls(session: Mapping[str, Any]) -> list:
     ]
 
 
-def _panel(state: Mapping[str, Any], *, interactive: bool) -> tuple[str, list]:
+def _panel(state: Mapping[str, Any], *, interactive: bool, monitor: bool) -> tuple[str, list]:
     output, truncated, offset, next_offset, eof = _output(state)
     session_value = state.get("session")
     if session_value is None:
@@ -336,7 +337,7 @@ def _panel(state: Mapping[str, Any], *, interactive: bool) -> tuple[str, list]:
         components.append(
             alert(
                 "The retained output window is truncated. Earlier bytes are no longer "
-                "available in this panel.",
+                + ("available in this monitor." if monitor else "available in this panel."),
                 "warning",
             )
         )
@@ -348,7 +349,8 @@ def _panel(state: Mapping[str, Any], *, interactive: bool) -> tuple[str, list]:
         text("No output is available yet.", "caption")
     ]
     output_content.append(
-        text(_INTERACTIVE_HINT if interactive else _READ_ONLY_HINT, "caption")
+        text(_INTERACTIVE_HINT if interactive else _READ_ONLY_HINT.replace(" here", "")
+             if monitor else _READ_ONLY_HINT, "caption")
     )
     components.append(card("Output", output_content))
     components.append(
@@ -358,30 +360,32 @@ def _panel(state: Mapping[str, Any], *, interactive: bool) -> tuple[str, list]:
         )
     )
     components.append(
-        _open("Refresh output", "panel", session_id=session["session_id"], offset=next_offset)
+        _open("Refresh output", "monitor" if monitor else "panel", session_id=session["session_id"], offset=next_offset)
     )
     if offset > 0:
         components.append(
-            _open("Reload retained output", "panel", session_id=session["session_id"])
+            _open("Reload retained output", "monitor" if monitor else "panel", session_id=session["session_id"])
         )
     if interactive and session["state"] in {"running", "open"}:
         components.append(card("Terminal controls", _controls(session)))
-    components.extend([_open("Back to terminals", "list"), _close_monitor()])
-    return f"Terminal panel · {session['target']}", components
+    components.extend([_open("Back to terminals", "list"), _close_monitor(monitor=monitor)])
+    return f"Terminal {'monitor' if monitor else 'panel'} · {session['target']}", components
 
 
-def _failure(status: str, *, interactive: bool) -> list:
+def _failure(status: str, *, interactive: bool, monitor: bool) -> list:
     del interactive
     canonical = _STATUS_ALIASES.get(status, status)
     message, variant, recover = _FAILURES.get(canonical, _FAILURES["unavailable"])
+    if monitor:
+        message = message.replace("panel", "monitor").replace(" on this host", "")
     components = [alert(message, variant)]
     if recover:
         components.append(_open("Refresh terminal list", "list"))
-    components.append(_close_monitor())
+    components.append(_close_monitor(monitor=monitor))
     return components
 
 
-def _watch(state: object) -> list:
+def _watch(state: object, *, monitor: bool) -> list:
     components = []
     if isinstance(state, Mapping):
         session = state.get("session")
@@ -392,7 +396,7 @@ def _watch(state: object) -> list:
         )
         if isinstance(selected, str) and selected in _STATES:
             components.append(_session_badge(selected))
-    components.append(alert(_WATCH_HANDOFF, "info"))
+    components.append(alert(_WATCH_HANDOFF.replace("panel", "monitor") if monitor else _WATCH_HANDOFF, "info"))
     return components
 
 
@@ -403,28 +407,43 @@ def build_terminal_view(
     layout: LayoutView | None = None,
     watch: bool = False,
     interactive: bool = False,
+    monitor: bool = False,
 ) -> ChromeViewModel:
-    title = TITLE
+    monitor = monitor or isinstance(state, Mapping) and (
+        state.get("mode") == "monitor" or state.get("contract") == "terminal_monitor/v1"
+    )
+    interactive = interactive and not monitor
+    title = "Terminal monitor" if monitor else TITLE
     if watch:
-        components = _watch(state)
+        components = _watch(state, monitor=monitor)
     else:
         try:
             _require(isinstance(state, Mapping))
-            mode = state.get("mode", "panel")
+            mode = state.get("mode", "monitor" if monitor else "panel")
             status = state.get("status", "ready")
-            _require(type(mode) is str and mode in ("list", "panel"))
+            _require(type(mode) is str and mode in ("list", "panel", "monitor"))
             _require(type(status) is str and status in _STATUSES)
             if status != "ready":
-                components = _failure(status, interactive=interactive)
-                title = LIST_TITLE if mode == "list" else TITLE
+                components = _failure(status, interactive=interactive, monitor=monitor)
+                title = LIST_TITLE if mode == "list" else title
             elif mode == "list":
-                title, components = _list(state)
+                title, components = _list(state, monitor=monitor)
             else:
-                title, components = _panel(state, interactive=interactive)
+                title, components = _panel(state, interactive=interactive, monitor=monitor)
         except (ValueError, TypeError, AttributeError, KeyError, OverflowError):
             title = LIST_TITLE
-            components = _failure("unavailable", interactive=interactive)
+            components = _failure("unavailable", interactive=interactive, monitor=monitor)
     return build_view(SURFACE, title, components, theme=theme, layout=layout)
+
+
+def build_terminal_monitor_view(
+    state: Mapping[str, object],
+    *,
+    theme: ThemeView | None = None,
+    layout: LayoutView | None = None,
+    watch: bool = False,
+) -> ChromeViewModel:
+    return build_terminal_view(state, theme=theme, layout=layout, watch=watch, monitor=True)
 
 
 build_terminal_panel_view = build_terminal_view
@@ -438,6 +457,7 @@ __all__ = [
     "MAX_SESSIONS",
     "SURFACE",
     "TITLE",
+    "build_terminal_monitor_view",
     "build_terminal_panel_view",
     "build_terminal_view",
 ]

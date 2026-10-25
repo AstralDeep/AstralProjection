@@ -176,3 +176,12 @@ responsive failure remains.
 Do not infer a package-version bump, store submission or qualified native
 release from the UI name. Release publication workflows are disabled and
 require their own activation; see the [repository README](../README.md).
+
+## Terminal monitor
+
+Existing owner-authorized terminal sessions open in the shared read-only terminal
+monitor. The server-owned contract, sanitizer, list/monitor views, native
+dispositions and watch handoff are documented in
+[terminal-monitor.md](terminal-monitor.md). The monitor advertises only list,
+refresh and close reads; terminal input and session control remain outside this
+surface.

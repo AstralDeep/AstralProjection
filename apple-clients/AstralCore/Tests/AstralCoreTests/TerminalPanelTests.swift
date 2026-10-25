@@ -138,7 +138,7 @@ final class TerminalPanelTests: XCTestCase {
         }
         let refused: [JSONValue] = [
             .object(["mode": .string("panel")]),
-            .object(["mode": .string("monitor"), "session_id": .string("term_fixture")]),
+            .object(["mode": .string("unknown"), "session_id": .string("term_fixture")]),
             .object(["mode": .string("panel"), "session_id": .string("bad id")]),
             .object([
                 "mode": .string("panel"), "session_id": .string("term_fixture"),

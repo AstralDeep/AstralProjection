@@ -44,7 +44,7 @@ public struct ConsoleSurfaceRequest: Equatable, Sendable {
     private static func validTerminalParams(_ params: [String: JSONValue]) -> Bool {
         if params == ["mode": .string("list")] { return true }
         guard Set(params.keys).isSubset(of: ["mode", "session_id", "offset"]),
-            params["mode"] == .string("panel"),
+            [JSONValue.string("panel"), .string("monitor")].contains(params["mode"] ?? .null),
             params["session_id"]?.stringValue?.range(
                 of: "^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}\\z", options: .regularExpression) != nil
         else { return false }
