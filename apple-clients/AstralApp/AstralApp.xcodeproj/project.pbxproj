@@ -13,6 +13,7 @@
 		AA00000000000000000000A5 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A3 /* AstralCore */; };
 		AA00000000000000000000C1 /* AstralWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000B1 /* AstralWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AC6500000000000000000003 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC6500000000000000000002 /* LiveKit */; };
+		AF1020000000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; platformFilter = macos; productRef = AF1020000000000000000002 /* Sparkle */; };
 		AD0881000000000000000001 /* AstralCore in Harness Frameworks */ = {isa = PBXBuildFile; productRef = AD0881000000000000000002 /* AstralCore */; };
 /* End PBXBuildFile section */
 
@@ -125,6 +126,7 @@
 			files = (
 				AA00000000000000000000A4 /* AstralCore in Frameworks */,
 				AC6500000000000000000003 /* LiveKit in Frameworks */,
+				AF1020000000000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,6 +230,7 @@
 			packageProductDependencies = (
 				AA00000000000000000000A2 /* AstralCore */,
 				AC6500000000000000000002 /* LiveKit */,
+				AF1020000000000000000002 /* Sparkle */,
 			);
 			productName = AstralApp;
 			productReference = 222F50272FFD60D80016B0D6 /* AstralDeep.app */;
@@ -395,6 +398,7 @@
 			packageReferences = (
 				AA00000000000000000000A1 /* XCLocalSwiftPackageReference "../AstralCore" */,
 				AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
+				AF1020000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 222F50282FFD60D80016B0D6 /* Products */;
@@ -1232,6 +1236,14 @@
 				version = 2.15.3;
 			};
 		};
+		AF1020000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = exactVersion;
+				version = 2.10.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -1247,6 +1259,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
 			productName = LiveKit;
+		};
+		AF1020000000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AF1020000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 		AD0881000000000000000002 /* AstralCore */ = {isa = XCSwiftPackageProductDependency; productName = AstralCore; };
 /* End XCSwiftPackageProductDependency section */
