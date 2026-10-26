@@ -142,7 +142,7 @@
       "sourcePath": "android-client/app/src/main/AndroidManifest.xml",
       "sourceBlob": "12f60a18a7505c3a8d37ebe9c2f3abd8c1439253",
       "sourceMode": "100644",
-      "resultSha256": "0820ca6eebb314b59866824c355b15f8e40fabb2bb4be665706904b1d5cc29af",
+      "resultSha256": "f8e699bea1de5a9999785292c3ec9a2f92ca3964dd91be56c6f92ac209407b34",
       "task": "T018/T260",
       "reason": "Report live native viewport, input, accessibility and media capabilities while preserving the Activity through supported configuration changes. Android push navigation integration: connect the delivered adapter to Deep enrollment, acknowledgment and revocation through the new PushDestinationRest and PushRuntime, gate taps on the authenticated session, and declare the POST_NOTIFICATIONS permission and channel strings for the live runtime. Apple push navigation integration: add the AstralCore destination machine and PushRest boundary, bind them through PushNotificationService with APNs registration, foreground suppression, acknowledgment and sign-out or account-change revocation, and declare the iOS push entitlement. Shared push_navigation contract: declare the destination runtime, payload bounds, server-selected presentation, foreground deduplication and tap navigation vocabulary with per-client dispositions and Python drift guards for both phone clients and the in-app-only fallback elsewhere; taps never approve actions or execute tools, and real-device staging dispatch remains a coordinated release-lane step."
     },
