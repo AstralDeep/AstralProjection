@@ -39,6 +39,13 @@ def test_console_contains_shared_catalog_identity_and_ordered_actions():
     assert console["show_voice_availability_banner"] is False
 
 
+def test_subtitle_is_a_short_functional_label_and_no_label_is_blank():
+    console = model()
+    assert console["labels"]["subtitle"] == "Workspace"
+    assert all(isinstance(label, str) and label.strip() for label in console["labels"].values())
+    assert render_console_labels("%%CONSOLE:subtitle%%") == "Workspace"
+
+
 def test_unavailable_actions_are_omitted_and_inputs_are_not_mutated():
     source = catalog()
     original = deepcopy(source)
