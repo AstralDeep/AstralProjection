@@ -8,6 +8,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import textwrap
@@ -28,6 +29,7 @@ REVIEWED_GITLEAKS_FIXTURE_FINGERPRINTS = frozenset(
         "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_startup_gate.py:generic-api-key:201",
         "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:124",
         "330bc85d07cac8fabc5cf8e1f7d313d2eb47e7d8:windows-client/tests/test_win_agent_inbound_auth.py:generic-api-key:267",
+        "f99deae033af29b71cb5543b1dc21c4b9666eff6:apple-clients/AstralApp/AstralAppTests/UpdateCoordinatorTests.swift:generic-api-key:280",
     }
 )
 
@@ -348,10 +350,7 @@ def _assert_whole_os_helper_contract(apple: str) -> None:
         "set -euo pipefail",
         WHOLE_OS_VERSION,
         'evidence="$PWD/build/099/swift-inactive-input"',
-        'if [[ -e "$evidence" || -L "$evidence" ]]; then',
-        'echo "::error::helper evidence directory already exists" >&2',
-        "exit 1",
-        'mkdir -p "$evidence"',
+        'rm -rf "$evidence"\n          mkdir -p "$evidence"',
         'chmod 700 "$evidence"',
         "python -m pytest tests/test_swift_inactive_input.py tests/test_swift_inactive_input_native.py",
         '-q -p no:cacheprovider --basetemp="$evidence/pytest"',
@@ -1029,7 +1028,7 @@ def test_apple_required_lane_qualifies_and_retains_real_compiler_helper() -> Non
         ('python-version: "3.11"', 'python-version: "3.12"'),
         ("--require-hashes -r tooling/python-ci/requirements.lock.txt", "-r tooling/python-ci/requirements.lock.txt"),
         (WHOLE_OS_VERSION, "true"),
-        ('if [[ -e "$evidence" || -L "$evidence" ]]; then', "if false; then"),
+        ('rm -rf "$evidence"\n', ""),
         ("tests/test_swift_inactive_input_native.py", ""),
         ('--basetemp="$evidence/pytest"', "--basetemp=/tmp/helper"),
         ('2>&1 | tee "$evidence/pytest.log"', '2>&1 | tee "$evidence/pytest.log" || true'),
@@ -1071,7 +1070,7 @@ def test_helper_workflow_preserves_test_failure_through_tee(tmp_path, test_exit)
 
 
 @pytest.mark.parametrize("existing", ["directory", "symlink"])
-def test_helper_workflow_refuses_preexisting_evidence_without_running_tests(tmp_path, existing):
+def test_helper_workflow_replaces_preexisting_evidence_without_following_links(tmp_path, existing):
     core = _job_block((ACTIVE / "apple-ci.yml").read_text(), "core-tests")
     step = _step_block(core, WHOLE_OS_STEP)
     evidence = tmp_path / "build/099/swift-inactive-input"
@@ -1081,6 +1080,7 @@ def test_helper_workflow_refuses_preexisting_evidence_without_running_tests(tmp_
     (operator / "preimage").write_bytes(b"original")
     if existing == "directory":
         evidence.mkdir()
+        (evidence / "stale.xml").write_bytes(b"stale")
     else:
         evidence.symlink_to(operator, target_is_directory=True)
     shims = tmp_path / "bin"
@@ -1096,7 +1096,11 @@ def test_helper_workflow_refuses_preexisting_evidence_without_running_tests(tmp_
         capture_output=True,
         timeout=10,
     )
-    assert result.returncode != 0 and not (tmp_path / "tests-ran").exists()
+    assert result.returncode == 0 and (tmp_path / "tests-ran").exists()
+    assert evidence.is_dir() and not evidence.is_symlink()
+    assert sorted(path.name for path in evidence.iterdir()) == ["pytest.log"]
+    assert stat.S_IMODE(evidence.stat().st_mode) == 0o700
+    assert sorted(path.name for path in operator.iterdir()) == ["preimage"]
     assert (operator / "preimage").read_bytes() == b"original"
 
 

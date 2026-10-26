@@ -120,10 +120,7 @@ jobs:
           set -euo pipefail
           [[ "$(xcodebuild -version)" == $'Xcode 26.6\nBuild version 17F113' ]]
           evidence="$PWD/build/099/swift-inactive-input"
-          if [[ -e "$evidence" || -L "$evidence" ]]; then
-            echo "::error::helper evidence directory already exists" >&2
-            exit 1
-          fi
+          rm -rf "$evidence"
           mkdir -p "$evidence"
           chmod 700 "$evidence"
           python -m pytest tests/test_swift_inactive_input.py tests/test_swift_inactive_input_native.py \
