@@ -293,8 +293,8 @@
                 verbs.subtract(Self.commandVerbs.union(["read_file", "list_dir", "write_file", "delete_path"]))
             }
             if browser?.isEnabled != true { verbs = verbs.filter { !Self.browserVerb($0) } }
-            let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.8"
-            let version = raw.split(separator: ".").count == 2 ? raw + ".0" : raw
+            let raw = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+            let version = raw + String(repeating: ".0", count: max(0, 3 - raw.split(separator: ".").count))
             let roots = files.roots.compactMap { root -> ComputerHostWorkspaceRoot? in
                 let folder = String(
                     URL(fileURLWithPath: root).lastPathComponent.unicodeScalars.filter {
