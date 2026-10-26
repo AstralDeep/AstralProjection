@@ -364,6 +364,8 @@ class PrivateOutput:
 
     def read(self, name: str, *, adopt=False):
         self.check(new_binary=adopt)
+        if adopt:
+            os.chmod(name, 0o700, dir_fd=self.fd, follow_symlinks=False)
         before = os.stat(name, dir_fd=self.fd, follow_symlinks=False)
         descriptor = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=self.fd)
         with os.fdopen(descriptor, "rb") as stream:

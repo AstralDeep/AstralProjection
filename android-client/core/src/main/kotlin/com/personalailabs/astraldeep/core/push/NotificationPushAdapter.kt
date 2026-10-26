@@ -9,11 +9,24 @@ package com.personalailabs.astraldeep.core.push
 import kotlinx.serialization.json.JsonObject
 import java.security.MessageDigest
 
-enum class PushLifecycle { Foreground, Background, Terminated }
+enum class PushLifecycle {
+    Foreground,
+    Background,
+    Terminated,
+}
 
-enum class PushPermissionState { NotDetermined, Granted, Denied, Revoked }
+enum class PushPermissionState {
+    NotDetermined,
+    Granted,
+    Denied,
+    Revoked,
+}
 
-enum class ProviderAvailability { Unknown, Supported, Unsupported }
+enum class ProviderAvailability {
+    Unknown,
+    Supported,
+    Unsupported,
+}
 
 data class PushIdentity(
     val deviceId: String,
@@ -64,11 +77,11 @@ sealed interface PushEffect {
 }
 
 sealed interface RegistrationState {
-    data object Idle : RegistrationState
+    object Idle : RegistrationState
 
-    data object RequestingToken : RegistrationState
+    object RequestingToken : RegistrationState
 
-    data object Enrolling : RegistrationState
+    object Enrolling : RegistrationState
 
     data class Registered(val tokenFingerprint: String, val tokenGeneration: Int) : RegistrationState
 
@@ -88,9 +101,9 @@ sealed interface MessageReceipt {
 
     data class Malformed(val reason: String) : MessageReceipt
 
-    data object NotPermitted : MessageReceipt
+    object NotPermitted : MessageReceipt
 
-    data object Unsupported : MessageReceipt
+    object Unsupported : MessageReceipt
 }
 
 class NotificationPushAdapter(
