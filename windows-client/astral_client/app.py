@@ -594,6 +594,7 @@ class Canvas(QScrollArea):
         self._by_id: Dict[str, QWidget] = {}
         self._rendered: Dict[str, Any] = {}
         self._last_components: list = []
+        self._navigation_context = ctx.navigation
         self._mutated_since_render = False
         self._empty: Optional[QWidget] = None
         self._skeleton: Optional[QWidget] = None
@@ -695,9 +696,13 @@ class Canvas(QScrollArea):
             self.set_components(kept)
 
     def set_components(self, components: list) -> None:
+        context_current = self._navigation_context is self.ctx.navigation
+        self._navigation_context = self.ctx.navigation
+        if not context_current:
+            self._rendered.clear()
         incoming = components or []
         keep_loading = not incoming and self.turn_active
-        if not self._mutated_since_render and (
+        if context_current and not self._mutated_since_render and (
             incoming is self._last_components
             or incoming == self._last_components
         ):
@@ -1302,6 +1307,8 @@ class SurfaceDialog(QDialog):
         if accepted is False:
             self.fail_operation("Couldn't send this action. Reconnect and retry.")
             return False
+        if action == "load_chat":
+            return accepted
         if action == "chrome_open" and payload.get("surface") == "work":
             return
         if action not in {"chat_message", "compose_prompt"} and action not in _CLIENT_LOCAL_ACTIONS:
@@ -1375,6 +1382,9 @@ class SurfaceDialog(QDialog):
 
     def set_surface(self, title: str, components: list) -> None:
         self._surface_payload = components
+        factory = getattr(self.parent(), "_surface_navigation_factory", None)
+        if factory is not None:
+            self._ctx.navigation = factory(self, components)
         self._timer.stop()
         self._status.setVisible(False)
         self.setWindowTitle(title or "Settings")
@@ -2162,6 +2172,9 @@ class MainWindow(QMainWindow):
         self._background_mode = False
         self._guidance_ticket = None
         self._surface_owner = None
+        self._canvas_navigation = None
+        self._transcript_navigation = None
+        self._surface_navigation = None
         self._workspace_actions = None
         self._rendered_snapshot = None
         self._viewport = ViewportRefresh(self)
@@ -2786,6 +2799,82 @@ class MainWindow(QMainWindow):
             if self._surface_dialog is not None:
                 self._surface_dialog._on_timeout()
 
+    def _navigation_lifetime(self):
+        return (self.client, getattr(self.client, "connection_generation", None),
+                self._resume_store.storage_key, self._auth_generation, self.active_chat,
+                self._continuity.request_generation)
+
+    @staticmethod
+    def _navigation_component_present(components, selected):
+        for component in components or []:
+            if not isinstance(component, dict):
+                continue
+            if component is selected:
+                return True
+            for key in ("content", "children"):
+                value = component.get(key)
+                if isinstance(value, list) and MainWindow._navigation_component_present(value, selected):
+                    return True
+        return False
+
+    @staticmethod
+    def _navigation_offered(component, payload, origin):
+        if not isinstance(payload, dict):
+            return False
+        target = payload.get("chat_id")
+        if not isinstance(target, str) or not target.strip():
+            return False
+        if component.get("type") == "chat_history":
+            if set(payload) != {"chat_id"}:
+                return False
+            rows = component.get("items", component.get("chats", [])) or []
+            return isinstance(rows, list) and any(
+                isinstance(row, dict) and (row.get("chat_id") or row.get("id")) == target for row in rows)
+        return (origin == "surface" and component.get("type") == "button"
+                and component.get("action") == "load_chat" and component.get("payload") == payload
+                and not component.get("disabled") and component.get("enabled") is not False)
+
+    def _navigation_factory(self, origin, components, dialog=None):
+        scope = (object(), self._navigation_lifetime(), components, dialog)
+        setattr(self, "_" + origin + "_navigation", scope)
+
+        def capture(component):
+            offered = deepcopy(component)
+            present = self._navigation_component_present(components, component)
+
+            def invoke(action, payload):
+                current = self._navigation_lifetime()
+                if (action != "load_chat" or not present or component != offered
+                        or getattr(self, "_" + origin + "_navigation") is not scope
+                        or scope[1] != current or self._auth_stopped
+                        or not self.isVisible() or not getattr(self.client, "connected", False)
+                        or not _canonical_uuid4(current[1]) or not current[2]
+                        or self.canvas.timeline_mode or not self._navigation_offered(offered, payload, origin)):
+                    return False
+                active = self._surface_dialog
+                if origin == "surface":
+                    if (active is not dialog or not dialog.isVisible() or dialog._mandatory
+                            or dialog._timer.isActive() or self._settings_ticket is not None
+                            or self._surface_owner != current[:3]
+                            or dialog._surface_payload is not components):
+                        return False
+                elif active is not None and active.isVisible():
+                    return False
+                self._load_chat(payload["chat_id"])
+                if origin == "surface":
+                    dialog.close()
+                return True
+
+            return invoke
+
+        return capture
+
+    def _surface_navigation_factory(self, dialog, components):
+        return self._navigation_factory("surface", components, dialog)
+
+    def _bind_canvas_navigation(self, components):
+        self.canvas.ctx.navigation = self._navigation_factory("canvas", components)
+
     def _compose_surface_prompt(self, payload: dict) -> None:
         dialog = self._surface_dialog
         current = (self.client, getattr(self.client, "connection_generation", None), self._resume_store.storage_key)
@@ -3100,6 +3189,8 @@ class MainWindow(QMainWindow):
         if not _canonical_uuid4(connection):
             return
         if self._continuity.connection_generation != connection:
+            self._canvas_navigation = None
+            self._transcript_navigation = None
             self._viewport.retire(reset=True)
             self._rendered_snapshot = None
             self._continuity.bind_connection(connection)
@@ -3116,6 +3207,8 @@ class MainWindow(QMainWindow):
         ):
             if purpose == "hydration":
                 self._rendered_snapshot = None
+            self._canvas_navigation = None
+            self._transcript_navigation = None
             try:
                 self._continuity.open_request(purpose, generation)
             except WindowsProtocolError:
@@ -3124,6 +3217,8 @@ class MainWindow(QMainWindow):
     def _begin_conversation_request(
         self, purpose: str, chat_id: Optional[str]
     ) -> Optional[str]:
+        self._canvas_navigation = None
+        self._transcript_navigation = None
         if chat_id is not None and not _canonical_uuid4(chat_id):
             return None
         self._viewport.retire()
@@ -3258,6 +3353,7 @@ class MainWindow(QMainWindow):
         self._finish_work_read()
         dialog = self._surface_dialog
         if dialog is not None and dialog._surface == "work":
+            self._surface_owner = None
             dialog._on_timeout()
 
     def _request_work_surface(self, params: dict) -> None:
@@ -3418,6 +3514,7 @@ class MainWindow(QMainWindow):
                     or not self._work_read_current(ticket) or dialog is None
                     or not dialog.isVisible() or dialog._surface != "work"):
                 return
+            self._surface_owner = ticket[:3]
             self._finish_work_read()
         components = msg.get("components") or []
         mode = str(msg.get("mode") or "replace")
@@ -4057,6 +4154,8 @@ class MainWindow(QMainWindow):
         self._console_open_surface("mesh", "Mesh devices", {})
 
     def _emit(self, action: str, payload: dict) -> None:
+        if action == "load_chat":
+            return False
         if action in {"chrome_mesh_create", "chrome_mesh_identity", "chrome_mesh_redeem"}:
             self._mesh_action(action, payload)
             return
@@ -4630,11 +4729,15 @@ class MainWindow(QMainWindow):
             return
         messages = decode_semantic_transcript(snapshot.transcript)
         components = snapshot.canvas["components"]
+        self._bind_canvas_navigation(components)
+        transcript_context = copy(self.canvas.ctx)
+        transcript_context.navigation = self._navigation_factory("transcript", [
+            component for message in messages for part in message.parts for component in part.components])
         prepared = [render(component, self.canvas.ctx, top_level=True) for component in components]
         for widget in prepared:
             widget.deleteLater()
         self._clear_transient_conversation()
-        self.rail.replace_semantic(messages, self.canvas.ctx)
+        self.rail.replace_semantic(messages, transcript_context)
         self.canvas.set_components(components)
         self._rendered_snapshot = snapshot
         self._set_turn_active(False)
@@ -4657,10 +4760,12 @@ class MainWindow(QMainWindow):
                     self.rail.show_transient("\n".join(self._transient_chat_lines))
             else:
                 self._transient_canvas_components = list(components or [])
+                self._bind_canvas_navigation(self._transient_canvas_components)
                 self.canvas.set_transient_overlay(self._transient_canvas_components)
             return
         if frame_type == "ui_append":
             self._transient_canvas_components.extend(components or [])
+            self._bind_canvas_navigation(self._transient_canvas_components)
             self.canvas.set_transient_overlay(self._transient_canvas_components)
             return
         if frame_type == "ui_upsert":
@@ -4691,6 +4796,7 @@ class MainWindow(QMainWindow):
                 else:
                     current[index] = component
             self._transient_canvas_components = current
+            self._bind_canvas_navigation(current)
             self.canvas.set_transient_overlay(current)
             return
         if frame_type == "ui_stream_data":
@@ -4714,6 +4820,7 @@ class MainWindow(QMainWindow):
                 self._apply_transient_frame(synthetic)
             else:
                 self._transient_canvas_components.extend(streamed)
+                self._bind_canvas_navigation(self._transient_canvas_components)
                 self.canvas.set_transient_overlay(self._transient_canvas_components)
 
     def _scoped_status_matches(self, msg: dict[str, Any]) -> bool:
@@ -5055,20 +5162,28 @@ class MainWindow(QMainWindow):
             elif target == "history":
                 self._on_history_render(comps)
             else:
+                self._bind_canvas_navigation(comps)
                 self.canvas.set_components(comps)
         elif t == "ui_update":
-            self.canvas.set_components(msg.get("components") or [])
+            components = msg.get("components") or []
+            self._bind_canvas_navigation(components)
+            self.canvas.set_components(components)
         elif t == "ui_append":
             components = list(self.canvas._last_components)
             components.extend(msg.get("components") or [])
+            self._bind_canvas_navigation(components)
             self.canvas.set_components(components)
         elif t == "ui_upsert":
             if not msg.get("chat_id") or msg.get("chat_id") == self.active_chat:
                 self.canvas.apply_ops(msg.get("ops") or [])
+                self._bind_canvas_navigation(self.canvas._last_components)
+                self.canvas.set_components(self.canvas._last_components)
         elif t == "component_deleted":
             cid = msg.get("component_id")
             if cid:
                 self.canvas.apply_ops([{"op": "remove", "component_id": str(cid)}])
+                self._bind_canvas_navigation(self.canvas._last_components)
+                self.canvas.set_components(self.canvas._last_components)
         elif t in ("components_combined", "components_condensed"):
             self._reset_status_line()
             rows = msg.get("new_components") or []

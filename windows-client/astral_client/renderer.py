@@ -47,6 +47,7 @@ class RenderContext:
     download: Optional[Callable[[str, str], None]] = None
     chat_id: Optional[str] = None
     apply_theme: Optional[Callable[[Any], None]] = None
+    navigation: Optional[Callable[[dict], Callable[[str, dict], bool]]] = None
 
 
 def _label(
@@ -533,7 +534,8 @@ def _r_button(c, ctx):
     btn.setProperty("server_disabled", c.get("disabled") is True or not action or not label_available)
     btn.setEnabled(not btn.property("server_disabled"))
     if action:
-        btn.clicked.connect(lambda: ctx.emit(action, dict(payload)))
+        emit = ctx.navigation(c) if action == "load_chat" and ctx.navigation is not None else ctx.emit
+        btn.clicked.connect(lambda: emit(action, dict(payload)))
     btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     return btn
 
@@ -1344,6 +1346,7 @@ def _r_chat_history(c, ctx):
     frame.setLayout(lay)
     if c.get("title"):
         lay.addWidget(_label(c["title"], size=14, bold=True))
+    emit = ctx.navigation(c) if ctx.navigation is not None else ctx.emit
     for item in c.get("items", c.get("chats", [])) or []:
         if not isinstance(item, dict):
             continue
@@ -1352,7 +1355,7 @@ def _r_chat_history(c, ctx):
         btn.setStyleSheet("text-align:left; padding:8px;")
         if cid:
             btn.clicked.connect(
-                lambda _=False, x=cid: ctx.emit("load_chat", {"chat_id": x})
+                lambda _=False, x=cid: emit("load_chat", {"chat_id": x})
             )
         lay.addWidget(btn)
     return frame

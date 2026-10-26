@@ -636,6 +636,7 @@ private struct ChatBubble: View {
                     }
                     ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
                         ComponentView(component: component)
+                            .environment(\.astralNavigationTranscript, turn.id)
                     }
                 }
                 .font(ConsoleTypography.subheadline)

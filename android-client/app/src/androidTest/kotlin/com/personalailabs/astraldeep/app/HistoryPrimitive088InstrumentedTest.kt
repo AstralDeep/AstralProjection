@@ -82,6 +82,32 @@ class HistoryPrimitive088InstrumentedTest {
     }
 
     @Test
+    fun rendered_history_uses_the_captured_navigation_callback() {
+        val target = "22222222-2222-4222-8222-222222222222"
+        val component =
+            Component.fromJson(
+                Json.parseToJsonElement(
+                    """{"type":"chat_history","items":[{"chat_id":"$target","title":"Current owned history"}]}""",
+                ).jsonObject,
+            )
+        val emitted = mutableListOf<Pair<String, JsonObject>>()
+        var captured: Component? = null
+        val renderer =
+            Renderer(Emit { _, _ -> error("Unscoped history event") }).registerAllRenderers().also {
+                it.navigation = { source ->
+                    captured = source
+                    Emit { action, payload -> emitted += action to payload }
+                }
+            }
+        rule.setContent { AstralTheme { renderer.render(component) } }
+        rule.onNodeWithText("Current owned history").performClick()
+        rule.runOnIdle {
+            assertTrue(captured === component)
+            assertEquals(listOf("load_chat" to Json.parseToJsonElement("""{"chat_id":"$target"}""").jsonObject), emitted)
+        }
+    }
+
+    @Test
     fun history_has_web_type_scale_count_alignment_and_accessible_rows_in_both_themes() {
         var palette by mutableStateOf<ThemePalette?>(null)
         val component =

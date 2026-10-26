@@ -39,6 +39,7 @@ import SwiftUI
                                         }
                                         ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
                                             ComponentView(component: component)
+                                                .environment(\.astralNavigationTranscript, turn.id)
                                         }
                                     }
                                     .font(ConsoleTypography.body).foregroundStyle(p.text)
@@ -181,6 +182,7 @@ struct ConsoleConversation: View {
                                     }
                                     ForEach(Array(turn.components.enumerated()), id: \.offset) { _, component in
                                         ComponentView(component: component)
+                                            .environment(\.astralNavigationTranscript, turn.id)
                                     }
                                 }
                                 .font(ConsoleTypography.subheadline).foregroundStyle(p.text)

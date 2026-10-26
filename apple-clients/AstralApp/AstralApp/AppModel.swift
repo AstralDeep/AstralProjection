@@ -183,6 +183,15 @@ final class AppModel: NSObject {
     var terminalReadGeneration: String? { pendingSurfaceKey == "terminal" ? ordinarySurfaceGeneration : nil }
     var safetyRequestGeneration: String? { pendingSurfaceKey == "safety" ? ordinarySurfaceGeneration : nil }
     private var ordinaryReadIntent: (generation: String, owner: DownloadOwner)?
+    private var surfaceNavigationScope: (owner: DownloadOwner, connection: String?, render: UUID)?
+    private struct ConversationNavigationBinding {
+        let render = UUID()
+        let owner: DownloadOwner
+        let connection: String?
+        let request: String?
+    }
+    private var acceptingTransientNavigationRender = false
+    private var conversationNavigationBindings: [String: ConversationNavigationBinding] = [:]
     private var parameterRequests: [String: String] = [:]
     private var parameterFailures: Set<String> = []
     var screen: Screen = .chat {
@@ -195,16 +204,28 @@ final class AppModel: NSObject {
     var runInBackground = false
     var workspaceStarted = false
     var turns: [ChatTurn] = [] {
-        didSet { if !turns.isEmpty { workspaceStarted = true } }
+        didSet {
+            bindConversationNavigationRender("transcript")
+            if !turns.isEmpty { workspaceStarted = true }
+        }
     }
     var canvas: [AstralComponent] = [] {
-        didSet { if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true } }
+        didSet {
+            bindConversationNavigationRender("canvas")
+            if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true }
+        }
     }
     var transientTurns: [ChatTurn] = [] {
-        didSet { if !transientTurns.isEmpty { workspaceStarted = true } }
+        didSet {
+            bindConversationNavigationRender("transient-transcript")
+            if !transientTurns.isEmpty { workspaceStarted = true }
+        }
     }
     var transientCanvas: [AstralComponent]? {
-        didSet { if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true } }
+        didSet {
+            bindConversationNavigationRender("transient-canvas")
+            if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true }
+        }
     }
     var pendingCanvas: [AstralComponent] = []
     var turnActive = false
@@ -2547,6 +2568,8 @@ final class AppModel: NSObject {
 
     private func reduceTransient(_ frame: InboundFrame) {
         guard viewportRequest == nil, continuity.acceptTransient(frame) else { return }
+        acceptingTransientNavigationRender = true
+        defer { acceptingTransientNavigationRender = false }
         switch frame.name {
         case "ui_render", "ui_update":
             let components = frame.renderComponents
@@ -2793,6 +2816,7 @@ final class AppModel: NSObject {
                 workReadUpdate = update
                 workReadFailed = false
                 pendingSurface = SurfaceContent(surfaceKey: "work", title: update.title, components: update.components)
+                surfaceNavigationScope = (downloadOwner, continuity.connectionGeneration, UUID())
             }
             return
         }
@@ -2885,6 +2909,7 @@ final class AppModel: NSObject {
         }
         ordinarySurfaceRequests.removeValue(forKey: current)
         ordinarySurfaceGeneration = nil
+        surfaceNavigationScope = (downloadOwner, continuity.connectionGeneration, UUID())
         return true
     }
 
@@ -2896,6 +2921,7 @@ final class AppModel: NSObject {
     }
 
     private func retireOrdinarySurfaceRequests(preservingReadIntent: Bool = false) {
+        surfaceNavigationScope = nil
         ordinarySurfaceRequests = [:]
         ordinarySurfaceGeneration = nil
         if ["evidence", "safety", "terminal"].contains(pendingSurfaceKey) { pendingSurface = nil }
@@ -3329,6 +3355,96 @@ final class AppModel: NSObject {
         }
     }
 
+    private func bindConversationNavigationRender(_ source: String) {
+        guard continuity.acceptedSnapshot != nil || acceptingTransientNavigationRender else {
+            conversationNavigationBindings[source] = nil
+            return
+        }
+        conversationNavigationBindings[source] = ConversationNavigationBinding(
+            owner: downloadOwner, connection: continuity.connectionGeneration, request: continuity.requestGeneration)
+    }
+
+    func navigationCallback(
+        _ component: AstralComponent, surface: Bool, transcript: String? = nil
+    ) -> ([String: JSONValue]) -> Void {
+        let owner = downloadOwner
+        let connection = continuity.connectionGeneration
+        let request = continuity.requestGeneration
+        let chat = activeChatId
+        let source: String
+        let components: [AstralComponent]
+        if surface {
+            source = "surface"
+            components = pendingSurface?.components ?? []
+        } else if let transcript {
+            if let turn = transientTurns.first(where: { $0.id == transcript }) {
+                source = "transient-transcript"
+                components = turn.components
+            } else {
+                source = "transcript"
+                components = turns.first(where: { $0.id == transcript })?.components ?? []
+            }
+        } else {
+            source = transientCanvas == nil ? "canvas" : "transient-canvas"
+            components = visibleCanvas
+        }
+        let binding = conversationNavigationBindings[source]
+        let surfaceRender = surfaceNavigationScope?.render
+        let offered = components.contains { navigationComponentPresent(component.raw, in: $0.raw) }
+        return { [weak self] fields in
+            guard let self, offered, self.signedIn, self.connected, !self.mandatorySurface,
+                !self.mutationsLocked, !self.isViewingHistory, self.downloadOwner == owner,
+                connection != nil, self.continuity.connectionGeneration == connection,
+                self.continuity.requestGeneration == request, self.activeChatId == chat,
+                fields.count == 1, let target = fields["chat_id"]?.stringValue,
+                target.range(
+                    of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    options: .regularExpression) != nil,
+                self.navigationOffered(component, target: target, surface: surface)
+            else { return }
+            if surface {
+                guard self.screen == .surface, self.ordinarySurfaceGeneration == nil,
+                    self.surfaceFailureMessage == nil, surfaceRender != nil,
+                    self.surfaceNavigationScope?.render == surfaceRender,
+                    self.surfaceNavigationScope?.owner == owner,
+                    self.surfaceNavigationScope?.connection == connection
+                else { return }
+                self.closeSurface()
+            } else {
+                guard self.screen == .chat, let binding,
+                    self.conversationNavigationBindings[source]?.render == binding.render,
+                    binding.owner == owner, binding.connection == connection, binding.request == request
+                else { return }
+            }
+            self.openChat(target)
+        }
+    }
+
+    private func navigationComponentPresent(_ selected: JSONValue, in value: JSONValue) -> Bool {
+        if value == selected { return true }
+        if let values = value.arrayValue { return values.contains { navigationComponentPresent(selected, in: $0) } }
+        return value.objectValue?.values.contains { navigationComponentPresent(selected, in: $0) } == true
+    }
+
+    private func navigationOffered(_ component: AstralComponent, target: String, surface: Bool) -> Bool {
+        if component.type == "chat_history" {
+            return (component.raw["items"]?.arrayValue ?? []).compactMap { ChatSummary(historyItem: $0) }
+                .contains { $0.id == target }
+        }
+        return surface && component.type == "button" && component.raw["action"] == .string("load_chat")
+            && component.raw["payload"] == .object(["chat_id": .string(target)])
+            && component.raw["disabled"] != .bool(true) && component.raw["enabled"] != .bool(false)
+    }
+
+    private func surfaceConversationOffered(_ component: AstralComponent, payload: JSONValue) -> Bool {
+        if component.type == "button", component.raw["action"] == .string("load_chat"),
+            component.raw["payload"] == payload, component.raw["disabled"] != .bool(true)
+        {
+            return true
+        }
+        return component.children.contains { surfaceConversationOffered($0, payload: payload) }
+    }
+
     private func permitsIntroPrompt(_ component: AstralComponent, action: String, payload: JSONValue) -> Bool {
         if component.raw["action"]?.stringValue == action, component.raw["payload"] == payload {
             return true
@@ -3718,27 +3834,19 @@ final class AppModel: NSObject {
                     snapshotPurpose: .commit))
             return
         }
-        if action == "load_chat", let chatId = payload["chat_id"]?.stringValue {
-            let identity = ClientOperationIdentity.fresh()
-            if continuity.connectionGeneration != nil {
-                guard
-                    openConversationRequest(
-                        chatId: chatId,
-                        requestGeneration: identity.requestGeneration,
-                        purpose: .hydration)
-                else { return }
-            }
-            beginLocalOperationSubmission(
-                identity: identity,
-                action: action,
-                surface: "chat",
-                chatId: chatId)
-            rawSend(
-                Outbound.loadChat(
-                    sessionId: chatId,
-                    chatId: chatId,
-                    submissionId: identity.submissionId,
-                    requestGeneration: identity.requestGeneration))
+        if action == "load_chat" {
+            guard signedIn, connected, screen == .surface, !mandatorySurface, !mutationsLocked,
+                ordinarySurfaceGeneration == nil, surfaceFailureMessage == nil,
+                let connection = continuity.connectionGeneration, surfaceNavigationScope?.connection == connection,
+                surfaceNavigationScope?.owner == downloadOwner,
+                let chatId = payload["chat_id"]?.stringValue,
+                chatId.range(
+                    of: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+                    options: .regularExpression) != nil,
+                pendingSurface?.components.contains(where: { surfaceConversationOffered($0, payload: payload) }) == true
+            else { return }
+            closeSurface()
+            openChat(chatId)
             return
         }
 
@@ -4418,7 +4526,10 @@ final class AppModel: NSObject {
         retireWorkTicket()
         workReadUpdate = nil
         workReadFailed = false
-        if pendingSurfaceKey == "work" { pendingSurface = nil }
+        if pendingSurfaceKey == "work" {
+            pendingSurface = nil
+            surfaceNavigationScope = nil
+        }
     }
 
     private func beginWorkRead(_ payload: JSONValue) {

@@ -2308,3 +2308,79 @@ for (const update of ["append", "upsert"]) {
     await expect(page.locator("body")).toHaveAttribute("data-astral-view", "start");
   });
 }
+
+function chromeConversationButton(payload) {
+  return execFileSync("python3", ["-c", [
+    "import json,sys",
+    "sys.path.insert(0,sys.argv[1])",
+    "from astralprojection.chrome import render_html",
+    "from astralprojection.models import ChromeViewModel,ComponentView",
+    'button=ComponentView("button",{"label":"Open conversation","action":"load_chat","payload":json.loads(sys.argv[2])})',
+    'print(render_html(ChromeViewModel("search","Search",(button,))))',
+  ].join("\n"), resolve(ROOT, "src"), JSON.stringify(payload)], {cwd: ROOT, encoding: "utf8"});
+}
+
+async function offerChromeConversation(page, payload) {
+  await receive(page, {type: "chrome_render", region: "modal", mode: "replace",
+    html: `<div class="astral-modal-card" role="dialog" tabindex="-1">${chromeConversationButton(payload)}</div>`});
+}
+
+test("shared chrome conversation navigation selects and hydrates the target before the next explicit send", async ({page}) => {
+  await installHarness(page);
+  await receive(page, snapshot((await registration(page)).frame));
+  await offerChromeConversation(page, {chat_id: OTHER_CHAT_ID});
+  const before = await page.evaluate(() => window.__socketEvents.length);
+  await page.getByRole("button", {name: "Open conversation", exact: true}).click();
+  const frames = await page.evaluate(index => window.__socketEvents.slice(index).map(event => event.frame), before);
+  const load = frames.find(frame => frame.action === "load_chat");
+  expect(load.session_id).toBe(OTHER_CHAT_ID);
+  expect(load.payload.chat_id).toBe(OTHER_CHAT_ID);
+  expect(load.payload.snapshot_purpose).toBe("hydration");
+  expect(load.payload.request_generation).toBe(load.request_generation);
+  expect(frames.filter(frame => frame.action === "load_chat")).toHaveLength(1);
+  expect(frames.some(frame => frame.action === "chat_message")).toBe(false);
+  await expect(page.getByRole("button", {name: "Open conversation", exact: true})).toHaveCount(0);
+  await receive(page, snapshot(load, {chat_id: OTHER_CHAT_ID, snapshot_id: SNAPSHOT_B,
+    transcript: [{message_id: "target-message", role: "assistant", created_at: COMMITTED_AT,
+      parts: [{type: "text", text: "Target conversation hydrated"}], attachments: []}],
+    canvas: {target: "canvas", components: [presentation("target-canvas", "Target source result")]},
+  }));
+  await expect(page.locator("#astral-chat")).toContainText("Target conversation hydrated");
+  await expect(page.locator('[data-component-id="target-canvas"]')).toBeVisible();
+  await expect(page.locator("#astral-chat")).not.toContainText("Committed answer");
+  expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(OTHER_CHAT_ID);
+  await page.locator("#astral-input").fill("Explicit next message");
+  await page.getByRole("button", {name: "Send", exact: true}).click();
+  const sends = await page.evaluate(() => window.__socketEvents.map(event => event.frame).filter(frame => frame.action === "chat_message"));
+  expect(sends).toHaveLength(1);
+  expect(sends[0].session_id).toBe(OTHER_CHAT_ID);
+  expect(sends[0].payload.chat_id).not.toBe(CHAT_ID);
+});
+
+for (const target of [null, "", "not-a-chat", 42]) {
+  test(`shared chrome refuses malformed conversation target ${JSON.stringify(target)}`, async ({page}) => {
+    await installHarness(page);
+    await offerChromeConversation(page, {chat_id: target});
+    const before = await page.evaluate(() => window.__socketEvents.length);
+    await page.getByRole("button", {name: "Open conversation", exact: true}).click();
+    expect(await page.evaluate(index => window.__socketEvents.slice(index), before)).toEqual([]);
+    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(CHAT_ID);
+  });
+}
+
+for (const retirement of ["disconnected", "mandatory", "removed"]) {
+  test(`shared chrome conversation navigation rejects ${retirement} offers`, async ({page}) => {
+    await installHarness(page);
+    await offerChromeConversation(page, {chat_id: OTHER_CHAT_ID});
+    const button = await page.getByRole("button", {name: "Open conversation", exact: true}).elementHandle();
+    await page.evaluate(change => {
+      if (change === "disconnected") window.__sockets.at(-1).readyState = 3;
+      if (change === "mandatory") document.querySelector(".astral-modal-card").setAttribute("data-mandatory", "true");
+      if (change === "removed") document.querySelector("#astral-modal").replaceChildren();
+    }, retirement);
+    const before = await page.evaluate(() => window.__socketEvents.length);
+    await button.evaluate(element => element.click());
+    expect(await page.evaluate(index => window.__socketEvents.slice(index), before)).toEqual([]);
+    expect(await page.evaluate(key => JSON.parse(localStorage.getItem(key)).chat_id, LOCATOR_KEY)).toBe(CHAT_ID);
+  });
+}
