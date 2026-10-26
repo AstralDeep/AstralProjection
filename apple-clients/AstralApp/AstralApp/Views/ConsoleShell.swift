@@ -416,6 +416,30 @@ struct ConsoleSurfaceOverlay: View {
     }
     private var hasNavigation: Bool { currentNavigationItem != nil && !model.mandatorySurface }
     private var isIntro: Bool { model.pendingSurfaceKey == "agent_intro" && model.pendingSurface != nil }
+    private var desktopSheet: Bool {
+        #if os(macOS)
+            presentation.settingsPresentation == .dialog && presentation.settingsNavigationAxis == .vertical
+        #else
+            false
+        #endif
+    }
+    private var compactSettings: Bool {
+        #if os(macOS)
+            true
+        #else
+            false
+        #endif
+    }
+    private var sheetWidth: CGFloat {
+        let width = hasNavigation ? presentation.settingsWidth : presentation.dialogWidth
+        return desktopSheet && hasNavigation ? min(size.width - 32, 980) : min(size.width, width)
+    }
+    private var sheetHeight: CGFloat? {
+        if isIntro && presentation.settingsPresentation != .sheet { return nil }
+        let height = min(size.height, presentation.settingsMaxHeight)
+        return desktopSheet && hasNavigation ? min(size.height - 32, height, 640) : height
+    }
+    private var navigationWidth: CGFloat { desktopSheet ? 220 : presentation.settingsNavigationWidth }
 
     var body: some View {
         ZStack {
@@ -429,7 +453,8 @@ struct ConsoleSurfaceOverlay: View {
                                     && $0.action?.params == model.pendingSurfaceParams
                             }?.label ?? "Settings"
                     )
-                    .font(ConsoleTypography.headline).foregroundStyle(p.text)
+                    .font(desktopSheet ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline)
+                    .foregroundStyle(p.text)
                     .accessibilityAddTraits(.isHeader)
                     Spacer()
                     if model.mandatorySurface {
@@ -439,12 +464,15 @@ struct ConsoleSurfaceOverlay: View {
                         Button {
                             model.closeSurface()
                         } label: {
-                            Image(systemName: "xmark").frame(width: 44, height: 44)
+                            Image(systemName: "xmark")
+                                .frame(width: desktopSheet ? 28 : 44, height: desktopSheet ? 28 : 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).foregroundStyle(p.muted).accessibilityLabel("Close")
                     }
                 }
-                .padding(.horizontal, presentation.settingsPresentation == .sheet ? 16 : 20).padding(.vertical, 18)
+                .padding(.horizontal, presentation.settingsPresentation == .sheet ? 16 : desktopSheet ? 16 : 20)
+                .padding(.vertical, desktopSheet ? 10 : 18)
                 Divider().overlay(p.border)
                 if hasNavigation, presentation.settingsNavigationAxis == .horizontal {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -458,21 +486,30 @@ struct ConsoleSurfaceOverlay: View {
                 }
                 HStack(spacing: 0) {
                     if hasNavigation, presentation.settingsNavigationAxis == .vertical {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: desktopSheet ? 12 : 16) {
+                            HStack(spacing: desktopSheet ? 8 : 10) {
                                 Text(console.identity.initials).font(ConsoleTypography.caption.bold()).foregroundStyle(
                                     .white
                                 )
-                                .frame(width: 34, height: 34).background(p.gradient, in: Circle())
-                                Text(console.identity.name).font(ConsoleTypography.subheadline.weight(.semibold))
+                                .frame(width: desktopSheet ? 28 : 34, height: desktopSheet ? 28 : 34)
+                                .background(p.gradient, in: Circle())
+                                Text(console.identity.name)
+                                    .font(
+                                        desktopSheet
+                                            ? ConsoleTypography.footnote.weight(.semibold)
+                                            : ConsoleTypography.subheadline.weight(.semibold)
+                                    )
+                                    .lineLimit(1)
                             }
+                            .padding(.horizontal, desktopSheet ? 4 : 0)
                             Divider().overlay(p.border)
                             ScrollView {
-                                VStack(alignment: .leading, spacing: 18) {
+                                VStack(alignment: .leading, spacing: desktopSheet ? 12 : 18) {
                                     ForEach(model.chromeMenu?.menu ?? []) { group in
-                                        VStack(alignment: .leading, spacing: 4) {
+                                        VStack(alignment: .leading, spacing: desktopSheet ? 2 : 4) {
                                             Text(group.label.uppercased()).font(ConsoleTypography.sans(10).bold())
-                                                .tracking(0.8).foregroundStyle(p.muted).padding(8)
+                                                .tracking(0.8).foregroundStyle(p.muted)
+                                                .padding(.horizontal, 8).padding(.vertical, desktopSheet ? 4 : 8)
                                             ForEach(group.items) { item in navigationButton(item) }
                                         }
                                     }
@@ -480,7 +517,7 @@ struct ConsoleSurfaceOverlay: View {
                             }
                             signoutButton
                         }
-                        .padding(12).frame(width: presentation.settingsNavigationWidth)
+                        .padding(desktopSheet ? 8 : 12).frame(width: navigationWidth)
                         .background(p.bg.opacity(0.35))
                         Divider().overlay(p.border)
                     }
@@ -490,14 +527,11 @@ struct ConsoleSurfaceOverlay: View {
                             maximumHeight: max(0, min(size.height, presentation.settingsMaxHeight) - 80))
                     } else {
                         SurfaceView(embedded: true)
+                            .environment(\.astralCompactSettings, compactSettings)
                     }
                 }
             }
-            .frame(
-                width: min(size.width, hasNavigation ? presentation.settingsWidth : presentation.dialogWidth),
-                height: isIntro && presentation.settingsPresentation != .sheet
-                    ? nil : min(size.height, presentation.settingsMaxHeight)
-            )
+            .frame(width: sheetWidth, height: sheetHeight)
             .background(p.surface)
             .clipShape(RoundedRectangle(cornerRadius: presentation.settingsPresentation == .sheet ? 0 : 14))
             .overlay(
@@ -509,25 +543,28 @@ struct ConsoleSurfaceOverlay: View {
 
     private var signoutButton: some View {
         Button(model.chromeMenu?.signout.label ?? "Sign out") { Task { await model.signOut() } }
-            .buttonStyle(.plain).foregroundStyle(p.error).font(ConsoleTypography.subheadline)
-            .padding(.horizontal, 8).frame(minHeight: max(32, presentation.minimumControlHeight))
+            .buttonStyle(.plain).foregroundStyle(p.error)
+            .font(desktopSheet ? ConsoleTypography.footnote : ConsoleTypography.subheadline)
+            .padding(.horizontal, desktopSheet ? 10 : 8)
+            .frame(minHeight: desktopSheet ? 28 : max(32, presentation.minimumControlHeight))
             .accessibilityIdentifier("console-settings-signout")
     }
 
     private func navigationButton(_ item: ChromeMenuItem) -> some View {
-        Button {
+        let selected = item.key == currentNavigationItem?.key
+        return Button {
             model.openMenuItem(item)
         } label: {
-            Text(item.label).font(ConsoleTypography.subheadline)
-                .foregroundStyle(item.key == currentNavigationItem?.key ? p.text : p.muted)
-                .padding(.horizontal, 10).padding(.vertical, 8)
+            Text(item.label).font(desktopSheet ? ConsoleTypography.footnote : ConsoleTypography.subheadline)
+                .foregroundStyle(selected ? p.text : desktopSheet ? p.text.opacity(0.8) : p.muted)
+                .lineLimit(desktopSheet ? 1 : nil)
+                .padding(.horizontal, 10).padding(.vertical, desktopSheet ? 6 : 8)
                 .frame(
                     maxWidth: presentation.settingsNavigationAxis == .vertical ? .infinity : nil, alignment: .leading
                 )
-                .background(
-                    item.key == currentNavigationItem?.key ? p.primary.opacity(0.2) : .clear,
-                    in: RoundedRectangle(cornerRadius: 6))
+                .background(selected ? p.primary.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain).accessibilityAddTraits(item.key == currentNavigationItem?.key ? .isSelected : [])
+        .buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
