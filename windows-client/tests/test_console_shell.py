@@ -1064,3 +1064,316 @@ def test_cached_chat_workspace_actions_wait_for_matching_rendered_hydration(win,
     assert not win._workspace_context()["operations"]
     assert controller.perform(operation) is False
     assert len(queued) == 1
+
+
+def search_navigation(win, target=OTHER, *, disabled=False, surface_name="search"):
+    win.client.connected = True
+    win._load_chat(CHAT)
+    win.client.send_current_work_read = lambda params, generation, **kwargs: True
+    win._console_open_surface(surface_name, "Sources", {})
+    component = {"type": "button", "label": "Open conversation", "action": "load_chat",
+                 "payload": {"chat_id": target}, "disabled": disabled}
+    generation = (win._work_read if surface_name == "work" else win._settings_ticket)[3]
+    win._on_message({"type": "chrome_surface", "surface_key": surface_name, "title": "Sources",
+                     "request_generation": generation, "mode": "replace",
+                     "components": [{"type": "card", "title": "Source", "content": [component]}]})
+    return next(button for button in win._surface_dialog._inner.findChildren(QPushButton)
+                if button.text() == "Open conversation")
+
+
+@pytest.mark.parametrize("surface_name", ["search", "work"])
+def test_search_conversation_button_selects_hydrates_and_sends_next_message_to_target(win, surface_name):
+    from test_conversation_continuity_060 import _snapshot
+
+    button = search_navigation(win, surface_name=surface_name)
+    sent = []
+    win.client.send_event = lambda action, payload, session_id=None: sent.append((action, payload, session_id))
+    messages = []
+    win.client.send_chat = lambda message, chat_id, **kwargs: messages.append((message, chat_id))
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    assert win.active_chat == OTHER
+    assert not win._surface_dialog.isVisible()
+    assert not win._surface_dialog._timer.isActive()
+    assert win._settings_ticket is None
+    assert sent == [("load_chat", {"chat_id": OTHER, "connection_generation": CONNECTION,
+        "request_generation": win._continuity.request_generation, "snapshot_purpose": "hydration"}, OTHER)]
+    win._on_message(_snapshot(chat=OTHER, request=win._continuity.request_generation, text="Target conversation"))
+    assert win.canvas._last_components == [{"type": "text", "content": "Target conversation"}]
+    assert not messages
+    win._emit("chat_message", {"message": "Explicit follow-up"})
+    assert messages == [("Explicit follow-up", OTHER)]
+
+
+@pytest.mark.parametrize("retirement", ["owner", "connection", "disconnected", "closed", "pending", "timeout", "disabled", "wrong-target", "mandatory"])
+def test_search_conversation_offer_cannot_outlive_its_current_surface(win, retirement):
+    search_navigation(win, disabled=retirement == "disabled")
+    component = win._surface_dialog._surface_payload[0]["content"][0]
+    callback = win._surface_dialog._ctx.navigation(component)
+    if retirement == "owner":
+        win._resume_store.storage_key = "replacement-owner"
+    elif retirement == "connection":
+        win.client.connection_generation = CHAT
+    elif retirement == "disconnected":
+        win.client.connected = False
+    elif retirement == "closed":
+        win._surface_dialog.close()
+    elif retirement == "pending":
+        win._emit("chrome_open", {"surface": "search", "params": {"q": "new search"}})
+    elif retirement == "timeout":
+        win._surface_dialog._on_timeout()
+    elif retirement == "mandatory":
+        win._surface_dialog.set_mandatory(True)
+    before = list(win.client.sent)
+    payload = {"chat_id": CHAT if retirement == "wrong-target" else OTHER}
+    callback("load_chat", payload)
+    assert win.active_chat == CHAT
+    assert win.client.sent == before
+
+
+@pytest.mark.parametrize("target", [None, "", " ", 42])
+def test_search_malformed_conversation_target_is_not_forwarded(win, target):
+    button = search_navigation(win, target)
+    before = list(win.client.sent)
+    button.click()
+    assert win.active_chat == CHAT
+    assert win.client.sent == before
+
+
+def test_surface_navigation_rejects_an_explicitly_disabled_enabled_flag(win):
+    search_navigation(win)
+    component = win._surface_dialog._surface_payload[0]["content"][0]
+    component["enabled"] = False
+    callback = win._surface_dialog._ctx.navigation(component)
+    before = list(win.client.sent)
+    assert callback("load_chat", {"chat_id": OTHER}) is False
+    assert win.active_chat == CHAT
+    assert win.client.sent == before
+
+
+@pytest.mark.parametrize("target", ['archived-"quoted"-\\path-🙂', "legacy-" + "x" * 2000], ids=["quoted-legacy", "long-legacy"])
+def test_current_surface_offer_retains_normal_legacy_conversation_dispatch(win, target):
+    button = search_navigation(win, target)
+    sent = []
+    win.client.send_event = lambda action, payload, session_id=None: sent.append((action, payload, session_id))
+    button.click()
+    assert sent == [("load_chat", {"chat_id": target}, None)]
+    assert not win._surface_dialog.isVisible()
+
+
+@pytest.mark.parametrize("target", [OTHER, 'archived-"quoted"-\\path-🙂'])
+def test_existing_history_navigation_keeps_normal_hydration_and_legacy_fallback(win, target):
+    sent = []
+    win.client.send_event = lambda action, payload, session_id=None: sent.append((action, payload, session_id))
+    win._load_chat(target)
+    assert sent[0][0] == "load_chat" and sent[0][1]["chat_id"] == target
+    if target == OTHER:
+        assert win.active_chat == target
+        assert sent[0][2] == target and sent[0][1]["snapshot_purpose"] == "hydration"
+    else:
+        assert sent == [("load_chat", {"chat_id": target}, None)]
+
+
+@pytest.mark.parametrize("origin", ["canvas", "transcript", "surface"])
+@pytest.mark.parametrize("collection,identity", [("items", "chat_id"), ("items", "id"), ("chats", "id")])
+def test_current_history_primitive_row_selects_hydrates_and_sends_only_explicit_followup(
+        win, origin, collection, identity):
+    from test_conversation_continuity_060 import _snapshot
+
+    win.client.connected = True
+    win._load_chat(CHAT)
+    history = {"type": "chat_history", "title": "Current histories", collection: [
+        {identity: OTHER, "title": "Target owned history", "preview": "Current accepted reference"}]}
+    components = [{"type": "card", "title": "Current source", "content": [history]}]
+    if origin == "surface":
+        win._console_open_surface("search", "Sources", {})
+        win._on_message({"type": "chrome_surface", "surface_key": "search", "title": "Sources",
+            "request_generation": win._settings_ticket[3], "mode": "replace", "components": components})
+        root = win._surface_dialog._inner
+    else:
+        frame = _snapshot(chat=CHAT, request=win._continuity.request_generation)
+        if origin == "canvas":
+            frame["canvas"]["components"] = components
+            root = win.canvas
+        else:
+            frame["transcript"][0]["parts"] = [{"type": "components", "components": components}]
+            root = win.rail
+        win._on_message(frame)
+    button = next(button for button in root.findChildren(QPushButton) if button.text() == "Target owned history")
+    sent, messages = [], []
+    win.client.send_event = lambda action, payload, session_id=None: sent.append((action, payload, session_id))
+    win.client.send_chat = lambda message, chat_id, **kwargs: messages.append((message, chat_id))
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    assert win.active_chat == OTHER
+    assert sent == [("load_chat", {"chat_id": OTHER, "connection_generation": CONNECTION,
+        "request_generation": win._continuity.request_generation, "snapshot_purpose": "hydration"}, OTHER)]
+    assert messages == []
+    win._on_message(_snapshot(chat=OTHER, request=win._continuity.request_generation, text="Hydrated target"))
+    assert win.canvas._last_components == [{"type": "text", "content": "Hydrated target"}]
+    win._emit("chat_message", {"message": "Explicit follow-up"})
+    assert messages == [("Explicit follow-up", OTHER)]
+
+
+@pytest.mark.parametrize("origin", ["canvas", "transcript", "surface"])
+def test_replaced_equal_history_render_retires_old_row_and_keeps_fresh_row_usable(win, origin):
+    from uuid import uuid4
+    from test_conversation_continuity_060 import _snapshot
+
+    win.client.connected = True
+    win._load_chat(CHAT)
+    history = {"type": "chat_history", "items": [{"chat_id": OTHER, "title": "Current history row"}]}
+
+    def accepted():
+        if origin == "surface":
+            win._console_open_surface("search", "Sources", {})
+            win._on_message({"type": "chrome_surface", "surface_key": "search", "title": "Sources",
+                "request_generation": win._settings_ticket[3], "mode": "replace", "components": [copy.deepcopy(history)]})
+            root = win._surface_dialog._inner
+        else:
+            win._load_chat(CHAT)
+            frame = _snapshot(chat=CHAT, request=win._continuity.request_generation, snapshot_id=str(uuid4()))
+            if origin == "canvas":
+                frame["canvas"]["components"] = [copy.deepcopy(history)]
+                root = win.canvas
+            else:
+                frame["transcript"][0]["parts"] = [{"type": "components", "components": [copy.deepcopy(history)]}]
+                root = win.rail
+            win._on_message(frame)
+        return next(button for button in root.findChildren(QPushButton) if button.text() == "Current history row")
+
+    old = accepted()
+    fresh = accepted()
+    before = list(win.client.sent)
+    old.click()
+    assert win.active_chat == CHAT and win.client.sent == before
+    fresh.click()
+    assert win.active_chat == OTHER
+
+
+def test_unoffered_canvas_button_cannot_borrow_current_history_target(win):
+    from test_conversation_continuity_060 import _snapshot
+
+    win.client.connected = True
+    win._load_chat(CHAT)
+    frame = _snapshot(chat=CHAT, request=win._continuity.request_generation)
+    frame["canvas"]["components"] = [
+        {"type": "chat_history", "items": [{"chat_id": OTHER, "title": "Current history row"}]},
+        {"type": "button", "label": "Unoffered origin", "action": "load_chat", "payload": {"chat_id": OTHER}}]
+    win._on_message(frame)
+    before = list(win.client.sent)
+    win._emit("load_chat", {"chat_id": OTHER})
+    button = next(button for button in win.canvas.findChildren(QPushButton) if button.text() == "Unoffered origin")
+    QTest.mouseClick(button, Qt.MouseButton.LeftButton)
+    assert win.active_chat == CHAT and win.client.sent == before
+
+
+@pytest.mark.parametrize("payload", [None, {}, {"other": OTHER}, {"chat_id": None}, {"chat_id": []}])
+def test_current_navigation_callback_rejects_malformed_payload_without_mutation(win, payload):
+    search_navigation(win)
+    dialog = win._surface_dialog
+    capture = win._surface_navigation_factory(dialog, dialog._surface_payload)
+    component = dialog._surface_payload[0]["content"][0]
+    invoke = capture(component)
+    before = list(win.client.sent)
+    assert invoke("load_chat", payload) is False
+    assert win.active_chat == CHAT
+    assert win.client.sent == before
+
+
+def test_copied_surface_component_cannot_claim_a_rendered_navigation_source(win):
+    search_navigation(win)
+    dialog = win._surface_dialog
+    component = dialog._surface_payload[0]["content"][0]
+    dialog._surface_payload[0]["content"].insert(0, None)
+    callback = win._surface_navigation_factory(dialog, dialog._surface_payload)(copy.deepcopy(component))
+    before = list(win.client.sent)
+    assert callback("load_chat", {"chat_id": OTHER}) is False
+    assert win.active_chat == CHAT and win.client.sent == before
+
+
+def accepted_canvas_history_navigation(win):
+    from test_conversation_continuity_060 import _snapshot
+
+    win.client.connected = True
+    win._load_chat(CHAT)
+    frame = _snapshot(chat=CHAT, request=win._continuity.request_generation)
+    frame["canvas"]["components"] = [
+        {"type": "chat_history", "items": [{"chat_id": OTHER, "title": "Accepted history row"}]}]
+    win._on_message(frame)
+    component = win._continuity.committed_snapshot.canvas["components"][0]
+    return win.canvas.ctx.navigation(component)
+
+
+def test_history_navigation_cannot_add_fields_to_its_rendered_offer(win):
+    callback = accepted_canvas_history_navigation(win)
+    before = list(win.client.sent)
+    assert callback("load_chat", {"chat_id": OTHER, "extra": True}) is False
+    assert win.active_chat == CHAT and win.client.sent == before
+
+
+def test_canvas_navigation_is_blocked_while_another_surface_is_open(win):
+    callback = accepted_canvas_history_navigation(win)
+    win._console_open_surface("search", "Search", {})
+    before = list(win.client.sent)
+    assert callback("load_chat", {"chat_id": OTHER}) is False
+    assert win.active_chat == CHAT and win.client.sent == before
+
+
+def test_transport_request_rebinding_retires_a_captured_history_source(win):
+    callback = accepted_canvas_history_navigation(win)
+    win.client.request_generation = OTHER
+    win.client.request_purpose = "hydration"
+    win._sync_transport_scope()
+    before = list(win.client.sent)
+    assert callback("load_chat", {"chat_id": OTHER}) is False
+    assert win._continuity.request_generation == OTHER
+    assert win.active_chat == CHAT and win.client.sent == before
+
+
+@pytest.mark.parametrize("origin", ["canvas", "transcript", "surface"])
+@pytest.mark.parametrize("retirement", ["owner", "connection", "disconnected", "auth", "request", "timeline", "hidden", "replacement"])
+def test_captured_history_row_cannot_outlive_accepted_owner_connection_or_render(win, origin, retirement):
+    from test_conversation_continuity_060 import _snapshot
+
+    win.client.connected = True
+    win._load_chat(CHAT)
+    history = {"type": "chat_history", "items": [{"chat_id": OTHER, "title": "Captured history row"}]}
+    if origin == "surface":
+        win._console_open_surface("search", "Sources", {})
+        win._on_message({"type": "chrome_surface", "surface_key": "search", "title": "Sources",
+            "request_generation": win._settings_ticket[3], "mode": "replace", "components": [history]})
+        root = win._surface_dialog._inner
+    else:
+        frame = _snapshot(chat=CHAT, request=win._continuity.request_generation)
+        if origin == "canvas":
+            frame["canvas"]["components"] = [history]
+            root = win.canvas
+        else:
+            frame["transcript"][0]["parts"] = [{"type": "components", "components": [history]}]
+            root = win.rail
+        win._on_message(frame)
+    row = next(button for button in root.findChildren(QPushButton) if button.text() == "Captured history row")
+    if retirement == "owner":
+        win._resume_store.storage_key = "replacement-owner"
+    elif retirement == "connection":
+        win.client.connection_generation = OTHER
+    elif retirement == "disconnected":
+        win.client.connected = False
+    elif retirement == "auth":
+        win._auth_stopped = True
+    elif retirement == "request":
+        win._begin_conversation_request("hydration", CHAT)
+    elif retirement == "timeline":
+        win.canvas.timeline_mode = True
+    elif retirement == "hidden":
+        if origin == "surface":
+            win._surface_dialog.close()
+        else:
+            win.hide()
+    elif origin == "surface":
+        win._console_open_surface("search", "New pending source", {})
+    else:
+        win._load_chat(CHAT)
+    before = list(win.client.sent)
+    row.click()
+    assert win.active_chat == CHAT
+    assert win.client.sent == before

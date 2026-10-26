@@ -8606,6 +8606,15 @@
       payload.params = payload.params || {};
       if (!payload.params.chat_id && activeChatId) payload.params.chat_id = activeChatId;
     }
+    if (act === "load_chat") {
+      e.preventDefault();
+      if (accountSignedOut || !isSocketReady() || modalIsMandatory()
+          || !payload || !isCanonicalUuid4(payload.chat_id)) return;
+      loadActiveChat(payload.chat_id);
+      closeModal();
+      closeHistoryOverlay();
+      return;
+    }
     if (act === "compose_prompt") {
       e.preventDefault();
       closeModal();

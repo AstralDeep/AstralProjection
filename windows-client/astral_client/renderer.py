@@ -47,6 +47,7 @@ class RenderContext:
     download: Optional[Callable[[str, str], None]] = None
     chat_id: Optional[str] = None
     apply_theme: Optional[Callable[[Any], None]] = None
+    navigation: Optional[Callable[[dict], Callable[[str, dict], bool]]] = None
 
 
 def _label(
@@ -533,7 +534,10 @@ def _r_button(c, ctx):
     btn.setProperty("server_disabled", c.get("disabled") is True or not action or not label_available)
     btn.setEnabled(not btn.property("server_disabled"))
     if action:
-        btn.clicked.connect(lambda: ctx.emit(action, dict(payload)))
+        emit = ctx.navigation(c) if action == "load_chat" and ctx.navigation is not None else ctx.emit
+        btn.clicked.connect(lambda: emit(action, dict(payload)))
+    if action == "load_chat":
+        btn._navigation_component = c
     btn.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     return btn
 
@@ -1340,10 +1344,12 @@ def _r_plotly_chart(c, ctx):
 
 def _r_chat_history(c, ctx):
     frame = _card_frame()
+    frame._navigation_component = c
     lay = _vbox(4, (10, 10, 10, 10))
     frame.setLayout(lay)
     if c.get("title"):
         lay.addWidget(_label(c["title"], size=14, bold=True))
+    emit = ctx.navigation(c) if ctx.navigation is not None else ctx.emit
     for item in c.get("items", c.get("chats", [])) or []:
         if not isinstance(item, dict):
             continue
@@ -1352,7 +1358,7 @@ def _r_chat_history(c, ctx):
         btn.setStyleSheet("text-align:left; padding:8px;")
         if cid:
             btn.clicked.connect(
-                lambda _=False, x=cid: ctx.emit("load_chat", {"chat_id": x})
+                lambda _=False, x=cid: emit("load_chat", {"chat_id": x})
             )
         lay.addWidget(btn)
     return frame
@@ -1535,6 +1541,42 @@ def _r_theme_apply(c, ctx):
 
 
 REGISTRY.update({"color_picker": _r_color_picker, "theme_apply": _r_theme_apply})
+
+
+def rebind_navigation(root: QWidget, components: Any, ctx: RenderContext) -> dict:
+    offered = []
+
+    def collect(value):
+        if isinstance(value, dict):
+            if value.get("type") == "chat_history" or (
+                    value.get("type") == "button" and value.get("action") == "load_chat"):
+                offered.append(value)
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    collect(components)
+    replacements = {}
+    for widget in [root, *root.findChildren(QWidget)]:
+        original = getattr(widget, "_navigation_component", None)
+        if original is None:
+            continue
+        current = next((value for value in offered if value == original), None)
+        parent = widget.parentWidget()
+        layout = parent.layout() if parent is not None else None
+        if current is None or layout is None:
+            continue
+        fresh = render(current, ctx)
+        item = layout.replaceWidget(widget, fresh)
+        if item is None:
+            fresh.deleteLater()
+            continue
+        widget.setParent(None)
+        widget.deleteLater()
+        replacements[widget] = fresh
+    return replacements
 
 
 def render(component: Any, ctx: RenderContext, *, top_level: bool = False) -> QWidget:

@@ -202,6 +202,7 @@ struct SurfaceView: View {
                         ForEach(Array(zip(Self.componentKeys(surface.components), surface.components)), id: \.0) {
                             key, comp in
                             ComponentView(component: comp)
+                                .environment(\.astralNavigationSurface, true)
                                 .environment(
                                     \.astralWorkReadSurface,
                                     ["work", "guidance", "evidence"].contains(surface.surfaceKey)

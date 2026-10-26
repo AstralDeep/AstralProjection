@@ -51,7 +51,7 @@ fun Renderer.registerDataRenderers(): Renderer =
         register("list") { c -> ListPrimitive(c) { render(it) } }
         register("table") { c -> TablePrimitive(c, emit) }
         register("tabs") { c -> TabsPrimitive(c) { child, path -> render(child, path) } }
-        register("chat_history") { c -> ChatHistoryPrimitive(c, emit) }
+        register("chat_history") { c -> ChatHistoryPrimitive(c, navigationEmit(c)) }
         register("skeleton") { c -> SkeletonPrimitive(c) }
     }
 

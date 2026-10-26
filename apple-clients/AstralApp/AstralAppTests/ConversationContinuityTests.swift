@@ -356,4 +356,299 @@ final class ConversationContinuityTests: XCTestCase {
         model.handleFrame(inbound(#"{"type":"error","code":"snapshot_retryable","message":"retry"}"#))
         XCTAssertEqual(store.load(for: account)?.chatId, chat)
     }
+
+    func testAcceptedHistoryPrimitiveUsesNormalHydration() throws {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        model.bindConversationAccount(account)
+        model.signedIn = true
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+        let target = "66666666-6666-4666-8666-666666666666"
+        let history: JSONValue = .object([
+            "type": .string("chat_history"),
+            "items": .array([.object(["chat_id": .string(target), "title": .string("Owned history")])]),
+        ])
+        var frame = snapshot().payload.objectValue!
+        frame["canvas"] = .object(["target": .string("canvas"), "components": .array([history])])
+        model.handleFrame(InboundFrame(name: "conversation_snapshot", payload: .object(frame)))
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.navigationCallback(try XCTUnwrap(model.canvas.first), surface: false)(["chat_id": .string(target)])
+        XCTAssertEqual(model.activeChatId, target)
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertEqual(sent.first?["action"]?.stringValue, "load_chat")
+        XCTAssertEqual(sent.first?["session_id"]?.stringValue, target)
+    }
+
+    func testCapturedHistoryRowsBindActualSourceAndRetireWithItsLifetime() throws {
+        for origin in ["canvas", "transcript", "surface"] {
+            for change in [
+                "current", "replacement", "request", "owner", "connection", "disconnected", "signed-out",
+                "pending", "mandatory", "timeline", "wrong-target", "malformed", "extra",
+            ] {
+                let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+                model.bindConversationAccount(account)
+                model.signedIn = true
+                model.connected = true
+                XCTAssertTrue(model.beginConversationConnection(connection))
+                XCTAssertTrue(
+                    model.openConversationRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+                let target = "66666666-6666-4666-8666-666666666666"
+                let history: JSONValue = .object([
+                    "type": .string("chat_history"),
+                    "items": .array([.object(["id": .string(target), "title": .string("Owned history")])]),
+                ])
+                var sent: [JSONValue] = []
+                model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+                var frame = snapshot().payload.objectValue!
+                if origin == "transcript" {
+                    frame["transcript"] = .array([
+                        .object([
+                            "message_id": .string("history"), "role": .string("assistant"),
+                            "created_at": .string("2026-07-15T18:40:59Z"), "attachments": .array([]),
+                            "parts": .array([.object(["type": .string("components"), "components": .array([history])])]
+                            ),
+                        ])
+                    ])
+                } else {
+                    frame["canvas"] = .object(["target": .string("canvas"), "components": .array([history])])
+                }
+                model.handleFrame(InboundFrame(name: "conversation_snapshot", payload: .object(frame)))
+                if origin == "surface" {
+                    model.openSurface("search")
+                    let request = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+                    model.handleFrame(
+                        InboundFrame(
+                            name: "chrome_surface",
+                            payload: .object([
+                                "type": .string("chrome_surface"), "surface_key": .string("search"),
+                                "title": .string("Sources"), "mode": .string("replace"),
+                                "request_generation": .string(request),
+                                "components": .array([history]),
+                            ])))
+                }
+                let component = try XCTUnwrap(
+                    origin == "surface"
+                        ? model.pendingSurface?.components.first
+                        : origin == "transcript" ? model.turns.first?.components.first : model.canvas.first)
+                let callback = model.navigationCallback(
+                    component, surface: origin == "surface", transcript: origin == "transcript" ? "history" : nil)
+                switch change {
+                case "replacement":
+                    if origin == "surface" {
+                        model.openSurface("search")
+                        let replacement = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+                        model.handleFrame(
+                            InboundFrame(
+                                name: "chrome_surface",
+                                payload: .object([
+                                    "type": .string("chrome_surface"), "surface_key": .string("search"),
+                                    "title": .string("Sources"), "mode": .string("replace"),
+                                    "request_generation": .string(replacement), "components": .array([history]),
+                                ])))
+                    } else {
+                        let replacement = UUID().uuidString.lowercased()
+                        XCTAssertTrue(
+                            model.openConversationRequest(
+                                chatId: chat, requestGeneration: replacement, purpose: .hydration))
+                        frame["snapshot_id"] = .string(UUID().uuidString.lowercased())
+                        frame["request_generation"] = .string(replacement)
+                        model.handleFrame(InboundFrame(name: "conversation_snapshot", payload: .object(frame)))
+                    }
+                case "request":
+                    _ = model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit)
+                case "owner":
+                    model.bindConversationAccount(
+                        ConversationAccount(issuer: account.issuer, subject: "replacement-owner")!)
+                case "connection": _ = model.beginConversationConnection("77777777-7777-4777-8777-777777777777")
+                case "disconnected": model.connected = false
+                case "signed-out": model.signedIn = false
+                case "pending": model.openSurface("search")
+                case "mandatory": model.mandatorySurface = true
+                case "timeline": model.timelineReadOnly = true
+                default: break
+                }
+                let before = model.activeChatId
+                sent.removeAll()
+                var payload: [String: JSONValue] =
+                    change == "malformed" ? [:] : ["chat_id": .string(change == "wrong-target" ? chat : target)]
+                if change == "extra" { payload["other"] = .bool(true) }
+                callback(payload)
+                if change == "current" {
+                    XCTAssertEqual(model.activeChatId, target, origin)
+                    XCTAssertEqual(sent.count, 1, origin)
+                    XCTAssertEqual(sent.first?["action"]?.stringValue, "load_chat", origin)
+                } else {
+                    XCTAssertEqual(model.activeChatId, before, "\(origin)/\(change)")
+                    XCTAssertTrue(sent.isEmpty, "\(origin)/\(change)")
+                    if change == "replacement" {
+                        let fresh = try XCTUnwrap(
+                            origin == "surface"
+                                ? model.pendingSurface?.components.first
+                                : origin == "transcript" ? model.turns.first?.components.first : model.canvas.first)
+                        model.navigationCallback(
+                            fresh, surface: origin == "surface", transcript: origin == "transcript" ? "history" : nil)([
+                                "chat_id": .string(target)
+                            ])
+                        XCTAssertEqual(model.activeChatId, target, origin)
+                        XCTAssertEqual(sent.count, 1, origin)
+                    }
+                }
+            }
+        }
+    }
+
+    func testReconnectedTranscriptPreviewCannotRebindTheRetainedCanvasHistory() throws {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        model.bindConversationAccount(account)
+        model.signedIn = true
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+        let target = "66666666-6666-4666-8666-666666666666"
+        let history: JSONValue = .object([
+            "type": .string("chat_history"),
+            "items": .array([.object(["chat_id": .string(target), "title": .string("Retained history")])]),
+        ])
+        var frame = snapshot().payload.objectValue!
+        frame["canvas"] = .object(["target": .string("canvas"), "components": .array([history])])
+        model.handleFrame(InboundFrame(name: "conversation_snapshot", payload: .object(frame)))
+        let component = try XCTUnwrap(model.canvas.first)
+        let old = model.navigationCallback(component, surface: false)
+        let replacement = "77777777-7777-4777-8777-777777777777"
+        XCTAssertTrue(model.beginConversationConnection(replacement))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: commit, purpose: .commit))
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_render","target":"chat","chat_id":"\(chat)",
+                "connection_generation":"\(replacement)","request_generation":"\(commit)",
+                "base_render_revision":0,"frame_sequence":1,"components":[{"type":"text","content":"Current preview"}]}
+                """))
+        XCTAssertFalse(model.transientTurns.isEmpty)
+        var sent: [String] = []
+        model.outboundTap = { sent.append($0) }
+        old(["chat_id": .string(target)])
+        model.navigationCallback(component, surface: false)(["chat_id": .string(target)])
+        XCTAssertEqual(model.activeChatId, chat)
+        XCTAssertTrue(sent.isEmpty)
+        model.handleFrame(
+            inbound(
+                """
+                {"type":"ui_render","target":"canvas","chat_id":"\(chat)",
+                "connection_generation":"\(replacement)","request_generation":"\(commit)",
+                "base_render_revision":0,"frame_sequence":2,"components":[\(String(decoding: try history.encoded(), as: UTF8.self))]}
+                """))
+        model.navigationCallback(try XCTUnwrap(model.visibleCanvas.first), surface: false)(["chat_id": .string(target)])
+        XCTAssertEqual(model.activeChatId, target)
+        XCTAssertEqual(sent.count, 1)
+    }
+
+    func testSharedChromeConversationOpensTheSelectedChatAndHydratesBeforeNextSend() throws {
+        let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+        model.bindConversationAccount(account)
+        model.signedIn = true
+        model.connected = true
+        XCTAssertTrue(model.beginConversationConnection(connection))
+        XCTAssertTrue(model.openConversationRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+        model.handleFrame(snapshot())
+        var sent: [JSONValue] = []
+        model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+        model.openSurface("search")
+        let surfaceRequest = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+        let target = "66666666-6666-4666-8666-666666666666"
+        let payload: JSONValue = .object(["chat_id": .string(target)])
+        model.handleFrame(
+            InboundFrame(
+                name: "chrome_surface",
+                payload: .object([
+                    "type": .string("chrome_surface"), "surface_key": .string("search"),
+                    "title": .string("Search"), "mode": .string("replace"),
+                    "request_generation": .string(surfaceRequest),
+                    "components": .array([
+                        .object([
+                            "type": .string("button"), "label": .string("Open conversation"),
+                            "action": .string("load_chat"), "payload": payload,
+                        ])
+                    ]),
+                ])))
+        XCTAssertNotNil(model.pendingSurface)
+        sent.removeAll()
+        model.sendEvent("load_chat", payload)
+        let load = try XCTUnwrap(sent.first)
+        XCTAssertEqual(load["session_id"]?.stringValue, target)
+        XCTAssertEqual(load["payload"]?["chat_id"]?.stringValue, target)
+        XCTAssertEqual(model.activeChatId, target)
+        XCTAssertEqual(model.screen, .chat)
+        XCTAssertEqual(sent.count, 1)
+        var restored = snapshot(canvasText: "Target canvas").payload.objectValue!
+        restored["chat_id"] = .string(target)
+        restored["request_generation"] = load["request_generation"]
+        model.handleFrame(InboundFrame(name: "conversation_snapshot", payload: .object(restored)))
+        XCTAssertEqual(model.canvas.map(\.fallbackText), ["Target canvas"])
+        XCTAssertEqual(model.turns.map(\.id), ["u1", "a1"])
+        XCTAssertFalse(sent.contains { $0["action"]?.stringValue == "chat_message" })
+        model.sendChat("Explicit next message")
+        XCTAssertEqual(sent.last?["action"]?.stringValue, "chat_message")
+        XCTAssertEqual(sent.last?["session_id"]?.stringValue, target)
+    }
+
+    func testSharedChromeConversationRefusesRetiredDisabledAndChangedOffers() throws {
+        for change in [
+            "closed", "pending", "disabled", "wrong-target", "disconnected", "owner", "connection", "mandatory",
+            "malformed", "failure",
+        ] {
+            let model = AppModel(conversationResumeStore: store, tokenStore: InMemoryTokenStore())
+            model.bindConversationAccount(account)
+            model.signedIn = true
+            model.connected = true
+            XCTAssertTrue(model.beginConversationConnection(connection))
+            XCTAssertTrue(
+                model.openConversationRequest(chatId: chat, requestGeneration: hydration, purpose: .hydration))
+            var sent: [JSONValue] = []
+            model.outboundTap = { sent.append(try! JSONValue.parse(Data($0.utf8))) }
+            model.openSurface("search")
+            let request = try XCTUnwrap(sent.last?["request_generation"]?.stringValue)
+            let target = change == "malformed" ? "invalid" : "66666666-6666-4666-8666-666666666666"
+            let payload: JSONValue = .object(["chat_id": .string(target)])
+            model.handleFrame(
+                InboundFrame(
+                    name: "chrome_surface",
+                    payload: .object([
+                        "type": .string("chrome_surface"), "surface_key": .string("search"),
+                        "title": .string("Search"), "mode": .string("replace"), "request_generation": .string(request),
+                        "components": .array([
+                            .object([
+                                "type": .string("card"), "title": .string("Source"),
+                                "content": .array([
+                                    .object([
+                                        "type": .string("button"), "label": .string("Open conversation"),
+                                        "action": .string("load_chat"), "payload": payload,
+                                        "disabled": .bool(change == "disabled"),
+                                    ])
+                                ]),
+                            ])
+                        ]),
+                    ])))
+            switch change {
+            case "closed": model.closeSurface()
+            case "pending": model.openSurface("search")
+            case "disconnected": model.connected = false
+            case "owner":
+                model.bindConversationAccount(
+                    ConversationAccount(issuer: account.issuer, subject: "replacement-owner")!)
+            case "connection": _ = model.beginConversationConnection("77777777-7777-4777-8777-777777777777")
+            case "failure": model.surfaceFailureMessage = "Reload this surface"
+            case "mandatory": model.mandatorySurface = true
+            default: break
+            }
+            let before = model.activeChatId
+            sent.removeAll()
+            model.sendEvent("load_chat", change == "wrong-target" ? .object(["chat_id": .string(chat)]) : payload)
+            XCTAssertEqual(model.activeChatId, before, change)
+            XCTAssertTrue(sent.isEmpty, change)
+        }
+    }
+
 }

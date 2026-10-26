@@ -9,9 +9,21 @@ private struct WorkReadSurfaceKey: EnvironmentKey {
     static let defaultValue = false
 }
 
+private struct NavigationTranscriptKey: EnvironmentKey { static let defaultValue: String? = nil }
+
+private struct NavigationSurfaceKey: EnvironmentKey { static let defaultValue = false }
+
 private struct GuidanceSurfaceKey: EnvironmentKey { static let defaultValue = false }
 
 extension EnvironmentValues {
+    var astralNavigationTranscript: String? {
+        get { self[NavigationTranscriptKey.self] }
+        set { self[NavigationTranscriptKey.self] = newValue }
+    }
+    var astralNavigationSurface: Bool {
+        get { self[NavigationSurfaceKey.self] }
+        set { self[NavigationSurfaceKey.self] = newValue }
+    }
     var astralGuidanceSurface: Bool {
         get { self[GuidanceSurfaceKey.self] }
         set { self[GuidanceSurfaceKey.self] = newValue }
@@ -43,6 +55,8 @@ struct ComponentView: View {
     let component: AstralComponent
     @Environment(ThemeStore.self) var theme
     @Environment(AppModel.self) var model
+    @Environment(\.astralNavigationTranscript) private var navigationTranscript
+    @Environment(\.astralNavigationSurface) private var navigationSurface
     @Environment(\.astralWorkReadSurface) private var workReadSurface
     @Environment(\.astralViewportWidth) private var viewportWidth
     @Environment(\.canvasCapturePath) private var capturePath
@@ -577,8 +591,10 @@ struct ComponentView: View {
         let label = component.label ?? component.title ?? "Continue"
         let variant = component.variant ?? "primary"
         let action = component.raw["action"]?.stringValue ?? "component_action"
+        let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
         let button = Button {
-            model.emit(action, payload: component.raw["payload"]?.objectValue ?? [:])
+            let payload = component.raw["payload"]?.objectValue ?? [:]
+            if action == "load_chat" { navigate(payload) } else { model.emit(action, payload: payload) }
         } label: {
             Text(label).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: variant == "primary" && !WorkspaceWelcome.isExample(component) ? .infinity : nil)
@@ -597,6 +613,7 @@ struct ComponentView: View {
 
     private var chatHistoryView: some View {
         let items = (component.raw["items"]?.arrayValue ?? []).compactMap { ChatSummary(historyItem: $0) }
+        let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
         return VStack(alignment: .leading, spacing: 2) {
             if items.isEmpty {
                 Text("No conversations yet.").foregroundStyle(p.muted)
@@ -604,7 +621,7 @@ struct ComponentView: View {
                 HistoryHeader(title: component.raw["title"]?.stringValue ?? "Recent chats", count: items.count)
                 ForEach(Array(items.enumerated()), id: \.offset) { _, chat in
                     Button {
-                        model.emit("load_chat", payload: ["chat_id": .string(chat.id)])
+                        navigate(["chat_id": .string(chat.id)])
                     } label: {
                         HistoryRow(chat: chat)
                     }

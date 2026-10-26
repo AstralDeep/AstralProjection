@@ -277,6 +277,7 @@ class MainActivity : ComponentActivity() {
                             Download { url, fn -> downloadFile(url, fn) },
                             ThemeSink { spec -> vm.applyTheme(spec) },
                         ).registerAllRenderers().also {
+                            it.navigation = vm::navigationEmitter
                             it.componentActions = componentActions.handler(vm)
                             it.capture = canvasCapture
                             it.captureContext = { vm.workspaceContext() }
