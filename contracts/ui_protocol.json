@@ -4,7 +4,11 @@
   "presentation_contracts": {
     "ordinary_settings_forms": {
       "version": 1,
-      "components": ["param_picker", "color_picker", "theme_apply"],
+      "components": [
+        "param_picker",
+        "color_picker",
+        "theme_apply"
+      ],
       "options": "String choices or objects with a string value and readable label. Labels are displayed, values submitted, and saved choices absent from refreshed catalogs remain recoverable.",
       "defaults": "Untouched select, boolean and checklist controls display and submit their saved defaults; conditional fields use the same resolved form state.",
       "actions": "Untyped label/action/payload descriptors are metadata, not renderable components. Adaptation preserves routing and labels, while host interactivity and action budgets still apply. Missing routing is explicitly unavailable.",
@@ -754,7 +758,7 @@
       },
       "payload": {
         "version": 1,
-        "agent": "null or {agent_id, revision_id} — one active declarative agent revision",
+        "agent": "null or {agent_id, revision_id} \u2014 one active declarative agent revision",
         "skills": "list of {skill_id, revision}, at most 20, unique",
         "notes": "list of {note_id, revision}, at most 8, unique",
         "shape": "Exactly the version-1 selection work_submit accepts; every button carries the complete resulting selection, never a delta. The all-empty shape clears the chat's selection and is never forwarded as a Work selection.",
@@ -815,7 +819,7 @@
           "button",
           "param_picker"
         ],
-        "text": "Notes appear only as category, revision and enabled state — never their value. Skills appear only as name, /command, revision and enabled state — never their instructions."
+        "text": "Notes appear only as category, revision and enabled state \u2014 never their value. Skills appear only as name, /command, revision and enabled state \u2014 never their instructions."
       },
       "legacy": "Hosts expose the picker only to clients advertising guidance_selection_v1; other clients submit Work without a selection exactly as before."
     },
@@ -4359,6 +4363,7 @@
     "chrome_author_tasks",
     "chrome_close",
     "chrome_computer_forget",
+    "chrome_computer_grant_revoke",
     "chrome_computer_session_pause",
     "chrome_computer_session_resume",
     "chrome_computer_session_start",
@@ -4790,6 +4795,26 @@
       "scope": "Optional server capability for a fresh scoped hydration on update_device; absence or false retains legacy capability delivery.",
       "introduced_by": "090-native-ui-v2",
       "contract": "console_v2"
+    },
+    {
+      "field": "grants",
+      "shape": {
+        "id": "task grant id",
+        "kind": "application | program | origin",
+        "target": "bundle id for application, program name for program, http(s) origin for origin",
+        "expires_at": "integer epoch seconds: the earlier of last use + 900 and creation + 7200",
+        "scope": {
+          "kind": "app | window | command | origin",
+          "hwnd": "window scope only: positive integer window handle",
+          "root": "command scope only: absolute workspace folder the program is granted in"
+        }
+      },
+      "carried_on": [
+        "computer_session"
+      ],
+      "scope": "The owner's live task grants for this session, refreshed when a grant is created, used, expires or is revoked; always empty on a paused or ended session. A client lists them and revokes one with ui_event chrome_computer_grant_revoke {session_id, host_id, chat_id, grant_id} taken from the same frame. A client never caches, extends or widens a grant.",
+      "introduced_by": "macOS client production readiness, Deep server contracts",
+      "contract": "accept_actions.chrome_computer_grant_revoke"
     }
   ],
   "component_types": [
