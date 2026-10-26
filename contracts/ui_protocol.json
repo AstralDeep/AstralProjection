@@ -3184,7 +3184,7 @@
         "file_io": false
       },
       "agent_intro": {
-        "components": "Existing text, badge, card, container, list and button primitives. Only console/v2 introductions include text.console_role=surface_subtitle; render its server-owned content in the dialog header.",
+        "components": "Existing text, badge, card, container, list and button primitives. Only console/v2 introductions may include text.console_role=surface_subtitle; clients render its content in the dialog header when present, and the server does not currently send it.",
         "layout": "ROTE settings_presentation selects stacked phone scenarios or compact desktop rows; introductions use content height bounded by settings_max_height. Tool names render as wrapping chips.",
         "authority": "Presentation roles grant no authority. Every Run/Load payload must match the exact currently offered server component."
       },
