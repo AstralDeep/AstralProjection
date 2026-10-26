@@ -25,6 +25,24 @@
             harness = nil
         }
 
+        private static func closedLoopbackPort() -> Int {
+            let descriptor = socket(AF_INET, SOCK_STREAM, 0)
+            XCTAssertGreaterThanOrEqual(descriptor, 0)
+            defer { close(descriptor) }
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_addr.s_addr = inet_addr("127.0.0.1")
+            var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let bound = withUnsafeMutablePointer(to: &address) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                    Darwin.bind(descriptor, $0, length) == 0 && getsockname(descriptor, $0, &length) == 0
+                }
+            }
+            XCTAssertTrue(bound)
+            return Int(UInt16(bigEndian: address.sin_port))
+        }
+
         func testNavigationApprovesOnlyTheForwardedOriginAndRejectsTrickURLs() async throws {
             await harness.expectCode("browser_snapshot", [:], nil)
             let blank = try await harness.run("browser_snapshot")
@@ -376,7 +394,9 @@
                 XCTAssertTrue(kinds.contains("scheme"), "\(result)")
             }
             XCTAssertEqual(harness.pane.webView.url?.path, "/prompts")
-            let unreachable = await harness.failure("browser_navigate", ["url": .string("http://127.0.0.1:1/")])
+            let closed = Self.closedLoopbackPort()
+            let unreachable = await harness.failure(
+                "browser_navigate", ["url": .string("http://127.0.0.1:\(closed)/")])
             XCTAssertEqual(unreachable?.code, "navigation_failed")
             XCTAssertTrue(unreachable?.message.contains("desktop path") == true)
             _ = try await harness.open("/prompts")

@@ -199,6 +199,7 @@ import SwiftUI
             .padding(.horizontal, compact ? 10 : 0).padding(.vertical, compact ? 6 : 0)
             .background(compact ? p.surface.opacity(0.35) : .clear, in: RoundedRectangle(cornerRadius: 8))
             .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isStaticText)
             .accessibilityLabel(row.accessibilityLabel)
             .accessibilityValue(row.accessibilityValue)
         }

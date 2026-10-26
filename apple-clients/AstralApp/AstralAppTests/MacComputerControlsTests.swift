@@ -83,7 +83,10 @@
                     contentRect: NSRect(x: 0, y: 0, width: 560, height: 900), styleMask: .borderless,
                     backing: .buffered, defer: false)
                 window.isReleasedWhenClosed = false
-                let view = NSHostingView(rootView: MacComputerControls(host: host).environment(ThemeStore()))
+                let theme = ThemeStore()
+                window.appearance = NSAppearance(named: theme.colorScheme == .dark ? .darkAqua : .aqua)
+                let view = NSHostingView(
+                    rootView: MacComputerControls(host: host).environment(theme).background(theme.palette.bg))
                 window.contentView = view
                 defer {
                     window.contentView = nil
