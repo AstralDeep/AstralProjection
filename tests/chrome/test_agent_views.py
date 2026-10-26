@@ -133,6 +133,38 @@ def test_agent_detail_enforces_management_affordance_boundary() -> None:
     assert 'type="password"' in html
 
 
+def test_permission_toggles_keep_the_tool_description_as_help_and_nothing_else_does() -> None:
+    view = build_agents_view(
+        selected={"id": "a", "name": "Agent"},
+        can_manage=True,
+        permissions=[
+            {"field_name": "search_web::tools:search", "tool_name": "search_web",
+             "scope": "tools:search", "description": "Search the web"},
+            {"field_name": "delete_file::tools:files", "tool_name": "delete_file",
+             "scope": "tools:files"},
+        ],
+        credentials=[{"key": "API_TOKEN", "stored": True}],
+    )
+    forms = {}
+
+    def collect(value) -> None:
+        if isinstance(value, dict):
+            if value.get("type") == "param_picker":
+                forms[value["title"]] = value
+            for child in value.values():
+                collect(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect(child)
+
+    collect(view.to_dict())
+    permissions = {item["name"]: item for item in forms["Tool permissions"]["fields"]}
+    assert permissions["search_web::tools:search"]["help"] == "Search the web"
+    assert "help" not in permissions["delete_file::tools:files"]
+    assert forms["Tool permissions"]["description"] == ""
+    assert all("help" not in item for item in forms["Credentials"]["fields"])
+
+
 def test_agent_permissions_with_no_portable_fields_degrade_explicitly() -> None:
     view = build_agents_view(
         selected={"id": "a", "name": "Agent"},

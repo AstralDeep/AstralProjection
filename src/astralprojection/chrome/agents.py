@@ -276,6 +276,7 @@ def _permissions_form(
         field_name = clean_text(permission.get("field_name"))
         tool_name = clean_text(permission.get("tool_name") or "Tool")
         scope = clean_text(permission.get("scope") or "unknown")
+        description = clean_text(permission.get("description"))
         destructive = clean_text(permission.get("destructive"))
         suffix = f" — {destructive}" if destructive and destructive != "never" else ""
         if not field_name:
@@ -287,6 +288,7 @@ def _permissions_form(
                 permission.get("label") or f"{tool_name} ({scope}){suffix}",
                 "boolean",
                 default=bool(permission.get("enabled")),
+                help_text=description or None,
                 visible_when=permission.get("visible_when"),
             )
         )
