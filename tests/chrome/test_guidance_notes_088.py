@@ -104,13 +104,14 @@ def test_toggle_has_explicit_target_state_and_revision(enabled, label):
 
 def test_bounded_search_page_does_not_claim_empty_library_and_keeps_cursor():
     view = build_notes_view(state(notes=[], search="needle", next_cursor=ID))
-    assert "No matching notes on this page" in render_html(view)
+    assert "No matching notes on this page" not in render_html(view)
     assert "No private notes yet" not in render_html(view)
     more = next(item for item in nodes(view.to_dict()) if item.get("label") == "Next page")
     assert more["payload"]["params"] == {"mode": "list", "after_id": ID, "search": "needle"}
     assert forms(view)[0]["submit_action"] == "chrome_note_search"
     assert forms(view)[0]["fields"][0]["default"] == "needle"
-    assert "No private notes yet" in render_html(build_notes_view(state(notes=[])))
+    assert "No private notes yet" not in render_html(build_notes_view(state(notes=[])))
+    assert "Private notes are guidance" not in render_html(build_notes_view(state(notes=[])))
 
 
 @pytest.mark.parametrize("expiry", [None, 2**53 - 1])

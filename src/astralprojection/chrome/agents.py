@@ -108,15 +108,7 @@ def build_agents_view(
         direction="row",
     )
     components: list[ComponentView] = [tabs]
-    rows = _rows(agents)
-    if not rows:
-        message = (
-            "No public agents are available."
-            if active == "public"
-            else "You don't own any agents yet. Create one from Drafts or chat."
-        )
-        components.append(alert(message, "info"))
-    for agent in rows:
+    for agent in _rows(agents):
         agent_id = clean_text(agent.get("agent_id") or agent.get("id"))
         enabled = not bool(agent.get("disabled"))
         components.append(
@@ -206,8 +198,8 @@ def _build_agent_detail(
             )
         )
         return build_view("agents", "Agents & permissions", components, theme=theme, layout=layout)
-    if can_configure:
-        components.append(_permissions_form(agent_id, permissions, tab))
+    if can_configure and (permissions_form := _permissions_form(agent_id, permissions, tab)):
+        components.append(permissions_form)
     if can_set_visibility:
         components.append(
             card(
@@ -265,7 +257,8 @@ def _build_agent_detail(
             else:
                 identity_body.append(text("Connect ORCID in the web client using your signed-in browser session."))
             components.append(card("ORCID identity", identity_body))
-        components.append(_credentials_form(agent_id, credentials, tab))
+        if credentials_form := _credentials_form(agent_id, credentials, tab):
+            components.append(credentials_form)
     return build_view("agents", "Agents & permissions", components, theme=theme, layout=layout)
 
 
@@ -273,21 +266,20 @@ def _permissions_form(
     agent_id: str,
     permissions: Iterable[Mapping[str, object]],
     tab: str,
-) -> ComponentView:
+) -> ComponentView | None:
     rows = _rows(permissions)
     if not rows:
-        return card("Tool permissions", [alert("This agent exposes no tools.", "info")])
+        return None
     fields = []
     other_tools = []
     for permission in rows:
         field_name = clean_text(permission.get("field_name"))
         tool_name = clean_text(permission.get("tool_name") or "Tool")
         scope = clean_text(permission.get("scope") or "unknown")
-        description = clean_text(permission.get("description"))
         destructive = clean_text(permission.get("destructive"))
         suffix = f" — {destructive}" if destructive and destructive != "never" else ""
         if not field_name:
-            other_tools.append(text(f"{tool_name}{suffix} — Not configurable. {description}"))
+            other_tools.append(text(f"{tool_name}{suffix} — Not configurable."))
             continue
         fields.append(
             field(
@@ -295,7 +287,6 @@ def _permissions_form(
                 permission.get("label") or f"{tool_name} ({scope}){suffix}",
                 "boolean",
                 default=bool(permission.get("enabled")),
-                help_text=description or None,
                 visible_when=permission.get("visible_when"),
             )
         )
@@ -307,7 +298,6 @@ def _permissions_form(
     picker = form(
         fields,
         title="Tool permissions",
-        description="Runtime security gates remain authoritative after a permission is enabled.",
         submit_action="chrome_perms_save",
         submit_label="Save permissions",
         submit_payload={"agent_id": agent_id, "tab": tab},
@@ -321,10 +311,10 @@ def _credentials_form(
     agent_id: str,
     credentials: Iterable[Mapping[str, object]],
     tab: str,
-) -> ComponentView:
+) -> ComponentView | None:
     rows = _rows(credentials)
     if not rows:
-        return card("Credentials", [text("This agent requires no user credentials.", "caption")])
+        return None
     fields = []
     for credential in rows:
         key = clean_text(credential.get("key"))
@@ -338,7 +328,6 @@ def _credentials_form(
                 key,
                 f"{label} ({requirement}, {stored})",
                 "password",
-                help_text="Leave blank to keep the current encrypted value.",
             )
         )
     actions: list[dict[str, object]] = [
@@ -385,10 +374,7 @@ def build_authoring_view(
         else "Your desktop host is offline. Agents remain unavailable until it reconnects."
     )
     components: list[ComponentView] = [alert(host_note, "info")]
-    rows = _rows(agents)
-    if not rows:
-        components.append(alert("No agents yet — create one below.", "info"))
-    for agent in rows:
+    for agent in _rows(agents):
         agent_id = clean_text(agent.get("agent_id") or agent.get("id"))
         body: list[ComponentView] = [
             badge(agent.get("status") or "unknown"),
@@ -420,12 +406,7 @@ def build_authoring_view(
         form(
             [
                 field("agent_name", "Agent name"),
-                field(
-                    "description",
-                    "What should it do for you?",
-                    "textarea",
-                    help_text="At least 10 characters.",
-                ),
+                field("description", "What should it do for you?", "textarea"),
             ],
             title="Create a personal agent",
             submit_action="chrome_author_start",
@@ -455,7 +436,6 @@ def _build_authoring_session(
     payload = {"draft_id": draft_id, "state_revision": revision}
     components: list[ComponentView] = [
         text(f"{phase.title()} — {clean_text(session.get('agent_name'))}", "h3"),
-        text(session.get("phase_help") or "Complete this phase to continue.", "caption"),
     ]
     if phase == "analyze":
         violations = _rows(session.get("violations") or ())  # type: ignore[arg-type]
@@ -512,8 +492,6 @@ def _build_authoring_session(
                     ],
                 )
             )
-        else:
-            components.append(text("Nothing drafted yet — ask the assistant.", "caption"))
         components.append(
             button("Ask the assistant", "chrome_author_draft", {"draft_id": draft_id})
         )
@@ -535,15 +513,7 @@ def build_drafts_view(
     if selected is not None:
         return _build_draft_detail(selected, show_refine=show_refine, theme=theme, layout=layout)
     components: list[ComponentView] = []
-    rows = _rows(drafts)
-    if not rows:
-        components.append(
-            alert(
-                "No drafts yet — create one below or ask for a missing capability in chat.",
-                "info",
-            )
-        )
-    for draft in rows:
+    for draft in _rows(drafts):
         draft_id = clean_text(draft.get("draft_id") or draft.get("id"))
         components.append(
             card(
@@ -573,7 +543,6 @@ def build_drafts_view(
                 field("tools", "Tools (optional)", "textarea"),
             ],
             title="Create a new agent",
-            description="Generation and self-test may take a few minutes.",
             submit_action="chrome_draft_create",
             submit_label="Generate & self-test",
         )
@@ -658,28 +627,8 @@ def build_attachments_view(
 ) -> ChromeViewModel:
     if error:
         return unavailable_view("attachments", "Attachments", error)
-    rows = _rows(attachments)
-    if not rows:
-        return build_view(
-            "attachments",
-            "Attachments",
-            [
-                alert(
-                    "No uploads yet. Use the paperclip in chat to attach a file; it will "
-                    "appear here for reuse.",
-                    "info",
-                )
-            ],
-            theme=theme,
-            layout=layout,
-        )
-    components: list[ComponentView] = [
-        text(
-            "Attach a previously uploaded file to the next message without uploading it again.",
-            "caption",
-        )
-    ]
-    for attachment in rows:
+    components: list[ComponentView] = []
+    for attachment in _rows(attachments):
         attachment_id = clean_text(attachment.get("attachment_id") or attachment.get("id"))
         filename = clean_text(attachment.get("filename") or "Unnamed attachment")
         category = clean_text(attachment.get("category") or "file")

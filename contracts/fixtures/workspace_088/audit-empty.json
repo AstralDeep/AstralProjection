@@ -37,17 +37,15 @@
         },
         {
           "name": "from",
-          "label": "From (UTC)",
+          "label": "From (UTC, YYYY-MM-DD)",
           "kind": "text",
-          "default": "",
-          "help": "YYYY-MM-DD"
+          "default": ""
         },
         {
           "name": "to",
-          "label": "Through (UTC)",
+          "label": "Through (UTC, YYYY-MM-DD)",
           "kind": "text",
-          "default": "",
-          "help": "YYYY-MM-DD"
+          "default": ""
         }
       ],
       "submit_label": "Apply",
@@ -120,11 +118,6 @@
         }
       ],
       "direction": "row"
-    },
-    {
-      "type": "alert",
-      "message": "No audit entries match the current filters.",
-      "variant": "info"
     }
   ],
   "theme": {

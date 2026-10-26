@@ -11,7 +11,6 @@ from typing import Any
 
 from astralprojection.models import ChromeViewModel, LayoutView, ThemeView
 from webrender.terminal import (
-    MAX_KEYBOARD_TEXT,
     bounded_terminal_output,
     decode_terminal_chunk,
     sanitize_terminal_output as sanitize_terminal_output,
@@ -19,7 +18,7 @@ from webrender.terminal import (
     terminal_seconds,
 )
 
-from ._components import alert, badge, build_view, button, card, code_block, field, form, key_value, text
+from ._components import alert, badge, build_view, button, card, code_block, field, form, key_value
 
 SURFACE = "terminal"
 CONTRACT = "terminal_panel/v1"
@@ -88,14 +87,6 @@ _FAILURES = {
         False,
     ),
 }
-_READ_ONLY_HINT = (
-    "Terminal output is read-only here. Select the text to copy it; terminal links and "
-    "clipboard escape sequences are ignored."
-)
-_INTERACTIVE_HINT = (
-    "Output is literal selectable text for copying. Terminal links and clipboard escape "
-    "sequences are ignored; the host validates every submitted operation."
-)
 _WATCH_HANDOFF = (
     "This terminal panel continues on your phone or desktop. Session output and "
     "identifiers are not sent to the watch."
@@ -144,7 +135,7 @@ def _target(value: object) -> str:
             candidate = value.get(key)
             if isinstance(candidate, str) and candidate.strip():
                 return _plain(candidate, 200)
-    return _plain(value, 200, empty=True) or "Target not reported"
+    return _plain(value, 200, empty=True) or "—"
 
 
 def _session(value: object) -> dict[str, Any]:
@@ -155,7 +146,7 @@ def _session(value: object) -> dict[str, Any]:
     target = _target(source.get("target", source.get("machine", "")))
     directory = _plain(
         source.get("directory", source.get("cwd", "")), 1024, empty=True
-    ) or "Directory not reported"
+    ) or "—"
     result = {
         "session_id": identity,
         "target": target,
@@ -259,27 +250,14 @@ def _list(state: Mapping[str, Any], *, monitor: bool) -> tuple[str, list]:
         )
         for row in rows
     ]
-    if not rows:
-        components.append(text("No terminal sessions are open for this account."))
     components.extend([_open("Refresh terminal list", "list"), _close_monitor(monitor=monitor)])
     return LIST_TITLE, components
 
 
 def _input_form(session_id: str):
     return form(
-        [
-            field(
-                "data",
-                "Keyboard input",
-                "text",
-                help_text=(
-                    f"Up to {MAX_KEYBOARD_TEXT} characters without control characters; "
-                    "the host submits this one governed line to the terminal."
-                ),
-            )
-        ],
+        [field("data", "Keyboard input", "text")],
         title="Keyboard input",
-        description="Submitted through the governed terminal contract; never replayed or queued.",
         submit_action="chrome_terminal_input",
         submit_payload={"surface": SURFACE, "session_id": session_id},
         submit_label="Send to terminal",
@@ -293,7 +271,6 @@ def _resize_form(session: Mapping[str, Any]):
             field("rows", "Rows", "number", default=session["rows"]),
         ],
         title="Resize terminal",
-        description="Columns 2–1000, rows 2–300; the host applies the new size to the session.",
         submit_action="chrome_terminal_resize",
         submit_payload={"surface": SURFACE, "session_id": session["session_id"]},
         submit_label="Apply resize",
@@ -345,14 +322,8 @@ def _panel(state: Mapping[str, Any], *, interactive: bool, monitor: bool) -> tup
         components.append(
             alert("The terminal has exited. Retained output remains read-only.", "info")
         )
-    output_content = [code_block(output, "terminal")] if output else [
-        text("No output is available yet.", "caption")
-    ]
-    output_content.append(
-        text(_INTERACTIVE_HINT if interactive else _READ_ONLY_HINT.replace(" here", "")
-             if monitor else _READ_ONLY_HINT, "caption")
-    )
-    components.append(card("Output", output_content))
+    if output:
+        components.append(card("Output", [code_block(output, "terminal")]))
     components.append(
         key_value(
             [("Read from byte", str(offset)), ("Next byte", str(next_offset))],

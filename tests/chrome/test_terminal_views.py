@@ -72,8 +72,7 @@ def test_list_mode_renders_one_bounded_card_per_session():
     assert len(cards) == 2
     assert _actions(view) == {"chrome_open", "chrome_close"}
     empty = build_terminal_view({"mode": "list", "status": "ready", "sessions": []})
-    assert any(node.get("type") == "text" and "No terminal sessions" in node.get("content", "")
-               for node in _nodes(empty))
+    assert not any(node.get("type") == "text" for node in _nodes(empty))
 
 
 def test_list_mode_refuses_duplicates_and_oversized_catalogs():
@@ -111,6 +110,19 @@ def test_interactive_panel_declares_only_the_governed_operations():
     resize_form = next(form for form in forms if form["submit_action"] == "chrome_terminal_resize")
     assert [(entry["name"], entry["default"]) for entry in resize_form["fields"]] == [
         ("cols", 120), ("rows", 32)]
+
+
+@pytest.mark.parametrize("interactive,monitor", [(True, False), (False, False), (False, True)])
+def test_panels_carry_no_helper_sentences_and_omit_the_empty_output_card(interactive, monitor):
+    view = build_terminal_view(PANEL, interactive=interactive, monitor=monitor)
+    assert not [node for node in _nodes(view) if node.get("type") == "text"]
+    for form in (node for node in _nodes(view) if node.get("type") == "param_picker"):
+        assert form["description"] == ""
+        assert all("help" not in entry for entry in form["fields"])
+    silent = build_terminal_view(dict(PANEL, output=dict(PANEL["output"], text="")),
+                                 interactive=interactive, monitor=monitor)
+    assert not [node for node in _nodes(silent) if node.get("title") == "Output"]
+    assert "No output is available yet" not in json.dumps(_nodes(silent))
 
 
 def test_interactive_controls_withdraw_when_the_session_is_not_running():
@@ -231,7 +243,7 @@ def test_target_mapping_created_at_and_retained_reload_paths():
     })
     titles = [node.get("title") for node in _nodes(target_fallbacks)
               if node.get("type") == "card" and node.get("title")]
-    assert titles == ["runner", "Target not reported"]
+    assert titles == ["runner", "—"]
     reloaded = build_terminal_view(dict(PANEL, output=dict(PANEL["output"], offset=12)))
     labels = [node.get("label") for node in _nodes(reloaded) if node.get("type") == "button"]
     assert "Reload retained output" in labels

@@ -36,8 +36,8 @@ def test_agent_lists_empty_populated_denied_and_error() -> None:
     assert "Agent access was denied" in render_html(build_agents_view(denied=True))
     assert _actions(build_agents_view(denied=True)) == []
     assert "Agent service offline" in render_html(build_agents_view(error="Agent service offline"))
-    assert "own any agents" in render_html(build_agents_view())
-    assert "No public agents" in render_html(build_agents_view(tab="public"))
+    assert "own any agents" not in render_html(build_agents_view())
+    assert "No public agents" not in render_html(build_agents_view(tab="public"))
     view = build_agents_view(
         [
             {
@@ -87,8 +87,8 @@ def test_agent_detail_enforces_management_affordance_boundary() -> None:
     assert "Only the owner" in render_html(readonly)
     managed_empty = build_agents_view(selected=agent, can_manage=True)
     managed_html = render_html(managed_empty)
-    assert "This agent exposes no tools" in managed_html
-    assert "requires no user credentials" in managed_html
+    assert "This agent exposes no tools" not in managed_html
+    assert "requires no user credentials" not in managed_html
     assert {"chrome_visibility_set", "chrome_safe_set"} <= set(_actions(managed_empty))
     managed = build_agents_view(
         selected={**agent, "is_public": True, "is_safe": True, "disabled": True},
@@ -149,7 +149,7 @@ def test_authoring_disabled_list_and_session_phases() -> None:
     empty = build_authoring_view(host_online=False)
     empty_html = render_html(empty)
     assert "desktop host is offline" in empty_html
-    assert "No agents yet" in empty_html
+    assert "No agents yet" not in empty_html
     assert "chrome_author_start" in _actions(empty)
     listing = build_authoring_view(
         agents=[
@@ -190,7 +190,8 @@ def test_authoring_disabled_list_and_session_phases() -> None:
     generate = build_authoring_view(selected={"id": "d1", "phase": "generate", "state_revision": 3})
     assert {"chrome_author_generate", "chrome_author_analyze"} <= set(_actions(generate))
     specify_empty = build_authoring_view(selected={"id": "d1", "phase": "specify"})
-    assert "Nothing drafted yet" in render_html(specify_empty)
+    assert "Nothing drafted yet" not in render_html(specify_empty)
+    assert "Complete this phase" not in render_html(specify_empty)
     specify = build_authoring_view(
         selected={
             "id": "d1",
@@ -215,7 +216,9 @@ def test_authoring_disabled_list_and_session_phases() -> None:
 def test_draft_list_detail_refinement_and_terminal_states() -> None:
     assert "Draft storage offline" in render_html(build_drafts_view(error="Draft storage offline"))
     empty = build_drafts_view()
-    assert "No drafts yet" in render_html(empty)
+    assert "No drafts yet" not in render_html(empty)
+    assert empty.to_dict()["components"][0]["description"] == ""
+    assert all("help" not in item for item in empty.to_dict()["components"][0]["fields"])
     assert "chrome_draft_create" in _actions(empty)
     listing = build_drafts_view(
         [
@@ -262,7 +265,7 @@ def test_attachments_empty_error_sizes_and_client_local_action() -> None:
     assert "Attachment storage offline" in render_html(
         build_attachments_view(error="Attachment storage offline")
     )
-    assert "No uploads yet" in render_html(build_attachments_view())
+    assert build_attachments_view().components == ()
     view = build_attachments_view(
         [
             {"id": "a1", "filename": "small.txt", "category": "text", "size_bytes": 12},
