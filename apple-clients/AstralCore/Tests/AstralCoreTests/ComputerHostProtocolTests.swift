@@ -63,7 +63,7 @@ final class ComputerHostProtocolTests: XCTestCase {
 
     func testDeadlineCeilingFollowsTheVerb() throws {
         let ceilings: [String: Double] = [
-            "run_command": 600000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
+            "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
             "browser_wait": 15000, "browser_snapshot": 5000, "browser_get_text": 5000, "browser_screenshot": 5000,
             "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
             "browser_dialog": 5000,
@@ -71,8 +71,12 @@ final class ComputerHostProtocolTests: XCTestCase {
         for verb in ComputerHostRequest.verbs {
             XCTAssertEqual(ComputerHostRequest.maximumDeadlineMs(for: verb), ceilings[verb] ?? 30000, verb)
         }
-        XCTAssertEqual(try request("run_command", args: command(), deadline: 600000).deadline, 600)
-        XCTAssertThrowsError(try request("run_command", args: command(), deadline: 600001))
+        XCTAssertEqual(try request("run_command", args: command(), deadline: 630000).deadline, 630)
+        XCTAssertThrowsError(try request("run_command", args: command(), deadline: 630001))
+        XCTAssertNoThrow(
+            try request("run_command", args: command(["timeout_s": .number(600)]), deadline: 610000))
+        XCTAssertThrowsError(
+            try request("run_command", args: command(["timeout_s": .number(601)]), deadline: 611000))
         XCTAssertNoThrow(try request(deadline: 30000))
         XCTAssertThrowsError(try request(deadline: 30001))
         XCTAssertThrowsError(try request(deadline: 0))

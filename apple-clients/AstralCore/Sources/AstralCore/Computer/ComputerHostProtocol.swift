@@ -122,7 +122,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
         "browser_press", "browser_scroll", "browser_dialog",
     ]
     private static let deadlineCeilings: [String: Double] = [
-        "run_command": 600000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
+        "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
         "browser_wait": 15000, "browser_snapshot": 5000, "browser_get_text": 5000, "browser_screenshot": 5000,
         "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
         "browser_dialog": 5000,
