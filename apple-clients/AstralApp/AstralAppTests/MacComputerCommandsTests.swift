@@ -184,8 +184,10 @@
                 authorize: {})
             XCTAssertEqual(
                 partial["chunks"],
-                .array([.object(["stream": .string("stdout"), "offset": .number(2), "data": .string("e\n")]),
-                    .object(["stream": .string("stderr"), "offset": .number(4), "data": .string("e")])]))
+                .array([
+                    .object(["stream": .string("stdout"), "offset": .number(2), "data": .string("e\n")]),
+                    .object(["stream": .string("stderr"), "offset": .number(4), "data": .string("e")]),
+                ]))
             XCTAssertEqual(partial["next_offset"], .number(5))
             XCTAssertEqual(partial["truncated"], .bool(true))
             let waiting = Task {

@@ -357,18 +357,21 @@
             let snap = try await harness.snapshot()
             let notify = try harness.ref(snap.lines, containing: "button \"Notify\"")
             let name = try harness.ref(snap.lines, containing: "button \"Name\"")
-            let alerted = try await harness.run("browser_click", ["ref": .string(notify), "snapshot_id": .string(snap.id)])
+            let alerted = try await harness.run(
+                "browser_click", ["ref": .string(notify), "snapshot_id": .string(snap.id)])
             XCTAssertEqual(alerted["pending_dialog"]?["type"], .string("alert"))
             XCTAssertEqual(alerted["pending_dialog"]?["message"], .string("Saved"))
             let accepted = try await harness.run("browser_dialog", ["action": .string("accept")])
             XCTAssertEqual(accepted["answered"], .string("alert"))
-            let prompted = try await harness.run("browser_click", ["ref": .string(name), "snapshot_id": .string(snap.id)])
+            let prompted = try await harness.run(
+                "browser_click", ["ref": .string(name), "snapshot_id": .string(snap.id)])
             XCTAssertEqual(prompted["pending_dialog"]?["default_text"], .string("Ada"))
             _ = try await harness.run("browser_dialog", ["action": .string("accept"), "text": .string("Grace")])
             try await harness.expectEventually { try await self.harness.page("window.reply") as? String == "Grace" }
             for label in ["link \"Custom\"", "link \"Inline\""] {
                 let ref = try harness.ref(snap.lines, containing: label)
-                let result = try await harness.run("browser_click", ["ref": .string(ref), "snapshot_id": .string(snap.id)])
+                let result = try await harness.run(
+                    "browser_click", ["ref": .string(ref), "snapshot_id": .string(snap.id)])
                 let kinds = (result["blocked"]?.arrayValue ?? []).compactMap { $0["kind"]?.stringValue }
                 XCTAssertTrue(kinds.contains("scheme"), "\(result)")
             }

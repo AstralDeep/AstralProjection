@@ -51,7 +51,8 @@
                     Text("Computer access on this Mac").font(.title2.bold())
                     Text(host.statusLabel).accessibilityIdentifier("mac-computer-status")
                     if let error = host.lastError {
-                        Text(error.leadSentence).foregroundStyle(errorColor).accessibilityIdentifier("mac-computer-error")
+                        Text(error.leadSentence).foregroundStyle(errorColor)
+                            .accessibilityIdentifier("mac-computer-error")
                     }
                     VStack(alignment: .leading, spacing: 10) {
                         Text("Permissions").font(.headline).accessibilityAddTraits(.isHeader)
