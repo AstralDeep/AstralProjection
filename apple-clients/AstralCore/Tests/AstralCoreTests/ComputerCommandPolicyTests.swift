@@ -29,32 +29,43 @@
                 "ASTRAL_TOKEN": "secret", "GITHUB_TOKEN": "secret", "SSH_AUTH_SOCK": "/tmp/agent", "DYLD_X": "y",
             ]
             let env = try ComputerCommandPolicy.environment(
-                inherited: inherited, path: "/usr/bin:/bin", additions: ["FOO": "bar", "HOME": "/override"])
+                inherited: inherited, path: "/usr/bin:/bin",
+                additions: ["APP_MODE": "test", "LANG": "en_GB.UTF-8", "NO_COLOR": "1", "TERM": "xterm"])
             XCTAssertEqual(
                 env,
                 [
-                    "PATH": "/usr/bin:/bin", "HOME": "/override", "USER": "sam", "LANG": "en_US.UTF-8", "LC_ALL": "C",
-                    "LC_CTYPE": "UTF-8", "TMPDIR": "/tmp/x", "SHELL": "/bin/zsh", "TERM": "dumb", "FOO": "bar",
+                    "PATH": "/usr/bin:/bin", "HOME": "/Users/sam", "USER": "sam", "LANG": "en_GB.UTF-8", "LC_ALL": "C",
+                    "LC_CTYPE": "UTF-8", "TMPDIR": "/tmp/x", "SHELL": "/bin/zsh", "TERM": "xterm", "APP_MODE": "test",
+                    "NO_COLOR": "1",
                 ])
+            let longest = "APP_" + String(repeating: "A", count: 60)
+            let named = ComputerCommandPolicy.requestNames.union(["APP_", "APP_X1", longest])
+            for name in named {
+                XCTAssertTrue(ComputerCommandPolicy.requestable(name), name)
+            }
         }
 
-        func testForbiddenEnvironmentNamesAreRefusedCaseInsensitively() throws {
+        func testRequestEnvironmentIsAnAllowlistAndForbiddenNamesStayRefused() throws {
             for name in [
                 "ASTRAL_SESSION", "astral_x", "API_TOKEN", "MY_SECRET", "AWS_ACCESS_KEY_ID", "db_password", "KEYCHAIN",
-                "Token",
+                "Token", "FOO", "HOME", "PATH", "DYLD_INSERT_LIBRARIES", "LD_PRELOAD", "SHELL", "lang", "app_mode",
+                "APP_TOKEN", "APP_API_KEY", "APP_" + String(repeating: "A", count: 61), "1BAD", "_APP", "LC_NUMERIC",
             ] {
                 XCTAssertEqual(
                     code {
                         try ComputerCommandPolicy.environment(inherited: [:], path: "/bin", additions: [name: "v"])
                     }, "env_forbidden", name)
             }
-            XCTAssertEqual(
-                code { try ComputerCommandPolicy.environment(inherited: [:], path: "/bin", additions: ["1BAD": "v"]) },
-                "out_of_range")
-            XCTAssertEqual(
-                code { try ComputerCommandPolicy.environment(inherited: [:], path: "/bin", additions: ["A": "a\0b"]) },
-                "out_of_range")
-            let many = Dictionary(uniqueKeysWithValues: (0..<33).map { ("V\($0)", "x") })
+            for value in ["a\0b", "line\nbreak", "carriage\rreturn", String(repeating: "v", count: 4097)] {
+                XCTAssertEqual(
+                    code {
+                        try ComputerCommandPolicy.environment(inherited: [:], path: "/bin", additions: ["APP_V": value])
+                    }, "out_of_range")
+            }
+            XCTAssertNoThrow(
+                try ComputerCommandPolicy.environment(
+                    inherited: [:], path: "/bin", additions: ["APP_V": String(repeating: "v", count: 4096)]))
+            let many = Dictionary(uniqueKeysWithValues: (0..<33).map { ("APP_V\($0)", "x") })
             XCTAssertEqual(
                 code { try ComputerCommandPolicy.environment(inherited: [:], path: "/bin", additions: many) },
                 "out_of_range")

@@ -17,6 +17,10 @@
         public static let environmentLimit = 32
         public static let fallbackPath = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         private static let inheritedNames: Set<String> = ["HOME", "USER", "LANG", "SHELL", "TMPDIR"]
+        public static let requestNames: Set<String> = [
+            "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TZ", "TERM", "NO_COLOR", "FORCE_COLOR", "CI", "DEBUG",
+            "PAGER", "EDITOR", "COLUMNS", "LINES",
+        ]
         private static let shells: Set<String> = ["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"]
         private static let neverGrantable: Set<String> = [
             "node", "ruby", "perl", "env", "xargs", "osascript", "open", "sudo", "su", "launchctl", "defaults",
@@ -27,6 +31,11 @@
         public static func forbidden(_ name: String) -> Bool {
             let upper = name.uppercased()
             return upper.hasPrefix("ASTRAL_") || ["TOKEN", "SECRET", "KEY", "PASSWORD"].contains { upper.contains($0) }
+        }
+
+        public static func requestable(_ name: String) -> Bool {
+            computerFullMatch(name, "^[A-Z][A-Z0-9_]{0,63}$") && !forbidden(name)
+                && (requestNames.contains(name) || name.hasPrefix("APP_"))
         }
 
         public static func environment(
@@ -44,11 +53,17 @@
             result["PATH"] = path
             result["TERM"] = "dumb"
             for (name, value) in additions.sorted(by: { $0.key < $1.key }) {
-                guard computerFullMatch(name, "^[A-Za-z_][A-Za-z0-9_]{0,127}$"), !value.contains("\0"),
-                    value.unicodeScalars.count <= 4096
-                else { throw ComputerHostError("out_of_range", "Invalid command environment.") }
-                guard !forbidden(name) else {
-                    throw ComputerHostError("env_forbidden", "The environment variable \(name) cannot be set.")
+                guard requestable(name) else {
+                    throw ComputerHostError(
+                        "env_forbidden",
+                        "The environment variable \(name) cannot be set. Commands may set APP_* or "
+                            + requestNames.sorted().joined(separator: ", ") + ".")
+                }
+                guard value.unicodeScalars.count <= 4096,
+                    !value.unicodeScalars.contains(where: { $0 == "\0" || $0 == "\n" || $0 == "\r" })
+                else {
+                    throw ComputerHostError(
+                        "out_of_range", "Environment values are one line of at most 4096 characters.")
                 }
                 result[name] = value
             }
