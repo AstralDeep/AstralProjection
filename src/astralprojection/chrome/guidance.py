@@ -103,13 +103,9 @@ def _list(state):
     for note in notes:
         _note(note)
     _require(len({note["note_id"] for note in notes}) == len(notes))
-    components = [text("Private notes are guidance you can select for your work."),
-                  _nav("Add note", "new"),
+    components = [_nav("Add note", "new"),
                   form([field("search", "Search notes", default=search)],
                        submit_action="chrome_note_search", submit_label="Search")]
-    if not notes:
-        components.append(text("No matching notes on this page." if search or cursor
-                               else "No private notes yet."))
     for note in notes:
         components.append(card(NOTE_CATEGORY_LABELS[note["category"]], [*_summary(note),
             _nav("Edit", "edit", **_key(note)),
@@ -134,11 +130,10 @@ def _editor(state):
         field("category", "Category", "select", default=NOTE_CATEGORY_LABELS[note["category"]],
               options=list(NOTE_CATEGORY_LABELS.values())),
         field("value", "Note", "textarea", default=note["value"],
-              help_text="Describe your preferences or context. Do not include patient information."),
+              help_text="Do not include patient information."),
         field("enabled", "Enabled", "boolean", default=note["enabled"]),
         field("expiry", "Expiry", "select", default=expiry_options[0], options=expiry_options),
-        field("expiry_date", "Expiry date (UTC)", default=_date(note["expires_at"]),
-              help_text="Use a UTC date and time, for example 2026-12-31T23:59:00Z.",
+        field("expiry_date", "Expiry date (UTC, e.g. 2026-12-31T23:59:00Z)", default=_date(note["expires_at"]),
               visible_when={"expiry": "Set a date"}),
     ], title="Add note" if new else "Edit note", submit_action="chrome_note_save",
         submit_label="Save note", submit_payload=_key(note)))
@@ -258,15 +253,12 @@ def _skills_list(state):
     identities = [skill["skill_id"] for skill in skills] + [skill["command_id"] for skill in skills]
     _require(len(set(identities)) == len(identities))
     _require(len({skill["slug"] for skill in skills}) == len(skills))
-    components = [text("Skills are standing instructions you can select for your work; "
-                       "a /command makes one a shortcut you can type.")]
+    components = []
     if len(skills) < MAX_SKILLS:
         components.append(_skill_nav("Add skill", "new"))
     else:
         components.append(text(f"You can keep up to {MAX_SKILLS} skills. Delete one to add another.",
                                "caption"))
-    if not skills:
-        components.append(text("No skills yet."))
     for skill in skills:
         components.append(card(skill["name"], [*_skill_summary(skill),
             _skill_nav("Edit", "edit", **_skill_route(skill)),
@@ -290,14 +282,11 @@ def _skills_editor(state):
     if not new:
         components.extend([text("Current skill", "h3"), *_skill_summary(skill)])
     components.append(form([
-        field("skill_name", "Name", default=skill["name"],
-              help_text="2 to 60 characters."),
-        field("skill_command", "/command (optional)", default=skill["command"],
-              help_text="Lowercase letters, digits, - or _; up to 24 characters."),
-        field("skill_applies", "Applies to", default=", ".join(skill["applies_to"]),
-              help_text="Leave empty for every chat, or list agent ids separated by commas."),
+        field("skill_name", "Name", default=skill["name"]),
+        field("skill_command", "/command (optional)", default=skill["command"]),
+        field("skill_applies", "Applies to", default=", ".join(skill["applies_to"])),
         field("skill_instructions", "Instructions", "textarea", default=skill["instructions"],
-              help_text="Standing guidance in your own words. Do not include patient information."),
+              help_text="Do not include patient information."),
     ], title="Add skill" if new else "Edit skill", submit_action="chrome_user_skill_save",
         submit_label="Add skill" if new else "Save skill",
         submit_payload={**_skill_key(skill), "skill_slug": skill["slug"],
@@ -430,19 +419,7 @@ def _agents_list(state):
     for agent in agents:
         _agent_head(agent)
     _require(len({agent["agent_id"] for agent in agents}) == len(agents))
-    components = [card("Declarative agents", [
-        text("Save a reusable set of instructions and capabilities for your work."),
-        text("Create a definition, review its revisions, then activate the version you want to select "
-             "for a chat. Your usual permissions and approvals still apply.", "caption"),
-        _agent_nav("New agent", "new", variant="primary"),
-    ])]
-    if not agents:
-        components.append(card("No agents yet", [
-            text("Create your first agent to keep its instructions and revision history in one place."),
-            text("1. Give the agent a name and define its job."),
-            text("2. Save and review the definition before activating it."),
-            text("3. Choose the active agent from your chat's selections."),
-        ]))
+    components = [card("Declarative agents", [_agent_nav("New agent", "new", variant="primary")])]
     for agent in agents:
         actions = [_agent_nav("History", "history", agent_id=agent["agent_id"])]
         if agent["status"] != "archived":
@@ -471,9 +448,6 @@ def _agents_history(state):
         _require(not numbers or before <= numbers[-1])
     components = [_agent_nav("Back to agents"), card(agent["display_name"], _agent_summary(agent)),
                   text("Revision history", "h3")]
-    if not revisions:
-        components.append(text("No revisions on this page." if before is not None
-                               else "No revisions yet."))
     for revision in revisions:
         body = [text("Definition digest " + revision["definition_digest"], "caption")]
         if _date(revision["created_at"]):
@@ -494,10 +468,8 @@ def _agents_history(state):
 
 
 def _definition_fields(display_name, definition_text):
-    return [field("display_name", "Name", default=display_name, help_text="1 to 120 characters."),
-            field("definition", "Definition (JSON)", "textarea", default=definition_text,
-                  help_text="A versioned declarative definition. The server validates it "
-                            "before storing an immutable revision.")]
+    return [field("display_name", "Name", default=display_name),
+            field("definition", "Definition (JSON)", "textarea", default=definition_text)]
 
 
 def _agents_new(state):
@@ -510,8 +482,6 @@ def _agents_new(state):
                 "limits": {}, "approvals": {"policy": "normal"}}
     return [_agent_nav("Back to agents"),
             form(_definition_fields("", _definition(template)), title="New agent",
-                 description="Name this agent and customize the starter definition below. Saving creates "
-                             "a draft revision with no tool access; review its capabilities before activation.",
                  submit_action="chrome_declarative_command", submit_label="Create agent",
                  submit_payload=_agent_command("create", command_id, agent_id, revision_id=revision_id))]
 
@@ -541,8 +511,7 @@ def _agents_clone(state):
     _require(len({agent_id, revision_id, command_id, source["agent_id"], revision["revision_id"]}) == 5)
     return [_agent_nav("Back to agents"), card(source["display_name"], _agent_summary(source)),
             text(f"Cloning revision {revision['revision_number']} into a new agent", "caption"),
-            form([field("display_name", "Name", default=source["display_name"] + " (copy)",
-                        help_text="1 to 120 characters.")],
+            form([field("display_name", "Name", default=source["display_name"] + " (copy)")],
                  title="Clone agent", submit_action="chrome_declarative_command",
                  submit_label="Clone agent",
                  submit_payload=_agent_command("clone", command_id, agent_id, revision_id=revision_id,

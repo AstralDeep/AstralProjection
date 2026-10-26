@@ -44,7 +44,13 @@
                     try await input.press(ComputerHostChord("a"), args: [:], authorize: {})
                     XCTFail("Unverifiable keyboard target accepted: \(fault)")
                 } catch let error as ComputerHostError {
-                    XCTAssertEqual(error.code, fault == .terminal ? "confirmation_required" : "permission_denied")
+                    let expected =
+                        switch fault {
+                        case .terminal: "confirmation_required"
+                        case .secureInput, .secureField: "secure_input_active"
+                        default: "permission_denied"
+                        }
+                    XCTAssertEqual(error.code, expected, "\(fault)")
                 }
                 XCTAssertTrue(events.posted.isEmpty)
             }
@@ -168,6 +174,66 @@
             XCTAssertEqual(posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [111, 111])
             XCTAssertTrue(posted[0].flags.contains([.maskCommand, .maskControl, .maskAlternate, .maskShift]))
             XCTAssertTrue(posted.allSatisfy { $0.getIntegerValueField(.eventSourceUserData) == 30 })
+        }
+
+        func testPunctuationChordsPostTheirANSIVirtualKeys() async throws {
+            let codes: [String: Int64] = [
+                "cmd+,": 43, "cmd+.": 47, "cmd+/": 44, "cmd+;": 41, "cmd+'": 39, "cmd+[": 33, "cmd+]": 30,
+                "cmd+\\": 42, "cmd+-": 27, "cmd+=": 24, "cmd+`": 50, "cmd+comma": 43, "ctrl+grave": 50,
+            ]
+            for (text, code) in codes {
+                let events = MacComputerInputTestEvents()
+                let input = MacComputerInput(marker: 30, system: MacComputerInputTestSystem(), events: events)
+                try await input.press(ComputerHostChord(text), args: [:], authorize: {})
+                XCTAssertEqual(events.posted.map { $0.getIntegerValueField(.keyboardEventKeycode) }, [code, code], text)
+            }
+        }
+
+        func testSecureInputRefusesOnlyKeyboardWhilePointerContinues() async throws {
+            for fault in [MacComputerInputTestSystem.Fault.secureInput, .secureField] {
+                let system = MacComputerInputTestSystem()
+                system.apply(fault)
+                let events = MacComputerInputTestEvents()
+                let input = MacComputerInput(marker: 30, system: system, events: events)
+                do {
+                    try await input.type("secret", args: [:], authorize: {})
+                    XCTFail("Secure input accepted typing")
+                } catch let error as ComputerHostError { XCTAssertEqual(error.code, "secure_input_active") }
+                XCTAssertTrue(events.posted.isEmpty)
+                try await input.pointer(
+                    request("click", args: ["x": .number(20), "y": .number(30)]), start: CGPoint(x: 20, y: 30),
+                    end: nil, authorize: {})
+                XCTAssertEqual(events.posted.map(\.type), [.leftMouseDown, .leftMouseUp])
+            }
+        }
+
+        func testSessionPanelOverTheTargetReportsObscuredInsteadOfAGenericRefusal() async throws {
+            let system = MacComputerInputTestSystem()
+            var panel = MacComputerInputTestSystem.row(pid: 100)
+            panel[kCGWindowName as String] = MacComputerPanelIdentity.title
+            system.setWindows([panel, MacComputerInputTestSystem.row(pid: 200)])
+            let events = MacComputerInputTestEvents()
+            let input = MacComputerInput(marker: 30, system: system, events: events)
+            do {
+                try await input.pointer(
+                    request("click", args: ["x": .number(20), "y": .number(30)]), start: CGPoint(x: 20, y: 30),
+                    end: nil, authorize: {})
+                XCTFail("A click under the session panel was posted")
+            } catch let error as ComputerHostError { XCTAssertEqual(error.code, "obscured_by_astral_panel") }
+            var other = MacComputerInputTestSystem.row(pid: 100)
+            other[kCGWindowName as String] = "Astral"
+            system.setWindows([other])
+            do {
+                try await input.pointer(
+                    request("click", args: ["x": .number(20), "y": .number(30)]), start: CGPoint(x: 20, y: 30),
+                    end: nil, authorize: {})
+                XCTFail("A click into Astral's own window was posted")
+            } catch let error as ComputerHostError { XCTAssertEqual(error.code, "permission_denied") }
+            system.setWindows([MacComputerInputTestSystem.row(pid: 200), panel])
+            try await input.pointer(
+                request("click", args: ["x": .number(20), "y": .number(30)]), start: CGPoint(x: 20, y: 30), end: nil,
+                authorize: {})
+            XCTAssertEqual(events.posted.map(\.type), [.leftMouseDown, .leftMouseUp])
         }
 
         func testAlreadyCancelledTypingCannotGenerateAnEvent() async throws {

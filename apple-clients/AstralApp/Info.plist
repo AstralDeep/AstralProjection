@@ -40,6 +40,20 @@
 	<string>$(ASTRAL_SERVER_BASE_URL)</string>
 	<key>ASTRALKeycloakAuthority</key>
 	<string>$(ASTRAL_KEYCLOAK_AUTHORITY)</string>
+	<key>SUFeedURL</key>
+	<string>https://astraldeep.github.io/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>eg4hW6POM2f99hfVp8K+U5bx5Hpl8+P+IYLuW0+pPzw=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>86400</integer>
+	<key>SUAutomaticallyUpdate</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SUShowReleaseNotes</key>
+	<true/>
 	<!-- ATS: no NSAllowsArbitraryLoads. Release talks HTTPS to the hosted backend
 	     and is fully ATS-compliant. NSAllowsLocalNetworking only relaxes ATS for
 	     loopback/.local addresses (so Debug can reach http://localhost:8001); it

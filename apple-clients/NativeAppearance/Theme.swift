@@ -5,21 +5,26 @@ import AstralCore
 import SwiftUI
 
 struct AstralPalette: Equatable {
-    var bg = Color(hex: 0x0F1221)
-    var surface = Color(hex: 0x1A1E2E)
-    var surface2 = Color(hex: 0x1E2338)
+    var bg = Color(hex: 0x121214)
+    var surface = Color(hex: 0x1B1B1F)
+    var surface2 = Color(hex: 0x232328)
     var border = Color.white.opacity(0.08)
-    var primary = Color(hex: 0x6366F1)
-    var secondary = Color(hex: 0x8B5CF6)
-    var accent = Color(hex: 0x06B6D4)
-    var text = Color(hex: 0xF3F4F6)
-    var muted = Color(hex: 0x9CA3AF)
-    var success = Color(hex: 0x22C55E)
-    var warning = Color(hex: 0xEAB308)
-    var error = Color(hex: 0xEF4444)
-    var info = Color(hex: 0x3B82F6)
+    var primary = Color(hex: 0x7C3AED)
+    var secondary = Color(hex: 0x6E6E78)
+    var accent = Color(hex: 0xA78BFA)
+    var text = Color(hex: 0xECECEF)
+    var muted = Color(hex: 0x8C8C95)
+    var success = Color(hex: 0x5EC28F)
+    var warning = Color(hex: 0xD4A94A)
+    var error = Color(hex: 0xE06C6C)
+    var info = Color(hex: 0x9A8CF2)
 
-    static let midnight = AstralPalette()
+    static let graphite = AstralPalette()
+    static let midnight: AstralPalette = {
+        let store = ThemeStore()
+        store.apply(preset: "midnight")
+        return store.palette
+    }()
 
     var gradient: LinearGradient {
         LinearGradient(
@@ -156,7 +161,7 @@ extension View {
 @MainActor
 @Observable
 final class ThemeStore {
-    var palette = AstralPalette.midnight
+    var palette = AstralPalette.graphite
 
     var colorScheme: ColorScheme {
         let color = palette.bg.resolve(in: EnvironmentValues())
@@ -170,45 +175,61 @@ final class ThemeStore {
 
     func apply(spec: JSONValue?) {
         guard let spec else { return }
-        if let preset = spec["preset"]?.stringValue { apply(preset: preset) }
-        if let colors = spec["colors"]?.objectValue { apply(colors: colors) }
-        if let key = spec["color_key"]?.stringValue,
-            let val = spec["color_value"]?.stringValue,
-            let color = Color(cssHex: val)
-        {
-            set(channel: key, color)
+        let preset = spec["preset"]?.stringValue
+        if let preset { apply(preset: preset) }
+        var colors = spec["colors"]?.objectValue ?? [:]
+        if let key = spec["color_key"]?.stringValue, let value = spec["color_value"] { colors[key] = value }
+        if spec["preset"] == nil, spec["colors"] == nil, spec["color_key"] == nil, let flat = spec.objectValue {
+            colors = flat
         }
-        if spec["preset"] == nil, spec["colors"] == nil, spec["color_key"] == nil,
-            let flat = spec.objectValue
-        {
-            apply(colors: flat)
-        }
+        let applied = apply(colors: colors)
+        guard preset == nil, !applied.isEmpty else { return }
+        deriveExtras(keepingSurface2: applied.contains(\.surface2))
     }
 
-    private func apply(colors: [String: JSONValue]) {
-        for (key, value) in colors {
-            if let hex = value.stringValue, let color = Color(cssHex: hex) {
-                set(channel: key, color)
+    private func deriveExtras(keepingSurface2: Bool) {
+        palette.border = palette.text.opacity(0.08)
+        guard !keepingSurface2 else { return }
+        let base = palette.surface.resolve(in: EnvironmentValues())
+        let target: Float = colorScheme == .dark ? 1 : 0
+        func shifted(_ channel: Float) -> Double { Double(channel + (target - channel) * 0.04) }
+        palette.surface2 = Color(
+            .sRGB, red: shifted(base.red), green: shifted(base.green), blue: shifted(base.blue), opacity: 1)
+    }
+
+    private func apply(colors: [String: JSONValue]) -> [WritableKeyPath<AstralPalette, Color>] {
+        colors.compactMap { key, value in
+            guard let role = Self.role(key), let hex = value.stringValue, let color = Color(cssHex: hex) else {
+                return nil
             }
+            palette[keyPath: role] = color
+            return role
         }
     }
 
-    private func set(channel: String, _ color: Color) {
+    private static func role(_ channel: String) -> WritableKeyPath<AstralPalette, Color>? {
         switch channel {
-        case "bg", "background": palette.bg = color
-        case "surface": palette.surface = color
-        case "surface2", "surface_2": palette.surface2 = color
-        case "primary": palette.primary = color
-        case "secondary": palette.secondary = color
-        case "accent": palette.accent = color
-        case "text": palette.text = color
-        case "muted": palette.muted = color
-        default: break
+        case "bg", "background": \.bg
+        case "surface": \.surface
+        case "surface2", "surface_2": \.surface2
+        case "primary": \.primary
+        case "secondary": \.secondary
+        case "accent": \.accent
+        case "text": \.text
+        case "muted": \.muted
+        default: nil
         }
     }
 
     func apply(preset: String) {
         switch preset {
+        case "midnight":
+            palette = AstralPalette(
+                bg: Color(hex: 0x0F1221), surface: Color(hex: 0x1A1E2E),
+                surface2: Color(hex: 0x1E2338),
+                primary: Color(hex: 0x6366F1), secondary: Color(hex: 0x8B5CF6),
+                accent: Color(hex: 0x06B6D4), text: Color(hex: 0xF3F4F6),
+                muted: Color(hex: 0x9CA3AF))
         case "daylight":
             palette = AstralPalette(
                 bg: Color(hex: 0xF8FAFC), surface: Color(hex: 0xFFFFFF),
@@ -219,23 +240,26 @@ final class ThemeStore {
         case "ocean":
             palette = AstralPalette(
                 bg: Color(hex: 0x0C1222), surface: Color(hex: 0x132038),
+                surface2: Color(hex: 0x1C2940),
                 primary: Color(hex: 0x0EA5E9), secondary: Color(hex: 0x06B6D4),
                 accent: Color(hex: 0x2DD4BF), text: Color(hex: 0xE2E8F0),
                 muted: Color(hex: 0x94A3B8))
         case "sunset":
             palette = AstralPalette(
                 bg: Color(hex: 0x1C1017), surface: Color(hex: 0x2D1B24),
+                surface2: Color(hex: 0x35242D),
                 primary: Color(hex: 0xF97316), secondary: Color(hex: 0xEF4444),
                 accent: Color(hex: 0xFBBF24), text: Color(hex: 0xFEF2F2),
                 muted: Color(hex: 0xA8A29E))
         case "forest":
             palette = AstralPalette(
                 bg: Color(hex: 0x0F1A14), surface: Color(hex: 0x1A2E22),
+                surface2: Color(hex: 0x23362B),
                 primary: Color(hex: 0x22C55E), secondary: Color(hex: 0x10B981),
                 accent: Color(hex: 0xA3E635), text: Color(hex: 0xECFDF5),
                 muted: Color(hex: 0x86EFAC))
         default:
-            palette = .midnight
+            palette = .graphite
         }
     }
 }

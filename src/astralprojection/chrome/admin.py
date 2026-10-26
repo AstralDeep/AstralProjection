@@ -89,8 +89,8 @@ def build_audit_view(
             options=("", *_AUDIT_OUTCOMES),
         ),
         field("q", "Search", default=active.get("q") or ""),
-        field("from", "From (UTC)", default=active.get("from") or "", help_text="YYYY-MM-DD"),
-        field("to", "Through (UTC)", default=active.get("to") or "", help_text="YYYY-MM-DD"),
+        field("from", "From (UTC, YYYY-MM-DD)", default=active.get("from") or ""),
+        field("to", "Through (UTC, YYYY-MM-DD)", default=active.get("to") or ""),
     ]
     components: list[ComponentView] = [
         form(
@@ -110,9 +110,7 @@ def build_audit_view(
     rows = _rows(entries)
     if not loaded:
         return build_view("audit", "Audit log", components, theme=theme, layout=layout)
-    if not rows:
-        components.append(alert("No audit entries match the current filters.", "info"))
-    else:
+    if rows:
         components.append(text(f"Showing {len(rows)} entries", "caption"))
         components.extend(_audit_pager(active, next_cursor))
         for day, entries_for_day in groupby(rows, key=lambda row: clean_text(row.get("recorded_at"))[:10]):
@@ -302,23 +300,10 @@ def build_diagnostics_view(
         )
     if error:
         return unavailable_view("admin_tools", "Runtime diagnostics", error)
-    rows = _diagnostic_samples(snapshot)
     components: list[ComponentView] = [
-        text(
-            "Deployment-wide runtime counters and gauges. No user, conversation, credential or "
-            "target identity is recorded here.",
-            "caption",
-        )
+        card(name, [key_value([(labels, value) for _, labels, value in batch])])
+        for name, batch in groupby(_diagnostic_samples(snapshot), key=lambda row: row[0])
     ]
-    if not rows:
-        components.append(alert("No runtime samples have been recorded yet.", "info"))
-        return build_view(
-            "admin_tools", "Runtime diagnostics", components, theme=theme, layout=layout
-        )
-    for name, batch in groupby(rows, key=lambda row: row[0]):
-        components.append(
-            card(name, [key_value([(labels, value) for _, labels, value in batch])])
-        )
     return build_view("admin_tools", "Runtime diagnostics", components, theme=theme, layout=layout)
 
 
@@ -337,8 +322,6 @@ def build_feedback_view(
         return unavailable_view("admin_tools", "Tool quality", error)
     components: list[ComponentView] = [text("Underperforming tools", "h3")]
     flagged = _rows(flagged_tools)
-    if not flagged:
-        components.append(alert("No underperforming tools right now.", "info"))
     for item in flagged:
         components.append(
             card(
@@ -355,16 +338,16 @@ def build_feedback_view(
                             ("Dispatches", item.get("dispatch_count") or 0),
                         ]
                     ),
-                    badge("proposal pending", "info")
-                    if item.get("pending_proposal_id")
-                    else text("No proposal pending.", "caption"),
+                    *(
+                        [badge("proposal pending", "info")]
+                        if item.get("pending_proposal_id")
+                        else []
+                    ),
                 ],
             )
         )
     components.append(text("Pending knowledge-update proposals", "h3"))
     pending = _rows(proposals)
-    if not pending:
-        components.append(alert("No pending knowledge-update proposals.", "info"))
     for proposal in pending:
         proposal_id = clean_text(proposal.get("proposal_id") or proposal.get("id"))
         components.append(
@@ -375,7 +358,7 @@ def build_feedback_view(
                     text(proposal.get("artifact_path") or "", "caption"),
                     text(proposal.get("diff_payload") or "No diff supplied."),
                     form(
-                        [field("rationale", "Rationale", help_text="Required to reject")],
+                        [field("rationale", "Rationale")],
                         title="Review proposal",
                         actions=[
                             {
@@ -409,26 +392,16 @@ def build_onboarding_view(
 ) -> ChromeViewModel:
     rows = _rows(steps)
     if not admin:
-        intro = text(
-            "The guided tour walks through AstralDeep's main controls step by step. "
-            "You can skip or dismiss it at any time."
-        )
         if offline:
             return build_view(
                 "tour",
                 "Take the tour",
-                [intro, alert("The onboarding subsystem is unavailable right now.", "error")],
+                [alert("The onboarding subsystem is unavailable right now.", "error")],
                 theme=theme,
                 layout=layout,
             )
         if not rows:
-            return build_view(
-                "tour",
-                "Take the tour",
-                [intro, alert("No tour steps are available yet.", "info")],
-                theme=theme,
-                layout=layout,
-            )
+            return build_view("tour", "Take the tour", [], theme=theme, layout=layout)
         step_cards = [
             card(
                 step.get("title") or "Tour step",
@@ -441,7 +414,6 @@ def build_onboarding_view(
             "tour",
             "Take the tour",
             [
-                intro,
                 *step_cards,
                 button("Start tour", "chrome_tour_event", {"event": "started", "steps": step_ids}),
             ],
@@ -457,8 +429,6 @@ def build_onboarding_view(
             variant="primary",
         )
     ]
-    if not rows:
-        components.append(alert("No tutorial steps yet.", "info"))
     for step in rows:
         archived = bool(step.get("archived"))
         step_id = step.get("id")

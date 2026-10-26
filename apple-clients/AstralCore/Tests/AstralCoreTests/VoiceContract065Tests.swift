@@ -660,9 +660,8 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertEqual(notice.kind, .requestFailure)
         XCTAssertEqual(notice.title, "Request did not start.")
         XCTAssertEqual(notice.serverMessage, "Capacity is temporarily full.")
-        XCTAssertEqual(notice.guidance, "Please say it again when you are ready.")
-        XCTAssertTrue(notice.displayText.contains("Capacity is temporarily full."))
-        XCTAssertTrue(notice.displayText.contains("Please say it again when you are ready."))
+        XCTAssertNil(notice.guidance)
+        XCTAssertEqual(notice.displayText, "Warning. Request did not start. Capacity is temporarily full.")
 
         let failed = try voiceTurn(
             fixture: fixture, state: "failed", message: "Keep this newer failure.",

@@ -10,14 +10,10 @@
     nonisolated enum MacComputerDesktopProbe: Sendable {
         static func usable() -> Bool { usable(system: MacComputerLiveSystem.shared) }
         static func usable(system: any MacComputerSystemIO) -> Bool {
-            guard let session = system.sessionDictionary(),
-                session[kCGSessionOnConsoleKey as String] as? Bool == true,
-                session[kCGSessionLoginDoneKey as String] as? Bool == true,
-                session["CGSSessionScreenIsLocked"] as? Bool != true,
-                !system.secureInputEnabled(), let pid = MacComputerObservation.context(system: system).pid,
-                let bundle = system.bundleIdentifier(for: pid), bundle != "com.apple.loginwindow"
-            else { return false }
-            return true
+            guard let session = system.sessionDictionary() else { return false }
+            return session[kCGSessionOnConsoleKey as String] as? Bool == true
+                && session[kCGSessionLoginDoneKey as String] as? Bool == true
+                && session["CGSSessionScreenIsLocked"] as? Bool != true
         }
         @MainActor static func localRearm() -> Bool {
             localRearm(system: MacComputerLiveSystem.shared, appActive: NSApp.isActive)

@@ -1,5 +1,5 @@
-// Executes the existing computer verbs with public macOS capture, accessibility and application APIs.
-// OS work stays on this actor while a separate synchronous authority gate can revoke every pending effect.
+// Executes the desktop computer verbs with public macOS capture, accessibility and application APIs.
+// OS work stays on this actor; input results carry a settled screenshot and a synchronous gate revokes effects.
 
 #if os(macOS)
     import AppKit
@@ -38,6 +38,11 @@
     }
 
     actor MacComputerDriver: MacComputerDriving {
+        static let inputVerbs: Set<String> = [
+            "click", "double_click", "right_click", "move", "drag", "scroll", "type_text", "press_keys", "focus_window",
+            "open_app",
+        ]
+        static let settleNanoseconds: UInt64 = 250_000_000
         private struct Geometry {
             let display: CGDirectDisplayID
             let bounds: CGRect
@@ -104,7 +109,7 @@
             }
             throw ComputerHostError("stale_target", "Take a current screenshot before pointer input.")
         }
-        private func screenshot(_ request: ComputerHostRequest, authorize: @Sendable () throws -> Void) async throws
+        private func screenshot(index: Int, maximum: Int, authorize: @Sendable () throws -> Void) async throws
             -> [String: JSONValue]
         {
             try authorize()
@@ -112,7 +117,6 @@
                 throw ComputerHostError("permission_denied", "Allow Screen Recording in System Settings.")
             }
             let ids = try displays()
-            let index = Int(request.args["screen_index"]?.numberValue ?? 0)
             guard ids.indices.contains(index) else {
                 throw ComputerHostError("out_of_range", "The display is unavailable.")
             }
@@ -126,7 +130,6 @@
                 throw ComputerHostError("out_of_range", "The display dimensions are invalid.")
             }
             let excluded = await system.controlsWindows()
-            let maximum = Int(request.args["max_width"]?.numberValue ?? 1280)
             let width = min(maximum, display.width)
             let height = max(1, Int(Double(display.height) * Double(width) / Double(display.width)))
             try authorize()
@@ -161,6 +164,20 @@
                 "screen_index": .number(Double(index)),
             ]
         }
+        private func settled(_ result: [String: JSONValue], authorize: @Sendable () throws -> Void) async
+            -> [String: JSONValue]
+        {
+            var value = result
+            do {
+                try await system.delay(nanoseconds: Self.settleNanoseconds)
+                let ids = try displays()
+                let index = geometry.flatMap { ids.firstIndex(of: $0.display) } ?? 0
+                value["screenshot"] = .object(try await screenshot(index: index, maximum: 1280, authorize: authorize))
+            } catch {
+                value["screenshot"] = nil
+            }
+            return value
+        }
         private func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
             system.attribute(name, of: element)
         }
@@ -190,7 +207,7 @@
                     try authorize()
                     system.messagingTimeout(0.2, for: window)
                     guard let bounds = rect(window), let title = attribute(window, kAXTitleAttribute) as? String,
-                        title != "Astral computer session"
+                        title != MacComputerPanelIdentity.title
                     else { continue }
                     guard nextWindow < Int(Int32.max) else {
                         throw ComputerHostError("capacity_exceeded", "Window identity capacity is exhausted.")
@@ -351,9 +368,12 @@
             }
             try check()
             switch request.verb {
-            case "screenshot": return try await screenshot(request, authorize: check)
+            case "screenshot":
+                return try await screenshot(
+                    index: Int(request.args["screen_index"]?.numberValue ?? 0),
+                    maximum: Int(request.args["max_width"]?.numberValue ?? 1280), authorize: check)
             case "list_windows": return try await listWindows(authorize: check)
-            case "focus_window": return try await focus(request, authorize: check)
+            case "focus_window": return await settled(try await focus(request, authorize: check), authorize: baseCheck)
             case "wait":
                 let seconds = request.args["seconds"]?.numberValue ?? 1
                 try await system.delay(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -449,17 +469,20 @@
                 try ComputerTerminalPolicy.validateLaunch(name, bundle: launched.bundleIdentifier)
                 observationStale = true
                 lastObservation = nil
-                return [
-                    "launched": .bool(true), "pid": .number(Double(launched.pid)),
-                    "bundle_id": launched.bundleIdentifier.map(JSONValue.string) ?? .null, "app": .string(name),
-                ]
+                return await settled(
+                    [
+                        "launched": .bool(true), "pid": .number(Double(launched.pid)),
+                        "bundle_id": launched.bundleIdentifier.map(JSONValue.string) ?? .null, "app": .string(name),
+                    ], authorize: baseCheck)
             case "type_text":
                 try await input.type(request.args["text"]!.stringValue!, args: request.args, authorize: check)
-                return ["chars": .number(Double(request.args["text"]!.stringValue!.unicodeScalars.count))]
+                return await settled(
+                    ["chars": .number(Double(request.args["text"]!.stringValue!.unicodeScalars.count))],
+                    authorize: baseCheck)
             case "press_keys":
                 try await input.press(
                     ComputerHostChord(request.args["keys"]!.stringValue!), args: request.args, authorize: check)
-                return ["keys": request.args["keys"]!]
+                return await settled(["keys": request.args["keys"]!], authorize: baseCheck)
             default:
                 let start = try point(
                     request.args, request.verb == "drag" ? "x1" : "x", request.verb == "drag" ? "y1" : "y")
@@ -467,7 +490,7 @@
                 if let boundTarget { try ComputerHostGeometry.validate(start, end: end, within: boundTarget.bounds) }
                 try await input.pointer(request, start: start, end: end, authorize: check)
                 if let geometry, geometry.foreground != foreground() { observationStale = true }
-                return ["attempted": .bool(true)]
+                return await settled(["attempted": .bool(true)], authorize: baseCheck)
             }
         }
     }

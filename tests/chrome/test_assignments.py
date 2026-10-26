@@ -234,7 +234,8 @@ def test_disabled_error_unknown_and_malformed_views_fail_visibly():
         assert message.lower() in render_html(view).lower()
         assert not buttons(view)
     view = build_assignments_view(state("list", assignments=[]), theme=ThemeView(name="daylight"))
-    assert "No ongoing agents" in render_html(view)
+    assert "No ongoing agents" not in render_html(view)
+    assert "Standing instructions continue" not in render_html(view)
     assert view.theme.name == "daylight"
     bad = assignment(instruction_revision=True, submission_ids={a: "bad" for a in ACTIONS})
     assert not ({b["action"] for b in buttons(build_assignments_view(state(assignment=bad)))} & ACTIONS)
@@ -290,7 +291,7 @@ def test_remaining_empty_error_and_expired_control_states():
     assert not any(b["action"] in {"chrome_assignment_run_now", "chrome_assignment_approval_decide"} for b in buttons(view))
     assert "Unknown state" in render_html(build_assignments_view(state(assignment=assignment(lifecycle="unknown"))))
     assert "Unknown state" in render_html(build_assignments_view(state(assignment=assignment(phase="unknown"))))
-    assert "No ongoing agents" in render_html(build_assignments_view(state("list", assignments="malformed")))
+    assert "No ongoing agents" not in render_html(build_assignments_view(state("list", assignments="malformed")))
     bad = assignment(assignment_id="not-an-id")
     assert "View assignment" not in render_html(build_assignments_view(state("list", assignments=[bad])))
 
@@ -458,7 +459,7 @@ def test_recurring_detail_has_bound_agent_runs_and_back_navigation():
     assert nav["View ongoing agent"] == {"tab": "schedule", "assignment_id": ASSIGNMENT_ID}
     assert nav["Back to recurring work"] == {"tab": "schedule", "view": "recurring"}
     empty = render_html(build_recurring_work_view(rstate(job=job(runs=[], assignment=None))))
-    assert "No runs yet" in empty and "View ongoing agent" not in empty
+    assert "No runs yet" not in empty and "View ongoing agent" not in empty
     listed = build_recurring_work_view(rstate("list", jobs=[job()]))
     assert any(b["payload"]["params"] == {"tab": "schedule", "view": "recurring", "job_id": JOB_ID}
                for b in buttons(listed))
@@ -474,9 +475,10 @@ def test_recurring_disabled_error_malformed_empty_and_notice_states():
         assert message.lower() in render_html(view).lower()
         assert not buttons(view)
     empty = build_recurring_work_view(rstate("list", jobs=[]), theme=ThemeView(name="daylight"))
-    assert "No recurring work yet" in render_html(empty) and empty.theme.name == "daylight"
-    assert "No recurring work yet" in render_html(build_recurring_work_view(rstate("list", jobs="malformed")))
-    assert "No recurring work yet" in render_html(build_recurring_work_view(rstate("list", jobs=["bad", 3])))
+    assert "No recurring work yet" not in render_html(empty) and empty.theme.name == "daylight"
+    assert "Recurring work runs on" not in render_html(empty)
+    assert "No recurring work yet" not in render_html(build_recurring_work_view(rstate("list", jobs="malformed")))
+    assert "No recurring work yet" not in render_html(build_recurring_work_view(rstate("list", jobs=["bad", 3])))
     noticed = render_html(build_recurring_work_view(rstate(notice="Paused by owner", execution_enabled=False)))
     assert "Paused by owner" in noticed and "Unattended execution is unavailable" in noticed
     assert "turned off" in render_html(build_recurring_work_view(None))
@@ -495,7 +497,8 @@ def test_recurring_watch_is_bounded_with_handoff_and_no_controls(mode):
     assert "phone or computer" in encoded and "Changed" in encoded
     assert len(encoded) < 5000 and "Observation number" not in encoded
     empty = build_recurring_work_view(rstate("list", jobs=[]), layout=LayoutView(mode="watch"))
-    assert "No recurring work yet" in render_html(empty)
+    assert "No recurring work yet" not in render_html(empty)
+    assert "phone or computer" in render_html(empty)
 
 
 def test_recurring_rows_forward_no_secrets_or_raw_records():

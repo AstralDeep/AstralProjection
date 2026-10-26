@@ -11,7 +11,7 @@ CONSOLE_CONTRACT = "console/v2"
 LABELS = {
     "brand": "AstralDeep",
     "title": "AstralDeep Console",
-    "subtitle": "Multi-agent orchestrator and server-driven UI workspace",
+    "subtitle": "Workspace",
     "start_here": "Start here",
     "history": "History",
     "agent_directory": "Agent Directory",

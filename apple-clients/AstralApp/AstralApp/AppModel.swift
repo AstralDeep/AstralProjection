@@ -6,6 +6,7 @@ import AVFoundation
 import AstralCore
 import AuthenticationServices
 import Foundation
+import ImageIO
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -110,6 +111,51 @@ final class AppModel: NSObject {
         let components: [AstralComponent]
     }
 
+    struct ActivityRow: Identifiable, Equatable {
+        enum Approval: Equatable { case none, waiting, approved, granted, denied }
+        enum State: Equatable { case running, completed, failed, cancelled }
+
+        let id: String
+        var tool: String
+        var action: String
+        var target: String
+        var approval: Approval
+        var state: State
+        var result: String
+        var thumbnail: Data?
+        var position: Int
+        var arguments: String
+
+        var approvalLabel: String? {
+            switch approval {
+            case .none: return nil
+            case .waiting: return "Approval waiting"
+            case .approved: return "Approved"
+            case .granted: return "Allowed for this task"
+            case .denied: return "Denied"
+            }
+        }
+
+        var stateLabel: String {
+            switch state {
+            case .running: return "Running"
+            case .completed: return "Done"
+            case .failed: return "Failed"
+            case .cancelled: return "Cancelled"
+            }
+        }
+
+        var accessibilityLabel: String { target.isEmpty ? action : "\(action), \(target)" }
+
+        var accessibilityValue: String {
+            var parts = [approvalLabel ?? stateLabel]
+            if approval != .none && state != .completed { parts.append(stateLabel) }
+            if !result.isEmpty && result != parts.last { parts.append(result) }
+            if thumbnail != nil { parts.append("Screenshot") }
+            return parts.joined(separator: ", ")
+        }
+    }
+
     struct SurfaceContent: Equatable {
         let surfaceKey: String
         let title: String
@@ -125,7 +171,11 @@ final class AppModel: NSObject {
     @ObservationIgnored private let defaults: UserDefaults
 
     #if os(macOS)
-        let macComputerHost = MacComputerHost()
+        typealias LocalComputerHost = MacComputerHost
+        let macComputerHost: MacComputerHost
+        let macBrowser: MacBrowserDriver
+    #else
+        typealias LocalComputerHost = Never
     #endif
     #if os(iOS)
         var pushNotifications: PushNotificationService?
@@ -136,7 +186,9 @@ final class AppModel: NSObject {
             if oldValue != serverBaseText {
                 #if os(macOS)
                     macComputerHost.signedOut()
+                    macBrowser.bind(owner: nil)
                 #endif
+                clearActivity()
                 retireMeshCustody()
                 retireServerSession()
             }
@@ -151,7 +203,9 @@ final class AppModel: NSObject {
             if oldValue != authorityText {
                 #if os(macOS)
                     macComputerHost.signedOut()
+                    macBrowser.bind(owner: nil)
                 #endif
+                clearActivity()
                 retireMeshCustody()
                 retireServerSession()
             }
@@ -210,24 +264,28 @@ final class AppModel: NSObject {
         didSet {
             bindConversationNavigationRender("transcript")
             if !turns.isEmpty { workspaceStarted = true }
+            observeActivityComponents()
         }
     }
     var canvas: [AstralComponent] = [] {
         didSet {
             bindConversationNavigationRender("canvas")
             if WorkspaceWelcome.containsWork(canvas) { workspaceStarted = true }
+            observeActivityComponents()
         }
     }
     var transientTurns: [ChatTurn] = [] {
         didSet {
             bindConversationNavigationRender("transient-transcript")
             if !transientTurns.isEmpty { workspaceStarted = true }
+            observeActivityComponents()
         }
     }
     var transientCanvas: [AstralComponent]? {
         didSet {
             bindConversationNavigationRender("transient-canvas")
             if WorkspaceWelcome.containsWork(transientCanvas ?? []) { workspaceStarted = true }
+            observeActivityComponents()
         }
     }
     var pendingCanvas: [AstralComponent] = []
@@ -246,6 +304,18 @@ final class AppModel: NSObject {
     private var warningBannerText: String?
     var bannerIsWarning: Bool { errorBanner != nil && errorBanner == warningBannerText }
     var stepTrail: [String] = []
+    private(set) var activityLog: [String: [ActivityRow]] = [:]
+    @ObservationIgnored private var activityAliases: [String: String] = [:]
+    @ObservationIgnored private var activityOrder: [String] = []
+    @ObservationIgnored private var decidedApprovals: Set<String> = []
+    @ObservationIgnored private var screenThumbnailSource: String?
+    @ObservationIgnored private var approvalRows: [String: String] = [:]
+    @ObservationIgnored private var redispatchable: Set<String> = []
+    @ObservationIgnored private var activityObservationPaused = false
+    static let maximumActivityRows = 200
+    static let maximumActivityChats = 32
+    var activity: [ActivityRow] { activityLog[activityKey(activeChatId)] ?? [] }
+    var canCancelTurn: Bool { signedIn && connected && turnActive }
     var asyncDetached = false
     var operationStatuses: [String: OperationStatus] = [:]
     var agentLifecycles: [String: AgentLifecycle] = [:]
@@ -434,8 +504,14 @@ final class AppModel: NSObject {
         defaults: UserDefaults = .standard,
         webSocket: WSClient? = nil,
         voiceController: AppleVoiceSessionController? = nil,
-        credentialClock: @escaping @Sendable () -> Date = { Date() }
+        credentialClock: @escaping @Sendable () -> Date = { Date() },
+        computerHost: LocalComputerHost? = nil
     ) {
+        #if os(macOS)
+            let host = computerHost ?? MacComputerHost()
+            macComputerHost = host
+            macBrowser = MacBrowserDriver(host: host, defaults: defaults)
+        #endif
         self.voice = voiceController ?? AppleVoiceSessionController()
         self.store = tokenStore
         if tokenStore is InMemoryTokenStore {
@@ -523,7 +599,9 @@ final class AppModel: NSObject {
         if conversationAccount != account {
             #if os(macOS)
                 macComputerHost.signedOut()
+                macBrowser.bind(owner: nil)
             #endif
+            clearActivity()
             #if os(iOS)
                 if conversationAccount != nil {
                     pushNotifications?.ownerSessionEnded(access: nil)
@@ -970,6 +1048,7 @@ final class AppModel: NSObject {
             let hostOwner = downloadOwner
             let hostScope =
                 signedIn ? hostOwner.account.map { serverBase.absoluteString + "|" + $0.locatorStorageKey } : nil
+            macBrowser.bind(owner: hostScope)
             macComputerHost.bind(owner: hostScope) { [weak self] text in
                 guard let self, let socket, self.ws === socket, self.downloadOwner == hostOwner,
                     self.continuity.connectionGeneration == connection,
@@ -1400,7 +1479,9 @@ final class AppModel: NSObject {
     func signOut(revokeRemote: Bool = true) async {
         #if os(macOS)
             macComputerHost.signedOut()
+            macBrowser.bind(owner: nil)
         #endif
+        clearActivity()
         #if os(iOS)
             pushNotifications?.ownerSessionEnded(access: tokens?.accessToken)
         #endif
@@ -1474,7 +1555,9 @@ final class AppModel: NSObject {
     func clearConversationForAccountRemoval() {
         #if os(macOS)
             macComputerHost.signedOut()
+            macBrowser.bind(owner: nil)
         #endif
+        clearActivity()
         retireMeshCustody()
         retireServerSession()
         retireOrdinarySurfaceRequests()
@@ -2008,6 +2091,10 @@ final class AppModel: NSObject {
         case "chat_deleted":
             if let chatId = nestedChatId(frame) { clearConfirmedDeletion(chatId) }
         case "chat_status":
+            if frame.payload["status"]?.stringValue == "done", frame.payload["message"]?.stringValue == "Cancelled" {
+                recordActivityCancellation(chatId: nestedChatId(frame) ?? activeChatId)
+            }
+            if ["done", "idle"].contains(frame.payload["status"]?.stringValue ?? "") { finishActivityProgress() }
             reduceStatus(frame)
         case "agent_list":
             agents = Agent.list(from: frame.payload["agents"])
@@ -2072,6 +2159,7 @@ final class AppModel: NSObject {
             let step = frame.payload["step"]
             let name = step?["name"]?.stringValue ?? step?["kind"]?.stringValue
             stepTrail = trailUpsert(stepTrail, stepLine(name: name, status: step?["status"]?.stringValue))
+            recordActivityStep(frame)
         case "tool_progress":
             let head = [frame.payload["tool_name"]?.stringValue, frame.payload["message"]?.stringValue]
                 .compactMap { $0 }.joined(separator: ": ")
@@ -2087,13 +2175,11 @@ final class AppModel: NSObject {
                 .map { " (\($0)%)" } ?? ""
             let label = (head + pct).isEmpty ? "Working…" : head + pct
             stepTrail = trailUpsert(stepTrail, "• \(label)")
+            recordActivityProgress(frame, percent: pct)
         case "task_started":
             if frameTargetsActiveChat(frame) {
                 statusText = "Working in the background…"
                 asyncDetached = true
-            } else {
-                bannerIsError = false
-                errorBanner = "Background task started in another chat"
             }
         case "task_completed":
             if frameTargetsActiveChat(frame) {
@@ -2106,9 +2192,6 @@ final class AppModel: NSObject {
                 }
                 bannerIsError = false
                 errorBanner = "Background task finished"
-            } else {
-                bannerIsError = false
-                errorBanner = "Background task finished in another chat"
             }
         case "notification":
             var text = [frame.payload["title"]?.stringValue, frame.payload["body"]?.stringValue]
@@ -2125,9 +2208,8 @@ final class AppModel: NSObject {
                 refreshActiveChat()
             }
         case "component_saved":
-            let title = frame.payload["component"]?["title"]?.stringValue ?? ""
             bannerIsError = false
-            errorBanner = title.isEmpty ? "Component saved" : "Saved \(title)"
+            errorBanner = "Component saved"
         case "component_save_error":
             bannerIsError = true
             errorBanner = frame.payload["error"]?.stringValue ?? "Couldn't save component"
@@ -2659,6 +2741,10 @@ final class AppModel: NSObject {
         if let account = conversationAccount {
             _ = conversationResumeStore.save(chatId: chatId, for: account)
         }
+        if activeChatId == nil, let pending = activityLog.removeValue(forKey: activityKey(nil)) {
+            activityLog[chatId] = Array(((activityLog[chatId] ?? []) + pending).suffix(Self.maximumActivityRows))
+            touchActivityChat(chatId)
+        }
         activeChatId = chatId
         voice.updateVisibleChatLocally(chatId)
         guard let request = pendingCommitRequestGeneration else { return }
@@ -2678,6 +2764,8 @@ final class AppModel: NSObject {
                 for: account,
                 chatId: chatId)
         }
+        activityLog.removeValue(forKey: chatId)
+        activityOrder.removeAll { $0 == chatId }
         guard activeChatId == chatId else { return }
         clearContinuityChatKeepingConnection()
         resetChatState()
@@ -3177,6 +3265,388 @@ final class AppModel: NSObject {
         return Array(next.suffix(maxTrail))
     }
 
+    struct PendingApproval: Equatable {
+        let requestId: String
+        let tool: String
+        let summary: String
+        let image: String?
+    }
+
+    @discardableResult
+    func cancelCurrentTurn() -> Bool {
+        guard canCancelTurn else { return false }
+        endRunningActivity(chatId: activeChatId)
+        rawSend(Outbound.uiEvent(action: "cancel_task", sessionId: activeChatId, payload: .object([:])))
+        return true
+    }
+
+    #if os(macOS)
+        func stopComputerTask() {
+            cancelCurrentTurn()
+            macComputerHost.stop()
+        }
+    #endif
+
+    static func pendingComputerApprovals(in components: [AstralComponent]) -> [PendingApproval] {
+        var found: [PendingApproval] = []
+        func visit(_ component: AstralComponent, depth: Int) {
+            if component.type == "card", let approval = computerApproval(component) {
+                found.append(approval)
+                return
+            }
+            guard depth < 3 else { return }
+            for child in component.children { visit(child, depth: depth + 1) }
+        }
+        for component in components { visit(component, depth: 0) }
+        return found
+    }
+
+    private static func computerApproval(_ card: AstralComponent) -> PendingApproval? {
+        let children = card.children
+        let requests = children.compactMap { child -> String? in
+            guard child.type == "button", child.raw["disabled"]?.boolValue != true,
+                ["authorize_action", "remote_op_decision"].contains(child.raw["action"]?.stringValue ?? ""),
+                let payload = child.raw["payload"],
+                let id = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue,
+                !id.isEmpty, id.count <= 200
+            else { return nil }
+            return id
+        }
+        guard let requestId = requests.first, requests.allSatisfy({ $0 == requestId }) else { return nil }
+        let texts = children.filter { $0.type == "text" }.compactMap(\.textContent)
+        let image = children.first { $0.type == "image" && $0.url?.hasPrefix("data:image/") == true }?.url
+        if card.componentId == "hitl_\(requestId)",
+            let review = texts.first(where: { $0.hasPrefix("Tool: ") && $0.contains(" · Agent: computer-use-1") })
+        {
+            let tool = String(review.dropFirst(6).prefix { $0 != " " })
+            let summary = texts.drop { $0 != review }.dropFirst().first ?? ""
+            return PendingApproval(requestId: requestId, tool: tool, summary: activityLine(summary), image: image)
+        }
+        if card.componentId == "au_approval_\(requestId)", card.title?.hasPrefix("Confirm an action on ") == true {
+            return PendingApproval(
+                requestId: requestId, tool: "", summary: activityLine(texts.first ?? ""), image: image)
+        }
+        return nil
+    }
+
+    static func activityLine(_ text: String, limit: Int = 120) -> String {
+        let line = text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        return line.count > limit ? String(line.prefix(limit - 1)) + "…" : line
+    }
+
+    static func activityAction(_ tool: String) -> String {
+        tool.isEmpty ? "Action" : tool.replacingOccurrences(of: "_", with: " ")
+    }
+
+    static func activityTarget(_ arguments: String) -> String {
+        guard !arguments.isEmpty else { return "" }
+        guard let object = (try? JSONValue.parse(Data(arguments.utf8)))?.objectValue else {
+            return arguments.hasPrefix("{") ? "" : activityLine(arguments)
+        }
+        func text(_ value: JSONValue?) -> String? {
+            guard let value else { return nil }
+            if let items = value.arrayValue { return items.map(\.displayText).joined(separator: "+") }
+            let shown = value.displayText
+            return shown.isEmpty ? nil : shown
+        }
+        if let x = text(object["x"]), let y = text(object["y"]) { return "at \(x), \(y)" }
+        if let x = text(object["x1"]), let y = text(object["y1"]), let x2 = text(object["x2"]),
+            let y2 = text(object["y2"])
+        {
+            return "from \(x), \(y) to \(x2), \(y2)"
+        }
+        for key in [
+            "command", "url", "app", "app_name", "bundle_id", "path", "text", "keys", "query", "ref", "title", "name",
+            "job_id", "direction",
+        ] {
+            if let value = text(object[key]) { return activityLine(value) }
+        }
+        let pairs = object.keys.filter { !$0.hasPrefix("_") }.sorted().prefix(3).compactMap { key in
+            text(object[key]).map { "\(key) \($0)" }
+        }
+        return activityLine(pairs.joined(separator: ", "))
+    }
+
+    static func activityResult(_ summary: String?) -> (text: String, waiting: Bool) {
+        guard let summary, !summary.isEmpty else { return ("", false) }
+        guard let parsed = try? JSONValue.parse(Data(summary.utf8)) else {
+            if summary.contains("\"confirmation_required\"") { return ("", true) }
+            return (summary.hasPrefix("{") || summary.hasPrefix("[") ? "" : activityLine(summary), false)
+        }
+        guard let object = parsed.objectValue else { return (activityLine(parsed.displayText), false) }
+        let data = object["_data"]?.objectValue ?? object
+        if data["status"]?.stringValue == "confirmation_required" { return ("", true) }
+        if let error = data["error"]?["message"]?.stringValue ?? data["error"]?.stringValue {
+            return (activityLine(error), false)
+        }
+        if let code = data["exit_code"]?.numberValue, code.isFinite, abs(code) < 1e6 {
+            return (data["timed_out"]?.boolValue == true ? "Timed out" : "Exit \(Int(code))", false)
+        }
+        if let message = data["message"]?.stringValue { return (activityLine(message), false) }
+        if let status = data["status"]?.stringValue {
+            return (activityLine(status.replacingOccurrences(of: "_", with: " ")), false)
+        }
+        return ("", false)
+    }
+
+    nonisolated static func activityThumbnail(_ source: String) -> Data? {
+        guard source.hasPrefix("data:image/"), source.utf8.count <= 12_000_000,
+            let comma = source.firstIndex(of: ","), source[..<comma].hasSuffix(";base64"),
+            let bytes = Data(
+                base64Encoded: String(source[source.index(after: comma)...]), options: .ignoreUnknownCharacters),
+            let image = CGImageSourceCreateWithData(bytes as CFData, nil),
+            let thumbnail = CGImageSourceCreateThumbnailAtIndex(
+                image, 0,
+                [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 320,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                ] as CFDictionary)
+        else { return nil }
+        let output = NSMutableData()
+        guard
+            let destination = CGImageDestinationCreateWithData(
+                output as CFMutableData, UTType.jpeg.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(
+            destination, thumbnail, [kCGImageDestinationLossyCompressionQuality: 0.7] as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? output as Data : nil
+    }
+
+    private func activityKey(_ chatId: String?) -> String { chatId ?? "" }
+
+    private func touchActivityChat(_ key: String) {
+        activityOrder.removeAll { $0 == key }
+        activityOrder.append(key)
+        while activityOrder.count > Self.maximumActivityChats {
+            activityLog.removeValue(forKey: activityOrder.removeFirst())
+        }
+    }
+
+    private func updateActivity(_ chatId: String?, _ change: (inout [ActivityRow]) -> Void) {
+        let key = activityKey(chatId)
+        var rows = activityLog[key] ?? []
+        let before = rows
+        change(&rows)
+        if rows.count > Self.maximumActivityRows {
+            let dropped = Set(rows.prefix(rows.count - Self.maximumActivityRows).map(\.id))
+            rows.removeFirst(rows.count - Self.maximumActivityRows)
+            activityAliases = activityAliases.filter { !dropped.contains($0.value) }
+            approvalRows = approvalRows.filter { !dropped.contains($0.value) }
+            redispatchable.subtract(dropped)
+        }
+        guard rows != before else { return }
+        activityLog[key] = rows
+        touchActivityChat(key)
+    }
+
+    private func activityPosition(_ chatId: String?) -> Int {
+        chatId == activeChatId ? visibleTurns.count : Int.max
+    }
+
+    private func recordActivityStep(_ frame: InboundFrame) {
+        guard let step = frame.payload["step"], (step["kind"]?.stringValue ?? "tool_call") == "tool_call",
+            let stepId = step["id"]?.stringValue, !stepId.isEmpty, stepId.count <= 128,
+            let tool = step["name"]?.stringValue, !tool.isEmpty
+        else { return }
+        let chatId = frame.payload["chat_id"]?.stringValue ?? step["chat_id"]?.stringValue ?? activeChatId
+        let status = step["status"]?.stringValue ?? "in_progress"
+        let arguments = step["args_truncated"]?.stringValue ?? ""
+        let position = activityPosition(chatId)
+        updateActivity(chatId) { rows in
+            var index = rows.firstIndex { $0.id == (activityAliases[stepId] ?? stepId) }
+            if index == nil, let reuse = rows.lastIndex(where: {
+                redispatchable.contains($0.id) && $0.tool == tool && $0.arguments == arguments
+            }) {
+                activityAliases[stepId] = rows[reuse].id
+                redispatchable.remove(rows[reuse].id)
+                index = reuse
+            }
+            if index == nil {
+                rows.append(
+                    ActivityRow(
+                        id: stepId, tool: tool, action: Self.activityAction(tool),
+                        target: Self.activityTarget(arguments), approval: .none, state: .running, result: "",
+                        thumbnail: nil, position: position, arguments: arguments))
+                index = rows.count - 1
+            }
+            guard let index else { return }
+            switch status {
+            case "completed":
+                let outcome = Self.activityResult(step["result_summary"]?.stringValue)
+                if outcome.waiting {
+                    rows[index].approval = .waiting
+                    rows[index].state = .running
+                } else {
+                    rows[index].state = .completed
+                    rows[index].result = outcome.text
+                }
+            case "errored":
+                rows[index].state = .failed
+                rows[index].result = Self.activityLine(step["error_message"]?.stringValue ?? "")
+            case "cancelled", "interrupted":
+                rows[index].state = .cancelled
+                if rows[index].approval == .waiting { rows[index].approval = .none }
+            default:
+                rows[index].state = .running
+            }
+        }
+    }
+
+    private func recordActivityProgress(_ frame: InboundFrame, percent: String) {
+        guard let tool = frame.payload["tool_name"]?.stringValue, !tool.isEmpty, tool.count <= 128 else { return }
+        let message = Self.activityLine((frame.payload["message"]?.stringValue ?? "") + percent)
+        let terminal = frame.payload["terminal"]?.boolValue == true
+        let failed = frame.payload["phase"]?.stringValue == "failed"
+        let position = activityPosition(activeChatId)
+        updateActivity(activeChatId) { rows in
+            if !rows.contains(where: { $0.tool == tool && $0.state == .running }) {
+                rows.append(
+                    ActivityRow(
+                        id: "progress-\(UUID().uuidString.lowercased())", tool: tool,
+                        action: Self.activityAction(tool), target: "", approval: .none, state: .running,
+                        result: "", thumbnail: nil, position: position, arguments: ""))
+            }
+            guard let index = rows.lastIndex(where: { $0.tool == tool && $0.state == .running }) else { return }
+            if !message.isEmpty { rows[index].result = message }
+            if terminal { rows[index].state = failed ? .failed : .completed }
+        }
+    }
+
+    private func finishActivityProgress() {
+        updateActivity(activeChatId) { rows in
+            for index in rows.indices where rows[index].id.hasPrefix("progress-") && rows[index].state == .running {
+                rows[index].state = .completed
+            }
+        }
+    }
+
+    private func endRunningActivity(chatId: String?) {
+        updateActivity(chatId) { rows in
+            for index in rows.indices where rows[index].state == .running {
+                rows[index].state = .cancelled
+                if rows[index].approval == .waiting { rows[index].approval = .none }
+                redispatchable.remove(rows[index].id)
+            }
+        }
+    }
+
+    private func recordActivityCancellation(chatId: String?) {
+        endRunningActivity(chatId: chatId)
+        let position = activityPosition(chatId)
+        updateActivity(chatId) { rows in
+            guard rows.last?.id.hasPrefix("cancel-") != true else { return }
+            rows.append(
+                ActivityRow(
+                    id: "cancel-\(UUID().uuidString.lowercased())", tool: "", action: "Turn cancelled", target: "",
+                    approval: .none, state: .cancelled, result: "", thumbnail: nil, position: position,
+                    arguments: ""))
+        }
+    }
+
+    private func noteApprovalDecision(_ text: String) {
+        guard text.contains("authorize_action") || text.contains("remote_op_decision"),
+            let frame = InboundFrame.parse(text), frame.name == "ui_event",
+            ["authorize_action", "remote_op_decision"].contains(frame.payload["action"]?.stringValue ?? ""),
+            let payload = frame.payload["payload"],
+            let requestId = (payload["hitl_request_id"] ?? payload["proposal_id"])?.stringValue, !requestId.isEmpty
+        else { return }
+        let approval: ActivityRow.Approval
+        switch payload["decision"]?.stringValue {
+        case "approve", "approve_and_resume": approval = .approved
+        case "grant_task": approval = .granted
+        case "decline": approval = .denied
+        default: return
+        }
+        if decidedApprovals.count >= 512 { decidedApprovals.removeAll() }
+        decidedApprovals.insert(requestId)
+        let linked = approvalRows[requestId]
+        updateActivity(activeChatId) { rows in
+            guard
+                let index = linked.flatMap({ id in rows.firstIndex { $0.id == id } })
+                    ?? rows.lastIndex(where: { $0.approval == .waiting })
+            else { return }
+            rows[index].approval = approval
+            if approval == .denied {
+                rows[index].state = .cancelled
+            } else {
+                redispatchable.insert(rows[index].id)
+            }
+        }
+        observeActivityComponents()
+    }
+
+    private func observeActivityComponents() {
+        guard !activityObservationPaused else { return }
+        let live = transientCanvas ?? canvas
+        let pending = Self.pendingComputerApprovals(in: visibleTurns.suffix(8).flatMap(\.components) + live)
+            .filter { !decidedApprovals.contains($0.requestId) }
+        for approval in pending where approvalRows[approval.requestId] == nil { linkApproval(approval) }
+        #if os(macOS)
+            if macComputerHost.awaitingApproval == pending.isEmpty { macComputerHost.approvalWaiting(!pending.isEmpty) }
+        #endif
+        guard
+            let shot = live.first(where: {
+                $0.type == "image" && ($0.componentId ?? "").hasPrefix("au_cuview_")
+            })?.url, shot != screenThumbnailSource
+        else { return }
+        screenThumbnailSource = shot
+        if let row = activity.last, row.thumbnail == nil, !row.id.hasPrefix("cancel-") {
+            attachActivityThumbnail(shot, to: row.id, chatId: activeChatId)
+        }
+    }
+
+    private func linkApproval(_ approval: PendingApproval) {
+        if approvalRows.count >= 512 { approvalRows.removeAll() }
+        let chatId = activeChatId
+        let position = activityPosition(chatId)
+        var linked: String?
+        updateActivity(chatId) { rows in
+            let claimed = Set(approvalRows.values)
+            if let index = rows.lastIndex(where: { $0.approval == .waiting && !claimed.contains($0.id) }) {
+                linked = rows[index].id
+                if rows[index].target.isEmpty { rows[index].target = approval.summary }
+            } else {
+                let row = ActivityRow(
+                    id: "approval-\(approval.requestId)", tool: approval.tool,
+                    action: Self.activityAction(approval.tool), target: approval.summary, approval: .waiting,
+                    state: .running, result: "", thumbnail: nil, position: position, arguments: "")
+                rows.append(row)
+                linked = row.id
+            }
+        }
+        guard let linked else { return }
+        approvalRows[approval.requestId] = linked
+        if let image = approval.image { attachActivityThumbnail(image, to: linked, chatId: chatId) }
+    }
+
+    private func attachActivityThumbnail(_ source: String, to rowId: String, chatId: String?) {
+        Task.detached(priority: .utility) { [weak self] in
+            guard let data = AppModel.activityThumbnail(source) else { return }
+            await self?.setActivityThumbnail(data, rowId: rowId, chatId: chatId)
+        }
+    }
+
+    private func setActivityThumbnail(_ data: Data, rowId: String, chatId: String?) {
+        guard activityLog[activityKey(chatId)] != nil else { return }
+        updateActivity(chatId) { rows in
+            if let index = rows.firstIndex(where: { $0.id == rowId }) { rows[index].thumbnail = data }
+        }
+    }
+
+    private func clearActivity() {
+        activityLog = [:]
+        activityAliases = [:]
+        activityOrder = []
+        decidedApprovals = []
+        approvalRows = [:]
+        redispatchable = []
+        screenThumbnailSource = nil
+        #if os(macOS)
+            macComputerHost.approvalWaiting(false)
+        #endif
+    }
+
     private func isReasoning(_ c: AstralComponent) -> Bool {
         c.type.lowercased() == "collapsible" && (c.raw["title"]?.stringValue ?? "").lowercased() == "reasoning"
     }
@@ -3211,6 +3681,11 @@ final class AppModel: NSObject {
     }
 
     private func resetChatState() {
+        activityObservationPaused = true
+        defer {
+            activityObservationPaused = false
+            observeActivityComponents()
+        }
         if ["evidence", "terminal"].contains(pendingSurfaceKey) { closeSurface() }
         conversationNavigationGeneration += 1
         consoleFullscreen = false
@@ -3225,6 +3700,7 @@ final class AppModel: NSObject {
             screen = .chat
         }
         canvasCapture.clear()
+        activityLog.removeValue(forKey: activityKey(nil))
         activeChatId = nil
         voice.updateVisibleChatLocally(nil)
         turns = []
@@ -3824,12 +4300,7 @@ final class AppModel: NSObject {
         }
         var payload = payload
         if action == "attach_existing" {
-            if stageExistingAttachment(payload) {
-                let filename = payload["filename"]?.stringValue ?? "file"
-                screen = .chat
-                bannerIsError = false
-                errorBanner = "Attached \(filename) — it will be sent with your next message"
-            }
+            if stageExistingAttachment(payload) { screen = .chat }
             return
         }
         if timelineReadOnly && timelineMutations.contains(action) { return }
@@ -4068,6 +4539,7 @@ final class AppModel: NSObject {
     }
 
     private func rawSend(_ text: String) {
+        noteApprovalDecision(text)
         let computerReview = ComputerHostOutbound.isReviewDecision(text)
         #if os(macOS)
             let localComputerSession = computerReview ? macComputerHost.recordApprovalInteraction() : nil
@@ -4771,7 +5243,7 @@ final class AppModel: NSObject {
     var connectionStripLabel: String? {
         guard signedIn, !connected else { return nil }
         if everConnected { return "Reconnecting…" }
-        return initialConnectionFailed ? "Couldn't connect. Check your connection and retry." : "Connecting…"
+        return initialConnectionFailed ? "Couldn't connect." : "Connecting…"
     }
 
     func retryConnection() {

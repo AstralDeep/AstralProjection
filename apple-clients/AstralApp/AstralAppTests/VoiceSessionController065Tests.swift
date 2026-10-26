@@ -745,9 +745,8 @@ final class VoiceSessionController065Tests: XCTestCase {
         XCTAssertEqual(controller.terminalNotice?.title, "Request did not start.")
         XCTAssertEqual(
             controller.terminalNotice?.serverMessage, "Capacity is temporarily full.")
-        XCTAssertEqual(
-            controller.terminalNotice?.guidance,
-            "Please say it again when you are ready.")
+        XCTAssertNotNil(controller.terminalNotice)
+        XCTAssertNil(controller.terminalNotice?.guidance)
         let settledSendCount = sent.count
         try await Task.sleep(nanoseconds: 30_000_000)
         XCTAssertEqual(

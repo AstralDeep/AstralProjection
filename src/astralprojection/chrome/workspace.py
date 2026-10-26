@@ -58,7 +58,6 @@ def _credential_fields() -> list[dict[str, object]]:
             "private_key",
             "Private key (paste the full PEM)",
             "textarea",
-            help_text="Used only when credential type is ssh_key.",
             visible_when={"field": "cred_type", "equals": "ssh_key", "default": "ssh_key"},
         ),
         field(
@@ -71,7 +70,6 @@ def _credential_fields() -> list[dict[str, object]]:
             "password",
             "Password",
             "password",
-            help_text="Used only when credential type is password.",
             visible_when={"field": "cred_type", "equals": "password", "default": "ssh_key"},
         ),
     ]
@@ -98,17 +96,8 @@ def build_remote_machines_view(
         )
     if error:
         return unavailable_view("remote_machines", "Remote machines", error)
-    components: list[ComponentView] = [
-        text(
-            "Register private machines and clusters. Saving performs a real connection "
-            "probe and reports the result.",
-            "caption",
-        )
-    ]
-    rows = _rows(machines)
-    if not rows:
-        components.append(alert("No machines yet — add one below.", "info"))
-    for machine in rows:
+    components: list[ComponentView] = []
+    for machine in _rows(machines):
         machine_id = clean_text(machine.get("machine_id") or machine.get("id"))
         verdict = clean_text(machine.get("last_verdict") or "not yet probed")
         actions: list[ComponentView] = [
@@ -163,8 +152,8 @@ def build_remote_machines_view(
     components.append(
         form(
             [
-                field("label", "Label", help_text="A short name, for example my-dgx."),
-                field("address", "Address", help_text="Hostname or IP address."),
+                field("label", "Label"),
+                field("address", "Address"),
                 field("port", "Port", "number", default=22),
                 field("username", "Username"),
                 field(
@@ -203,17 +192,8 @@ def build_feature_flags_view(
         return denied_view("feature_flags", "Feature flags", "Feature-flag access denied.")
     if error:
         return unavailable_view("feature_flags", "Feature flags", error)
-    components: list[ComponentView] = [
-        alert(
-            "Feature policy is read-only here. Changes require the authorized host "
-            "configuration path.",
-            "info",
-        )
-    ]
-    rows = _rows(flags)
-    if not rows:
-        components.append(text("No feature flags were supplied.", "caption"))
-    for item in rows:
+    components: list[ComponentView] = []
+    for item in _rows(flags):
         components.append(
             card(
                 item.get("label") or item.get("key") or "Feature",
@@ -255,8 +235,6 @@ def build_workspace_view(
         if isinstance(raw, Mapping) and raw.get("type"):
             properties = {key: value for key, value in raw.items() if key != "type"}
             components.append(ComponentView(clean_text(raw["type"]).lower(), properties))
-    if not components:
-        components.append(alert("This workspace has no visible components yet.", "info"))
     if state.get("chat_id"):
         components.append(
             button(
@@ -283,10 +261,7 @@ def build_history_view(
     if error:
         return unavailable_view("history", "Conversation history", error)
     components: list[ComponentView] = []
-    rows = _rows(conversations)
-    if not rows:
-        components.append(alert("No conversations yet.", "info"))
-    for conversation in rows:
+    for conversation in _rows(conversations):
         chat_id = clean_text(conversation.get("chat_id") or conversation.get("id"))
         body: list[ComponentView] = [
             text(conversation.get("updated_at") or "", "caption"),
@@ -330,17 +305,10 @@ def build_timeline_view(
         return _build_snapshot_view(selected, safe_chat_id, theme=theme, layout=layout)
     rows = _rows(snapshots)
     if not rows:
-        return build_view(
-            "workspace_timeline",
-            "Workspace timeline",
-            [alert("No workspace history yet for this chat.", "info")],
-            theme=theme,
-            layout=layout,
-        )
+        return build_view("workspace_timeline", "Workspace timeline", [], theme=theme, layout=layout)
     safe_page = max(0, int(page))
     safe_total = max(len(rows), int(total))
     components: list[ComponentView] = [
-        text("Viewing the past never changes the live workspace.", "caption"),
         button(
             "Back to live",
             "chrome_workspace_timeline_live",
@@ -523,9 +491,7 @@ def build_saved_results_view(
     mode = state.get("mode") or "list"
     if mode not in ("list", "detail"):
         return unavailable_view(_SAVED_SURFACE, _SAVED_TITLE, "This saved-results view is unavailable.")
-    components: list[ComponentView] = [
-        text("Saved results are exact copies you approved. Viewing a result never saves it.", "caption")
-    ]
+    components: list[ComponentView] = []
     if mode == "detail":
         receipt = state.get("receipt")
         receipt = receipt if isinstance(receipt, Mapping) else {}
@@ -544,8 +510,6 @@ def build_saved_results_view(
             body.append(button("View saved result", "chrome_open", {
                 "surface": _SAVED_SURFACE, "params": {"mode": "detail", "publication_id": publication_id}}))
         components.append(card(_scalar(receipt.get("operation_title"), "Saved result"), body))
-    if not rows:
-        components.append(alert("No saved results yet. Save a result from its task's result view.", "info"))
     cursor = _scalar(state.get("next_cursor"))
     if cursor:
         components.append(_open_saved("More saved results", after=cursor))

@@ -229,8 +229,6 @@ def _detail(row: Mapping, execution_enabled: bool) -> list[ComponentView]:
         result.append(card(_display(item.get("title"), "Activity"), [
             text(_display(item.get("summary"))), text(_display(item.get("created_at")), "caption"),
         ]))
-    if not activity:
-        result.append(text("No activity yet. Unchanged checks update Last checked quietly.", "caption"))
     cursor = _display(row.get("activity_cursor"))
     if cursor:
         result.append(_open("More activity", assignment_id=row["assignment_id"], activity_cursor=cursor))
@@ -259,7 +257,7 @@ def _form(state: Mapping, row: Mapping, mode: str) -> list[ComponentView]:
         if name in seen or not _LIMIT_NAME.fullmatch(name) or (value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 0)):
             return [alert("Resource limit fields are invalid. Reload before approving.", "warning")]
         seen.add(name)
-        limit_fields.append(field(f"limits.{name}", _display(item.get("label"), name), "number", default=value, help_text=_display(item.get("help"))))
+        limit_fields.append(field(f"limits.{name}", _display(item.get("label"), name), "number", default=value))
     fields = [
         field("name", "Name", default=_display(definition.get("name"))),
         field("instructions", "Standing instructions", "textarea", default=_display(definition.get("instructions"))),
@@ -267,8 +265,7 @@ def _form(state: Mapping, row: Mapping, mode: str) -> list[ComponentView]:
         field("source_key", "Source reader", "select", options=sources, default=_display(definition.get("source_key")) or sources[0]),
         field("source_url", "Source URL", default=_display(definition.get("source_url"))),
         *([field("source_arguments", "Connected reader selection (JSON)", "textarea",
-                 default=_display(definition.get("source_arguments")),
-                 help_text="For a connected reader; the public page uses Source URL.")]
+                 default=_display(definition.get("source_arguments")))]
           if state.get("registered_reader_enabled") else []),
         field("linked_document_urls", "Reviewed linked document URLs (optional, one per line)", "textarea",
               default=_display(definition.get("linked_document_urls")),
@@ -325,7 +322,7 @@ def build_assignments_view(
     elif mode == "detail":
         components = _detail(row, state.get("execution_enabled") is True)
     else:
-        components = [text("Standing instructions continue between sessions. Unchanged checks stay quiet.", "caption")]
+        components = []
         if _allowed(state, "chrome_assignment_create"):
             components.append(_open("Create ongoing agent", assignment_mode="create"))
         rows = _rows(state.get("assignments"), 50)
@@ -335,8 +332,6 @@ def build_assignments_view(
                 body.append(_open("View assignment", assignment_id=item["assignment_id"]))
             body.extend(_controls(item, state.get("execution_enabled") is True))
             components.append(card(_display(_definition(item).get("name"), "Ongoing agent"), body))
-        if not rows:
-            components.append(alert("No ongoing agents yet.", "info"))
         cursor = _display(state.get("next_cursor"))
         if cursor:
             components.append(_open("More ongoing agents", assignment_cursor=cursor))
@@ -463,8 +458,6 @@ def _job_detail(row: Mapping, execution_enabled: bool) -> list[ComponentView]:
             badge(_display(run.get("outcome"), "unknown")),
             text(_display(run.get("summary"), "No summary recorded.")),
         ]))
-    if not runs:
-        result.append(text("No runs yet. Unchanged observations do not spend the run allowance.", "caption"))
     result.append(_open_recurring("Back to recurring work"))
     return result
 
@@ -497,13 +490,11 @@ def build_recurring_work_view(
                            ("Run allowance", _allowance(item))]),
                 *_observation(item, wrist=True),
             ]))
-        if not rows:
-            components.append(alert("No recurring work yet.", "info"))
         components.append(alert("To pause, resume or stop recurring work, continue in AstralDeep on your phone or computer.", "info"))
     elif mode == "detail":
         components = _job_detail(row, execution_enabled)
     else:
-        components = [text("Recurring work runs on its schedule and checks its source. Unchanged observations stay quiet and spend no run allowance.", "caption")]
+        components = []
         rows = _rows(state.get("jobs"), 50)
         for item in rows:
             body = _job_summary(item)
@@ -511,8 +502,6 @@ def build_recurring_work_view(
                 body.append(_open_recurring("View recurring work", job_id=item["job_id"]))
             body.extend(_job_controls(item, execution_enabled))
             components.append(card(_display(item.get("name"), "Recurring work"), body))
-        if not rows:
-            components.append(alert("No recurring work yet.", "info"))
         cursor = _display(state.get("next_cursor"))
         if cursor:
             components.append(_open_recurring("More recurring work", job_cursor=cursor))

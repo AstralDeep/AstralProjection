@@ -43,59 +43,70 @@
 
     struct MacComputerControls: View {
         @Bindable var host: MacComputerHost
+        @Environment(ThemeStore.self) private var theme: ThemeStore?
+        private var errorColor: Color { (theme?.palette ?? .graphite).error }
         var body: some View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     Text("Computer access on this Mac").font(.title2.bold())
                     Text(host.statusLabel).accessibilityIdentifier("mac-computer-status")
                     if let error = host.lastError {
-                        Text(error).foregroundStyle(.red).accessibilityIdentifier("mac-computer-error")
+                        Text(error.leadSentence).foregroundStyle(errorColor).accessibilityIdentifier("mac-computer-error")
                     }
-                    Text(host.permissionDiagnostic).font(.caption).textSelection(.enabled)
-                        .accessibilityIdentifier("mac-computer-permission-facts")
-                    Text(
-                        "Astral can observe this desktop, operate applications and browsers, and use the clipboard during an approved session. Commands use the visible Terminal and require server approval. You complete sign-in and system permission dialogs yourself."
-                    )
-                    if !host.available {
-                        Text(
-                            "Install the direct-download Mac build to host computer tasks. This distribution remains a controller."
-                        )
-                    }
-                    permission(
-                        "Accessibility", allowed: host.accessibilityAllowed, command: .permission(.accessibility))
-                    permission("Screen Recording", allowed: host.screenAllowed, command: .permission(.screen))
-                    permission("Input Monitoring", allowed: host.monitoringAllowed, command: .permission(.monitoring))
-                    Button("Refresh permissions", action: MacComputerControlCommand.refreshPermissions.action(on: host))
-                    Toggle(
-                        "Allow computer tasks on this Mac", isOn: MacComputerControlCommand.enabledBinding(on: host)
-                    )
-                    .disabled(!host.available).accessibilityIdentifier("mac-computer-consent")
-                    Text("Saved for this account and server. Locking pauses access and ends active tasks.")
-                        .font(.caption)
-                    if host.consentEnabled && !host.enabled {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Permissions").font(.headline).accessibilityAddTraits(.isHeader)
+                        Text("Astral sees and operates this Mac only during sessions you approve.").font(.caption)
+                        permission(
+                            "Accessibility", allowed: host.accessibilityAllowed, command: .permission(.accessibility))
+                        permission("Screen Recording", allowed: host.screenAllowed, command: .permission(.screen))
+                        permission(
+                            "Input Monitoring", allowed: host.monitoringAllowed, command: .permission(.monitoring))
                         Button(
-                            "Resume computer access",
-                            action: MacComputerControlCommand.setEnabled(true).action(on: host)
+                            "Refresh permissions", action: MacComputerControlCommand.refreshPermissions.action(on: host)
                         )
-                        .accessibilityIdentifier("mac-computer-resume-access")
-                    }
-                    Divider()
-                    Text("Selected workspaces").font(.headline)
-                    Text(
-                        "File tools can access only these folders. Writes and deletes also require the server's action approval. An approved Terminal command has broader computer access."
-                    )
-                    ForEach(host.files.roots, id: \.self) { path in
-                        HStack {
-                            Text(path).textSelection(.enabled)
-                            Spacer()
-                            Button("Remove", action: MacComputerControlCommand.removeWorkspace(path).action(on: host))
+                        .disabled(!host.available)
+                        Toggle(
+                            "Allow computer tasks on this Mac",
+                            isOn: MacComputerControlCommand.enabledBinding(on: host)
+                        )
+                        .disabled(!host.available).accessibilityIdentifier("mac-computer-consent")
+                        if let browser = host.browser as? MacBrowserDriver {
+                            Toggle(
+                                "Browser pane", isOn: Binding(get: { browser.paneEnabled }, set: browser.setPaneEnabled)
+                            )
+                            .disabled(!host.available || !browser.accountBound)
+                            .accessibilityIdentifier("mac-computer-browser-pane")
+                        }
+                        if host.consentEnabled && !host.enabled {
+                            Button(
+                                "Resume computer access",
+                                action: MacComputerControlCommand.setEnabled(true).action(on: host)
+                            )
+                            .accessibilityIdentifier("mac-computer-resume-access")
                         }
                     }
-                    Button(
-                        "Choose workspace folders…", action: MacComputerControlCommand.chooseWorkspaces.action(on: host)
-                    )
-                    .disabled(!host.available || !host.ownerBound)
-                    if let error = host.files.errorMessage { Text(error).foregroundStyle(.red) }
+                    Divider()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Workspaces").font(.headline).accessibilityAddTraits(.isHeader)
+                        Text("File tools reach only these folders.").font(.caption)
+                        ForEach(host.files.roots, id: \.self) { path in
+                            HStack {
+                                Text(path).textSelection(.enabled)
+                                Spacer()
+                                Button(
+                                    "Remove", action: MacComputerControlCommand.removeWorkspace(path).action(on: host))
+                            }
+                        }
+                        Button(
+                            "Choose workspace folders…",
+                            action: MacComputerControlCommand.chooseWorkspaces.action(on: host)
+                        )
+                        .disabled(!host.available || !host.ownerBound)
+                        if let error = host.files.errorMessage {
+                            Text(error.leadSentence).foregroundStyle(errorColor)
+                                .accessibilityIdentifier("mac-computer-workspace-error")
+                        }
+                    }
                     if host.session != nil { MacComputerSessionControls(host: host) }
                     HStack {
                         Spacer()

@@ -44,16 +44,15 @@ struct ComponentChrome: View {
                                             "Submitting component action")
                                     }
                                     Text(descriptor.icon).accessibilityHidden(true)
-                                    Text(descriptor.label)
                                 }
-                                .font(ConsoleTypography.sans(10, relativeTo: .caption2))
-                                .foregroundStyle(theme.palette.muted.opacity(0.7))
-                                .frame(minHeight: 44)
+                                .font(ConsoleTypography.sans(12, relativeTo: .caption))
+                                .foregroundStyle(theme.palette.muted)
+                                .frame(minWidth: 28, minHeight: 44)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
                             .disabled(model.componentActionInFlight(context))
-                            .help(descriptor.title)
+                            .help(descriptor.label)
                             .accessibilityLabel(descriptor.label)
                             .accessibilityHint(descriptor.title)
                             .accessibilityIdentifier(
@@ -123,9 +122,6 @@ struct RefineSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(target.title.isEmpty ? "Refine this component" : "Refine \(target.title)")
                 .font(ConsoleTypography.headline).foregroundStyle(p.text)
-            Text("Describe the change. The component updates in place — earlier versions stay restorable.")
-                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                .fixedSize(horizontal: false, vertical: true)
             TextField("e.g. sort by total, highest first", text: $instruction, axis: .vertical)
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
@@ -205,10 +201,6 @@ private struct ComponentHistorySheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     let versions = ComponentChromeModel.versions(from: target.context.component.raw["versions"])
-                    if versions.isEmpty {
-                        Text(ComponentChromeModel.emptyHistory)
-                            .font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
-                    }
                     ForEach(versions) { version in
                         Button {
                             guard model.componentActionIsCurrent(target.context) else {
