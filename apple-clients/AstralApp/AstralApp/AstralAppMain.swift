@@ -49,7 +49,7 @@ struct AstralApp: App {
             if let updateRequirement {
                 UpdateRequiredView(requirement: updateRequirement, coordinator: updates)
             } else {
-                RootView()
+                RootView().environment(\.astralUpdateCoordinator, updates)
             }
         #else
             RootView()
