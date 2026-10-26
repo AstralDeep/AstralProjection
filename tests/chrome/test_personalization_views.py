@@ -309,8 +309,8 @@ def test_personalization_shell_routes_tabs_and_defaults_invalid_tab() -> None:
 def test_graphite_is_the_first_preset_and_the_default_theme_name() -> None:
     assert list(THEME_PRESETS)[0] == "graphite"
     assert dict(THEME_PRESETS["graphite"]) == {
-        "bg": "#0B0B0D",
-        "surface": "#151518",
+        "bg": "#121214",
+        "surface": "#1B1B1F",
         "primary": "#7C3AED",
         "secondary": "#6E6E78",
         "text": "#ECECEF",

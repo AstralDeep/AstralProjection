@@ -96,8 +96,8 @@ def test_every_theme_channel_is_still_defined(token: str) -> None:
 
 
 GRAPHITE_CHANNELS = {
-    "--astral-bg": "11 11 13",
-    "--astral-surface": "21 21 24",
+    "--astral-bg": "18 18 20",
+    "--astral-surface": "27 27 31",
     "--astral-primary": "124 58 237",
     "--astral-secondary": "110 110 120",
     "--astral-text": "236 236 239",

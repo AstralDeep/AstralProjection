@@ -343,7 +343,7 @@ final class SettingsControlTests: XCTestCase {
         let graphite = AstralPalette.graphite
         XCTAssertEqual(
             [graphite.bg, graphite.surface, graphite.surface2, graphite.primary, graphite.secondary].map(rgb),
-            [[11, 11, 13], [21, 21, 24], [29, 29, 33], [124, 58, 237], [110, 110, 120]])
+            [[18, 18, 20], [27, 27, 31], [35, 35, 40], [124, 58, 237], [110, 110, 120]])
         XCTAssertEqual(
             [graphite.accent, graphite.text, graphite.muted].map(rgb),
             [[167, 139, 250], [236, 236, 239], [140, 140, 149]])
@@ -406,7 +406,7 @@ final class SettingsControlTests: XCTestCase {
                 "preferences": .object([
                     "theme": .object([
                         "preset": .string("graphite"),
-                        "colors": .object(["bg": .string("#0B0B0D"), "surface": .string("#151518")]),
+                        "colors": .object(["bg": .string("#121214"), "surface": .string("#1B1B1F")]),
                     ])
                 ])
             ]))

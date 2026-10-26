@@ -27,11 +27,11 @@ object AstralColors {
     val Secondary = Color(0xFF6E6E78)
     val Accent = Color(0xFFA78BFA)
     val Cyan = Color(0xFF06B6D4)
-    val Bg = Color(0xFF0B0B0D)
-    val BgElevated = Color(0xFF111115)
-    val Surface = Color(0xFF151518)
-    val SurfaceVariant = Color(0xFF1D1D21)
-    val Border = Color(0xFF28282B)
+    val Bg = Color(0xFF121214)
+    val BgElevated = Color(0xFF18181C)
+    val Surface = Color(0xFF1B1B1F)
+    val SurfaceVariant = Color(0xFF232328)
+    val Border = Color(0xFF2D2D31)
     val Text = Color(0xFFECECEF)
     val Muted = Color(0xFF8C8C95)
 
@@ -126,7 +126,7 @@ data class ThemePalette(
 
 val THEME_PRESETS: Map<String, ThemePalette> =
     mapOf(
-        "graphite" to ThemePalette("#0B0B0D", "#151518", "#7C3AED", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
+        "graphite" to ThemePalette("#121214", "#1B1B1F", "#7C3AED", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
         "midnight" to ThemePalette("#0F1221", "#1A1E2E", "#6366F1", "#8B5CF6", "#F3F4F6", "#9CA3AF", "#06B6D4"),
         "daylight" to ThemePalette("#F8FAFC", "#FFFFFF", "#4F46E5", "#7C3AED", "#1E293B", "#64748B", "#0891B2"),
         "ocean" to ThemePalette("#0C1222", "#132038", "#0EA5E9", "#06B6D4", "#E2E8F0", "#94A3B8", "#2DD4BF"),

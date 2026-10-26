@@ -7,8 +7,8 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#0B0B0D",
-  "theme_color": "#0B0B0D",
+  "background_color": "#121214",
+  "theme_color": "#121214",
   "icons": [{
     "src": "/static/img/astra-fav.png",
     "sizes": "180x180",

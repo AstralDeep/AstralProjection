@@ -14,7 +14,7 @@ from PySide6.QtGui import QFont, QFontDatabase
 
 # Must byte-match webrender's PRESETS (cross-client parity)
 PRESETS = {
-    "graphite": {"bg": "#0B0B0D", "surface": "#151518", "primary": "#7C3AED",
+    "graphite": {"bg": "#121214", "surface": "#1B1B1F", "primary": "#7C3AED",
                  "secondary": "#6E6E78", "text": "#ECECEF", "muted": "#8C8C95",
                  "accent": "#A78BFA"},
     "midnight": {"bg": "#0F1221", "surface": "#1A1E2E", "primary": "#6366F1",

@@ -50,7 +50,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
 
     func testCardUsesWebTranslucencyWithoutPaintingShadowInsideInBothThemes() throws {
         for (preset, expected) in [
-            ("graphite", [16, 16, 18]), ("midnight", [20, 23, 39]), ("daylight", [251, 252, 253]),
+            ("graphite", [22, 22, 25]), ("midnight", [20, 23, 39]), ("daylight", [251, 252, 253]),
         ] {
             let image = try render(#"{"type":"card","content":[]}"#, preset: preset)
             assertRGB(try rgb(image, x: 180, y: image.height / 2), expected)
@@ -63,7 +63,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
 
     func testCodeUsesPaletteSuccessOnSurface2AndMarkdownFencesUseSurface2() throws {
         let code = try render(#"{"type":"code","content":"ok"}"#)
-        assertRGB(try rgb(code, x: 300, y: code.height / 2), [29, 29, 33])
+        assertRGB(try rgb(code, x: 300, y: code.height / 2), [35, 35, 40])
         #if os(macOS)
             let model = AppModel(tokenStore: InMemoryTokenStore())
             let theme = ThemeStore()
@@ -98,7 +98,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
             XCTAssertGreaterThan(brightest[1], brightest[2] + 20)
         #endif
         let fence = try render(#"{"type":"text","variant":"markdown","content":"```\nok\n```"}"#)
-        assertRGB(try rgb(fence, x: 300, y: fence.height / 2), [29, 29, 33])
+        assertRGB(try rgb(fence, x: 300, y: fence.height / 2), [35, 35, 40])
         let midnight = try render(#"{"type":"code","content":"ok"}"#, preset: "midnight")
         assertRGB(try rgb(midnight, x: 300, y: midnight.height / 2), [30, 35, 56])
     }
@@ -174,7 +174,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(image.height, 44)
             XCTAssertGreaterThanOrEqual(image.width, 44)
             widths.append(image.width)
-            assertRGB(try rgb(image, x: 8, y: image.height / 2), [21, 21, 24])
+            assertRGB(try rgb(image, x: 8, y: image.height / 2), [27, 27, 31])
         }
         XCTAssertGreaterThan(widths[1], widths[0] + 40)
     }

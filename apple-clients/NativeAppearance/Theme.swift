@@ -5,9 +5,9 @@ import AstralCore
 import SwiftUI
 
 struct AstralPalette: Equatable {
-    var bg = Color(hex: 0x0B0B0D)
-    var surface = Color(hex: 0x151518)
-    var surface2 = Color(hex: 0x1D1D21)
+    var bg = Color(hex: 0x121214)
+    var surface = Color(hex: 0x1B1B1F)
+    var surface2 = Color(hex: 0x232328)
     var border = Color.white.opacity(0.08)
     var primary = Color(hex: 0x7C3AED)
     var secondary = Color(hex: 0x6E6E78)

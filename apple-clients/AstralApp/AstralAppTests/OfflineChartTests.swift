@@ -32,12 +32,12 @@ final class OfflineChartTests: XCTestCase {
 
     func testAppearanceInjectsThePaletteSeriesBesideTheDocumentColors() throws {
         let appearance = OfflineChartDocument.Appearance(
-            background: 0x0B0B0D, text: 0xECECEF, muted: 0x8C8C95, primary: 0x7C3AED, secondary: 0x6E6E78,
+            background: 0x121214, text: 0xECECEF, muted: 0x8C8C95, primary: 0x7C3AED, secondary: 0x6E6E78,
             accent: 0xA78BFA)
         XCTAssertTrue(
             appearance.style.contains(
                 ":root{--astral-chart-primary:#7C3AED;--astral-chart-secondary:#6E6E78;--astral-chart-accent:#A78BFA}"))
-        XCTAssertTrue(appearance.style.contains("html,body{background:#0B0B0D;color:#ECECEF}#status{color:#8C8C95}"))
+        XCTAssertTrue(appearance.style.contains("html,body{background:#121214;color:#ECECEF}#status{color:#8C8C95}"))
         let chart = try component(#"{"type":"bar_chart","labels":["A"],"datasets":[{"data":[1]}]}"#)
         let html = try OfflineChartDocument.html(component: chart, viewportWidth: 800, appearance: appearance)
         XCTAssertTrue(html.contains("--astral-chart-accent:#A78BFA}html,body"))
@@ -264,7 +264,7 @@ final class OfflineChartTests: XCTestCase {
 
         func testMacChartPixelsMatchDirectAndNestedSurfacesInBothThemes() async throws {
             for (preset, expected) in [
-                ("graphite", [[16, 16, 18], [18, 18, 21], [19, 19, 22]]),
+                ("graphite", [[22, 22, 25], [24, 24, 28], [26, 26, 29]]),
                 ("midnight", [[20, 23, 39], [23, 26, 42], [24, 28, 44]]),
                 ("daylight", [[251, 252, 253], [253, 253, 254], [254, 254, 254]]),
             ] {
@@ -300,7 +300,7 @@ final class OfflineChartTests: XCTestCase {
             }
             let view = try await chartView(in: window)
             _ = try await waitForState(view, expected: "ready")
-            try await assertBackdrop(view, rgb: [18, 18, 21], name: "mac-chart-before-theme-change")
+            try await assertBackdrop(view, rgb: [24, 24, 28], name: "mac-chart-before-theme-change")
             theme.apply(preset: "daylight")
             for _ in 0..<100 {
                 let background = try? await view.evaluateJavaScript("getComputedStyle(document.body).backgroundColor")
@@ -356,7 +356,7 @@ final class OfflineChartTests: XCTestCase {
 
         func testMacTranscriptChartsMatchOpaqueAssistantAndTintedUserBubbles() async throws {
             for (preset, expected) in [
-                ("graphite", [[25, 25, 29], [28, 21, 43]]),
+                ("graphite", [[31, 31, 36], [34, 26, 49]]),
                 ("midnight", [[28, 33, 52], [29, 33, 62]]),
                 ("daylight", [[246, 247, 250], [233, 232, 251]]),
             ] {

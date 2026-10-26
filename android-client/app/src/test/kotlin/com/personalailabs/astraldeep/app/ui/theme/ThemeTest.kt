@@ -27,7 +27,7 @@ class ThemeTest {
     fun graphite_leads_the_presets_and_midnight_keeps_its_values() {
         assertEquals("graphite", THEME_PRESETS.keys.first())
         assertEquals(
-            ThemePalette("#0B0B0D", "#151518", "#7C3AED", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
+            ThemePalette("#121214", "#1B1B1F", "#7C3AED", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
             THEME_PRESETS["graphite"],
         )
         assertEquals(
@@ -149,8 +149,8 @@ class ThemeTest {
         assertEquals(hexToColor("#7C3AED"), scheme.primary)
         assertEquals(hexToColor("#6E6E78"), scheme.secondary)
         assertEquals(hexToColor("#A78BFA"), scheme.tertiary)
-        assertEquals(hexToColor("#0B0B0D"), scheme.background)
-        assertEquals(hexToColor("#151518"), scheme.surface)
+        assertEquals(hexToColor("#121214"), scheme.background)
+        assertEquals(hexToColor("#1B1B1F"), scheme.surface)
         assertEquals(hexToColor("#ECECEF"), scheme.onSurface)
         assertEquals(hexToColor("#8C8C95"), scheme.onSurfaceVariant)
     }

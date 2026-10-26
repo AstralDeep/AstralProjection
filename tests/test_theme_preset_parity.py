@@ -23,8 +23,8 @@ APPLE = ROOT / "apple-clients/NativeAppearance/Theme.swift"
 Presets = dict[str, dict[str, str]]
 
 GRAPHITE = {
-    "bg": "#0B0B0D",
-    "surface": "#151518",
+    "bg": "#121214",
+    "surface": "#1B1B1F",
     "primary": "#7C3AED",
     "secondary": "#6E6E78",
     "text": "#ECECEF",
