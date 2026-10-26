@@ -6,7 +6,7 @@
 
     struct UpdateStatusChip: View {
         @ObservedObject var coordinator: UpdateCoordinator
-        @Environment(ThemeStore.self) private var theme
+        @Environment(ThemeStore.self) private var themeStore: ThemeStore?
 
         static func title(for status: UpdateStatus) -> String {
             switch status {
@@ -22,15 +22,17 @@
             }
         }
 
+        private var palette: AstralPalette { themeStore?.palette ?? .graphite }
+
         var body: some View {
             if let status = coordinator.status {
-                let tint = status == .restartPending ? theme.palette.primary : theme.palette.warning
+                let tint = status == .restartPending ? palette.primary : palette.warning
                 Button {
                     coordinator.settingsPresented = true
                 } label: {
                     Label(Self.title(for: status), systemImage: Self.symbol(for: status))
                         .font(.caption)
-                        .foregroundStyle(theme.palette.text)
+                        .foregroundStyle(palette.text)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 4)
                         .background(Capsule().fill(tint.opacity(0.18)))

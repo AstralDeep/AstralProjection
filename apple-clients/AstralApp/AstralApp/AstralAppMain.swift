@@ -172,6 +172,8 @@ struct AstralApp: App {
                 #if os(macOS)
                     .sheet(isPresented: $updates.settingsPresented) {
                         UpdateSettingsSheet(coordinator: updates)
+                            .environment(model.themeStore)
+                            .tint(model.themeStore.palette.primary)
                     }
                     .frame(minWidth: 320, minHeight: 480)
                 #endif

@@ -18,12 +18,14 @@
 
     struct UpdateSettingsSheet: View {
         @ObservedObject var coordinator: UpdateCoordinator
-        @Environment(ThemeStore.self) private var theme
+        @Environment(ThemeStore.self) private var themeStore: ThemeStore?
         @Environment(\.dismiss) private var dismiss
 
         static func lastCheckText(_ date: Date?) -> String {
             date.map { $0.formatted(date: .abbreviated, time: .shortened) } ?? "Never"
         }
+
+        private var palette: AstralPalette { themeStore?.palette ?? .graphite }
 
         var body: some View {
             VStack(alignment: .leading, spacing: 14) {
@@ -44,9 +46,9 @@
                 LabeledContent("Last checked", value: Self.lastCheckText(coordinator.lastCheck))
                 if let status = coordinator.status {
                     Label(UpdateStatusChip.title(for: status), systemImage: UpdateStatusChip.symbol(for: status))
-                        .foregroundStyle(theme.palette.warning)
+                        .foregroundStyle(palette.warning)
                     if case .failed(let reason) = status {
-                        Text(reason).font(.caption).foregroundStyle(theme.palette.muted)
+                        Text(reason).font(.caption).foregroundStyle(palette.muted)
                     }
                 }
                 HStack {
@@ -64,26 +66,28 @@
     struct UpdateRequiredView: View {
         let requirement: UpdateRequirement
         @ObservedObject var coordinator: UpdateCoordinator
-        @Environment(ThemeStore.self) private var theme
+        @Environment(ThemeStore.self) private var themeStore: ThemeStore?
+
+        private var palette: AstralPalette { themeStore?.palette ?? .graphite }
 
         var body: some View {
             VStack(spacing: 14) {
-                Image(systemName: "arrow.down.circle").font(.system(size: 40)).foregroundStyle(theme.palette.primary)
-                Text(requirement.message).font(.title3.weight(.semibold)).foregroundStyle(theme.palette.text)
+                Image(systemName: "arrow.down.circle").font(.system(size: 40)).foregroundStyle(palette.primary)
+                Text(requirement.message).font(.title3.weight(.semibold)).foregroundStyle(palette.text)
                 Text("\(UpdateCoordinator.installedVersion()), build \(requirement.minimumBuild) or later required")
-                    .font(.callout).foregroundStyle(theme.palette.muted)
+                    .font(.callout).foregroundStyle(palette.muted)
                 Button("Check for Updates") { coordinator.checkForUpdates() }
                     .buttonStyle(.borderedProminent)
                     .keyboardShortcut(.defaultAction)
                     .disabled(!coordinator.isEnabled || !coordinator.canCheckForUpdates)
                 if let reason = coordinator.lastError {
-                    Text(reason).font(.caption).foregroundStyle(theme.palette.warning)
+                    Text(reason).font(.caption).foregroundStyle(palette.warning)
                 }
             }
             .multilineTextAlignment(.center)
             .padding(32)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(theme.palette.bg)
+            .background(palette.bg)
             .accessibilityElement(children: .contain)
         }
     }
