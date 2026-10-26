@@ -50,7 +50,7 @@ final class WorkspaceExportPipeline088Tests: XCTestCase {
                     #"{"version":2,"topbar":[{"key":"export","kind":"workspace_action","label":"Export page","icon":"download","operation":"export_canvas","context":"live_canvas"}]}"#
                         .utf8)))
         model.canvasCapture.setWindow(CGSize(width: 320, height: 700))
-        model.canvasCapture.setCanvas(CGSize(width: 296, height: 480), palette: .midnight)
+        model.canvasCapture.setCanvas(CGSize(width: 296, height: 480), palette: .graphite)
         do {
             try await body(model, server)
             await model.signOut(revokeRemote: false)

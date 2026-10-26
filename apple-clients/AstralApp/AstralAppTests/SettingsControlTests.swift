@@ -331,11 +331,108 @@ final class SettingsControlTests: XCTestCase {
         XCTAssertEqual(theme.colorScheme, .dark)
     }
 
+    private func rgb(_ color: Color) -> [Int] {
+        let resolved = color.resolve(in: EnvironmentValues())
+        return [resolved.red, resolved.green, resolved.blue].map { Int(($0 * 255).rounded()) }
+    }
+
+    func testGraphiteIsTheBakedDefaultAndEveryPresetOwnsItsSurface2() {
+        let theme = ThemeStore()
+        XCTAssertEqual(theme.palette, .graphite)
+        XCTAssertEqual(theme.colorScheme, .dark)
+        let graphite = AstralPalette.graphite
+        XCTAssertEqual(
+            [graphite.bg, graphite.surface, graphite.surface2, graphite.primary, graphite.secondary].map(rgb),
+            [[11, 11, 13], [21, 21, 24], [29, 29, 33], [124, 58, 237], [110, 110, 120]])
+        XCTAssertEqual(
+            [graphite.accent, graphite.text, graphite.muted].map(rgb),
+            [[167, 139, 250], [236, 236, 239], [140, 140, 149]])
+        XCTAssertEqual(
+            [graphite.success, graphite.warning, graphite.error, graphite.info].map(rgb),
+            [[94, 194, 143], [212, 169, 74], [224, 108, 108], [154, 140, 242]])
+        XCTAssertEqual(graphite.border, Color.white.opacity(0.08))
+        theme.apply(preset: "midnight")
+        XCTAssertEqual(theme.palette, .midnight)
+        XCTAssertEqual(
+            [theme.palette.bg, theme.palette.surface, theme.palette.surface2, theme.palette.primary].map(rgb),
+            [[15, 18, 33], [26, 30, 46], [30, 35, 56], [99, 102, 241]])
+        XCTAssertEqual(
+            [theme.palette.secondary, theme.palette.accent, theme.palette.text, theme.palette.muted].map(rgb),
+            [[139, 92, 246], [6, 182, 212], [243, 244, 246], [156, 163, 175]])
+        var surfaces = [rgb(graphite.surface2)]
+        for preset in ["midnight", "daylight", "ocean", "sunset", "forest"] {
+            theme.apply(preset: preset)
+            XCTAssertFalse(surfaces.contains(rgb(theme.palette.surface2)), preset)
+            surfaces.append(rgb(theme.palette.surface2))
+            XCTAssertEqual(theme.palette.error, graphite.error, preset)
+        }
+        theme.apply(preset: "retired")
+        XCTAssertEqual(theme.palette, .graphite)
+    }
+
+    func testColorsOnlyThemeDerivesAppleExtrasWhileNamedPresetsKeepTheirOwn() {
+        let dark = ThemeStore()
+        dark.apply(preset: "midnight")
+        dark.applyPreferences(
+            .object([
+                "preferences": .object([
+                    "theme": .object([
+                        "colors": .object([
+                            "bg": .string("#101010"), "surface": .string("#202020"), "primary": .string("#123ABC"),
+                            "secondary": .string("#445566"), "text": .string("#F0F0F0"), "muted": .string("#909090"),
+                            "accent": .string("#00AA88"),
+                        ])
+                    ])
+                ])
+            ]))
+        XCTAssertEqual(rgb(dark.palette.surface2), [41, 41, 41])
+        XCTAssertEqual(dark.palette.border, Color(hex: 0xF0F0F0).opacity(0.08))
+        XCTAssertEqual(dark.palette.success, AstralPalette.graphite.success)
+        XCTAssertEqual(dark.palette.info, AstralPalette.graphite.info)
+        let light = ThemeStore()
+        light.apply(
+            spec: .object(["bg": .string("#F0F0F0"), "surface": .string("#FFFFFF"), "text": .string("#202020")]))
+        XCTAssertEqual(light.colorScheme, .light)
+        XCTAssertEqual(rgb(light.palette.surface2), [245, 245, 245])
+        XCTAssertEqual(light.palette.border, Color(hex: 0x202020).opacity(0.08))
+        let explicit = ThemeStore()
+        explicit.apply(
+            spec: .object(["colors": .object(["surface": .string("#202020"), "surface2": .string("#303030")])]))
+        XCTAssertEqual(rgb(explicit.palette.surface2), [48, 48, 48])
+        let delivered = ThemeStore()
+        delivered.apply(preset: "midnight")
+        delivered.applyPreferences(
+            .object([
+                "preferences": .object([
+                    "theme": .object([
+                        "preset": .string("graphite"),
+                        "colors": .object(["bg": .string("#0B0B0D"), "surface": .string("#151518")]),
+                    ])
+                ])
+            ]))
+        XCTAssertEqual(delivered.palette, .graphite)
+        let stored = ThemeStore()
+        stored.applyPreferences(.object(["preferences": .object(["theme": .object(["preset": .string("midnight")])])]))
+        XCTAssertEqual(stored.palette, .midnight)
+        let unrelated = ThemeStore()
+        unrelated.apply(preset: "midnight")
+        unrelated.applyPreferences(.object(["type": .string("user_preferences"), "preferences": .object([:])]))
+        XCTAssertEqual(unrelated.palette, .midnight)
+    }
+
+    func testBannerStateCarriesAnIconAndNotOnlyItsHue() {
+        XCTAssertEqual(BannerBar(text: "Failed", isError: true, onDismiss: {}).symbol, "xmark.octagon.fill")
+        XCTAssertEqual(
+            BannerBar(text: "Careful", isError: false, isWarning: true, onDismiss: {}).symbol,
+            "exclamationmark.triangle.fill")
+        XCTAssertEqual(BannerBar(text: "Saved", isError: false, onDismiss: {}).symbol, "info.circle.fill")
+    }
+
     func testUnsolicitedWrongSurfaceCannotApplyThemeButPreferenceUpdatesCan() throws {
         let model = model()
         model.openSurface("llm")
         model.handleFrame(try themeSurface("ocean"))
-        XCTAssertEqual(model.themeStore.palette, .midnight)
+        XCTAssertEqual(model.themeStore.palette, .graphite)
         model.handleFrame(
             try XCTUnwrap(
                 InboundFrame.parse(#"{"type":"user_preferences","theme":{"preset":"forest"}}"#)))
@@ -578,7 +675,7 @@ final class SettingsControlTests: XCTestCase {
                     "components":[{"type":"alert","variant":"error","message":"The color could not be saved."}]}
                     """)))
         XCTAssertEqual(model.pendingSurface?.components.last, previous)
-        XCTAssertEqual(model.themeStore.palette, .midnight)
+        XCTAssertEqual(model.themeStore.palette, .graphite)
         XCTAssertFalse(model.paramPickerPending(action: "save_theme"))
         XCTAssertNil(model.paramPickerStatus(action: "save_theme"))
     }

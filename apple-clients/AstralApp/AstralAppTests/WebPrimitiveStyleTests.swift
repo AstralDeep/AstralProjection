@@ -10,7 +10,7 @@ import XCTest
 @MainActor
 final class WebPrimitiveStyleTests: XCTestCase {
     private func render(
-        _ json: String, viewport: CGFloat = 411, preset: String = "midnight",
+        _ json: String, viewport: CGFloat = 411, preset: String = "graphite",
         width: CGFloat = 320, textSize: DynamicTypeSize = .large
     ) throws -> CGImage {
         let model = AppModel(tokenStore: InMemoryTokenStore())
@@ -48,7 +48,9 @@ final class WebPrimitiveStyleTests: XCTestCase {
     }
 
     func testCardUsesWebTranslucencyWithoutPaintingShadowInsideInBothThemes() throws {
-        for (preset, expected) in [("midnight", [20, 23, 39]), ("daylight", [251, 252, 253])] {
+        for (preset, expected) in [
+            ("graphite", [16, 16, 18]), ("midnight", [20, 23, 39]), ("daylight", [251, 252, 253]),
+        ] {
             let image = try render(#"{"type":"card","content":[]}"#, preset: preset)
             assertRGB(try rgb(image, x: 180, y: image.height / 2), expected)
             let attachment = XCTAttachment(image: platformImage(image))
@@ -56,6 +58,48 @@ final class WebPrimitiveStyleTests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+    }
+
+    func testCodeUsesPaletteSuccessOnSurface2AndMarkdownFencesUseSurface2() throws {
+        let code = try render(#"{"type":"code","content":"ok"}"#)
+        assertRGB(try rgb(code, x: 300, y: code.height / 2), [29, 29, 33])
+        #if os(macOS)
+            let model = AppModel(tokenStore: InMemoryTokenStore())
+            let theme = ThemeStore()
+            let component = try XCTUnwrap(
+                AstralComponent(json: JSONValue.parse(Data(#"{"type":"code","content":"OK OK OK"}"#.utf8))))
+            let window = NSWindow(
+                contentRect: CGRect(x: 0, y: 0, width: 360, height: 100), styleMask: .borderless,
+                backing: .buffered, defer: false)
+            window.isReleasedWhenClosed = false
+            let view = NSHostingView(
+                rootView: ComponentView(component: component).environment(model).environment(theme)
+                    .frame(width: 320).padding(20).background(theme.palette.bg))
+            window.contentView = view
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+            view.layoutSubtreeIfNeeded()
+            let bitmap = try XCTUnwrap(view.bitmapImageRepForCachingDisplay(in: view.bounds))
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            var brightest = [0.0, 0.0, 0.0]
+            for y in 0..<bitmap.pixelsHigh {
+                for x in 0..<bitmap.pixelsWide {
+                    guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) else { continue }
+                    if color.greenComponent * 255 > brightest[1] {
+                        brightest = [color.redComponent, color.greenComponent, color.blueComponent].map { $0 * 255 }
+                    }
+                }
+            }
+            XCTAssertEqual(brightest[1], 194, accuracy: 12)
+            XCTAssertGreaterThan(brightest[1], brightest[0] + 40)
+            XCTAssertGreaterThan(brightest[1], brightest[2] + 20)
+        #endif
+        let fence = try render(#"{"type":"text","variant":"markdown","content":"```\nok\n```"}"#)
+        assertRGB(try rgb(fence, x: 300, y: fence.height / 2), [29, 29, 33])
+        let midnight = try render(#"{"type":"code","content":"ok"}"#, preset: "midnight")
+        assertRGB(try rgb(midnight, x: 300, y: midnight.height / 2), [30, 35, 56])
     }
 
     func testCardPaddingFollowsViewportEvenInNarrowGridSlot() throws {
@@ -78,8 +122,8 @@ final class WebPrimitiveStyleTests: XCTestCase {
     func testMetricRendersCanonicalTitleVariantEdgeAndClampedProgress() throws {
         let image = try render(
             #"{"type":"metric","title":"Total","value":18,"subtitle":"Six dice","variant":"success","progress":2}"#)
-        assertRGB(try rgb(image, x: 21, y: image.height / 2), [32, 172, 84])
-        assertRGB(try rgb(image, x: 300, y: image.height - 40), [239, 68, 68])
+        assertRGB(try rgb(image, x: 21, y: image.height / 2), [84, 171, 127])
+        assertRGB(try rgb(image, x: 300, y: image.height - 40), [224, 108, 108])
         let empty = try render(#"{"type":"metric","title":"Total","value":18,"progress":-1}"#)
         let noProgress = try render(#"{"type":"metric","title":"Total","value":18}"#)
         XCTAssertEqual(empty.height - noProgress.height, 18)
@@ -99,8 +143,8 @@ final class WebPrimitiveStyleTests: XCTestCase {
         for viewport: CGFloat in [639, 640] {
             let renderer = ImageRenderer(
                 content:
-                    AstralNewChatButton(viewportWidth: viewport, palette: .midnight, action: {})
-                    .fixedSize().background(AstralPalette.midnight.surface)
+                    AstralNewChatButton(viewportWidth: viewport, palette: .graphite, action: {})
+                    .fixedSize().background(AstralPalette.graphite.surface)
                     .environment(\.dynamicTypeSize, .large)
             )
             renderer.scale = 1
@@ -108,7 +152,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
             XCTAssertGreaterThanOrEqual(image.height, 44)
             XCTAssertGreaterThanOrEqual(image.width, 44)
             widths.append(image.width)
-            assertRGB(try rgb(image, x: 8, y: image.height / 2), [26, 30, 46])
+            assertRGB(try rgb(image, x: 8, y: image.height / 2), [21, 21, 24])
         }
         XCTAssertGreaterThan(widths[1], widths[0] + 40)
     }
@@ -122,7 +166,7 @@ final class WebPrimitiveStyleTests: XCTestCase {
             #"{"type":"donut_chart","title":"Shares","labels":["A","B","C","D","E","F","G"],"data":[10,20,10,10,20,20,10],"center_label":"Total","center_value":"100"}"#,
             #"{"type":"radar_chart","title":"Quality","axes":["Speed","Accuracy","Cost"],"datasets":[{"label":"One","data":[1,2,3]},{"label":"Two","data":[2,3,1]},{"label":"Three","data":[3,1,2]},{"label":"Four","data":[2,2,2]}]}"#,
         ]
-        for preset in ["midnight", "daylight"] {
+        for preset in ["graphite", "midnight", "daylight"] {
             for (index, component) in components.enumerated() {
                 let image = try render(component, preset: preset)
                 XCTAssertEqual(image.width, 360)

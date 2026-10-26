@@ -530,8 +530,8 @@ struct ComponentView: View {
                 .padding(12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.black.opacity(0.45), in: RoundedRectangle(cornerRadius: AstralRadius.sm))
-        .foregroundStyle(Color(hex: 0x8BE9A0))
+        .background(p.surface2, in: RoundedRectangle(cornerRadius: AstralRadius.sm))
+        .foregroundStyle(p.success)
     }
 
     @ViewBuilder

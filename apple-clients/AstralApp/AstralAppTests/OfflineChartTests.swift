@@ -30,6 +30,21 @@ final class OfflineChartTests: XCTestCase {
             try OfflineChartDocument.html(component: chart, viewportWidth: 1200, bundle: Bundle(for: Self.self)))
     }
 
+    func testAppearanceInjectsThePaletteSeriesBesideTheDocumentColors() throws {
+        let appearance = OfflineChartDocument.Appearance(
+            background: 0x0B0B0D, text: 0xECECEF, muted: 0x8C8C95, primary: 0x7C3AED, secondary: 0x6E6E78,
+            accent: 0xA78BFA)
+        XCTAssertTrue(
+            appearance.style.contains(
+                ":root{--astral-chart-primary:#7C3AED;--astral-chart-secondary:#6E6E78;--astral-chart-accent:#A78BFA}"))
+        XCTAssertTrue(appearance.style.contains("html,body{background:#0B0B0D;color:#ECECEF}#status{color:#8C8C95}"))
+        let chart = try component(#"{"type":"bar_chart","labels":["A"],"datasets":[{"data":[1]}]}"#)
+        let html = try OfflineChartDocument.html(component: chart, viewportWidth: 800, appearance: appearance)
+        XCTAssertTrue(html.contains("--astral-chart-accent:#A78BFA}html,body"))
+        let unthemed = try OfflineChartDocument.html(component: chart, viewportWidth: 800)
+        XCTAssertFalse(unthemed.contains("--astral-chart-primary:"))
+    }
+
     func testIsolatedWebKitRendersMixedTracesAndDeniesNetworkNavigation() async throws {
         let chart = try component(
             #"{"type":"plotly_chart","title":"Synthetic chart fixture","data":[{"type":"bar","x":["A","B"],"y":[-2,3]},{"type":"scatter","mode":"lines+markers","x":["A","B"],"y":[1,4]}],"layout":{"height":600}}"#
@@ -249,6 +264,7 @@ final class OfflineChartTests: XCTestCase {
 
         func testMacChartPixelsMatchDirectAndNestedSurfacesInBothThemes() async throws {
             for (preset, expected) in [
+                ("graphite", [[16, 16, 18], [18, 18, 21], [19, 19, 22]]),
                 ("midnight", [[20, 23, 39], [23, 26, 42], [24, 28, 44]]),
                 ("daylight", [[251, 252, 253], [253, 253, 254], [254, 254, 254]]),
             ] {
@@ -284,7 +300,7 @@ final class OfflineChartTests: XCTestCase {
             }
             let view = try await chartView(in: window)
             _ = try await waitForState(view, expected: "ready")
-            try await assertBackdrop(view, rgb: [23, 26, 42], name: "mac-chart-before-theme-change")
+            try await assertBackdrop(view, rgb: [18, 18, 21], name: "mac-chart-before-theme-change")
             theme.apply(preset: "daylight")
             for _ in 0..<100 {
                 let background = try? await view.evaluateJavaScript("getComputedStyle(document.body).backgroundColor")
@@ -295,8 +311,52 @@ final class OfflineChartTests: XCTestCase {
             try await assertBackdrop(view, rgb: [253, 253, 254], name: "mac-chart-after-theme-change")
         }
 
+        func testMacChartSeriesFollowThePaletteAndUnthemedDocumentsKeepWebDefaults() async throws {
+            let bar = #"{"type":"bar_chart","title":"Rolls","labels":["A","B"],"datasets":[{"data":[1,2]}]}"#
+            let pie = #"{"type":"pie_chart","title":"Share","labels":["A","B","C","D"],"data":[1,2,3,4]}"#
+            let theme = ThemeStore()
+            let window = try host(bar, theme: theme)
+            defer {
+                window.contentView = nil
+                window.close()
+            }
+            let view = try await chartView(in: window)
+            _ = try await waitForState(view, expected: "ready")
+            let graphite = try await view.evaluateJavaScript("document.getElementById('chart').data[0].marker.color")
+            XCTAssertEqual(graphite as? String, "#7C3AED")
+            theme.apply(preset: "midnight")
+            var repainted: Any?
+            for _ in 0..<100 {
+                repainted = try? await view.evaluateJavaScript(
+                    "document.documentElement.dataset.chartState === 'ready'"
+                        + " && document.getElementById('chart').data[0].marker.color")
+                if repainted as? String == "#6366F1" { break }
+                try await Task.sleep(for: .milliseconds(50))
+            }
+            XCTAssertEqual(repainted as? String, "#6366F1")
+            let pieWindow = try host(pie, theme: ThemeStore())
+            defer {
+                pieWindow.contentView = nil
+                pieWindow.close()
+            }
+            let pieView = try await chartView(in: pieWindow)
+            _ = try await waitForState(pieView, expected: "ready")
+            let colors = try await pieView.evaluateJavaScript(
+                "document.getElementById('chart').data[0].marker.colors.slice(0, 4).join(',')")
+            XCTAssertEqual(colors as? String, "#7C3AED,#6E6E78,#A78BFA,#10B981")
+            let coordinator = OfflineChartCoordinator()
+            let plain = OfflineChartCoordinator.webView()
+            plain.frame = CGRect(x: 0, y: 0, width: 600, height: 300)
+            defer { coordinator.dismantle(plain) }
+            coordinator.update(plain, component: try component(bar), viewportWidth: 1200)
+            _ = try await waitForState(plain, expected: "ready")
+            let unthemed = try await plain.evaluateJavaScript("document.getElementById('chart').data[0].marker.color")
+            XCTAssertEqual(unthemed as? String, "#6366F1")
+        }
+
         func testMacTranscriptChartsMatchOpaqueAssistantAndTintedUserBubbles() async throws {
             for (preset, expected) in [
+                ("graphite", [[25, 25, 29], [28, 21, 43]]),
                 ("midnight", [[28, 33, 52], [29, 33, 62]]),
                 ("daylight", [[246, 247, 250], [233, 232, 251]]),
             ] {
@@ -318,11 +378,15 @@ final class OfflineChartTests: XCTestCase {
         func testMacEmptyErrorAndTerminatedDocumentsKeepThemedLegibleSurfaces() async throws {
             for (appearance, background, muted, text) in [
                 (
-                    OfflineChartDocument.Appearance(background: 0x171A2A, text: 0xF3F4F6, muted: 0x9CA3AF),
+                    OfflineChartDocument.Appearance(
+                        background: 0x171A2A, text: 0xF3F4F6, muted: 0x9CA3AF, primary: 0x6366F1,
+                        secondary: 0x8B5CF6, accent: 0x06B6D4),
                     [23, 26, 42], "rgb(156, 163, 175)", "rgb(243, 244, 246)"
                 ),
                 (
-                    OfflineChartDocument.Appearance(background: 0xFDFDFE, text: 0x1E293B, muted: 0x64748B),
+                    OfflineChartDocument.Appearance(
+                        background: 0xFDFDFE, text: 0x1E293B, muted: 0x64748B, primary: 0x4F46E5,
+                        secondary: 0x7C3AED, accent: 0x0891B2),
                     [253, 253, 254], "rgb(100, 116, 139)", "rgb(30, 41, 59)"
                 ),
             ] {

@@ -36,7 +36,7 @@ struct MarkdownBlockView: View {
                     .padding(10)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.black.opacity(0.35), in: RoundedRectangle(cornerRadius: AstralRadius.sm))
+            .background(p.surface2, in: RoundedRectangle(cornerRadius: AstralRadius.sm))
         case .bullets(let items, let ordered, let start):
             VStack(alignment: .leading, spacing: 3) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
