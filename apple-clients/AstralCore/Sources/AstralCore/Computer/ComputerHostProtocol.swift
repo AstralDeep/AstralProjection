@@ -42,7 +42,7 @@ public struct ComputerHostWorkspaceRoot: Sendable, Equatable {
         self.name = name
         self.path = path
     }
-    var valid: Bool {
+    public var isValid: Bool {
         !name.isEmpty && name.unicodeScalars.count <= 255
             && !name.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) && path.hasPrefix("/")
             && path.utf8.count <= 1024 && !path.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
@@ -75,7 +75,7 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
                     && (0.5...8).contains($0.element.scale)
             }),
             !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs),
-            workspaceRoots.count <= Self.maximumWorkspaceRoots, workspaceRoots.allSatisfy(\.valid),
+            workspaceRoots.count <= Self.maximumWorkspaceRoots, workspaceRoots.allSatisfy(\.isValid),
             Set(workspaceRoots.map(\.path)).count == workspaceRoots.count
         else { throw ComputerHostError("out_of_range", "The computer descriptor is invalid.") }
         self.hostId = hostId

@@ -168,7 +168,7 @@
         }
         @MainActor func controlsWindows() -> Set<CGWindowID> {
             Set(
-                NSApplication.shared.windows.filter { $0.title == "Astral computer session" }.map {
+                NSApplication.shared.windows.filter { $0.title == MacComputerPanelIdentity.title }.map {
                     CGWindowID($0.windowNumber)
                 })
         }

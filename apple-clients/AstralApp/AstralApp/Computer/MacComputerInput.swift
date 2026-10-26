@@ -1,11 +1,15 @@
-// Injects bounded marked native input and detects human takeover for the computer host.
-// The driver rechecks current authority, focused identity and secure-field status before keyboard effects.
+// Injects bounded marked native input and detects human takeover outside Astral's own windows.
+// The driver rechecks current authority, focused identity and secure-input status before keyboard effects.
 
 #if os(macOS)
     import AppKit
     import ApplicationServices
     import AstralCore
     import Foundation
+
+    nonisolated enum MacComputerPanelIdentity {
+        static let title = "Astral computer session"
+    }
 
     actor MacComputerInput {
         let marker: Int64
@@ -25,8 +29,13 @@
             events.post(event)
         }
         private nonisolated func keyboardAuthority(_ args: [String: JSONValue]) throws {
-            guard system.accessibilityTrusted(), system.postEventAccess(), !system.secureInputEnabled() else {
+            guard system.accessibilityTrusted(), system.postEventAccess() else {
                 throw ComputerHostError("permission_denied", "Accessibility access or keyboard input is unavailable.")
+            }
+            guard !system.secureInputEnabled() else {
+                throw ComputerHostError(
+                    "secure_input_active",
+                    "Secure keyboard entry is active, so keyboard input is refused. Pointer actions still work.")
             }
             let root = system.systemElement()
             guard let appValue = system.attribute(kAXFocusedApplicationAttribute, of: root),
@@ -48,7 +57,9 @@
             system.messagingTimeout(0.3, for: element)
             if (system.attribute(kAXSubroleAttribute, of: element) as? String) == kAXSecureTextFieldSubrole as String {
                 throw ComputerHostError(
-                    "permission_denied", "Astral cannot type into a secure field. Complete authentication yourself.")
+                    "secure_input_active",
+                    "A password field is focused, so keyboard input is refused. Complete it yourself; pointer actions work."
+                )
             }
             if ComputerTerminalPolicy.requiresApproval(bundle), args["terminal_ok"] != .bool(true) {
                 throw ComputerHostError(
@@ -79,7 +90,8 @@
                 "k": 40, "n": 45, "m": 46, "tab": 48, "space": 49, "backspace": 51, "escape": 53, "home": 115,
                 "pageup": 116, "delete": 117, "end": 119, "pagedown": 121, "left": 123, "right": 124, "down": 125,
                 "up": 126, "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97, "f7": 98, "f8": 100,
-                "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+                "f9": 101, "f10": 109, "f11": 103, "f12": 111, "=": 24, "-": 27, "]": 30, "[": 33, "'": 39, ";": 41,
+                "\\": 42, ",": 43, "/": 44, ".": 47, "`": 50,
             ]
             guard let key = keys[chord.key] else { throw ComputerHostError("unsupported", "The key is unsupported.") }
             try authorize()
@@ -115,16 +127,26 @@
             else {
                 throw ComputerHostError("permission_denied", "Visible computer controls cannot be verified.")
             }
-            let windows = rows.compactMap { row -> ComputerHostTargetWindow? in
+            let visible = rows.compactMap { row -> (window: ComputerHostTargetWindow, name: String?)? in
                 guard (row[kCGWindowAlpha as String] as? NSNumber)?.doubleValue ?? 1 > 0,
                     let raw = row[kCGWindowBounds as String] as? [String: Any],
                     let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary)
                 else { return nil }
-                return ComputerHostTargetWindow(
-                    pid: (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, bounds: bounds)
+                return (
+                    ComputerHostTargetWindow(
+                        pid: (row[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value, bounds: bounds),
+                    row[kCGWindowName as String] as? String
+                )
+            }
+            if let top = visible.first(where: { $0.window.bounds.contains(point) }), top.window.pid == system.hostPID,
+                top.name == MacComputerPanelIdentity.title
+            {
+                throw ComputerHostError(
+                    "obscured_by_astral_panel",
+                    "Astral's session panel covers this point. Move the panel, take a new screenshot and retry.")
             }
             try ComputerHostTargetPolicy.externalPoint(
-                point, hostPID: system.hostPID, windows: windows)
+                point, hostPID: system.hostPID, windows: visible.map(\.window))
         }
         func pointer(
             _ request: ComputerHostRequest, start: CGPoint, end: CGPoint?, authorize: @Sendable () throws -> Void
@@ -186,49 +208,98 @@
     @MainActor
     protocol MacComputerMonitoring: AnyObject {
         var running: Bool { get }
-        var controlsWindow: Int? { get set }
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool
         func stop()
     }
 
     @MainActor
     final class MacComputerInputMonitor: MacComputerMonitoring {
+        static let movementThreshold: CGFloat = 24
+        static let movementWindow: TimeInterval = 0.25
+        static let frontmostDelay: TimeInterval = 0.3
         private var global: Any?
-        private var local: Any?
         let marker: Int64
-        var controlsWindow: Int?
         private let monitors: any MacComputerEventMonitoring
-        init(marker: Int64, monitors: any MacComputerEventMonitoring = MacComputerLiveEventMonitoring()) {
+        private let frontmost: @MainActor () -> String?
+        private let hostBundle: String?
+        private let schedule: @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Void
+        private var samples: [(time: TimeInterval, point: CGPoint)] = []
+        private var pending = false
+        private var generation = 0
+        init(
+            marker: Int64, monitors: any MacComputerEventMonitoring = MacComputerLiveEventMonitoring(),
+            frontmost: @escaping @MainActor () -> String? = {
+                NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+            },
+            hostBundle: String? = Bundle.main.bundleIdentifier,
+            schedule: @escaping @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
+                Task { @MainActor in
+                    do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
+                    body()
+                }
+            }
+        ) {
             self.marker = marker
             self.monitors = monitors
+            self.frontmost = frontmost
+            self.hostBundle = hostBundle
+            self.schedule = schedule
         }
-        var running: Bool { global != nil && local != nil }
+        var running: Bool { global != nil }
         func start(_ humanInput: @escaping @MainActor () -> Void) -> Bool {
             if running { return true }
             let mask: NSEvent.EventTypeMask = [
                 .keyDown, .flagsChanged, .leftMouseDown, .rightMouseDown, .otherMouseDown, .mouseMoved,
-                .leftMouseDragged, .rightMouseDragged, .scrollWheel,
+                .leftMouseDragged, .rightMouseDragged, .otherMouseDragged, .scrollWheel,
             ]
-            let marker = marker
-            let monitors = monitors
-            global = monitors.addGlobal(matching: mask) { event in
-                if event.cgEvent?.getIntegerValueField(.eventSourceUserData) != marker { humanInput() }
-            }
-            local = monitors.addLocal(matching: mask) { [weak self] event in
-                if monitors.associatedWindowNumber(for: event) != self?.controlsWindow,
-                    event.cgEvent?.getIntegerValueField(.eventSourceUserData) != marker
-                {
-                    humanInput()
-                }
-                return event
+            generation += 1
+            let current = generation
+            global = monitors.addGlobal(matching: mask) { [weak self] event in
+                self?.observe(event, generation: current, humanInput: humanInput)
             }
             return running
         }
         func stop() {
             if let global { monitors.remove(global) }
-            if let local { monitors.remove(local) }
             global = nil
-            local = nil
+            generation += 1
+            samples = []
+            pending = false
+        }
+        private func observe(_ event: NSEvent, generation current: Int, humanInput: @escaping @MainActor () -> Void) {
+            guard current == generation, event.cgEvent?.getIntegerValueField(.eventSourceUserData) != marker else {
+                return
+            }
+            if [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged].contains(event.type) {
+                guard moved(event) else { return }
+            }
+            guard !pending else { return }
+            pending = true
+            schedule(Self.frontmostDelay) { [weak self] in
+                guard let self, self.generation == current else { return }
+                self.pending = false
+                if let host = self.hostBundle, self.frontmost() == host { return }
+                humanInput()
+            }
+        }
+        private func moved(_ event: NSEvent) -> Bool {
+            let now = monitors.uptime
+            let point = event.cgEvent?.location ?? event.locationInWindow
+            guard now.isFinite else {
+                samples = []
+                return true
+            }
+            samples.removeAll { now < $0.time || now - $0.time > Self.movementWindow }
+            let crossed = samples.contains {
+                hypot($0.point.x - point.x, $0.point.y - point.y) > Self.movementThreshold
+            }
+            if crossed {
+                samples = []
+                return true
+            }
+            samples.append((now, point))
+            if samples.count > 64 { samples.removeFirst(samples.count - 64) }
+            return false
         }
     }
 #endif

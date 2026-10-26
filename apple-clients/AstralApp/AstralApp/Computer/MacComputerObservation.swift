@@ -14,7 +14,7 @@
                 session[kCGSessionOnConsoleKey as String] as? Bool == true,
                 session[kCGSessionLoginDoneKey as String] as? Bool == true,
                 session["CGSSessionScreenIsLocked"] as? Bool != true,
-                !system.secureInputEnabled(), let pid = MacComputerObservation.context(system: system).pid,
+                let pid = MacComputerObservation.context(system: system).pid,
                 let bundle = system.bundleIdentifier(for: pid), bundle != "com.apple.loginwindow"
             else { return false }
             return true

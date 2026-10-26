@@ -77,7 +77,7 @@
             }
             XCTAssertThrowsError(try MacComputerObservation.topology(system: io))
         }
-        func testDesktopAdmissionUsesRawSessionSecureInputAndProcessFacts() {
+        func testDesktopAdmissionUsesRawSessionAndProcessFactsButNotSecureInput() {
             let io = MacComputerTestSystem()
             XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
             for session: [String: Any]? in [
@@ -95,7 +95,7 @@
                 $0.session = [kCGSessionOnConsoleKey as String: true, kCGSessionLoginDoneKey as String: true]
                 $0.secure = true
             }
-            XCTAssertFalse(MacComputerDesktopProbe.usable(system: io))
+            XCTAssertTrue(MacComputerDesktopProbe.usable(system: io))
             io.configure {
                 $0.secure = false
                 $0.bundles[200] = "com.apple.loginwindow"

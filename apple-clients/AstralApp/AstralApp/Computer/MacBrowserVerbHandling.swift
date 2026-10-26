@@ -1,5 +1,5 @@
 // Declares the seam through which the Mac computer host hands browser pane verbs to the embedded browser.
-// MacComputerHost routes every browser_* request here on its non-physical executor; authorize rechecks the admission ticket.
+// MacComputerHost routes every browser_* request here off the physical queue; authorize rechecks the admission ticket.
 
 #if os(macOS)
     import AstralCore
