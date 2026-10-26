@@ -404,6 +404,15 @@
             host.applicationWillTerminate()
         }
 
+        func testDescriptorReportsTheBundleShortVersionToTheServer() throws {
+            let host = makeHost(driver: ComputerTestDriver())
+            defer { host.stop() }
+            let bundled = try XCTUnwrap(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+            let descriptor = try XCTUnwrap(host.descriptor)
+            XCTAssertEqual(descriptor.clientVersion, bundled)
+            XCTAssertEqual(descriptor.json.objectValue?["client_version"]?.stringValue, bundled)
+        }
+
         func testUnavailableDesktopOrPermissionKeepsChoiceWithoutAdvertisingAccess() throws {
             for unavailable in ["desktop", "permission", "distribution", "monitor"] {
                 let defaults = UserDefaults(suiteName: UUID().uuidString)!
