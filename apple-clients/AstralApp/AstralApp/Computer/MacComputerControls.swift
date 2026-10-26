@@ -70,6 +70,11 @@
                         "Allow computer tasks on this Mac", isOn: MacComputerControlCommand.enabledBinding(on: host)
                     )
                     .disabled(!host.available).accessibilityIdentifier("mac-computer-consent")
+                    if let browser = host.browser as? MacBrowserDriver {
+                        Toggle("Browser pane", isOn: Binding(get: { browser.paneEnabled }, set: browser.setPaneEnabled))
+                            .disabled(!host.available || !browser.accountBound)
+                            .accessibilityIdentifier("mac-computer-browser-pane")
+                    }
                     Text("Saved for this account and server. Locking pauses access and ends active tasks.")
                         .font(.caption)
                     if host.consentEnabled && !host.enabled {
