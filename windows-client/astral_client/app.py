@@ -79,6 +79,7 @@ from .protocol import (
 from .protocol_manifest import CLIENT_LOCAL_ACTIONS, is_classified, is_handled
 from .renderer import (
     RenderContext,
+    rebind_navigation,
     render,
     supported_types as native_types,
     _btn_label,
@@ -488,8 +489,14 @@ class ChatRail(QWidget):
     ) -> None:
         cache = self._semantic_cache
         palette = tuple(T.PALETTE.items())
-        if (cache is not None and cache[0] == messages and cache[1] is ctx
+        context_current = cache is not None and (cache[1] is ctx or all(
+            getattr(cache[1], key) is getattr(ctx, key) for key in ("emit", "download", "apply_theme")))
+        if (cache is not None and cache[0] == messages and context_current
                 and cache[2] == ctx.chat_id and cache[3] == palette):
+            if cache[4] is not ctx.navigation:
+                rebind_navigation(self._inner, [component for message in messages
+                    for part in message.parts for component in part.components], ctx)
+            self._semantic_cache = (cache[0], ctx, ctx.chat_id, palette, ctx.navigation)
             return
         prepared = [
             (self._semantic_bubble(message, ctx), message.role)
@@ -498,7 +505,7 @@ class ChatRail(QWidget):
         self.clear()
         for bubble, role in prepared:
             self._insert_bubble(bubble, role)
-        self._semantic_cache = (deepcopy(messages), ctx, ctx.chat_id, palette)
+        self._semantic_cache = (deepcopy(messages), ctx, ctx.chat_id, palette, ctx.navigation)
         if not prepared:
             return
         bar = self._scroll.verticalScrollBar()
@@ -698,14 +705,16 @@ class Canvas(QScrollArea):
     def set_components(self, components: list) -> None:
         context_current = self._navigation_context is self.ctx.navigation
         self._navigation_context = self.ctx.navigation
-        if not context_current:
-            self._rendered.clear()
         incoming = components or []
+        if not context_current:
+            replacements = rebind_navigation(self._inner, incoming, self.ctx)
+            self._by_id = {key: replacements.get(widget, widget) for key, widget in self._by_id.items()}
         keep_loading = not incoming and self.turn_active
-        if context_current and not self._mutated_since_render and (
+        if not self._mutated_since_render and (
             incoming is self._last_components
             or incoming == self._last_components
         ):
+            self._last_components = list(incoming)
             if not keep_loading:
                 self.hide_skeleton()
             return

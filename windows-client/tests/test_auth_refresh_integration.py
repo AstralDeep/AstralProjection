@@ -12,7 +12,7 @@ import uuid
 
 import pytest
 from PySide6.QtCore import QSettings
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
 
 from astral_client import app as appmod, auth, protocol
 from astral_client.protocol import LocalOperationSubmission, OrchestratorClient
@@ -354,6 +354,58 @@ def test_identical_transcript_hydration_retains_embedded_control(win, workers, c
     assert win.rail._inner.findChild(QLineEdit) is field
     assert field.text() == 'unsubmitted transcript edit' and field.cursorPosition() == 6
     assert QApplication.focusWidget() is field
+
+
+@pytest.mark.parametrize('origin', ['canvas', 'transcript'])
+@pytest.mark.parametrize('nested', [False, True], ids=['siblings', 'shared-card'])
+def test_identical_hydration_preserves_nested_edits_and_rebinds_only_navigation(
+        win, workers, clock, refresh, qapp, origin, nested):
+    target = '22222222-2222-4222-8222-222222222222'
+    components = [
+        {'type': 'input', 'component_id': 'retained-input', 'label': 'Answer', 'value': 'server'},
+        {'type': 'chat_history', 'component_id': 'history',
+         'items': [{'chat_id': target, 'title': 'Current history offer'}]},
+    ]
+    if nested:
+        components = [{'type': 'card', 'component_id': 'mixed', 'content': components}]
+    if origin == 'canvas':
+        frame = hydrate(win, components=components)
+        root = win.canvas._inner
+    else:
+        frame = _snapshot()
+        frame['transcript'][0]['parts'] = [{'type': 'components', 'components': components}]
+        frame = hydrate(win, transcript=frame['transcript'])
+        root = win.rail._inner
+    field = root.findChild(QLineEdit)
+    field.setText('local unsent edit')
+    field.setSelection(6, 6)
+    old = next(button for button in root.findChildren(QPushButton) if button.text() == 'Current history offer')
+    win.show()
+    field.setFocus()
+    qapp.processEvents()
+    assert QApplication.focusWidget() is field
+    advance(clock, 840)
+    win._refresh_expiring_session()
+    workers.pop()()
+    win._on_status('connected')
+    win.client._connected = True
+    frame.update(snapshot_id=str(uuid.uuid4()), connection_generation=win.client.connection_generation,
+                 request_generation=win.client.request_generation)
+    win._on_message(frame)
+    assert root.findChild(QLineEdit) is field
+    assert field.text() == 'local unsent edit' and field.selectedText() == 'unsent'
+    assert QApplication.focusWidget() is field
+    fresh = next(button for button in root.findChildren(QPushButton) if button.text() == 'Current history offer')
+    assert fresh is not old
+    if origin == 'canvas' and not nested:
+        assert win.canvas._by_id['history'].findChild(QPushButton) is fresh
+    before = list(win.client.events)
+    old.click()
+    assert win.client.events == before and win.active_chat == CHAT
+    fresh.click()
+    assert win.active_chat == target
+    assert win.client.events[-1][0] == 'load_chat' and win.client.events[-1][2] == target
+    assert not any(event[0] == 'chat_message' for event in win.client.events)
 
 
 @pytest.mark.parametrize('change', ['semantic', 'owner', 'context', 'theme', 'clear', 'add', 'note'])
