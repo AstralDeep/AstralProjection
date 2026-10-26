@@ -3,9 +3,9 @@
 
 #if os(macOS)
     import AstralCore
+    import AstralSparkle
     import Combine
     import Foundation
-    import Sparkle
 
     @MainActor
     protocol UpdaterControlling: AnyObject {

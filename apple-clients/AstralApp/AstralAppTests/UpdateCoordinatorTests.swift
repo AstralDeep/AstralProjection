@@ -3,9 +3,9 @@
 
 #if os(macOS)
     import AstralCore
+    import AstralSparkle
     import Combine
     import SwiftUI
-    import Sparkle
     import XCTest
     @testable import AstralDeep
 
