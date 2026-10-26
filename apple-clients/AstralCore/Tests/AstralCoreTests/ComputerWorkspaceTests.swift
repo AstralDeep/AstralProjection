@@ -50,6 +50,53 @@
             XCTAssertFalse(FileManager.default.fileExists(atPath: path))
         }
 
+        func testTruncatedReadEndsOnTheLastCompleteScalar() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("text.txt").path
+            try Data("aé🧭z".utf8).write(to: URL(fileURLWithPath: path))
+            for (maximum, expected, truncated) in [
+                (1, "a", true), (2, "a", true), (3, "aé", true), (4, "aé", true), (6, "aé", true), (7, "aé🧭", true),
+                (8, "aé🧭z", false), (100, "aé🧭z", false),
+            ] {
+                let read = try workspace.read(path, maximum: maximum)
+                XCTAssertEqual(read["text"], .string(expected), "\(maximum)")
+                XCTAssertEqual(read["truncated"], .bool(truncated), "\(maximum)")
+            }
+            try Data([0x61, 0xff, 0x62, 0x63]).write(to: URL(fileURLWithPath: path))
+            XCTAssertThrowsError(try workspace.read(path, maximum: 3))
+            XCTAssertEqual(ComputerWorkspace.scalarBoundary([0xe2, 0x80], 2), 0)
+            XCTAssertEqual(ComputerWorkspace.scalarBoundary([0x80, 0x80], 2), 2)
+        }
+
+        func testOverwriteKeepsModeAndExtendedAttributesButNotSetID() throws {
+            let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            defer { try? FileManager.default.removeItem(at: root) }
+            let workspace = try ComputerWorkspace(root: root.path)
+            let path = root.appendingPathComponent("script.sh").path
+            try workspace.write(path, content: "echo one", overwrite: false, authorize: {})
+            XCTAssertEqual(chmod(path, 0o4751), 0)
+            let value = Array("synthetic".utf8)
+            XCTAssertEqual(setxattr(path, "com.example.tag", value, value.count, 0, 0), 0)
+            try workspace.write(path, content: "echo two", overwrite: true, authorize: {})
+            var info = stat()
+            XCTAssertEqual(stat(path, &info), 0)
+            XCTAssertEqual(info.st_mode & 0o7777, 0o751)
+            var buffer = [UInt8](repeating: 0, count: 64)
+            let length = getxattr(path, "com.example.tag", &buffer, buffer.count, 0, 0)
+            XCTAssertEqual(Array(buffer.prefix(max(0, length))), value)
+            XCTAssertEqual(try workspace.read(path, maximum: 100)["text"], .string("echo two"))
+            let fresh = root.appendingPathComponent("fresh.txt").path
+            try workspace.write(fresh, content: "new", overwrite: true, authorize: {})
+            XCTAssertEqual(stat(fresh, &info), 0)
+            XCTAssertEqual(info.st_mode & 0o7777, 0o600)
+            let entries = try FileManager.default.contentsOfDirectory(atPath: root.path)
+            XCTAssertFalse(entries.contains { $0.hasPrefix(".astral-") })
+        }
+
         func testSymlinkParentEscapeAndCancellationHaveNoEffect() throws {
             let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
             let outside = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
