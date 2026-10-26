@@ -31,8 +31,8 @@ public struct PushIdentity: Equatable, Sendable {
 
     public init(deviceId: String, label: String? = nil) {
         let valid = deviceId.count >= 8 && deviceId.count <= 128
-            && deviceId.first?.isLetterOrDigit == true
-            && deviceId.allSatisfy { $0.isLetterOrDigit || $0 == "." || $0 == "_" || $0 == "-" }
+            && deviceId.first.map { $0.isLetter || $0.isNumber } == true
+            && deviceId.allSatisfy { $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-" }
         precondition(valid, PushIdentity.reasonDeviceId)
         precondition(label == nil || (label?.count ?? 0) <= PushIdentity.maxLabelChars, PushIdentity.reasonLabel)
         self.deviceId = deviceId

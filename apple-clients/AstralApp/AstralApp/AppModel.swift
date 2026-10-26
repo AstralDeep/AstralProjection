@@ -494,8 +494,8 @@ final class AppModel: NSObject {
             let pushDeviceId: String
             if let storedPushDeviceId,
                 storedPushDeviceId.count >= 8, storedPushDeviceId.count <= 128,
-                storedPushDeviceId.first?.isLetterOrDigit == true,
-                storedPushDeviceId.allSatisfy({ $0.isLetterOrDigit || $0 == "." || $0 == "_" || $0 == "-" })
+                storedPushDeviceId.first.map({ $0.isLetter || $0.isNumber }) == true,
+                storedPushDeviceId.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "." || $0 == "_" || $0 == "-" })
             {
                 pushDeviceId = storedPushDeviceId
             } else {

@@ -332,7 +332,9 @@ class NotificationPushAdapter(
 
     private fun remember(notificationId: String) {
         if (notificationId !in acceptedIds) acceptedIds.addLast(notificationId)
-        while (acceptedIds.size > acceptedCapacity) acceptedIds.removeFirst()
+        while (acceptedIds.size > acceptedCapacity) {
+            acceptedIds.removeFirst()
+        }
     }
 
     private companion object {

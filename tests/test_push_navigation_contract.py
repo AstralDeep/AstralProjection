@@ -206,7 +206,8 @@ def test_android_activity_wires_lifecycle_cleanup_and_dedup() -> None:
 def test_apple_sources_implement_the_destination_runtime() -> None:
     sources = _apple_sources()
     assert 'var platform: String { "ios" }' in sources["machine"]
-    assert "/api/push/destinations" in sources["rest"]
+    assert '"api/push/destinations"' in sources["rest"]
+    assert '"api/push/ack"' in sources["rest"]
     assert "case 410: return .destinationRevoked" in sources["rest"]
     assert "200...299, 404: return .revoked" in sources["rest"]
     assert "case 409: return .rejected(transient: false, code: \"destination_capacity\")" in sources["rest"]

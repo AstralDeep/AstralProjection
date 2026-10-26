@@ -123,6 +123,20 @@ class AppViewModelReducerTest {
     }
 
     @Test
+    fun notification_for_another_chat_points_at_the_conversation_surfaces() {
+        val foreign =
+            vm.reduce(UiState(), Inbound.Notification(title = "Job", body = "Done", level = "info", chatId = "c2"))
+        assertEquals("Job: Done — open it from History", foreign.banner)
+        assertEquals("info", foreign.bannerKind)
+        val active =
+            vm.reduce(
+                UiState(activeChatId = "c1"),
+                Inbound.Notification(title = "Job", body = "Done", level = "info", chatId = "c1"),
+            )
+        assertEquals("Job: Done", active.banner)
+    }
+
+    @Test
     fun unknown_frame_is_a_state_noop() {
         assertEquals(midTurn, vm.reduce(midTurn, Inbound.Unknown("mystery_frame")))
         assertEquals(midTurn, vm.reduce(midTurn, Inbound.Unknown("heartbeat")))

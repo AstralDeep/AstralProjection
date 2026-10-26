@@ -34,10 +34,11 @@ public struct PushRest: Sendable {
         transport: Transport? = nil
     ) {
         self.serverBase = serverBase
-        self.transport = transport ?? { request in
-            let (data, response) = try await NoStoreHTTP.session.data(for: request)
-            return ((response as? HTTPURLResponse)?.statusCode ?? 0, data)
-        }
+        self.transport =
+            transport ?? { request in
+                let (data, response) = try await NoStoreHTTP.session.data(for: request)
+                return ((response as? HTTPURLResponse)?.statusCode ?? 0, data)
+            }
     }
 
     public func enroll(
@@ -47,28 +48,35 @@ public struct PushRest: Sendable {
         pushToken: String,
         label: String?
     ) async -> PushEnrollOutcome {
-        guard let token, !token.isEmpty else { return .unauthenticated }
+        guard let token = token, !token.isEmpty else { return .unauthenticated }
         var body: [String: JSONValue] = [
             "device_id": .string(deviceId),
             "platform": .string(platform),
             "token": .string(pushToken),
         ]
-        if let label, !label.isEmpty {
+        if let label = label, !label.isEmpty {
             body["label"] = .string(String(label.prefix(64)))
         }
         guard let request = postRequest(path: "api/push/destinations", token: token, body: body) else {
             return .rejected(transient: true, code: Self.codeNetwork)
         }
-        return classify(await outcome(of: request))
+        let result = await outcome(of: request)
+        return classify(result)
     }
 
-    public func acknowledge(token: String?, deviceId: String, notificationId: String) async -> PushAckOutcome {
-        guard let token, !token.isEmpty else { return .unauthenticated }
-        guard let request = postRequest(
-            path: "api/push/ack",
-            token: token,
-            body: ["device_id": .string(deviceId), "notification_id": .string(notificationId)])
-        else { return .refused }
+    public func acknowledge(
+        token: String?,
+        deviceId: String,
+        notificationId: String
+    ) async -> PushAckOutcome {
+        guard let token = token, !token.isEmpty else { return .unauthenticated }
+        let body: [String: JSONValue] = [
+            "device_id": .string(deviceId),
+            "notification_id": .string(notificationId),
+        ]
+        guard let request = postRequest(path: "api/push/ack", token: token, body: body) else {
+            return .refused
+        }
         let (status, _) = await outcome(of: request)
         switch status {
         case 200...299: return .acknowledged
@@ -78,12 +86,14 @@ public struct PushRest: Sendable {
     }
 
     public func revoke(token: String?, deviceId: String) async -> PushRevokeOutcome {
-        guard let token, !token.isEmpty else { return .unauthenticated }
+        guard let token = token, !token.isEmpty else { return .unauthenticated }
         var components = URLComponents(url: serverBase, resolvingAgainstBaseURL: false)
-        components?.percentEncodedPath =
-            (components?.percentEncodedPath ?? "").hasSuffix("/") ?
-            (components?.percentEncodedPath ?? "") + "api/push/destinations/\(deviceId)"
-            : (components?.percentEncodedPath ?? "") + "/api/push/destinations/\(deviceId)"
+        var path = components?.percentEncodedPath ?? ""
+        if !path.hasSuffix("/") {
+            path += "/"
+        }
+        path += "api/push/destinations/\(deviceId)"
+        components?.percentEncodedPath = path
         guard let url = components?.url else { return .failed }
         var request = NoStoreHTTP.request(url: url, method: "DELETE")
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
