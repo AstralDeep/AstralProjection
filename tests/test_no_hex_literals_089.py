@@ -98,7 +98,7 @@ def test_every_theme_channel_is_still_defined(token: str) -> None:
 GRAPHITE_CHANNELS = {
     "--astral-bg": "11 11 13",
     "--astral-surface": "21 21 24",
-    "--astral-primary": "139 92 246",
+    "--astral-primary": "124 58 237",
     "--astral-secondary": "110 110 120",
     "--astral-text": "236 236 239",
     "--astral-muted": "140 140 149",
@@ -127,5 +127,9 @@ def test_graphite_channels_match_the_canonical_preset() -> None:
     assert channels == GRAPHITE_CHANNELS
 
 
-def test_no_stale_midnight_primary_fallback_remains_in_the_stylesheet() -> None:
-    assert "99 102 241" not in _stylesheet()
+def test_no_stale_primary_fallback_remains_in_the_stylesheet() -> None:
+    css = _stylesheet()
+
+    assert "99 102 241" not in css
+    assert "139 92 246" not in css
+    assert css.count("var(--astral-primary, 124 58 237)") == 2

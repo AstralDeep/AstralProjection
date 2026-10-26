@@ -311,7 +311,7 @@ def test_graphite_is_the_first_preset_and_the_default_theme_name() -> None:
     assert dict(THEME_PRESETS["graphite"]) == {
         "bg": "#0B0B0D",
         "surface": "#151518",
-        "primary": "#8B5CF6",
+        "primary": "#7C3AED",
         "secondary": "#6E6E78",
         "text": "#ECECEF",
         "muted": "#8C8C95",

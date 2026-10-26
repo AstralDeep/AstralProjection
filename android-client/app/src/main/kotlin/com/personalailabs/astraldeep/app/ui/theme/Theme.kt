@@ -23,7 +23,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 object AstralColors {
-    val Primary = Color(0xFF8B5CF6)
+    val Primary = Color(0xFF7C3AED)
     val Secondary = Color(0xFF6E6E78)
     val Accent = Color(0xFFA78BFA)
     val Cyan = Color(0xFF06B6D4)
@@ -126,7 +126,7 @@ data class ThemePalette(
 
 val THEME_PRESETS: Map<String, ThemePalette> =
     mapOf(
-        "graphite" to ThemePalette("#0B0B0D", "#151518", "#8B5CF6", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
+        "graphite" to ThemePalette("#0B0B0D", "#151518", "#7C3AED", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
         "midnight" to ThemePalette("#0F1221", "#1A1E2E", "#6366F1", "#8B5CF6", "#F3F4F6", "#9CA3AF", "#06B6D4"),
         "daylight" to ThemePalette("#F8FAFC", "#FFFFFF", "#4F46E5", "#7C3AED", "#1E293B", "#64748B", "#0891B2"),
         "ocean" to ThemePalette("#0C1222", "#132038", "#0EA5E9", "#06B6D4", "#E2E8F0", "#94A3B8", "#2DD4BF"),

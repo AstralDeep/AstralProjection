@@ -16,7 +16,7 @@
 :root {
   --astral-bg:        11 11 13;
   --astral-surface:   21 21 24;
-  --astral-primary:   139 92 246;
+  --astral-primary:   124 58 237;
   --astral-secondary: 110 110 120;
   --astral-text:      236 236 239;
   --astral-muted:     140 140 149;
@@ -1446,13 +1446,13 @@ details > summary::-webkit-details-marker { display: none; }
   0% {
     opacity: 0.3;
     transform: translateY(-2px);
-    color: rgb(var(--astral-primary, 139 92 246));
+    color: rgb(var(--astral-primary, 124 58 237));
   }
   35% {
     opacity: 1;
     transform: translateY(0);
     color: rgb(var(--astral-accent, 129 140 248));
-    text-shadow: 0 0 8px rgb(var(--astral-primary, 139 92 246) / 0.45);
+    text-shadow: 0 0 8px rgb(var(--astral-primary, 124 58 237) / 0.45);
   }
   100% {
     opacity: 1;

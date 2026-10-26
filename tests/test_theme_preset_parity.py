@@ -25,7 +25,7 @@ Presets = dict[str, dict[str, str]]
 GRAPHITE = {
     "bg": "#0B0B0D",
     "surface": "#151518",
-    "primary": "#8B5CF6",
+    "primary": "#7C3AED",
     "secondary": "#6E6E78",
     "text": "#ECECEF",
     "muted": "#8C8C95",
@@ -180,7 +180,7 @@ def test_a_changed_palette_value_in_any_copy_is_detected(copy: str) -> None:
     assert value, copy
     mutated = source[: value.start(1)] + "8B5CF7" + source[value.end(1):]
 
-    assert _divergence(canonical, parse(mutated)) == ["graphite.primary: #8B5CF7 != #8B5CF6"]
+    assert _divergence(canonical, parse(mutated)) == ["midnight.secondary: #8B5CF7 != #8B5CF6"]
 
 
 def test_a_missing_or_renamed_preset_is_detected() -> None:

@@ -32,7 +32,7 @@ THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
     "graphite": {
         "bg": "#0B0B0D",
         "surface": "#151518",
-        "primary": "#8B5CF6",
+        "primary": "#7C3AED",
         "secondary": "#6E6E78",
         "text": "#ECECEF",
         "muted": "#8C8C95",

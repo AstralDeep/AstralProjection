@@ -27,7 +27,7 @@ class ThemeTest {
     fun graphite_leads_the_presets_and_midnight_keeps_its_values() {
         assertEquals("graphite", THEME_PRESETS.keys.first())
         assertEquals(
-            ThemePalette("#0B0B0D", "#151518", "#8B5CF6", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
+            ThemePalette("#0B0B0D", "#151518", "#7C3AED", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
             THEME_PRESETS["graphite"],
         )
         assertEquals(
@@ -146,7 +146,7 @@ class ThemeTest {
     @Test
     fun the_graphite_preset_maps_to_the_default_color_scheme() {
         val scheme = paletteToColorScheme(THEME_PRESETS.getValue("graphite"))
-        assertEquals(hexToColor("#8B5CF6"), scheme.primary)
+        assertEquals(hexToColor("#7C3AED"), scheme.primary)
         assertEquals(hexToColor("#6E6E78"), scheme.secondary)
         assertEquals(hexToColor("#A78BFA"), scheme.tertiary)
         assertEquals(hexToColor("#0B0B0D"), scheme.background)
