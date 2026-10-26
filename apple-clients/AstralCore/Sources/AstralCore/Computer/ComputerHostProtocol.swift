@@ -35,15 +35,34 @@ public struct ComputerHostScreen: Sendable, Equatable {
     }
 }
 
+public struct ComputerHostWorkspaceRoot: Sendable, Equatable {
+    public let name: String
+    public let path: String
+    public init(name: String, path: String) {
+        self.name = name
+        self.path = path
+    }
+    var valid: Bool {
+        !name.isEmpty && name.unicodeScalars.count <= 255
+            && !name.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) && path.hasPrefix("/")
+            && path.utf8.count <= 1024 && !path.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
+            && !path.split(separator: "/").contains("..")
+    }
+    public var json: JSONValue { .object(["name": .string(name), "path": .string(path)]) }
+}
+
 public struct ComputerHostDescriptor: Sendable, Equatable {
+    public static let maximumWorkspaceRoots = 32
     public let hostId: String
     public let name: String
     public let clientVersion: String
     public let screens: [ComputerHostScreen]
     public let verbs: [String]
-    public init(hostId: String, name: String, clientVersion: String, screens: [ComputerHostScreen], verbs: [String])
-        throws
-    {
+    public let workspaceRoots: [ComputerHostWorkspaceRoot]
+    public init(
+        hostId: String, name: String, clientVersion: String, screens: [ComputerHostScreen], verbs: [String],
+        workspaceRoots: [ComputerHostWorkspaceRoot] = []
+    ) throws {
         guard computerUUID(hostId), !name.isEmpty, name.count <= 64,
             !name.unicodeScalars.contains(where: { $0.value < 32 }),
             clientVersion.range(
@@ -55,20 +74,25 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
                     && (1...16384).contains($0.element.height) && $0.element.scale.isFinite
                     && (0.5...8).contains($0.element.scale)
             }),
-            !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs)
+            !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs),
+            workspaceRoots.count <= Self.maximumWorkspaceRoots, workspaceRoots.allSatisfy(\.valid),
+            Set(workspaceRoots.map(\.path)).count == workspaceRoots.count
         else { throw ComputerHostError("out_of_range", "The computer descriptor is invalid.") }
         self.hostId = hostId
         self.name = name
         self.clientVersion = clientVersion
         self.screens = screens
         self.verbs = verbs.sorted()
+        self.workspaceRoots = workspaceRoots
     }
     public var json: JSONValue {
-        .object([
+        var object: [String: JSONValue] = [
             "host_id": .string(hostId), "name": .string(name), "platform": .string("macos"),
             "client_version": .string(clientVersion), "screens": .array(screens.map(\.json)),
             "verbs": .array(verbs.map(JSONValue.string)), "protocol": .number(1),
-        ])
+        ]
+        if !workspaceRoots.isEmpty { object["workspace_roots"] = .array(workspaceRoots.map(\.json)) }
+        return .object(object)
     }
 }
 
@@ -373,7 +397,10 @@ public struct ComputerHostChord: Sendable, Equatable {
         let parts = text.lowercased().split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         let aliases = [
             "control": "ctrl", "command": "cmd", "meta": "cmd", "option": "alt", "return": "enter", "esc": "escape",
-            "spacebar": "space", "back": "backspace",
+            "spacebar": "space", "back": "backspace", "comma": ",", "period": ".", "slash": "/", "semicolon": ";",
+            "quote": "'", "apostrophe": "'", "leftbracket": "[", "bracketleft": "[", "rightbracket": "]",
+            "bracketright": "]", "backslash": "\\", "minus": "-", "hyphen": "-", "equal": "=", "equals": "=",
+            "grave": "`", "backtick": "`",
         ]
         let normalized = parts.map { aliases[$0] ?? $0 }
         let mods: Set<String> = ["ctrl", "cmd", "alt", "shift"]
@@ -381,7 +408,7 @@ public struct ComputerHostChord: Sendable, Equatable {
             "enter", "escape", "space", "tab", "backspace", "delete", "up", "down", "left", "right", "home", "end",
             "pageup", "pagedown",
         ])
-        .union((1...12).map { "f\($0)" }).union("abcdefghijklmnopqrstuvwxyz0123456789".map(String.init))
+        .union((1...12).map { "f\($0)" }).union("abcdefghijklmnopqrstuvwxyz0123456789,./;'[]\\-=`".map(String.init))
         guard let last = normalized.last, keys.contains(last), normalized.dropLast().allSatisfy(mods.contains),
             Set(normalized).count == normalized.count
         else { throw ComputerHostError("out_of_range", "The key chord is unsupported.") }

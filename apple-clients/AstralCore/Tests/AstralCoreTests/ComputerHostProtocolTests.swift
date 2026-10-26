@@ -546,4 +546,65 @@ final class ComputerHostProtocolTests: XCTestCase {
         XCTAssertThrowsError(
             try ComputerHostGeometry.validate(CGPoint(x: CGFloat.infinity, y: 50), end: nil, within: bounds))
     }
+
+    func testPunctuationKeysAndNamedAliasesFormChords() throws {
+        let cases: [(String, String, [String])] = [
+            ("cmd+,", ",", ["cmd"]), ("cmd+[", "[", ["cmd"]), ("cmd+]", "]", ["cmd"]),
+            ("cmd+shift+.", ".", ["cmd", "shift"]),
+            ("ctrl+/", "/", ["ctrl"]), (";", ";", []), ("'", "'", []), ("\\", "\\", []), ("cmd+-", "-", ["cmd"]),
+            ("cmd+=", "=", ["cmd"]), ("ctrl+`", "`", ["ctrl"]), ("cmd+comma", ",", ["cmd"]), ("Period", ".", []),
+            ("slash", "/", []), ("semicolon", ";", []), ("quote", "'", []), ("apostrophe", "'", []),
+            ("cmd+leftbracket", "[", ["cmd"]), ("bracketright", "]", []), ("backslash", "\\", []), ("minus", "-", []),
+            ("hyphen", "-", []), ("equal", "=", []), ("equals", "=", []), ("grave", "`", []), ("backtick", "`", []),
+        ]
+        for (text, key, modifiers) in cases {
+            let chord = try ComputerHostChord(text)
+            XCTAssertEqual(chord.key, key, text)
+            XCTAssertEqual(chord.modifiers, Set(modifiers), text)
+            XCTAssertNoThrow(try request("press_keys", args: ["keys": .string(text)]), text)
+            XCTAssertNoThrow(try request("browser_press", args: ["keys": .string(text)]), text)
+        }
+        for invalid in ["cmd+", "+", "cmd++", ",+cmd", "cmd+,+.", "~", "cmd+comma+comma", "shift+shift+,"] {
+            XCTAssertThrowsError(try ComputerHostChord(invalid), invalid)
+        }
+    }
+
+    func testDescriptorWorkspaceRootsAreOptionalBoundedAndEncodedOnlyWhenPresent() throws {
+        let screens = [ComputerHostScreen(index: 0, width: 1000, height: 800, scale: 2, primary: true)]
+        let bare = try ComputerHostDescriptor(
+            hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens, verbs: ["screenshot"])
+        XCTAssertNil(bare.json["workspace_roots"])
+        let roots = [
+            ComputerHostWorkspaceRoot(name: "x", path: "/Users/sam/Projects/x"),
+            ComputerHostWorkspaceRoot(name: "Notes – 2026", path: "/Users/sam/Notes – 2026"),
+        ]
+        let descriptor = try ComputerHostDescriptor(
+            hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens,
+            verbs: ["run_command", "screenshot"], workspaceRoots: roots)
+        XCTAssertEqual(
+            descriptor.json["workspace_roots"],
+            .array([
+                .object(["name": .string("x"), "path": .string("/Users/sam/Projects/x")]),
+                .object(["name": .string("Notes – 2026"), "path": .string("/Users/sam/Notes – 2026")]),
+            ]))
+        let invalid: [[ComputerHostWorkspaceRoot]] = [
+            [ComputerHostWorkspaceRoot(name: "", path: "/a")],
+            [ComputerHostWorkspaceRoot(name: "a", path: "relative")],
+            [ComputerHostWorkspaceRoot(name: "a", path: "/a/../b")],
+            [ComputerHostWorkspaceRoot(name: "a\nb", path: "/a")],
+            [ComputerHostWorkspaceRoot(name: "a", path: "/a\u{7f}")],
+            [ComputerHostWorkspaceRoot(name: String(repeating: "n", count: 256), path: "/a")],
+            [ComputerHostWorkspaceRoot(name: "a", path: "/" + String(repeating: "p", count: 1024))],
+            [ComputerHostWorkspaceRoot(name: "a", path: "/a"), ComputerHostWorkspaceRoot(name: "b", path: "/a")],
+            (0...ComputerHostDescriptor.maximumWorkspaceRoots).map {
+                ComputerHostWorkspaceRoot(name: "r\($0)", path: "/r\($0)")
+            },
+        ]
+        for value in invalid {
+            XCTAssertThrowsError(
+                try ComputerHostDescriptor(
+                    hostId: session, name: "Test Mac", clientVersion: "1.9.0", screens: screens,
+                    verbs: ["screenshot"], workspaceRoots: value))
+        }
+    }
 }
