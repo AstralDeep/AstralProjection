@@ -38,6 +38,16 @@
             case .monitoring: return "Input Monitoring"
             }
         }
+        var pane: String {
+            switch self {
+            case .accessibility: return "Device Control and Data Access"
+            case .screen: return "Screen & System Audio Recording"
+            case .monitoring: return "Input Monitoring"
+            }
+        }
+        var noPromptGuidance: String {
+            "macOS no longer prompts for this app; open \(pane) and add AstralDeep with +"
+        }
         var settingsURL: URL {
             let anchor: String
             switch self {
@@ -369,7 +379,7 @@
             accessibilityAllowed = permissions.accessibility && permissions.posting
             screenAllowed = permissions.screen
             monitoringAllowed = permissions.monitoring
-            if enabled && (!authority.desktopIsAvailable || !desktopProbe()) {
+            if enabled, session?.state != "paused", !authority.desktopIsAvailable || !desktopProbe() {
                 sessionLocked()
                 return
             }
@@ -405,6 +415,14 @@
                 }
                 return
             }
+            let asked = "computer.permission.requested." + permission.title
+            if defaults.bool(forKey: asked) {
+                lastError =
+                    permission.noPromptGuidance
+                    + (settingsOpener(permission.settingsURL) ? "" : ". AstralDeep could not open that pane.")
+                return
+            }
+            defaults.set(true, forKey: asked)
             let granted = permissionRequester(permission)
             refreshPermissions()
             let ready = permissionReady(permission)

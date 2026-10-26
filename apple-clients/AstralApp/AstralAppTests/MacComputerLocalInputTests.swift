@@ -88,7 +88,8 @@
                             mouseButton: .right)),
                     try XCTUnwrap(
                         CGEvent(
-                            scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 2, wheel2: 0, wheel3: 0)),
+                            scrollWheelEvent2Source: nil, units: .line, wheelCount: 1, wheel1: 2, wheel2: 0,
+                            wheel3: 0)),
                 ]
                 for kind in kinds {
                     let monitors = MacComputerTestMonitors()
@@ -153,6 +154,43 @@
             monitors.uptime = 11.05
             monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: marked)))
             XCTAssertEqual(scheduler.delays.count, 1)
+        }
+
+        func testPointerInputEndingOverAstralWindowsIsNotTakeoverButKeysAre() throws {
+            let monitors = MacComputerTestMonitors()
+            let scheduler = MacComputerTestScheduler()
+            let pointer = MacComputerTestFlag(true)
+            let monitor = MacComputerInputMonitor(
+                marker: 30, monitors: monitors, frontmost: { "com.apple.TextEdit" },
+                hostBundle: "com.personalailabs.astraldeep", pointerOverHost: { pointer.value },
+                schedule: scheduler.schedule)
+            var takeovers = 0
+            XCTAssertTrue(monitor.start { takeovers += 1 })
+            defer { monitor.stop() }
+            let click = try XCTUnwrap(
+                CGEvent(
+                    mouseEventSource: nil, mouseType: .leftMouseDown, mouseCursorPosition: .zero, mouseButton: .left))
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: click)))
+            for x in [0.0, 30, 60] {
+                monitors.uptime += 0.05
+                monitors.emitGlobal(
+                    try XCTUnwrap(
+                        NSEvent(
+                            cgEvent: XCTUnwrap(
+                                CGEvent(
+                                    mouseEventSource: nil, mouseType: .mouseMoved,
+                                    mouseCursorPosition: CGPoint(x: x, y: 0), mouseButton: .left)))))
+            }
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 0)
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: event())))
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: click)))
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 1)
+            pointer.value = false
+            monitors.emitGlobal(try XCTUnwrap(NSEvent(cgEvent: click)))
+            scheduler.runAll()
+            XCTAssertEqual(takeovers, 2)
         }
 
         func testStopCancelsAPendingFrontmostCheck() throws {
@@ -246,6 +284,12 @@
             scheduler.runAll()
             XCTAssertEqual(takeovers, 1)
         }
+    }
+
+    @MainActor
+    final class MacComputerTestFlag {
+        var value: Bool
+        init(_ value: Bool) { self.value = value }
     }
 
     @MainActor

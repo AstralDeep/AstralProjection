@@ -222,9 +222,11 @@
         private let monitors: any MacComputerEventMonitoring
         private let frontmost: @MainActor () -> String?
         private let hostBundle: String?
+        private let pointerOverHost: @MainActor () -> Bool
         private let schedule: @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Void
         private var samples: [(time: TimeInterval, point: CGPoint)] = []
         private var pending = false
+        private var keyed = false
         private var generation = 0
         init(
             marker: Int64, monitors: any MacComputerEventMonitoring = MacComputerLiveEventMonitoring(),
@@ -232,6 +234,10 @@
                 NSWorkspace.shared.frontmostApplication?.bundleIdentifier
             },
             hostBundle: String? = Bundle.main.bundleIdentifier,
+            pointerOverHost: @escaping @MainActor () -> Bool = {
+                let number = NSWindow.windowNumber(at: NSEvent.mouseLocation, belowWindowWithWindowNumber: 0)
+                return NSApp.windows.contains { $0.isVisible && $0.windowNumber == number }
+            },
             schedule: @escaping @MainActor (TimeInterval, @escaping @MainActor () -> Void) -> Void = { delay, body in
                 Task { @MainActor in
                     do { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) } catch { return }
@@ -243,6 +249,7 @@
             self.monitors = monitors
             self.frontmost = frontmost
             self.hostBundle = hostBundle
+            self.pointerOverHost = pointerOverHost
             self.schedule = schedule
         }
         var running: Bool { global != nil }
@@ -265,6 +272,7 @@
             generation += 1
             samples = []
             pending = false
+            keyed = false
         }
         private func observe(_ event: NSEvent, generation current: Int, humanInput: @escaping @MainActor () -> Void) {
             guard current == generation, event.cgEvent?.getIntegerValueField(.eventSourceUserData) != marker else {
@@ -273,12 +281,16 @@
             if [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged].contains(event.type) {
                 guard moved(event) else { return }
             }
+            if [.keyDown, .flagsChanged].contains(event.type) { keyed = true }
             guard !pending else { return }
             pending = true
             schedule(Self.frontmostDelay) { [weak self] in
                 guard let self, self.generation == current else { return }
+                let typed = self.keyed
                 self.pending = false
+                self.keyed = false
                 if let host = self.hostBundle, self.frontmost() == host { return }
+                if !typed && self.pointerOverHost() { return }
                 humanInput()
             }
         }
