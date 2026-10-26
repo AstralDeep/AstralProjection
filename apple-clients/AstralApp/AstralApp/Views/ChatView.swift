@@ -240,8 +240,6 @@ private struct RailHeader: View {
     let onCollapse: () -> Void
     var body: some View {
         HStack(spacing: 6) {
-            Text("CONVERSATION")
-                .font(ConsoleTypography.caption2.bold()).foregroundStyle(theme.palette.muted)
             Spacer()
             Button(action: onCollapse) {
                 Image(systemName: "chevron.right.2")
@@ -334,7 +332,7 @@ struct CanvasArea: View {
                         if model.showSkeleton && model.workspaceCanvas.isEmpty {
                             SkeletonCanvas()
                         } else if model.workspaceCanvas.isEmpty {
-                            EmptyCanvasHint()
+                            Color.clear
                         } else {
                             ScrollView {
                                 LazyVStack(alignment: .leading, spacing: 12) {
@@ -391,21 +389,6 @@ private struct SkeletonCanvas: View {
     }
 }
 
-private struct EmptyCanvasHint: View {
-    @Environment(ThemeStore.self) var theme
-    private var p: AstralPalette { theme.palette }
-    var body: some View {
-        VStack(spacing: 8) {
-            Text("Your generated interface appears here")
-                .font(ConsoleTypography.headline).foregroundStyle(p.text).multilineTextAlignment(.center)
-            Text("Ask something below and AstralDeep will build a live interface for it.")
-                .font(ConsoleTypography.subheadline).foregroundStyle(p.muted).multilineTextAlignment(.center)
-        }
-        .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
 private struct ReadOnlyBanner: View {
     @Environment(ThemeStore.self) var theme
     let label: String?
@@ -414,12 +397,9 @@ private struct ReadOnlyBanner: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "clock.arrow.circlepath").foregroundStyle(p.primary)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Viewing a previous canvas").font(ConsoleTypography.footnote.weight(.semibold)).foregroundStyle(
-                    p.text)
-                if let label, !label.isEmpty {
-                    Text(label).font(ConsoleTypography.caption).foregroundStyle(p.muted).lineLimit(1)
-                }
+                .accessibilityLabel("Viewing history")
+            if let label, !label.isEmpty {
+                Text(label).font(ConsoleTypography.footnote.weight(.semibold)).foregroundStyle(p.text).lineLimit(1)
             }
             Spacer(minLength: 8)
             Button("Back to live", action: onBackToLive)
@@ -462,8 +442,6 @@ struct CanvasTimelineOverlay: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Previous canvases").font(ConsoleTypography.headline).foregroundStyle(p.text)
-            Text("Read-only snapshots from earlier turns in this chat.")
-                .font(ConsoleTypography.caption).foregroundStyle(p.muted)
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(Array(history.enumerated()).reversed(), id: \.offset) { idx, snap in
@@ -471,12 +449,8 @@ struct CanvasTimelineOverlay: View {
                             onSelect(idx)
                         } label: {
                             HStack {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(snap.label.isEmpty ? "Canvas \(idx + 1)" : snap.label)
-                                        .foregroundStyle(p.text).lineLimit(1)
-                                    Text("\(snap.components.count) component\(snap.components.count == 1 ? "" : "s")")
-                                        .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                                }
+                                Text(snap.label.isEmpty ? "Canvas \(idx + 1)" : snap.label)
+                                    .foregroundStyle(p.text).lineLimit(1)
                                 Spacer()
                                 Text("›").foregroundStyle(p.muted)
                             }
@@ -704,9 +678,7 @@ struct InputBar: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if model.mutationsLocked {
-                Text("Viewing history — messaging is paused. Return to the live view to continue.")
-                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                    .padding(.horizontal, 6)
+                HistoryLockChip()
             }
             if !model.staged.isEmpty {
                 AttachmentChips(staged: model.staged) { model.removeAttachment($0) }
@@ -748,17 +720,18 @@ struct InputBar: View {
                     .padding(.horizontal, 4).padding(.bottom, 4)
                 }
                 .background(p.surface, in: RoundedRectangle(cornerRadius: 16))
-                .overlay(RoundedRectangle(cornerRadius: 16).stroke(focused ? p.primary.opacity(0.7) : p.border))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(fieldOutline))
             } else if model.console != nil {
                 ComposerInputLayout {
                     messageField.lineLimit(1...3)
                         .padding(.horizontal, 12).padding(.vertical, 10)
                         .background(p.surface, in: RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(focused ? p.primary : p.border))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(fieldOutline))
                     controls
                 }
             } else {
-                messageField.lineLimit(2...8).padding(.horizontal, 4).padding(.vertical, 8)
+                messageField.lineLimit(2...8).padding(.horizontal, 10).padding(.vertical, 8)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(fieldOutline))
                 controls
             }
         }
@@ -816,16 +789,15 @@ struct InputBar: View {
         .accessibilityIdentifier("console-selection-summary")
     }
 
+    private var fieldOutline: Color { focused ? p.primary : p.muted.opacity(0.8) }
+
     private var messageField: some View {
-        TextField(
-            model.console == nil ? "Ask anything…" : model.consoleLabel("message_placeholder"), text: $input,
-            axis: .vertical
-        )
-        .textFieldStyle(.plain)
-        .accessibilityIdentifier("chat-composer-input")
-        .accessibilityLabel("Message AstralDeep")
-        .submitLabel(.send).onSubmit(send)
-        .disabled(model.mutationsLocked).focused($focused)
+        TextField("", text: $input, axis: .vertical)
+            .textFieldStyle(.plain)
+            .accessibilityIdentifier("chat-composer-input")
+            .accessibilityLabel("Message AstralDeep")
+            .submitLabel(.send).onSubmit(send)
+            .disabled(model.mutationsLocked).focused($focused)
     }
 
     private var controls: some View {
@@ -891,6 +863,35 @@ struct InputBar: View {
         focused = false
         input = ""
         model.sendChat(submittedInput)
+    }
+}
+
+struct HistoryLockChip: View {
+    @Environment(AppModel.self) var model
+    @Environment(ThemeStore.self) var theme
+    private var p: AstralPalette { theme.palette }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "clock.arrow.circlepath").foregroundStyle(p.primary).accessibilityHidden(true)
+            Text("Viewing history").font(ConsoleTypography.caption.weight(.semibold)).foregroundStyle(p.text)
+            Button("Back to live") {
+                model.emit(
+                    "chrome_workspace_timeline_live",
+                    payload: model.activeChatId.map { ["chat_id": .string($0)] } ?? [:])
+            }
+            .font(ConsoleTypography.caption.weight(.medium))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(p.primary, in: Capsule())
+            .buttonStyle(.plain)
+            .disabled(!model.connected)
+            .accessibilityIdentifier("composer-back-to-live")
+        }
+        .padding(.leading, 10).padding(.trailing, 4).padding(.vertical, 4)
+        .background(p.primary.opacity(0.14), in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("composer-history-lock")
     }
 }
 

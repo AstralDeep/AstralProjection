@@ -3,6 +3,7 @@
 
 import AstralCore
 import SwiftUI
+import Vision
 import XCTest
 
 @testable import AstralDeep
@@ -100,6 +101,27 @@ final class WebPrimitiveStyleTests: XCTestCase {
         assertRGB(try rgb(fence, x: 300, y: fence.height / 2), [29, 29, 33])
         let midnight = try render(#"{"type":"code","content":"ok"}"#, preset: "midnight")
         assertRGB(try rgb(midnight, x: 300, y: midnight.height / 2), [30, 35, 56])
+    }
+
+    private func recognized(_ image: CGImage) throws -> [String] {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = false
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        return (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
+    }
+
+    func testUploadHintEmptyHistoryAndUntitledWelcomeDisclosureDrawNoHelperCopy() throws {
+        let upload = try recognized(render(#"{"type":"file_upload","label":"Quarterly report"}"#))
+        XCTAssertTrue(upload.contains { $0.contains("Quarterly report") })
+        XCTAssertFalse(upload.contains { $0.contains("paperclip") || $0.contains("chat input") })
+        XCTAssertTrue(try recognized(render(#"{"type":"chat_history","items":[]}"#)).isEmpty)
+        let more = try recognized(
+            render(
+                #"{"type":"collapsible","title":"","data-welcome":"more","aria-label":"More examples","content":[]}"#))
+        XCTAssertFalse(more.contains { $0.contains("More examples") || $0.contains("Details") })
+        let details = try recognized(render(#"{"type":"collapsible","title":"","content":[]}"#))
+        XCTAssertTrue(details.contains { $0.contains("Details") })
     }
 
     func testCardPaddingFollowsViewportEvenInNarrowGridSlot() throws {

@@ -615,9 +615,7 @@ struct ComponentView: View {
         let items = (component.raw["items"]?.arrayValue ?? []).compactMap { ChatSummary(historyItem: $0) }
         let navigate = model.navigationCallback(component, surface: navigationSurface, transcript: navigationTranscript)
         return VStack(alignment: .leading, spacing: 2) {
-            if items.isEmpty {
-                Text("No conversations yet.").foregroundStyle(p.muted)
-            } else {
+            if !items.isEmpty {
                 HistoryHeader(title: component.raw["title"]?.stringValue ?? "Recent chats", count: items.count)
                 ForEach(Array(items.enumerated()), id: \.offset) { _, chat in
                     Button {
@@ -876,15 +874,11 @@ struct ComponentView: View {
     }
 
     private var fileUploadHint: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Image(systemName: "paperclip").foregroundStyle(p.muted).accessibilityHidden(true)
             if let label = component.label ?? component.title, !label.isEmpty {
                 markdown(label).foregroundStyle(p.text)
             }
-            Label(
-                "Attach files with the paperclip in the chat input",
-                systemImage: "paperclip"
-            )
-            .font(ConsoleTypography.caption).foregroundStyle(p.muted)
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1388,15 +1382,11 @@ struct ParamPickerComponent: View {
             if let title = component.title, !title.isEmpty {
                 formText(title)
                     .font(ConsoleTypography.headline).foregroundStyle(p.text)
+                    .fieldHelp(component.raw["description"]?.stringValue)
                     .accessibilityIdentifier(
                         hasLLMSave ? "llm-provider-form-title" : "param-picker-form-title"
                     )
                     .onTapGesture { editingField = nil }
-            }
-            if let desc = component.raw["description"]?.stringValue, !desc.isEmpty {
-                formText(desc)
-                    .font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(Array(fields.enumerated()), id: \.offset) { _, field in
                 fieldView(field)
@@ -1487,6 +1477,8 @@ struct ParamPickerComponent: View {
         guidanceSurface ? Text(verbatim: text) : Text(InlineMarkdown.attributed(text))
     }
 
+    static func placeholder(_ field: JSONValue) -> String { field["example"]?.stringValue ?? "" }
+
     @ViewBuilder
     private func fieldView(_ field: JSONValue) -> some View {
         if fieldIsVisible(field) { fieldBody(field) }
@@ -1510,10 +1502,7 @@ struct ParamPickerComponent: View {
             Text(label + (field["required"]?.boolValue == true ? " *" : ""))
                 .font(ConsoleTypography.caption).foregroundStyle(p.muted)
             fieldControl(field, name: name, label: label, kind: kind)
-            if let help = field["help"]?.stringValue, !help.isEmpty {
-                formText(help).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                .fieldHelp(field["help"]?.stringValue)
         }
     }
 
@@ -1597,7 +1586,7 @@ struct ParamPickerComponent: View {
                         ?? field["default"]?.numberValue.map { String($0) } ?? "")
             },
             set: { values[name] = $0 })
-        TextField(field["help"]?.stringValue ?? "", text: text)
+        TextField(Self.placeholder(field), text: text)
             .textFieldStyle(.roundedBorder)
             .focused($editingField, equals: name)
             #if os(iOS)
@@ -1612,7 +1601,7 @@ struct ParamPickerComponent: View {
         let text: Binding<String> = Binding(
             get: { values[name] ?? "" },
             set: { values[name] = $0 })
-        SecureField(field["help"]?.stringValue ?? "", text: text)
+        SecureField(Self.placeholder(field), text: text)
             .textFieldStyle(.roundedBorder)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
@@ -1641,7 +1630,7 @@ struct ParamPickerComponent: View {
         let text: Binding<String> = Binding(
             get: { values[name] ?? (field["default"]?.stringValue ?? "") },
             set: { values[name] = $0 })
-        TextField(field["help"]?.stringValue ?? "", text: text)
+        TextField(Self.placeholder(field), text: text)
             .textFieldStyle(.roundedBorder)
             .focused($editingField, equals: name)
             .onSubmit { editingField = nil }
@@ -1765,6 +1754,9 @@ struct CollapsibleComponent: View {
         _expanded = State(initialValue: component.raw["default_open"]?.boolValue ?? false)
     }
 
+    private var title: String? { component.title?.isEmpty == false ? component.title : nil }
+    private var spokenTitle: String { title ?? component.raw["aria-label"]?.stringValue ?? "Details" }
+
     var body: some View {
         let welcome = WorkspaceWelcome.role(of: component) == .more
         VStack(alignment: welcome ? .center : .leading, spacing: 8) {
@@ -1773,15 +1765,21 @@ struct CollapsibleComponent: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right").foregroundStyle(p.muted)
-                    Text(InlineMarkdown.attributed(component.title?.isEmpty == false ? component.title! : "Details"))
-                        .font(welcome ? ConsoleTypography.subheadline : ConsoleTypography.headline)
-                        .foregroundStyle(welcome ? p.muted : p.text)
+                    if let title {
+                        Text(InlineMarkdown.attributed(title))
+                            .font(welcome ? ConsoleTypography.subheadline : ConsoleTypography.headline)
+                            .foregroundStyle(welcome ? p.muted : p.text)
+                    } else if !welcome {
+                        Text("Details").font(ConsoleTypography.headline).foregroundStyle(p.text)
+                    }
                     if !welcome { Spacer(minLength: 0) }
                 }
-                .frame(minHeight: 44)
+                .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .help(title == nil ? spokenTitle : "")
+            .accessibilityLabel(title.map { Text(InlineMarkdown.attributed($0)) } ?? Text(spokenTitle))
             .accessibilityValue(expanded ? "Expanded" : "Collapsed")
             if expanded {
                 if welcome {
@@ -1805,6 +1803,17 @@ struct CollapsibleComponent: View {
         .onChange(of: captureNode) { _, _ in retainExpansion() }
     }
 
+}
+
+extension View {
+    @ViewBuilder
+    func fieldHelp(_ text: String?) -> some View {
+        if let text, !text.isEmpty {
+            help(text).accessibilityHint(text)
+        } else {
+            self
+        }
+    }
 }
 
 struct ColorPickerComponent: View {

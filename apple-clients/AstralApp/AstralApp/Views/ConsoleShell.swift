@@ -337,7 +337,6 @@ struct ConsoleLanding: View {
     @Environment(ThemeStore.self) var theme
     let console: ConsoleModel
     let presentation: ConsolePresentation
-    @State private var category: String?
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -346,31 +345,14 @@ struct ConsoleLanding: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(console.labels["title"] ?? "").font(ConsoleTypography.title2.weight(.heavy)).foregroundStyle(
                         p.text)
-                    Text(console.labels["subtitle"] ?? "").font(ConsoleTypography.subheadline).foregroundStyle(p.muted)
                     Divider().overlay(p.border).padding(.top, 8)
-                }
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 14) {
-                        Text(console.labels["start_here"] ?? "").font(ConsoleTypography.sans(18).bold())
-                            .fixedSize(horizontal: true, vertical: false)
-                        Spacer(minLength: 0)
-                        filters.frame(minWidth: 120, maxWidth: 420)
-                    }
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(console.labels["start_here"] ?? "").font(ConsoleTypography.sans(18).bold())
-                            .fixedSize(horizontal: false, vertical: true)
-                        filters
-                    }
                 }
                 LazyVGrid(
                     columns: Array(
                         repeating: GridItem(.flexible(), spacing: 14, alignment: .top),
                         count: presentation.scenarioColumns), spacing: 14
                 ) {
-                    ForEach(console.catalog.scenarios.filter { category == nil || $0.category == category }) {
-                        scenario in
-                        scenarioCard(scenario)
-                    }
+                    ForEach(console.catalog.scenarios) { scenario in scenarioCard(scenario) }
                 }
             }
             .padding(presentation.contentPadding.edgeInsets)
@@ -378,43 +360,9 @@ struct ConsoleLanding: View {
         .accessibilityIdentifier("workspace-start")
     }
 
-    private func filter(_ value: String?, label: String) -> some View {
-        Button {
-            category = value
-        } label: {
-            Text(label).font(ConsoleTypography.caption).foregroundStyle(category == value ? p.text : p.muted)
-                .padding(.horizontal, 14).frame(minHeight: max(32, presentation.minimumControlHeight))
-                .background(category == value ? p.primary.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(category == value ? p.primary.opacity(0.45) : .clear))
-        }
-        .buttonStyle(.plain).accessibilityAddTraits(category == value ? .isSelected : [])
-    }
-
-    private var filters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                filter(nil, label: console.labels["all_categories"] ?? "")
-                ForEach(console.catalog.categories, id: \.self) { filter($0, label: $0) }
-            }
-            .padding(5)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .background(p.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.text.opacity(0.09)))
-    }
-
     private func scenarioCard(_ scenario: ConsoleScenario) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(scenario.category).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                Spacer()
-                Text(console.labels["example"] ?? "").font(ConsoleTypography.sans(11))
-                    .foregroundStyle(p.muted).padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(p.text.opacity(0.04), in: Capsule()).overlay(Capsule().stroke(p.border))
-            }
             Text(scenario.title).font(ConsoleTypography.subheadline.bold()).foregroundStyle(p.text)
-            Text(scenario.description).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 Button(console.labels["run"] ?? "") { model.useConsoleScenario(scenario, run: true) }
@@ -474,22 +422,15 @@ struct ConsoleSurfaceOverlay: View {
             Color.black.opacity(0.4).ignoresSafeArea().onTapGesture { model.closeSurface() }
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Text("✦").font(ConsoleTypography.title3).foregroundStyle(p.primary)
-                        .frame(width: 36, height: 36).background(
-                            p.primary.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(
-                            model.pendingSurface?.title ?? currentNavigationItem?.label
-                                ?? console.composerActions.first {
-                                    $0.action?.surface == model.pendingSurfaceKey
-                                        && $0.action?.params == model.pendingSurfaceParams
-                                }?.label ?? "Settings"
-                        )
-                        .font(ConsoleTypography.headline).foregroundStyle(p.text)
-                        if let subtitle = model.pendingSurface?.subtitle {
-                            Text(subtitle).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                        }
-                    }
+                    Text(
+                        model.pendingSurface?.title ?? currentNavigationItem?.label
+                            ?? console.composerActions.first {
+                                $0.action?.surface == model.pendingSurfaceKey
+                                    && $0.action?.params == model.pendingSurfaceParams
+                            }?.label ?? "Settings"
+                    )
+                    .font(ConsoleTypography.headline).foregroundStyle(p.text)
+                    .accessibilityAddTraits(.isHeader)
                     Spacer()
                     if model.mandatorySurface {
                         Button(model.chromeMenu?.signout.label ?? "Sign out") { Task { await model.signOut() } }
@@ -523,10 +464,7 @@ struct ConsoleSurfaceOverlay: View {
                                     .white
                                 )
                                 .frame(width: 34, height: 34).background(p.gradient, in: Circle())
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(console.identity.name).font(ConsoleTypography.subheadline.weight(.semibold))
-                                    Text(console.identity.role).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                                }
+                                Text(console.identity.name).font(ConsoleTypography.subheadline.weight(.semibold))
                             }
                             Divider().overlay(p.border)
                             ScrollView {

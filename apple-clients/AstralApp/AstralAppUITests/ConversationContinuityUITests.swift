@@ -91,7 +91,10 @@ final class ConversationContinuityUITests: XCTestCase {
             "Continuity question", "continuity.pdf", "Continuity total: 21",
             "Continuity component answer", "Restored continuity canvas",
         ]
-        let forbidden = ["Your generated interface appears here", "locator was not restored"]
+        let forbidden = [
+            "Your generated interface appears here", "Ask something below", "locator was not restored", "CONVERSATION",
+            "messaging is paused", "Ask anything",
+        ]
         let deadline = Date().addingTimeInterval(timeout)
         var texts: [String] = []
         repeat {
