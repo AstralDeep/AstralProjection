@@ -83,7 +83,9 @@
             XCTAssertEqual(plan.stdin, Data("in".utf8))
             XCTAssertEqual(
                 plan.environment,
-                ["HOME": "/Users/synthetic", "LANG": "C", "PATH": "/usr/bin:/bin", "TERM": "dumb", "APP_FOO": "bar"])
+                [
+                    "HOME": "/Users/synthetic", "LANG": "C", "PATH": "/usr/bin:/bin", "TERM": "dumb", "APP_FOO": "bar",
+                ].merging(ComputerCommandPolicy.forcedNames) { $1 })
             _ = try await host.run(
                 request("run_command", ["command": .string("wc -l notes.md"), "cwd": .string(root)]),
                 session: session, roots: [root], authorize: {})
@@ -101,6 +103,7 @@
                 (try run(root), [], "cwd_outside_workspace"),
                 (try run(root, ["env": .object(["GITHUB_TOKEN": .string("x")])]), [root], "env_forbidden"),
                 (try run(root, ["env": .object(["DYLD_INSERT_LIBRARIES": .string("/x")])]), [root], "env_forbidden"),
+                (try run(root, ["env": .object(["EDITOR": .string("/bin/sh")])]), [root], "env_forbidden"),
                 (
                     try request(
                         "run_command", ["argv": .array([.string("no-such-tool-zz")]), "cwd": .string(root)]), [root],
@@ -381,7 +384,11 @@
                         "env": .object(["APP_FOO": .string("bar")]), "stdin": .string("ignored"),
                     ], deadline: 600000), session: session, roots: [root], authorize: {})
             let lines = Set((env["stdout"]?.stringValue ?? "").split(separator: "\n").map(String.init))
-            XCTAssertTrue(lines.isSuperset(of: ["TERM=dumb", "APP_FOO=bar", "PATH=/usr/bin:/bin", "USER=synthetic"]))
+            XCTAssertTrue(
+                lines.isSuperset(of: [
+                    "TERM=dumb", "APP_FOO=bar", "PATH=/usr/bin:/bin", "USER=synthetic", "EDITOR=/usr/bin/false",
+                    "PAGER=cat",
+                ]))
             XCTAssertFalse(lines.contains { $0.hasPrefix("ASTRAL_") })
             let cat = try await host.run(
                 request(

@@ -19,7 +19,11 @@
         private static let inheritedNames: Set<String> = ["HOME", "USER", "LANG", "SHELL", "TMPDIR"]
         public static let requestNames: Set<String> = [
             "LANG", "LC_ALL", "LC_CTYPE", "LC_MESSAGES", "TZ", "TERM", "NO_COLOR", "FORCE_COLOR", "CI", "DEBUG",
-            "PAGER", "EDITOR", "COLUMNS", "LINES",
+            "COLUMNS", "LINES",
+        ]
+        public static let forcedNames: [String: String] = [
+            "EDITOR": "/usr/bin/false", "VISUAL": "/usr/bin/false", "GIT_EDITOR": "/usr/bin/false", "PAGER": "cat",
+            "GIT_PAGER": "cat",
         ]
         private static let shells: Set<String> = ["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"]
         private static let neverGrantable: Set<String> = [
@@ -67,6 +71,7 @@
                 }
                 result[name] = value
             }
+            result.merge(forcedNames) { $1 }
             return result
         }
 

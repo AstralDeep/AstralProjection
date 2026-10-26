@@ -36,7 +36,8 @@
                 [
                     "PATH": "/usr/bin:/bin", "HOME": "/Users/sam", "USER": "sam", "LANG": "en_GB.UTF-8", "LC_ALL": "C",
                     "LC_CTYPE": "UTF-8", "TMPDIR": "/tmp/x", "SHELL": "/bin/zsh", "TERM": "xterm", "APP_MODE": "test",
-                    "NO_COLOR": "1",
+                    "NO_COLOR": "1", "EDITOR": "/usr/bin/false", "VISUAL": "/usr/bin/false",
+                    "GIT_EDITOR": "/usr/bin/false", "PAGER": "cat", "GIT_PAGER": "cat",
                 ])
             let longest = "APP_" + String(repeating: "A", count: 60)
             let named = ComputerCommandPolicy.requestNames.union(["APP_", "APP_X1", longest])
@@ -50,6 +51,7 @@
                 "ASTRAL_SESSION", "astral_x", "API_TOKEN", "MY_SECRET", "AWS_ACCESS_KEY_ID", "db_password", "KEYCHAIN",
                 "Token", "FOO", "HOME", "PATH", "DYLD_INSERT_LIBRARIES", "LD_PRELOAD", "SHELL", "lang", "app_mode",
                 "APP_TOKEN", "APP_API_KEY", "APP_" + String(repeating: "A", count: 61), "1BAD", "_APP", "LC_NUMERIC",
+                "EDITOR", "VISUAL", "GIT_EDITOR", "PAGER", "GIT_PAGER", "LESS", "MANPAGER",
             ] {
                 XCTAssertEqual(
                     code {
@@ -71,6 +73,17 @@
                 "out_of_range")
             XCTAssertFalse(ComputerCommandPolicy.forbidden("PATH"))
             XCTAssertTrue(ComputerCommandPolicy.forbidden("MONKEY_BUSINESS"))
+        }
+
+        func testEditorsAndPagersAreForcedInertWhateverTheBaseHolds() throws {
+            let env = try ComputerCommandPolicy.environment(
+                inherited: ["EDITOR": "vim", "VISUAL": "code -w", "PAGER": "less", "GIT_PAGER": "delta", "HOME": "/h"],
+                path: "/bin", additions: ["APP_EDITOR": "nano"])
+            for (name, value) in ComputerCommandPolicy.forcedNames { XCTAssertEqual(env[name], value, name) }
+            XCTAssertEqual(env["APP_EDITOR"], "nano")
+            XCTAssertEqual(
+                Set(ComputerCommandPolicy.forcedNames.keys), ["EDITOR", "VISUAL", "GIT_EDITOR", "PAGER", "GIT_PAGER"])
+            XCTAssertTrue(ComputerCommandPolicy.requestNames.isDisjoint(with: ComputerCommandPolicy.forcedNames.keys))
         }
 
         func testWorkingDirectoryMustResolveInsideAGrantedRoot() throws {
