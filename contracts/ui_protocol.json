@@ -3074,6 +3074,16 @@
           "composer_actions",
           "show_voice_availability_banner"
         ],
+        "optional_labels": [
+          "title",
+          "subtitle",
+          "start_here",
+          "example",
+          "empty_title",
+          "empty_subtitle",
+          "message_placeholder"
+        ],
+        "optional_label_rule": "Optional copy labels may be absent, empty or whitespace and render as nothing. Every other label the server sends stays a non-empty string.",
         "identity_fields": [
           "name",
           "role",
