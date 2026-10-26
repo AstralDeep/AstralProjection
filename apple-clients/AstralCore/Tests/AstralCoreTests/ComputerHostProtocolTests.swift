@@ -307,6 +307,73 @@ final class ComputerHostProtocolTests: XCTestCase {
         }
     }
 
+    func testBrowserActionsAdmitOptionalConfirmationAndBoundPermit() throws {
+        let click: [String: JSONValue] = ["ref": .string("e12"), "snapshot_id": .string("s9")]
+        let fill: [String: JSONValue] = [
+            "fields": .array([.object(["ref": .string("e2"), "value": .string("Ada")])]), "snapshot_id": .string("s9"),
+        ]
+        let single = JSONValue.object([
+            "ref": .string("e12"), "origin": .string("https://example.org"), "snapshot_id": .string("s9"),
+        ])
+        let many = JSONValue.object([
+            "refs": .array([.string("e2"), .string("e3")]), "origin": .string("https://shop.example:8443"),
+            "snapshot_id": .string("s9"),
+        ])
+        let line = JSONValue.string(#"[e12] button "Pay now""#)
+        for (verb, base) in [("browser_click", click), ("browser_fill", fill)] {
+            XCTAssertNoThrow(try request(verb, args: base.merging(["confirm_element": line]) { $1 }), verb)
+            XCTAssertNoThrow(try request(verb, args: base.merging(["permit": single]) { $1 }), verb)
+            XCTAssertNoThrow(
+                try request(verb, args: base.merging(["permit": many, "confirm_element": line]) { $1 }), verb)
+            let longest = JSONValue.string(String(repeating: "a", count: 200))
+            XCTAssertNoThrow(try request(verb, args: base.merging(["confirm_element": longest]) { $1 }), verb)
+            let refused: [JSONValue] = [
+                .string("e12"),
+                .object(["ref": .string("e12"), "origin": .string("https://example.org")]),
+                .object(["ref": .string("e12"), "snapshot_id": .string("s9")]),
+                .object([
+                    "ref": .string("e12"), "refs": .array([.string("e12")]), "origin": .string("https://example.org"),
+                    "snapshot_id": .string("s9"),
+                ]),
+                .object([
+                    "ref": .string("x12"), "origin": .string("https://example.org"), "snapshot_id": .string("s9"),
+                ]),
+                .object([
+                    "ref": .number(12), "origin": .string("https://example.org"), "snapshot_id": .string("s9"),
+                ]),
+                .object([
+                    "refs": .array([]), "origin": .string("https://example.org"), "snapshot_id": .string("s9"),
+                ]),
+                .object([
+                    "refs": .array([.string("e1"), .string("bad")]), "origin": .string("https://example.org"),
+                    "snapshot_id": .string("s9"),
+                ]),
+                .object([
+                    "refs": .array((0..<33).map { .string("e\($0)") }), "origin": .string("https://example.org"),
+                    "snapshot_id": .string("s9"),
+                ]),
+                .object(["ref": .string("e12"), "origin": .string("file:///etc"), "snapshot_id": .string("s9")]),
+                .object(["ref": .string("e12"), "origin": .number(1), "snapshot_id": .string("s9")]),
+                .object(["ref": .string("e12"), "origin": .string("https://example.org"), "snapshot_id": .string("9")]),
+                .object([
+                    "ref": .string("e12"), "origin": .string("https://example.org"), "snapshot_id": .string("s9"),
+                    "extra": .bool(true),
+                ]),
+            ]
+            for permit in refused {
+                XCTAssertThrowsError(try request(verb, args: base.merging(["permit": permit]) { $1 }), "\(permit)")
+            }
+            let invalid: [JSONValue] = [
+                .string(""), .string(String(repeating: "a", count: 201)), .number(1), .string("a\0b"),
+            ]
+            for confirm in invalid {
+                XCTAssertThrowsError(try request(verb, args: base.merging(["confirm_element": confirm]) { $1 }))
+            }
+        }
+        XCTAssertThrowsError(try request("browser_press", args: ["keys": .string("Enter"), "permit": single]))
+        XCTAssertThrowsError(try request("browser_scroll", args: ["dy": .number(1), "confirm_element": line]))
+    }
+
     func testExactTerminalAppRequiresTargetAndMatchesActualBundle() throws {
         let args: [String: JSONValue] = [
             "text": .string("printf hello"), "hwnd": .number(9), "terminal_app": .string("com.apple.Terminal"),

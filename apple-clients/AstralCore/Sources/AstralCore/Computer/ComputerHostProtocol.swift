@@ -173,8 +173,9 @@ public struct ComputerHostRequest: Sendable, Equatable {
             "interrupt_command": ["job_id", "signal"],
             "browser_snapshot": ["scope_ref", "mode", "max_chars"], "browser_get_text": ["ref", "max_chars"],
             "browser_screenshot": ["max_width", "ref"], "browser_wait": ["for", "text", "ref", "seconds"],
-            "browser_navigate": ["url", "action"], "browser_click": ["ref", "button", "count", "snapshot_id"],
-            "browser_fill": ["fields", "snapshot_id"], "browser_press": ["keys", "ref"],
+            "browser_navigate": ["url", "action"],
+            "browser_click": ["ref", "button", "count", "snapshot_id", "confirm_element", "permit"],
+            "browser_fill": ["fields", "snapshot_id", "confirm_element", "permit"], "browser_press": ["keys", "ref"],
             "browser_scroll": ["ref", "dy"], "browser_dialog": ["action", "text"],
         ]
         guard Set(args.keys).isSubset(of: fields[verb] ?? []) else {
@@ -385,6 +386,23 @@ public struct ComputerHostRequest: Sendable, Equatable {
             guard let snapshot = args["snapshot_id"]?.stringValue, computerFullMatch(snapshot, "^s[0-9]{1,9}$") else {
                 throw ComputerHostError(
                     "out_of_range", "Browser actions need the snapshot_id their reference came from.")
+            }
+            if args["confirm_element"] != nil { try text("confirm_element", 200) }
+            if let permit = args["permit"] {
+                func ref(_ value: JSONValue) -> Bool {
+                    value.stringValue.map { computerFullMatch($0, "^e[0-9]{1,9}$") } == true
+                }
+                func refs(_ value: JSONValue) -> Bool {
+                    value.arrayValue.map { (1...32).contains($0.count) && $0.allSatisfy(ref) } == true
+                }
+                guard let object = permit.objectValue,
+                    Set(object.keys) == ["ref", "origin", "snapshot_id"]
+                        || Set(object.keys) == ["refs", "origin", "snapshot_id"],
+                    object["ref"].map(ref) ?? true, object["refs"].map(refs) ?? true,
+                    let origin = object["origin"]?.stringValue, origin.unicodeScalars.count <= 2048,
+                    computerWebURL(origin), let permitted = object["snapshot_id"]?.stringValue,
+                    computerFullMatch(permitted, "^s[0-9]{1,9}$")
+                else { throw ComputerHostError("out_of_range", "Invalid browser action permit.") }
             }
         }
     }
