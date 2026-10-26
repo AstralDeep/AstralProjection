@@ -41,16 +41,32 @@ do not grant server authority.
 android-client/
 ├── core/   # PURE Kotlin (no Android) — JVM-unit-tested:
 │           #   protocol/ (WS message models + JSON), sdui/ (Component + canvas),
-│           #   streaming/ (push consumer), rest/ (audit REST shaping)
+│           #   streaming/ (push consumer), push/ (notification adapter decisions),
+│           #   rest/ (audit REST shaping)
 └── app/    # Android/Compose:
             #   transport/ (OkHttp WS), auth/ (AppAuth OIDC PKCE), render/
-            #   (type→@Composable registry), stream/, ui/ (adaptive scaffold +
-            #   chat/agents/history/audit screens)
+            #   (type→@Composable registry), push/ (OS notification adapter),
+            #   stream/, ui/ (adaptive scaffold + chat/agents/history/audit screens)
 ```
 
 The pure logic lives in `:core` so it is testable on the JVM without an emulator
 (the bulk of the verification surface). `:core` ports the *verified* logic of the
 Windows client (`windows-client/astral_client/streaming.py`, `rest.py`).
+
+## Notifications
+
+The Android push adapter is delivered and qualified but **not yet wired into the
+app runtime**: OS presentation, dismissal and product push availability wait for
+coordinated integration with the server-side push destination and delivery
+services. The adapter already declares the `POST_NOTIFICATIONS` permission and
+implements the full OS surface — permission request state (denied and revoked
+are distinct, revoked clears presented notifications), provider token callbacks
+with rotation generations and fingerprints, minimal payload receipt with the
+delivery pipeline's identity and text bounds, bounded duplicate suppression,
+foreground/background/terminated presentation decisions, and explicit
+unsupported-device behavior. See
+[`docs/push-notification-adapter.md`](docs/push-notification-adapter.md) for the
+contract and the integration seams a provider bridge must implement.
 
 ## Prerequisites
 

@@ -7,9 +7,9 @@
       "sourcePath": "android-client/README.md",
       "sourceBlob": "a2f81fbfa8b081a3c339e870f5cc8ed05a16f1c9",
       "sourceMode": "100644",
-      "resultSha256": "872cbfb79421e8ed3d8999d14495b4137cbc1a7223642a61b833f4a43fbbd980",
-      "task": "T188",
-      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Projection Constitution XII: describe android-ci's actual triggers and required jobs under Projection Principles X and IX, state that dependencies need only the catalog, lockfiles and verification metadata (Principle XI), and cite the Development Workflow live-verification rule. Validate explicit Android TLS deployment build profiles and runtime endpoints while retaining shipped defaults, registered mobile IAM identity and normal AppAuth/server-custody verification; exercise safe profiles and configuration denials. Complete shared mesh management and possession-bound enrollment using protected account/server device custody, current owner/session lifetimes, cookie-free member verification, and locked owning cryptographic dependencies."
+      "resultSha256": "f99316615a903d2a73345248129efbdb9811ee6471f2914c956e0365ada72e0c",
+      "task": "T188/T260",
+      "reason": "Replace the broken AstralDeep feature-spec link with standalone Projection contract and immutable extraction provenance references. Feature 088 component actions: consume the bounded canonical refine/history/CSV/share inventory, preserve exact owner/chat/component contexts through nonqueued correlated decisions and private file/link lifetimes, align web footer tokens, and exercise real native controller/loopback flows. Projection Constitution XII: describe android-ci's actual triggers and required jobs under Projection Principles X and IX, state that dependencies need only the catalog, lockfiles and verification metadata (Principle XI), and cite the Development Workflow live-verification rule. Validate explicit Android TLS deployment build profiles and runtime endpoints while retaining shipped defaults, registered mobile IAM identity and normal AppAuth/server-custody verification; exercise safe profiles and configuration denials. Complete shared mesh management and possession-bound enrollment using protected account/server device custody, current owner/session lifetimes, cookie-free member verification, and locked owning cryptographic dependencies. Android push notification adapter: declare the POST_NOTIFICATIONS permission for the delivered-but-not-yet-integrated OS adapter, add its channel-name strings, and document the adapter contract, verification lanes and coordinated-integration seams. No dependency, identity or workflow changes; the push packages and their lanes carry the acceptance tests."
     },
     {
       "path": "android-client/app/build.gradle.kts",
@@ -142,9 +142,9 @@
       "sourcePath": "android-client/app/src/main/AndroidManifest.xml",
       "sourceBlob": "12f60a18a7505c3a8d37ebe9c2f3abd8c1439253",
       "sourceMode": "100644",
-      "resultSha256": "b14e02637e1235cc3ecdc32857ac90d638b744f6644a006527f9b3ba4a8ffd98",
-      "task": "T018",
-      "reason": "Report live native viewport, input, accessibility and media capabilities while preserving the Activity through supported configuration changes."
+      "resultSha256": "f8e699bea1de5a9999785292c3ec9a2f92ca3964dd91be56c6f92ac209407b34",
+      "task": "T018/T260",
+      "reason": "Report live native viewport, input, accessibility and media capabilities while preserving the Activity through supported configuration changes. Android push notification adapter: declare the POST_NOTIFICATIONS permission for the delivered-but-not-yet-integrated OS adapter, add its channel-name strings, and document the adapter contract, verification lanes and coordinated-integration seams. No dependency, identity or workflow changes; the push packages and their lanes carry the acceptance tests."
     },
     {
       "path": "android-client/app/src/main/kotlin/com/personalailabs/astraldeep/app/AppConfig.kt",
@@ -433,6 +433,15 @@
       "task": "T056/T060",
       "reason": "Feature 088 native checkpoint: apply the existing Kotlin formatting gate now that it includes app sources; retain voice and release-evidence behavior. Feature 088 native visual parity: align web card, metric, chart, welcome and composer presentation; preserve drafts, read-only controls, terminal voice failures and safe Markdown targets. Bind the response-presentation and Constitution VI self-documenting source cleanup committed in 01010571a0ff40652f8aa049fa75d034b4c7de27. Native console parity: consume negotiated server chrome and ROTE geometry, retain current conversation and voice identity, and qualify native rendering, transport and interaction behavior. Client-local speech runtime: select the server-chosen client_local backend through the v2 capability and session routes on the existing voice-control binding and UI socket, drive the on-device SpeechRecognizer/TextToSpeech engine through the ready handshake, server turn binding, immutable final submission with exact acknowledgements and bounded announcements, keep typed fallback for denied or unsupported devices, and preserve the remote LiveKit path and frozen fixture bytes. Reconcile this draft client-local speech source with qualified Projection main while retaining its native implementation and outstanding qualification blockers. Feature AP-04 voice audio hardening: add the project-owned Android voice audio-focus and output-route lifecycle with immediate capture/playout suspension ahead of the audio_interrupted/route_unavailable server updates, bounded generation-fenced recovery gated on current server authorization and the recorded user microphone intent, announcement intake gating while ineligible, stale-callback rejection, the focus/route observation seam with deterministic unit tests, and ownership documentation. Fence effective microphone capture by current audio, foreground, chat and session authority before and after awaited media operations, preserving explicit user intent and server authorization. Combine client-local speech with audio-focus and route ownership: stop local owners before awaited control updates, preserve explicit microphone intent, and resume only through current authority and a fresh ready handshake. Keep explicit start and microphone commands ordered independently of effective server-state projections; honor a later OFF during activation, and reconcile an authorized local state through the existing ready handshake.",
       "resultSha256": "7ff3d7c36a9c5857f48299f97ea443b99265a783fc1977099ad39916318d0df9"
+    },
+    {
+      "path": "android-client/app/src/main/res/values/strings.xml",
+      "sourcePath": "android-client/app/src/main/res/values/strings.xml",
+      "sourceBlob": "9f28a160a71187d46a21118cadb13ff3a5598594",
+      "sourceMode": "100644",
+      "task": "T260",
+      "reason": "Android push notification adapter: add the OS notification channel names for the delivered-but-not-yet-integrated adapter, alongside the manifest and documentation locks for the same contribution. The shared T260 reason declares the POST_NOTIFICATIONS permission for the delivered-but-not-yet-integrated OS adapter, add its channel-name strings, and document the adapter contract, verification lanes and coordinated-integration seams. No dependency, identity or workflow changes; the push packages and their lanes carry the acceptance tests.",
+      "resultSha256": "c59b40f6d9cd1ed6e56a758de3feab09d0e98302b78ea218bb98b28ca0b534d2"
     },
     {
       "path": "android-client/app/src/test/kotlin/com/personalailabs/astraldeep/app/ConversationContinuityTest.kt",
