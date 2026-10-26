@@ -223,16 +223,9 @@ def build_connections_view(
         identities = [record["credential_id"] for record in records]
         _require(len(identities) == len(set(identities)) and len(identities) <= 100)
         components: list[ComponentView] = [
-            text(
-                "Keys let your own tools reach your work. Each key carries only the permissions "
-                "you grant it and can be revoked at any time.",
-                "body",
-            )
+            *_issue_form(form_state),
+            *(_row_card(record) for record in records),
         ]
-        components.extend(_issue_form(form_state))
-        if not records:
-            components.append(alert("You have not issued any keys yet.", "info"))
-        components.extend(_row_card(record) for record in records)
         return build_view(SURFACE, TITLE, components, theme=theme, layout=layout)
     except (ValueError, TypeError, AttributeError, KeyError, OverflowError):
         return unavailable_view(

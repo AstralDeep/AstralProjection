@@ -79,18 +79,49 @@ def test_no_op_specs_return_false():
     assert T.apply_theme(None) is False
 
 
-def test_five_presets_seven_channels():
-    assert set(T.PRESETS) == {"midnight", "daylight", "ocean", "sunset", "forest"}
+def test_six_presets_seven_channels():
+    assert set(T.PRESETS) == {"graphite", "midnight", "daylight", "ocean", "sunset", "forest"}
     for chans in T.PRESETS.values():
         assert set(chans) == {"bg", "surface", "primary", "secondary",
                               "text", "muted", "accent"}
+
+
+GRAPHITE = {"bg": "#121214", "surface": "#1B1B1F", "primary": "#7C3AED",
+            "secondary": "#6E6E78", "text": "#ECECEF", "muted": "#8C8C95",
+            "accent": "#A78BFA"}
+
+
+def test_graphite_is_listed_first_with_the_contract_values():
+    assert next(iter(T.PRESETS)) == "graphite"
+    assert T.PRESETS["graphite"] == GRAPHITE
+    assert T.PRESETS["midnight"]["bg"] == "#0F1221"
+
+
+def test_a_fresh_module_starts_on_graphite():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("astral_client_theme_fresh", T.__file__)
+    fresh = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fresh)
+
+    assert fresh.PALETTE == GRAPHITE
+    assert fresh.PRIMARY == GRAPHITE["primary"]
+    assert fresh.BG == GRAPHITE["bg"]
+
+
+def test_midnight_is_an_ordinary_preset_that_replaces_graphite():
+    T.apply_theme("graphite")
+    assert T.apply_theme("midnight") is True
+    assert T.PALETTE == T.PRESETS["midnight"]
+    assert T.apply_theme("graphite") is True
+    assert T.PALETTE == GRAPHITE
 
 
 def test_color_picker_renders(qapp, native_root):
     from PySide6.QtWidgets import QWidget
 
     w = native_root(render, {"type": "color_picker", "color_key": "primary",
-                "value": "#6366F1", "label": "Primary"},
+                "value": T.PALETTE["primary"], "label": "Primary"},
                RenderContext(emit=lambda *a: None))
     assert isinstance(w, QWidget)
 
@@ -101,12 +132,13 @@ def test_color_picker_requests_save_before_server_application(qapp, monkeypatch,
     monkeypatch.setattr(rmod, "_choose_color", lambda *a, **k: "#FF8800")
     seen = []
     ctx = RenderContext(emit=lambda a, p: seen.append((a, p)))
+    current = T.PALETTE["accent"]
     w = native_root(render, {"type": "color_picker", "color_key": "accent",
-                "value": "#06B6D4", "label": "Accent"}, ctx)
+                "value": current, "label": "Accent"}, ctx)
     w.findChild(QPushButton).click()
     assert seen[-1][0] == "save_theme"
     assert seen[-1][1]["theme"] == {"color_key": "accent", "color_value": "#FF8800"}
-    assert T.PALETTE["accent"] == "#06B6D4"
+    assert T.PALETTE["accent"] == current
     native_root(render, {"type": "theme_apply", "colors": {"accent": "#FF8800"}}, ctx)
     assert T.PALETTE["accent"] == "#FF8800"
 
@@ -116,7 +148,7 @@ def test_color_picker_cancel_emits_nothing(qapp, monkeypatch, native_root):
 
     monkeypatch.setattr(rmod, "_choose_color", lambda *a, **k: None)
     seen = []
-    w = native_root(render, {"type": "color_picker", "color_key": "primary", "value": "#6366F1"},
+    w = native_root(render, {"type": "color_picker", "color_key": "primary", "value": T.PALETTE["primary"]},
                RenderContext(emit=lambda a, p: seen.append((a, p))))
     w.findChild(QPushButton).click()
     assert seen == []
@@ -146,7 +178,7 @@ def test_color_picker_waits_for_theme_apply_callback(qapp, monkeypatch, native_r
     ctx = RenderContext(emit=lambda a, p: None,
                         apply_theme=lambda spec: seen.append(spec))
     w = native_root(render, {"type": "color_picker", "color_key": "accent",
-                "value": "#06B6D4", "label": "Accent"}, ctx)
+                "value": T.PALETTE["accent"], "label": "Accent"}, ctx)
     w.findChild(QPushButton).click()
     assert seen == []
     native_root(render, {"type": "theme_apply", "color_key": "accent", "color_value": "#FF8800"}, ctx)

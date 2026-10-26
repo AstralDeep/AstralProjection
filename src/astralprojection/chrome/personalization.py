@@ -29,6 +29,15 @@ from ._components import (
 )
 
 THEME_PRESETS: Mapping[str, Mapping[str, str]] = {
+    "graphite": {
+        "bg": "#121214",
+        "surface": "#1B1B1F",
+        "primary": "#7C3AED",
+        "secondary": "#6E6E78",
+        "text": "#ECECEF",
+        "muted": "#8C8C95",
+        "accent": "#A78BFA",
+    },
     "midnight": {
         "bg": "#0F1221",
         "surface": "#1A1E2E",
@@ -123,18 +132,8 @@ def build_llm_view(
             "base_url",
             "Endpoint (Base URL)",
             default=state.get("base_url") or "",
-            help_text="Auto-set for hosted providers; required for Custom.",
         ),
-        field(
-            "api_key",
-            "API key",
-            "password",
-            help_text=(
-                "A key is saved; leave blank to keep the encrypted value."
-                if state.get("has_key")
-                else "Stored encrypted for this account."
-            ),
-        ),
+        field("api_key", "API key", "password"),
         field(
             "model",
             "Model",
@@ -149,12 +148,6 @@ def build_llm_view(
         {"label": "Save", "action": f"{prefix}_save", "variant": "primary"},
     ]
     components: list[ComponentView] = [
-        text(
-            "The provider configuration is account-scoped and its API key is never displayed."
-            if not system
-            else "This credential is used only for reviewed deployment-wide background work.",
-            "caption",
-        ),
         badge(
             "configured" if state.get("configured") else "not configured",
             "success" if state.get("configured") else "default",
@@ -196,11 +189,6 @@ def build_profile_view(
             submit_action="chrome_profile_save",
             submit_label="Save profile",
         ),
-        text(
-            "Personality guides tone only; it never overrides safety, privacy, or "
-            "compliance rules. Free text is screened for protected health information.",
-            "caption",
-        ),
     ]
     return build_view("personalization", "Personalization", components, theme=theme, layout=layout)
 
@@ -214,17 +202,8 @@ def build_memory_view(
 ) -> ChromeViewModel:
     if error:
         return unavailable_view("personalization", "Personalization", error)
-    components: list[ComponentView] = [
-        text(
-            "Durable, non-PHI personalization facts remembered across sessions. Edits "
-            "are screened by the same PHI gate as new values.",
-            "caption",
-        )
-    ]
-    rows = _rows(memories)
-    if not rows:
-        components.append(alert("No memory items yet.", "info"))
-    for memory in rows:
+    components: list[ComponentView] = []
+    for memory in _rows(memories):
         memory_id = clean_text(memory.get("memory_id") or memory.get("id"))
         components.append(
             form(
@@ -264,10 +243,7 @@ def build_skills_view(
     if error:
         return unavailable_view("personalization", "Personalization", error)
     components: list[ComponentView] = []
-    rows = _rows(skills)
-    if not rows:
-        components.append(alert("No skills are available yet.", "info"))
-    for skill in rows:
+    for skill in _rows(skills):
         body: list[ComponentView] = [
             key_value(
                 [
@@ -310,12 +286,7 @@ def build_scheduler_view(
 ) -> ChromeViewModel:
     if error:
         return unavailable_view("personalization", "Personalization", error)
-    components: list[ComponentView] = [
-        text(
-            "New jobs are created in chat after confirmation. Manage existing jobs here.",
-            "caption",
-        )
-    ]
+    components: list[ComponentView] = []
     if not execution_enabled:
         components.append(
             alert(
@@ -324,10 +295,7 @@ def build_scheduler_view(
                 "warning",
             )
         )
-    rows = _rows(jobs)
-    if not rows:
-        components.append(alert("No scheduled jobs yet.", "info"))
-    for job in rows:
+    for job in _rows(jobs):
         job_id = clean_text(job.get("job_id") or job.get("id"))
         status = clean_text(job.get("status") or "unknown")
         actions: list[ComponentView] = []
@@ -354,7 +322,7 @@ def build_scheduler_view(
                 "caption",
             )
             for run in recent_runs[:5]
-        ] or [text("No runs yet.", "caption")]
+        ]
         components.append(
             card(
                 job.get("name") or "Scheduled job",
@@ -367,7 +335,7 @@ def build_scheduler_view(
                             ("Last run", job.get("last_run_at") or "-"),
                         ]
                     ),
-                    card("Recent runs", run_components),
+                    *([card("Recent runs", run_components)] if run_components else []),
                     container(actions, direction="row"),
                 ],
             )
@@ -390,10 +358,6 @@ def build_dreaming_view(
             "Background consolidation",
             [
                 badge("on" if enabled else "off", "success" if enabled else "default"),
-                text(
-                    "Dreaming reviews recurring signals and promotes only non-PHI items into "
-                    "long-term memory."
-                ),
                 container(
                     [
                         button(
@@ -408,10 +372,7 @@ def build_dreaming_view(
             ],
         )
     ]
-    rows = _rows(sweeps)
-    if not rows:
-        components.append(alert("No sweeps yet.", "info"))
-    for sweep in rows:
+    for sweep in _rows(sweeps):
         components.append(
             card(
                 f"{clean_text(sweep.get('ran_at') or '-')} — "
@@ -448,15 +409,8 @@ def build_pulse_view(
         )
     if error:
         return unavailable_view("pulse", "Pulse — your digest", error)
-    components: list[ComponentView] = [
-        text(
-            "A read-only summary of recurring topics, goals, and preferences from recent activity."
-        )
-    ]
-    rows = _rows(digest)
-    if not rows:
-        components.append(alert("Nothing to show yet — the digest fills in as you chat.", "info"))
-    for item in rows:
+    components: list[ComponentView] = []
+    for item in _rows(digest):
         components.append(
             card(
                 item.get("title") or item.get("value") or "Digest item",
@@ -466,17 +420,6 @@ def build_pulse_view(
                 ],
             )
         )
-    components.append(
-        card(
-            "Want this on a schedule?",
-            [
-                text(
-                    'Ask in chat, for example "remind me every morning". You will be asked '
-                    "to confirm before anything is scheduled."
-                )
-            ],
-        )
-    )
     return build_view("pulse", "Pulse — your digest", components, theme=theme, layout=layout)
 
 
@@ -488,7 +431,7 @@ def build_theme_view(
 ) -> ChromeViewModel:
     active = clean_text(current.get("preset"))
     supplied_colors = current.get("colors") if isinstance(current.get("colors"), Mapping) else {}
-    colors = dict(THEME_PRESETS[active] if active in THEME_PRESETS else THEME_PRESETS["midnight"])
+    colors = dict(THEME_PRESETS[active] if active in THEME_PRESETS else THEME_PRESETS["graphite"])
     for key, value in supplied_colors.items():  # type: ignore[union-attr]
         value_text = clean_text(value)
         if key in colors and _HEX_COLOR_RE.fullmatch(value_text):
@@ -498,7 +441,7 @@ def build_theme_view(
         if active in THEME_PRESETS
         else "Current theme: custom colors (defaults shown where unset)."
         if supplied_colors
-        else "Current theme: default (Midnight)."
+        else "Current theme: default (Graphite)."
     )
     components: list[ComponentView] = []
     if current:

@@ -97,7 +97,7 @@ class FrameView:
 
 @dataclass(frozen=True, slots=True)
 class ThemeView:
-    name: str = "midnight"
+    name: str = "graphite"
     colors: Mapping[str, str] = field(default_factory=dict)
     color_scheme: str = "dark"
     contrast: str = "normal"

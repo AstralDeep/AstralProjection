@@ -43,7 +43,7 @@ struct RootView: View {
                     get: { model.macComputerHost.controlsPresented },
                     set: { model.macComputerHost.controlsPresented = $0 })
             ) {
-                MacComputerControls(host: model.macComputerHost)
+                MacComputerControls(host: model.macComputerHost).environment(theme)
             }
         #endif
         .sheet(
@@ -145,7 +145,6 @@ struct RootView: View {
         var body: some View {
             if host.available {
                 HStack(spacing: 12) {
-                    Text("This Mac").foregroundStyle(theme.palette.muted)
                     Spacer(minLength: 0)
                     Button {
                         host.showControls()
@@ -417,13 +416,20 @@ struct AstralToolbarLayout: Layout {
     }
 }
 
+extension String {
+    var leadSentence: String {
+        guard let end = range(of: ". ") else { return self }
+        return String(self[..<end.lowerBound]) + "."
+    }
+}
+
 struct ConnectionStrip: View {
     @Environment(AppModel.self) var model
     @Environment(ThemeStore.self) var theme
     let label: String
     var body: some View {
         HStack(spacing: 10) {
-            Text(label).frame(maxWidth: .infinity, alignment: .leading)
+            Text(label.leadSentence).frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
             if model.initialConnectionFailed || model.everConnected {
                 Button("Retry") { model.retryConnection() }
@@ -468,15 +474,23 @@ struct BannerBar: View {
     var isWarning = false
     let onDismiss: () -> Void
 
+    var symbol: String {
+        isError ? "xmark.octagon.fill" : isWarning ? "exclamationmark.triangle.fill" : "info.circle.fill"
+    }
+
     var body: some View {
         let color = isError ? theme.palette.error : isWarning ? theme.palette.warning : theme.palette.info
         HStack(spacing: 8) {
+            Image(systemName: symbol).font(ConsoleTypography.footnote).foregroundStyle(color)
+                .accessibilityHidden(true)
             Text(text).font(ConsoleTypography.footnote).foregroundStyle(theme.palette.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Button(action: onDismiss) {
                 Image(systemName: "xmark").font(ConsoleTypography.caption).foregroundStyle(theme.palette.muted)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+            .help("Dismiss")
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .background(color.opacity(0.16))
@@ -485,6 +499,7 @@ struct BannerBar: View {
 
 struct SignInView: View {
     @Environment(AppModel.self) var model
+    @Environment(ThemeStore.self) var theme
 
     var body: some View {
         VStack(spacing: 28) {
@@ -505,7 +520,8 @@ struct SignInView: View {
             .buttonStyle(.borderedProminent)
             .accessibilityLabel("Sign in with single sign-on")
             if let error = model.signInError {
-                Text(error).font(ConsoleTypography.footnote).foregroundStyle(.red).multilineTextAlignment(.center)
+                Text(error).font(ConsoleTypography.footnote).foregroundStyle(theme.palette.error)
+                    .multilineTextAlignment(.center)
             }
             Spacer().frame(height: 48)
         }

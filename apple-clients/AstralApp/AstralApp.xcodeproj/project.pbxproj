@@ -13,6 +13,7 @@
 		AA00000000000000000000A5 /* AstralCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA00000000000000000000A3 /* AstralCore */; };
 		AA00000000000000000000C1 /* AstralWatch.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = AA00000000000000000000B1 /* AstralWatch.app */; platformFilter = ios; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AC6500000000000000000003 /* LiveKit in Frameworks */ = {isa = PBXBuildFile; productRef = AC6500000000000000000002 /* LiveKit */; };
+		AF1020000000000000000006 /* AstralSparkle in Frameworks */ = {isa = PBXBuildFile; productRef = AF1020000000000000000005 /* AstralSparkle */; };
 		AD0881000000000000000001 /* AstralCore in Harness Frameworks */ = {isa = PBXBuildFile; productRef = AD0881000000000000000002 /* AstralCore */; };
 /* End PBXBuildFile section */
 
@@ -125,6 +126,7 @@
 			files = (
 				AA00000000000000000000A4 /* AstralCore in Frameworks */,
 				AC6500000000000000000003 /* LiveKit in Frameworks */,
+				AF1020000000000000000006 /* AstralSparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -228,6 +230,7 @@
 			packageProductDependencies = (
 				AA00000000000000000000A2 /* AstralCore */,
 				AC6500000000000000000002 /* LiveKit */,
+				AF1020000000000000000005 /* AstralSparkle */,
 			);
 			productName = AstralApp;
 			productReference = 222F50272FFD60D80016B0D6 /* AstralDeep.app */;
@@ -394,6 +397,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				AA00000000000000000000A1 /* XCLocalSwiftPackageReference "../AstralCore" */,
+				AF1020000000000000000004 /* XCLocalSwiftPackageReference "../AstralSparkle" */,
 				AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -585,7 +589,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -594,7 +598,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep;
 				PRODUCT_NAME = AstralDeep;
 				SDKROOT = auto;
@@ -616,7 +620,7 @@
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Distribution";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_APP_SANDBOX = NO;
 				"ENABLE_APP_SANDBOX[sdk=macosx*]" = YES;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -627,7 +631,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep;
 				PRODUCT_NAME = AstralDeep;
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*]" = "$(ASTRAL_PROFILE_IOS)";
@@ -647,12 +651,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WatchInfo.plist;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.watch;
 				PRODUCT_NAME = AstralWatch;
 				SDKROOT = watchos;
@@ -673,12 +677,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"CODE_SIGN_IDENTITY[sdk=watchos*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WatchInfo.plist;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.watch;
 				PRODUCT_NAME = AstralWatch;
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=watchos*]" = "$(ASTRAL_PROFILE_WATCH)";
@@ -699,11 +703,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
@@ -722,11 +726,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
@@ -744,7 +748,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -753,7 +757,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
@@ -771,7 +775,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -780,7 +784,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
@@ -799,13 +803,13 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.watch.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -825,13 +829,13 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.watch.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -850,8 +854,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CURRENT_PROJECT_VERSION = 69;
-				MARKETING_VERSION = 1.8;
+				CURRENT_PROJECT_VERSION = 70;
+				MARKETING_VERSION = 1.9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WatchNavigationHarnessInfo.plist;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -873,8 +877,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CURRENT_PROJECT_VERSION = 69;
-				MARKETING_VERSION = 1.8;
+				CURRENT_PROJECT_VERSION = 70;
+				MARKETING_VERSION = 1.9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WatchNavigationHarnessInfo.plist;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -896,8 +900,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CURRENT_PROJECT_VERSION = 69;
-				MARKETING_VERSION = 1.8;
+				CURRENT_PROJECT_VERSION = 70;
+				MARKETING_VERSION = 1.9;
 				GENERATE_INFOPLIST_FILE = YES;
 				TEST_TARGET_NAME = AstralWatchNavigationHarness;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.personalailabs.astraldeep.watch.navigation-tests";
@@ -918,8 +922,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CURRENT_PROJECT_VERSION = 69;
-				MARKETING_VERSION = 1.8;
+				CURRENT_PROJECT_VERSION = 70;
+				MARKETING_VERSION = 1.9;
 				GENERATE_INFOPLIST_FILE = YES;
 				TEST_TARGET_NAME = AstralWatchNavigationHarness;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.personalailabs.astraldeep.watch.navigation-tests";
@@ -975,7 +979,7 @@
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Developer ID Application";
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_APP_SANDBOX = NO;
 				"ENABLE_APP_SANDBOX[sdk=macosx*]" = NO;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
@@ -987,7 +991,7 @@
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep;
 				PRODUCT_NAME = AstralDeep;
 				SDKROOT = auto;
@@ -1007,12 +1011,12 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"CODE_SIGN_IDENTITY[sdk=watchos*]" = "Apple Distribution";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WatchInfo.plist;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.watch;
 				PRODUCT_NAME = AstralWatch;
 				"PROVISIONING_PROFILE_SPECIFIER[sdk=watchos*]" = "$(ASTRAL_PROFILE_WATCH)";
@@ -1033,11 +1037,11 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
@@ -1055,7 +1059,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -1064,7 +1068,7 @@
 					"@loader_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.uitests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
@@ -1083,13 +1087,13 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@loader_path/Frameworks",
 				);
-				MARKETING_VERSION = 1.8;
+				MARKETING_VERSION = 1.9;
 				PRODUCT_BUNDLE_IDENTIFIER = com.personalailabs.astraldeep.watch.tests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = watchos;
@@ -1108,8 +1112,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CURRENT_PROJECT_VERSION = 69;
-				MARKETING_VERSION = 1.8;
+				CURRENT_PROJECT_VERSION = 70;
+				MARKETING_VERSION = 1.9;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = WatchNavigationHarnessInfo.plist;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -1131,8 +1135,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
-				CURRENT_PROJECT_VERSION = 69;
-				MARKETING_VERSION = 1.8;
+				CURRENT_PROJECT_VERSION = 70;
+				MARKETING_VERSION = 1.9;
 				GENERATE_INFOPLIST_FILE = YES;
 				TEST_TARGET_NAME = AstralWatchNavigationHarness;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.personalailabs.astraldeep.watch.navigation-tests";
@@ -1221,6 +1225,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../AstralCore;
 		};
+		AF1020000000000000000004 /* XCLocalSwiftPackageReference "../AstralSparkle" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../AstralSparkle;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -1247,6 +1255,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = AC6500000000000000000001 /* XCRemoteSwiftPackageReference "client-sdk-swift" */;
 			productName = LiveKit;
+		};
+		AF1020000000000000000005 /* AstralSparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = AF1020000000000000000004 /* XCLocalSwiftPackageReference "../AstralSparkle" */;
+			productName = AstralSparkle;
 		};
 		AD0881000000000000000002 /* AstralCore */ = {isa = XCSwiftPackageProductDependency; productName = AstralCore; };
 /* End XCSwiftPackageProductDependency section */

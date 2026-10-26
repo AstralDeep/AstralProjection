@@ -35,15 +35,34 @@ public struct ComputerHostScreen: Sendable, Equatable {
     }
 }
 
+public struct ComputerHostWorkspaceRoot: Sendable, Equatable {
+    public let name: String
+    public let path: String
+    public init(name: String, path: String) {
+        self.name = name
+        self.path = path
+    }
+    public var isValid: Bool {
+        !name.isEmpty && name.unicodeScalars.count <= 255
+            && !name.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 }) && path.hasPrefix("/")
+            && path.utf8.count <= 1024 && !path.unicodeScalars.contains(where: { $0.value < 32 || $0.value == 127 })
+            && !path.split(separator: "/").contains("..")
+    }
+    public var json: JSONValue { .object(["name": .string(name), "path": .string(path)]) }
+}
+
 public struct ComputerHostDescriptor: Sendable, Equatable {
+    public static let maximumWorkspaceRoots = 32
     public let hostId: String
     public let name: String
     public let clientVersion: String
     public let screens: [ComputerHostScreen]
     public let verbs: [String]
-    public init(hostId: String, name: String, clientVersion: String, screens: [ComputerHostScreen], verbs: [String])
-        throws
-    {
+    public let workspaceRoots: [ComputerHostWorkspaceRoot]
+    public init(
+        hostId: String, name: String, clientVersion: String, screens: [ComputerHostScreen], verbs: [String],
+        workspaceRoots: [ComputerHostWorkspaceRoot] = []
+    ) throws {
         guard computerUUID(hostId), !name.isEmpty, name.count <= 64,
             !name.unicodeScalars.contains(where: { $0.value < 32 }),
             clientVersion.range(
@@ -55,20 +74,25 @@ public struct ComputerHostDescriptor: Sendable, Equatable {
                     && (1...16384).contains($0.element.height) && $0.element.scale.isFinite
                     && (0.5...8).contains($0.element.scale)
             }),
-            !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs)
+            !verbs.isEmpty, Set(verbs).count == verbs.count, Set(verbs).isSubset(of: ComputerHostRequest.verbs),
+            workspaceRoots.count <= Self.maximumWorkspaceRoots, workspaceRoots.allSatisfy(\.isValid),
+            Set(workspaceRoots.map(\.path)).count == workspaceRoots.count
         else { throw ComputerHostError("out_of_range", "The computer descriptor is invalid.") }
         self.hostId = hostId
         self.name = name
         self.clientVersion = clientVersion
         self.screens = screens
         self.verbs = verbs.sorted()
+        self.workspaceRoots = workspaceRoots
     }
     public var json: JSONValue {
-        .object([
+        var object: [String: JSONValue] = [
             "host_id": .string(hostId), "name": .string(name), "platform": .string("macos"),
             "client_version": .string(clientVersion), "screens": .array(screens.map(\.json)),
             "verbs": .array(verbs.map(JSONValue.string)), "protocol": .number(1),
-        ])
+        ]
+        if !workspaceRoots.isEmpty { object["workspace_roots"] = .array(workspaceRoots.map(\.json)) }
+        return .object(object)
     }
 }
 
@@ -93,8 +117,17 @@ public struct ComputerHostRequest: Sendable, Equatable {
     public static let verbs: Set<String> = [
         "screenshot", "list_windows", "get_clipboard", "read_file", "list_dir", "wait", "click", "double_click",
         "right_click", "move", "drag", "scroll", "type_text", "press_keys", "focus_window", "open_app", "set_clipboard",
-        "write_file", "delete_path",
+        "write_file", "delete_path", "run_command", "read_output", "interrupt_command", "browser_snapshot",
+        "browser_get_text", "browser_screenshot", "browser_wait", "browser_navigate", "browser_click", "browser_fill",
+        "browser_press", "browser_scroll", "browser_dialog",
     ]
+    private static let deadlineCeilings: [String: Double] = [
+        "run_command": 630000, "read_output": 30000, "interrupt_command": 5000, "browser_navigate": 15000,
+        "browser_wait": 15000, "browser_snapshot": 5000, "browser_get_text": 5000, "browser_screenshot": 5000,
+        "browser_click": 5000, "browser_fill": 5000, "browser_press": 5000, "browser_scroll": 5000,
+        "browser_dialog": 5000,
+    ]
+    public static func maximumDeadlineMs(for verb: String) -> Double { deadlineCeilings[verb] ?? 30000 }
     public let id: String
     public let sessionId: String
     public let verb: String
@@ -111,7 +144,7 @@ public struct ComputerHostRequest: Sendable, Equatable {
             let verb = object["verb"]?.stringValue, Self.verbs.contains(verb),
             let args = object["args"]?.objectValue,
             let milliseconds = object["deadline_ms"]?.numberValue, milliseconds.isFinite,
-            milliseconds.rounded() == milliseconds, (1...30000).contains(milliseconds)
+            milliseconds.rounded() == milliseconds, (1...Self.maximumDeadlineMs(for: verb)).contains(milliseconds)
         else { throw ComputerHostError("out_of_range", "The computer request envelope is invalid.") }
         self.id = id
         sessionId = session
@@ -135,6 +168,15 @@ public struct ComputerHostRequest: Sendable, Equatable {
             "type_text": ["text", "terminal_ok", "hwnd", "terminal_app"],
             "press_keys": ["keys", "terminal_ok", "hwnd", "terminal_app"],
             "focus_window": ["hwnd", "title"], "open_app": ["app", "args"], "set_clipboard": ["text"],
+            "run_command": ["command", "argv", "cwd", "env", "timeout_s", "background", "stdin"],
+            "read_output": ["job_id", "stream", "offset", "max_bytes", "wait_s"],
+            "interrupt_command": ["job_id", "signal"],
+            "browser_snapshot": ["scope_ref", "mode", "max_chars"], "browser_get_text": ["ref", "max_chars"],
+            "browser_screenshot": ["max_width", "ref"], "browser_wait": ["for", "text", "ref", "seconds"],
+            "browser_navigate": ["url", "action"],
+            "browser_click": ["ref", "button", "count", "snapshot_id", "confirm_element", "permit"],
+            "browser_fill": ["fields", "snapshot_id", "confirm_element", "permit"], "browser_press": ["keys", "ref"],
+            "browser_scroll": ["ref", "dy"], "browser_dialog": ["action", "text"],
         ]
         guard Set(args.keys).isSubset(of: fields[verb] ?? []) else {
             throw ComputerHostError("out_of_range", "Unexpected computer arguments.")
@@ -154,6 +196,32 @@ public struct ComputerHostRequest: Sendable, Equatable {
             else {
                 throw ComputerHostError("out_of_range", "Invalid \(key).")
             }
+        }
+        func choice(_ key: String, _ values: Set<String>, required: Bool = false) throws {
+            guard let value = args[key] else {
+                if required { throw ComputerHostError("out_of_range", "Missing \(key).") }
+                return
+            }
+            guard let s = value.stringValue, values.contains(s) else {
+                throw ComputerHostError("out_of_range", "Invalid \(key).")
+            }
+        }
+        func reference(_ key: String, required: Bool = false) throws {
+            guard let value = args[key] else {
+                if required { throw ComputerHostError("out_of_range", "Missing \(key).") }
+                return
+            }
+            guard let s = value.stringValue, computerFullMatch(s, "^e[0-9]{1,9}$") else {
+                throw ComputerHostError("out_of_range", "Invalid element reference \(key).")
+            }
+        }
+        func seconds(_ key: String, _ range: ClosedRange<Double>) throws {
+            if let v = args[key], !(v.numberValue.map { $0.isFinite && range.contains($0) } ?? false) {
+                throw ComputerHostError("out_of_range", "Invalid \(key).")
+            }
+        }
+        func bounded(_ value: JSONValue, _ maximum: Int) -> Bool {
+            value.stringValue.map { $0.unicodeScalars.count <= maximum && !$0.contains("\0") } == true
         }
         if args["terminal_ok"] != nil, args["terminal_ok"]?.boolValue == nil {
             throw ComputerHostError("out_of_range", "Invalid terminal authority.")
@@ -216,7 +284,126 @@ public struct ComputerHostRequest: Sendable, Equatable {
                     args["if_exists"] == nil || [.string("refuse"), .string("overwrite")].contains(args["if_exists"]!)
                 else { throw ComputerHostError("out_of_range", "Invalid file content or overwrite mode.") }
             }
+        case "run_command":
+            guard (args["command"] == nil) != (args["argv"] == nil) else {
+                throw ComputerHostError("out_of_range", "Give exactly one of command or argv.")
+            }
+            if args["command"] != nil { try text("command", 4096) }
+            if let argv = args["argv"] {
+                guard let items = argv.arrayValue, (1...256).contains(items.count),
+                    items.allSatisfy({ bounded($0, 4096) }), items[0].stringValue?.isEmpty == false
+                else { throw ComputerHostError("out_of_range", "Invalid argv.") }
+            }
+            try text("cwd", 1024)
+            guard args["cwd"]!.stringValue!.hasPrefix("/"),
+                !args["cwd"]!.stringValue!.split(separator: "/").contains("..")
+            else { throw ComputerHostError("out_of_range", "An absolute workspace folder is required.") }
+            if let env = args["env"] {
+                guard let variables = env.objectValue, variables.count <= 32,
+                    variables.allSatisfy({
+                        computerFullMatch($0.key, "^[A-Za-z_][A-Za-z0-9_]{0,127}$") && bounded($0.value, 4096)
+                    })
+                else { throw ComputerHostError("out_of_range", "Invalid command environment.") }
+            }
+            if args["background"] != nil, args["background"]?.boolValue == nil {
+                throw ComputerHostError("out_of_range", "Invalid background.")
+            }
+            try integer("timeout_s", 1...(args["background"]?.boolValue == true ? 3600 : 600))
+            if let stdin = args["stdin"] {
+                guard let input = stdin.stringValue, input.utf8.count <= 16384, !input.contains("\0") else {
+                    throw ComputerHostError("out_of_range", "Invalid stdin.")
+                }
+            }
+        case "read_output", "interrupt_command":
+            guard let job = args["job_id"]?.stringValue, computerUUID(job), computerFullMatch(job, "^[0-9a-f-]{36}$")
+            else { throw ComputerHostError("out_of_range", "Invalid job_id.") }
+            if verb == "interrupt_command" {
+                try choice("signal", ["INT", "TERM", "KILL"], required: true)
+            } else {
+                try choice("stream", ["stdout", "stderr", "both"])
+                try integer("offset", 0...9_007_199_254_740_991)
+                try integer("max_bytes", 1...65536)
+                try seconds("wait_s", 0...25)
+            }
+        case "browser_snapshot":
+            try reference("scope_ref")
+            try choice("mode", ["interactive", "all"])
+            try integer("max_chars", 1...60000)
+        case "browser_get_text":
+            try reference("ref")
+            try integer("max_chars", 1...60000)
+        case "browser_screenshot":
+            try integer("max_width", 320...1920)
+            try reference("ref")
+        case "browser_wait":
+            try choice("for", ["load", "text", "ref"], required: true)
+            let mode = args["for"]!.stringValue!
+            guard (args["text"] != nil) == (mode == "text"), (args["ref"] != nil) == (mode == "ref") else {
+                throw ComputerHostError("out_of_range", "browser_wait needs exactly the target its mode names.")
+            }
+            if mode == "text" { try text("text", 1000) }
+            try reference("ref", required: mode == "ref")
+            try seconds("seconds", 0.1...10)
+        case "browser_navigate":
+            guard (args["url"] == nil) != (args["action"] == nil) else {
+                throw ComputerHostError("out_of_range", "Give exactly one of url or action.")
+            }
+            if args["url"] != nil {
+                try text("url", 4096)
+                guard computerWebURL(args["url"]!.stringValue!) else {
+                    throw ComputerHostError("out_of_range", "Only http and https pages can be opened.")
+                }
+            } else {
+                try choice("action", ["back", "forward", "reload"], required: true)
+            }
+        case "browser_click":
+            try reference("ref", required: true)
+            try choice("button", ["left", "right"])
+            try integer("count", 1...2)
+        case "browser_fill":
+            guard let items = args["fields"]?.arrayValue, (1...32).contains(items.count),
+                items.allSatisfy({
+                    guard let field = $0.objectValue, Set(field.keys) == ["ref", "value"],
+                        let ref = field["ref"]?.stringValue, computerFullMatch(ref, "^e[0-9]{1,9}$"),
+                        let value = field["value"]
+                    else { return false }
+                    return bounded(value, 16384)
+                })
+            else { throw ComputerHostError("out_of_range", "Invalid browser fields.") }
+        case "browser_press":
+            try text("keys", 100)
+            _ = try ComputerHostChord(args["keys"]!.stringValue!)
+            try reference("ref")
+        case "browser_scroll":
+            try integer("dy", -10000...10000, required: true)
+            try reference("ref")
+        case "browser_dialog":
+            try choice("action", ["accept", "dismiss"], required: true)
+            if args["text"] != nil { try text("text", 4000, empty: true) }
         default: break
+        }
+        if ["browser_click", "browser_fill"].contains(verb) {
+            guard let snapshot = args["snapshot_id"]?.stringValue, computerFullMatch(snapshot, "^s[0-9]{1,9}$") else {
+                throw ComputerHostError(
+                    "out_of_range", "Browser actions need the snapshot_id their reference came from.")
+            }
+            if args["confirm_element"] != nil { try text("confirm_element", 200) }
+            if let permit = args["permit"] {
+                func ref(_ value: JSONValue) -> Bool {
+                    value.stringValue.map { computerFullMatch($0, "^e[0-9]{1,9}$") } == true
+                }
+                func refs(_ value: JSONValue) -> Bool {
+                    value.arrayValue.map { (1...32).contains($0.count) && $0.allSatisfy(ref) } == true
+                }
+                guard let object = permit.objectValue,
+                    Set(object.keys) == ["ref", "origin", "snapshot_id"]
+                        || Set(object.keys) == ["refs", "origin", "snapshot_id"],
+                    object["ref"].map(ref) ?? true, object["refs"].map(refs) ?? true,
+                    let origin = object["origin"]?.stringValue, origin.unicodeScalars.count <= 2048,
+                    computerWebURL(origin), let permitted = object["snapshot_id"]?.stringValue,
+                    computerFullMatch(permitted, "^s[0-9]{1,9}$")
+                else { throw ComputerHostError("out_of_range", "Invalid browser action permit.") }
+            }
         }
     }
 }
@@ -228,7 +415,10 @@ public struct ComputerHostChord: Sendable, Equatable {
         let parts = text.lowercased().split(separator: "+", omittingEmptySubsequences: false).map(String.init)
         let aliases = [
             "control": "ctrl", "command": "cmd", "meta": "cmd", "option": "alt", "return": "enter", "esc": "escape",
-            "spacebar": "space", "back": "backspace",
+            "spacebar": "space", "back": "backspace", "comma": ",", "period": ".", "slash": "/", "semicolon": ";",
+            "quote": "'", "apostrophe": "'", "leftbracket": "[", "bracketleft": "[", "rightbracket": "]",
+            "bracketright": "]", "backslash": "\\", "minus": "-", "hyphen": "-", "equal": "=", "equals": "=",
+            "grave": "`", "backtick": "`",
         ]
         let normalized = parts.map { aliases[$0] ?? $0 }
         let mods: Set<String> = ["ctrl", "cmd", "alt", "shift"]
@@ -236,7 +426,7 @@ public struct ComputerHostChord: Sendable, Equatable {
             "enter", "escape", "space", "tab", "backspace", "delete", "up", "down", "left", "right", "home", "end",
             "pageup", "pagedown",
         ])
-        .union((1...12).map { "f\($0)" }).union("abcdefghijklmnopqrstuvwxyz0123456789".map(String.init))
+        .union((1...12).map { "f\($0)" }).union("abcdefghijklmnopqrstuvwxyz0123456789,./;'[]\\-=`".map(String.init))
         guard let last = normalized.last, keys.contains(last), normalized.dropLast().allSatisfy(mods.contains),
             Set(normalized).count == normalized.count
         else { throw ComputerHostError("out_of_range", "The key chord is unsupported.") }
@@ -331,6 +521,19 @@ public enum ComputerHostOutbound {
             && payload["session_id"]?.stringValue.map(computerUUID) == true
             && Set(payload.keys).isSubset(of: ["host_id", "event", "session_id", "reason"])
     }
+}
+
+func computerFullMatch(_ value: String, _ pattern: String) -> Bool {
+    value.range(of: pattern, options: .regularExpression) == value.startIndex..<value.endIndex
+}
+
+func computerWebURL(_ text: String) -> Bool {
+    guard !text.unicodeScalars.contains(where: { $0.value <= 32 || $0.value == 127 }),
+        let components = URLComponents(string: text), let scheme = components.scheme?.lowercased(),
+        ["http", "https"].contains(scheme), let host = components.host, !host.isEmpty,
+        components.user == nil, components.password == nil
+    else { return false }
+    return true
 }
 
 func computerUUID(_ value: String) -> Bool {

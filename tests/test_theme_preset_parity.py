@@ -22,6 +22,25 @@ APPLE = ROOT / "apple-clients/NativeAppearance/Theme.swift"
 
 Presets = dict[str, dict[str, str]]
 
+GRAPHITE = {
+    "bg": "#121214",
+    "surface": "#1B1B1F",
+    "primary": "#7C3AED",
+    "secondary": "#6E6E78",
+    "text": "#ECECEF",
+    "muted": "#8C8C95",
+    "accent": "#A78BFA",
+}
+MIDNIGHT = {
+    "bg": "#0F1221",
+    "surface": "#1A1E2E",
+    "primary": "#6366F1",
+    "secondary": "#8B5CF6",
+    "text": "#F3F4F6",
+    "muted": "#9CA3AF",
+    "accent": "#06B6D4",
+}
+
 
 def _hex(value: str) -> str:
     assert re.fullmatch(r"#?[0-9A-Fa-f]{6}", value), value
@@ -79,11 +98,11 @@ def _android_presets(source: str) -> Presets:
 
 
 def _apple_presets(source: str) -> Presets:
-    struct = re.search(r"struct AstralPalette: Equatable \{(?P<body>.*?)\n    static let midnight", source, re.S)
+    struct = re.search(r"struct AstralPalette: Equatable \{(?P<body>.*?)\n    static let graphite", source, re.S)
     switch = re.search(r"func apply\(preset: String\) \{(?P<body>.*?)\n        default:", source, re.S)
     assert struct and switch, "Apple AstralPalette defaults or apply(preset:) is missing"
     defaults = dict(re.findall(r"var (\w+) = Color\(hex: 0x([0-9A-Fa-f]{6})\)", struct["body"]))
-    presets: Presets = {"midnight": defaults}
+    presets: Presets = {"graphite": defaults}
     cases = switch["body"] + "\n"
     for name, body in re.findall(r'case "(\w+)":\s*palette = AstralPalette\((.*?)\)\n', cases, re.S):
         presets[name] = {**defaults, **dict(re.findall(r"(\w+): Color\(hex: 0x([0-9A-Fa-f]{6})\)", body))}
@@ -111,9 +130,36 @@ def _divergence(canonical: Presets, copy: Presets) -> list[str]:
 def test_canonical_presets_define_all_seven_roles_as_hex_colors() -> None:
     canonical = _canonical_presets(CANONICAL.read_text(encoding="utf-8"))
 
-    assert "midnight" in canonical
+    assert {"graphite", "midnight"} <= set(canonical)
     for palette in canonical.values():
         assert set(palette) == ROLES
+
+
+def test_graphite_is_the_first_canonical_preset_and_midnight_keeps_its_values() -> None:
+    canonical = _canonical_presets(CANONICAL.read_text(encoding="utf-8"))
+
+    assert next(iter(canonical)) == "graphite"
+    assert canonical["graphite"] == GRAPHITE
+    assert canonical["midnight"] == MIDNIGHT
+    assert len(canonical) == 6
+
+
+@pytest.mark.parametrize("copy", sorted(COPIES))
+def test_graphite_leads_every_copy_with_the_same_values(copy: str) -> None:
+    path, parse, _ = COPIES[copy]
+    presets = parse(path.read_text(encoding="utf-8"))
+
+    assert next(iter(presets)) == "graphite"
+    assert presets["graphite"] == GRAPHITE
+    assert presets["midnight"] == MIDNIGHT
+
+
+def test_windows_and_android_default_to_graphite() -> None:
+    windows = WINDOWS.read_text(encoding="utf-8")
+    android = ANDROID.read_text(encoding="utf-8")
+
+    assert 'PALETTE: dict = dict(PRESETS["graphite"])' in windows
+    assert 'DEFAULT_PALETTE = THEME_PRESETS.getValue("graphite")' in android
 
 
 @pytest.mark.parametrize("copy", sorted(COPIES))

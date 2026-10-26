@@ -91,6 +91,18 @@ def build() -> str:
     }
     el.setAttribute("aria-label", c.title ? String(c.title) : "Chart");
 __WEB_OPTIONS__
+    var rootStyle = getComputedStyle(document.documentElement);
+    var series = ["primary", "secondary", "accent"].map(function (role) {
+      return rootStyle.getPropertyValue("--astral-chart-" + role).trim();
+    });
+    if (series.every(function (value) { return /^#[0-9A-F]{6}$/i.test(value); })) {
+      if (kind === "bar" || kind === "line") {
+        traces[0].marker.color = series[0];
+        if (traces[0].line) traces[0].line.color = series[0];
+      } else if (kind === "pie" && !spec.colors.length) {
+        traces[0].marker.colors = series.concat(traces[0].marker.colors.slice(series.length));
+      }
+    }
     // The surrounding native component owns the maximum visible rectangle
     layout.height = Math.min(1200, Math.max(160, Number(layout.height) || 320));
     Promise.resolve(Plotly.newPlot(el, traces, layout, cfg)).then(function () {

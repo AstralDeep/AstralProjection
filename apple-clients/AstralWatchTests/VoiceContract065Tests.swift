@@ -283,9 +283,8 @@ final class VoiceContract065Tests: XCTestCase {
         XCTAssertEqual(model.voiceTerminalNotice?.title, "Request did not start.")
         XCTAssertEqual(
             model.voiceTerminalNotice?.serverMessage, "Capacity is temporarily full.")
-        XCTAssertEqual(
-            model.voiceTerminalNotice?.guidance,
-            "Please say it again when you are ready.")
+        XCTAssertNotNil(model.voiceTerminalNotice)
+        XCTAssertNil(model.voiceTerminalNotice?.guidance)
         try await Task.sleep(for: .milliseconds(2700))
         XCTAssertEqual(
             sent.count, 1,

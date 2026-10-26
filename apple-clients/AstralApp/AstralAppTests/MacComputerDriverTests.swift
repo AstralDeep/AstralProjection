@@ -58,7 +58,7 @@
             XCTAssertEqual(events.posted.first?.location, CGPoint(x: 40, y: 60))
         }
         func testPermissionsDesktopAndMissingObservationDenyBeforeAnyEffect() async throws {
-            for denial in 0..<6 {
+            for denial in 0..<5 {
                 let io = MacComputerTestSystem()
                 io.configure {
                     switch denial {
@@ -66,7 +66,6 @@
                     case 1: $0.posting = false
                     case 2: $0.screen = false
                     case 3: $0.monitoring = false
-                    case 4: $0.secure = true
                     default: $0.session = nil
                     }
                 }
@@ -84,6 +83,64 @@
                     self.request("click", ["x": .number(1), "y": .number(1)]), workspaces: [], authorize: {})
             }
             XCTAssertTrue(events.posted.isEmpty)
+        }
+        func testSecureInputRefusesKeyboardButKeepsObservationAndPointerVerbs() async throws {
+            let io = MacComputerTestSystem()
+            let (driver, events) = driver(io)
+            io.configure { $0.secure = true }
+            io.configure { $0.clipboard = "Synthetic" }
+            let clipboard = try await driver.execute(request("get_clipboard"), workspaces: [], authorize: {})
+            XCTAssertEqual(clipboard["text"], .string("Synthetic"))
+            try await observe(driver)
+            for verb in ["type_text", "press_keys"] {
+                await error("secure_input_active") {
+                    _ = try await driver.execute(
+                        self.request(verb, verb == "type_text" ? ["text": .string("x")] : ["keys": .string("a")]),
+                        workspaces: [], authorize: {})
+                }
+            }
+            XCTAssertTrue(events.posted.isEmpty)
+            let click = try await driver.execute(
+                request("click", ["x": .number(1), "y": .number(1)]), workspaces: [], authorize: {})
+            XCTAssertEqual(click["attempted"], .bool(true))
+            XCTAssertEqual(events.posted.map(\.type), [.leftMouseDown, .leftMouseUp])
+        }
+        func testInputResultsCarryASettledBoundedScreenshotWithoutFailingTheEffect() async throws {
+            let io = MacComputerTestSystem()
+            io.configure { $0.captureDisplays = [MacComputerCaptureDisplay(id: 77, width: 2560, height: 1600)] }
+            let (driver, events) = driver(io)
+            try await observe(driver)
+            let plans = io.configure { $0.plans.count }
+            let click = try await driver.execute(
+                request("click", ["x": .number(1), "y": .number(1)]), workspaces: [], authorize: {})
+            let shot = try XCTUnwrap(click["screenshot"])
+            XCTAssertEqual(shot["width"], .number(1280))
+            XCTAssertEqual(shot["height"], .number(800))
+            XCTAssertEqual(shot["media_type"], .string("image/jpeg"))
+            XCTAssertEqual(shot["screen_index"], .number(0))
+            XCTAssertFalse(try XCTUnwrap(shot["base64"]?.stringValue).isEmpty)
+            XCTAssertEqual(io.configure { $0.plans.count }, plans + 1)
+            XCTAssertEqual(io.configure { $0.plans.last?.excludedWindows }, [5])
+            let trace = io.configure { $0.trace }
+            let posted = try XCTUnwrap(trace.lastIndex(of: "delay"))
+            XCTAssertLessThan(posted, try XCTUnwrap(trace.lastIndex(of: "capture")))
+            io.configure { $0.jpegOverride = Data(repeating: 0, count: 2_900_001) }
+            let oversized = try await driver.execute(
+                request("move", ["x": .number(2), "y": .number(2)]), workspaces: [], authorize: {})
+            XCTAssertEqual(oversized["attempted"], .bool(true))
+            XCTAssertNil(oversized["screenshot"])
+            io.configure {
+                $0.jpegOverride = nil
+                $0.captureFailure = true
+            }
+            let typed = try await driver.execute(
+                request("type_text", ["text": .string("ok")]), workspaces: [], authorize: {})
+            XCTAssertEqual(typed["chars"], .number(2))
+            XCTAssertNil(typed["screenshot"])
+            XCTAssertEqual(events.posted.count, 5)
+            let clipboard = try await driver.execute(
+                request("set_clipboard", ["text": .string("x")]), workspaces: [], authorize: {})
+            XCTAssertNil(clipboard["screenshot"])
         }
         func testPointerRechecksPermissionFocusAndTopologyAfterFirstEvent() async throws {
             for change in 0..<3 {
@@ -115,13 +172,17 @@
             let io = MacComputerTestSystem()
             let (driver, events) = driver(io)
             try await observe(driver)
-            _ = try await driver.execute(
+            let focused = try await driver.execute(
                 request("focus_window", ["title": .string("Synthetic")]), workspaces: [], authorize: {})
+            XCTAssertNotNil(focused["screenshot"])
+            io.configure { $0.jpegFailure = true }
+            let unobserved = try await driver.execute(
+                request("focus_window", ["title": .string("Synthetic")]), workspaces: [], authorize: {})
+            XCTAssertNil(unobserved["screenshot"])
             await error("stale_target") {
                 _ = try await driver.execute(
                     self.request("click", ["x": .number(1), "y": .number(1)]), workspaces: [], authorize: {})
             }
-            io.configure { $0.jpegFailure = true }
             await error("out_of_range") {
                 _ = try await driver.execute(self.request("screenshot"), workspaces: [], authorize: {})
             }
@@ -259,6 +320,7 @@
                     : ["x": .number(1), "y": .number(1)]
                 let value = try await driver.execute(request(verb, args), workspaces: [], authorize: {})
                 XCTAssertEqual(value["attempted"], .bool(true))
+                XCTAssertEqual(value["screenshot"]?["media_type"], .string("image/jpeg"), verb)
                 XCTAssertFalse(events.posted.isEmpty)
                 XCTAssertTrue(events.posted.allSatisfy { $0.getIntegerValueField(.eventSourceUserData) == 30 })
             }
@@ -268,9 +330,11 @@
             let text = try await driver.execute(
                 request("type_text", ["text": .string("Synthetic")]), workspaces: [], authorize: {})
             XCTAssertEqual(text["chars"], .number(9))
+            XCTAssertNotNil(text["screenshot"])
             let chord = try await driver.execute(
                 request("press_keys", ["keys": .string("cmd+a")]), workspaces: [], authorize: {})
             XCTAssertEqual(chord["keys"], .string("cmd+a"))
+            XCTAssertNotNil(chord["screenshot"])
             XCTAssertEqual(events.posted.map(\.type), [.keyDown, .keyUp, .keyDown, .keyUp])
         }
         func testWindowEnumerationIsBoundedAndResetDoesNotReuseOldIdentities() async throws {

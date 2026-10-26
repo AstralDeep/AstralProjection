@@ -337,7 +337,6 @@ struct ConsoleLanding: View {
     @Environment(ThemeStore.self) var theme
     let console: ConsoleModel
     let presentation: ConsolePresentation
-    @State private var category: String?
     private var p: AstralPalette { theme.palette }
 
     var body: some View {
@@ -346,31 +345,14 @@ struct ConsoleLanding: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(console.labels["title"] ?? "").font(ConsoleTypography.title2.weight(.heavy)).foregroundStyle(
                         p.text)
-                    Text(console.labels["subtitle"] ?? "").font(ConsoleTypography.subheadline).foregroundStyle(p.muted)
                     Divider().overlay(p.border).padding(.top, 8)
-                }
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 14) {
-                        Text(console.labels["start_here"] ?? "").font(ConsoleTypography.sans(18).bold())
-                            .fixedSize(horizontal: true, vertical: false)
-                        Spacer(minLength: 0)
-                        filters.frame(minWidth: 120, maxWidth: 420)
-                    }
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text(console.labels["start_here"] ?? "").font(ConsoleTypography.sans(18).bold())
-                            .fixedSize(horizontal: false, vertical: true)
-                        filters
-                    }
                 }
                 LazyVGrid(
                     columns: Array(
                         repeating: GridItem(.flexible(), spacing: 14, alignment: .top),
                         count: presentation.scenarioColumns), spacing: 14
                 ) {
-                    ForEach(console.catalog.scenarios.filter { category == nil || $0.category == category }) {
-                        scenario in
-                        scenarioCard(scenario)
-                    }
+                    ForEach(console.catalog.scenarios) { scenario in scenarioCard(scenario) }
                 }
             }
             .padding(presentation.contentPadding.edgeInsets)
@@ -378,43 +360,9 @@ struct ConsoleLanding: View {
         .accessibilityIdentifier("workspace-start")
     }
 
-    private func filter(_ value: String?, label: String) -> some View {
-        Button {
-            category = value
-        } label: {
-            Text(label).font(ConsoleTypography.caption).foregroundStyle(category == value ? p.text : p.muted)
-                .padding(.horizontal, 14).frame(minHeight: max(32, presentation.minimumControlHeight))
-                .background(category == value ? p.primary.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(category == value ? p.primary.opacity(0.45) : .clear))
-        }
-        .buttonStyle(.plain).accessibilityAddTraits(category == value ? .isSelected : [])
-    }
-
-    private var filters: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                filter(nil, label: console.labels["all_categories"] ?? "")
-                ForEach(console.catalog.categories, id: \.self) { filter($0, label: $0) }
-            }
-            .padding(5)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .background(p.surface.opacity(0.55), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(p.text.opacity(0.09)))
-    }
-
     private func scenarioCard(_ scenario: ConsoleScenario) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(scenario.category).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                Spacer()
-                Text(console.labels["example"] ?? "").font(ConsoleTypography.sans(11))
-                    .foregroundStyle(p.muted).padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(p.text.opacity(0.04), in: Capsule()).overlay(Capsule().stroke(p.border))
-            }
             Text(scenario.title).font(ConsoleTypography.subheadline.bold()).foregroundStyle(p.text)
-            Text(scenario.description).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 8) {
                 Button(console.labels["run"] ?? "") { model.useConsoleScenario(scenario, run: true) }
@@ -468,28 +416,46 @@ struct ConsoleSurfaceOverlay: View {
     }
     private var hasNavigation: Bool { currentNavigationItem != nil && !model.mandatorySurface }
     private var isIntro: Bool { model.pendingSurfaceKey == "agent_intro" && model.pendingSurface != nil }
+    private var desktopSheet: Bool {
+        #if os(macOS)
+            presentation.settingsPresentation == .dialog && presentation.settingsNavigationAxis == .vertical
+        #else
+            false
+        #endif
+    }
+    private var compactSettings: Bool {
+        #if os(macOS)
+            true
+        #else
+            false
+        #endif
+    }
+    private var sheetWidth: CGFloat {
+        let width = hasNavigation ? presentation.settingsWidth : presentation.dialogWidth
+        return desktopSheet && hasNavigation ? min(size.width - 32, 980) : min(size.width, width)
+    }
+    private var sheetHeight: CGFloat? {
+        if isIntro && presentation.settingsPresentation != .sheet { return nil }
+        let height = min(size.height, presentation.settingsMaxHeight)
+        return desktopSheet && hasNavigation ? min(size.height - 32, height, 640) : height
+    }
+    private var navigationWidth: CGFloat { desktopSheet ? 220 : presentation.settingsNavigationWidth }
 
     var body: some View {
         ZStack {
             Color.black.opacity(0.4).ignoresSafeArea().onTapGesture { model.closeSurface() }
             VStack(spacing: 0) {
                 HStack(spacing: 12) {
-                    Text("✦").font(ConsoleTypography.title3).foregroundStyle(p.primary)
-                        .frame(width: 36, height: 36).background(
-                            p.primary.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(
-                            model.pendingSurface?.title ?? currentNavigationItem?.label
-                                ?? console.composerActions.first {
-                                    $0.action?.surface == model.pendingSurfaceKey
-                                        && $0.action?.params == model.pendingSurfaceParams
-                                }?.label ?? "Settings"
-                        )
-                        .font(ConsoleTypography.headline).foregroundStyle(p.text)
-                        if let subtitle = model.pendingSurface?.subtitle {
-                            Text(subtitle).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                        }
-                    }
+                    Text(
+                        model.pendingSurface?.title ?? currentNavigationItem?.label
+                            ?? console.composerActions.first {
+                                $0.action?.surface == model.pendingSurfaceKey
+                                    && $0.action?.params == model.pendingSurfaceParams
+                            }?.label ?? "Settings"
+                    )
+                    .font(desktopSheet ? ConsoleTypography.subheadline.weight(.semibold) : ConsoleTypography.headline)
+                    .foregroundStyle(p.text)
+                    .accessibilityAddTraits(.isHeader)
                     Spacer()
                     if model.mandatorySurface {
                         Button(model.chromeMenu?.signout.label ?? "Sign out") { Task { await model.signOut() } }
@@ -498,12 +464,15 @@ struct ConsoleSurfaceOverlay: View {
                         Button {
                             model.closeSurface()
                         } label: {
-                            Image(systemName: "xmark").frame(width: 44, height: 44)
+                            Image(systemName: "xmark")
+                                .frame(width: desktopSheet ? 28 : 44, height: desktopSheet ? 28 : 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain).foregroundStyle(p.muted).accessibilityLabel("Close")
                     }
                 }
-                .padding(.horizontal, presentation.settingsPresentation == .sheet ? 16 : 20).padding(.vertical, 18)
+                .padding(.horizontal, presentation.settingsPresentation == .sheet ? 16 : desktopSheet ? 16 : 20)
+                .padding(.vertical, desktopSheet ? 10 : 18)
                 Divider().overlay(p.border)
                 if hasNavigation, presentation.settingsNavigationAxis == .horizontal {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -517,24 +486,30 @@ struct ConsoleSurfaceOverlay: View {
                 }
                 HStack(spacing: 0) {
                     if hasNavigation, presentation.settingsNavigationAxis == .vertical {
-                        VStack(alignment: .leading, spacing: 16) {
-                            HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: desktopSheet ? 12 : 16) {
+                            HStack(spacing: desktopSheet ? 8 : 10) {
                                 Text(console.identity.initials).font(ConsoleTypography.caption.bold()).foregroundStyle(
                                     .white
                                 )
-                                .frame(width: 34, height: 34).background(p.gradient, in: Circle())
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(console.identity.name).font(ConsoleTypography.subheadline.weight(.semibold))
-                                    Text(console.identity.role).font(ConsoleTypography.caption).foregroundStyle(p.muted)
-                                }
+                                .frame(width: desktopSheet ? 28 : 34, height: desktopSheet ? 28 : 34)
+                                .background(p.gradient, in: Circle())
+                                Text(console.identity.name)
+                                    .font(
+                                        desktopSheet
+                                            ? ConsoleTypography.footnote.weight(.semibold)
+                                            : ConsoleTypography.subheadline.weight(.semibold)
+                                    )
+                                    .lineLimit(1)
                             }
+                            .padding(.horizontal, desktopSheet ? 4 : 0)
                             Divider().overlay(p.border)
                             ScrollView {
-                                VStack(alignment: .leading, spacing: 18) {
+                                VStack(alignment: .leading, spacing: desktopSheet ? 12 : 18) {
                                     ForEach(model.chromeMenu?.menu ?? []) { group in
-                                        VStack(alignment: .leading, spacing: 4) {
+                                        VStack(alignment: .leading, spacing: desktopSheet ? 2 : 4) {
                                             Text(group.label.uppercased()).font(ConsoleTypography.sans(10).bold())
-                                                .tracking(0.8).foregroundStyle(p.muted).padding(8)
+                                                .tracking(0.8).foregroundStyle(p.muted)
+                                                .padding(.horizontal, 8).padding(.vertical, desktopSheet ? 4 : 8)
                                             ForEach(group.items) { item in navigationButton(item) }
                                         }
                                     }
@@ -542,7 +517,7 @@ struct ConsoleSurfaceOverlay: View {
                             }
                             signoutButton
                         }
-                        .padding(12).frame(width: presentation.settingsNavigationWidth)
+                        .padding(desktopSheet ? 8 : 12).frame(width: navigationWidth)
                         .background(p.bg.opacity(0.35))
                         Divider().overlay(p.border)
                     }
@@ -552,14 +527,11 @@ struct ConsoleSurfaceOverlay: View {
                             maximumHeight: max(0, min(size.height, presentation.settingsMaxHeight) - 80))
                     } else {
                         SurfaceView(embedded: true)
+                            .environment(\.astralCompactSettings, compactSettings)
                     }
                 }
             }
-            .frame(
-                width: min(size.width, hasNavigation ? presentation.settingsWidth : presentation.dialogWidth),
-                height: isIntro && presentation.settingsPresentation != .sheet
-                    ? nil : min(size.height, presentation.settingsMaxHeight)
-            )
+            .frame(width: sheetWidth, height: sheetHeight)
             .background(p.surface)
             .clipShape(RoundedRectangle(cornerRadius: presentation.settingsPresentation == .sheet ? 0 : 14))
             .overlay(
@@ -571,25 +543,28 @@ struct ConsoleSurfaceOverlay: View {
 
     private var signoutButton: some View {
         Button(model.chromeMenu?.signout.label ?? "Sign out") { Task { await model.signOut() } }
-            .buttonStyle(.plain).foregroundStyle(p.error).font(ConsoleTypography.subheadline)
-            .padding(.horizontal, 8).frame(minHeight: max(32, presentation.minimumControlHeight))
+            .buttonStyle(.plain).foregroundStyle(p.error)
+            .font(desktopSheet ? ConsoleTypography.footnote : ConsoleTypography.subheadline)
+            .padding(.horizontal, desktopSheet ? 10 : 8)
+            .frame(minHeight: desktopSheet ? 28 : max(32, presentation.minimumControlHeight))
             .accessibilityIdentifier("console-settings-signout")
     }
 
     private func navigationButton(_ item: ChromeMenuItem) -> some View {
-        Button {
+        let selected = item.key == currentNavigationItem?.key
+        return Button {
             model.openMenuItem(item)
         } label: {
-            Text(item.label).font(ConsoleTypography.subheadline)
-                .foregroundStyle(item.key == currentNavigationItem?.key ? p.text : p.muted)
-                .padding(.horizontal, 10).padding(.vertical, 8)
+            Text(item.label).font(desktopSheet ? ConsoleTypography.footnote : ConsoleTypography.subheadline)
+                .foregroundStyle(selected ? p.text : desktopSheet ? p.text.opacity(0.8) : p.muted)
+                .lineLimit(desktopSheet ? 1 : nil)
+                .padding(.horizontal, 10).padding(.vertical, desktopSheet ? 6 : 8)
                 .frame(
                     maxWidth: presentation.settingsNavigationAxis == .vertical ? .infinity : nil, alignment: .leading
                 )
-                .background(
-                    item.key == currentNavigationItem?.key ? p.primary.opacity(0.2) : .clear,
-                    in: RoundedRectangle(cornerRadius: 6))
+                .background(selected ? p.primary.opacity(0.2) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.plain).accessibilityAddTraits(item.key == currentNavigationItem?.key ? .isSelected : [])
+        .buttonStyle(.plain).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }

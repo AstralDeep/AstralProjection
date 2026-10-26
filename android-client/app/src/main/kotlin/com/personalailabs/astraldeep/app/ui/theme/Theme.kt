@@ -23,22 +23,23 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 
 object AstralColors {
-    val Indigo = Color(0xFF6366F1)
-    val Purple = Color(0xFF8B5CF6)
+    val Primary = Color(0xFF7C3AED)
+    val Secondary = Color(0xFF6E6E78)
+    val Accent = Color(0xFFA78BFA)
     val Cyan = Color(0xFF06B6D4)
-    val Bg = Color(0xFF0F1221)
-    val BgElevated = Color(0xFF12162A)
-    val Surface = Color(0xFF1A1E2E)
-    val SurfaceVariant = Color(0xFF1E2338)
-    val Border = Color(0xFF2A2F49)
-    val Text = Color(0xFFF3F4F6)
-    val Muted = Color(0xFF9CA3AF)
+    val Bg = Color(0xFF121214)
+    val BgElevated = Color(0xFF18181C)
+    val Surface = Color(0xFF1B1B1F)
+    val SurfaceVariant = Color(0xFF232328)
+    val Border = Color(0xFF2D2D31)
+    val Text = Color(0xFFECECEF)
+    val Muted = Color(0xFF8C8C95)
 
     val AccentBrush =
-        Brush.linearGradient(listOf(Indigo, Purple), start = Offset.Zero, end = Offset.Infinite)
+        Brush.linearGradient(listOf(Primary, Secondary), start = Offset.Zero, end = Offset.Infinite)
 
     val BackdropBrush =
-        Brush.verticalGradient(listOf(Color(0xFF0F1221), Color(0xFF141A33), Color(0xFF0F1221)))
+        Brush.verticalGradient(listOf(Bg, BgElevated, Bg))
 }
 
 @OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
@@ -71,10 +72,10 @@ private val astralTypography =
 
 private val AstralDarkColors =
     darkColorScheme(
-        primary = AstralColors.Indigo,
+        primary = AstralColors.Primary,
         onPrimary = Color.White,
-        secondary = AstralColors.Purple,
-        tertiary = AstralColors.Cyan,
+        secondary = AstralColors.Secondary,
+        tertiary = AstralColors.Accent,
         background = AstralColors.Bg,
         onBackground = AstralColors.Text,
         surface = AstralColors.Surface,
@@ -125,6 +126,7 @@ data class ThemePalette(
 
 val THEME_PRESETS: Map<String, ThemePalette> =
     mapOf(
+        "graphite" to ThemePalette("#121214", "#1B1B1F", "#7C3AED", "#6E6E78", "#ECECEF", "#8C8C95", "#A78BFA"),
         "midnight" to ThemePalette("#0F1221", "#1A1E2E", "#6366F1", "#8B5CF6", "#F3F4F6", "#9CA3AF", "#06B6D4"),
         "daylight" to ThemePalette("#F8FAFC", "#FFFFFF", "#4F46E5", "#7C3AED", "#1E293B", "#64748B", "#0891B2"),
         "ocean" to ThemePalette("#0C1222", "#132038", "#0EA5E9", "#06B6D4", "#E2E8F0", "#94A3B8", "#2DD4BF"),
@@ -132,7 +134,7 @@ val THEME_PRESETS: Map<String, ThemePalette> =
         "forest" to ThemePalette("#0F1A14", "#1A2E22", "#22C55E", "#10B981", "#ECFDF5", "#86EFAC", "#A3E635"),
     )
 
-private val DEFAULT_PALETTE = THEME_PRESETS.getValue("midnight")
+private val DEFAULT_PALETTE = THEME_PRESETS.getValue("graphite")
 
 fun channelSwatchOptions(
     key: String,

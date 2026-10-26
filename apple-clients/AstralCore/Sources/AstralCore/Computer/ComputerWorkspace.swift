@@ -129,7 +129,8 @@
                 if n == 0 { break }
                 used += n
             }
-            guard let text = String(bytes: bytes.prefix(min(used, maximum)), encoding: .utf8), !text.contains("\0")
+            let end = used > maximum ? Self.scalarBoundary(bytes, maximum) : used
+            guard let text = String(bytes: bytes.prefix(end), encoding: .utf8), !text.contains("\0")
             else {
                 throw ComputerHostError("unsupported", "The selected file is not UTF-8 text.")
             }
@@ -137,6 +138,31 @@
                 "path": .string(path), "text": .string(text),
                 "truncated": .bool(used > maximum), "size": .number(Double(info.st_size)),
             ]
+        }
+        static func scalarBoundary(_ bytes: [UInt8], _ end: Int) -> Int {
+            var start = end
+            while start > 0, start > end - 4, bytes[start - 1] & 0xC0 == 0x80 { start -= 1 }
+            guard start > 0 else { return end }
+            let lead = bytes[start - 1]
+            let width = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1
+            return start - 1 + width > end ? start - 1 : end
+        }
+        private func preserve(from source: Int32, to target: Int32, mode: mode_t) throws {
+            guard fchmod(target, mode & 0o1777) == 0 else { throw failure() }
+            let size = flistxattr(source, nil, 0, 0)
+            guard size >= 0 else { throw failure() }
+            guard size > 0 else { return }
+            var names = [CChar](repeating: 0, count: size)
+            let listed = flistxattr(source, &names, size, 0)
+            guard listed >= 0 else { throw failure() }
+            for raw in names.prefix(listed).split(separator: 0, omittingEmptySubsequences: true) {
+                let name = Array(raw) + [0]
+                let length = fgetxattr(source, name, nil, 0, 0, 0)
+                guard length >= 0 else { throw failure() }
+                var value = [UInt8](repeating: 0, count: length)
+                let read = fgetxattr(source, name, &value, length, 0, 0)
+                guard read >= 0, fsetxattr(target, name, value, read, 0, 0) == 0 else { throw failure() }
+            }
         }
         public func list(_ path: String) throws -> [String: JSONValue] {
             let fd = try directory(components(path))
@@ -169,13 +195,23 @@
             let (parent, name) = try parent(path)
             defer { Darwin.close(parent) }
             var existing = stat()
+            var original: Int32 = -1
             if fstatat(parent, name, &existing, AT_SYMLINK_NOFOLLOW) == 0 {
                 guard existing.st_mode & S_IFMT == S_IFREG else {
                     throw ComputerHostError("permission_denied", "Only regular files can be replaced.")
                 }
+                if overwrite {
+                    original = Darwin.openat(parent, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+                    guard original >= 0 else { throw failure() }
+                    guard fstat(original, &existing) == 0, existing.st_mode & S_IFMT == S_IFREG else {
+                        Darwin.close(original)
+                        throw ComputerHostError("permission_denied", "Only regular files can be replaced.")
+                    }
+                }
             } else if errno != ENOENT {
                 throw failure()
             }
+            defer { if original >= 0 { Darwin.close(original) } }
             try authorize()
             let temporary = ".astral-" + UUID().uuidString.lowercased()
             let fd = Darwin.openat(
@@ -198,6 +234,7 @@
                 guard n > 0 else { throw failure() }
                 offset += n
             }
+            if original >= 0 { try preserve(from: original, to: fd, mode: existing.st_mode) }
             guard fsync(fd) == 0 else { throw failure() }
             try authorize()
             guard renameatx_np(parent, temporary, parent, name, overwrite ? 0 : UInt32(RENAME_EXCL)) == 0 else {

@@ -638,7 +638,7 @@ def test_runtime_manifests_bind_exact_owning_dependency_inventory() -> None:
             "a93ad97e4fb1ab31546fbe0d2b3db0a69eb0578d01e7e134cbad2f9652e41d5c"
         ),
         "apple-clients/AstralApp/AstralApp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved": (
-            "ba9a2222179d2db1b42ed9d0d862fd0072f1944f70af705c9c2a00f32f54bf98"
+            "5cf70218d493aa617c2a4f33831214104e76b93eb70d23ef924a3039afbfcc73"
         ),
         "pyproject.toml": (
             "e4384cda1aec04d50a46d2134a6d9524b3a3ec3d1000e4d052a437cf44741e3b"
@@ -751,7 +751,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
     assert paths == sorted(paths)
     assert len(paths) == len(set(paths))
     assert len(extraction["entries"]) == 519
-    assert len(paths) == 387
+    assert len(paths) == 388
     assert sum(entry.get("resultStatus") == "removed" for entry in record["entries"]) == 20
 
     moved_workflows = {
@@ -773,7 +773,7 @@ def test_transformation_record_binds_imported_sources_to_current_bytes() -> None
         f"unledgered imported changes: {sorted(changed_paths - set(paths))}; "
         f"ledger entries without imported changes: {sorted(set(paths) - changed_paths)}"
     )
-    assert len(extracted) - len(changed_paths) == 132
+    assert len(extracted) - len(changed_paths) == 131
 
     for entry in record["entries"]:
         path = entry["path"]

@@ -1,4 +1,4 @@
-// Coordinates the direct-download Mac's explicit consent, current host session and bounded execution queue.
+// Coordinates the direct-download Mac's explicit consent, current host session, physical queue and command executor.
 // AppModel supplies an owner-fenced live channel; native controls can revoke authority without waiting for OS work.
 
 #if os(macOS)
@@ -37,6 +37,16 @@
             case .screen: return "Screen Recording"
             case .monitoring: return "Input Monitoring"
             }
+        }
+        var pane: String {
+            switch self {
+            case .accessibility: return "Device Control and Data Access"
+            case .screen: return "Screen & System Audio Recording"
+            case .monitoring: return "Input Monitoring"
+            }
+        }
+        var noPromptGuidance: String {
+            "macOS no longer prompts for this app; open \(pane) and add AstralDeep with +"
         }
         var settingsURL: URL {
             let anchor: String
@@ -78,6 +88,7 @@
         private(set) var screenAllowed = false
         private(set) var monitoringAllowed = false
         private(set) var lastError: String?
+        private(set) var awaitingApproval = false
         let files: MacComputerFiles
         @ObservationIgnored private let defaults: UserDefaults
         @ObservationIgnored private let authority = ComputerHostAuthority()
@@ -107,6 +118,12 @@
         @ObservationIgnored private var channelEpoch = UUID()
         @ObservationIgnored private var outboundTail: Task<Bool, Never>?
         @ObservationIgnored private var pauseWaiters: [UUID: PauseWaiter] = [:]
+        @ObservationIgnored private var localResumeSession: String?
+        @ObservationIgnored private let commands: MacComputerCommands
+        @ObservationIgnored private let appActivator: @MainActor () -> Void
+        @ObservationIgnored weak var browser: (any MacBrowserVerbHandling)?
+        @ObservationIgnored private var auxiliary: [UUID: Task<Void, Never>] = [:]
+        @ObservationIgnored private var browserTail: Task<Void, Never>?
 
         init(
             available: Bool? = nil, defaults: UserDefaults = .standard, files: MacComputerFiles? = nil,
@@ -118,13 +135,17 @@
             desktopProbe: @escaping @Sendable () -> Bool = MacComputerDesktopProbe.usable,
             desktopRearm: (@MainActor () -> Bool)? = nil,
             system: any MacComputerSystemIO = MacComputerLiveSystem.shared,
-            panelPresenter: (@MainActor (NSPanel) -> Void)? = nil
+            panelPresenter: (@MainActor (NSPanel) -> Void)? = nil,
+            commands: MacComputerCommands? = nil,
+            appActivator: (@MainActor () -> Void)? = nil
         ) {
             self.available = available ?? Self.executionDistribution()
             self.defaults = defaults
             self.files = files ?? MacComputerFiles(defaults: defaults)
             self.system = system
             self.panelPresenter = panelPresenter ?? { $0.orderFrontRegardless() }
+            self.commands = commands ?? MacComputerCommands()
+            self.appActivator = appActivator ?? { NSApp.activate() }
             let marker = Int64.random(in: 1...Int64.max)
             self.monitor = monitor ?? MacComputerInputMonitor(marker: marker)
             self.permissionProvider = permissionProvider ?? MacComputerPermissions.current
@@ -221,6 +242,14 @@
             return "Computer access is off"
         }
         var ownerBound: Bool { owner != nil }
+        var taskActive: Bool { session != nil }
+        private static let commandVerbs: Set<String> = ["run_command", "read_output", "interrupt_command"]
+        private static let computerName: String = {
+            let name = String(
+                (Host.current().localizedName ?? "This Mac").unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }
+                    .prefix(64).map(String.init).joined())
+            return name.isEmpty ? "This Mac" : name
+        }()
         var awaitingPause: Bool { awaitingPauseAcknowledgment }
         var canResume: Bool {
             session?.state == "paused" && !awaitingPauseAcknowledgment && desktopAvailable && permissionsReady
@@ -260,21 +289,33 @@
                         scale: Double(pixels.width) / max(1, bounds.width), primary: id == primary))
             }
             var verbs = ComputerHostRequest.verbs
-            if files.roots.isEmpty { verbs.subtract(["read_file", "list_dir", "write_file", "delete_path"]) }
+            if files.roots.isEmpty {
+                verbs.subtract(Self.commandVerbs.union(["read_file", "list_dir", "write_file", "delete_path"]))
+            }
+            if browser?.isEnabled != true { verbs = verbs.filter { !Self.browserVerb($0) } }
             let raw = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.8"
             let version = raw.split(separator: ".").count == 2 ? raw + ".0" : raw
-            let name = String(
-                (Host.current().localizedName ?? "This Mac").unicodeScalars.filter { $0.value >= 32 && $0.value != 127 }
-                    .prefix(64).map(String.init).joined())
+            let roots = files.roots.compactMap { root -> ComputerHostWorkspaceRoot? in
+                let folder = String(
+                    URL(fileURLWithPath: root).lastPathComponent.unicodeScalars.filter {
+                        $0.value >= 32 && $0.value != 127
+                    }.prefix(255).map(String.init).joined())
+                let value = ComputerHostWorkspaceRoot(name: folder.isEmpty ? "Workspace" : folder, path: root)
+                return value.isValid ? value : nil
+            }
             return try? ComputerHostDescriptor(
-                hostId: hostId, name: name.isEmpty ? "This Mac" : name, clientVersion: version, screens: screens,
-                verbs: verbs.sorted())
+                hostId: hostId, name: Self.computerName, clientVersion: version, screens: screens,
+                verbs: verbs.sorted(),
+                workspaceRoots: Array(roots.prefix(ComputerHostDescriptor.maximumWorkspaceRoots)))
         }
         func bind(owner: String?, sender: @escaping @MainActor (String) async -> Bool) {
             let epoch = UUID()
             disconnect(epoch: epoch)
             guard channelEpoch == epoch else { return }
-            if self.owner != owner { files.bind(owner) }
+            if self.owner != owner {
+                files.bind(owner)
+                commands.forget()
+            }
             guard channelEpoch == epoch else { return }
             self.owner = owner
             self.sender = sender
@@ -305,7 +346,7 @@
             channelEpoch = epoch
             outboundTail?.cancel()
             outboundTail = nil
-            retire()
+            retire(commands: "uncertain")
             guard channelEpoch == epoch else { return }
             sender = nil
             monitor.stop()
@@ -320,6 +361,7 @@
             enabled = false
             consentEnabled = false
             files.bind(nil)
+            commands.forget()
         }
         func showControls() {
             refreshPermissions()
@@ -337,7 +379,7 @@
             accessibilityAllowed = permissions.accessibility && permissions.posting
             screenAllowed = permissions.screen
             monitoringAllowed = permissions.monitoring
-            if enabled && (!authority.desktopIsAvailable || !desktopProbe()) {
+            if enabled, session?.state != "paused", !authority.desktopIsAvailable || !desktopProbe() {
                 sessionLocked()
                 return
             }
@@ -373,6 +415,14 @@
                 }
                 return
             }
+            let asked = "computer.permission.requested." + permission.title
+            if defaults.bool(forKey: asked) {
+                lastError =
+                    permission.noPromptGuidance
+                    + (settingsOpener(permission.settingsURL) ? "" : ". AstralDeep could not open that pane.")
+                return
+            }
+            defaults.set(true, forKey: asked)
             let granted = permissionRequester(permission)
             refreshPermissions()
             let ready = permissionReady(permission)
@@ -446,12 +496,19 @@
             lastError = "Computer control stopped because this desktop became unavailable."
         }
         func applicationWillTerminate() {
+            commands.terminateNow()
             localInput?.stop()
             stop()
             monitor.stop()
             authority.invalidate()
         }
         func pause() { pause(reason: "local_pause") }
+        func takeover() { pause(reason: "local_input") }
+        func approvalWaiting(_ waiting: Bool) {
+            awaitingApproval = waiting && session != nil
+            if awaitingApproval { showPanel() }
+        }
+        func bringAstralForward() { appActivator() }
         private func pause(reason: String) {
             guard let current = session, current.state == "active" else { return }
             localInput?.invalidate()
@@ -474,6 +531,7 @@
                 lastError = "Resume this task yourself using Astral's local session controls."
                 return
             }
+            localResumeSession = current.id
             sendEvent("resumed", additional: ["session_id": .string(current.id)])
         }
         func recordApprovalInteraction() -> String? {
@@ -533,23 +591,29 @@
             }
             retire()
         }
-        private func cancelWork(resetDriver: Bool = true) {
+        private func cancelWork(resetDriver: Bool = true, commands state: String = "interrupted") {
             workerId = UUID()
             worker?.cancel()
             worker = nil
             queue = []
+            commands.endAll(as: state)
+            for task in auxiliary.values { task.cancel() }
+            auxiliary = [:]
+            browserTail = nil
             if resetDriver { Task { await driver.reset() } }
         }
-        private func retire() {
+        private func retire(commands state: String = "interrupted") {
             resolvePauseWaiters(accepted: false)
             authority.invalidate()
-            cancelWork()
+            cancelWork(commands: state)
             session = nil
             startedAt = nil
             heartbeat?.cancel()
             heartbeat = nil
             awaitingPauseAcknowledgment = false
             localPauseReason = nil
+            localResumeSession = nil
+            awaitingApproval = false
             panel?.orderOut(nil)
             panel = nil
         }
@@ -575,14 +639,29 @@
                     }
                     if incoming.state == "active" {
                         if awaitingPauseAcknowledgment && incoming.id == session?.id { return true }
+                        if incoming.id == session?.id, session?.state == "paused", localPauseReason == "local_pause",
+                            localResumeSession != incoming.id
+                        {
+                            sendEvent(
+                                "paused",
+                                additional: ["session_id": .string(incoming.id), "reason": .string("local_pause")])
+                            return true
+                        }
                         try authority.begin(incoming.id)
                         if incoming.id == session?.id && session?.state == "paused" { authority.resume() }
+                        localResumeSession = nil
+                        localPauseReason = nil
                     } else {
+                        let locallyPaused =
+                            incoming.id == session?.id && session?.state == "paused"
+                            && localPauseReason == "local_pause"
                         if incoming.id != session?.id { try authority.begin(incoming.id) }
                         authority.pause()
                         cancelWork(resetDriver: false)
                         awaitingPauseAcknowledgment = false
-                        if let reason = frame.payload["pause_reason"]?.stringValue { localPauseReason = reason }
+                        if !locallyPaused, let reason = frame.payload["pause_reason"]?.stringValue {
+                            localPauseReason = reason
+                        }
                     }
                     if session?.id != incoming.id { startedAt = ProcessInfo.processInfo.systemUptime }
                     session = incoming
@@ -600,9 +679,14 @@
             }
             do {
                 refreshPermissions()
-                guard available, enabled, permissionsReady, monitor.running, sender != nil,
-                    descriptor?.verbs.contains(request.verb) == true
-                else {
+                guard available, enabled, permissionsReady, monitor.running, sender != nil else {
+                    throw ComputerHostError(
+                        "permission_denied", "This Mac has not granted the requested computer capability.")
+                }
+                if Self.browserVerb(request.verb), browser?.isEnabled != true {
+                    throw ComputerHostError("unsupported", "The browser pane is turned off on this Mac.")
+                }
+                guard descriptor?.verbs.contains(request.verb) == true else {
                     throw ComputerHostError(
                         "permission_denied", "This Mac has not granted the requested computer capability.")
                 }
@@ -612,7 +696,13 @@
             } catch { respond(request.id, error: error) }
             return true
         }
+        private static func browserVerb(_ verb: String) -> Bool { verb.hasPrefix("browser_") }
+        private static func nonPhysical(_ verb: String) -> Bool { browserVerb(verb) || commandVerbs.contains(verb) }
         private func drain() {
+            while let index = queue.firstIndex(where: { Self.nonPhysical($0.0.verb) }) {
+                let (request, ticket) = queue.remove(at: index)
+                runAuxiliary(request, ticket)
+            }
             guard worker == nil, !queue.isEmpty else { return }
             let (request, ticket) = queue.removeFirst()
             let authority = authority
@@ -652,6 +742,65 @@
                 self.worker = nil
                 self.drain()
             }
+        }
+        private func runAuxiliary(_ request: ComputerHostRequest, _ ticket: ComputerHostTicket) {
+            let authority = authority
+            let desktopProbe = desktopProbe
+            let roots = files.roots
+            let authorize: @Sendable () throws -> Void = {
+                try authority.verify(ticket)
+                guard desktopProbe() else {
+                    authority.setDesktopAvailable(false)
+                    throw ComputerHostError(
+                        "screen_locked", "This desktop is unavailable. Enable it locally after unlocking.")
+                }
+                try authority.verify(ticket)
+            }
+            let id = UUID()
+            let serial = Self.browserVerb(request.verb)
+            let previous = serial ? browserTail : nil
+            let task = Task { [weak self] in
+                _ = await previous?.value
+                let result: Result<[String: JSONValue], Error>
+                do {
+                    try authorize()
+                    guard let host = self else { return }
+                    result = .success(
+                        try await host.performAuxiliary(request, ticket: ticket, roots: roots, authorize: authorize))
+                } catch { result = .failure(error) }
+                guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
+                do {
+                    try authority.verify(ticket)
+                    switch result {
+                    case .success(let value): self.respond(request.id, result: value)
+                    case .failure(let error):
+                        self.respond(request.id, error: error)
+                        self.lastError = error.localizedDescription
+                    }
+                } catch {
+                    self.lastError =
+                        "The operation was interrupted; inspect the current computer state before retrying."
+                }
+                authority.complete(ticket)
+            }
+            auxiliary[id] = task
+            if serial { browserTail = task }
+        }
+        private func performAuxiliary(
+            _ request: ComputerHostRequest, ticket: ComputerHostTicket, roots: [String],
+            authorize: @escaping @Sendable () throws -> Void
+        ) async throws -> [String: JSONValue] {
+            switch request.verb {
+            case "run_command":
+                return try await commands.run(request, session: ticket.sessionId, roots: roots, authorize: authorize)
+            case "read_output": return try await commands.read(request, authorize: authorize)
+            case "interrupt_command": return try await commands.interrupt(request, authorize: authorize)
+            default: break
+            }
+            guard let browser, browser.isEnabled else {
+                throw ComputerHostError("unsupported", "The browser pane is turned off on this Mac.")
+            }
+            return try await browser.handle(request, ticket: ticket, authorize: authorize)
         }
         private func respond(_ id: String, result: [String: JSONValue]? = nil, error: Error? = nil) {
             var payload: [String: JSONValue] = ["request_id": .string(id), "ok": .bool(error == nil)]
@@ -709,16 +858,35 @@
                 let value = NSPanel(
                     contentRect: NSRect(x: 80, y: 80, width: 380, height: 110),
                     styleMask: [.nonactivatingPanel, .titled], backing: .buffered, defer: false)
-                value.title = "Astral computer session"
+                value.title = MacComputerPanelIdentity.title
                 value.level = .floating
                 value.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
                 value.isReleasedWhenClosed = false
                 value.hidesOnDeactivate = false
-                value.contentView = NSHostingView(rootView: MacComputerSessionControls(host: self))
+                let content = NSHostingController(rootView: MacComputerSessionPanel(host: self))
+                content.sizingOptions = [.preferredContentSize]
+                value.contentViewController = content
                 panel = value
-                monitor.controlsWindow = value.windowNumber
             }
             if let panel { panelPresenter(panel) }
+        }
+    }
+
+    struct MacComputerSessionPanel: View {
+        @Bindable var host: MacComputerHost
+        var body: some View {
+            VStack(alignment: .leading, spacing: 0) {
+                if host.awaitingApproval {
+                    HStack(spacing: 8) {
+                        Label("Approval waiting", systemImage: "hand.raised").font(.headline)
+                            .accessibilityIdentifier("mac-computer-approval-waiting")
+                        Spacer()
+                        Button("Open Astral", action: host.bringAstralForward)
+                            .accessibilityIdentifier("mac-computer-open-astral")
+                    }.padding([.horizontal, .top], 12)
+                }
+                MacComputerSessionControls(host: host)
+            }.frame(width: 380, alignment: .leading)
         }
     }
 #endif
