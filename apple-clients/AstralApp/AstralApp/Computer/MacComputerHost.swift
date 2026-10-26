@@ -107,6 +107,9 @@
         @ObservationIgnored private var channelEpoch = UUID()
         @ObservationIgnored private var outboundTail: Task<Bool, Never>?
         @ObservationIgnored private var pauseWaiters: [UUID: PauseWaiter] = [:]
+        @ObservationIgnored weak var browser: (any MacBrowserVerbHandling)?
+        @ObservationIgnored private var auxiliary: [UUID: Task<Void, Never>] = [:]
+        @ObservationIgnored private var browserTail: Task<Void, Never>?
 
         init(
             available: Bool? = nil, defaults: UserDefaults = .standard, files: MacComputerFiles? = nil,
@@ -538,6 +541,9 @@
             worker?.cancel()
             worker = nil
             queue = []
+            for task in auxiliary.values { task.cancel() }
+            auxiliary = [:]
+            browserTail = nil
             if resetDriver { Task { await driver.reset() } }
         }
         private func retire() {
@@ -600,9 +606,14 @@
             }
             do {
                 refreshPermissions()
-                guard available, enabled, permissionsReady, monitor.running, sender != nil,
-                    descriptor?.verbs.contains(request.verb) == true
-                else {
+                guard available, enabled, permissionsReady, monitor.running, sender != nil else {
+                    throw ComputerHostError(
+                        "permission_denied", "This Mac has not granted the requested computer capability.")
+                }
+                if Self.browserVerb(request.verb), browser?.isEnabled != true {
+                    throw ComputerHostError("unsupported", "The browser pane is turned off on this Mac.")
+                }
+                guard descriptor?.verbs.contains(request.verb) == true else {
                     throw ComputerHostError(
                         "permission_denied", "This Mac has not granted the requested computer capability.")
                 }
@@ -612,7 +623,13 @@
             } catch { respond(request.id, error: error) }
             return true
         }
+        private static func browserVerb(_ verb: String) -> Bool { verb.hasPrefix("browser_") }
+        private static func nonPhysical(_ verb: String) -> Bool { browserVerb(verb) }
         private func drain() {
+            while let index = queue.firstIndex(where: { Self.nonPhysical($0.0.verb) }) {
+                let (request, ticket) = queue.remove(at: index)
+                runAuxiliary(request, ticket)
+            }
             guard worker == nil, !queue.isEmpty else { return }
             let (request, ticket) = queue.removeFirst()
             let authority = authority
@@ -652,6 +669,56 @@
                 self.worker = nil
                 self.drain()
             }
+        }
+        private func runAuxiliary(_ request: ComputerHostRequest, _ ticket: ComputerHostTicket) {
+            let authority = authority
+            let desktopProbe = desktopProbe
+            let authorize: @Sendable () throws -> Void = {
+                try authority.verify(ticket)
+                guard desktopProbe() else {
+                    authority.setDesktopAvailable(false)
+                    throw ComputerHostError(
+                        "screen_locked", "This desktop is unavailable. Enable it locally after unlocking.")
+                }
+                try authority.verify(ticket)
+            }
+            let id = UUID()
+            let serial = Self.browserVerb(request.verb)
+            let previous = serial ? browserTail : nil
+            let task = Task { [weak self] in
+                _ = await previous?.value
+                let result: Result<[String: JSONValue], Error>
+                do {
+                    try authorize()
+                    guard let host = self else { return }
+                    result = .success(try await host.performAuxiliary(request, ticket: ticket, authorize: authorize))
+                } catch { result = .failure(error) }
+                guard let self, self.auxiliary.removeValue(forKey: id) != nil else { return }
+                do {
+                    try authority.verify(ticket)
+                    switch result {
+                    case .success(let value): self.respond(request.id, result: value)
+                    case .failure(let error):
+                        self.respond(request.id, error: error)
+                        self.lastError = error.localizedDescription
+                    }
+                } catch {
+                    self.lastError =
+                        "The operation was interrupted; inspect the current computer state before retrying."
+                }
+                authority.complete(ticket)
+            }
+            auxiliary[id] = task
+            if serial { browserTail = task }
+        }
+        private func performAuxiliary(
+            _ request: ComputerHostRequest, ticket: ComputerHostTicket,
+            authorize: @escaping @Sendable () throws -> Void
+        ) async throws -> [String: JSONValue] {
+            guard let browser, browser.isEnabled else {
+                throw ComputerHostError("unsupported", "The browser pane is turned off on this Mac.")
+            }
+            return try await browser.handle(request, ticket: ticket, authorize: authorize)
         }
         private func respond(_ id: String, result: [String: JSONValue]? = nil, error: Error? = nil) {
             var payload: [String: JSONValue] = ["request_id": .string(id), "ok": .bool(error == nil)]
