@@ -154,36 +154,46 @@
                 code { try ComputerCommandPolicy.stdin(String(repeating: "é", count: 8193)) }, "out_of_range")
         }
 
-        func testArgv0AndGrantableForm() throws {
-            func invocation(_ command: String) throws -> ComputerCommandInvocation {
-                try ComputerCommandPolicy.invocation(command: command, argv: nil)
+        func testOnlyPlainArgvInvocationsAreGrantable() throws {
+            func argv(_ items: String...) throws -> ComputerCommandInvocation {
+                try ComputerCommandPolicy.invocation(command: nil, argv: items)
             }
-            let argv = try ComputerCommandPolicy.invocation(command: nil, argv: ["/usr/bin/wc", "-l", "a;b|c"])
-            XCTAssertEqual(argv.argv0, "wc")
-            XCTAssertTrue(argv.grantable)
-            let simple = try invocation("wc -l 'notes file.md'")
-            XCTAssertEqual(simple.argv0, "wc")
-            XCTAssertTrue(simple.grantable)
-            for compound in [
-                "wc -l $(ls)", "wc `ls`", "cat a | wc", "ls; rm x", "a && b", "a || b", "echo > out", "echo >> out",
-                "wc < in", "ls\nrm x", "sleep 5 &", "FOO=1 wc -l x", "wc 'unbalanced",
+            let plain = try argv("wc", "-l", "notes.md")
+            XCTAssertEqual(plain.argv0, "wc")
+            XCTAssertTrue(plain.grantable)
+            let literal = try argv("/usr/bin/wc", "-l", "a;b|c", "*.md", "$HOME", "~", "{a,b}")
+            XCTAssertEqual(literal.argv0, "wc")
+            XCTAssertTrue(literal.grantable)
+            XCTAssertTrue(try argv("git", "status").grantable)
+            XCTAssertTrue(try argv("git", "checkout", "main").grantable)
+            XCTAssertTrue(try argv("find", ".", "-name", "x").grantable)
+            for command in [
+                "wc -l notes.md", "wc -l 'notes file.md'", "wc -l *.md", "ls ~", "echo $HOME", "ls {a,b}", "=ls",
+                "wc -l $(ls)", "wc `ls`", "cat a | wc", "ls; rm x", "a && b", "a || b", "echo > out", "wc < in",
+                "ls\nrm x", "sleep 5 &", "FOO=1 wc -l x", "wc 'unbalanced",
             ] {
-                XCTAssertFalse(try invocation(compound).grantable, compound)
+                let invocation = try ComputerCommandPolicy.invocation(command: command, argv: nil)
+                XCTAssertFalse(invocation.grantable, command)
+                XCTAssertEqual(invocation.command, command)
+                XCTAssertNil(invocation.argv)
             }
-            for never in [
-                "sh -c ls", "bash x", "/bin/zsh -c ls", "fish", "python3 x.py", "python", "node x", "ruby x",
-                "perl x", "env FOO=1 ls", "xargs rm", "osascript -e x", "open .", "sudo ls", "su", "launchctl list",
-                "defaults read", "security find", "find . -delete", "git push",
-                "git reset --hard", "git clean -fd", "git rebase main", "git checkout -- file",
+            XCTAssertEqual(try ComputerCommandPolicy.invocation(command: "wc -l notes.md", argv: nil).argv0, "wc")
+            for wrapper in [
+                "nice", "nohup", "time", "command", "exec", "caffeinate", "awk", "gawk", "sed", "make", "xcrun",
+                "swift", "php", "lua", "tclsh", "osascript", "env", "su", "sudo", "script", "expect", "screen", "tmux",
+                "sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh", "python", "python3", "node", "ruby", "perl",
+                "xargs", "open", "launchctl", "defaults", "security", "/usr/bin/nice", "/usr/bin/TIME",
             ] {
-                XCTAssertFalse(try invocation(never).grantable, never)
+                XCTAssertFalse(try argv(wrapper, "wc", "-l", "notes.md").grantable, wrapper)
             }
-            XCTAssertTrue(try invocation("find . -name x").grantable)
-            XCTAssertTrue(try invocation("git status").grantable)
-            XCTAssertTrue(try invocation("git checkout main").grantable)
-            XCTAssertFalse(try ComputerCommandPolicy.invocation(command: nil, argv: ["bash", "-c", "ls"]).grantable)
-            let find = try ComputerCommandPolicy.invocation(command: nil, argv: ["find", ".", "-exec", "rm", "{}", ";"])
-            XCTAssertFalse(find.grantable)
+            for effect in [
+                ["find", ".", "-delete"], ["find", ".", "-exec", "rm", "{}", ";"], ["find", ".", "-execdir", "x"],
+                ["git", "push"], ["git", "reset", "--hard"], ["git", "clean", "-fd"], ["git", "rebase", "main"],
+                ["git", "checkout", "--", "file"],
+            ] {
+                let invocation = try ComputerCommandPolicy.invocation(command: nil, argv: effect)
+                XCTAssertFalse(invocation.grantable, "\(effect)")
+            }
             XCTAssertEqual(code { try ComputerCommandPolicy.invocation(command: "   ", argv: nil) }, "out_of_range")
             XCTAssertEqual(code { try ComputerCommandPolicy.invocation(command: nil, argv: [""]) }, "out_of_range")
             XCTAssertEqual(code { try ComputerCommandPolicy.invocation(command: nil, argv: []) }, "out_of_range")

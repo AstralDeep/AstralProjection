@@ -28,9 +28,9 @@
         private static let shells: Set<String> = ["sh", "bash", "zsh", "fish", "dash", "ksh", "tcsh", "csh"]
         private static let neverGrantable: Set<String> = [
             "node", "ruby", "perl", "env", "xargs", "osascript", "open", "sudo", "su", "launchctl", "defaults",
-            "security",
+            "security", "nice", "nohup", "time", "command", "exec", "caffeinate", "awk", "gawk", "sed", "make", "xcrun",
+            "swift", "php", "lua", "tclsh", "script", "expect", "screen", "tmux",
         ]
-        private static let compound = ["$(", "`", "|", ";", "&", ">", "<", "\n", "\r"]
 
         public static func forbidden(_ name: String) -> Bool {
             let upper = name.uppercased()
@@ -128,15 +128,10 @@
             guard let command, !command.contains("\0"),
                 !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else { throw ComputerHostError("out_of_range", "Give exactly one of command or argv.") }
-            let tokens = tokenize(command)
-            let first = tokens?.first ?? command.split(whereSeparator: \.isWhitespace).first.map(String.init) ?? command
-            let simple =
-                tokens.map { !$0.isEmpty && !$0[0].contains("=") } == true
-                && !compound.contains { command.contains($0) }
-            let name = basename(first)
-            return ComputerCommandInvocation(
-                argv: nil, command: command, argv0: name,
-                grantable: simple && grantableProgram(name, Array((tokens ?? []).dropFirst())))
+            let first =
+                tokenize(command)?.first ?? command.split(whereSeparator: \.isWhitespace).first.map(String.init)
+                ?? command
+            return ComputerCommandInvocation(argv: nil, command: command, argv0: basename(first), grantable: false)
         }
 
         public static func executable(_ name: String, path: String, cwd: String) -> String? {
