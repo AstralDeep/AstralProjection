@@ -387,7 +387,8 @@ def _assert_whole_os_helper_contract(apple: str) -> None:
     native = (ROOT / "tests/test_swift_inactive_input_native.py").read_text()
     assert "sum(int(row[1]) > 0 for row in lines) / len(lines) >= 0.9" in native
     assert 'pinned = actual_version.strip() == b"Xcode 26.6\\nBuild version 17F113"' in native
-    assert "except proof.ProofError:\n        assert not pinned" in native
+    assert "except proof.ProofError:" in native
+    assert 'assert not pinned, f"pinned toolchain refused collection; retained outputs: {retained}"' in native
     assert "assert pinned" in native
 
 

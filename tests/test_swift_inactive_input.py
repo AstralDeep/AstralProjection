@@ -457,9 +457,16 @@ def test_script_entry_point_refuses_source_identity_without_tool_execution(
 @pytest.mark.parametrize(
     "banner,accepted",
     [
+        (b"Apple LLVM version 21.0.0\n", True),
         (b"Apple LLVM version 21.0.0\n  Optimized build.\n", True),
-        (b"Apple LLVM version 21.0.0\nUnknown build.\n", False),
-        (b"Apple LLVM version 21.0.0\n  Optimized build.\nextra\n", False),
+        (
+            b"Apple LLVM version 21.0.0\n  Optimized build.\n  Default target: arm64-apple-macosx15.0\n",
+            True,
+        ),
+        (b"Apple clang version 21.0.0\n", False),
+        (b"Apple LLVM version 20.0.0\n", False),
+        (b"", False),
+        (b"Apple LLVM version 21.0.0\n" + b"  Optimized build.\n" * 400, False),
     ],
 )
 def test_llvm_banner_accepts_only_the_known_closed_lines(pipeline, banner, accepted):

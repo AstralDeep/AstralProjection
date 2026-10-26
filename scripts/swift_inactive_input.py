@@ -552,12 +552,16 @@ def _collect_source(
     require(
         command("xcode", [str(tools[0]), "-version"]).strip() == b"Xcode 26.6\nBuild version 17F113"
     )
+    llvm_banner = command("llvm", [str(tools[3]), "--version"])
     require(
-        command("llvm", [str(tools[3]), "--version"]).splitlines()
-        in ([b"Apple LLVM version 21.0.0"], [b"Apple LLVM version 21.0.0", b"  Optimized build."])
+        0 < len(llvm_banner) <= 4096
+        and llvm_banner.splitlines()[0] == b"Apple LLVM version 21.0.0"
     )
     swift_version = command("swift", [str(tools[2]), "-version"]).decode("utf-8", "strict").strip()
-    require(swift_version.startswith("Apple Swift version ") and len(swift_version) <= 1024)
+    require(
+        0 < len(swift_version) <= 1024
+        and all(character.isprintable() or character.isspace() for character in swift_version)
+    )
     sdk_alias = (
         developer
         / "Platforms"

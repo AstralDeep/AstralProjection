@@ -35,7 +35,10 @@ Before checking the actual source, collection qualifies positive and negative co
 
 All original source, native inputs, tool identities and SDK metadata are checked again after collection. Unknown AST/SIL grammar, diagnostics, active declarations/functions/tables, malformed output, failed tools, changed inputs and expired/output bounds refuse the proof. Verification failures print only `swift_inactive_input_invalid`; partial private outputs remain available for diagnosis, and no successful `proof.json` is written.
 
-The LLVM version check accepts only the exact known LLVM 21 version line and its optional exact `  Optimized build.` line; additional or unknown banner text is refused.
+The LLVM version check requires the exact known LLVM 21 first line within a
+bounded banner; the complete banner is retained among the receipt's raw
+outputs. The Swift version line is bounded and retained for diagnosis, while
+the exact Xcode identity and the tool digests bind the toolchain.
 
 The current empty grammar is explicitly limited to the pinned frontend's empty source-file AST and raw SIL preamble, fixed imports and controlled one-file mapping. It is not a generic parser that drops unknown compiler output. Canonical qualification on 17F113 is still required; the local 27 grammar exercises do not replace it.
 

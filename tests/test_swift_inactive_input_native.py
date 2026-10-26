@@ -489,7 +489,8 @@ def test_real_collector_uses_native_object_and_shipping_library_profile(native_t
     try:
         value = proof.collect_proof(**arguments)
     except proof.ProofError:
-        assert not pinned
+        retained = sorted(entry.name for entry in output.iterdir()) if output.is_dir() else []
+        assert not pinned, f"pinned toolchain refused collection; retained outputs: {retained}"
         assert not (output / "proof.json").exists()
         assert (output / "xcode.stdout").read_bytes() == actual_version
         decision = "unqualified-toolchain-refused"
