@@ -331,12 +331,6 @@ class NotificationPushAdapter(
         const val REASON_BOOTSTRAP = "bootstrap"
         const val REASON_RETRY = "retry"
         const val REASON_PROVIDER_UNAVAILABLE = "provider_unavailable"
-
-        fun String.hasControlChars(): Boolean = any { it.code < 0x20 || it.code == 0x7F }
-
-        fun tokenFingerprint(token: String): String =
-            MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
-                .joinToString("") { "%02x".format(it) }
     }
 }
 
@@ -344,3 +338,9 @@ object PushChannels {
     const val DEFAULT = "astral_push"
     const val ALERTS = "astral_push_alerts"
 }
+
+private fun String.hasControlChars(): Boolean = any { it.code < 0x20 || it.code == 0x7F }
+
+private fun tokenFingerprint(token: String): String =
+    MessageDigest.getInstance("SHA-256").digest(token.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }

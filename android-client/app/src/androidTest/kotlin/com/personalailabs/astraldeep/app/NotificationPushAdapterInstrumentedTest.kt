@@ -59,8 +59,7 @@ class NotificationPushAdapterInstrumentedTest {
     fun grantedPermissionRequestsTokenAndPresentsBackgroundMessage() {
         val adapter = startAdapter(FakePushProvider(supported = true))
         deliverAndAccept(adapter)
-        val posted = notificationManager.activeNotifications.firstOrNull { it.tag == NOTIFICATION_ID }
-        assertNotNull(posted)
+        val posted = checkNotNull(notificationManager.activeNotifications.firstOrNull { it.tag == NOTIFICATION_ID })
         assertEquals("astral_push", posted.notification.channelId)
         assertEquals("Hello", posted.notification.extras.getString(Notification.EXTRA_TITLE))
         assertEquals("Body text", posted.notification.extras.getString(Notification.EXTRA_TEXT))

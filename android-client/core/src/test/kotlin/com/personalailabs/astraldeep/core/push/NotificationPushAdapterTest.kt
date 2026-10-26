@@ -13,6 +13,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class NotificationPushAdapterTest {
@@ -54,7 +55,7 @@ class NotificationPushAdapterTest {
         assertTrue(adapter.onToken("provider-token-A").isEmpty())
         assertTrue(adapter.retryRegistration().isEmpty())
         assertEquals(listOf<PushEffect>(PushEffect.RequestToken("bootstrap")), adapter.onAvailability(true))
-        assertEquals(null, adapter.unsupportedReason)
+        assertNull(adapter.unsupportedReason)
     }
 
     @Test

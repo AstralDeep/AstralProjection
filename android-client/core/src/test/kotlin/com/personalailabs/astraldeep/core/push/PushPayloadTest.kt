@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class PushPayloadTest {
@@ -20,18 +21,15 @@ class PushPayloadTest {
         assertEquals("Hello", payload.payload.title)
         assertEquals("Body text", payload.payload.body)
         assertEquals("info", payload.payload.level)
-        assertEquals(null, payload.payload.chatId)
+        assertNull(payload.payload.chatId)
     }
 
     @Test
     fun decodes_optional_level_and_chat_binding() {
-        val decoded =
-            decodePushPayload(
-                payloadJson(id = "notif-0002", title = null, level = "error", chatId = "chat-9"),
-            ) as PushPayloadResult.Decoded
+        val decoded = decodePushPayload(payloadJson(id = "notif-0002", title = null, level = "error", chatId = "chat-9")) as PushPayloadResult.Decoded
         assertEquals("error", decoded.payload.level)
         assertEquals("chat-9", decoded.payload.chatId)
-        assertEquals(null, decoded.payload.title)
+        assertNull(decoded.payload.title)
     }
 
     @Test
@@ -98,17 +96,17 @@ class PushPayloadTest {
 
     @Test
     fun json_null_fields_are_treated_as_absent() {
-        val decoded =
-            decodePushPayload(
-                buildJsonObject {
-                    put("notification_id", "notif-0001")
-                    put("title", JsonNull)
-                    put("body", "text")
-                },
-            ) as PushPayloadResult.Decoded
-        assertEquals(null, decoded.payload.title)
+        val decoded = decodePushPayload(jsonNullPayload()) as PushPayloadResult.Decoded
+        assertNull(decoded.payload.title)
         assertEquals("text", decoded.payload.body)
     }
+
+    private fun jsonNullPayload(): JsonObject =
+        buildJsonObject {
+            put("notification_id", "notif-0001")
+            put("title", JsonNull)
+            put("body", "text")
+        }
 
     private fun assertMalformed(data: JsonObject) {
         val decoded = decodePushPayload(data)

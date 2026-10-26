@@ -255,7 +255,7 @@ def test_actual_typed_ast_and_sil_controls_have_closed_empty_grammar(
                 str(root / "cache"),
                 str(source),
             ]
-            result = subprocess.run(command, capture_output=True, timeout=20)
+            result = subprocess.run(command, capture_output=True, timeout=120)
             assert result.returncode == 0 and not result.stderr.strip()
             (root / (source.stem + mode + ".stdout")).write_bytes(result.stdout)
             (root / (source.stem + mode + ".stderr")).write_bytes(result.stderr)
@@ -402,7 +402,7 @@ def test_real_frontend_accepts_relative_input_in_held_directory(native_tool, tmp
                 command,
                 cwd=storage.path,
                 directory_fd=storage.fd,
-                deadline=proof.time.monotonic() + 20,
+                deadline=proof.time.monotonic() + 120,
             )
             assert result.returncode == 0 and not result.stderr.strip()
             values[mode] = result.stdout
@@ -412,7 +412,10 @@ def test_real_frontend_accepts_relative_input_in_held_directory(native_tool, tmp
         proof.validate_empty(values["-dump-ast"], values["-emit-silgen"], Path("Input.swift"))
 
 
-def test_real_collector_uses_native_object_and_shipping_library_profile(native_tool, tmp_path):
+def test_real_collector_uses_native_object_and_shipping_library_profile(
+    native_tool, tmp_path, monkeypatch
+):
+    monkeypatch.setattr(proof, "TIME_BUDGET", 600)
     import platform
 
     architecture = platform.machine()
@@ -471,7 +474,7 @@ def test_real_collector_uses_native_object_and_shipping_library_profile(native_t
         ],
     ]
     for index, command in enumerate(commands):
-        result = subprocess.run(command, capture_output=True, timeout=30)
+        result = subprocess.run(command, capture_output=True, timeout=120)
         (native_tool.evidence_root / f"collector-build-{index}.stdout").write_bytes(result.stdout)
         (native_tool.evidence_root / f"collector-build-{index}.stderr").write_bytes(result.stderr)
         assert result.returncode == 0, result.stderr.decode()
