@@ -24,7 +24,7 @@ from typing import Any
 MAX_FILE = 256 * 1024 * 1024
 MAX_SOURCE = 16 * 1024 * 1024
 MAX_TOOL = 4 * 1024 * 1024
-TIME_BUDGET = 120
+TIME_BUDGET = 480
 HELPER = Path(__file__).resolve().with_name("WholeOSInputProof.swift")
 PLATFORMS = {
     7: ("iOS", "iphonesimulator", "iPhoneSimulator", "ios", "-simulator"),

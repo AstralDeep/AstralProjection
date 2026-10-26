@@ -20,6 +20,7 @@ ENV/
 pip-wheel-metadata/
 build/
 dist/
+.pi-evidence/
 /uv.lock
 
 # JavaScript and Node tooling

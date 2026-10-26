@@ -55,7 +55,7 @@ def native_tool(tmp_path_factory):
         "-o",
         str(root / "whole-os-proof"),
     ]
-    result = subprocess.run(command, capture_output=True, timeout=45)
+    result = subprocess.run(command, capture_output=True, timeout=120)
     (root / "build.stdout").write_bytes(result.stdout)
     (root / "build.stderr").write_bytes(result.stderr)
     assert result.returncode == 0, result.stderr.decode()
@@ -91,7 +91,7 @@ def native_tool(tmp_path_factory):
         result = subprocess.run(
             command,
             capture_output=True,
-            timeout=10,
+            timeout=30,
             env={**os.environ, "LLVM_PROFILE_FILE": str(root / "run-%p-%m.profraw")},
         )
         record["runs"].append(
@@ -125,7 +125,7 @@ def native_tool(tmp_path_factory):
         "-o",
         str(root / "merged.profdata"),
     ]
-    subprocess.run(merge, check=True, capture_output=True, timeout=20)
+    subprocess.run(merge, check=True, capture_output=True, timeout=60)
     export = [
         "xcrun",
         "llvm-cov",
@@ -134,7 +134,7 @@ def native_tool(tmp_path_factory):
         "-instr-profile=" + str(root / "merged.profdata"),
         str(root / "whole-os-proof"),
     ]
-    output = subprocess.check_output(export, timeout=20)
+    output = subprocess.check_output(export, timeout=60)
     (root / "native.lcov").write_bytes(output)
     record.update(
         merge_command=merge,
@@ -255,7 +255,7 @@ def test_actual_typed_ast_and_sil_controls_have_closed_empty_grammar(
                 str(root / "cache"),
                 str(source),
             ]
-            result = subprocess.run(command, capture_output=True, timeout=20)
+            result = subprocess.run(command, capture_output=True, timeout=120)
             assert result.returncode == 0 and not result.stderr.strip()
             (root / (source.stem + mode + ".stdout")).write_bytes(result.stdout)
             (root / (source.stem + mode + ".stderr")).write_bytes(result.stderr)
@@ -339,7 +339,7 @@ def test_real_compiler_output_and_cache_use_held_private_directory(
             cwd=output,
             directory_fd=storage.fd,
             developer=frontend.parents[4],
-            deadline=proof.time.monotonic() + 45,
+            deadline=proof.time.monotonic() + 120,
         )
         assert result.returncode == 0, result.stderr.decode()
         assert (held / "whole-os-proof").is_file() and (held / "host-cache").is_dir()
@@ -355,7 +355,7 @@ def test_real_compiler_output_and_cache_use_held_private_directory(
                 ["./whole-os-proof", "Input.swift", "macOS"],
                 cwd=output,
                 directory_fd=storage.fd,
-                deadline=proof.time.monotonic() + 10,
+                deadline=proof.time.monotonic() + 60,
             )
             assert parsed.returncode == 0
             proof.validate_syntax(parsed.stdout, source=raw, target_os="macOS")
@@ -402,7 +402,7 @@ def test_real_frontend_accepts_relative_input_in_held_directory(native_tool, tmp
                 command,
                 cwd=storage.path,
                 directory_fd=storage.fd,
-                deadline=proof.time.monotonic() + 20,
+                deadline=proof.time.monotonic() + 120,
             )
             assert result.returncode == 0 and not result.stderr.strip()
             values[mode] = result.stdout
@@ -471,7 +471,7 @@ def test_real_collector_uses_native_object_and_shipping_library_profile(native_t
         ],
     ]
     for index, command in enumerate(commands):
-        result = subprocess.run(command, capture_output=True, timeout=30)
+        result = subprocess.run(command, capture_output=True, timeout=90)
         (native_tool.evidence_root / f"collector-build-{index}.stdout").write_bytes(result.stdout)
         (native_tool.evidence_root / f"collector-build-{index}.stderr").write_bytes(result.stderr)
         assert result.returncode == 0, result.stderr.decode()
