@@ -176,7 +176,7 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     name: Required · actual iOS AstralCore coverage
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 16
     steps:
       - name: Check out candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -223,7 +223,7 @@ jobs:
             -default-test-execution-time-allowance 120 \
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
-            -test-iterations 3 \
+            -test-iterations 2 \
             -resultBundlePath "$result" test-without-building)
           status=$?
           set -e
@@ -281,7 +281,7 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     name: Required · ${{ matrix.name }} app continuity/unit coverage
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 17
     strategy:
       fail-fast: false
       matrix:
@@ -347,7 +347,7 @@ jobs:
             -default-test-execution-time-allowance 120 \
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
-            -test-iterations 3 \
+            -test-iterations 2 \
             -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppTests \
@@ -527,7 +527,7 @@ jobs:
             -default-test-execution-time-allowance 120 \
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
-            -test-iterations 3 \
+            -test-iterations 2 \
             -derivedDataPath "$derived" \
             -resultBundlePath "$result" \
             -only-testing:AstralAppUITests/LLMFirstLoginUITests \
@@ -613,7 +613,7 @@ jobs:
     if: needs.changes.outputs.apple == 'true'
     name: Required · watchOS 26.5 continuity coverage
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - name: Check out candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -687,7 +687,7 @@ jobs:
             -default-test-execution-time-allowance 120 \
             -maximum-test-execution-time-allowance 300 \
             -retry-tests-on-failure \
-            -test-iterations 3 \
+            -test-iterations 2 \
             -resultBundlePath "$navigation_result" \
             -only-testing:AstralWatchNavigationUITests \
             test

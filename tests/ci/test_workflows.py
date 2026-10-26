@@ -324,7 +324,7 @@ APPLE_RETRY_POLICY = (
     "-default-test-execution-time-allowance 120",
     "-maximum-test-execution-time-allowance 300",
     "-retry-tests-on-failure",
-    "-test-iterations 3",
+    "-test-iterations 2",
 )
 WHOLE_OS_STEP = "Qualify standalone whole-source compiler helper"
 WHOLE_OS_UPLOAD = "Retain standalone compiler helper raw evidence"
@@ -483,7 +483,7 @@ def _assert_apple_platform_contract(apple: str) -> None:
     assert 'rm -rf "$result"' not in first_login
     assert first_login.count("-resultBundlePath") == 1
     assert "-retry-tests-on-failure" in first_login
-    assert "-test-iterations 3" in first_login
+    assert "-test-iterations 2" in first_login
     assert "-test-timeouts-enabled YES \\\n" in first_login
     assert first_login.count("-default-test-execution-time-allowance") == 1
     assert "-default-test-execution-time-allowance 120 \\\n" in first_login
@@ -879,6 +879,27 @@ def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name:
     _assert_jobs_capped_at_thirty_minutes((ACTIVE / workflow_name).read_text(encoding="utf-8"))
 
 
+APPLE_TEST_JOBS = ("core-tests", "core-ios-tests", "app-unit-tests", "watch-continuity")
+
+
+def _assert_apple_test_jobs_within_twenty_minutes(text: str) -> None:
+    for job_id in APPLE_TEST_JOBS:
+        limits = re.findall(r"(?m)^    timeout-minutes: (\d+)$", _job_block(text, job_id))
+        assert len(limits) == 1 and 0 < int(limits[0]) <= 20, (job_id, limits)
+
+
+def test_apple_test_jobs_fit_the_twenty_minute_budget() -> None:
+    _assert_apple_test_jobs_within_twenty_minutes((ACTIVE / "apple-ci.yml").read_text(encoding="utf-8"))
+
+
+def test_apple_test_job_budget_rejects_a_longer_limit() -> None:
+    text = (ACTIVE / "apple-ci.yml").read_text(encoding="utf-8")
+    mutated = text.replace("    timeout-minutes: 16\n", "    timeout-minutes: 25\n", 1)
+    assert mutated != text
+    with pytest.raises(AssertionError):
+        _assert_apple_test_jobs_within_twenty_minutes(mutated)
+
+
 @pytest.mark.parametrize(
     ("workflow_name", "needle", "replacement"),
     (
@@ -886,7 +907,7 @@ def test_core_android_and_apple_jobs_are_capped_at_thirty_minutes(workflow_name:
         ("ci.yml", "    timeout-minutes: 10\n", ""),
         ("android-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 45\n"),
         ("android-ci.yml", "    timeout-minutes: 15\n", ""),
-        ("apple-ci.yml", "    timeout-minutes: 30\n", "    timeout-minutes: 31\n"),
+        ("apple-ci.yml", "    timeout-minutes: 20\n", "    timeout-minutes: 31\n"),
         ("apple-ci.yml", "    timeout-minutes: 15\n", ""),
     ),
 )
@@ -1471,7 +1492,7 @@ def _assert_retried_test_run(xcode):
         "-default-test-execution-time-allowance",
         "-maximum-test-execution-time-allowance",
         "-test-iterations",
-    )] == ["YES", "120", "300", "3"]
+    )] == ["YES", "120", "300", "2"]
     assert run.count("-retry-tests-on-failure") == 1
     assert not [call for call in xcode[:-1] if "-retry-tests-on-failure" in call]
     assert not [call for call in xcode if "-test-repetition-relaunch-enabled" in call]
@@ -1653,7 +1674,7 @@ def test_watch_workflow_requires_both_suites_before_export(tmp_path, failing_com
         assert "-test-repetition-relaunch-enabled" not in build
     assert "-retry-tests-on-failure" not in builds[0]
     assert "-retry-tests-on-failure" in builds[1]
-    assert builds[1][builds[1].index("-test-iterations") + 1] == "3"
+    assert builds[1][builds[1].index("-test-iterations") + 1] == "2"
     assert builds[1][builds[1].index("-default-test-execution-time-allowance") + 1] == "120"
     merges = [call for call in calls if call[0] == "xcrun"]
     assert len(merges) == (1 if failing_command in {"none", "merge"} else 0)
